@@ -11,7 +11,14 @@ datasets:
     roles_to_train: [assistant]
 
 projection_sampling:
-  backend: transformers
+  backend: vllm
+  backend_kwargs:
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.8
+    max_model_len: 8192
+    enforce_eager: false
+    enable_prefix_caching: true
+    score_batch_size: 4
   cache_dir: ./last_run_prepared/projection-sampling
   acceptance: metropolis_hastings
   block_size: 32

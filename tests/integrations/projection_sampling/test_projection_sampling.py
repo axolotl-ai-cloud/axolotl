@@ -15,7 +15,10 @@ from axolotl.integrations.projection_sampling.args import (
     ProjectionSamplingArgs,
     ProjectionSamplingConfig,
 )
-from axolotl.integrations.projection_sampling.backend import TransformersBackend
+from axolotl.integrations.projection_sampling.backend import SamplingBackend
+from axolotl.integrations.projection_sampling.backends.transformers import (
+    TransformersBackend,
+)
 from axolotl.integrations.projection_sampling.plugin import (
     ProjectionSamplingPlugin,
     cache_path,
@@ -40,7 +43,7 @@ class TinyTokenizer:
         return [1, 3]
 
 
-class ScriptedBackend:
+class ScriptedBackend(SamplingBackend):
     tokenizer = TinyTokenizer()
     eos_token_ids = {7}
 
@@ -51,11 +54,21 @@ class ScriptedBackend:
         self.calls = []
         self.closed = False
 
+    @classmethod
+    def from_config(cls, cfg, config):
+        raise NotImplementedError
+
     def sample(self, context, max_tokens):
         self.calls.append(("sample", context.copy(), max_tokens))
         return next(self.sequences)
 
-    def score(self, context, tokens, *, proposal):
+    def target_logprob(self, context, tokens):
+        return self._score(context, tokens, proposal=False)
+
+    def proposal_logprob(self, context, tokens):
+        return self._score(context, tokens, proposal=True)
+
+    def _score(self, context, tokens, *, proposal):
         self.calls.append(
             ("proposal" if proposal else "target", context.copy(), tokens.copy())
         )
@@ -233,7 +246,7 @@ def test_teacher_forcing_matches_generation_log_densities(real_backend):
         scores[0].log_softmax(-1)[token].item()
         for scores, token in zip(output.scores, tokens, strict=True)
     )
-    assert real_backend.score(context, tokens, proposal=True) == pytest.approx(
+    assert real_backend.proposal_logprob(context, tokens) == pytest.approx(
         expected, abs=1e-6
     )
     ids = torch.tensor([context + tokens])
@@ -242,7 +255,7 @@ def test_teacher_forcing_matches_generation_log_densities(real_backend):
     target = (
         logits.log_softmax(-1).gather(-1, torch.tensor(tokens)[:, None]).sum().item()
     )
-    assert real_backend.score(context, tokens, proposal=False) == pytest.approx(
+    assert real_backend.target_logprob(context, tokens) == pytest.approx(
         target, abs=1e-6
     )
 

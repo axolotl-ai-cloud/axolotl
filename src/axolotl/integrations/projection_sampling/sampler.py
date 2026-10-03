@@ -2,9 +2,11 @@
 
 import math
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .args import ProjectionSamplingConfig
+from .backend import SamplingBackend
 
 
 @dataclass
@@ -21,7 +23,7 @@ class SamplingResult:
 class ProjectionSampler:
     """Algorithm 1 with explicitly rescored forward and reverse proposals."""
 
-    def __init__(self, backend, config: ProjectionSamplingConfig):
+    def __init__(self, backend: SamplingBackend, config: ProjectionSamplingConfig):
         self.backend = backend
         self.config = config
         self.rng = random.Random(config.seed)  # nosec B311
@@ -43,16 +45,30 @@ class ProjectionSampler:
             tokens = [tokenizer.bos_token_id]
         return tokens
 
-    def proposal_ids(self, question: str, expert: str, prefix: list[int]) -> list[int]:
+    def proposal_ids(
+        self,
+        question: str,
+        expert: str,
+        prefix: list[int],
+        prompt_builder: Callable[[str], list[int]] | None = None,
+    ) -> list[int]:
         text = self.config.proposal_template.format(
             question=question,
             expert_response=expert,
             prefix=self.backend.tokenizer.decode(prefix, skip_special_tokens=True),
         )
-        return self.prompt_ids(text) + prefix
+        return (prompt_builder or self.prompt_ids)(text) + prefix
 
-    def sample(self, question: str, expert: str) -> SamplingResult:
-        target_context = self.prompt_ids(question)
+    def sample(
+        self,
+        question: str,
+        expert: str,
+        *,
+        target_context: list[int] | None = None,
+        prompt_builder: Callable[[str], list[int]] | None = None,
+    ) -> SamplingResult:
+        if target_context is None:
+            target_context = self.prompt_ids(question)
         current: list[int] = []
         attempts = accepted = 0
         target = 0.0
@@ -63,29 +79,24 @@ class ProjectionSampler:
         ):
             horizon = min(horizon, self.config.max_new_tokens)
             current += self.backend.sample(
-                self.proposal_ids(question, expert, current), horizon - len(current)
+                self.proposal_ids(question, expert, current, prompt_builder),
+                horizon - len(current),
             )
             self._validate_tokens(current, horizon)
-            target = self.backend.score(target_context, current, proposal=False)
+            target = self.backend.target_logprob(target_context, current)
             for _ in range(self.config.mcmc_steps):
                 index = self.rng.randrange(len(current))
                 prefix = current[:index]
-                context = self.proposal_ids(question, expert, prefix)
+                context = self.proposal_ids(question, expert, prefix, prompt_builder)
                 candidate = prefix + self.backend.sample(context, horizon - index)
                 self._validate_tokens(candidate, horizon)
-                proposed_target = self.backend.score(
-                    target_context, candidate, proposal=False
-                )
+                proposed_target = self.backend.target_logprob(target_context, candidate)
                 attempts += 1
                 if self.config.acceptance == "greedy":
                     accept = proposed_target / len(candidate) > target / len(current)
                 else:
-                    forward = self.backend.score(
-                        context, candidate[index:], proposal=True
-                    )
-                    reverse = self.backend.score(
-                        context, current[index:], proposal=True
-                    )
+                    forward = self.backend.proposal_logprob(context, candidate[index:])
+                    reverse = self.backend.proposal_logprob(context, current[index:])
                     # EOS can change length, hence the reverse cut-index probability.
                     log_ratio = (
                         proposed_target

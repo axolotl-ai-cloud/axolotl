@@ -1,6 +1,5 @@
 """Dataset-loading plugin for offline projection sampling and ordinary SFT."""
 
-import gc
 import hashlib
 import importlib
 import json
@@ -9,7 +8,6 @@ import tempfile
 from glob import glob
 from pathlib import Path
 
-import torch
 from filelock import FileLock
 
 from axolotl.integrations.base import BasePlugin
@@ -17,7 +15,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 from .args import ProjectionSamplingConfig
-from .backend import TransformersBackend
+from .backend import load_backend
 from .sampler import ProjectionSampler
 
 LOG = get_logger(__name__)
@@ -27,6 +25,9 @@ CACHE_VERSION = 1
 def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
     """Fingerprint settings, tokenization, source configuration, and local data."""
     settings = config.model_dump(exclude={"cache_dir", "device"})
+    if config.backend == "transformers" and not config.backend_kwargs:
+        settings.pop("backend")
+        settings.pop("backend_kwargs")
     payload = {
         "version": CACHE_VERSION,
         "sampling": settings,
@@ -51,6 +52,16 @@ def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
             )
         },
     }
+    if any(source.get("type") == "chat_template" for source in cfg.datasets):
+        payload["chat_tokenization"] = {
+            key: cfg.get(key)
+            for key in (
+                "train_on_inputs",
+                "sequence_len",
+                "eot_tokens",
+                "chat_template_kwargs",
+            )
+        }
     local_hashes = {}
     for dataset in cfg.datasets:
         files = dataset.get("data_files") or []
@@ -116,11 +127,15 @@ class ProjectionSamplingPlugin(BasePlugin):
                 raise ValueError(f"projection_sampling does not support {key}")
         if not cfg.datasets:
             raise ValueError(
-                "projection_sampling requires datasets of expert question/response pairs"
+                "projection_sampling requires expert chat messages or question/response pairs"
             )
         for source in cfg.datasets:
             if not source.get("path"):
                 raise ValueError("projection_sampling datasets require a source path")
+            if source.get("type") not in (None, "chat_template"):
+                raise ValueError(
+                    "projection_sampling supports type: chat_template or flat pairs without a dataset type"
+                )
             if source.get("input_transform") or source.get("preprocess_shards"):
                 raise ValueError(
                     "projection_sampling does not support input_transform or preprocess_shards"
@@ -168,7 +183,6 @@ class ProjectionSamplingPlugin(BasePlugin):
                 raise ValueError(
                     "projection_sampling.verifier must resolve to a callable"
                 )
-        backend = None
         temporary = None
         count = 0
         try:
@@ -180,20 +194,7 @@ class ProjectionSamplingPlugin(BasePlugin):
                 encoding="utf-8",
             ) as output:
                 temporary = Path(output.name)
-                device = torch.device(config.device)
-                devices = []
-                if device.type == "cuda":
-                    devices = [
-                        device.index
-                        if device.index is not None
-                        else torch.cuda.current_device()
-                    ]
-                with torch.random.fork_rng(devices=devices):
-                    torch.random.default_generator.manual_seed(config.seed)
-                    if devices:
-                        with torch.cuda.device(devices[0]):
-                            torch.cuda.manual_seed(config.seed)
-                    backend = TransformersBackend.from_config(cfg, config)
+                with load_backend(cfg, config) as backend:
                     sampler = ProjectionSampler(backend, config)
                     for source in cfg.datasets:
                         source = DictDefault(source)
@@ -210,7 +211,27 @@ class ProjectionSamplingPlugin(BasePlugin):
                             dataset = dataset.shuffle(seed=config.seed).select(
                                 range(int(len(dataset) * source.weight))
                             )
+                        chat_strategy = None
+                        if source.type == "chat_template":
+                            from axolotl.prompt_strategies.chat_template import load
+
+                            chat_strategy = load(backend.tokenizer, cfg, source)
                         for row in dataset:
+                            if chat_strategy is not None:
+                                from .chat import sample_chat
+
+                                record = sample_chat(
+                                    row, chat_strategy, sampler, verifier
+                                )
+                                output.write(
+                                    json.dumps(
+                                        record, ensure_ascii=False, allow_nan=False
+                                    )
+                                    + "\n"
+                                )
+                                count += 1
+                                LOG.info("Projection sampled chat row %s", count)
+                                continue
                             question, expert = (
                                 row[config.question_field],
                                 row[config.response_field],
@@ -289,6 +310,3 @@ class ProjectionSamplingPlugin(BasePlugin):
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
-            if backend is not None:
-                backend.close()
-                gc.collect()

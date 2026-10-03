@@ -1,108 +1,104 @@
-"""Transformers inference with matching generation and proposal densities."""
+"""Inference backend contract and lazy loading for projection sampling."""
 
-import torch
-from transformers import AutoModelForCausalLM, GenerationConfig
+from abc import ABC, abstractmethod
+from contextlib import contextmanager, nullcontext
+from importlib import import_module
+from typing import Any, ContextManager, Iterator, Protocol
 
 from .args import ProjectionSamplingConfig
 
 
-class TransformersBackend:
-    """Unmodified base model for target and expert-conditioned proposal scoring."""
+class SamplingTokenizer(Protocol):
+    """Tokenization operations needed by the backend-independent sampler."""
 
-    def __init__(self, model, tokenizer, config: ProjectionSamplingConfig):
-        self.model = model.eval()
-        self.tokenizer = tokenizer
-        self.config = config
-        eos = model.generation_config.eos_token_id
-        if eos is None:
-            eos = tokenizer.eos_token_id
-        self.eos_token_ids = set(eos if isinstance(eos, list) else [eos]) - {None}
-        self.device = model.get_input_embeddings().weight.device
+    @property
+    def bos_token_id(self) -> int | None: ...
+
+    @property
+    def eos_token_id(self) -> int | None: ...
+
+    @property
+    def pad_token_id(self) -> int | None: ...
+
+    def encode(self, text: str, **kwargs: Any) -> list[int]: ...
+
+    def decode(self, tokens: list[int], **kwargs: Any) -> str: ...
+
+    def apply_chat_template(
+        self, messages: list[dict[str, str]], **kwargs: Any
+    ) -> Any: ...
+
+
+class SamplingBackend(ABC):
+    """Generate proposals and score exact conditional sequence log densities.
+
+    Tokenization must match the SFT tokenizer. Scores sum over the supplied
+    continuation only, including EOS, without length normalization. Proposal
+    scores must use the same distribution as sample(), including temperature
+    and penalties. Target scores use the unmodified base-model distribution.
+    """
+
+    tokenizer: SamplingTokenizer
+    eos_token_ids: set[int]
 
     @classmethod
-    def from_config(cls, cfg, config: ProjectionSamplingConfig):
-        from axolotl.loaders import load_tokenizer
+    @abstractmethod
+    def from_config(
+        cls, cfg: Any, config: ProjectionSamplingConfig
+    ) -> "SamplingBackend":
+        """Load a backend; clean up partial resources if initialization fails."""
 
-        tokenizer = load_tokenizer(cfg)
-        model = AutoModelForCausalLM.from_pretrained(
-            cfg.base_model,
-            revision=cfg.revision_of_model,
-            trust_remote_code=bool(cfg.trust_remote_code),
-            dtype=config.dtype
-            if config.dtype == "auto"
-            else getattr(torch, config.dtype),
-            attn_implementation="eager",
-        ).to(config.device)
-        if len(tokenizer) > model.get_input_embeddings().num_embeddings:
-            raise ValueError(
-                "Projection sampling does not support adding tokens to the base model vocabulary"
-            )
-        return cls(model, tokenizer, config)
+    @classmethod
+    def rng_context(cls, config: ProjectionSamplingConfig) -> ContextManager:
+        """Scope backend RNG state when the inference runtime needs it."""
+        return nullcontext()
 
-    def _check_context(self, context: list[int], length: int):
-        limit = getattr(self.model.config, "max_position_embeddings", None)
-        if not context or (limit and len(context) + length > limit):
-            raise ValueError(
-                f"Sampling context ({len(context)} tokens) plus continuation "
-                f"({length} tokens) exceeds model context length ({limit}). "
-                "Reduce max_new_tokens or shorten the expert solution."
-            )
-
-    @torch.inference_mode()
+    @abstractmethod
     def sample(self, context: list[int], max_tokens: int) -> list[int]:
-        self._check_context(context, max_tokens)
-        ids = torch.tensor([context], device=self.device)
-        generation = GenerationConfig(
-            do_sample=True,
-            temperature=self.config.temperature,
-            repetition_penalty=self.config.repetition_penalty,
-            top_k=0,
-            top_p=1.0,
-            max_new_tokens=max_tokens,
-            eos_token_id=sorted(self.eos_token_ids) or None,
-            pad_token_id=self.tokenizer.pad_token_id
-            if self.tokenizer.pad_token_id is not None
-            else next(iter(self.eos_token_ids), None),
-            bos_token_id=self.tokenizer.bos_token_id,
-        )
-        output = self.model.generate(
-            input_ids=ids,
-            attention_mask=torch.ones_like(ids),
-            generation_config=generation,
-        )
-        return output[0, len(context) :].tolist()
+        """Extend context by at most max_tokens, stopping only on EOS."""
 
-    @torch.inference_mode()
-    def score(self, context: list[int], tokens: list[int], *, proposal: bool) -> float:
-        if not tokens:
-            return 0.0
-        self._check_context(context, len(tokens))
-        ids = torch.tensor([context + tokens], device=self.device)
-        logits = (
-            self.model(
-                input_ids=ids, attention_mask=torch.ones_like(ids), use_cache=False
-            )
-            .logits[0, len(context) - 1 : -1]
-            .float()
-        )
-        if proposal:
-            if self.config.repetition_penalty != 1.0:
-                for position, row in enumerate(logits):
-                    previous = ids[0, : len(context) + position].unique()
-                    values = row[previous]
-                    row[previous] = torch.where(
-                        values < 0,
-                        values * self.config.repetition_penalty,
-                        values / self.config.repetition_penalty,
-                    )
-            logits /= self.config.temperature
-        selected = logits.log_softmax(-1).gather(-1, ids[0, len(context) :, None])
-        result = selected.sum().item()
-        if not torch.isfinite(selected).all():
-            raise ValueError("Model returned non-finite token log probabilities")
-        return result
+    @abstractmethod
+    def target_logprob(self, context: list[int], tokens: list[int]) -> float:
+        """Sum base-model log probabilities of tokens conditioned on context."""
 
-    def close(self):
-        self.model = None
-        if self.device.type == "cuda":
-            torch.cuda.empty_cache()
+    @abstractmethod
+    def proposal_logprob(self, context: list[int], tokens: list[int]) -> float:
+        """Sum log probabilities under the distribution used by sample()."""
+
+    @abstractmethod
+    def close(self) -> None:
+        """Release owned resources; repeated calls must be safe."""
+
+
+BACKENDS = {
+    "transformers": "axolotl.integrations.projection_sampling.backends.transformers.TransformersBackend",
+    "vllm": "axolotl.integrations.projection_sampling.backends.vllm.VLLMBackend",
+}
+
+
+def resolve_backend(name: str) -> type[SamplingBackend]:
+    """Resolve a bundled alias or an external backend's dotted class path."""
+    target = BACKENDS.get(name, name)
+    module, separator, class_name = target.rpartition(".")
+    if not separator:
+        raise ValueError(
+            f"Unknown projection sampling backend {name!r}; use {', '.join(BACKENDS)} or a dotted SamplingBackend subclass"
+        )
+    backend = getattr(import_module(module), class_name)
+    if not isinstance(backend, type) or not issubclass(backend, SamplingBackend):
+        raise TypeError(f"Backend {target!r} must subclass SamplingBackend")
+    return backend
+
+
+@contextmanager
+def load_backend(
+    cfg: Any, config: ProjectionSamplingConfig
+) -> Iterator[SamplingBackend]:
+    """Own the backend lifecycle and close it on successful or failed sampling."""
+    backend_cls = resolve_backend(config.backend)
+    with backend_cls.rng_context(config):
+        backend = backend_cls.from_config(cfg, config)
+        try:
+            yield backend
+        finally:
+            backend.close()

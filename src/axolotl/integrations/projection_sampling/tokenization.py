@@ -7,6 +7,10 @@ class ProjectionTokenizationStrategy(PromptTokenizingStrategy):
     """Read the exact target context and completion from the sampling cache."""
 
     def tokenize_prompt(self, prompt):
+        if "input_ids" in prompt:
+            return {
+                key: prompt[key] for key in ("input_ids", "labels", "attention_mask")
+            }
         context = prompt["prompt_token_ids"]
         response = prompt["response_token_ids"]
         ids = context + response

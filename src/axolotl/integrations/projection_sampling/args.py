@@ -1,7 +1,7 @@
 """Configuration for offline projection sampling."""
 
 from string import Formatter
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -21,6 +21,8 @@ class ProjectionSamplingConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
+    backend: str = "transformers"
+    backend_kwargs: dict[str, Any] = Field(default_factory=dict)
     cache_dir: str = "./last_run_prepared/projection-sampling"
     question_field: str = "prompt"
     response_field: str = "response"
@@ -36,6 +38,26 @@ class ProjectionSamplingConfig(BaseModel):
     device: str = Field("cuda", pattern=r"^(cpu|cuda(:\d+)?)$")
     dtype: Literal["auto", "float32", "bfloat16", "float16"] = "auto"
     verifier: str | None = None
+
+    @model_validator(mode="after")
+    def validate_backend(self):
+        if self.backend == "transformers" and self.backend_kwargs:
+            raise ValueError("The Transformers backend does not accept backend_kwargs")
+        if self.backend == "vllm":
+            if self.device != "cuda":
+                raise ValueError(
+                    "vLLM uses visible GPUs; set device: cuda and select GPUs with CUDA_VISIBLE_DEVICES"
+                )
+            if self.temperature < 0.01:
+                raise ValueError(
+                    "vLLM temperature must be >= 0.01 to avoid runtime clamping"
+                )
+            VLLMBackendOptions.model_validate(self.backend_kwargs)
+        elif self.backend != "transformers" and "." not in self.backend:
+            raise ValueError(
+                "backend must be transformers, vllm, or a dotted SamplingBackend subclass"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_template(self):
@@ -72,3 +94,17 @@ class ProjectionSamplingArgs(BaseModel):
                 if data.get(key):
                     raise ValueError(f"projection_sampling does not support {key}")
         return data
+
+
+class VLLMBackendOptions(BaseModel):
+    """Engine controls accepted by the bundled vLLM backend."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    tensor_parallel_size: int = Field(1, ge=1)
+    gpu_memory_utilization: float = Field(0.8, gt=0, le=1)
+    max_model_len: int | None = Field(None, ge=1)
+    enforce_eager: bool = False
+    enable_prefix_caching: bool = True
+    attention_backend: str | None = None
+    score_batch_size: int = Field(4, ge=1)
