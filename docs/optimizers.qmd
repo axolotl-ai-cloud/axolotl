@@ -201,6 +201,17 @@ optim_args:
   sinkgd_lr_scale: 0.05  # α scale applied to linear-layer updates
 ```
 
+Set `sinkgd_fallback_lr` to give all AdamW-routed fallback parameters (embeddings,
+the LM head, norms, and biases) a separate learning rate. It does not change the
+SinkGD matrix learning rate or `sinkgd_lr_scale`; schedulers preserve the per-group
+ratio. SinkGD rejects `embedding_lr`, `embedding_lr_scale`, and `lr_groups` because
+its matrix/fallback routing cannot apply those finer-grained settings.
+
+```yaml
+optim_args:
+  sinkgd_fallback_lr: 2.5e-5
+```
+
 #### Width transfer (`sinkgd_base_width`) and spectral normalization
 
 Two optional, default-off knobs help the learning rate transfer across model width and

@@ -1,17 +1,109 @@
 """Unit tests for the SinkGD optimizer's SR-Sinkhorn, including 3D fused-MoE shapes."""
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
 from axolotl.utils.optimizers.sinkgd import (
+    DistSinkGDOptimizerFactory,
     SinkGD,
     SinkGDMD,
+    SinkGDOptimizerFactory,
     _pop_sinkgd_extra_kwargs,
     _specnorm_gram_cols,
     _specnorm_gram_rows,
     single_param_sinkgd_specnorm,
     sr_sinkhorn,
 )
+
+
+class _FallbackToyModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(4, 3)
+        self.embed_tokens = torch.nn.Embedding(5, 4)
+        self.lm_head = torch.nn.Linear(4, 5, bias=False)
+
+
+def _group_for_param(optimizer, param):
+    return next(
+        group
+        for group in optimizer.param_groups
+        if any(group_param is param for group_param in group["params"])
+    )
+
+
+def test_factory_uses_requested_fallback_lr_and_scheduler_scales_groups():
+    """The fallback override applies only to AdamW-routed parameters."""
+    model = _FallbackToyModel()
+    optimizer = SinkGDOptimizerFactory()(
+        model,
+        lr=1e-3,
+        weight_decay=0.1,
+        sinkgd_lr_scale=0.5,
+        sinkgd_fallback_lr="2.5e-5",
+    )
+
+    matrix_group = _group_for_param(optimizer, model.linear.weight)
+    bias_group = _group_for_param(optimizer, model.linear.bias)
+    embed_group = _group_for_param(optimizer, model.embed_tokens.weight)
+    head_group = _group_for_param(optimizer, model.lm_head.weight)
+    assert matrix_group["use_sinkgd"] is True
+    assert matrix_group["lr"] == pytest.approx(1e-3)
+    assert matrix_group["weight_decay"] == pytest.approx(0.1)
+    for group in (bias_group, embed_group, head_group):
+        assert group["use_sinkgd"] is False
+        assert group["lr"] == pytest.approx(2.5e-5)
+        assert group["weight_decay"] == 0.0
+
+    for param in model.parameters():
+        param.grad = torch.ones_like(param)
+    optimizer.step()
+    assert optimizer.state[model.linear.weight] == {}
+    assert "exp_avg" in optimizer.state[model.linear.bias]
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 0.5)
+    optimizer.step()
+    scheduler.step()
+    assert matrix_group["lr"] == pytest.approx(5e-4)
+    assert bias_group["lr"] == pytest.approx(1.25e-5)
+
+
+def test_factory_default_fallback_lr_uses_optimizer_lr():
+    """Without an override, AdamW fallback keeps the optimizer's base LR."""
+    model = _FallbackToyModel()
+    optimizer = SinkGDOptimizerFactory()(model, lr=1e-3, weight_decay=0.1)
+    assert _group_for_param(optimizer, model.linear.weight)["lr"] == pytest.approx(1e-3)
+    assert _group_for_param(optimizer, model.linear.bias)["lr"] == pytest.approx(1e-3)
+
+
+@pytest.mark.parametrize(
+    "fallback_lr", [True, False, 0, -1, "not-a-number", float("inf")]
+)
+def test_factory_rejects_invalid_fallback_lr(fallback_lr):
+    with pytest.raises(ValueError, match="positive finite"):
+        SinkGDOptimizerFactory()(
+            _FallbackToyModel(), lr=1e-3, sinkgd_fallback_lr=fallback_lr
+        )
+
+
+@pytest.mark.parametrize("setting", ["embedding_lr", "embedding_lr_scale", "lr_groups"])
+def test_factory_rejects_unsupported_lr_grouping(setting):
+    with pytest.raises(ValueError, match="sinkgd_fallback_lr"):
+        SinkGDOptimizerFactory()(
+            _FallbackToyModel(),
+            SimpleNamespace(**{setting: 1e-4}),
+            lr=1e-3,
+        )
+
+
+def test_dist_factory_uses_requested_fallback_lr():
+    """Distributed SinkGD keeps the same fallback group semantics before stepping."""
+    model = _FallbackToyModel()
+    optimizer = DistSinkGDOptimizerFactory()(model, lr=1e-3, sinkgd_fallback_lr=2.5e-5)
+    assert _group_for_param(optimizer, model.linear.weight)["lr"] == pytest.approx(1e-3)
+    assert _group_for_param(optimizer, model.linear.bias)["lr"] == pytest.approx(2.5e-5)
 
 
 def test_sr_sinkhorn_2d_fixed_point():
