@@ -233,3 +233,31 @@ def dequantize(
         quant_state.shape,
         quant_state.dtype,
     )
+
+
+def quantize_fp8(
+    W: torch.Tensor, scale_inv_like: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Inverse of ``dequantize_fp8``: fresh scales in the layout of ``scale_inv_like``."""
+    fp8_max = torch.finfo(torch.float8_e4m3fn).max
+    W = W.float()
+    if scale_inv_like.numel() == 1:
+        scale_inv = W.abs().amax().clamp(min=1e-12) / fp8_max
+        quantized = W / scale_inv
+        scale_inv = scale_inv.reshape(scale_inv_like.shape)
+    elif scale_inv_like.dim() == 2 and W.dim() == 2:
+        sr, sc = scale_inv_like.shape
+        rows, cols = W.shape
+        br, bc = -(-rows // sr), -(-cols // sc)
+        padded = torch.nn.functional.pad(W, (0, sc * bc - cols, 0, sr * br - rows))
+        blocks = padded.reshape(sr, br, sc, bc)
+        scale_inv = blocks.abs().amax(dim=(1, 3)).clamp(min=1e-12) / fp8_max
+        quantized = (blocks / scale_inv[:, None, :, None]).reshape(padded.shape)
+        quantized = quantized[:rows, :cols]
+    else:
+        raise NotImplementedError(
+            f"Unsupported FP8 scale layout {tuple(scale_inv_like.shape)} "
+            f"for weight {tuple(W.shape)}"
+        )
+    quantized = quantized.clamp(-fp8_max, fp8_max).to(torch.float8_e4m3fn)
+    return quantized, scale_inv.to(scale_inv_like.dtype)

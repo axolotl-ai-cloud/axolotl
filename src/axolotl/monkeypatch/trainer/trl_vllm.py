@@ -1,17 +1,15 @@
 """Monkeypatches for TRL's vLLM integration and trainer utils.
 
 Adds:
-- VLLMClient.batch_update_named_params: batched weight sync (fewer HTTP round-trips)
+- VLLMClient.batch_update_named_params: chunked weight sync over vLLM's native NCCL
+  weight-transfer engine, inside a single weight update, with lazy communicator init
 - extract_logprobs: NaN→0.0 fix (prevents downstream NaN propagation)
-- VLLMGeneration: weight_sync_chunk_size + batched sync path for non-FSDP/non-ZeRO
 - split_tensor_dict / shuffle_sequence_dict: scalar type handling (int/float/bool passthrough)
 """
 
 import math
-from functools import wraps
 
 import torch
-from torch import nn
 
 from axolotl.utils.logging import get_logger
 
@@ -21,108 +19,50 @@ LOG = get_logger(__name__)
 def _batch_update_named_params(
     self, params: list[tuple[str, torch.Tensor]], chunk_size: int | None = None
 ):
-    """Batched weight sync — uses NCCL if communicator available, HTTP otherwise."""
-    has_communicator = getattr(self, "communicator", None) is not None
+    """Stream params over vLLM's NCCL weight-transfer engine in one weight update.
 
-    if has_communicator:
-        # Fast path: metadata via HTTP, tensors via NCCL
-        from transformers import is_torch_xpu_available
+    The communicator is initialised on first use when trainer init skipped it.
+    Generation is paused (in-flight requests kept) for the update, since vLLM
+    unloads layers while the update is open.
+    """
+    if not params:
+        return
 
-        if chunk_size is None:
-            chunks = [params]
-        else:
-            chunks = []
-            current_chunk: list[tuple[str, torch.Tensor]] = []
-            current_elements = 0
-            for name, weights in params:
-                n_elem = weights.numel()
-                if current_chunk and current_elements + n_elem > chunk_size:
-                    chunks.append(current_chunk)
-                    current_chunk = []
-                    current_elements = 0
-                current_chunk.append((name, weights))
-                current_elements += n_elem
-            if current_chunk:
-                chunks.append(current_chunk)
+    if getattr(self, "communicator", None) is None:
+        self.init_communicator(device=params[0][1].device)
 
-        for chunk in chunks:
-            param_metadata = [
-                {
-                    "name": name,
-                    "dtype": str(weights.dtype),
-                    "shape": list(weights.shape),
-                }
-                for name, weights in chunk
-            ]
-            url = f"{self.base_url}/batch_update_named_params/"
-            response = self.session.post(
-                url, json={"params": param_metadata}, timeout=120
-            )
-            if response.status_code == 404:
-                # Server doesn't support batch endpoint — fall back to individual updates
-                for meta in param_metadata:
-                    ind_url = f"{self.base_url}/update_named_param/"
-                    ind_response = self.session.post(ind_url, json=meta, timeout=120)
-                    if ind_response.status_code != 200:
-                        raise Exception(
-                            f"Individual update failed: {ind_response.status_code}, {ind_response.text}"
-                        )
-            elif response.status_code != 200:
-                raise Exception(
-                    f"Request failed: {response.status_code}, {response.text}"
-                )
-
-            for _name, weights in chunk:
-                if is_torch_xpu_available():
-                    self.communicator.broadcast(weights, root=self.rank)
-                else:
-                    self.communicator.broadcast(weights, src=self.rank)
-
-            if is_torch_xpu_available():
-                self.communicator.barrier()
-            else:
-                self.communicator.group.barrier()
+    if chunk_size is None:
+        chunks = [params]
     else:
-        # HTTP-only path: encode tensor data in request body (no NCCL needed).
-        # Batch by byte size to avoid huge HTTP payloads.
-        MAX_BYTES_PER_REQUEST = 10 * 1024 * 1024  # 10 MB
-        HTTP_TIMEOUT = 120  # seconds per request
-
-        payload: list[dict] = []
-        payload_bytes = 0
-        url = f"{self.base_url}/http_update_weights/"
-
-        def _flush(p: list[dict]) -> None:
-            if not p:
-                return
-            response = self.session.post(url, json={"params": p}, timeout=HTTP_TIMEOUT)
-            if response.status_code != 200:
-                raise Exception(
-                    f"Request failed: {response.status_code}, {response.text}"
-                )
-
-        from axolotl.utils.weight_serde import encode_for_http
-
+        chunks = []
+        current_chunk: list[tuple[str, torch.Tensor]] = []
+        current_elements = 0
         for name, weights in params:
-            entry = encode_for_http(name, weights)
-            entry_bytes = weights.nelement() * weights.element_size()
+            n_elem = weights.numel()
+            if current_chunk and current_elements + n_elem > chunk_size:
+                chunks.append(current_chunk)
+                current_chunk = []
+                current_elements = 0
+            current_chunk.append((name, weights))
+            current_elements += n_elem
+        if current_chunk:
+            chunks.append(current_chunk)
 
-            # Flush current batch if adding this entry would exceed limit
-            if payload and payload_bytes + entry_bytes > MAX_BYTES_PER_REQUEST:
-                _flush(payload)
-                payload = []
-                payload_bytes = 0
-
-            payload.append(entry)
-            payload_bytes += entry_bytes
-
-        _flush(payload)  # send remaining
-
-
-def _update_model_params(self, model: nn.Module, chunk_size: int | None = None):
-    """Updates all model params using batch_update_named_params."""
-    params = [(name, param.data) for name, param in model.named_parameters()]
-    self.batch_update_named_params(params, chunk_size=chunk_size)
+    self._post(f"{self.base_url}/pause", params={"mode": "keep"})
+    try:
+        with self.weight_update():
+            for chunk in chunks:
+                metadata = [
+                    (
+                        name,
+                        str(weights.dtype).removeprefix("torch."),
+                        list(weights.shape),
+                    )
+                    for name, weights in chunk
+                ]
+                self.update_named_params(metadata, iter(chunk))
+    finally:
+        self._post(f"{self.base_url}/resume")
 
 
 def _patched_extract_logprobs(all_outputs):
@@ -200,76 +140,6 @@ def _patched_shuffle_sequence_dict(seq_dict):
     return {k: permute(v) for k, v in seq_dict.items()}
 
 
-def _patch_sync_weights_batched(original_init):
-    """Wrap VLLMGeneration.__init__ to accept weight_sync_chunk_size."""
-
-    @wraps(original_init)
-    def patched_init(self, *args, weight_sync_chunk_size=None, **kwargs):
-        original_init(self, *args, **kwargs)
-        self.weight_sync_chunk_size = weight_sync_chunk_size
-
-    return patched_init
-
-
-def _make_batched_sync_weights(original_sync_weights):
-    """Wrap sync_weights to use batched sync for non-FSDP/non-ZeRO paths."""
-
-    @wraps(original_sync_weights)
-    def patched_sync_weights(self):
-        from accelerate.utils import is_peft_model
-
-        # Check if we're in a non-PEFT, non-FSDP, non-ZeRO scenario where batching helps
-        accelerator = self.accelerator
-        model = self.model
-        # TRL >=1.6 moved the FSDP flag onto the distributed helper (_dist.is_fsdp);
-        # VLLMGeneration no longer exposes is_fsdp_enabled directly.
-        is_fsdp_enabled = self._dist.is_fsdp
-
-        deepspeed_plugin = accelerator.state.deepspeed_plugin
-        zero_stage_3 = deepspeed_plugin is not None and deepspeed_plugin.zero_stage == 3
-
-        is_peft = is_peft_model(model)
-
-        # If PEFT, FSDP, or ZeRO-3, fall back to original (which handles those cases)
-        if is_peft or is_fsdp_enabled or zero_stage_3:
-            return original_sync_weights(self)
-
-        # Non-PEFT, non-FSDP, non-ZeRO: use batched sync
-        if self.mode == "colocate" and getattr(self, "enable_sleep_mode", False):
-            from vllm.distributed.device_communicators.cuda_wrapper import (
-                empty_cache,
-            )
-
-            empty_cache()
-            self.llm.wake_up(tags=["weights"])
-
-        if self.mode == "server" and accelerator.is_main_process:
-            params = [
-                (self._fix_param_name_to_vllm(name), param.data)
-                for name, param in model.named_parameters()
-            ]
-            self.vllm_client.batch_update_named_params(
-                params, chunk_size=getattr(self, "weight_sync_chunk_size", None)
-            )
-        elif self.mode == "colocate":
-            llm_model = (
-                self.llm.llm_engine.model_executor.driver_worker.model_runner.model
-            )
-            weights = [
-                (self._fix_param_name_to_vllm(name), param.data)
-                for name, param in model.named_parameters()
-            ]
-            llm_model.load_weights(weights=weights)
-
-        # Reset cache
-        if self.mode == "server" and accelerator.is_main_process:
-            self.vllm_client.reset_prefix_cache()
-        elif self.mode == "colocate":
-            self.llm.reset_prefix_cache()
-
-    return patched_sync_weights
-
-
 def patch_trl_vllm():
     """Apply all TRL vLLM monkeypatches."""
     import trl.generation.vllm_client
@@ -277,28 +147,17 @@ def patch_trl_vllm():
     import trl.trainer.utils
 
     VLLMClient = trl.generation.vllm_client.VLLMClient
-    VLLMGeneration = trl.generation.vllm_generation.VLLMGeneration
 
     # 1. Add batch_update_named_params to VLLMClient
     if not hasattr(VLLMClient, "batch_update_named_params"):
         VLLMClient.batch_update_named_params = _batch_update_named_params
-        VLLMClient.update_model_params = _update_model_params
         LOG.info("Patched VLLMClient with batch_update_named_params")
 
     # 2. Patch extract_logprobs (NaN→0.0)
     trl.generation.vllm_generation.extract_logprobs = _patched_extract_logprobs
     LOG.info("Patched extract_logprobs with NaN→0.0 fix")
 
-    # 3. Patch VLLMGeneration.__init__ to accept weight_sync_chunk_size
-    VLLMGeneration.__init__ = _patch_sync_weights_batched(VLLMGeneration.__init__)
-
-    # 4. Patch sync_weights for batched non-FSDP/non-ZeRO path
-    VLLMGeneration.sync_weights = _make_batched_sync_weights(
-        VLLMGeneration.sync_weights
-    )
-    LOG.info("Patched VLLMGeneration with batched sync_weights")
-
-    # 5. Patch split_tensor_dict and shuffle_sequence_dict
+    # 3. Patch split_tensor_dict and shuffle_sequence_dict
     trl.trainer.utils.split_tensor_dict = _patched_split_tensor_dict
     trl.trainer.utils.shuffle_sequence_dict = _patched_shuffle_sequence_dict
     LOG.info("Patched split_tensor_dict and shuffle_sequence_dict for scalar types")

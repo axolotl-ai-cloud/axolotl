@@ -5,10 +5,7 @@
 #
 # Prerequisites:
 #   1. Start vLLM server on a separate GPU:
-#      CUDA_VISIBLE_DEVICES=1 python -m trl.scripts.vllm_serve \
-#          --model meta-llama/Llama-3.2-1B \
-#          --host 0.0.0.0 --port 8000 \
-#          --gpu-memory-utilization 0.4 --dtype bfloat16
+#      CUDA_VISIBLE_DEVICES=1 axolotl vllm-serve examples/ebft/llama-1b-ebft-opencode.yaml
 #
 #   2. Run training:
 #      CUDA_VISIBLE_DEVICES=0 axolotl train examples/ebft/llama-1b-ebft-opencode.yaml

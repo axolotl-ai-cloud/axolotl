@@ -1029,15 +1029,25 @@ class RLValidationMixin:
                 "the policy never updates."
             )
 
+        # Without `capabilities` populated yet (mode='before'), fall back to
+        # user-set distributed fields.
+        world_size = int(
+            (data.get("capabilities") or {}).get("n_gpu") or data.get("world_size") or 1
+        )
+
         explicit_gbs = trl_cfg.get("generation_batch_size")
         if explicit_gbs is not None:
             effective_gbs = int(explicit_gbs)
             gbs_source = "trl.generation_batch_size"
         else:
+            # TRL's default is per_device_train_batch_size * num_processes *
+            # steps_per_generation, with steps_per_generation = GA.
             mb = data.get("micro_batch_size") or 1
             ga = data.get("gradient_accumulation_steps") or 1
-            effective_gbs = int(mb) * int(ga)
+            effective_gbs = int(mb) * int(ga) * world_size
             gbs_source = f"micro_batch_size ({mb}) * gradient_accumulation_steps ({ga})"
+            if world_size > 1:
+                gbs_source += f" * world_size ({world_size})"
 
         if effective_gbs % num_gen != 0:
             # Suggest the smallest GA bump that fixes it for the common case
@@ -1046,14 +1056,14 @@ class RLValidationMixin:
             if explicit_gbs is None:
                 from math import gcd
 
-                mb_val = int(data.get("micro_batch_size") or 1)
-                # smallest GA such that mb*GA is a multiple of num_gen
-                lcm = num_gen * mb_val // gcd(num_gen, mb_val)
-                suggested_ga = lcm // mb_val
+                per_step = int(data.get("micro_batch_size") or 1) * world_size
+                # smallest GA such that the generation batch is a multiple of num_gen
+                lcm = num_gen * per_step // gcd(num_gen, per_step)
+                suggested_ga = lcm // per_step
                 hint = (
                     f" Smallest fix: set `gradient_accumulation_steps: "
-                    f"{suggested_ga}` (so micro_batch_size * GA = "
-                    f"{mb_val * suggested_ga} is a multiple of {num_gen})."
+                    f"{suggested_ga}` (so the generation batch size "
+                    f"{per_step * suggested_ga} is a multiple of {num_gen})."
                 )
             raise ValueError(
                 f"GRPO: generation batch size must be divisible by "
@@ -1062,12 +1072,8 @@ class RLValidationMixin:
             )
 
         # Multi-rank check: each rank must receive at least one full group
-        # per step. Without `capabilities` populated yet (mode='before'), we
-        # fall back to user-set distributed fields.
-        world_size = (
-            (data.get("capabilities") or {}).get("n_gpu") or data.get("world_size") or 1
-        )
-        if world_size and world_size > 1 and effective_gbs < num_gen * world_size:
+        # per step.
+        if world_size > 1 and effective_gbs < num_gen * world_size:
             raise ValueError(
                 f"GRPO with world_size={world_size} requires effective_gbs "
                 f">= num_generations * world_size = {num_gen * world_size}, "

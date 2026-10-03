@@ -42,10 +42,8 @@ class VLLMWeightSyncCapabilities:
     ``/openapi.json``. Drives the transport-selection table below.
     """
 
-    nccl: bool = False  # /init_communicator/ + /update_named_param/
-    lora_filesystem: bool = False  # /v1/load_lora_adapter (vLLM native)
-    lora_axolotl: bool = False  # /set_lora_adapter/ (axolotl serve_lora extension)
-    http_full: bool = False  # /http_update_weights/ (axolotl serve_lora extension)
+    nccl: bool = False  # /init_weight_transfer_engine + /update_weights (dev mode)
+    lora_filesystem: bool = False  # /v1/load_lora_adapter (runtime LoRA updating)
     probed: bool = False
     probe_error: str | None = None
     routes: list[str] = field(default_factory=list)
@@ -53,12 +51,12 @@ class VLLMWeightSyncCapabilities:
     @property
     def any_full_param_sync(self) -> bool:
         """True if at least one transport can push full-model weights."""
-        return self.nccl or self.http_full
+        return self.nccl
 
     @property
     def any_lora_sync(self) -> bool:
         """True if at least one transport can push LoRA adapters."""
-        return self.lora_filesystem or self.lora_axolotl or self.nccl
+        return self.lora_filesystem or self.nccl
 
 
 def probe_vllm_weight_sync(
@@ -80,10 +78,10 @@ def probe_vllm_weight_sync(
         spec = r.json()
         routes = sorted((spec.get("paths") or {}).keys())
         caps.routes = routes
-        caps.nccl = "/init_communicator/" in routes and "/update_named_param/" in routes
+        caps.nccl = (
+            "/init_weight_transfer_engine" in routes and "/update_weights" in routes
+        )
         caps.lora_filesystem = "/v1/load_lora_adapter" in routes
-        caps.lora_axolotl = "/set_lora_adapter/" in routes
-        caps.http_full = "/http_update_weights/" in routes
         caps.probed = True
     except Exception as exc:
         caps.probe_error = f"{type(exc).__name__}: {exc}"
@@ -104,31 +102,27 @@ def select_weight_sync_transport(
 ) -> str:
     """Pick the right transport for a (server caps, model type) combo.
 
-    Returns one of: ``"lora_filesystem"``, ``"nccl"``, ``"http_full"``, or
-    ``"none"``. The caller decides what to do with ``"none"`` (typically:
+    Returns one of: ``"lora_filesystem"``, ``"nccl"``, or ``"none"``. The caller decides what to do with ``"none"`` (typically:
     raise an error explaining the misconfiguration).
 
     Selection table:
         LoRA model + lora endpoint + lora-sync pref    → lora_filesystem
-        LoRA model + lora endpoint                     → lora_filesystem
-        LoRA model + nccl endpoint                     → nccl (broadcast merged adapter)
+        LoRA model + nccl endpoint, no lora-sync pref  → nccl (broadcast merged adapter)
+        LoRA model + lora endpoint only                → lora_filesystem
         Full model + nccl endpoint                     → nccl
-        Full model + http endpoint                     → http_full
         anything else                                  → none
     """
     if has_lora:
-        if (caps.lora_filesystem or caps.lora_axolotl) and vllm_lora_sync_pref:
-            return "lora_filesystem"
-        if caps.lora_filesystem or caps.lora_axolotl:
+        if caps.lora_filesystem and (vllm_lora_sync_pref or not caps.nccl):
             return "lora_filesystem"
         if caps.nccl:
             return "nccl"
+        if caps.lora_filesystem:
+            return "lora_filesystem"
         return "none"
     # Full-parameter model
     if caps.nccl:
         return "nccl"
-    if caps.http_full:
-        return "http_full"
     return "none"
 
 
@@ -163,9 +157,10 @@ class NemoGymPlugin(BasePlugin):
         Replaces the previous unconditional ``init_communicator`` monkey-patch
         with a probe of the configured vLLM server's ``/openapi.json``. We only
         bypass NCCL init when the server we're talking to actually lacks the
-        ``/init_communicator/`` route (i.e. stock ``vllm serve``); against
-        TRL/axolotl serve modules that DO expose NCCL routes, we leave the
-        standard TRL flow alone so full-finetune training can sync weights.
+        ``/init_weight_transfer_engine`` route (i.e. stock ``vllm serve`` without
+        dev mode); against servers that DO expose it (``axolotl vllm-serve``),
+        we leave the standard TRL flow alone so full-finetune training can
+        sync weights.
         """
         if not cfg.nemo_gym_enabled:
             return
@@ -181,13 +176,10 @@ class NemoGymPlugin(BasePlugin):
 
         if self._vllm_caps.probed:
             LOG.info(
-                "NeMo Gym: vLLM weight-sync probe @ %s — nccl=%s lora_native=%s "
-                "lora_axolotl=%s http_full=%s",
+                "NeMo Gym: vLLM weight-sync probe @ %s — nccl=%s lora_native=%s",
                 base_url,
                 self._vllm_caps.nccl,
                 self._vllm_caps.lora_filesystem,
-                self._vllm_caps.lora_axolotl,
-                self._vllm_caps.http_full,
             )
 
         # Only bypass NCCL init when the server doesn't speak it. If NCCL is
@@ -200,7 +192,7 @@ class NemoGymPlugin(BasePlugin):
         """Monkeypatch VLLMClient.init_communicator to no-op.
 
         Only called when the configured vLLM server doesn't expose
-        ``/init_communicator/`` (e.g. stock ``vllm serve``). In that case
+        ``/init_weight_transfer_engine`` (e.g. stock ``vllm serve``). In that case
         TRL's standard ``init_communicator`` would 404 inside trainer
         construction; we no-op it so the LoRA filesystem path can install
         its own sync in ``post_trainer_create``.
@@ -209,8 +201,9 @@ class NemoGymPlugin(BasePlugin):
             from trl.generation.vllm_client import VLLMClient
 
             VLLMClient._original_init_communicator = VLLMClient.init_communicator
-            VLLMClient.init_communicator = lambda self, **kwargs: LOG.info(
-                "Skipping NCCL init_communicator (server has no /init_communicator/)"
+            VLLMClient.init_communicator = lambda self, *args, **kwargs: LOG.info(
+                "Skipping NCCL init_communicator (server has no "
+                "/init_weight_transfer_engine)"
             )
             LOG.info(
                 "Patched VLLMClient.init_communicator to no-op (server has no NCCL routes)"
@@ -388,7 +381,7 @@ class NemoGymPlugin(BasePlugin):
             )
 
             if transport == "lora_filesystem":
-                self._setup_lora_sync(trainer)
+                self._setup_lora_sync(trainer, alias=model_name if multi_turn else None)
                 self._check_lora_endpoint(vllm_gen)
                 LOG.info("NeMo Gym weight sync: LoRA filesystem")
             elif transport == "nccl":
@@ -396,18 +389,7 @@ class NemoGymPlugin(BasePlugin):
                 # alone (pre_model_load only patched it when the probe found no
                 # NCCL route) so the trainer's normal weight-sync flow runs.
                 LOG.info(
-                    "NeMo Gym weight sync: NCCL (server exposes /init_communicator/)"
-                )
-            elif transport == "http_full":
-                # Full-parameter HTTP sync — implementation lands in step 3.
-                # For now, fail loudly so users know the path is detected but
-                # not yet wired up, instead of silently no-oping like before.
-                raise NotImplementedError(
-                    "NeMo Gym + full fine-tune + HTTP weight sync is detected "
-                    "but the client-side sync helper is not yet implemented "
-                    "(planned). Use `adapter: lora|qlora` for now, or use a "
-                    "vLLM serve module that exposes /init_communicator/ for "
-                    "NCCL sync."
+                    "NeMo Gym weight sync: NCCL (server exposes /init_weight_transfer_engine)"
                 )
             else:  # transport == "none"
                 # No viable sync path. Build a precise error so the user knows
@@ -422,20 +404,23 @@ class NemoGymPlugin(BasePlugin):
                     )
                 elif has_lora:
                     msg = (
-                        "the vLLM server has neither NCCL routes "
-                        "(/init_communicator/) nor a LoRA-loading route "
-                        "(/v1/load_lora_adapter or /set_lora_adapter/). "
-                        "Restart vLLM with `--enable-lora --max-lora-rank N "
-                        "VLLM_ALLOW_RUNTIME_LORA_UPDATING=1` for the stock "
-                        "server, or use `axolotl vllm-serve` for the "
-                        "NCCL-capable serve module."
+                        "the vLLM server has neither native weight-transfer "
+                        "routes (/init_weight_transfer_engine) nor "
+                        "/v1/load_lora_adapter. Start it with `axolotl "
+                        "vllm-serve`, which enables the native weight-transfer "
+                        "routes and, with trl.vllm_lora_sync: true, runtime "
+                        "LoRA loading; or run `vllm serve` with "
+                        "VLLM_SERVER_DEV_MODE=1 --weight-transfer-config "
+                        '\'{"backend":"nccl"}\' / --enable-lora + '
+                        "VLLM_ALLOW_RUNTIME_LORA_UPDATING=True."
                     )
                 else:
                     msg = (
                         "the vLLM server exposes no full-parameter sync route "
-                        "(/init_communicator/ for NCCL or /http_update_weights/ "
-                        "for HTTP). Use `axolotl vllm-serve` (which has both) "
-                        "or set `adapter: lora|qlora`."
+                        "(/init_weight_transfer_engine). Start it with `axolotl "
+                        "vllm-serve`, or run `vllm serve` with "
+                        "VLLM_SERVER_DEV_MODE=1 --weight-transfer-config "
+                        '\'{"backend":"nccl"}\', or set `adapter: lora|qlora`.'
                     )
                 raise ValueError(
                     f"NeMo Gym: no usable weight-sync transport — {msg} Without "
@@ -575,7 +560,7 @@ class NemoGymPlugin(BasePlugin):
         except Exception:
             pass  # Server might not be up yet, sync will warn later
 
-    def _setup_lora_sync(self, trainer):
+    def _setup_lora_sync(self, trainer, alias=None):
         """Replace sync_weights with LoRA adapter sync via filesystem + HTTP.
 
         If the async trainer is detected (has ``_sync_lora_adapter``), delegates
@@ -586,6 +571,9 @@ class NemoGymPlugin(BasePlugin):
         saves the adapter and POSTs to ``/v1/load_lora_adapter``.
         """
         vllm_gen = trainer.vllm_generation
+        # Agent servers address vLLM by a fixed model name, so that name has to
+        # follow the adapter.
+        trainer._vllm_lora_alias = alias
 
         # Async trainer path: delegate to its _sync_lora_adapter (multi-GPU safe)
         if hasattr(trainer, "_sync_lora_adapter"):
@@ -603,12 +591,11 @@ class NemoGymPlugin(BasePlugin):
 
         # Non-async standard GRPO path: standalone closure
         import os
-        import shutil
         import tempfile
 
-        import requests as http_requests
+        from axolotl.utils.vllm_lora_sync import publish_lora_adapter
 
-        base_model = getattr(trainer.args, "model_name_or_path", None) or "axolotl-lora"
+        sync_timeout = getattr(trainer.args, "vllm_server_timeout", 300) or 300
         sync_state = {"version": 0, "sync_dir": tempfile.mkdtemp(prefix="lora_sync_")}
 
         def lora_sync_weights():
@@ -630,44 +617,17 @@ class NemoGymPlugin(BasePlugin):
                 unwrapped = accelerator.unwrap_model(model)
                 unwrapped.save_pretrained(adapter_path, state_dict=state_dict)
 
-                base_url = vllm_gen.vllm_client.base_url
-                resp = http_requests.post(
-                    f"{base_url}/v1/load_lora_adapter",
-                    json={
-                        "lora_name": base_model,
-                        "lora_path": adapter_path,
-                        "load_inplace": True,
-                    },
-                    timeout=30,
+                lora_name = publish_lora_adapter(
+                    vllm_gen.vllm_client,
+                    sync_state["sync_dir"],
+                    version,
+                    sync_timeout,
+                    alias=alias,
                 )
-                if resp.status_code != 200:
-                    resp = http_requests.post(
-                        f"{base_url}/set_lora_adapter/",
-                        json={
-                            "lora_name": "active_lora",
-                            "lora_int_id": version,
-                            "lora_path": adapter_path,
-                        },
-                        timeout=30,
-                    )
-                    if resp.status_code != 200:
-                        LOG.warning(
-                            f"Failed to set LoRA adapter: "
-                            f"{resp.status_code} {resp.text}"
-                        )
-                        return
-
-                try:
-                    vllm_gen.vllm_client.reset_prefix_cache()
-                except Exception as exc:
-                    LOG.warning("Failed to reset prefix cache: %s", exc)
-
-                if version > 1:
-                    old = os.path.join(sync_state["sync_dir"], f"v{version - 1}")
-                    if os.path.exists(old):
-                        shutil.rmtree(old, ignore_errors=True)
-
-                LOG.info(f"Synced LoRA adapter v{version} to vLLM ({adapter_path})")
+                LOG.info(
+                    f"Synced LoRA adapter v{version} to vLLM as {lora_name} "
+                    f"({adapter_path})"
+                )
 
             if accelerator.num_processes > 1:
                 import torch.distributed as dist
