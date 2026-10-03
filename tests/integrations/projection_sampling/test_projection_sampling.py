@@ -481,6 +481,13 @@ def test_cache_accepts_inline_jinja_and_tracks_local_globs(cfg, tmp_path):
     assert cache_path(cfg, config) != original
 
 
+def test_sampling_eot_tokens_invalidate_cache(cfg):
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    original = cache_path(cfg, config)
+    cfg.eot_tokens = ["<turn_end>"]
+    assert cache_path(cfg, config) != original
+
+
 def test_top_level_seed_resamples_and_reuses_same_seed(cfg, monkeypatch):
     import axolotl.common.datasets as common
 
@@ -545,3 +552,24 @@ def test_top_level_seed_drives_mh_decisions(cfg, monkeypatch, seed, accepted):
         ).read_text()
     )
     assert record["sampling"]["accepted"] == accepted
+
+
+@pytest.mark.parametrize("ids", [[8], [8, 9]])
+def test_configured_chat_eot_stops_sampling_and_invalid_eot_closes(
+    cfg, monkeypatch, ids
+):
+    from axolotl.integrations.projection_sampling.backend import load_backend
+
+    cfg.eot_tokens = ["<turn_end>"]
+    backend = ScriptedBackend([])
+    backend.tokenizer = SimpleNamespace(encode=lambda *args, **kwargs: ids)
+    monkeypatch.setattr(TransformersBackend, "from_config", lambda *args: backend)
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    if len(ids) == 1:
+        with load_backend(cfg, config) as loaded:
+            assert loaded.eos_token_ids == {7, 8}
+    else:
+        with pytest.raises(ValueError, match="single-token EOT"):
+            with load_backend(cfg, config):
+                pytest.fail("invalid EOT was accepted")
+    assert backend.closed

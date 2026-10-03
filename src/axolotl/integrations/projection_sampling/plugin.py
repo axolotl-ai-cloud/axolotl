@@ -54,6 +54,8 @@ def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
             )
         },
     }
+    if cfg.get("eot_tokens"):
+        payload["sampling_eot_tokens"] = cfg.eot_tokens
     if any(source.get("type") == "chat_template" for source in cfg.datasets):
         payload["chat_tokenization"] = {
             key: cfg.get(key)

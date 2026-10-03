@@ -99,6 +99,13 @@ def load_backend(
     with backend_cls.rng_context(cfg, config):
         backend = backend_cls.from_config(cfg, config)
         try:
+            for token in cfg.get("eot_tokens") or []:
+                ids = backend.tokenizer.encode(token, add_special_tokens=False)
+                if len(ids) != 1:
+                    raise ValueError(
+                        "Projection sampling requires single-token EOT markers"
+                    )
+                backend.eos_token_ids.update(ids)
             yield backend
         finally:
             backend.close()

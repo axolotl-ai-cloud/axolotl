@@ -151,6 +151,15 @@ def test_vllm_target_excludes_prompt_and_ignores_proposal_controls(vllm_backend)
     assert params.temperature == params.repetition_penalty == 1.0
 
 
+def test_vllm_nested_text_config_eos(vllm_backend):
+    engine = vllm_backend.engine
+    engine.llm_engine.model_config.hf_config = SimpleNamespace(
+        text_config=SimpleNamespace(eos_token_id=6)
+    )
+    backend = VLLMBackend(engine, FakeTokenizer(), vllm_backend.config)
+    assert backend.eos_token_ids == {6}
+
+
 @pytest.mark.parametrize("specific_logprobs", [True, False])
 def test_vllm_proposal_matches_processed_distribution_in_bounded_batches(
     vllm_backend, specific_logprobs

@@ -31,7 +31,13 @@ class VLLMBackend(SamplingBackend):
         )
         model_config = engine.llm_engine.model_config
         self.max_model_len = model_config.max_model_len
-        eos = model_config.hf_config.eos_token_id
+        eos = getattr(model_config.hf_config, "eos_token_id", None)
+        if eos is None:
+            eos = getattr(
+                getattr(model_config.hf_config, "text_config", None),
+                "eos_token_id",
+                None,
+            )
         if eos is None:
             eos = tokenizer.eos_token_id
         self.eos_token_ids = (
