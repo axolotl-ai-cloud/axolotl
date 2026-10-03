@@ -66,6 +66,22 @@ image_resize_algorithm: bilinear
 
 Please see [examples](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples) folder for full configs.
 
+### Capping image resolution {#sec-image-resolution}
+
+`image_size` resizes every image with PIL before it reaches the processor: a tuple resizes to exactly `(width, height)`, an int preserves aspect ratio and pads to a black square. It applies both when images are processed at collate time (`skip_prepare_dataset: true`) and during pre-tokenization.
+
+For processors that support native resolution controls, `processor_kwargs` forwards kwargs to the processor's `from_pretrained()` and is usually the better lever — the processor scales images within its own patch-grid logic instead of a fixed square. For the Qwen-VL family:
+
+```yaml
+processor_kwargs:
+  max_pixels: 1003520  # ~1280 merged vision tokens per image (after 2x2 merging)
+  # min_pixels: 3136
+```
+
+::: {.callout-warning}
+Some processors apply no resolution cap by default. The Qwen3-VL processor defaults to `size.longest_edge: 16777216` (a 16-megapixel *area* budget), so a 1700x2200 document scan produces ~14,600 patches — roughly 90 MB of `pixel_values` and ~3,650 vision tokens per image. Defaults differ across the family: Qwen2-VL caps at `max_pixels: 1003520` and Qwen2.5-VL at 12,845,056. If pre-tokenization exhausts host RAM or training is slow on high-resolution images, set `max_pixels` (or `image_size`) first.
+:::
+
 ::: {.callout-tip}
 Some of our chat_templates have been extended to support broader dataset types. This should not break any existing configs.
 :::
