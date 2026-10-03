@@ -1109,8 +1109,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         # TODO handle reasoning_content with split_thinking
         # if the role is assistant that we want to use reasoning_content
-        if self.split_thinking and transformed_message["role"] == "assistant":
-            content = transformed_message["content"]
+        content = transformed_message.get("content")
+        if (
+            self.split_thinking
+            and transformed_message.get("role") == "assistant"
+            # a tool call turn carries no content, and multimodal content is a
+            # list of parts, neither of which has thinking tags to split
+            and isinstance(content, str)
+        ):
             thinking_pairs = [
                 ("<think>", "</think>"),
                 ("<reasoning>", "</reasoning>"),

@@ -55,6 +55,43 @@ def messages_w_reasoning_fixture():
     )
 
 
+@pytest.fixture(name="messages_w_tool_call")
+def messages_w_tool_call_fixture():
+    """An assistant tool call turn, which carries no content.
+
+    ``content: null`` is what the OpenAI format emits for a tool call, and the
+    key is absent altogether once the message property mapping skips the None.
+    """
+    return Dataset.from_list(
+        [
+            {
+                "messages": [
+                    {"role": "user", "content": "what is the weather in Paris?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": '{"city": "Paris"}',
+                                },
+                            }
+                        ],
+                    },
+                    {"role": "tool", "content": "22C, sunny"},
+                    {
+                        "role": "assistant",
+                        "content": "<think>lorem</think>\nwelcome",
+                    },
+                ]
+            }
+        ]
+    )
+
+
 class TestSplitThinking:
     """
     test class to make sure datasets with reasoning content conforms to the chat_template strategy
@@ -122,3 +159,55 @@ class TestSplitThinking:
             assert input_ids == expected_input_ids, (
                 f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
             )
+
+    def test_tool_call_turn_without_content(
+        self, messages_w_tool_call, qwen3_tokenizer
+    ):
+        """A contentless assistant turn must not break the thinking split.
+
+        The split reads the assistant content, and an OpenAI tool call turn has
+        none, so the same conversation tokenizes with split_thinking off and
+        raised KeyError with it on.
+        """
+        strategy = load(
+            qwen3_tokenizer,
+            DictDefault(
+                {
+                    "train_on_inputs": False,
+                    "sequence_len": 512,
+                }
+            ),
+            DictDefault(
+                {
+                    "chat_template": "qwen3",
+                    "message_field_role": "role",
+                    "message_field_content": "content",
+                    "message_property_mappings": {
+                        "role": "role",
+                        "content": "content",
+                    },
+                    "roles": {
+                        "user": ["user"],
+                        "assistant": ["assistant"],
+                        "system": ["system"],
+                        "tool": ["tool"],
+                    },
+                    "field_messages": "messages",
+                    "split_thinking": True,
+                }
+            ),
+        )
+
+        conversation = messages_w_tool_call[0]
+        thread = strategy.get_conversation_thread(conversation)
+
+        # the tool call survives, and carries no content to split
+        assert thread[1]["role"] == "assistant"
+        assert "content" not in thread[1]
+        assert thread[1]["tool_calls"][0]["function"]["name"] == "get_weather"
+
+        # the later assistant turn still splits normally
+        assert thread[3]["reasoning_content"] == "lorem"
+        assert thread[3]["content"] == "welcome"
+
+        assert len(strategy.tokenize_prompt(conversation)["input_ids"]) > 0
