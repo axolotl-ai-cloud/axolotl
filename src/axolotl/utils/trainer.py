@@ -17,6 +17,7 @@ from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
+from axolotl.utils.datasets import dataset_map_buffer_kwargs
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_world_size,
@@ -294,9 +295,11 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         # handle iterable datasets case
         prior_len = None
     filter_map_kwargs = {}
+    map_buffer_kwargs = {}
     if not isinstance(train_dataset, IterableDataset):
         filter_map_kwargs["num_proc"] = cfg.dataset_num_proc
         filter_map_kwargs["load_from_cache_file"] = not cfg.is_preprocess
+        map_buffer_kwargs = dataset_map_buffer_kwargs(cfg, batched=True)
 
     drop_long_kwargs = {}
     if filter_map_kwargs:
@@ -305,6 +308,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         drop_no_trainable_tokens,
         batched=True,
         **filter_map_kwargs,
+        **map_buffer_kwargs,
         **drop_long_kwargs,
     )
     if prior_len:
@@ -322,6 +326,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
         eval_dataset = eval_dataset.filter(
             drop_no_trainable_tokens,
             **filter_map_kwargs,
+            **map_buffer_kwargs,
             **drop_long_kwargs,
         )
         if prior_len:
@@ -338,6 +343,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             num_proc=cfg.dataset_num_proc,
             load_from_cache_file=not cfg.is_preprocess,
             desc="Group By Length",
+            **map_buffer_kwargs,
         )
 
     if cfg.use_pose:
@@ -355,6 +361,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             num_proc=cfg.dataset_num_proc,
             load_from_cache_file=not cfg.is_preprocess,
             desc="Add position_id column (PoSE)",
+            **map_buffer_kwargs,
         )
         train_dataset = train_dataset.sort("sequence_len")
         if cfg.eval_sample_packing is not False:
@@ -364,6 +371,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     num_proc=cfg.dataset_num_proc,
                     load_from_cache_file=not cfg.is_preprocess,
                     desc="Add position_id column (PoSE)",
+                    **map_buffer_kwargs,
                 )
     elif cfg.sample_packing or deepspeed_context_parallel(cfg):
         # DeepSpeed Ulysses shards the sequence, so every batch must carry global positions
@@ -374,6 +382,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             add_position_ids,
             batched=True,
             **filter_map_kwargs,
+            **map_buffer_kwargs,
             **drop_long_kwargs,
         )
         if cfg.eval_sample_packing or deepspeed_context_parallel(cfg):
@@ -381,6 +390,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 eval_dataset = eval_dataset.map(
                     add_position_ids,
                     **filter_map_kwargs,
+                    **map_buffer_kwargs,
                     **drop_long_kwargs,
                 )
 

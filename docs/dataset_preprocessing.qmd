@@ -42,3 +42,18 @@ calculated hash value for the pre-processed dataset.
 If you have `dataset_prepared_path: ...` set
 and change your prompt templating logic, it may not pick up the changes you made and you will be
 training over the old prompt.
+
+### Controlling preprocessing RAM
+
+Each tokenization worker buffers rows in memory twice: `dataset_map_batch_size` rows are handed to each batched tokenization call, and `dataset_writer_batch_size` rows are accumulated before every flush to the Arrow cache. Both default to 1000 (the `datasets` library default).
+
+For multimodal datasets both default to 32 instead, because a single row can carry tens of MB of `pixel_values` — e.g. an uncapped 1700x2200 scan through a Qwen-VL processor produces ~90 MB per row, so 1000-row buffers would need ~180 GB per worker. Peak preprocessing RAM is roughly `dataset_num_proc x (dataset_map_batch_size + dataset_writer_batch_size) x bytes_per_row`.
+
+```yaml
+# lower these if preprocessing runs out of host RAM; raise for faster
+# preprocessing of small rows
+dataset_map_batch_size: 32
+dataset_writer_batch_size: 32
+```
+
+Capping image resolution (`processor_kwargs` / `image_size`) shrinks `bytes_per_row` itself and also reduces per-step training cost; see the [multimodal guide](multimodal.qmd).
