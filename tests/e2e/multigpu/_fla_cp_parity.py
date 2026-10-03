@@ -1,4 +1,4 @@
-"""Opt-in four-rank native FLA forward/backward parity with a real Qwen mixer."""
+"""Distributed native FLA forward/backward parity with a real Qwen mixer."""
 
 import copy
 import os
