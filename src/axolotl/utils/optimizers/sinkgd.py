@@ -35,6 +35,7 @@ from torchao.optim.quant_utils import _fp32_to_bf16_sr
 from torchao.optim.subclass_8bit import OptimState8bit
 
 from axolotl.integrations.base import BaseOptimizerFactory
+from axolotl.utils.optimizers.loraplus import apply_loraplus_lr_groups
 from axolotl.utils.optimizers.sinkgd_triton import fused_available, fused_sinkgd_step
 
 
@@ -521,7 +522,7 @@ class SinkGDMD(SinkGD):
         )
 
 
-def _sinkgd_param_groups(opt_model, weight_decay):
+def _sinkgd_param_groups(opt_model, weight_decay, lr=None, loraplus_lr_ratio=None):
     """Split params: 2D/3D weight matrices -> SR-Sinkhorn; everything else -> AdamW.
 
     Routing is by tensor rank, not module type, so fused MoE experts (transformers
@@ -529,9 +530,10 @@ def _sinkgd_param_groups(opt_model, weight_decay):
     ``nn.Linear`` modules) are picked up and normalized per-expert. The AdamW
     fallback group (embeddings, head, norms, biases) uses no weight decay.
     """
+    named_params = list(opt_model.named_parameters())
     sinkgd_params = []
     adamw_params = []
-    for name, param in opt_model.named_parameters():
+    for name, param in named_params:
         if not param.requires_grad:
             continue
         if (
@@ -555,7 +557,13 @@ def _sinkgd_param_groups(opt_model, weight_decay):
         param_groups.append(
             {"params": adamw_params, "use_sinkgd": False, "weight_decay": 0.0}
         )
-    return param_groups
+    return apply_loraplus_lr_groups(
+        param_groups,
+        named_params,
+        default_lr=lr,
+        loraplus_lr_ratio=loraplus_lr_ratio,
+        eligible=lambda _name, _param, group: group.get("use_sinkgd", False),
+    )
 
 
 def _as_bool(v) -> bool:
@@ -613,9 +621,15 @@ class SinkGDOptimizerFactory(BaseOptimizerFactory):
         )  # ignored by the single-device variant
         md_sphere = _as_bool(optimizer_kwargs.pop("sinkgd_md_sphere", False))
         cls = SinkGDMD if md_sphere else SinkGD
+        loraplus_lr_ratio = getattr(training_args, "loraplus_lr_ratio", None)
 
         return cls(
-            _sinkgd_param_groups(opt_model, weight_decay),
+            _sinkgd_param_groups(
+                opt_model,
+                weight_decay,
+                lr=lr,
+                loraplus_lr_ratio=loraplus_lr_ratio,
+            ),
             lr=lr,
             betas=betas,
             eps=eps,

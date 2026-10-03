@@ -1,17 +1,102 @@
 """Unit tests for the SinkGD optimizer's SR-Sinkhorn, including 3D fused-MoE shapes."""
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
 from axolotl.utils.optimizers.sinkgd import (
     SinkGD,
     SinkGDMD,
+    SinkGDOptimizerFactory,
     _pop_sinkgd_extra_kwargs,
+    _sinkgd_param_groups,
     _specnorm_gram_cols,
     _specnorm_gram_rows,
     single_param_sinkgd_specnorm,
     sr_sinkhorn,
 )
+
+
+class _LoRAPlusModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(4, 4))
+        self.bias = torch.nn.Parameter(torch.randn(4))
+        self.lora_A = torch.nn.Linear(4, 2, bias=False)
+        self.lora_B = torch.nn.Linear(2, 4, bias=False)
+        self.frozen = torch.nn.Parameter(torch.randn(4, 4), requires_grad=False)
+
+
+def _params_in_groups(optimizer):
+    return {
+        id(param): group
+        for group in optimizer.param_groups
+        for param in group["params"]
+    }
+
+
+def test_sinkgd_factory_applies_loraplus_ratio_to_lora_factors():
+    model = _LoRAPlusModel()
+    optimizer = SinkGDOptimizerFactory()(
+        model,
+        SimpleNamespace(loraplus_lr_ratio=8),
+        lr=1e-3,
+        weight_decay=0.1,
+    )
+
+    groups = _params_in_groups(optimizer)
+    trainable = {id(param) for param in model.parameters() if param.requires_grad}
+    assert set(groups) == trainable
+    assert len(groups) == sum(len(group["params"]) for group in optimizer.param_groups)
+    assert groups[id(model.lora_A.weight)]["lr"] == pytest.approx(1e-3)
+    assert groups[id(model.lora_B.weight)]["lr"] == pytest.approx(8e-3)
+    assert groups[id(model.lora_A.weight)]["use_sinkgd"]
+    assert groups[id(model.lora_B.weight)]["use_sinkgd"]
+    assert groups[id(model.weight)]["lr"] == pytest.approx(1e-3)
+    assert groups[id(model.bias)]["lr"] == pytest.approx(1e-3)
+    assert groups[id(model.weight)]["weight_decay"] == pytest.approx(0.1)
+    assert groups[id(model.lora_A.weight)]["weight_decay"] == pytest.approx(0.1)
+    assert groups[id(model.lora_B.weight)]["weight_decay"] == pytest.approx(0.1)
+    assert groups[id(model.bias)]["weight_decay"] == pytest.approx(0.0)
+
+    before = {id(param): param.detach().clone() for param in model.parameters()}
+    for param in model.parameters():
+        if param.requires_grad:
+            param.grad = torch.ones_like(param)
+    optimizer.step()
+    assert all(
+        not torch.equal(param.detach(), before[id(param)])
+        for param in model.parameters()
+        if param.requires_grad
+    )
+
+
+def test_sinkgd_factory_without_loraplus_keeps_default_grouping():
+    model = _LoRAPlusModel()
+    optimizer = SinkGDOptimizerFactory()(
+        model,
+        SimpleNamespace(loraplus_lr_ratio=None),
+        lr=1e-3,
+        weight_decay=0.1,
+    )
+
+    groups = _params_in_groups(optimizer)
+    assert len(optimizer.param_groups) == 2
+    assert groups[id(model.lora_A.weight)]["lr"] == pytest.approx(1e-3)
+    assert groups[id(model.lora_B.weight)]["lr"] == pytest.approx(1e-3)
+    assert groups[id(model.weight)]["use_sinkgd"]
+    assert not groups[id(model.bias)]["use_sinkgd"]
+
+
+def test_sinkgd_param_groups_support_legacy_two_arg_call():
+    model = _LoRAPlusModel()
+
+    groups = _sinkgd_param_groups(model, weight_decay=0.1)
+
+    params = {id(param) for group in groups for param in group["params"]}
+    assert len(groups) == 2
+    assert params == {id(param) for param in model.parameters() if param.requires_grad}
 
 
 def test_sr_sinkhorn_2d_fixed_point():
