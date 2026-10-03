@@ -58,7 +58,10 @@ def create_nemo_gym_rollout_func(
         temperature = trainer.temperature
         top_p = getattr(trainer, "top_p", None) or 0.999
         max_completion_length = trainer.max_completion_length
-        eos_token_id = trainer.processing_class.eos_token_id
+        tokenizer = getattr(
+            trainer.processing_class, "tokenizer", trainer.processing_class
+        )
+        eos_token_id = tokenizer.eos_token_id
 
         # Expand prompts: each prompt index repeated num_generations times
         expanded_items = []

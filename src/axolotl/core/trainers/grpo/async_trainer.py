@@ -663,15 +663,11 @@ class GRPODataProducer(BaseDataProducer):
                 self._generation_batch_size,
             )
 
-        # Use identity collator (same as stock GRPOTrainer)
-        def _identity(x):
-            return x
-
         dl = DataLoader(
             self._dataset,
             batch_size=self._train_batch_size * self._steps_per_generation,
             sampler=sampler,
-            collate_fn=_identity,
+            collate_fn=trainer.data_collator,
             num_workers=trainer.args.dataloader_num_workers,
             pin_memory=trainer.args.dataloader_pin_memory,
             persistent_workers=trainer.args.dataloader_persistent_workers,
@@ -753,7 +749,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
     instead of ``GRPOTrainer``.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, data_collator=None, **kwargs):
         # Skip NCCL communicator init when using LoRA sync (filesystem) or HTTP-only
         # merged weight sync. NCCL is only needed for the standard update_named_param
         # path which broadcasts tensors through the communicator.
@@ -801,6 +797,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
             # Restore original _init_vllm so other trainers aren't affected
             if _skip_nccl:
                 VLLMGeneration._init_vllm = _orig_init_vllm  # type: ignore[possibly-undefined]
+
+        # GRPOTrainer hardcodes an identity collator; set ours before dataloaders are built.
+        if data_collator is not None:
+            self.data_collator = data_collator
 
         # FP8 models: zero out the pad token embedding so that padding
         # positions have zero hidden states throughout the network.
@@ -1292,7 +1292,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
         else:
             return
 
-        pad_id = self.processing_class.pad_token_id
+        pad_id = getattr(
+            self.processing_class, "tokenizer", self.processing_class
+        ).pad_token_id
         if pad_id is not None and pad_id < embed.weight.shape[0]:
             with torch.no_grad():
                 embed.weight.data[pad_id].zero_()

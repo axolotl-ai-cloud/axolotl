@@ -739,6 +739,7 @@ class TestNemoGymE2E(unittest.TestCase):
         trainer.temperature = 0.8
         trainer.pad_token_id = 0
         trainer.processing_class.eos_token_id = 2
+        del trainer.processing_class.tokenizer  # a plain tokenizer, not a processor
         trainer.processing_class.batch_decode.return_value = ["crane slide"]
         return trainer
 
