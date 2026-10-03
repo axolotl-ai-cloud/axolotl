@@ -21,13 +21,10 @@ def default(cfg, dataset_idx=0, **kwargs):
         completion_format = "{completion}"
 
     def transform_fn(sample):
-        if (
-            "{system}" in prompt_format
-            and field_system in sample
-            and sample[field_system]
-        ):
+        if "{system}" in prompt_format:
             sample["prompt"] = prompt_format.format(
-                system=sample[field_system], prompt=sample[field_prompt]
+                system=sample.get(field_system) or "",
+                prompt=sample[field_prompt],
             )
         else:
             sample["prompt"] = prompt_format.format(prompt=sample[field_prompt])

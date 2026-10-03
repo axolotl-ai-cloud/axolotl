@@ -87,6 +87,22 @@ class TestKTOUserDefined:
         assert sample["prompt"] == "be helpful hello"
         assert sample["completion"] == "world"
 
+    @pytest.mark.parametrize(
+        "sample",
+        [
+            {"prompt": "hello", "completion": "world", "label": True},
+            {"system": None, "prompt": "hello", "completion": "world", "label": True},
+            {"system": "", "prompt": "hello", "completion": "world", "label": True},
+        ],
+        ids=["missing", "none", "empty"],
+    )
+    def test_system_in_prompt_format_empty_system(self, sample):
+        """A missing, None or empty system field renders as "" instead of
+        raising KeyError on the unfilled {system} placeholder."""
+        cfg = make_cfg({"prompt_format": "{system} {prompt}"})
+        transform_fn = default(cfg)
+        assert transform_fn(sample)["prompt"] == " hello"
+
     def test_non_dict_type_raises(self):
         """A non-dict dataset type raises a clear ValueError."""
         cfg = make_cfg({})
