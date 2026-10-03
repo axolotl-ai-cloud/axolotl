@@ -377,5 +377,65 @@ class TestDPOChatTemplateToolRole:
         assert "prompt" in result
 
 
+class TestDPOChatTemplateResponseInTemplateText:
+    """
+    A response that also occurs in the template's own text (a role name, a special
+    token fragment, a digit of an injected date) must be located after the assistant
+    header, not at its first occurrence in the render.
+    """
+
+    @pytest.mark.parametrize(
+        "chat_template,chosen,rejected",
+        [
+            ("llama3", "a", "user"),
+            ("llama3", "end", "start"),
+            ("chatml", "a", "user"),
+            # llama3_2_vision injects "Cutting Knowledge Date: December 2023"
+            ("llama3_2_vision", "2", "3"),
+        ],
+    )
+    def test_default(self, llama3_tokenizer, chat_template, chosen, rejected):
+        transform_fn, _ = default(
+            DictDefault(
+                {
+                    "chat_template": chat_template,
+                    "datasets": [{"type": "chat_template"}],
+                }
+            )
+        )
+        sample = {
+            "messages": [{"role": "user", "content": "hello"}],
+            "chosen": {"role": "assistant", "content": chosen},
+            "rejected": {"role": "assistant", "content": rejected},
+        }
+        result = transform_fn(sample, tokenizer=llama3_tokenizer)
+        eot = "<|im_end|>" if chat_template == "chatml" else "<|eot_id|>"
+        assert result["chosen"] == chosen + eot
+        assert result["rejected"] == rejected + eot
+
+    def test_argilla_chat(self, llama3_tokenizer):
+        transform_fn, _ = argilla_chat(
+            DictDefault(
+                {
+                    "chat_template": "llama3",
+                    "datasets": [{"type": "chat_template.argilla_chat"}],
+                }
+            )
+        )
+        sample = {
+            "chosen": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "a"},
+            ],
+            "rejected": [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "user"},
+            ],
+        }
+        result = transform_fn(sample, tokenizer=llama3_tokenizer)
+        assert result["chosen"] == "a<|eot_id|>"
+        assert result["rejected"] == "user<|eot_id|>"
+
+
 if __name__ == "__main__":
     unittest.main()

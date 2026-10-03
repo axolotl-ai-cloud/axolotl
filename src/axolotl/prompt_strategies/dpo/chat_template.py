@@ -6,6 +6,16 @@ from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_te
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
 
 
+def _response_offset(rendered: str, response_prefix: str) -> int:
+    """Index in ``rendered`` from which to search for the response content.
+
+    Skips the rendered dummy user turn and assistant header when the render starts
+    with them, so a response that also occurs in the template's own text (a role
+    name, a special token fragment, a digit of an injected date) is not matched there.
+    """
+    return len(response_prefix) if rendered.startswith(response_prefix) else 0
+
+
 def default(cfg, dataset_idx=0, **kwargs):
     ds_cfg = cfg["datasets"][dataset_idx]
     ds_cfg = handle_legacy_message_fields_logic(ds_cfg)
@@ -91,6 +101,12 @@ def default(cfg, dataset_idx=0, **kwargs):
             "content": rejected_msg[message_property_mappings["content"]],
         }
         dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
+        response_prefix = tokenizer.apply_chat_template(
+            [dummy_user_message],
+            add_generation_prompt=True,
+            chat_template=chat_template_string,
+            tokenize=False,
+        )
 
         result = {}
         result["prompt"] = tokenizer.apply_chat_template(
@@ -106,7 +122,9 @@ def default(cfg, dataset_idx=0, **kwargs):
             chat_template=chat_template_string,
             tokenize=False,
         )
-        chosen_strip_index = result["chosen"].find(chosen["content"])
+        chosen_strip_index = result["chosen"].find(
+            chosen["content"], _response_offset(result["chosen"], response_prefix)
+        )
         result["chosen"] = result["chosen"][chosen_strip_index:].rstrip()
 
         result["rejected"] = tokenizer.apply_chat_template(
@@ -115,7 +133,9 @@ def default(cfg, dataset_idx=0, **kwargs):
             chat_template=chat_template_string,
             tokenize=False,
         )
-        rejected_strip_index = result["rejected"].find(rejected["content"])
+        rejected_strip_index = result["rejected"].find(
+            rejected["content"], _response_offset(result["rejected"], response_prefix)
+        )
         result["rejected"] = result["rejected"][rejected_strip_index:].rstrip()
 
         return result
@@ -212,6 +232,12 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
         }
 
         dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
+        response_prefix = tokenizer.apply_chat_template(
+            [dummy_user_message],
+            add_generation_prompt=True,
+            chat_template=chat_template_string,
+            tokenize=False,
+        )
 
         result = {}
         result["prompt"] = tokenizer.apply_chat_template(
@@ -227,7 +253,10 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
             chat_template=chat_template_string,
             tokenize=False,
         )
-        chosen_strip_index = result["chosen"].find(chosen_response["content"])
+        chosen_strip_index = result["chosen"].find(
+            chosen_response["content"],
+            _response_offset(result["chosen"], response_prefix),
+        )
         result["chosen"] = result["chosen"][chosen_strip_index:].rstrip()
 
         result["rejected"] = tokenizer.apply_chat_template(
@@ -236,7 +265,10 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
             chat_template=chat_template_string,
             tokenize=False,
         )
-        rejected_strip_index = result["rejected"].find(rejected_response["content"])
+        rejected_strip_index = result["rejected"].find(
+            rejected_response["content"],
+            _response_offset(result["rejected"], response_prefix),
+        )
         result["rejected"] = result["rejected"][rejected_strip_index:].rstrip()
 
         return result
