@@ -1,0 +1,43 @@
+base_model: Qwen/Qwen2.5-3B-Instruct
+plugins:
+  - axolotl.integrations.projection_sampling.ProjectionSamplingPlugin
+
+# JSONL rows: {"prompt": "Question", "response": "Expert reasoning and answer"}
+datasets:
+  - path: ./expert-traces.jsonl
+    ds_type: json
+    split: train
+
+projection_sampling:
+  cache_dir: ./last_run_prepared/projection-sampling
+  question_field: prompt
+  response_field: response
+  prompt_format: chat
+  acceptance: metropolis_hastings
+  block_size: 32
+  max_new_tokens: 1856
+  mcmc_steps: 10
+  temperature: 0.6
+  seed: 42
+  device: cuda
+  dtype: bfloat16
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_target_linear: true
+sequence_len: 4096
+sample_packing: true
+train_on_inputs: false
+val_set_size: 0
+micro_batch_size: 1
+gradient_accumulation_steps: 16
+num_epochs: 2
+learning_rate: 0.00005
+optimizer: adamw_torch
+lr_scheduler: cosine
+bf16: true
+attn_implementation: sdpa
+gradient_checkpointing: true
+dataset_prepared_path: ./prepared-datasets/projection-sampling
+output_dir: ./outputs/projection-sampling
