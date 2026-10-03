@@ -23,10 +23,12 @@ class SamplingResult:
 class ProjectionSampler:
     """Algorithm 1 with explicitly rescored forward and reverse proposals."""
 
-    def __init__(self, backend: SamplingBackend, config: ProjectionSamplingConfig):
+    def __init__(
+        self, backend: SamplingBackend, config: ProjectionSamplingConfig, seed: int = 42
+    ):
         self.backend = backend
         self.config = config
-        self.rng = random.Random(config.seed)  # nosec B311
+        self.rng = random.Random(seed)  # nosec B311
 
     def prompt_ids(self, text: str) -> list[int]:
         tokenizer = self.backend.tokenizer

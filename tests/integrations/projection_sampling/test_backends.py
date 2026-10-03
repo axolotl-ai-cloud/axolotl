@@ -345,3 +345,30 @@ def test_cache_identity_changes_with_backend_and_options(tmp_path):
 def test_backend_config_rejects_unsupported_or_density_changing_settings(settings):
     with pytest.raises(ValidationError):
         ProjectionSamplingConfig(**settings)
+
+
+def test_vllm_factory_uses_top_level_seed(vllm_backend, monkeypatch):
+    from transformers import GenerationConfig
+
+    import axolotl.loaders as loaders
+
+    engine = FakeEngine()
+    module = sys.modules["vllm"]
+    module.LLM = Mock(return_value=engine)
+    monkeypatch.setattr(loaders, "load_tokenizer", lambda cfg: FakeTokenizer())
+    monkeypatch.setattr(
+        GenerationConfig,
+        "from_pretrained",
+        lambda *args, **kwargs: SimpleNamespace(eos_token_id=7),
+    )
+    cfg = DictDefault(base_model="tiny", seed=0)
+    backend = VLLMBackend.from_config(cfg, vllm_backend.config)
+    try:
+        assert module.LLM.call_args.kwargs["seed"] == 0
+        backend.sample([1, 3], 2)
+        backend.proposal_logprob([1, 3], [4, 7])
+        backend.sample([1, 3], 2)
+        assert engine.calls[0][1].seed == 0
+        assert engine.calls[-1][1].seed == 1
+    finally:
+        backend.close()

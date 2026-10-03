@@ -6,7 +6,7 @@ from contextlib import contextmanager
 import torch
 from transformers import AutoModelForCausalLM, GenerationConfig
 
-from ..args import ProjectionSamplingConfig
+from ..args import ProjectionSamplingConfig, get_seed
 from ..backend import SamplingBackend
 
 
@@ -25,7 +25,7 @@ class TransformersBackend(SamplingBackend):
 
     @classmethod
     @contextmanager
-    def rng_context(cls, config: ProjectionSamplingConfig):
+    def rng_context(cls, cfg, config: ProjectionSamplingConfig):
         device = torch.device(config.device)
         devices = []
         if device.type == "cuda":
@@ -35,10 +35,10 @@ class TransformersBackend(SamplingBackend):
                 else torch.cuda.current_device()
             ]
         with torch.random.fork_rng(devices=devices):
-            torch.random.default_generator.manual_seed(config.seed)
+            torch.random.default_generator.manual_seed(get_seed(cfg))
             if devices:
                 with torch.cuda.device(devices[0]):
-                    torch.cuda.manual_seed(config.seed)
+                    torch.cuda.manual_seed(get_seed(cfg))
             yield
 
     @classmethod

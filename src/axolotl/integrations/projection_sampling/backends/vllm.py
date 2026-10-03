@@ -5,7 +5,7 @@ import math
 from importlib import import_module
 from typing import Any
 
-from ..args import ProjectionSamplingConfig, VLLMBackendOptions
+from ..args import ProjectionSamplingConfig, VLLMBackendOptions, get_seed
 from ..backend import SamplingBackend
 
 
@@ -18,10 +18,12 @@ class VLLMBackend(SamplingBackend):
         tokenizer,
         config: ProjectionSamplingConfig,
         eos_token_ids: set[int] | None = None,
+        seed: int = 42,
     ):
         self.engine = engine
         self.tokenizer = tokenizer
         self.config = config
+        self.seed = seed
         self.options = VLLMBackendOptions.model_validate(config.backend_kwargs)
         self.sampling_params = import_module("vllm").SamplingParams
         self.specific_logprobs = "logprob_token_ids" in getattr(
@@ -62,7 +64,7 @@ class VLLMBackend(SamplingBackend):
             revision=cfg.revision_of_model,
             trust_remote_code=bool(cfg.trust_remote_code),
             dtype=config.dtype,
-            seed=config.seed,
+            seed=get_seed(cfg),
             skip_tokenizer_init=True,
             generation_config="vllm",
             logprobs_mode="processed_logprobs",
@@ -82,7 +84,7 @@ class VLLMBackend(SamplingBackend):
             if eos is None:
                 eos = tokenizer.eos_token_id
             eos_ids = set(eos if isinstance(eos, list) else [eos]) - {None}
-            return cls(engine, tokenizer, config, eos_ids)
+            return cls(engine, tokenizer, config, eos_ids, seed=get_seed(cfg))
         except BaseException:
             engine.llm_engine.engine_core.shutdown()
             raise
@@ -110,7 +112,7 @@ class VLLMBackend(SamplingBackend):
 
     def sample(self, context: list[int], max_tokens: int) -> list[int]:
         self._check_context(context, max_tokens)
-        seed = (self.config.seed + self.request_number) % (2**32)
+        seed = (self.seed + self.request_number) % (2**32)
         self.request_number += 1
         params = self._params(
             max_tokens,
@@ -149,9 +151,7 @@ class VLLMBackend(SamplingBackend):
             ) + self._next_token_logprobs(
                 [context + tokens[:-1]], [tokens[-1]], proposal=False
             )
-        params = self._params(
-            1, proposal=False, prompt_logprobs=0, seed=self.config.seed
-        )
+        params = self._params(1, proposal=False, prompt_logprobs=0, seed=self.seed)
         outputs = self.engine.generate(
             [{"prompt_token_ids": context + tokens}],
             sampling_params=params,
@@ -195,9 +195,7 @@ class VLLMBackend(SamplingBackend):
                 else {"logprobs": -1}
             )
             params.append(
-                self._params(
-                    1, proposal=proposal, seed=self.config.seed, **score_kwargs
-                )
+                self._params(1, proposal=proposal, seed=self.seed, **score_kwargs)
             )
         outputs = self.engine.generate(
             [{"prompt_token_ids": context} for context in contexts],

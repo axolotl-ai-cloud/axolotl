@@ -25,10 +25,10 @@ projection_sampling:
   max_new_tokens: 1856
   mcmc_steps: 10
   temperature: 0.6
-  seed: 42
   device: cuda
   dtype: bfloat16
 
+seed: 42
 chat_template: tokenizer_default
 
 adapter: lora

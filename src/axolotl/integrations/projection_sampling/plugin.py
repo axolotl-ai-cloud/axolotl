@@ -14,8 +14,9 @@ from axolotl.integrations.base import BasePlugin
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
-from .args import ProjectionSamplingConfig
+from .args import ProjectionSamplingConfig, get_seed
 from .backend import load_backend
+from .inspection import export_dataset
 from .sampler import ProjectionSampler
 
 LOG = get_logger(__name__)
@@ -25,6 +26,7 @@ CACHE_VERSION = 1
 def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
     """Fingerprint settings, tokenization, source configuration, and local data."""
     settings = config.model_dump(exclude={"cache_dir", "device"})
+    settings["seed"] = get_seed(cfg)
     if config.backend == "transformers" and not config.backend_kwargs:
         settings.pop("backend")
         settings.pop("backend_kwargs")
@@ -156,6 +158,9 @@ class ProjectionSamplingPlugin(BasePlugin):
             with FileLock(str(path) + ".lock"):
                 if not path.exists():
                     self._generate_cache(cfg, config, path)
+        if preprocess or int(os.environ.get("RANK", "0")) == 0:
+            exported = export_dataset(path, cfg.output_dir, seed=get_seed(cfg))
+            LOG.info("Exported rewritten dataset for inspection: %s", exported)
         LOG.info("Using projection sampling dataset: %s", path)
         prepared = DictDefault(cfg.to_dict())
         prepared.datasets = [
@@ -195,7 +200,7 @@ class ProjectionSamplingPlugin(BasePlugin):
             ) as output:
                 temporary = Path(output.name)
                 with load_backend(cfg, config) as backend:
-                    sampler = ProjectionSampler(backend, config)
+                    sampler = ProjectionSampler(backend, config, seed=get_seed(cfg))
                     for source in cfg.datasets:
                         source = DictDefault(source)
                         dataset = load_dataset_with_config(
@@ -204,11 +209,11 @@ class ProjectionSamplingPlugin(BasePlugin):
                         if isinstance(dataset, DatasetDict):
                             dataset = dataset[source.split or "train"]
                         if source.shards:
-                            dataset = dataset.shuffle(seed=config.seed).shard(
+                            dataset = dataset.shuffle(seed=get_seed(cfg)).shard(
                                 source.shards, source.shards_idx or 0
                             )
                         if source.weight is not None and source.weight < 1:
-                            dataset = dataset.shuffle(seed=config.seed).select(
+                            dataset = dataset.shuffle(seed=get_seed(cfg)).select(
                                 range(int(len(dataset) * source.weight))
                             )
                         chat_strategy = None

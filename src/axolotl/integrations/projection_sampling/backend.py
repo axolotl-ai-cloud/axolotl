@@ -49,7 +49,7 @@ class SamplingBackend(ABC):
         """Load a backend; clean up partial resources if initialization fails."""
 
     @classmethod
-    def rng_context(cls, config: ProjectionSamplingConfig) -> ContextManager:
+    def rng_context(cls, cfg: Any, config: ProjectionSamplingConfig) -> ContextManager:
         """Scope backend RNG state when the inference runtime needs it."""
         return nullcontext()
 
@@ -96,7 +96,7 @@ def load_backend(
 ) -> Iterator[SamplingBackend]:
     """Own the backend lifecycle and close it on successful or failed sampling."""
     backend_cls = resolve_backend(config.backend)
-    with backend_cls.rng_context(config):
+    with backend_cls.rng_context(cfg, config):
         backend = backend_cls.from_config(cfg, config)
         try:
             yield backend

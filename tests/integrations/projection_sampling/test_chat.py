@@ -2,6 +2,7 @@
 
 import json
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 from test_projection_sampling import ScriptedBackend
@@ -242,6 +243,7 @@ def test_plugin_chat_cache_and_training_reuse(tmp_path, tokenizer, cfg, monkeypa
     }
     path = tmp_path / "chat.jsonl"
     path.write_text(json.dumps(row) + "\n")
+    cfg.output_dir = str(tmp_path / "output")
     cfg.datasets = [
         {
             "path": str(path),
@@ -270,6 +272,14 @@ def test_plugin_chat_cache_and_training_reuse(tmp_path, tokenizer, cfg, monkeypa
     )
     assert record["messages"][-1]["content"] == "rewritten"
     assert len(record["input_ids"]) == len(record["labels"])
+    readable = json.loads(
+        (Path(cfg.output_dir) / "projection-sampling" / "rewritten.jsonl").read_text()
+    )
+    assert readable["messages"] == record["messages"]
+    assert readable["sampling"][0]["expert_response"] == "expert"
+    assert readable["sampling_seed"] == 42
+    assert not {"input_ids", "labels", "attention_mask"} & readable.keys()
+    assert "sampled_token_ids" not in readable["sampling"][0]
     monkeypatch.setattr(
         TransformersBackend, "from_config", lambda *args: pytest.fail("cache miss")
     )

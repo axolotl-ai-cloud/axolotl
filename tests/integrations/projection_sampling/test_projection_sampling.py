@@ -297,6 +297,7 @@ def cfg(tmp_path):
     source.write_text(json.dumps({"prompt": "question", "response": "expert"}) + "\n")
     return DictDefault(
         base_model="tiny",
+        output_dir=str(tmp_path / "output"),
         datasets=[{"path": str(source), "ds_type": "json", "split": "train"}],
         projection_sampling={
             "cache_dir": str(tmp_path / "cache"),
@@ -364,13 +365,32 @@ def test_preprocess_cache_reuse_verification_and_fallback(
     record = json.loads(path.read_text())
     assert record["sampling"]["fallback_to_expert"] is fallback
     assert record["response_token_ids"] == ([1, 2, 7] if fallback else sequence)
+    inspection = Path(cfg.output_dir) / "projection-sampling" / "rewritten.jsonl"
+    readable = json.loads(inspection.read_text())
+    assert readable["response"] == record["response"]
+    assert readable["sampling"]["fallback_to_expert"] is fallback
+    assert readable["sampling_seed"] == 42
+    assert "prompt_token_ids" not in readable
+    assert "response_token_ids" not in readable
     assert loaded[0].test_datasets == cfg.test_datasets
     assert cfg.to_dict()["datasets"] == source_datasets
     monkeypatch.setattr(
         TransformersBackend, "from_config", lambda *args: pytest.fail("cache miss")
     )
     assert plugin.load_datasets(cfg) == "metadata"
+    inspection.unlink()
     assert plugin.load_datasets(cfg, preprocess=True) == "metadata"
+    assert json.loads(inspection.read_text()) == readable
+    cfg.output_dir = str(Path(cfg.output_dir).parent / "another-run")
+    assert plugin.load_datasets(cfg) == "metadata"
+    assert (
+        json.loads(
+            (
+                Path(cfg.output_dir) / "projection-sampling" / "rewritten.jsonl"
+            ).read_text()
+        )
+        == readable
+    )
     assert not list(path.parent.glob("tmp*.jsonl"))
 
 
@@ -459,3 +479,69 @@ def test_cache_accepts_inline_jinja_and_tracks_local_globs(cfg, tmp_path):
         '{"prompt": "new", "response": "answer"}\n'
     )
     assert cache_path(cfg, config) != original
+
+
+def test_top_level_seed_resamples_and_reuses_same_seed(cfg, monkeypatch):
+    import axolotl.common.datasets as common
+
+    seeds = []
+    backends = []
+
+    def make_backend(training_cfg, config):
+        seeds.append(torch.initial_seed())
+        backend = ScriptedBackend([[2, 7]])
+        backends.append(backend)
+        return backend
+
+    monkeypatch.setattr(TransformersBackend, "from_config", make_backend)
+    monkeypatch.setattr(common, "load_datasets", lambda **kwargs: "prepared")
+    plugin = ProjectionSamplingPlugin()
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    cfg.seed = 0
+    path = cache_path(cfg, config)
+    plugin.load_datasets(cfg, preprocess=True)
+    original = path.read_bytes()
+    plugin.load_datasets(cfg, preprocess=True)
+    assert seeds == [0]
+    cfg.seed = 17
+    new_path = cache_path(cfg, config)
+    assert new_path != path
+    with pytest.raises(FileNotFoundError, match="axolotl preprocess"):
+        plugin.load_datasets(cfg)
+    plugin.load_datasets(cfg, preprocess=True)
+    assert seeds == [0, 17]
+    assert path.read_bytes() == original
+    assert new_path.exists()
+    assert all(backend.closed for backend in backends)
+    readable = json.loads(
+        (Path(cfg.output_dir) / "projection-sampling" / "rewritten.jsonl").read_text()
+    )
+    assert readable["sampling_seed"] == 17
+    cfg.seed = 0
+    plugin.load_datasets(cfg, preprocess=True)
+    assert seeds == [0, 17]
+
+
+def test_plugin_specific_seed_is_rejected():
+    with pytest.raises(ValidationError, match="seed"):
+        ProjectionSamplingConfig(seed=17)
+
+
+@pytest.mark.parametrize("seed,accepted", [(0, 0), (2, 1)])
+def test_top_level_seed_drives_mh_decisions(cfg, monkeypatch, seed, accepted):
+    import axolotl.common.datasets as common
+
+    cfg.seed = seed
+    cfg.projection_sampling.mcmc_steps = 1
+    backend = ScriptedBackend(
+        [[7], [4, 7]], target=lambda tokens: 0.0, proposal=lambda tokens: 0.0
+    )
+    monkeypatch.setattr(TransformersBackend, "from_config", lambda *args: backend)
+    monkeypatch.setattr(common, "load_datasets", lambda **kwargs: "prepared")
+    ProjectionSamplingPlugin().load_datasets(cfg, preprocess=True)
+    record = json.loads(
+        cache_path(
+            cfg, ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+        ).read_text()
+    )
+    assert record["sampling"]["accepted"] == accepted

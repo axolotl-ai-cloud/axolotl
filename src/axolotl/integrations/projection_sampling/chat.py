@@ -137,6 +137,7 @@ def sample_chat(
         )
     tokenized = strategy.tokenize_prompt(rewritten)
     return {
+        **({"tools": tools} if tools is not None else {}),
         **tokenized,
         "messages": strategy.get_conversation_thread(rewritten),
         "sampling": metadata,

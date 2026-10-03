@@ -34,7 +34,6 @@ class ProjectionSamplingConfig(BaseModel):
     acceptance: Literal["metropolis_hastings", "greedy"] = "metropolis_hastings"
     prompt_format: Literal["chat", "raw"] = "chat"
     proposal_template: str = PROPOSAL_TEMPLATE
-    seed: int = Field(42, ge=0)
     device: str = Field("cuda", pattern=r"^(cpu|cuda(:\d+)?)$")
     dtype: Literal["auto", "float32", "bfloat16", "float16"] = "auto"
     verifier: str | None = None
@@ -108,3 +107,9 @@ class VLLMBackendOptions(BaseModel):
     enable_prefix_caching: bool = True
     attention_backend: str | None = None
     score_batch_size: int = Field(4, ge=1)
+
+
+def get_seed(cfg) -> int:
+    """Use Axolotl's run seed, including its fallback when unset."""
+    seed = cfg.get("seed")
+    return 42 if seed is None else seed
