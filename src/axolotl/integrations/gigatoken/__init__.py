@@ -1,0 +1,59 @@
+# Copyright 2024 Axolotl AI. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Plugin for gigatoken integration with Axolotl.
+
+Attaches a gigatoken-accelerated, HF-compatible encoder alongside the tokenizer
+rather than replacing it, so only raw-text encoding is affected.
+"""
+
+from axolotl.integrations.base import BasePlugin
+from axolotl.utils.logging import get_logger
+from axolotl.utils.tokenization import set_fast_encoder
+
+from .args import GigatokenArgs as GigatokenArgs
+
+LOG = get_logger(__name__)
+
+
+class GigatokenPlugin(BasePlugin):
+    """Plugin for gigatoken integration with Axolotl."""
+
+    def get_input_args(self):
+        return "axolotl.integrations.gigatoken.GigatokenArgs"
+
+    def post_tokenizer_load(self, cfg, tokenizer):
+        if not cfg.gigatoken:
+            return None
+
+        try:
+            import gigatoken as gt
+        except ImportError as exc:
+            raise ImportError(
+                "gigatoken is not installed. Run `pip install axolotl[gigatoken]`, "
+                "or set `gigatoken: false`."
+            ) from exc
+
+        try:
+            encoder = gt.Tokenizer(tokenizer).as_hf()
+        except Exception as exc:
+            raise RuntimeError(
+                f"gigatoken cannot wrap this tokenizer ({exc}). "
+                "Set `gigatoken: false` to use the HuggingFace tokenizer."
+            ) from exc
+
+        set_fast_encoder(tokenizer, encoder)
+        LOG.info("gigatoken encoder attached for raw-text tokenization")
+        return None
