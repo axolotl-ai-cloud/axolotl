@@ -377,6 +377,18 @@ class ModelLoader:
             self.model._axolotl_lora_fp32_gradients = True
             if not self.cfg.deepspeed:
                 upcast_lora_parameters(self.model)
+        # FSDP2 needs one dtype per shard group and DeepSpeed keeps its own fp32 master copy
+        if (
+            not self.inference
+            and self.cfg.peft_autocast_adapter_dtype is not False
+            and not self.cfg.deepspeed
+            and not self.is_fsdp_enabled
+        ):
+            from axolotl.utils.lora_precision import upcast_modules_to_save
+
+            upcast_modules_to_save(
+                self.model, get_linear_embedding_layers(self.cfg.model_config_type)
+            )
         if self.cfg.fp32_norms:
             tag_model_fp32_norms(self.model, self.cfg)
 
