@@ -27,6 +27,8 @@ def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
     """Fingerprint settings, tokenization, source configuration, and local data."""
     settings = config.model_dump(exclude={"cache_dir", "device"})
     settings["seed"] = get_seed(cfg)
+    if config.proposal_batch_size == 1:
+        settings.pop("proposal_batch_size")
     if config.backend == "transformers" and not config.backend_kwargs:
         settings.pop("backend")
         settings.pop("backend_kwargs")
@@ -297,6 +299,7 @@ class ProjectionSamplingPlugin(BasePlugin):
                                     "finished": result.finished,
                                     "verified": verified,
                                     "fallback_to_expert": fallback,
+                                    **sampler.proposal_statistics(result),
                                 },
                             }
                             output.write(

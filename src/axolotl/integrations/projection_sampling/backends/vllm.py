@@ -135,6 +135,39 @@ class VLLMBackend(SamplingBackend):
             raise ValueError("vLLM returned an unexpected number of completions")
         return list(outputs[0].outputs[0].token_ids)
 
+    def sample_batch(
+        self, contexts: list[list[int]], max_tokens: list[int]
+    ) -> list[list[int]]:
+        if len(contexts) != len(max_tokens):
+            raise ValueError("Sampling batch contexts and budgets must align")
+        if len(contexts) == 1:
+            return [self.sample(contexts[0], max_tokens[0])]
+        if not contexts:
+            return []
+        for context, budget in zip(contexts, max_tokens, strict=True):
+            self._check_context(context, budget)
+        params = []
+        for budget in max_tokens:
+            params.append(
+                self._params(
+                    budget,
+                    proposal=True,
+                    seed=(self.seed + self.request_number) % (2**32),
+                    stop_token_ids=sorted(self.eos_token_ids),
+                )
+            )
+            self.request_number += 1
+        outputs = self.engine.generate(
+            [{"prompt_token_ids": context} for context in contexts],
+            sampling_params=params,
+            use_tqdm=False,
+        )
+        if len(outputs) != len(contexts) or any(
+            len(output.outputs) != 1 for output in outputs
+        ):
+            raise ValueError("vLLM returned a misaligned completion batch")
+        return [list(output.outputs[0].token_ids) for output in outputs]
+
     @staticmethod
     def _logprob(row, token: int) -> float:
         if row is None or token not in row:
@@ -175,6 +208,49 @@ class VLLMBackend(SamplingBackend):
             for row, token in zip(rows[len(context) :], tokens, strict=True)
         )
 
+    def target_logprob_batch(
+        self, contexts: list[list[int]], tokens: list[list[int]]
+    ) -> list[float]:
+        if len(contexts) != len(tokens):
+            raise ValueError("Scoring batch contexts and continuations must align")
+        result = [0.0] * len(contexts)
+        pending = []
+        for index, (context, continuation) in enumerate(
+            zip(contexts, tokens, strict=True)
+        ):
+            if not continuation:
+                continue
+            self._check_context(context, len(continuation))
+            if len(context) + len(continuation) == self.max_model_len:
+                result[index] = self.target_logprob(context, continuation)
+            else:
+                pending.append(index)
+        if not pending:
+            return result
+        params = self._params(1, proposal=False, prompt_logprobs=0, seed=self.seed)
+        outputs = self.engine.generate(
+            [
+                {"prompt_token_ids": contexts[index] + tokens[index]}
+                for index in pending
+            ],
+            sampling_params=params,
+            use_tqdm=False,
+        )
+        if len(outputs) != len(pending):
+            raise ValueError("vLLM returned a misaligned prompt-score batch")
+        for index, output in zip(pending, outputs, strict=True):
+            rows = output.prompt_logprobs
+            context, continuation = contexts[index], tokens[index]
+            if rows is None or len(rows) != len(context) + len(continuation):
+                raise ValueError(
+                    "vLLM returned missing or misaligned prompt log probabilities"
+                )
+            result[index] = sum(
+                self._logprob(row, token)
+                for row, token in zip(rows[len(context) :], continuation, strict=True)
+            )
+        return result
+
     def proposal_logprob(self, context: list[int], tokens: list[int]) -> float:
         if not tokens:
             return 0.0
@@ -190,9 +266,51 @@ class VLLMBackend(SamplingBackend):
             )
         return total
 
+    def proposal_logprob_batch(
+        self, contexts: list[list[int]], tokens: list[list[int]]
+    ) -> list[float]:
+        if len(contexts) != len(tokens):
+            raise ValueError("Scoring batch contexts and continuations must align")
+        if self.config.temperature == 1.0 and self.config.repetition_penalty == 1.0:
+            return self.target_logprob_batch(contexts, tokens)
+        for context, continuation in zip(contexts, tokens, strict=True):
+            if continuation:
+                self._check_context(context, len(continuation))
+        result = [0.0] * len(contexts)
+        prefixes: list[list[int]] = []
+        wanted: list[int] = []
+        owners: list[int] = []
+
+        def flush():
+            scores = self._token_logprobs(prefixes, wanted, proposal=True)
+            for owner, score in zip(owners, scores, strict=True):
+                result[owner] += score
+            prefixes.clear()
+            wanted.clear()
+            owners.clear()
+
+        for position in range(max((len(row) for row in tokens), default=0)):
+            for owner, (context, continuation) in enumerate(
+                zip(contexts, tokens, strict=True)
+            ):
+                if position < len(continuation):
+                    prefixes.append(context + continuation[:position])
+                    wanted.append(continuation[position])
+                    owners.append(owner)
+                    if len(prefixes) == self.options.score_batch_size:
+                        flush()
+        if prefixes:
+            flush()
+        return result
+
     def _next_token_logprobs(
         self, contexts: list[list[int]], tokens: list[int], *, proposal: bool
     ) -> float:
+        return sum(self._token_logprobs(contexts, tokens, proposal=proposal), 0.0)
+
+    def _token_logprobs(
+        self, contexts: list[list[int]], tokens: list[int], *, proposal: bool
+    ) -> list[float]:
         params = []
         for token in tokens:
             score_kwargs: dict[str, Any] = (
@@ -210,7 +328,7 @@ class VLLMBackend(SamplingBackend):
         )
         if len(outputs) != len(tokens):
             raise ValueError("vLLM returned an unexpected number of token scores")
-        total = 0.0
+        result = []
         for output, token in zip(outputs, tokens, strict=True):
             if len(output.outputs) != 1:
                 raise ValueError("vLLM returned an unexpected number of completions")
@@ -219,8 +337,8 @@ class VLLMBackend(SamplingBackend):
                 raise ValueError(
                     "vLLM returned missing or misaligned output log probabilities"
                 )
-            total += self._logprob(rows[0], token)
-        return total
+            result.append(self._logprob(rows[0], token))
+        return result
 
     def close(self):
         if self.engine is not None:

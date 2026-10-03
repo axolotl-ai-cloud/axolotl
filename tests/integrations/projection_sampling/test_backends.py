@@ -381,3 +381,91 @@ def test_vllm_factory_uses_top_level_seed(vllm_backend, monkeypatch):
         assert engine.calls[-1][1].seed == 1
     finally:
         backend.close()
+
+
+def test_vllm_batches_generation_with_ordered_seeds_and_ragged_budgets(vllm_backend):
+    contexts, budgets = [[1, 3], [1, 3], [1]], [3, 2, 1]
+    batched = vllm_backend.sample_batch(contexts, budgets)
+    prompts, params = vllm_backend.engine.calls[0]
+    assert [prompt["prompt_token_ids"] for prompt in prompts] == contexts
+    assert [parameter.seed for parameter in params] == [42, 43, 44]
+    assert [parameter.max_tokens for parameter in params] == budgets
+    assert all(parameter.stop_token_ids == [6, 7] for parameter in params)
+    assert vllm_backend.request_number == 3
+    vllm_backend.target_logprob_batch(contexts, batched)
+    vllm_backend.proposal_logprob_batch(contexts, batched)
+    assert vllm_backend.request_number == 3
+    vllm_backend.request_number = 0
+    sequential = [
+        vllm_backend.sample(context, budget)
+        for context, budget in zip(contexts, budgets, strict=True)
+    ]
+    assert batched == sequential
+
+
+@pytest.mark.parametrize("limit", [128, 3])
+def test_vllm_target_batch_handles_empty_suffixes_and_context_boundary(
+    vllm_backend, limit
+):
+    contexts, tokens = [[1], [1, 3], [1, 2], [1]], [[3, 7], [4], [], [4, 7]]
+    expected = [
+        vllm_backend.target_logprob(context, suffix)
+        for context, suffix in zip(contexts, tokens, strict=True)
+    ]
+    vllm_backend.max_model_len = limit
+    vllm_backend.engine.calls.clear()
+    assert vllm_backend.target_logprob_batch(contexts, tokens) == pytest.approx(
+        expected
+    )
+    if limit == 128:
+        assert len(vllm_backend.engine.calls) == 1
+        assert len(vllm_backend.engine.calls[0][0]) == 3
+
+
+@pytest.mark.parametrize("specific", [True, False])
+def test_vllm_proposal_batch_matches_processed_density_and_bounds_requests(
+    vllm_backend, specific
+):
+    vllm_backend.specific_logprobs = specific
+    contexts, tokens = [[1, 3], [1], [1]], [[3, 4, 7], [7], []]
+    expected = [
+        vllm_backend.proposal_logprob(context, suffix)
+        for context, suffix in zip(contexts, tokens, strict=True)
+    ]
+    vllm_backend.engine.calls.clear()
+    assert vllm_backend.proposal_logprob_batch(contexts, tokens) == pytest.approx(
+        expected
+    )
+    assert len(vllm_backend.engine.calls) == 2
+    assert all(len(prompts) <= 2 for prompts, _ in vllm_backend.engine.calls)
+    assert vllm_backend.request_number == 0
+
+
+@pytest.mark.parametrize(
+    "method", ["sample_batch", "target_logprob_batch", "proposal_logprob_batch"]
+)
+def test_vllm_rejects_misaligned_batches_before_inference(vllm_backend, method):
+    with pytest.raises(ValueError, match="align"):
+        getattr(vllm_backend, method)([[1]], [])
+    assert not vllm_backend.engine.calls
+    assert vllm_backend.request_number == 0
+
+
+def test_external_backend_has_sequential_batch_fallbacks():
+    backend = ExternalBackend()
+    assert backend.sample_batch([[1], [2]], [1, 2]) == [[7], [7]]
+    assert backend.target_logprob_batch([[1], [2]], [[7], [7]]) == [-1.0, -1.0]
+    assert backend.proposal_logprob_batch([[1], [2]], [[7], [7]]) == [-1.0, -1.0]
+    for method in ["sample_batch", "target_logprob_batch", "proposal_logprob_batch"]:
+        with pytest.raises(ValueError, match="align"):
+            getattr(backend, method)([[1]], [])
+
+
+def test_cache_tracks_proposal_batch_size_and_preserves_default_identity():
+    cfg = DictDefault(base_model="tiny", datasets=[{"path": "experts"}])
+    config = ProjectionSamplingConfig()
+    original = cache_path(cfg, config)
+    config.proposal_batch_size = 2
+    assert cache_path(cfg, config) != original
+    config.proposal_batch_size = 1
+    assert cache_path(cfg, config) == original

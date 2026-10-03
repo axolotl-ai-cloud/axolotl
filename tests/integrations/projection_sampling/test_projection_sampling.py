@@ -573,3 +573,118 @@ def test_configured_chat_eot_stops_sampling_and_invalid_eot_closes(
             with load_backend(cfg, config):
                 pytest.fail("invalid EOT was accepted")
     assert backend.closed
+
+
+def test_multiple_try_mh_selects_weighted_candidate_and_reuses_balancing_trials():
+    backend = ScriptedBackend(
+        [[2, 7], [3, 7], [4, 7]],
+        target=lambda tokens: {2: -2.0, 3: -4.0, 4: -3.0, 5: -4.0}[tokens[0]],
+        proposal=lambda tokens: -1.0 if tokens[0] == 2 else -5.0,
+    )
+    config = ProjectionSamplingConfig(
+        block_size=2, max_new_tokens=2, mcmc_steps=1, proposal_batch_size=2
+    )
+    sampler = ProjectionSampler(backend, config)
+    sampler.rng = FixedRNG()
+    result = sampler.sample("question", "expert")
+    assert result.token_ids == [4, 7]
+    assert result.attempts == result.accepted == 1
+    assert sampler.proposal_statistics(result) == {
+        "proposal_batch_size": 2,
+        "forward_proposals": 2,
+        "balancing_proposals_reused": 1,
+    }
+    proposals = [call for call in backend.calls if call[0] == "proposal"]
+    assert [call[2] for call in proposals] == [[3, 7], [4, 7], [2, 7]]
+    assert all(call[1] == proposals[0][1] for call in proposals)
+
+
+def test_parallel_greedy_selects_best_mean_and_avoids_reverse_proposals():
+    backend = ScriptedBackend(
+        [[2, 7], [3, 7], [4, 7]], target=lambda tokens: -float(6 - tokens[0])
+    )
+    config = ProjectionSamplingConfig(
+        block_size=2,
+        max_new_tokens=2,
+        mcmc_steps=1,
+        proposal_batch_size=2,
+        acceptance="greedy",
+    )
+    sampler = ProjectionSampler(backend, config)
+    sampler.rng = FixedRNG()
+    result = sampler.sample("question", "expert")
+    assert result.token_ids == [4, 7]
+    assert result.accepted == 1
+    assert not any(call[0] == "proposal" for call in backend.calls)
+    assert sampler.proposal_statistics(result)["balancing_proposals_reused"] == 0
+
+
+def test_multiple_try_rejects_misaligned_generation_batch():
+    backend = ScriptedBackend([[2, 7]])
+    backend.sample_batch = lambda *args: []
+    sampler = ProjectionSampler(
+        backend,
+        ProjectionSamplingConfig(
+            block_size=2, max_new_tokens=2, mcmc_steps=1, proposal_batch_size=2
+        ),
+    )
+    with pytest.raises(ValueError, match="misaligned"):
+        sampler.sample("question", "expert")
+
+
+def test_multiple_try_rejects_nonfinite_weights():
+    backend = ScriptedBackend(
+        [[2, 7], [3, 7], [4, 7]], proposal=lambda tokens: math.nan
+    )
+    sampler = ProjectionSampler(
+        backend,
+        ProjectionSamplingConfig(
+            block_size=2, max_new_tokens=2, mcmc_steps=1, proposal_batch_size=2
+        ),
+    )
+    with pytest.raises(ValueError, match="finite"):
+        sampler.sample("question", "expert")
+
+
+def test_multiple_try_preserves_target_with_variable_eos_lengths():
+    import random
+
+    class IndependenceBackend(ScriptedBackend):
+        def __init__(self):
+            super().__init__([])
+            self.rng = random.Random(5)
+
+        def sample(self, context, max_tokens):
+            if len(context) > 2:
+                return [7]
+            return [7] if self.rng.random() < 0.7 else [2, 7]
+
+        def target_logprob(self, context, tokens):
+            return math.log(0.2 if len(tokens) == 1 else 0.8)
+
+        def proposal_logprob(self, context, tokens):
+            if len(context) > 2:
+                return 0.0
+            return math.log(0.7 if len(tokens) == 1 else 0.3)
+
+    backend = IndependenceBackend()
+    sampler = ProjectionSampler(
+        backend,
+        ProjectionSamplingConfig(
+            block_size=2, max_new_tokens=2, proposal_batch_size=3, prompt_format="raw"
+        ),
+        seed=21,
+    )
+    current = [7]
+    target = backend.target_logprob([1, 2], current)
+    long_states = 0
+    for step in range(20500):
+        cut = sampler.rng.randrange(len(current))
+        prefix = current[:cut]
+        context = sampler.proposal_ids("question", "expert", prefix)
+        current, target, _ = sampler._batched_step(
+            [1, 2], current, target, context, prefix, 2
+        )
+        if step >= 500:
+            long_states += int(len(current) == 2)
+    assert long_states / 20000 == pytest.approx(0.8, abs=0.02)

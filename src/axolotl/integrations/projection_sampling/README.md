@@ -71,6 +71,29 @@ projection_sampling:
 
 vLLM prompt log probabilities are unprocessed, so they score the base-model target. Proposal scores come from the processed next-token distributions with the same temperature and repetition penalty as generation. The adapter scores known suffix tokens in batches of at most `score_batch_size`. Dataset rows are sampled serially; this setting batches scoring requests, and `dataset_processes` controls normal dataset preparation rather than sampling concurrency. vLLM versions with `SamplingParams.logprob_token_ids` return only the requested token's score; earlier supported versions return the full next-token distribution. The full-distribution path can use substantial host memory with large vocabularies; reduce `score_batch_size` if needed. This design avoids treating unscaled prompt probabilities as the proposal distribution. No Transformers model is loaded alongside vLLM for scoring.
 
+## Batched proposals
+
+Set `projection_sampling.proposal_batch_size` to generate multiple candidate replies at the same cut. The default is 1, preserving ordinary MH and existing cache identity. For example:
+
+```yaml
+projection_sampling:
+  backend: vllm
+  proposal_batch_size: 4
+  acceptance: metropolis_hastings
+  mcmc_steps: 3
+  backend_kwargs:
+    enable_prefix_caching: true
+    score_batch_size: 32
+```
+
+Each MH step sends all candidates in one generation batch with the same expert-conditioned prefix. vLLM handles their independent request seeds and can reuse cached prompt prefixes. Sharing depends on the model's prefix-cache support and block boundaries. Later MH steps use the selected chain state, so they remain sequential. The final dataset still has one rewritten row per source row.
+
+Acceptance uses [multiple-try independent Metropolis](https://arxiv.org/pdf/2111.15084), applied conditionally at the fixed cut. Candidate log weights are `target_logprob - proposal_logprob - log(length)`. The length factor accounts for the uniformly sampled cut. A candidate is selected proportionally to those weights. The reverse balancing set reuses the unselected candidates and includes the current state; the acceptance probability compares the two sums of weights. Conditional independence avoids a second generation batch. All proposal scores still match temperature and repetition penalties.
+
+With `acceptance: greedy`, batching selects the candidate with the highest mean target likelihood and accepts it only if it improves on the current state. This extends the reference heuristic; it does not use MH weights. `mcmc_steps: 0` skips candidate batches. Sampling metadata reports `proposal_batch_size`, `forward_proposals`, and `balancing_proposals_reused` when batching is enabled; `attempts` and `accepted` count chain steps.
+
+The backend contract also has optional `sample_batch(contexts, max_tokens)`, `target_logprob_batch(contexts, tokens)`, and `proposal_logprob_batch(contexts, tokens)` methods. Results must follow input order, with one item per input. Budgets and continuations may have different lengths. Native vLLM implementations batch generation and target scoring and bound processed next-token scoring across candidates by `score_batch_size`. Default implementations call the single-request methods sequentially, so existing external backends and Transformers remain compatible. New runtimes can override these methods for native batching.
+
 ## Adding a backend
 
 The algorithm and dataset plugin depend only on `SamplingBackend` in `backend.py`. Transformers and vLLM live in separate, lazily imported modules under `backends/`. An external backend, including a future SGLang implementation, can subclass `SamplingBackend` and be selected without changing the sampler or plugin:

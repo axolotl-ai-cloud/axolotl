@@ -29,6 +29,7 @@ class ProjectionSamplingConfig(BaseModel):
     block_size: int = Field(32, ge=1)
     max_new_tokens: int = Field(1856, ge=1)
     mcmc_steps: int = Field(10, ge=0)
+    proposal_batch_size: int = Field(1, ge=1)
     temperature: float = Field(0.6, gt=0)
     repetition_penalty: float = Field(1.0, gt=0)
     acceptance: Literal["metropolis_hastings", "greedy"] = "metropolis_hastings"

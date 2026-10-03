@@ -141,6 +141,7 @@ def sample_chat(
                 "verified": verified,
                 "fallback_to_expert": fallback,
                 "fallback_reason": fallback_reason,
+                **sampler.proposal_statistics(result),
             }
         )
     tokenized = strategy.tokenize_prompt(rewritten)

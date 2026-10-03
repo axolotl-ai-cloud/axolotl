@@ -90,6 +90,13 @@ class ProjectionSampler:
                 index = self.rng.randrange(len(current))
                 prefix = current[:index]
                 context = self.proposal_ids(question, expert, prefix, prompt_builder)
+                if self.config.proposal_batch_size > 1:
+                    current, target, accept = self._batched_step(
+                        target_context, current, target, context, prefix, horizon
+                    )
+                    attempts += 1
+                    accepted += int(accept)
+                    continue
                 candidate = prefix + self.backend.sample(context, horizon - index)
                 self._validate_tokens(candidate, horizon)
                 proposed_target = self.backend.target_logprob(target_context, candidate)
@@ -126,6 +133,89 @@ class ProjectionSampler:
             accepted,
             current[-1] in self.backend.eos_token_ids,
         )
+
+    def _draw_candidates(self, context, prefix, horizon, count):
+        suffixes = self.backend.sample_batch(
+            [context] * count, [horizon - len(prefix)] * count
+        )
+        self._check_batch(suffixes, count)
+        candidates = [prefix + suffix for suffix in suffixes]
+        for candidate in candidates:
+            self._validate_tokens(candidate, horizon)
+        return candidates, suffixes
+
+    def proposal_statistics(self, result: SamplingResult) -> dict[str, int]:
+        count = self.config.proposal_batch_size
+        if count == 1:
+            return {}
+        return {
+            "proposal_batch_size": count,
+            "forward_proposals": result.attempts * count,
+            "balancing_proposals_reused": result.attempts * (count - 1)
+            if self.config.acceptance == "metropolis_hastings"
+            else 0,
+        }
+
+    @staticmethod
+    def _check_batch(values, count):
+        if len(values) != count:
+            raise ValueError("Backend returned a misaligned proposal batch")
+
+    @staticmethod
+    def _logsumexp(values):
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("Multiple-try proposal weights must be finite")
+        maximum = max(values)
+        return maximum + math.log(
+            math.fsum(math.exp(value - maximum) for value in values)
+        )
+
+    def _batched_step(self, target_context, current, target, context, prefix, horizon):
+        count = self.config.proposal_batch_size
+        candidates, suffixes = self._draw_candidates(context, prefix, horizon, count)
+        targets = self.backend.target_logprob_batch(
+            [target_context] * count, candidates
+        )
+        self._check_batch(targets, count)
+        if self.config.acceptance == "greedy":
+            selected = max(
+                range(count), key=lambda index: targets[index] / len(candidates[index])
+            )
+            accept = targets[selected] / len(candidates[selected]) > target / len(
+                current
+            )
+        else:
+            proposals = self.backend.proposal_logprob_batch(
+                [context] * (count + 1), suffixes + [current[len(prefix) :]]
+            )
+            self._check_batch(proposals, count + 1)
+            forward, reverse = proposals[:-1], proposals[-1]
+            # A uniformly chosen cut weights each state by 1 / length.
+            weights = [
+                value - proposal - math.log(len(candidate))
+                for value, proposal, candidate in zip(
+                    targets, forward, candidates, strict=True
+                )
+            ]
+            total = self._logsumexp(weights)
+            threshold = self.rng.random()
+            selected = count - 1
+            for index, weight in enumerate(weights):
+                threshold -= math.exp(weight - total)
+                if threshold <= 0:
+                    selected = index
+                    break
+            # Fixed-prefix independence permits reusing the unselected trials.
+            reverse_weights = weights[:selected] + weights[selected + 1 :]
+            reverse_weights.append(target - reverse - math.log(len(current)))
+            log_ratio = total - self._logsumexp(reverse_weights)
+            uniform = self.rng.random()
+            accept = (math.log(uniform) if uniform > 0 else -math.inf) < min(
+                0.0, log_ratio
+            )
+        if accept:
+            return candidates[selected], targets[selected], True
+        return current, target, False
 
     def _validate_tokens(self, tokens: list[int], horizon: int):
         if not tokens or len(tokens) > horizon:

@@ -57,13 +57,46 @@ class SamplingBackend(ABC):
     def sample(self, context: list[int], max_tokens: int) -> list[int]:
         """Extend context by at most max_tokens, stopping only on EOS."""
 
+    def sample_batch(
+        self, contexts: list[list[int]], max_tokens: list[int]
+    ) -> list[list[int]]:
+        """Generate an ordered batch; override for native runtime batching."""
+        if len(contexts) != len(max_tokens):
+            raise ValueError("Sampling batch contexts and budgets must align")
+        return [
+            self.sample(context, budget)
+            for context, budget in zip(contexts, max_tokens, strict=True)
+        ]
+
     @abstractmethod
     def target_logprob(self, context: list[int], tokens: list[int]) -> float:
         """Sum base-model log probabilities of tokens conditioned on context."""
 
+    def target_logprob_batch(
+        self, contexts: list[list[int]], tokens: list[list[int]]
+    ) -> list[float]:
+        """Score an ordered batch under the base-model distribution."""
+        if len(contexts) != len(tokens):
+            raise ValueError("Scoring batch contexts and continuations must align")
+        return [
+            self.target_logprob(context, continuation)
+            for context, continuation in zip(contexts, tokens, strict=True)
+        ]
+
     @abstractmethod
     def proposal_logprob(self, context: list[int], tokens: list[int]) -> float:
         """Sum log probabilities under the distribution used by sample()."""
+
+    def proposal_logprob_batch(
+        self, contexts: list[list[int]], tokens: list[list[int]]
+    ) -> list[float]:
+        """Score an ordered batch under the actual proposal distribution."""
+        if len(contexts) != len(tokens):
+            raise ValueError("Scoring batch contexts and continuations must align")
+        return [
+            self.proposal_logprob(context, continuation)
+            for context, continuation in zip(contexts, tokens, strict=True)
+        ]
 
     @abstractmethod
     def close(self) -> None:
