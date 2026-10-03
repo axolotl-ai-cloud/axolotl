@@ -23,16 +23,18 @@ projection_sampling:
   backend_kwargs:
     tensor_parallel_size: 1
     gpu_memory_utilization: 0.8
-    max_model_len: 4096
+    max_model_len: 8192
     enforce_eager: false
     enable_prefix_caching: true
     score_batch_size: 32
   cache_dir: ./last_run_prepared/projection-sampling-qwen35-math
-  acceptance: metropolis_hastings
-  block_size: 1024
-  max_new_tokens: 1024
-  mcmc_steps: 1
+  acceptance: greedy
+  block_size: 58
+  max_new_tokens: 1856
+  mcmc_steps: 10
   temperature: 0.6
+  repetition_penalty: 1.1
+  proposal_batch_size: 1
   dtype: bfloat16
 
 seed: 42
