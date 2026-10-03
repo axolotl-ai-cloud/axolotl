@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, overload
 from weakref import WeakKeyDictionary
 
 from .base import Capability, ModelSupport
+from .diffusion import DiffusionSpec
 
 if TYPE_CHECKING:
     from peft import PeftModel
@@ -269,6 +270,7 @@ class ModelProfile:
     family: ModelFamilyTemplate
     is_multimodal: bool | None = None
     capabilities: Mapping[str, Capability | None] = field(default_factory=dict)
+    diffusion: DiffusionSpec | None = None
     strategies: ModelStrategyOverrides = field(default_factory=ModelStrategyOverrides)
     registrations: ModelRegistrationOverrides = field(
         default_factory=ModelRegistrationOverrides
@@ -290,6 +292,7 @@ class ResolvedModelProfile:
     family: str | None
     is_multimodal: bool
     capabilities: Mapping[str, Capability]
+    diffusion: DiffusionSpec | None
     strategies: ModelStrategies
     registrations: ModelRegistrations
     matchers: ModelMatchers
@@ -379,6 +382,7 @@ def _build_declarative_model_support(
             family=None,
             is_multimodal=False,
             capabilities={},
+            diffusion=None,
             strategies=ModelStrategies(),
             registrations=ModelRegistrations(),
             matchers=ModelMatchers(),
@@ -403,6 +407,7 @@ def _build_declarative_model_support(
         family=family.name,
         is_multimodal=is_multimodal,
         capabilities=capabilities,
+        diffusion=profile.diffusion,
         strategies=family.strategies.with_overrides(profile.strategies),
         registrations=family.registrations.with_overrides(profile.registrations),
         matchers=family.matchers.with_overrides(profile.matchers),
@@ -425,6 +430,7 @@ def _run_model_profile_hooks(
 _LEGACY_DECLARATION_NAMES = (
     "is_multimodal",
     "capabilities",
+    "diffusion",
     "get_auto_model_cls",
     "get_processing_strategy_cls",
     "matches_cfg",
@@ -472,6 +478,7 @@ def resolve_model_support(
 
     is_multimodal = declarative.is_multimodal
     capabilities = dict(declarative.capabilities)
+    diffusion = declarative.diffusion
     strategies = declarative.strategies
     matchers = declarative.matchers
     hooks = declarative.hooks
@@ -482,6 +489,9 @@ def resolve_model_support(
     declares_capabilities, _ = _declared_value(support, "capabilities")
     if declares_capabilities:
         capabilities.update(support.capabilities)
+    declares_diffusion, _ = _declared_value(support, "diffusion")
+    if declares_diffusion:
+        diffusion = support.diffusion
     declares_auto_model, _ = _declared_value(support, "get_auto_model_cls")
     if declares_auto_model:
         strategies = strategies.with_overrides(
@@ -528,6 +538,7 @@ def resolve_model_support(
         family=declarative.family,
         is_multimodal=is_multimodal,
         capabilities=capabilities,
+        diffusion=diffusion,
         strategies=strategies,
         registrations=declarative.registrations,
         matchers=matchers,

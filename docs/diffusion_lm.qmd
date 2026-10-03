@@ -1,0 +1,96 @@
+---
+title: Diffusion training plugins
+---
+
+Two plugins provide Nemotron diffusion training and typed decision fine-tuning.
+Their configuration fields and validation are registered through plugin args.
+
+## Install
+
+Use Torch **2.14.0** and the dependencies in
+`requirements/diffusion-lm-torch214.txt` in an isolated environment:
+
+```bash
+python -m venv .venv-nemotron
+source .venv-nemotron/bin/activate
+python -m pip install -r requirements/diffusion-lm-torch214.txt -e .
+```
+
+Choose the Torch wheel index appropriate for your accelerator when installing.
+Put that environment's `bin` directory first on `PATH` for the Axolotl CLI.
+
+## Diffusion plugin
+
+```yaml
+plugins:
+  - axolotl.integrations.diffusion.DiffusionPlugin
+base_model: nvidia/Nemotron-Labs-Diffusion-3B
+trust_remote_code: true
+diffusion:
+  from_causal_lm: false
+```
+
+`diffusion:` is the shared configuration block for native and causal-LM
+diffusion. Existing causal-LM recipes that omit `from_causal_lm` keep their
+previous behavior. Native recipes set it to `false`. The older `diffusion_lm:`
+spelling remains accepted as a deprecated alias and cannot be combined with
+`diffusion:`.
+
+The plugin supports Nemotron-Labs-Diffusion-3B and 8B with absorbing-mask
+corruption, bidirectional attention, aligned logits and inverse-time weighted
+CE at masked positions. LoRA targets the attention and MLP projections.
+Model revisions use normal Hugging Face resolution; examples pin revisions for
+reproducibility, and checkpoints record the resolved model identity.
+
+```bash
+axolotl preprocess examples/nemotron-diffusion/lora-smoke.yaml
+axolotl train examples/nemotron-diffusion/lora-smoke.yaml
+```
+
+This two-step synthetic example checks the training path. It does not measure
+model quality.
+
+## Decision plugin
+
+```yaml
+plugins:
+  - axolotl.integrations.diffusion.DiffusionPlugin
+  - axolotl.integrations.decision.DecisionPlugin
+```
+
+The decision plugin adds Choice, finite ordered Score, and yes/no Noul schemas;
+hard labels and probability targets can coexist within one batch. It supervises
+answer positions and preserves the candidate ordering used for inference.
+See [the training recipe](../examples/nemotron-diffusion/DECISION_TRAINING.md)
+and [normalized JSONL format](../examples/nemotron-diffusion/DECISION_DATASET_FORMAT.md).
+
+## Attention and batch geometry
+
+`attn_implementation: varlen` uses Torch 2.14 variable-length attention with
+per-document offsets. FlexAttention uses document-aware block masks; explicit
+SDPA is the dense reference path. Document boundaries prevent attention across
+packed examples. Mask construction avoids device-to-host scalar extraction.
+
+`sequence_len` is the logical sequence limit. With physical packing the token
+budget is `sequence_len * micro_batch_size`. Decision recipes use
+`batch_flattening: true` to retain a fixed number of logical examples per
+microbatch; `sample_packing` is separately opt-in.
+
+## Optional Cut Cross Entropy
+
+Install Axolotl's CCE fork as described in the CCE integration guide and add its
+plugin alongside the diffusion plugins:
+
+```yaml
+plugins:
+  - axolotl.integrations.diffusion.DiffusionPlugin
+  - axolotl.integrations.decision.DecisionPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
+```
+
+CCE computes final full-vocabulary CE from hidden states. Restricted-label CE
+and Brier use the valid answer set; intermediate denoising reads still need
+logits. A plain linear output head is required. CPU parity and a bounded BF16
+CUDA `cce_exact` native/typed loss-and-gradient check passed. Full-model CCE
+throughput and peak-memory gains are unmeasured; the quality recipes keep it off.

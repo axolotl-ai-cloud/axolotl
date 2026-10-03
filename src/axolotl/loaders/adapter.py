@@ -139,6 +139,10 @@ def _get_peft_task_type(model: PreTrainedModel) -> TaskType:
         return TaskType.SEQ_CLS
     if "TokenClassification" in model_cls:
         return TaskType.TOKEN_CLS
+    if getattr(getattr(model, "config", None), "model_type", None) in {
+        "nemotron_labs_diffusion",
+    }:
+        return None
     return TaskType.CAUSAL_LM
 
 

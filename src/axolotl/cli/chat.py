@@ -621,6 +621,7 @@ class DiffusionTurnGenerator(TurnGenerator):
         render_kwargs: dict | None = None,
     ) -> TurnResult:
         from axolotl.integrations.diffusion import generate as diffusion_generate
+        from axolotl.model_support.native_generation import generate_for_model
 
         ids = self.render(conversation, render_kwargs)
         if params["seed"] is not None:
@@ -630,13 +631,14 @@ class DiffusionTurnGenerator(TurnGenerator):
 
         start = time.monotonic()
         with torch.no_grad():
-            result = diffusion_generate(
+            result = generate_for_model(
                 self.model,
                 self.tokenizer,
-                original_sequence=sequence,
-                num_diffusion_steps=params["steps"],
-                temperature=params["temperature"],
-                mask_token_id=self.mask_token_id,
+                sequence,
+                params["steps"],
+                params["temperature"],
+                self.mask_token_id,
+                legacy_generate=diffusion_generate,
                 mode="completion",
                 completion_tokens=params["max_new_tokens"],
             )
@@ -1211,9 +1213,12 @@ def do_chat(
         )
 
     plugin_manager = PluginManager.get_instance()
-    is_diffusion = any(
-        plugin.__class__.__name__ == "DiffusionPlugin"
-        for plugin in plugin_manager.plugins.values()
+    is_diffusion = (
+        getattr(cfg, "diffusion", None) is not None
+        or any(
+            plugin.__class__.__name__ == "DiffusionPlugin"
+            for plugin in plugin_manager.plugins.values()
+        )
     )
 
     if not sys.stdin.isatty():
@@ -1249,18 +1254,25 @@ def do_chat(
     param_specs = GEN_PARAMS
 
     if is_diffusion:
-        from axolotl.integrations.diffusion import resolve_mask_token_id
+        from axolotl.integrations.diffusion.lm.config import get_diffusion_config
+        from axolotl.integrations.diffusion.lm.tokens import resolve_mask_token_id
+        from axolotl.model_support.native_generation import uses_native_generation
 
-        mask_token_id = resolve_mask_token_id(tokenizer, cfg, allow_add=False)
+        mask_token_id = (
+            0
+            if uses_native_generation(model)
+            else resolve_mask_token_id(tokenizer, cfg, allow_add=False)
+        )
         generator = DiffusionTurnGenerator(
             model, tokenizer, chat_template_str, cfg.device, mask_token_id
         )
         param_specs = DIFFUSION_GEN_PARAMS
         params = default_gen_params(param_specs)
-        if cfg.diffusion.num_diffusion_steps:
-            params["steps"] = cfg.diffusion.num_diffusion_steps
-        if cfg.diffusion.generation_temperature is not None:
-            params["temperature"] = cfg.diffusion.generation_temperature
+        diffusion_cfg = get_diffusion_config(cfg)
+        if diffusion_cfg.num_diffusion_steps:
+            params["steps"] = diffusion_cfg.num_diffusion_steps
+        if diffusion_cfg.generation_temperature is not None:
+            params["temperature"] = diffusion_cfg.generation_temperature
         banner["mode"] = "diffusion (completion-block denoising)"
     else:
         generator = CausalTurnGenerator(model, tokenizer, chat_template_str, cfg.device)

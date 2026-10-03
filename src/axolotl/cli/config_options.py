@@ -928,7 +928,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--merge-method",),
         None,
         None,
-        "Method to use for LoRA merging. 'memory_efficient' (default) processes shards individually to reduce memory usage, 'legacy' loads the full model into memory.",
+        "Optional LoRA merge method. The generic default is 'memory_efficient'; model profiles can select a verified method when omitted.",
     ),
     (
         ("--output-dir",),
@@ -2462,7 +2462,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--attn-implementation",),
         None,
         None,
-        "Attention backend. Canonical values: eager, sdpa, flash_attention_2, flash_attention_3, flash_attention_4, flash_attention_torch, flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. kernels-community/flash-attn3) are also accepted and passed through to transformers.",
+        "Attention backend. Canonical values: eager, sdpa, flash_attention_2, flash_attention_3, flash_attention_4, flash_attention_torch, flex_attention, varlen, xformers, sage, fp8. `varlen` is native full-sequence diffusion only. Hub-kernel paths (e.g. kernels-community/flash-attn3) are also accepted and passed through to transformers.",
     ),
     (
         ("--gemma4-hybrid-attn-impl/--no-gemma4-hybrid-attn-impl",),

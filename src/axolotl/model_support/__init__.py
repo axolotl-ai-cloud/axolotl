@@ -14,6 +14,19 @@ from .base import (
     Unsupported,
     check_capability,
 )
+from .diffusion import (
+    DiffusionLayout,
+    DiffusionNoise,
+    DiffusionSpec,
+    EosHandling,
+    FirstPositionAlignment,
+    GenerationAdapter,
+    LogitAlignment,
+    MaskTokenPolicy,
+    ObjectiveReduction,
+    ReductionScope,
+    TimeWeighting,
+)
 from .profile import (
     AutoModelClassProvider,
     ConfigMatcher,
@@ -42,12 +55,22 @@ from .registry import (
     get_model_support_for_processor,
     register_model_support,
 )
-from .templates import IMAGE_TEXT_TO_TEXT, VANILLA_CAUSAL_LM
+from .templates import DIFFUSION_LM, IMAGE_TEXT_TO_TEXT, VANILLA_CAUSAL_LM
 
 __all__ = [
     "AutoModelClassProvider",
     "Capability",
     "ConfigMatcher",
+    "DiffusionLayout",
+    "DiffusionNoise",
+    "DiffusionSpec",
+    "EosHandling",
+    "FirstPositionAlignment",
+    "GenerationAdapter",
+    "LogitAlignment",
+    "MaskTokenPolicy",
+    "ObjectiveReduction",
+    "ReductionScope",
     "Experimental",
     "ModelSupport",
     "ModelFamilyTemplate",
@@ -65,6 +88,7 @@ __all__ = [
     "ProcessingStrategyClassProvider",
     "ProcessorMatcher",
     "ResolvedModelProfile",
+    "TimeWeighting",
     "WeightConversionsProvider",
     "Supported",
     "Unsupported",
@@ -76,5 +100,6 @@ __all__ = [
     "resolve_model_support",
     "run_model_support_hooks",
     "IMAGE_TEXT_TO_TEXT",
+    "DIFFUSION_LM",
     "VANILLA_CAUSAL_LM",
 ]

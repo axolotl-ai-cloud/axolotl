@@ -1278,7 +1278,9 @@ class OptimizationValidationMixin:
             return self
 
         batch_flattening_auto = self.batch_flattening == "auto"
-        has_varlen_attn = self.attn_supports_packing
+        has_varlen_attn = self.attn_supports_packing or (
+            self.attn_implementation == "varlen"
+        )
 
         if not has_varlen_attn and not batch_flattening_auto:
             raise ValueError(

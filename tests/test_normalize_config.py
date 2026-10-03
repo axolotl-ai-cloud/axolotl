@@ -3,9 +3,11 @@ Test classes for checking functionality of the cfg normalization
 """
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from axolotl.utils.config import (
+    MULTIMODAL_AUTO_MODEL_MAPPING,
     normalize_cfg_datasets,
     normalize_config,
     validate_config,
@@ -43,6 +45,17 @@ class NormalizeConfigTestCase(unittest.TestCase):
         normalize_config(cfg)
 
         assert cfg.base_model_config == cfg.base_model
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_legacy_multimodal_auto_detection_is_unchanged(self, load_config):
+        cfg = self._get_base_cfg()
+        load_config.return_value = SimpleNamespace(
+            model_type=next(iter(MULTIMODAL_AUTO_MODEL_MAPPING))
+        )
+
+        normalize_config(cfg)
+
+        assert cfg.is_multimodal is True
 
     def test_chat_template_chatml(self):
         cfg = DictDefault(

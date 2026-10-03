@@ -859,7 +859,7 @@ class AxolotlInputConfig(
             "description": (
                 "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
                 "flash_attention_3, flash_attention_4, flash_attention_torch, "
-                "flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. "
+                "flex_attention, varlen, xformers, sage, fp8. Hub-kernel paths (e.g. "
                 "kernels-community/flash-attn3) are also accepted and passed through to "
                 "transformers."
             )
@@ -1547,10 +1547,20 @@ class AxolotlInputConfig(
             if isinstance(peft_trainable_token_indices, int):
                 peft_trainable_token_indices = (peft_trainable_token_indices,)
 
+            trainable_token_ids = (
+                {
+                    token_id
+                    for indices in peft_trainable_token_indices.values()
+                    for token_id in indices
+                }
+                if isinstance(peft_trainable_token_indices, dict)
+                else set(peft_trainable_token_indices)
+            )
+
             for untrained_token_id in fix_untrained_tokens:
-                if untrained_token_id not in peft_trainable_token_indices:
+                if untrained_token_id not in trainable_token_ids:
                     LOG.warning_once(
-                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices: ` list. "
+                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices`. "
                         "Please add it, otherwise the token won't be trained on."
                     )
         return data

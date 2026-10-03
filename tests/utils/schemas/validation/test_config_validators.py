@@ -11,10 +11,13 @@ Covers:
   - use_dft / use_eaft are SFT-only and reject each other, RL, reward models, CP and fused CE
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.config import AxolotlInputConfig
 
 
 class TestSaveStrategyBestValidator:
@@ -495,3 +498,30 @@ class TestCustomLossConflictsValidator:
     def test_conflict_raises(self, loss, conflict):
         with pytest.raises(ValueError, match="SFT-only"):
             self._check({loss: True, **conflict})
+
+
+class TestTrainableTokenWarning:
+    def test_mapping_values_satisfy_fixed_token_check(self):
+        data = {
+            "fix_untrained_tokens": [200, 201],
+            "peft_trainable_token_indices": {
+                "encoder.embed_tokens": [200],
+                "other_embedding": [201],
+            },
+        }
+        with patch("axolotl.utils.schemas.config.LOG.warning_once") as warning:
+            assert (
+                AxolotlInputConfig.warn_peft_trainable_token_to_fix_untrained(data)
+                is data
+            )
+        warning.assert_not_called()
+
+    def test_missing_fixed_token_warns_for_mapping(self):
+        data = {
+            "fix_untrained_tokens": [200, 201],
+            "peft_trainable_token_indices": {"encoder.embed_tokens": [200]},
+        }
+        with patch("axolotl.utils.schemas.config.LOG.warning_once") as warning:
+            AxolotlInputConfig.warn_peft_trainable_token_to_fix_untrained(data)
+        warning.assert_called_once()
+        assert "Token 201" in warning.call_args.args[0]

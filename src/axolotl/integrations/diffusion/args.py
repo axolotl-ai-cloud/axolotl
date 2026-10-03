@@ -1,95 +1,66 @@
-"""Config args for diffusion LM training (nested under `diffusion:`)."""
+"""Configuration exposed by the diffusion training plugin."""
 
-from __future__ import annotations
-
-from typing import Literal
+from collections.abc import Mapping
 
 from pydantic import BaseModel, Field, model_validator
 
-
-class DiffusionConfig(BaseModel):
-    """Nested diffusion configuration available under the `diffusion` key."""
-
-    # Noise schedule config
-    noise_schedule: Literal["linear", "cosine"] = Field(
-        default="linear", description="Type of noise schedule for diffusion training"
-    )
-    min_mask_ratio: float = Field(
-        default=0.1,
-        ge=0.0,
-        le=1.0,
-        description="Minimum masking ratio for diffusion noise schedule",
-    )
-    max_mask_ratio: float = Field(
-        default=0.9,
-        ge=0.0,
-        le=1.0,
-        description="Maximum masking ratio for diffusion noise schedule",
-    )
-    num_diffusion_steps: int = Field(
-        default=128, ge=1, description="Number of diffusion timesteps"
-    )
-    eps: float = Field(
-        default=1e-3,
-        ge=0.0,
-        le=1.0,
-        description="Epsilon value for minimum masking probability in forward process",
-    )
-
-    # Training config
-    importance_weighting: bool = Field(
-        default=True,
-        description="Apply importance weighting to loss based on masking probability",
-    )
-    mask_token_id: int | None = Field(
-        default=None,
-        description=(
-            "Token ID to use for masking. Unset by default; can use one of the "
-            "tokenizer's special tokens here."
-        ),
-    )
-    mask_token_str: str | None = Field(
-        default=None,
-        description=(
-            "Token string to use as a mask. If `mask_token_id` is invalid or unset, "
-            "this token will be ensured to exist as an additional special token and "
-            "used. If absent, a default '<|diffusion_mask|>' will be added."
-        ),
-    )
-
-    # Sample generation config
-    generate_samples: bool = Field(
-        default=True, description="Enable sample generation during training"
-    )
-    generation_interval: int = Field(
-        default=100, ge=1, description="Generate samples every N steps"
-    )
-    num_generation_samples: int = Field(
-        default=3, ge=1, description="Number of samples to generate each time"
-    )
-    generation_steps: int = Field(
-        default=128, ge=1, description="Number of diffusion steps for generation"
-    )
-    generation_temperature: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Temperature for generation sampling (0.0 = deterministic)",
-    )
-    generation_max_length: int = Field(
-        default=100, ge=1, description="Maximum sequence length for generation"
-    )
-
-    @model_validator(mode="after")
-    def _validate_mask_ratios(self) -> "DiffusionConfig":
-        if self.min_mask_ratio > self.max_mask_ratio:
-            raise ValueError("min_mask_ratio must be ≤ max_mask_ratio")
-        return self
+from .schema import DiffusionConfig, DiffusionLMConfig
 
 
 class DiffusionArgs(BaseModel):
-    """Plugin entry that exposes the nested `diffusion` block to the core config."""
+    """Diffusion configuration under one runtime key."""
 
-    diffusion: DiffusionConfig = Field(
-        default_factory=DiffusionConfig,
-        description="Diffusion training configuration. Only nested block is supported.",
-    )
+    diffusion: DiffusionLMConfig | None = Field(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_diffusion_alias(cls, value):
+        return normalize_diffusion_blocks(value)
+
+    @model_validator(mode="after")
+    def validate_diffusion_attention(self):
+        diffusion = self.diffusion
+        if diffusion is None or diffusion.from_causal_lm:
+            return self
+        if "attn_implementation" not in type(self).model_fields:
+            return self
+        attention = self.attn_implementation
+        if attention == "varlen":
+            import torch
+            from packaging.version import Version
+
+            env = getattr(self, "env_capabilities", None)
+            version = (
+                env.get("torch_version")
+                if isinstance(env, Mapping)
+                else getattr(env, "torch_version", None)
+            ) or torch.__version__
+            if Version(str(version).split("+", maxsplit=1)[0]) < Version("2.14.0"):
+                raise ValueError("attn_implementation: varlen requires torch >= 2.14")
+        return self
+
+
+__all__ = ["DiffusionArgs", "DiffusionConfig", "DiffusionLMConfig"]
+
+
+def normalize_diffusion_blocks(value):
+    """Normalize the deprecated block before plugin args are validated."""
+    if not isinstance(value, Mapping):
+        return value
+    result = dict(value)
+    if "diffusion" in result and "diffusion_lm" in result:
+        raise ValueError("Configure only one of `diffusion` and `diffusion_lm`.")
+    canonical = result.get("diffusion")
+    alias = result.pop("diffusion_lm", None)
+    selected = alias if alias is not None else canonical
+    if selected is None:
+        return result
+    if isinstance(selected, Mapping):
+        block = dict(selected)
+    elif callable(getattr(selected, "model_dump", None)):
+        block = selected.model_dump()
+    else:
+        raise TypeError("diffusion configuration must be a mapping")
+    block.setdefault("from_causal_lm", alias is None)
+    result["diffusion"] = block
+    return result

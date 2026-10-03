@@ -1,0 +1,41 @@
+base_model: nvidia/Nemotron-Labs-Diffusion-3B
+revision_of_model: 0d51902da1f8869f83413ce642fab402fa5641e0
+trust_remote_code: true
+plugins:
+  - axolotl.integrations.diffusion.DiffusionPlugin
+adapter: lora
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.0
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj]
+attn_implementation: sdpa
+bf16: true
+sequence_len: 256
+sample_packing: true
+micro_batch_size: 1
+gradient_accumulation_steps: 2
+max_steps: 2
+learning_rate: 0.0001
+optimizer: adamw_torch
+lr_scheduler: constant
+warmup_steps: 0
+dataloader_num_workers: 0
+dataset_processes: 1
+val_set_size: 0
+chat_template: tokenizer_default
+datasets:
+  - path: examples/nemotron-diffusion/smoke.jsonl
+    ds_type: json
+    type: chat_template
+    field_messages: messages
+    roles_to_train: [assistant]
+    train_on_eos: turn
+dataset_prepared_path: ./last_run_prepared/nemotron-diffusion-smoke
+output_dir: ./outputs/nemotron-diffusion-smoke
+logging_steps: 1
+save_strategy: 'no'
+gradient_checkpointing: false
+diffusion:
+  from_causal_lm: false
+  generate_samples: false
+  eos_tail: none

@@ -5,7 +5,14 @@ from __future__ import annotations
 import gradio as gr
 from colorama import Fore, Style
 
-from axolotl.integrations.diffusion import generate, resolve_mask_token_id
+from axolotl.integrations.diffusion.lm.config import get_diffusion_config
+from axolotl.integrations.diffusion.lm.generation import generate
+from axolotl.integrations.diffusion.lm.tokens import resolve_mask_token_id
+from axolotl.model_support.native_generation import (
+    generate_for_model,
+    supports_native_infill,
+    uses_native_generation,
+)
 from axolotl.utils.dict import DictDefault
 
 
@@ -17,7 +24,7 @@ def diffusion_inference(
     chat_template_str: str | None = None,
 ):
     """Diffusion inference helper method."""
-    mode = "random"
+    mode = None
     completion_tokens = 0
     target_mask_ratio = None
     mode, completion_tokens, target_mask_ratio, cleaned = _parse_commands(prompt)
@@ -40,6 +47,13 @@ def diffusion_inference(
     generated_ids = info["generated_ids"]
     masked_positions = info["masked_positions"]
     orig_ids = info["orig_ids"]
+    active_canvas_start = info.get("active_canvas_start")
+    active_canvas_end = info.get("active_canvas_end")
+
+    if active_canvas_start is not None:
+        print(
+            f"Native infill canvas: tokens [{active_canvas_start}, {active_canvas_end})"
+        )
 
     # Display with masked preview and colored diff
     if masked_text is not None and mask_ratio is not None:
@@ -98,7 +112,7 @@ def _parse_commands(text: str):
     """
     tokens = text.strip().split()
     i = 0
-    mode = "random"
+    mode = None
     completion_tokens = 0
     target_mask_ratio = None
     consumed = 0
@@ -143,7 +157,7 @@ def run_diffusion(
     cfg: DictDefault,
     prompt: str,
     chat_template_str: str | None,
-    mode: str = "random",
+    mode: str | None = None,
     target_mask_ratio: float | None = None,
     completion_tokens: int = 0,
 ):
@@ -161,19 +175,31 @@ def run_diffusion(
     else:
         batch = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
-    mask_token_id = resolve_mask_token_id(tokenizer, cfg, allow_add=False)
-
     seq = batch["input_ids"].to(cfg.device)
-    gen_mode = "completion" if mode == "completion" else "random"
+    diffusion_cfg = get_diffusion_config(cfg)
+    if diffusion_cfg is None:
+        raise ValueError("Diffusion inference requires `diffusion`.")
+    native = uses_native_generation(model)
+    if native and mode not in {None, "completion", "random"}:
+        raise ValueError("Native diffusion generation supports completion mode only.")
+    if native and mode == "random" and not supports_native_infill(model):
+        raise ValueError(
+            "This native diffusion generator supports completion mode only."
+        )
+    gen_mode = "completion" if native and mode is None else (mode or "random")
     comp_tokens = int(completion_tokens) if gen_mode == "completion" else 0
+    mask_token_id = (
+        None if native else resolve_mask_token_id(tokenizer, cfg, allow_add=False)
+    )
 
-    result = generate(
+    result = generate_for_model(
         model,
         tokenizer,
-        original_sequence=seq[:1],
-        num_diffusion_steps=cfg.diffusion.num_diffusion_steps,
-        temperature=cfg.diffusion.generation_temperature,
-        mask_token_id=int(mask_token_id),
+        seq[:1],
+        diffusion_cfg.num_diffusion_steps,
+        diffusion_cfg.generation_temperature,
+        int(mask_token_id or 0),
+        legacy_generate=generate,
         mode=gen_mode,  # type: ignore[arg-type]
         completion_tokens=comp_tokens,
         target_mask_ratio=target_mask_ratio,
@@ -186,6 +212,12 @@ def run_diffusion(
         set(result.get("masked_positions") or []) if isinstance(result, dict) else set()
     )
     orig_ids = seq[0].detach().cpu().tolist()
+    active_canvas_start = (
+        result.get("active_canvas_start") if isinstance(result, dict) else None
+    )
+    active_canvas_end = (
+        result.get("active_canvas_end") if isinstance(result, dict) else None
+    )
 
     return {
         "masked_text": masked_text,
@@ -193,6 +225,8 @@ def run_diffusion(
         "generated_ids": generated_ids,
         "masked_positions": masked_positions,
         "orig_ids": orig_ids,
+        "active_canvas_start": active_canvas_start,
+        "active_canvas_end": active_canvas_end,
     }
 
 
@@ -277,10 +311,16 @@ def launch_diffusion_gradio_ui(
             """
         )
 
+        native = uses_native_generation(model)
+        modes = (
+            ["random", "completion"]
+            if not native or supports_native_infill(model)
+            else ["completion"]
+        )
         with gr.Row():
             mode = gr.Radio(
-                choices=["random", "completion"],
-                value="random",
+                choices=modes,
+                value=modes[0],
                 label="Mode",
             )
             mask_ratio = gr.Slider(
