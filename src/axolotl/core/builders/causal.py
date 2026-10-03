@@ -40,11 +40,13 @@ from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
+    MultiModalBatchSamplerDataCollatorForSeq2Seq,
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
+from axolotl.utils.samplers.balanced import default_sample_packing_strategy
 
 LOG = get_logger(__name__)
 
@@ -53,6 +55,15 @@ _MM_NUM_WORKERS_WARNED: set = set()
 
 def _warn_if_num_workers_zero_for_mm(cfg, log) -> None:
     if not getattr(cfg, "processor_type", None):
+        return
+    # Buffered MM packing (streaming or skip_prepare_dataset) intentionally
+    # forces num_workers=0 (no worker sharding), so don't advise raising it.
+    if (
+        getattr(cfg, "streaming", None) or getattr(cfg, "skip_prepare_dataset", None)
+    ) and (
+        getattr(cfg, "sample_packing", None)
+        or getattr(cfg, "eval_sample_packing", None)
+    ):
         return
     if getattr(cfg, "dataloader_num_workers", None) not in (None, 0):
         return
@@ -264,6 +275,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
+        training_arguments_kwargs["sample_packing_strategy"] = (
+            default_sample_packing_strategy(
+                bool(
+                    getattr(self.cfg, "is_multimodal", False)
+                    or getattr(self.cfg, "processor_type", None)
+                )
+            )
+        )
         training_arguments_kwargs["sample_packing_drop_attention_mask"] = (
             self.cfg.attn_decontaminates_packing
         )
@@ -509,6 +528,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             tokenizer = collator_args.pop(0)
             kwargs["pad_token_id"] = tokenizer.pad_token_id
             kwargs.pop("padding")
+        elif use_batch_sampler_collator and self.cfg.processor_type and self.processor:
+            collator = MultiModalBatchSamplerDataCollatorForSeq2Seq
         elif use_batch_sampler_collator:
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
             # supported multipack models, or non-flash-attention llama
