@@ -727,21 +727,27 @@ class PatchManager:
                 patch_qwen3_next_modeling_packing,
             )
 
-            patch_qwen3_next_modeling_packing()
+            patch_qwen3_next_modeling_packing(
+                torch_compile=bool(self.cfg.torch_compile),
+            )
 
         if model_type in ("qwen3_5", "qwen3_5_text"):
             from axolotl.monkeypatch.models.qwen3_5.modeling import (
                 patch_qwen3_5_modeling_packing,
             )
 
-            patch_qwen3_5_modeling_packing()
+            patch_qwen3_5_modeling_packing(
+                torch_compile=bool(self.cfg.torch_compile),
+            )
 
         if model_type in ("qwen3_5_moe", "qwen3_5_moe_text"):
             from axolotl.monkeypatch.models.qwen3_5.modeling import (
                 patch_qwen3_5_moe_modeling_packing,
             )
 
-            patch_qwen3_5_moe_modeling_packing()
+            patch_qwen3_5_moe_modeling_packing(
+                torch_compile=bool(self.cfg.torch_compile),
+            )
 
         if model_type in self._SEQ_IDX_INJECTED_MODELS:
             import importlib
