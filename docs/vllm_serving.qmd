@@ -14,7 +14,7 @@ execute:
 
 GRPO (Group Relative Policy Optimization) trains a language model by generating completions, scoring them with reward functions, and updating the policy to favor higher-reward outputs. The generation step is the bottleneck: producing thousands of tokens per training step with the policy model is slow using standard HuggingFace generation.
 
-Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend. vLLM runs as a separate process (either on a dedicated GPU or colocated on the training GPU) and serves completions via an HTTP API. The trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.
+Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via an HTTP API. In [colocate mode](#sec-colocate-mode), the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.
 
 ```
 ┌──────────────────────┐       HTTP        ┌──────────────────────┐
@@ -98,20 +98,37 @@ Due to how TRL maps vLLM device indices, the vLLM instance should use the **last
 
 ## Colocate Mode {#sec-colocate-mode}
 
-Colocate mode runs vLLM on the same GPU as the trainer. This is useful when you only have a single GPU.
+Colocate mode runs a vLLM engine inside the trainer process, on the same GPU. No `axolotl vllm-serve` process is needed, so this is the way to run GRPO on a single GPU.
 
 ```yaml
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+rl: grpo
+adapter: lora
+
 trl:
   use_vllm: true
   vllm_mode: colocate
   vllm_enable_sleep_mode: true
+  num_generations: 8
+  max_completion_length: 512
+  reward_funcs:
+    - rewards.accuracy_reward
+
+vllm:
+  gpu_memory_utilization: 0.3   # fraction reserved for vLLM; the rest is for training
+  max_model_len: 2048           # prompt + completion budget for the engine
+  enforce_eager: true           # disable CUDA graphs if vLLM's custom all-reduce errors
 ```
+
+The `vllm:` block configures the colocated engine. `gpu_memory_utilization`, `tensor_parallel_size`, and `max_model_len` map to TRL's `vllm_gpu_memory_utilization`, `vllm_tensor_parallel_size`, and `vllm_max_model_length`; `enforce_eager`, `enable_prefix_caching`, and `dtype` are passed straight to the engine. When `gpu_memory_utilization` is unset, colocate mode uses TRL's default of 0.3 rather than the 0.9 used by `vllm-serve`, since the training process shares the GPU. `tensor_parallel_size` must divide the number of training processes.
 
 With `vllm_enable_sleep_mode: true`, vLLM offloads its VRAM allocation when not actively generating, freeing memory for training. When the trainer needs new completions, vLLM wakes up and reclaims VRAM.
 
 ::: {.callout-warning}
 Colocate mode is significantly slower than server mode because generation and training cannot overlap. The GPU alternates between the two workloads. This mode is practical only for smaller models (up to ~3B on a 24 GB GPU).
 :::
+
+Colocate mode uses the standard GRPO trainer. It cannot be combined with `context_parallel_size > 1`, with `vllm_lora_sync`, or with the async trainer (`async_prefetch` / `use_data_producer`) when training an adapter; config validation rejects those combinations.
 
 **When to use colocate mode:**
 
@@ -253,7 +270,7 @@ curl http://localhost:8000/health
 
 ### vLLM Server Options (`vllm:` section)
 
-These control the vLLM server process started by `axolotl vllm-serve`.
+These control the vLLM server process started by `axolotl vllm-serve`, and the colocated engine in [colocate mode](#sec-colocate-mode).
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -262,7 +279,7 @@ These control the vLLM server process started by `axolotl vllm-serve`.
 | `device` | str | `auto` | Device to use for vLLM |
 | `tensor_parallel_size` | int | `None` | Number of GPUs for tensor parallelism |
 | `data_parallel_size` | int | `None` | Number of data parallel replicas |
-| `gpu_memory_utilization` | float | `0.9` | Fraction of GPU memory for vLLM (0.0-1.0) |
+| `gpu_memory_utilization` | float | `None` | Fraction of GPU memory for vLLM (0.0-1.0). Defaults to 0.9 for `vllm-serve` and 0.3 in colocate mode |
 | `dtype` | str | `auto` | Data type (`auto`, `float16`, `bfloat16`) |
 | `max_model_len` | int | `None` | Maximum model context length. Set explicitly if the default is too large for your GPU |
 | `enable_prefix_caching` | bool | `None` | Enable prefix caching for repeated prompt prefixes |

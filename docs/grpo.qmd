@@ -522,7 +522,7 @@ All GRPO-specific options live under the `trl:` key in your config. Standard tra
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `use_vllm` | bool | `false` | Enable vLLM for generation |
-| `vllm_mode` | `"server"` or `"colocate"` | `null` | vLLM deployment mode |
+| `vllm_mode` | `"server"` or `"colocate"` | `null` | vLLM deployment mode. `colocate` hosts the engine on the training GPU (single-GPU); engine options come from the `vllm:` block, see [Colocate Mode](vllm_serving.qmd#sec-colocate-mode) |
 | `vllm_server_host` | str | `"0.0.0.0"` | vLLM server hostname |
 | `vllm_server_port` | int | `8000` | vLLM server port |
 | `vllm_server_timeout` | int | `null` | Timeout (seconds) for vLLM responses |

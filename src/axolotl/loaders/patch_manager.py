@@ -1260,9 +1260,17 @@ class PatchManager:
             and getattr(self.cfg, "trl", None)
             and getattr(self.cfg.trl, "use_vllm", False)
         ):
-            from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
+            from axolotl.monkeypatch.trainer.trl_vllm import (
+                colocate_vllm_engine_kwargs,
+                patch_trl_vllm,
+                patch_vllm_colocate_engine_kwargs,
+            )
 
             patch_trl_vllm()
+            if getattr(self.cfg.trl, "vllm_mode", None) == "colocate":
+                patch_vllm_colocate_engine_kwargs(
+                    colocate_vllm_engine_kwargs(getattr(self.cfg, "vllm", None))
+                )
 
     def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
         """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""

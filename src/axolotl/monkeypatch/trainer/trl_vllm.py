@@ -5,10 +5,12 @@ Adds:
 - extract_logprobs: NaN→0.0 fix (prevents downstream NaN propagation)
 - VLLMGeneration: weight_sync_chunk_size + batched sync path for non-FSDP/non-ZeRO
 - split_tensor_dict / shuffle_sequence_dict: scalar type handling (int/float/bool passthrough)
+- LLM (colocate): forward `vllm:` engine args TRL has no config field for (enforce_eager, ...)
 """
 
 import math
 from functools import wraps
+from typing import Any
 
 import torch
 from torch import nn
@@ -302,3 +304,40 @@ def patch_trl_vllm():
     trl.trainer.utils.split_tensor_dict = _patched_split_tensor_dict
     trl.trainer.utils.shuffle_sequence_dict = _patched_shuffle_sequence_dict
     LOG.info("Patched split_tensor_dict and shuffle_sequence_dict for scalar types")
+
+
+def colocate_vllm_engine_kwargs(vllm_cfg) -> dict[str, Any]:
+    """`vllm:` options that only reach a colocated engine via the LLM() call itself."""
+    kwargs: dict[str, Any] = {}
+    if not vllm_cfg:
+        return kwargs
+    if vllm_cfg.enforce_eager is not None:
+        kwargs["enforce_eager"] = vllm_cfg.enforce_eager
+    if vllm_cfg.enable_prefix_caching is not None:
+        kwargs["enable_prefix_caching"] = vllm_cfg.enable_prefix_caching
+    if vllm_cfg.dtype and vllm_cfg.dtype != "auto":
+        kwargs["dtype"] = vllm_cfg.dtype
+    return kwargs
+
+
+def patch_vllm_colocate_engine_kwargs(engine_kwargs: dict[str, Any]) -> None:
+    """Merge extra engine kwargs into the LLM() call VLLMGeneration makes in colocate mode.
+
+    TRL hardcodes that call, so this is the only way for e.g. `enforce_eager` (needed
+    to avoid vLLM's custom all-reduce CUDA errors on some setups) to reach the engine.
+    """
+    if not engine_kwargs:
+        return
+    import trl.generation.vllm_generation as vllm_generation
+
+    base_llm = getattr(vllm_generation, "LLM", None)
+    if base_llm is None:
+        return
+    base_llm = getattr(base_llm, "__wrapped__", base_llm)
+
+    @wraps(base_llm, updated=())
+    def _llm_with_engine_kwargs(*args, **kwargs):
+        return base_llm(*args, **{**kwargs, **engine_kwargs})
+
+    vllm_generation.LLM = _llm_with_engine_kwargs
+    LOG.info(f"Forwarding extra engine kwargs to colocated vLLM: {engine_kwargs}")

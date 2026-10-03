@@ -23,8 +23,11 @@ class VllmConfig(BaseModel):
         json_schema_extra={"description": "Data parallel size for VLLM"},
     )
     gpu_memory_utilization: float | None = Field(
-        default=0.9,
-        json_schema_extra={"description": "GPU memory utilization for VLLM"},
+        default=None,
+        json_schema_extra={
+            "description": "GPU memory utilization for VLLM. Defaults to 0.9 for `vllm-serve` "
+            "and to TRL's 0.3 in colocate mode, leaving the rest of the GPU for training."
+        },
     )
     dtype: str | None = Field(
         default="auto",
