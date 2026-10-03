@@ -200,6 +200,8 @@ trl:
 
 ::: {.callout-tip}
 If you are training with LoRA (which is recommended for GRPO), always enable `vllm_lora_sync: true`. The performance difference is substantial, especially as training progresses and NCCL contention increases.
+
+NCCL merge sync folds the adapter into the base weights out of place. FP8 base weights are requantized with fresh block scales before being sent. DoRA adapters and bitsandbytes 4-bit bases (QLoRA) cannot be merged this way and raise an error; use `vllm_lora_sync: true` for them.
 :::
 
 ### Importance Sampling Correction
