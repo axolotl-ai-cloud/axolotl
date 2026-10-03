@@ -11,7 +11,7 @@ MixLoRA dynamically routes tokens to specific LoRA experts within the FFN blocks
 
 ## Usage
 
-To enable MixLoRA, set the adapter type to `mixlora` and include the `MixLoraPlugin` in your configuration file. MixLoRA uses the base LoRA config for generating standard LoRA modules (like attention) but overrides the FFN targets to replace them with MixLoRA Modules.
+To enable MixLoRA, set the adapter type to `mixlora` and include the `MixLoraPlugin` in your configuration file. The `mixlora_*` options are contributed by the plugin, so they are only recognized when it is listed under `plugins:`. MixLoRA uses the base LoRA config for generating standard LoRA modules (like attention) but overrides the FFN targets to replace them with MixLoRA Modules.
 
 ```yaml
 plugins:
