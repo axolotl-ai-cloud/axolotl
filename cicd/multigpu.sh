@@ -30,6 +30,12 @@ pytest -v --durations=10 -n2 --maxfail=3 \
   /workspace/axolotl/tests/e2e/multigpu/ \
   --cov=axolotl
 
+pytest -v --durations=10 -n1 -m slow \
+  /workspace/axolotl/tests/e2e/multigpu/test_ringmaster.py \
+  -k test_axolotl_gdn_cp_parity \
+  --cov=axolotl \
+  --cov-append
+
 # Run solo tests with coverage append
 pytest -v --durations=10 -n1 \
   /workspace/axolotl/tests/e2e/multigpu/solo/ \
