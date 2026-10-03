@@ -4,7 +4,10 @@ tests for jinja_template_analyzer
 
 import pytest
 
-from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
+from axolotl.prompt_strategies.jinja_template_analyzer import (
+    MAX_TEMPLATE_DEPTH,
+    JinjaTemplateAnalyzer,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__, log_level="DEBUG")
@@ -152,6 +155,53 @@ class TestJinjaTemplateAnalyzer:
 
         variables = mistral_jinja_template_analyzer.get_message_vars()
         assert variables == {"role", "content", "tool_calls", "tool_call_id"}
+
+    def test_deeply_nested_expression_rejected(self):
+        """A deeply nested expression raises a clean error instead of crashing the parser."""
+        LOG.info("Testing deeply nested expression rejection")
+
+        depth = MAX_TEMPLATE_DEPTH + 5_000
+        template = "{{ " + "(" * depth + "x" + ")" * depth + " }}"
+        with pytest.raises(ValueError):
+            JinjaTemplateAnalyzer(template)
+
+    def test_deeply_nested_blocks_rejected(self):
+        """Deeply nested block tags raise a clean error instead of exhausting the stack."""
+        LOG.info("Testing deeply nested block rejection")
+
+        depth = MAX_TEMPLATE_DEPTH + 2_000
+        template = "{% if x %}" * depth + "y" + "{% endif %}" * depth
+        with pytest.raises(ValueError):
+            JinjaTemplateAnalyzer(template)
+
+    def test_deeply_nested_attribute_chain_rejected(self):
+        """A deep attribute chain parses iteratively but its deep AST is rejected.
+
+        The postfix parse does not recurse, so parsing survives; the depth guard
+        rejects the resulting AST at construction, before the recursive walk that
+        the original report blew up.
+        """
+        LOG.info("Testing deeply nested attribute chain rejection")
+
+        template = "{{ messages" + (".a" * (MAX_TEMPLATE_DEPTH + 2_000)) + " }}"
+        with pytest.raises(ValueError):
+            JinjaTemplateAnalyzer(template)
+
+    def test_well_formed_template_within_depth_still_analyzes(self):
+        """A normally nested template is unaffected by the depth guard."""
+        LOG.info("Testing that a well-formed nested template still analyzes")
+
+        template = """
+        {% for message in messages %}
+            {% if message.role == "user" %}
+                {{ message.content }}
+            {% endif %}
+        {% endfor %}
+        """
+        analyzer = JinjaTemplateAnalyzer(template)
+        variables = analyzer.get_template_variables()
+        assert "messages" in variables
+        assert "content" in analyzer.get_message_vars("messages")
 
 
 if __name__ == "__main__":
