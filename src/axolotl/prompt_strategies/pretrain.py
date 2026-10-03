@@ -30,23 +30,44 @@ class PretrainTokenizationStrategy(PromptTokenizingStrategy):
     def _tokenize(
         self, prompt: str, add_eos_token: bool = True, strip_bos_token: bool = False
     ) -> BatchEncoding:
-        # keep the overlap below the window size so small sequence_len values don't
-        # violate the tokenizer's `stride < effective max_length` constraint
-        stride = min(256, (self.max_length - 1) // 2)
-        res = self.tokenizer(
+        # Tokenise the full document first (large max_length mirrors completion.py),
+        # then split into non-overlapping chunks.  This ensures BOS appears only at
+        # the start of the first chunk and EOS only at the end of the last chunk,
+        # matching the token distribution produced by `type: completion`.
+        result = self.tokenizer(
             prompt,
             truncation=True,
-            max_length=self.max_length - 1,
-            add_special_tokens=True,
-            return_overflowing_tokens=True,
-            stride=stride,
+            max_length=self.max_length * 64,
+            padding=False,
+            return_tensors=None,
         )
-        res["input_ids"] = [
-            seq + [self.tokenizer.eos_token_id] for seq in res["input_ids"]
-        ]
-        res["attention_mask"] = [seq + [1] for seq in res["attention_mask"]]
+        input_ids = result["input_ids"]
+        attention_mask = result["attention_mask"]
 
-        return res
+        if (
+            add_eos_token
+            and len(input_ids) > 0
+            and input_ids[-1] != self.tokenizer.eos_token_id
+            and len(input_ids) < self.max_length * 64
+        ):
+            input_ids.append(self.tokenizer.eos_token_id)
+            attention_mask.append(1)
+
+        chunked_input_ids = [
+            input_ids[i : i + self.max_length]
+            for i in range(0, len(input_ids), self.max_length)
+        ]
+        chunked_attention_mask = [
+            attention_mask[i : i + self.max_length]
+            for i in range(0, len(attention_mask), self.max_length)
+        ]
+
+        return BatchEncoding(
+            data={
+                "input_ids": chunked_input_ids,
+                "attention_mask": chunked_attention_mask,
+            }
+        )
 
     def tokenize_prompt(self, prompt):
         return self._tokenize(prompt[self.text_column])
@@ -59,8 +80,6 @@ def load(tokenizer, cfg):
         cfg.train_on_inputs,
         cfg.sequence_len,
         text_column=cfg.pretraining_dataset[0]["text_column"] or "text",
-        # windows; larger values produce windows that the downstream
-        # `filter_sequences_by_length` drops wholesale
         max_length=cfg.sequence_len,
     )
     return strat
