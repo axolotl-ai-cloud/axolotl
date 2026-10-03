@@ -1,0 +1,57 @@
+base_model: Qwen/Qwen3.5-4B-Base
+revision_of_model: 1001bb4d826a52d1f399e183466143f4da7b741b
+plugins:
+  - axolotl.integrations.projection_sampling.ProjectionSamplingPlugin
+
+datasets:
+  - path: whitecircle/math-reasoning-sft
+    revision: 91b01b09a603f30d00719e26a0105bbde2b653b0
+    name: sft
+    split: train
+    type: chat_template
+    field_messages: prompt
+    roles_to_train: [assistant]
+    train_on_eot: turn
+
+chat_template: tokenizer_default
+chat_template_kwargs:
+  enable_thinking: true
+eot_tokens: ["<|im_end|>"]
+
+projection_sampling:
+  backend: vllm
+  backend_kwargs:
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.8
+    max_model_len: 4096
+    enforce_eager: false
+    enable_prefix_caching: true
+    score_batch_size: 32
+  cache_dir: ./last_run_prepared/projection-sampling-qwen35-math
+  acceptance: metropolis_hastings
+  block_size: 1024
+  max_new_tokens: 1024
+  mcmc_steps: 1
+  temperature: 0.6
+  dtype: bfloat16
+
+seed: 42
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_target_linear: true
+sequence_len: 4096
+sample_packing: false
+train_on_inputs: false
+val_set_size: 0
+micro_batch_size: 1
+gradient_accumulation_steps: 16
+num_epochs: 2
+learning_rate: 0.00005
+optimizer: adamw_torch
+lr_scheduler: cosine
+bf16: true
+attn_implementation: sdpa
+gradient_checkpointing: true
+dataset_prepared_path: ./prepared-datasets/projection-sampling-qwen35-math
+output_dir: ./outputs/projection-sampling-qwen35-math
