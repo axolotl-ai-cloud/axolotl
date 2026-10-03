@@ -1,5 +1,6 @@
 """Projection sampling through Axolotl's configurable chat-template strategy."""
 
+import json
 from copy import deepcopy
 from typing import Any, Callable
 
@@ -75,9 +76,16 @@ def sample_chat(
         )
         if not context:
             raise ValueError("The chat template produced an empty generation context")
-        question = prompter.build_prompt_text(turns[:-1], tools=tools)
-        if question is None:
-            raise ValueError("Projection sampling requires a text chat template")
+        conversation = [
+            {
+                key: value
+                for key, value in preceding.items()
+                if key
+                not in ("training", "training_detail", "reasoning_training_detail")
+            }
+            for preceding in turns[:-1]
+        ]
+        question = json.dumps(conversation, ensure_ascii=False)
         expert = turn["content"]
 
         def proposal_prompt(text: str) -> list[int]:

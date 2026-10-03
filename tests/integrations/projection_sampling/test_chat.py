@@ -143,6 +143,37 @@ def test_multiturn_uses_rewritten_history_and_keeps_system(tokenizer, cfg):
     assert record["labels"] == strategy.tokenize_prompt(expected_row)["labels"]
 
 
+def test_proposal_embeds_messages_without_template_control_tokens(
+    tokenizer, cfg, monkeypatch
+):
+    row = {
+        "messages": [
+            {"role": "system", "content": "system", "learn": False},
+            {"role": "user", "content": "question", "learn": False},
+            {"role": "assistant", "content": "expert", "learn": True},
+        ]
+    }
+    strategy = load(tokenizer, cfg, {"message_field_training": "learn"})
+    sampler, _ = setup_sampler(tokenizer)
+    sample = sampler.sample
+    contexts = []
+
+    def capture(question, expert, **kwargs):
+        assert tokenizer.eos_token not in question
+        contexts.append(json.loads(question))
+        return sample(question, expert, **kwargs)
+
+    monkeypatch.setattr(sampler, "sample", capture)
+    record = sample_chat(row, strategy, sampler)
+    assert contexts == [
+        [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "question"},
+        ]
+    ]
+    assert not record["sampling"][0]["fallback_to_expert"]
+
+
 def test_per_message_flags_and_span_masks_are_preserved(tokenizer, cfg):
     row = {
         "messages": [

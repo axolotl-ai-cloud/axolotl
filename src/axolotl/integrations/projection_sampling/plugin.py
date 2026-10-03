@@ -66,6 +66,7 @@ def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
                 "chat_template_kwargs",
             )
         }
+        payload["chat_tokenization"]["proposal_context_format"] = "messages_json"
     local_hashes = {}
     for dataset in cfg.datasets:
         files = dataset.get("data_files") or []
