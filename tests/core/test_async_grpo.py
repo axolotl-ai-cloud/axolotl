@@ -96,6 +96,29 @@ class TestGRPOStrategyConflict(unittest.TestCase):
         self.assertIs(cls, AxolotlGRPOTrainer)
 
 
+class TestQuantizeFP8Roundtrip(unittest.TestCase):
+    def _roundtrip(self, shape, scale_shape):
+        import torch
+
+        from axolotl.kernels.quantize import dequantize_fp8, quantize_fp8
+
+        W = torch.randn(*shape) * 3
+        q, scale_inv = quantize_fp8(W, torch.ones(scale_shape))
+        self.assertEqual(q.dtype, torch.float8_e4m3fn)
+        self.assertEqual(scale_inv.shape, torch.Size(scale_shape))
+        back = dequantize_fp8(q, scale_inv, torch.float32)
+        torch.testing.assert_close(back, W, rtol=0.07, atol=0.05)
+
+    def test_block_scales(self):
+        self._roundtrip((8, 8), (2, 4))
+
+    def test_tail_blocks(self):
+        self._roundtrip((7, 9), (2, 3))
+
+    def test_per_tensor_scale(self):
+        self._roundtrip((4, 6), (1,))
+
+
 class TestDequantizeFP8TailBlocks(unittest.TestCase):
     """Tests for FP8 dequantization with non-divisible dimensions."""
 
@@ -483,7 +506,8 @@ class TestMergedSyncDispatch(unittest.TestCase):
 
 
 class TestPeftSyncFusedSiblings(unittest.TestCase):
-    def test_q_v_lora_also_sends_k(self):
+    @staticmethod
+    def _make(lora_cls=None, fp8=False):
         import torch
         from torch import nn
 
@@ -493,17 +517,26 @@ class TestPeftSyncFusedSiblings(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.base_layer = nn.Linear(4, 4, bias=False)
+                if fp8:
+                    self.base_layer.weight = nn.Parameter(
+                        torch.randn(4, 4).to(torch.float8_e4m3fn), requires_grad=False
+                    )
+                    self.base_layer.weight_scale_inv = nn.Parameter(
+                        torch.full((2, 2), 0.5), requires_grad=False
+                    )
                 self.lora_A = nn.ModuleDict({"default": nn.Linear(4, 2, bias=False)})
                 self.lora_B = nn.ModuleDict({"default": nn.Linear(2, 4, bias=False)})
                 self.active_adapters = ["default"]
                 self.scaling = {"default": 1.0}
 
+        lora_cls = lora_cls or LoraLinear
+
         class Attn(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.q_proj = LoraLinear()
+                self.q_proj = lora_cls()
                 self.k_proj = nn.Linear(4, 4, bias=False)
-                self.v_proj = LoraLinear()
+                self.v_proj = lora_cls()
                 self.o_proj = nn.Linear(4, 4, bias=False)
                 self.q_norm = nn.LayerNorm(4)
 
@@ -532,6 +565,12 @@ class TestPeftSyncFusedSiblings(unittest.TestCase):
         )
         trainer = object.__new__(AsyncGRPOTrainer)
         trainer.vllm_generation = vllm_generation
+        return trainer, client, LoraLinear
+
+    def test_q_v_lora_also_sends_k(self):
+        import torch
+
+        trainer, client, _ = self._make()
         trainer._sync_peft_weights_no_merge()
 
         names = [n for n, _ in client.batch_update_named_params.call_args[0][0]]
@@ -545,6 +584,59 @@ class TestPeftSyncFusedSiblings(unittest.TestCase):
         self.assertIsInstance(
             client.batch_update_named_params.call_args[0][0][1][1], torch.Tensor
         )
+
+    def test_fp8_lora_weight_is_requantized_with_its_scale(self):
+        import torch
+
+        from axolotl.kernels.quantize import dequantize_fp8
+
+        trainer, client, _ = self._make(fp8=True)
+        trainer._sync_peft_weights_no_merge()
+
+        sent = dict(client.batch_update_named_params.call_args[0][0])
+        q = "model.layers.0.self_attn.q_proj.weight"
+        self.assertEqual(sent[q].dtype, torch.float8_e4m3fn)
+        self.assertEqual(sent[q + "_scale_inv"].shape, (2, 2))
+        self.assertEqual(
+            sent["model.layers.0.self_attn.k_proj.weight"].dtype, torch.float32
+        )
+
+        q_mod = trainer.vllm_generation.model.base_model.model.model.layers[0][
+            "self_attn"
+        ].q_proj
+        base = dequantize_fp8(
+            q_mod.base_layer.weight.data, q_mod.base_layer.weight_scale_inv.data
+        )
+        delta = (
+            q_mod.lora_B["default"].weight.data @ q_mod.lora_A["default"].weight.data
+        )
+        expected = (base + delta.to(torch.bfloat16)).float()
+        got = dequantize_fp8(sent[q], sent[q + "_scale_inv"], torch.float32)
+        torch.testing.assert_close(got, expected, rtol=0.1, atol=0.1)
+
+    def test_dora_is_rejected(self):
+        trainer, _, lora_linear = self._make()
+        attn = trainer.vllm_generation.model.base_model.model.model.layers[0][
+            "self_attn"
+        ]
+        attn.q_proj.use_dora = {"default": True}
+        with self.assertRaisesRegex(NotImplementedError, "DoRA"):
+            trainer._sync_peft_weights_no_merge()
+
+    def test_4bit_base_is_rejected(self):
+        from torch import nn
+
+        trainer, _, _ = self._make()
+        attn = trainer.vllm_generation.model.base_model.model.model.layers[0][
+            "self_attn"
+        ]
+
+        class Params4bit(nn.Parameter):
+            pass
+
+        attn.q_proj.base_layer.weight = Params4bit(attn.q_proj.base_layer.weight.data)
+        with self.assertRaisesRegex(NotImplementedError, "4-bit"):
+            trainer._sync_peft_weights_no_merge()
 
 
 class TestEnsureVllmCommunicator(unittest.TestCase):

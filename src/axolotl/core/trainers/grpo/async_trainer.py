@@ -985,9 +985,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         if not (self.vllm_generation.mode == "server" and accelerator.is_main_process):
             return
 
-        # NCCL communicator init is skipped at trainer init to avoid DDP param
-        # count mismatch and NCCL device conflicts; batch_update_named_params
-        # initialises it on first sync, on the device of the tensors below.
+        from axolotl.kernels.quantize import dequantize_fp8, quantize_fp8
 
         model = self.vllm_generation.model
         vllm_client = self.vllm_generation.vllm_client
@@ -1001,6 +999,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
             active = module.active_adapters[0]
             if active not in module.lora_A:
                 continue
+            if getattr(module, "use_dora", {}).get(active, False):
+                raise NotImplementedError(
+                    "Merged weight sync does not support DoRA; set "
+                    "`trl.vllm_lora_sync: true` to load the adapter in vLLM instead."
+                )
             lora_info[mod_name] = (
                 module.lora_A[active].weight.data,
                 module.lora_B[active].weight.data,
@@ -1035,6 +1038,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 continue
             if not vllm_name.endswith(".weight"):
                 continue
+            if param.__class__.__name__ == "Params4bit":
+                raise NotImplementedError(
+                    "Merged weight sync cannot stream bitsandbytes 4-bit weights; "
+                    "set `trl.vllm_lora_sync: true` for QLoRA."
+                )
             # fix_name strips modules_to_save.default. prefix
             raw_mod_path = vllm_name[: -len(".weight")]
             vllm_name = fix_name(vllm_name, extra_prefixes=["modules_to_save.default."])
@@ -1050,35 +1058,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 continue
 
             data = param.data
+            scale_inv = scale_inv_lookup.get(name)
+            is_fp8 = data.dtype == torch.float8_e4m3fn
 
-            # Dequantize FP8 weights before merging
-            if data.dtype == torch.float8_e4m3fn and name in scale_inv_lookup:
-                scale_inv = scale_inv_lookup[name]
-                fp8_bf16 = data.to(compute_dtype)
-                if scale_inv.dim() == 2 and fp8_bf16.dim() == 2:
-                    sr, sc = scale_inv.shape
-                    br = fp8_bf16.shape[0] // sr
-                    bc = fp8_bf16.shape[1] // sc
-                    data = (
-                        fp8_bf16.reshape(sr, br, sc, bc)
-                        * scale_inv[:, None, :, None].to(compute_dtype)
-                    ).reshape(fp8_bf16.shape)
-                elif scale_inv.dim() <= 1:
-                    data = fp8_bf16 * scale_inv.to(compute_dtype)
-                else:
-                    data = fp8_bf16
-            elif data.dtype == torch.float8_e4m3fn:
-                data = data.to(compute_dtype)
+            if not is_lora:
+                # modules_to_save / fused sibling: the stored weight is sent as is
+                params_to_sync.append((vllm_name, data))
+                continue
 
-            if is_lora:
-                A, B, s = lora_info[mod_path]
-                merged = data.to(compute_dtype) + s * (
-                    B.to(compute_dtype) @ A.to(compute_dtype)
-                )
-                params_to_sync.append((vllm_name, merged))
+            A, B, s = lora_info[mod_path]
+            delta = s * (B.to(compute_dtype) @ A.to(compute_dtype))
+            if is_fp8 and scale_inv is not None:
+                # The server keeps FP8 weights, so the merged weight goes back
+                # through fresh block scales rather than a plain cast.
+                merged = dequantize_fp8(data, scale_inv, compute_dtype) + delta
+                weight, new_scale_inv = quantize_fp8(merged, scale_inv)
+                params_to_sync.append((vllm_name, weight))
+                params_to_sync.append((vllm_name + "_scale_inv", new_scale_inv))
             else:
-                # modules_to_save / fused sibling: send raw weight (no LoRA merge needed)
-                params_to_sync.append((vllm_name, data.to(compute_dtype)))
+                params_to_sync.append((vllm_name, data.to(compute_dtype) + delta))
 
         # Batch sync only LoRA-modified params via NCCL
         if params_to_sync:
