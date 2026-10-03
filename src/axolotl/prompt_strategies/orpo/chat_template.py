@@ -248,14 +248,16 @@ class ORPOPrompter(Prompter):
                 )
 
 
-def argilla(cfg, **kwargs):
+def argilla(cfg, dataset_idx=0, **kwargs):
     dataset_parser = ORPODatasetParsingStrategy()
+    datasets = cfg.get("datasets") or []
+    ds_cfg = datasets[dataset_idx] if dataset_idx < len(datasets) else None
 
     def transform_fn(sample, tokenizer=None):
         res = {}
 
         chat_template_string = get_chat_template_from_config(
-            cfg=cfg, tokenizer=tokenizer
+            cfg=cfg, ds_cfg=ds_cfg, tokenizer=tokenizer
         )
 
         res["prompt"] = tokenizer.apply_chat_template(
