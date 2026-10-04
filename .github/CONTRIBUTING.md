@@ -110,7 +110,7 @@ Maintainers may close contributions that do not meet this policy without reviewi
 
 Every PR, including a draft PR, must have its complete diff reviewed by a human **before it is opened**. The contributor may perform this review; a separate reviewer is not required. The reviewing human must understand the changes and take responsibility for them. This applies to maintainer-directed work as well as other contributions.
 
-Agents must refuse to open a PR without explicit human confirmation that the diff being submitted has been reviewed. An instruction to implement a change or open a PR, automated checks, agent reviews, and a promise of later human review do not count. For otherwise permitted work, agents should prepare and validate the local changes, present the diff and results, and wait for human review. Any subsequent changes must also be reviewed before opening the PR.
+Agents must refuse to open a PR without explicit human confirmation that the diff being submitted has been reviewed. An instruction to implement a change or open a PR, automated checks, agent reviews, and a promise of later human review do not count. For otherwise permitted work, agents should prepare and validate the local changes, present the diff and results, and wait for human review. Any subsequent changes must also be reviewed before opening the PR. The gate applies to opening the PR: once it is open, follow-up commits such as fixes for review comments may be pushed without a fresh confirmation, since the human reviews them in the PR.
 
 Complete the human-review confirmation in the [PR template](PULL_REQUEST_TEMPLATE.md) truthfully. Agents must not fabricate confirmation or mark the checkbox without explicit confirmation from the human.
 
