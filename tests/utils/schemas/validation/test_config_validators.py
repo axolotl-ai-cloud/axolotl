@@ -428,9 +428,37 @@ class TestFlashAttnAvailabilityMessage:
             raise RuntimeError("HTTP 429 Too Many Requests")
 
         monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
+        from axolotl.utils.schemas import validation
+
+        def no_cached_build(*_, **__):
+            raise FileNotFoundError("no loadable cached snapshot")
+
+        monkeypatch.setattr(validation, "_get_kernel_from_cache", no_cached_build)
         cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
         with pytest.raises(ValueError, match="HTTP 429 Too Many Requests"):
             validate_config(cfg)
+
+    def test_hub_failure_falls_back_to_cached_build(self, min_base_cfg, monkeypatch):
+        import kernels
+        import torch
+        from transformers import utils as transformers_utils
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            transformers_utils, "is_flash_attn_2_available", lambda **_: False
+        )
+
+        def failing_get_kernel(*_, **__):
+            raise RuntimeError("HTTP 429 Too Many Requests")
+
+        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
+        from axolotl.utils.schemas import validation
+
+        monkeypatch.setattr(
+            validation, "_get_kernel_from_cache", lambda *_, **__: object()
+        )
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        validate_config(cfg)
 
     def test_successful_lookup_overrides_transformers_verdict(
         self, min_base_cfg, monkeypatch

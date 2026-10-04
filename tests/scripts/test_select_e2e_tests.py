@@ -298,3 +298,66 @@ def test_declared_unknown_key_runs_everything(repo):
     )
     assert sel.mode == "all"
     assert "no_such_key" in sel.reason
+
+
+def _grow_base(repo: Path, files: dict[str, str]) -> None:
+    """Add files to the base branch so they are not part of the feature diff."""
+    _write(repo, files)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base grows")
+    _git(repo, "branch", "-f", "main", "HEAD")
+
+
+WORKER_TEST = (
+    "from pathlib import Path\n\n"
+    "def test_launch():\n"
+    '    worker = Path(__file__).with_name("_fast_worker.py")\n'
+    "    assert worker.exists()\n"
+)
+
+
+def test_worker_script_config_counts_for_its_test(repo):
+    _grow_base(
+        repo,
+        {
+            "tests/e2e/_fast_worker.py": _cfg_test(
+                "worker", '"gradient_checkpointing": True,'
+            ),
+            "tests/e2e/test_worker_launcher.py": WORKER_TEST,
+        },
+    )
+    sel = _select(
+        repo, {"src/axolotl/monkeypatch/offload.py": OFFLOAD + "\n# touched\n"}
+    )
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_lora.py", "tests/e2e/test_worker_launcher.py"]
+
+
+def test_changed_worker_selects_the_tests_that_launch_it(repo):
+    _grow_base(
+        repo,
+        {
+            "tests/e2e/_fast_worker.py": _cfg_test("worker"),
+            "tests/e2e/test_worker_launcher.py": WORKER_TEST,
+        },
+    )
+    sel = _select(repo, {"tests/e2e/_fast_worker.py": _cfg_test("worker", '"x": 1,')})
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_worker_launcher.py"]
+
+
+def test_opaque_test_rides_along_with_every_subset(repo):
+    _grow_base(
+        repo, {"tests/e2e/test_opaque.py": "def test_opaque():\n    assert True\n"}
+    )
+    sel = _select(repo, {"src/axolotl/loaders/adapter.py": ADAPTER + "\n# touched\n"})
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_lora.py", "tests/e2e/test_opaque.py"]
+
+
+def test_opaque_test_does_not_turn_none_into_subset(repo):
+    _grow_base(
+        repo, {"tests/e2e/test_opaque.py": "def test_opaque():\n    assert True\n"}
+    )
+    sel = _select(repo, {"docs/readme.md": "changed again\n"})
+    assert sel.mode == "none"

@@ -312,9 +312,42 @@ class Selector:
             for p in (self.repo / self.scope).rglob("conftest.py")
         }
 
+        # helper modules next to the tests (worker scripts, parity probes) carry configs too
+        helpers: dict[str, tuple[set[str], set[str], set[str]]] = {}
+        for path in (self.repo / self.scope).rglob("*.py"):
+            rel = path.relative_to(self.repo).as_posix()
+            if path.name.startswith("test_") or path.name == "__init__.py":
+                continue
+            tree = _safe_parse(path)
+            if tree is None:
+                continue
+            hkeys, hstrings = self._config_keys_and_values(tree)
+            helpers[rel] = (hkeys, hstrings, self._imports(tree))
+
+        def helper_refs(rel: str, strings: set[str], imports: set[str]) -> set[str]:
+            """Helpers this file names by filename or stem, or imports by module."""
+            here = Path(rel).parent
+            found = set()
+            for helper in helpers:
+                hpath = Path(helper)
+                hmod = self.module_name(helper)
+                if (
+                    hpath.name in strings
+                    or hpath.stem in strings
+                    or helper in strings
+                    or any(imp == hmod or imp.startswith(hmod + ".") for imp in imports)
+                    or (
+                        hpath.parent == here
+                        and any(imp.endswith("." + hpath.stem) for imp in imports)
+                    )
+                ):
+                    found.add(helper)
+            return found
+
         test_keys: dict[str, set[str]] = {}
         test_strings: dict[str, set[str]] = {}
         test_imports: dict[str, set[str]] = {}
+        helper_tests: dict[str, set[str]] = defaultdict(set)
         for rel in tests:
             tree = _safe_parse(self.repo / rel)
             keys: set[str] = set()
@@ -329,9 +362,23 @@ class Selector:
                     ckeys, cstrings = self._config_keys_and_values(ctree)
                     keys |= ckeys
                     strings |= cstrings
+            seen: set[str] = set()
+            frontier = helper_refs(rel, strings, imports)
+            while frontier:
+                helper = frontier.pop()
+                if helper in seen:
+                    continue
+                seen.add(helper)
+                hkeys, hstrings, himports = helpers[helper]
+                keys |= hkeys
+                strings |= hstrings
+                imports |= himports
+                frontier |= helper_refs(helper, hstrings, himports) - seen
             test_keys[rel] = keys
             test_strings[rel] = strings
             test_imports[rel] = imports
+            for helper in seen:
+                helper_tests[helper].add(rel)
 
         all_fields: set[str] = set()
         src_trees = {}
@@ -373,19 +420,26 @@ class Selector:
             if n / max(len(src_names), 1) >= SOURCE_UBIQUITY_THRESHOLD
         }
 
+        opaque_exempt: set[str] = set()
+        configured = [t for t in tests if test_keys[t] & universe]
         counts: dict[str, int] = defaultdict(int)
-        for keys in test_keys.values():
-            for key in keys & universe:
+        for test in configured:
+            for key in test_keys[test] & universe:
                 counts[key] += 1
         ubiquitous = {
             k
             for k, c in counts.items()
-            if tests and c / len(tests) >= UBIQUITY_THRESHOLD
+            if configured and c / len(configured) >= UBIQUITY_THRESHOLD
         }
+        # a test with no visible config can be reached by anything, so it rides along with every subset
+        self.opaque_tests = [
+            t for t in tests if t not in configured and t not in opaque_exempt
+        ]
 
         self.entry_point_dirs = self._entry_point_dirs(by_module)
         self.script_modules = self._script_modules(by_module)
         self.tests = tests
+        self.helper_tests = helper_tests
         self.test_keys = test_keys
         self.test_strings = test_strings
         self.test_imports = test_imports
@@ -647,6 +701,10 @@ class Selector:
             if path.startswith("tests/"):
                 if path.endswith(".py") and Path(path).name.startswith("test_"):
                     continue  # a test outside this scope
+                if path in self.helper_tests:
+                    for test in self.helper_tests[path]:
+                        selected[test].add(f"{path} (helper it references)")
+                    continue
                 run_all.append(f"{path} is shared test support")
                 continue
             if path.startswith(SRC_ROOT + "/") and path.endswith(".py"):
@@ -658,6 +716,9 @@ class Selector:
                     selected[test].add(f"{path} ({reason})")
         if run_all:
             return Selection("all", self.tests, "; ".join(run_all), dict(selected))
+        if selected:
+            for test in self.opaque_tests:
+                selected[test].add("no visible config; rides along with every subset")
         tests = sorted(selected)
         if not tests:
             return Selection("none", [], "no in-scope test is reachable from the diff")
@@ -743,6 +804,7 @@ def main() -> int:
             d for d, is_reg in selector._registry_cache.items() if is_reg
         )  # pylint: disable=protected-access
         print(f"### registry directories: {registries}")
+        print(f"### opaque tests (always in a subset): {selector.opaque_tests}")
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text("".join(f"{t}\n" for t in sel.tests), encoding="utf-8")
