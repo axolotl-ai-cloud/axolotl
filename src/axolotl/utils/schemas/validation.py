@@ -161,14 +161,36 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
     repo_id = FLASH_ATTN_KERNEL_FALLBACK.get(attn_implementation)
     if repo_id is None:
         return None
+    version = get_attn_kernel_version(repo_id)
     try:
         # Direct kernels calls do not read Transformers' allow_all_hub_kernels flag.
-        get_kernel(
-            repo_id, version=get_attn_kernel_version(repo_id), trust_remote_code=True
-        )
+        get_kernel(repo_id, version=version, trust_remote_code=True)
     except Exception as err:  # noqa: BLE001
-        return f"{type(err).__name__}: {err}"
+        try:
+            _get_kernel_from_cache(repo_id, version)
+        except Exception:  # noqa: BLE001
+            return f"{type(err).__name__}: {err}"
+        LOG.warning(
+            "kernels hub lookup for %s failed (%s: %s); using the cached build",
+            repo_id,
+            type(err).__name__,
+            err,
+        )
     return None
+
+
+def _get_kernel_from_cache(repo_id: str, version: int):
+    """Resolve a hub kernel from the local HF cache without touching the network."""
+    from huggingface_hub import constants
+    from kernels import get_kernel
+
+    # kernels picks its cache-only resolver from this flag at call time
+    previous = constants.HF_HUB_OFFLINE
+    constants.HF_HUB_OFFLINE = True
+    try:
+        return get_kernel(repo_id, version=version, trust_remote_code=True)
+    finally:
+        constants.HF_HUB_OFFLINE = previous
 
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
