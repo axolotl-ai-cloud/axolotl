@@ -140,11 +140,6 @@ class DiffusionPlugin(BasePlugin):
         profile = self._native_profile(cfg)
         diffusion = cfg.diffusion
         spec = profile.diffusion
-        canvas_width = diffusion.canvas_width or spec.max_canvas
-        if spec.max_canvas is not None and canvas_width > spec.max_canvas:
-            raise ValueError(
-                "diffusion.canvas_width exceeds the model's maximum canvas"
-            )
         from .lm.collator import NativeDiffusionPluginCollator
         from .lm.sampling import resolve_native_packing_budget
 
@@ -161,7 +156,6 @@ class DiffusionPlugin(BasePlugin):
         )
 
         return NativeDiffusionPluginCollator, {
-            "canvas_width": canvas_width,
             "layout": spec.layout.value,
             "logical_sequence_length": cfg.sequence_len,
             "physical_pack_budget": None if budget is None else budget.payload_capacity,

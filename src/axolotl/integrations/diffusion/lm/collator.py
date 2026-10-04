@@ -1,4 +1,4 @@
-"""Collate tokenized chat examples into encoder/canvas diffusion tensors."""
+"""Collate tokenized examples into full-sequence diffusion tensors."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from .sampling import native_packing_lengths
 
 
 class DiffusionCollator:
-    """Build one selected supervised response block for each logical example."""
+    """Build one full-sequence native canvas for each logical example."""
 
     def __init__(
         self,
         pad_token_id: int,
         canvas_width: int | None = None,
-        layout: str = "encoder_canvas",
+        layout: str = "full_sequence",
         *,
         logical_sequence_length: int | None = None,
         physical_pack_budget: int | None = None,
@@ -26,9 +26,11 @@ class DiffusionCollator:
         overflow_policy: str = "error",
     ):
         self.pad_token_id = pad_token_id
-        self.canvas_width = 256 if canvas_width is None else canvas_width
-        if layout not in {"encoder_canvas", "full_sequence"}:
-            raise ValueError("layout must be encoder_canvas or full_sequence")
+        if layout != "full_sequence" or canvas_width is not None:
+            raise ValueError(
+                "native diffusion supports full_sequence without canvas_width"
+            )
+        self.layout = "full_sequence"
         if logical_sequence_length is not None and logical_sequence_length <= 0:
             raise ValueError("logical_sequence_length must be positive")
         if physical_pack_budget is not None and physical_pack_budget <= 0:
@@ -37,7 +39,6 @@ class DiffusionCollator:
             raise ValueError("eos_tail must be none or visible_supervised")
         if overflow_policy not in {"error", "drop"}:
             raise ValueError("overflow_policy must be error or drop")
-        self.layout = layout
         self.logical_sequence_length = logical_sequence_length
         self.physical_pack_budget = physical_pack_budget
         self.eos_tail = eos_tail
@@ -74,77 +75,7 @@ class DiffusionCollator:
             ]
             ids = [input_ids for input_ids, _ in with_tail]
             labels = [item_labels for _, item_labels in with_tail]
-        if self.layout == "full_sequence":
-            return self._build_full_sequence(ids, labels)
-        prompt_width = max(item.numel() for item in ids)
-        batch_size = len(ids)
-        encoder_ids = torch.full(
-            (batch_size, prompt_width), self.pad_token_id, dtype=torch.long
-        )
-        encoder_validity = torch.zeros_like(encoder_ids, dtype=torch.bool)
-        canvas_ids = torch.full(
-            (batch_size, self.canvas_width), self.pad_token_id, dtype=torch.long
-        )
-        canvas_validity = torch.zeros_like(canvas_ids, dtype=torch.bool)
-        canvas_loss_mask = torch.zeros_like(canvas_validity)
-        prefix_lengths = torch.zeros(batch_size, dtype=torch.long)
-        canvas_lengths = torch.zeros(batch_size, dtype=torch.long)
-        selected_block_ids = torch.zeros(batch_size, dtype=torch.long)
-        for index, (input_ids, item_labels) in enumerate(zip(ids, labels, strict=True)):
-            valid_length = input_ids.numel()
-            encoder_ids[index, :valid_length] = input_ids
-            encoder_validity[index, :valid_length] = True
-            supervised = torch.where(item_labels != -100)[0]
-            if not supervised.numel():
-                raise ValueError(
-                    "encoder/canvas diffusion requires a supervised response span"
-                )
-            first, last = supervised[0].item(), supervised[-1].item() + 1
-            response = input_ids[first:last]
-            response_labels = item_labels[first:last]
-            block_id = 0
-            if response.numel() > self.canvas_width:
-                eligible_blocks = ((supervised - first) // self.canvas_width).unique()
-                block_id = int(
-                    eligible_blocks[torch.randint(eligible_blocks.numel(), (1,))].item()
-                )
-                block = slice(
-                    block_id * self.canvas_width, (block_id + 1) * self.canvas_width
-                )
-                response = response[block]
-                response_labels = response_labels[block]
-            canvas_loss_mask[index, : response.numel()] = response_labels != -100
-            canvas_ids[index, : response.numel()] = response
-            canvas_validity[index, : response.numel()] = True
-            prefix_lengths[index] = first + block_id * self.canvas_width
-            canvas_lengths[index] = response.numel()
-            selected_block_ids[index] = block_id
-        logical_ids = torch.arange(batch_size, dtype=torch.long)
-        encoder_positions = torch.arange(prompt_width).expand(batch_size, -1).clone()
-        encoder_document_ids = torch.full_like(encoder_ids, -1)
-        encoder_document_ids[encoder_validity] = logical_ids[:, None].expand(
-            -1, prompt_width
-        )[encoder_validity]
-        return DiffusionBatch(
-            encoder_input_ids=encoder_ids,
-            encoder_validity=encoder_validity,
-            encoder_ar_valid_mask=encoder_validity.clone(),
-            encoder_document_ids=encoder_document_ids,
-            encoder_position_ids=encoder_positions,
-            canvas_clean_ids=canvas_ids,
-            canvas_semantic_validity=canvas_validity,
-            canvas_loss_mask=canvas_loss_mask,
-            canvas_corruptible_mask=canvas_loss_mask.clone(),
-            canvas_input_pinned_mask=canvas_validity & ~canvas_loss_mask,
-            canvas_sc_eligible_mask=canvas_validity.clone(),
-            canvas_read_only_mask=torch.zeros_like(canvas_validity),
-            canvas_update_mask=canvas_loss_mask.clone(),
-            logical_ids=logical_ids,
-            encoder_lengths=encoder_validity.sum(-1),
-            canvas_lengths=canvas_lengths,
-            decoder_prefix_lengths=prefix_lengths,
-            selected_block_ids=selected_block_ids,
-        )
+        return self._build_full_sequence(ids, labels)
 
     def _flatten_packed_features(
         self, features: Sequence[dict[str, object] | Sequence[dict[str, object]]]
@@ -181,8 +112,6 @@ class DiffusionCollator:
                 [feature],
                 eos_tail=self.eos_tail,
                 logical_sequence_length=self.logical_sequence_length,
-                layout=self.layout,
-                canvas_width=self.canvas_width,
             )[0]
             exceeds_physical = (
                 self.physical_pack_budget is not None

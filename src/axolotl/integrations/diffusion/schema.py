@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DiffusionConfig(BaseModel):
@@ -90,6 +90,8 @@ class DiffusionConfig(BaseModel):
 class DiffusionLMConfig(DiffusionConfig):
     """Canonical diffusion configuration available under ``diffusion``."""
 
+    model_config = ConfigDict(extra="forbid")
+
     from_causal_lm: bool = Field(
         default=False,
         description="Use the causal-LM compatibility backend for legacy diffusion runs.",
@@ -97,7 +99,7 @@ class DiffusionLMConfig(DiffusionConfig):
     canvas_width: int | None = Field(
         default=None,
         ge=1,
-        description="Canvas width override; unset resolves from the model diffusion spec.",
+        description="Decision-read canvas width; native full-sequence training ignores it.",
     )
     t_eps: float | None = Field(
         default=None,
@@ -105,9 +107,7 @@ class DiffusionLMConfig(DiffusionConfig):
         le=1.0,
         description="Native diffusion-time lower bound; unset resolves from the model spec.",
     )
-    time_weighting: (
-        Literal["none", "inv_t", "linear", "inv_one_minus_t", "cart", "loo"] | None
-    ) = Field(
+    time_weighting: Literal["none", "inv_t", "linear"] | None = Field(
         default=None,
         description="Named native objective weighting override.",
     )
@@ -116,31 +116,6 @@ class DiffusionLMConfig(DiffusionConfig):
     ) = Field(
         default=None,
         description="Objective reduction override; unset keeps the model spec's reference reduction.",
-    )
-    cart_p: float | None = Field(
-        default=None,
-        ge=0.0,
-        le=1.0,
-        description="CART context-reweighting probability when time_weighting=cart.",
-    )
-    token_reweighting: bool = Field(
-        default=False,
-        description="Apply Dream's source focal token reweighting.",
-    )
-    alpha: float = Field(
-        default=0.25,
-        ge=0.0,
-        description="Dream focal token-reweighting scale.",
-    )
-    gamma: float = Field(
-        default=2.0,
-        ge=0.0,
-        description="Dream focal token-reweighting exponent.",
-    )
-    rhine_weight_clip: float | None = Field(
-        default=None,
-        gt=0.0,
-        description="Optional maximum for Rhine 1 / (1 - t) token weights.",
     )
     treat_eos_as_one: bool | None = Field(
         default=None,
@@ -173,26 +148,10 @@ class DiffusionLMConfig(DiffusionConfig):
         default=False,
         description="Native diffusion vocab resizing is disabled until explicitly validated.",
     )
-    self_conditioning: "SelfConditioningConfig | None" = Field(
-        default=None,
-        description="Native self-conditioning options; unset resolves from the model spec.",
-    )
     unroll: "DiffusionUnrollConfig | None" = Field(
         default=None,
         description="K-step denoising and gradient-through-step policy.",
     )
-    encoder_ar_weight: float | None = Field(
-        default=None,
-        ge=0.0,
-        description="Clean encoder autoregressive-loss coefficient.",
-    )
-
-
-class SelfConditioningConfig(BaseModel):
-    """Run choices for native two-pass self-conditioning."""
-
-    p: float = Field(default=0.5, ge=0.0, le=1.0)
-    train_module: bool = False
 
 
 class DiffusionUnrollConfig(BaseModel):

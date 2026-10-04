@@ -13,10 +13,6 @@ from torch.utils.data import BatchSampler, DataLoader, Dataset, SequentialSample
 
 import axolotl.core.trainers.base as trainer_base
 from axolotl.core.trainers.base import AxolotlTrainer
-from axolotl.integrations.diffusion.lm.backends.full_sequence import (
-    FullSequenceBackend,
-)
-from axolotl.integrations.diffusion.lm.trainer import AxolotlDiffusionTrainer
 from axolotl.core.training_args import AxolotlTrainingArguments
 from axolotl.integrations.decision.datasets import DecisionDataset
 from axolotl.integrations.decision.loss import (
@@ -26,8 +22,6 @@ from axolotl.integrations.decision.loss import (
     DistributionLabel,
     HardLabel,
     SetLabel,
-    decision_example_from_canvas,
-    decision_label_loss,
 )
 from axolotl.integrations.decision.records import DecisionCanvas
 from axolotl.integrations.decision.trainer import (
@@ -38,6 +32,10 @@ from axolotl.integrations.decision.trainer import (
 from axolotl.integrations.decision.training_collator import (
     DecisionTrainingCollator,
 )
+from axolotl.integrations.diffusion.lm.backends.full_sequence import (
+    FullSequenceBackend,
+)
+from axolotl.integrations.diffusion.lm.trainer import AxolotlDiffusionTrainer
 from axolotl.model_support import (
     DiffusionLayout,
     DiffusionNoise,
@@ -295,11 +293,6 @@ class _LoopTrainer(DecisionTrainer):
         return self.optimizer
 
 
-class _SampledLoopTrainer(_LoopTrainer):
-    def _get_train_sampler(self, train_dataset=None):
-        return DecisionTrainer._get_train_sampler(self, train_dataset)
-
-
 class _PredictionHarness(_TrainerHarness):
     def __init__(self, spec: DiffusionSpec) -> None:
         super().__init__(spec)
@@ -486,13 +479,11 @@ def test_selected_logits_match_dense_full_ce_brier_for_multistep_padded_question
 
 
 @pytest.mark.parametrize("steps", [2, 3])
-
-
-def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state():
+def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state(steps):
     trainer = _MultistepTrainerHarness(
         _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=2,
-        sampled_steps=2,
+        k_max=steps,
+        sampled_steps=steps,
     )
     trainer._decision_times = lambda count, device, default_eps, decision: torch.tensor(
         [0.0, 1.0], device=device
@@ -506,7 +497,7 @@ def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state():
     )
 
     expected_state = torch.tensor([[1, 4, 5, 2, 6, 10]])
-    assert len(model.forward_states) == 2
+    assert len(model.forward_states) == steps
     assert all(torch.equal(state, expected_state) for state in model.forward_states)
 
 
@@ -531,97 +522,6 @@ def test_full_sequence_multistep_config_sampled_to_one_never_uses_native_commit(
     )
 
 
-@pytest.mark.parametrize("steps", [1, 2, 3])
-@pytest.mark.parametrize(
-    "device",
-    [
-        pytest.param(torch.device("cpu"), id="cpu"),
-        pytest.param(
-            torch.device("cuda"),
-            id="cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="requires CUDA"
-            ),
-        ),
-    ],
-)
-
-
-def _tiny_decision_gemma_config():
-    from transformers import DiffusionGemmaConfig
-
-    return DiffusionGemmaConfig(
-        text_config={
-            "vocab_size": 32,
-            "hidden_size": 16,
-            "intermediate_size": 32,
-            "num_hidden_layers": 1,
-            "num_attention_heads": 2,
-            "num_key_value_heads": 1,
-            "head_dim": 8,
-            "max_position_embeddings": 32,
-            "layer_types": ["full_attention"],
-            "per_layer_config": {"0": {"head_dim": 8}},
-            "sliding_window": 8,
-            "use_bidirectional_attention": "vision",
-            "num_experts": 2,
-            "top_k_experts": 1,
-            "moe_intermediate_size": 16,
-            "pad_token_id": 0,
-            "eos_token_id": 1,
-            "bos_token_id": 2,
-        },
-        vision_config={
-            "model_type": "gemma4_vision",
-            "hidden_size": 16,
-            "intermediate_size": 32,
-            "num_hidden_layers": 1,
-            "num_attention_heads": 2,
-            "num_key_value_heads": 2,
-            "head_dim": 8,
-            "max_position_embeddings": 32,
-            "patch_size": 16,
-            "position_embedding_size": 16,
-        },
-        canvas_length=8,
-        boi_token_id=31,
-        eoi_token_id=30,
-        image_token_id=29,
-    )
-
-
-@pytest.mark.parametrize("steps", [1, 2, 3])
-@pytest.mark.parametrize(
-    "device",
-    [
-        pytest.param(torch.device("cpu"), id="cpu"),
-        pytest.param(
-            torch.device("cuda"),
-            id="cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="requires CUDA"
-            ),
-        ),
-    ],
-)
-
-
-@pytest.mark.parametrize("steps", [2, 3])
-@pytest.mark.parametrize(
-    "device",
-    [
-        pytest.param(torch.device("cpu"), id="cpu"),
-        pytest.param(
-            torch.device("cuda"),
-            id="cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="requires CUDA"
-            ),
-        ),
-    ],
-)
-
-
 def _canvas(prompt, canvas, labels, identifier: str) -> DecisionCanvas:
     return DecisionCanvas(
         prompt_ids=tuple(prompt),
@@ -635,31 +535,6 @@ def _canvas(prompt, canvas, labels, identifier: str) -> DecisionCanvas:
         slot_mask=(False,) * len(canvas),
         template_length=len(canvas),
     )
-
-
-
-
-
-
-@pytest.mark.parametrize(
-    ("global_count", "world_size"),
-    [(None, 1), ({"encoder_ar": 0}, 2)],
-)
-
-
-
-
-@pytest.mark.parametrize("steps", [2, 3])
-
-
-
-
-@pytest.mark.parametrize("attention_backend", ["dense", "flex_attention"])
-
-
-@pytest.mark.parametrize("steps", [2, 3])
-
-
 
 
 def test_global_example_scaling_matches_ddp_average_for_unequal_windows():
@@ -678,8 +553,6 @@ def test_global_example_scaling_matches_ddp_average_for_unequal_windows():
     )
 
     torch.testing.assert_close(scaled, torch.tensor(1.5))
-
-
 
 
 def test_post_config_prevents_training_step_from_dividing_global_loss_again(
@@ -729,8 +602,6 @@ def test_post_config_prevents_training_step_from_dividing_global_loss_again(
     torch.testing.assert_close(model.logit_bias.grad, torch.ones_like(model.logit_bias))
 
 
-
-
 def test_stratified_sampler_shuffles_whole_microbatches_per_epoch():
     sampler = _StratifiedDecisionBatchSampler(dataset_size=12, batch_size=3, seed=17)
 
@@ -755,14 +626,6 @@ def test_stratified_sampler_pads_whole_batches_for_even_distributed_steps():
     assert len(batches) == 8
     assert all(batch == list(range(batch[0], batch[0] + 2)) for batch in batches)
     assert set(index for batch in batches for index in batch) == {0, 1}
-
-
-
-
-
-
-
-
 
 
 def test_stratified_batch_sampler_is_accepted_by_a_real_dataloader():
@@ -982,8 +845,6 @@ def test_prediction_step_uses_typed_loss_without_retaining_full_logits():
     assert model.logit_bias.grad is None
 
 
-
-
 def test_eval_metric_keys_are_prefixed_and_distributed_totals_merge(monkeypatch):
     local = {
         "decision/alpha": {
@@ -1135,79 +996,6 @@ def _loop_rows(count: int):
             }
         )
     return rows
-
-
-
-
-
-
-def _sampled_loop_trainer(
-    tmp_path,
-    dataset,
-    *,
-    stratified: bool,
-    mode: str = "pinned",
-    layout: DiffusionLayout = DiffusionLayout.FULL_SEQUENCE,
-):
-    spec = _spec(layout, LogitAlignment.ALIGNED)
-    args = AxolotlTrainingArguments(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=1,
-        learning_rate=0.05,
-        max_steps=1,
-        lr_scheduler_type="constant",
-        report_to=[],
-        disable_tqdm=True,
-        remove_unused_columns=False,
-        dataloader_drop_last=True,
-        seed=29,
-        data_seed=29,
-        optim="sgd",
-    )
-    trainer = _SampledLoopTrainer(
-        model=_LoopNativeModel(),
-        args=args,
-        train_dataset=dataset,
-        eval_dataset=dataset,
-        data_collator=DecisionTrainingCollator(spec),
-        spec=spec,
-    )
-    trainer.axolotl_cfg = {
-        "seed": 29,
-        "decision": {
-            "read_fraction": 1.0,
-            "latent": {
-                "mode": mode,
-                "num_slots": 3,
-                "sample_num_slots": True,
-            },
-        },
-    }
-    if stratified:
-        dataset.manifest.update(
-            {
-                "per_batch_stratified": True,
-                "stratified_micro_batch_size": 2,
-                "mixture_seed": 29,
-            }
-        )
-    trainer.post_set_axolotl_cfg()
-    return trainer
-
-
-@pytest.mark.parametrize("stratified", [False, True])
-
-
-
-
-@pytest.mark.parametrize(
-    "layout", [DiffusionLayout.FULL_SEQUENCE, DiffusionLayout.ENCODER_CANVAS]
-)
-
-
-
-
 
 
 def _manual_typed_objective(bias: torch.Tensor, examples):
@@ -1377,7 +1165,7 @@ def test_unwired_decision_controls_fail_explicitly(decision):
     )
 
     with pytest.raises((NotImplementedError, ValueError)):
-        trainer._validate_decision_config(trainer._decision_config())
+        trainer._decision_config()
 
 
 def test_fractional_read_times_preserve_endpoint_rng_and_select_logical_examples():
@@ -1465,11 +1253,6 @@ def test_fractional_read_times_preserve_native_sampler_rng_contract():
     assert torch.equal(torch.get_rng_state(), expected_state)
 
 
-@pytest.mark.parametrize("mode", ["pad", "pinned", "learned", "prompt", "mask"])
-
-
-
-
 def test_decision_multistep_rejects_grad_through_steps():
     trainer = _MultistepTrainerHarness(
         _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
@@ -1491,19 +1274,6 @@ def test_full_sequence_multistep_rejects_unsupported_self_conditioning():
 
     with pytest.raises(NotImplementedError, match="self-conditioning"):
         trainer.compute_loss(_TinyNativeModel(), _full_sequence_multistep_inputs())
-
-
-
-
-@pytest.mark.parametrize(
-    "layout", [DiffusionLayout.FULL_SEQUENCE, DiffusionLayout.ENCODER_CANVAS]
-)
-
-
-@pytest.mark.parametrize("steps", [2, 3])
-
-
-@pytest.mark.parametrize("steps", [2, 3])
 
 
 @pytest.mark.parametrize("steps", [1, 2, 3])
@@ -1555,9 +1325,7 @@ def test_decision_cce_final_read_matches_dense_loss_and_gradients(
             k_max=steps,
             sampled_steps=steps,
         )
-        trainer.axolotl_cfg = SimpleNamespace(
-            decision={}, cut_cross_entropy=enabled
-        )
+        trainer.axolotl_cfg = SimpleNamespace(decision={}, cut_cross_entropy=enabled)
         inputs = _full_sequence_multistep_inputs()
         inputs["decision_sources"] = ["source"]
         loss = trainer.compute_loss(model, inputs)

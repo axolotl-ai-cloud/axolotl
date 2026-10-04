@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader, SequentialSampler
 from axolotl.integrations.decision.datasets import DecisionDataset
 from axolotl.integrations.decision.loss import decision_example_from_canvas
 from axolotl.integrations.decision.records import DecisionCanvas
-from axolotl.integrations.decision.slot_sampling import DecisionDraw
 from axolotl.integrations.decision.training_collator import (
     DecisionTrainingCollator,
 )
@@ -96,8 +95,8 @@ def test_full_sequence_concat_preserves_document_and_label_coordinates():
         0,
     ]
     assert batch["decision_sources"] == ("source-0", "source-1")
-    assert batch["decision_slot_counts"].tolist() == [0, 0]
-    assert batch["decision_draws"] == (None, None)
+    assert "decision_slot_counts" not in batch
+    assert "decision_draws" not in batch
 
 
 def test_full_sequence_nested_packing_preserves_documents_labels_and_attention():
@@ -158,77 +157,6 @@ def test_multipack_dataloader_covers_each_decision_once():
     assert len(batches) == 1
     assert batches[0]["decision_sources"] == ("source-0", "source-1")
     assert batches[0]["document_ids"].tolist() == [[0] * 6 + [1] * 7]
-
-
-def test_encoder_canvas_keeps_logical_positions_for_postpack_remap():
-    batch = DecisionTrainingCollator(_spec(DiffusionLayout.ENCODER_CANVAS))(_rows())
-    logical = batch["diffusion_batch"]
-    assert logical.encoder_input_ids.tolist() == [[4, 5, 0], [10, 11, 12]]
-    assert batch["decision_logical_rows"].tolist() == [[0, 0], [1, -1]]
-    assert batch["decision_label_positions"].tolist() == [[1, 3], [2, -1]]
-    assert batch["decision_label_rows"].tolist() == [[-1, -1], [-1, -1]]
-
-
-@pytest.mark.parametrize(
-    "layout", [DiffusionLayout.FULL_SEQUENCE, DiffusionLayout.ENCODER_CANVAS]
-)
-def test_collator_preserves_sampled_slot_counts_and_draw_identity(layout):
-    rows = _rows()
-    draws = (DecisionDraw(0, 2, 17), DecisionDraw(1, 2, 18))
-    for row, count, draw in zip(rows, (1, 3), draws, strict=True):
-        row["decision_slot_count"] = count
-        row["decision_draw"] = draw
-    batch = DecisionTrainingCollator(_spec(layout))(rows)
-    assert batch["decision_slot_counts"].tolist() == [1, 3]
-    assert batch["decision_draws"] == draws
-
-
-@pytest.mark.parametrize(
-    "layout", [DiffusionLayout.FULL_SEQUENCE, DiffusionLayout.ENCODER_CANVAS]
-)
-def test_collator_emits_prompt_slot_metadata_for_sampled_counts(layout):
-    rows = _rows()
-    for row, count, ids in zip(rows, (1, 3), ((7,), (8, 9, 10)), strict=True):
-        canvas = row["canvas"]
-        row["canvas"] = DecisionCanvas(
-            prompt_ids=(*ids, *canvas.prompt_ids),
-            canvas_ids=canvas.canvas_ids,
-            label_positions=canvas.label_positions,
-            allowed_ids=canvas.allowed_ids,
-            question_ids=canvas.question_ids,
-            targets=canvas.targets,
-            pinned_mask=canvas.pinned_mask,
-            semantic_mask=canvas.semantic_mask,
-            slot_mask=canvas.slot_mask,
-            template_length=canvas.template_length,
-            prompt_slot_mask=(True,) * count + (False,) * len(canvas.prompt_ids),
-        )
-        row["decision_slot_count"] = count
-        row["decision_draw"] = DecisionDraw(count, 0, count)
-    batch = DecisionTrainingCollator(_spec(layout))(rows)
-
-    if layout is DiffusionLayout.FULL_SEQUENCE:
-        assert batch["decision_prompt_slot_mask"].tolist() == [
-            [True, False, False, False, False, False, False, True, True, True]
-            + [False] * 7
-        ]
-        assert torch.all(
-            batch["decision_prompt_slot_mask"] <= batch["canvas_input_pinned_mask"]
-        )
-    else:
-        assert batch["decision_prompt_slot_mask"].tolist() == [
-            [True, False, False, False, False, False],
-            [True, True, True, False, False, False],
-        ]
-        assert torch.equal(
-            batch["decision_prompt_input_pinned_mask"],
-            batch["diffusion_batch"].encoder_validity,
-        )
-        assert not torch.any(
-            batch["decision_prompt_slot_mask"]
-            & batch["diffusion_batch"].encoder_ar_valid_mask
-        )
-        assert batch["diffusion_batch"].encoder_ar_valid_mask[0, 1]
 
 
 def test_builder_compatible_constructor_accepts_standard_collator_options():

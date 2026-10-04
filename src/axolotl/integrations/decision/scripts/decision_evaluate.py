@@ -23,15 +23,10 @@ from axolotl.integrations.decision.evaluation import (
     evaluate_artifacts,
     evaluate_prepared_rows,
     file_sha256,
-    pad_ablate_prepared_slots,
     prepared_canvas_sha256,
     read_prediction_jsonl,
     write_metrics_json,
     write_prediction_jsonl,
-)
-from axolotl.integrations.decision.manifest import (
-    MANIFEST_FILENAME,
-    DecisionManifest,
 )
 from axolotl.integrations.decision.metrics import paired_bootstrap
 from axolotl.integrations.decision.readers.hf import HFReader
@@ -52,11 +47,6 @@ def _parser() -> argparse.ArgumentParser:
     arm.add_argument("--base", action="store_true")
     arm.add_argument("--adapter", type=Path)
     parser.add_argument("--before-predictions", type=Path)
-    parser.add_argument(
-        "--slot-ablation",
-        choices=("pad",),
-        help="replace recorded fixed canvas slots in place for an inference-only control",
-    )
     parser.add_argument("--seed", type=int)
     parser.add_argument(
         "--split",
@@ -103,22 +93,11 @@ def _validate_scope(cfg: Any, *, hold_label_noise: bool = False) -> None:
         raise ValueError("decision evaluation requires decision settings")
     latent = _value(decision, "latent")
     mode = _value(latent, "mode", "none")
-    if _value(latent, "sample_num_slots", False):
-        raise NotImplementedError(
-            "decision evaluation does not support sampled latent-slot counts"
-        )
-    if mode not in {"none", "pad", "pinned", "learned", "prompt", "mask", "free"}:
-        raise ValueError(f"unsupported decision latent mode: {mode!r}")
+    if mode != "none":
+        raise ValueError("latent slots are not supported")
     diffusion = _value(cfg, "diffusion")
     unroll = _value(diffusion, "unroll")
     k_max = _value(unroll, "k_max", 1)
-    if mode == "free":
-        if _value(latent, "free_update_policy") != "argmax":
-            raise ValueError(
-                "free decision evaluation requires free_update_policy=argmax"
-            )
-        if k_max < 2:
-            raise ValueError("free decision evaluation requires unroll.k_max > 1")
     if k_max > 1 and not hold_label_noise:
         raise NotImplementedError(
             "decision K-step evaluation requires --hold-label-noise"
@@ -159,10 +138,6 @@ def _reader(model: Any, cfg: Any, backend: str | None) -> HFReader:
         sliding_window=_value(text_config, "sliding_window"),
         attention_backend=selected,
         kernel_options=_value(cfg, "flex_attn_compile_kwargs"),
-        free_update_policy=_value(
-            _value(_value(cfg, "decision"), "latent"),
-            "free_update_policy",
-        ),
     )
 
 
@@ -189,7 +164,6 @@ def _provenance(
     adapter_fingerprint = (
         None if adapter is None else adapter_payload_fingerprint(adapter)
     )
-    initialization = _initialization_provenance(adapter, adapter_fingerprint)
     return {
         "base_model": _value(cfg, "base_model"),
         "requested_model_revision": _value(cfg, "revision_of_model"),
@@ -204,7 +178,6 @@ def _provenance(
         "adapter_payload_files": (
             None if adapter_fingerprint is None else adapter_fingerprint["files"]
         ),
-        **initialization,
         "config": str(config_path),
         "config_sha256": file_sha256(config_path),
         "dataset_manifest_sha256": _mapping_sha256(dataset_manifest),
@@ -224,82 +197,6 @@ def _provenance(
         "read_precision": dict(read_precision),
         "reader_read_stats": None if read_stats is None else dict(read_stats),
         "effective_overrides": dict(effective_overrides),
-    }
-
-
-def _effective_slot_protocol(cfg: Any) -> dict[str, Any]:
-    latent = _value(_value(cfg, "decision"), "latent")
-    mode = _value(latent, "mode", "none")
-    result = {
-        "mode": mode,
-        "num_slots": _value(latent, "num_slots", 0),
-        "token_ids": _value(latent, "token_ids", []),
-    }
-    if mode == "free":
-        result.update(
-            free_slot_init_policy="fresh_runtime_v1",
-            free_update_policy=_value(latent, "free_update_policy"),
-        )
-    return result
-
-
-def _initialization_provenance(
-    adapter: Path | None, adapter_fingerprint: Mapping[str, Any] | None
-) -> dict[str, Any]:
-    if adapter is None:
-        return {
-            "initial_common_adapter_sha256": None,
-            "initial_common_adapter_fingerprint_reason": "base arm has no adapter manifest",
-            "adapter_manifest_sha256": None,
-            "slot_protocol": None,
-        }
-    manifest_path = adapter / MANIFEST_FILENAME
-    if not manifest_path.is_file():
-        return {
-            "initial_common_adapter_sha256": None,
-            "initial_common_adapter_fingerprint_reason": "adapter manifest is absent",
-            "adapter_manifest_sha256": None,
-            "slot_protocol": None,
-        }
-    if (
-        adapter_fingerprint is None
-        or MANIFEST_FILENAME not in adapter_fingerprint["files"]
-    ):
-        raise ValueError("adapter payload fingerprint must cover the decision manifest")
-    manifest = DecisionManifest.from_path(manifest_path)
-    raw_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    raw_slots = (
-        raw_manifest.get("configured_slots")
-        if isinstance(raw_manifest, Mapping)
-        else None
-    )
-    slot_protocol: dict[str, Any] | None = {
-        "mode": manifest.configured_slots.mode,
-        "num_slots": manifest.configured_slots.num_slots,
-    }
-    if manifest.configured_slots.mode == "free":
-        if not isinstance(raw_slots, Mapping) or (
-            raw_slots.get("free_slot_init_policy") != "fresh_runtime_v1"
-            or raw_slots.get("free_update_policy") != "argmax"
-            or isinstance(raw_slots.get("num_slots"), bool)
-            or not isinstance(raw_slots.get("num_slots"), int)
-            or raw_slots["num_slots"] < 1
-        ):
-            slot_protocol = None
-        else:
-            slot_protocol = {
-                "mode": manifest.configured_slots.mode,
-                "num_slots": manifest.configured_slots.num_slots,
-                "free_update_policy": manifest.configured_slots.free_update_policy,
-                "free_slot_init_policy": "fresh_runtime_v1",
-            }
-    return {
-        "initial_common_adapter_sha256": manifest.initial_common_adapter_sha256,
-        "initial_common_adapter_fingerprint_reason": (
-            manifest.initial_common_adapter_fingerprint_reason
-        ),
-        "adapter_manifest_sha256": file_sha256(manifest_path),
-        "slot_protocol": slot_protocol,
     }
 
 
@@ -342,45 +239,6 @@ def _evaluation_selection(
         "drops": {
             "canvas_too_long": manifest.get("canvas_too_long", {}),
             "budget_drops": manifest.get("budget_drops", {}),
-        },
-    }
-
-
-def _pad_slot_ablation(
-    rows: tuple[Mapping[str, Any], ...], cfg: Any, tokenizer: Any
-) -> tuple[tuple[dict[str, Any], ...], dict[str, Any]]:
-    pad_token_id = _value(tokenizer, "pad_token_id")
-    if isinstance(pad_token_id, bool) or not isinstance(pad_token_id, int):
-        raise ValueError("--slot-ablation pad requires tokenizer.pad_token_id")
-    try:
-        vocab_size = len(tokenizer)
-    except TypeError as error:
-        raise TypeError(
-            "--slot-ablation pad requires a tokenizer vocabulary size"
-        ) from error
-    if isinstance(vocab_size, bool) or not isinstance(vocab_size, int):
-        raise TypeError(
-            "--slot-ablation pad requires an integer tokenizer vocabulary size"
-        )
-    decision = _value(cfg, "decision")
-    latent = _value(decision, "latent")
-    ablation = pad_ablate_prepared_slots(
-        rows,
-        latent_mode=_value(latent, "mode", "none"),
-        pad_token_id=pad_token_id,
-        vocab_size=vocab_size,
-    )
-    return ablation.rows, {
-        "kind": "pad",
-        "latent_mode": ablation.mode,
-        "pad_token_id": ablation.pad_token_id,
-        "slot_count": ablation.slot_count,
-        "changed_token_count": ablation.changed_token_count,
-        "original_canvas_sha256": ablation.original_canvas_sha256,
-        "ablated_canvas_sha256": ablation.ablated_canvas_sha256,
-        "recorded_slot_positions": {
-            key: {name: list(value) for name, value in positions.items()}
-            for key, positions in ablation.recorded_slot_positions.items()
         },
     }
 
@@ -433,9 +291,6 @@ def main(argv: list[str] | None = None) -> int:
         (lambda: torch.cuda.synchronize(device)) if device.type == "cuda" else None
     )
     rows = tuple(dataset[index] for index in range(len(dataset)))
-    slot_ablation = None
-    if args.slot_ablation == "pad":
-        rows, slot_ablation = _pad_slot_ablation(rows, cfg, tokenizer)
     with torch.inference_mode(), reader.autocast_context(device):
         read_precision = _read_precision(model)
         decision = _value(cfg, "decision")
@@ -495,7 +350,6 @@ def main(argv: list[str] | None = None) -> int:
             "adapter": None if args.adapter is None else str(args.adapter),
             "dataset_prepared_path": cfg.dataset_prepared_path,
             "configured_dataset_prepared_path": original_prepared_path,
-            "slot_ablation": slot_ablation,
             "ordinal_metadata": args.ordinal_metadata,
             "hold_label_noise": args.hold_label_noise,
             "batch_size": args.batch_size,
@@ -506,7 +360,6 @@ def main(argv: list[str] | None = None) -> int:
                 else "packed-batch latency replicated for each record; not per-request latency"
             ),
             "label_codebook": _value(labels, "codebook", "vendored26"),
-            "slot_protocol": _effective_slot_protocol(cfg),
         },
     )
     provenance["predictions_sha256"] = file_sha256(prediction_path)

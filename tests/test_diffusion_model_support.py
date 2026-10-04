@@ -141,13 +141,12 @@ def test_canonical_native_options_do_not_change_legacy_schema_or_imply_resize():
         t_eps=0.0,
         eos_tail="visible_supervised",
         objective_reduction="example_mean",
-        self_conditioning={"p": 0.5, "train_module": False},
         unroll={"k_max": 2, "grad_through_steps": True},
     )
 
     assert cfg.allow_native_vocab_resize is False
     assert cfg.t_eps == 0.0
-    assert cfg.self_conditioning is not None and cfg.self_conditioning.p == 0.5
+    assert cfg.canvas_width == 128
     assert cfg.unroll is not None and cfg.unroll.k_max == 2
 
     with pytest.raises(
@@ -158,6 +157,26 @@ def test_canonical_native_options_do_not_change_legacy_schema_or_imply_resize():
     assert cfg.objective_reduction == "example_mean"
     with pytest.raises(ValidationError):
         DiffusionLMConfig(allow_native_vocab_resize=True)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cart_p", 0.5),
+        ("token_reweighting", True),
+        ("alpha", 0.25),
+        ("gamma", 2.0),
+        ("rhine_weight_clip", 2.0),
+        ("encoder_ar_weight", 0.1),
+        ("self_conditioning", {"p": 0.5}),
+        ("time_weighting", "inv_one_minus_t"),
+        ("time_weighting", "cart"),
+        ("time_weighting", "loo"),
+    ],
+)
+def test_native_schema_rejects_removed_objective_options(field, value):
+    with pytest.raises(ValidationError, match=field):
+        DiffusionLMConfig.model_validate({field: value})
 
 
 def test_native_diffusion_rejects_unsupported_attention_implementation():

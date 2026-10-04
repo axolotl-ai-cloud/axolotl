@@ -111,10 +111,6 @@ class DecisionLatentConfig(BaseModel):
 
     mode: Literal["none"] = "none"
 
-    @model_validator(mode="after")
-    def validate_slots(self) -> "DecisionLatentConfig":
-        return self
-
 
 class DecisionEvalConfig(BaseModel):
     """Decision-read evaluation controls."""
@@ -140,7 +136,7 @@ class DecisionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     layout: Literal["thought_block"] = "thought_block"
-    reader: Literal["hf", "djev"] = "hf"
+    reader: Literal["hf"] = "hf"
     answer_format: Literal["auto"] = "auto"
     max_questions_per_canvas: int = Field(default=20, ge=1)
     read_fraction: float = 1.0
@@ -156,11 +152,15 @@ class DecisionConfig(BaseModel):
             return value
         latent = value.get("latent")
         if isinstance(latent, dict) and latent.get("mode", "none") != "none":
-            raise ValueError("decision latent slots were removed; use latent.mode: none")
+            raise ValueError(
+                "decision latent slots were removed; use latent.mode: none"
+            )
         if "carry" in value:
             raise ValueError("decision latent carry was removed")
         if value.get("layout", "thought_block") != "thought_block":
-            raise ValueError("decision prompt-slot layout was removed; use thought_block")
+            raise ValueError(
+                "decision prompt-slot layout was removed; use thought_block"
+            )
         labels = value.get("labels")
         if isinstance(labels, dict) and labels.get("full_ce_weighting", "ce") != "ce":
             raise ValueError("decision full_ce_weighting=dft was removed; use ce")
@@ -172,10 +172,6 @@ class DecisionConfig(BaseModel):
             raise ValueError("read_fraction must be finite")
         if not 0.0 <= self.read_fraction <= 1.0:
             raise ValueError("read_fraction must be in [0, 1]")
-        if self.reader == "djev" and self.labels.codebook != "vendored26":
-            raise ValueError(
-                f"DjevReader does not support the {self.labels.codebook} label codebook"
-            )
         return self
 
 

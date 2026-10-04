@@ -137,14 +137,8 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
     ) -> torch.Tensor | tuple[torch.Tensor, Any]:
         spec = self._native_spec
         if spec is None:
-            raise ValueError(
-                "decision requires a resolved native DiffusionSpec"
-            )
+            raise ValueError("decision requires a resolved native DiffusionSpec")
         decision = self._decision_config()
-        k_max, grad_through_steps = self._native_unroll_settings()
-        self._validate_decision_config(decision, k_max=k_max, spec=spec)
-        packed = None
-        coordinates = None
         use_cce = bool(getattr(self.axolotl_cfg, "cut_cross_entropy", False))
         loss_function = decision_label_loss
         if use_cce:
@@ -180,9 +174,7 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
             supervision = self._question_supervision(inputs)
             selected = logits
         else:
-            selected, supervision = self._select_question_logits(
-                logits, inputs, coordinates=coordinates
-            )
+            selected, supervision = self._select_question_logits(logits, inputs)
         examples = inputs.get("decision_examples")
         if not isinstance(examples, Sequence) or isinstance(examples, (str, bytes)):
             raise TypeError(
@@ -280,7 +272,7 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
                         examples=[examples[position] for position in indices],
                         supervision_mask=supervision.index_select(0, index),
                         label_softmax=decision.labels.label_softmax,
-                                    brier_weight=decision.labels.brier_weight,
+                        brier_weight=decision.labels.brier_weight,
                         hard_label_smoothing=(
                             decision.labels.hard_label_smoothing
                             if train_eval == "train"
@@ -356,14 +348,7 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
             return value
         if isinstance(value, Mapping):
             return DecisionConfig.model_validate(value)
-        raise ValueError(
-            "DecisionTrainer requires decision settings"
-        )
-
-    @staticmethod
-    def _validate_decision_config(self, decision, *, k_max, spec):
-        if spec.layout is not DiffusionLayout.FULL_SEQUENCE:
-            raise ValueError("decision supports full-sequence Nemotron only")
+        raise ValueError("DecisionTrainer requires decision settings")
 
     def _full_sequence_logits(
         self,
@@ -539,6 +524,7 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
         reads = torch.rand(count, device=device) < decision.read_fraction
         return torch.where(reads, torch.ones_like(times), times)
 
+    @staticmethod
     def _question_supervision(inputs: Mapping[str, Any]) -> torch.Tensor:
         question_mask = inputs["decision_question_mask"].bool()
         supervision = inputs["decision_supervision_mask"].bool()

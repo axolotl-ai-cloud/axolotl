@@ -25,9 +25,9 @@ def _manifest_config():
             "model_config_type": "nemotron_labs_diffusion",
             "diffusion": {"canvas_width": 128, "mask_token_id": 100},
             "decision": {
-                "layout": "prompt_slots",
+                "layout": "thought_block",
                 "reader": "hf",
-                "latent": {"mode": "none", "num_slots": 0},
+                "latent": {"mode": "none"},
             },
         }
     )

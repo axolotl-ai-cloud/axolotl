@@ -8,11 +8,10 @@ from types import SimpleNamespace
 import pytest
 import torch
 from torch import nn
-from transformers import DiffusionGemmaConfig
 
-from axolotl.integrations.diffusion.lm.unroll import run_unroll
 from axolotl.integrations.decision.readers import HFReader
 from axolotl.integrations.decision.records import DecisionCanvas
+from axolotl.integrations.diffusion.lm.unroll import run_unroll
 from axolotl.model_support.diffusion import (
     DiffusionLayout,
     DiffusionNoise,
@@ -24,9 +23,6 @@ from axolotl.model_support.diffusion import (
     MaskTokenPolicy,
     ObjectiveReduction,
     TimeWeighting,
-)
-from axolotl.model_support.diffusion_gemma.modeling import (
-    AxolotlDiffusionGemmaForBlockDiffusion,
 )
 
 
@@ -67,49 +63,6 @@ def _canvas() -> DecisionCanvas:
         semantic_mask=(True, True, True, True, True, True, True, True),
         slot_mask=(False,) * 8,
         template_length=4,
-    )
-
-
-def _tiny_gemma_config() -> DiffusionGemmaConfig:
-    text = {
-        "vocab_size": 32,
-        "hidden_size": 16,
-        "intermediate_size": 32,
-        "num_hidden_layers": 1,
-        "num_attention_heads": 2,
-        "num_key_value_heads": 1,
-        "head_dim": 8,
-        "max_position_embeddings": 32,
-        "layer_types": ["full_attention"],
-        "per_layer_config": {"0": {"head_dim": 8}},
-        "sliding_window": 8,
-        "use_bidirectional_attention": "vision",
-        "num_experts": 2,
-        "top_k_experts": 1,
-        "moe_intermediate_size": 16,
-        "pad_token_id": 0,
-        "eos_token_id": 1,
-        "bos_token_id": 2,
-    }
-    vision = {
-        "model_type": "gemma4_vision",
-        "hidden_size": 16,
-        "intermediate_size": 32,
-        "num_hidden_layers": 1,
-        "num_attention_heads": 2,
-        "num_key_value_heads": 2,
-        "head_dim": 8,
-        "max_position_embeddings": 32,
-        "patch_size": 16,
-        "position_embedding_size": 16,
-    }
-    return DiffusionGemmaConfig(
-        text_config=text,
-        vision_config=vision,
-        canvas_length=8,
-        boi_token_id=31,
-        eoi_token_id=30,
-        image_token_id=29,
     )
 
 
@@ -208,214 +161,6 @@ def test_hf_reader_full_sequence_batch_matches_independent_reads_with_ragged_pee
             left.diagnostics.final_canvas_ids, right.diagnostics.final_canvas_ids
         )
     assert batched_model.calls == steps
-
-
-def _free_canvas() -> DecisionCanvas:
-    return DecisionCanvas(
-        prompt_ids=(3, 4),
-        canvas_ids=(9, 6, 7, 8, 0, 0, 0, 0),
-        label_positions=(1, 3),
-        allowed_ids=((1, 2), (3, 4)),
-        question_ids=("q0", "q1"),
-        targets=(0, 0),
-        pinned_mask=(False, False, True, False, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, False, False, False, False, False, False),
-        template_length=4,
-    )
-
-
-def test_hf_reader_uniform_encoder_canvas_is_seeded_and_pins_template_tokens():
-    torch.manual_seed(7)
-    model = AxolotlDiffusionGemmaForBlockDiffusion(_tiny_gemma_config()).eval()
-    reader = HFReader(attention_backend="dense")
-    canvas = _canvas()
-
-    first = reader.read(
-        model,
-        _spec(layout=DiffusionLayout.ENCODER_CANVAS, noise=DiffusionNoise.UNIFORM),
-        canvas,
-        steps=2,
-        seed=19,
-        diagnostics=True,
-    )
-    second = reader.read(
-        model,
-        _spec(layout=DiffusionLayout.ENCODER_CANVAS, noise=DiffusionNoise.UNIFORM),
-        canvas,
-        steps=2,
-        seed=19,
-        diagnostics=True,
-    )
-    changed = reader.read(
-        model,
-        _spec(layout=DiffusionLayout.ENCODER_CANVAS, noise=DiffusionNoise.UNIFORM),
-        canvas,
-        steps=2,
-        seed=23,
-        diagnostics=True,
-    )
-
-    assert first.full_vocab_logprobs.shape == (2, 32)
-    assert torch.equal(first.full_vocab_logprobs, second.full_vocab_logprobs)
-    assert torch.equal(
-        first.diagnostics.initial_canvas_ids, second.diagnostics.initial_canvas_ids
-    )
-    label_mask = torch.zeros(8, dtype=torch.bool)
-    label_mask[torch.tensor(canvas.label_positions)] = True
-    clean = torch.tensor(canvas.canvas_ids)
-    assert torch.equal(
-        first.diagnostics.initial_canvas_ids[~label_mask], clean[~label_mask]
-    )
-    assert not torch.equal(
-        first.diagnostics.initial_canvas_ids[label_mask],
-        changed.diagnostics.initial_canvas_ids[label_mask],
-    )
-    assert first.diagnostics.forward_count == 2
-    assert torch.allclose(first.restricted_probs.sum(-1), torch.ones(2))
-    assert torch.equal(
-        first.candidate_mask, torch.tensor([[True, True, False], [True, True, True]])
-    )
-
-
-def test_hf_reader_k1_uses_one_actual_decoder_read(monkeypatch):
-    import axolotl.model_support.diffusion_gemma.modeling as modeling
-
-    torch.manual_seed(7)
-    model = AxolotlDiffusionGemmaForBlockDiffusion(_tiny_gemma_config()).eval()
-    calls = []
-    original = modeling.decode_packed_canvas
-
-    def counted(*args, **kwargs):
-        calls.append(None)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(modeling, "decode_packed_canvas", counted)
-    result = HFReader(attention_backend="dense").read(
-        model,
-        _spec(layout=DiffusionLayout.ENCODER_CANVAS, noise=DiffusionNoise.UNIFORM),
-        _canvas(),
-        steps=1,
-        seed=19,
-        diagnostics=True,
-    )
-
-    assert len(calls) == 1
-    assert result.diagnostics.forward_count == 1
-
-
-def test_hf_reader_held_label_noise_keeps_slots_in_recurrent_sc_only(monkeypatch):
-    from axolotl.integrations.diffusion.lm.backends.encoder_canvas import (
-        EncoderCanvasBackend,
-    )
-
-    class Model(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.anchor = nn.Parameter(torch.zeros(()))
-            self.config = SimpleNamespace(
-                vocab_size=16,
-                sliding_window=8,
-                text_config=SimpleNamespace(vocab_size=16, sliding_window=8),
-            )
-
-    captured = {}
-
-    def forward(self, model, packed, input_ids, **kwargs):
-        del self, model
-        captured.update(kwargs)
-        return SimpleNamespace(
-            logits=torch.zeros(
-                (*input_ids.shape, 16), device=input_ids.device, dtype=torch.float32
-            ),
-            denoised_input_ids=input_ids,
-        )
-
-    monkeypatch.setattr(EncoderCanvasBackend, "forward", forward)
-    canvas = DecisionCanvas(
-        prompt_ids=(3, 4),
-        canvas_ids=(9, 6, 7, 8, 0, 0, 0, 0),
-        label_positions=(1, 3),
-        allowed_ids=((1, 2), (3, 4)),
-        question_ids=("q0", "q1"),
-        targets=(0, 0),
-        pinned_mask=(True, False, False, False, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, False, False, False, False, False, False),
-        template_length=4,
-    )
-    result = HFReader(attention_backend="dense").read(
-        Model(),
-        _spec(layout=DiffusionLayout.ENCODER_CANVAS, noise=DiffusionNoise.UNIFORM),
-        canvas,
-        steps=2,
-        seed=7,
-        hold_label_noise=True,
-        diagnostics=True,
-    )
-
-    assert result.diagnostics is not None
-    assert result.diagnostics.update_policy == "held_label_noise_with_sc"
-    assert torch.equal(
-        result.diagnostics.initial_canvas_ids, result.diagnostics.final_canvas_ids
-    )
-    assert not captured["k1_conditioning_mask"][0, 0]
-    assert captured["recurrent_conditioning_mask"][0, 0]
-    assert captured["recurrent_conditioning_mask"][0, 1]
-    assert not captured["update_mask"].any()
-
-
-def test_hf_reader_fixed_label_noise_remains_no_sc_ablation(monkeypatch):
-    from axolotl.integrations.diffusion.lm.backends.encoder_canvas import (
-        EncoderCanvasBackend,
-    )
-
-    class Model(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.anchor = nn.Parameter(torch.zeros(()))
-            self.config = SimpleNamespace(
-                vocab_size=16,
-                sliding_window=8,
-                text_config=SimpleNamespace(vocab_size=16, sliding_window=8),
-            )
-
-    captured = {}
-
-    def forward(self, model, packed, input_ids, **kwargs):
-        del self, model
-        captured.update(kwargs)
-        return SimpleNamespace(
-            logits=torch.zeros(
-                (*input_ids.shape, 16), device=input_ids.device, dtype=torch.float32
-            ),
-            denoised_input_ids=input_ids,
-        )
-
-    monkeypatch.setattr(EncoderCanvasBackend, "forward", forward)
-    canvas = DecisionCanvas(
-        prompt_ids=(3, 4),
-        canvas_ids=(9, 6, 7, 8, 0, 0, 0, 0),
-        label_positions=(1, 3),
-        allowed_ids=((1, 2), (3, 4)),
-        question_ids=("q0", "q1"),
-        targets=(0, 0),
-        pinned_mask=(True, False, False, False, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, False, False, False, False, False, False),
-        template_length=4,
-    )
-    HFReader(attention_backend="dense").read(
-        Model(),
-        _spec(layout=DiffusionLayout.ENCODER_CANVAS, noise=DiffusionNoise.UNIFORM),
-        canvas,
-        steps=2,
-        seed=7,
-        fixed_label_noise=True,
-    )
-
-    assert not captured["k1_conditioning_mask"].any()
-    assert not captured["recurrent_conditioning_mask"].any()
 
 
 def test_training_k1_pilot_default_is_preserved_while_serving_can_disable_it():
@@ -561,304 +306,6 @@ def test_hf_reader_fixed_label_noise_is_an_explicit_read_only_control():
     )
 
 
-@pytest.mark.parametrize("steps", [2, 3])
-def test_hf_reader_free_full_sequence_updates_only_slots_and_holds_labels(steps):
-    canvas = _free_canvas()
-    initial = torch.tensor(canvas.canvas_ids)
-    result = HFReader(attention_backend="dense", free_update_policy="argmax").read(
-        _FullSequenceIncrement(),
-        _spec(layout=DiffusionLayout.FULL_SEQUENCE, noise=DiffusionNoise.UNIFORM),
-        canvas,
-        steps=steps,
-        initial_canvas_ids=initial,
-        diagnostics=True,
-    )
-
-    assert result.diagnostics is not None
-    assert result.diagnostics.update_policy == "free_slot_argmax_held_labels"
-    assert result.diagnostics.forward_count == steps
-    assert torch.equal(
-        result.diagnostics.initial_canvas_ids[torch.tensor(canvas.label_positions)],
-        result.diagnostics.final_canvas_ids[torch.tensor(canvas.label_positions)],
-    )
-    assert result.diagnostics.final_canvas_ids[0].item() == (9 + steps) % 16
-    assert torch.equal(
-        result.diagnostics.initial_canvas_ids[2:],
-        result.diagnostics.final_canvas_ids[2:],
-    )
-
-
-@pytest.mark.parametrize("steps", [2, 3])
-def test_hf_reader_free_encoder_updates_only_slots_and_holds_labels(monkeypatch, steps):
-    from axolotl.integrations.diffusion.lm.backends.encoder_canvas import (
-        EncoderCanvasBackend,
-    )
-
-    class Model(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.anchor = nn.Parameter(torch.zeros(()))
-            self.config = SimpleNamespace(
-                vocab_size=16,
-                sliding_window=8,
-                text_config=SimpleNamespace(vocab_size=16, sliding_window=8),
-            )
-
-    captured = {}
-
-    def forward(self, model, packed, input_ids, *, unroll_steps, update_mask, **kwargs):
-        del self, model, kwargs
-        captured["update_mask"] = update_mask.detach().clone()
-        final = input_ids.clone()
-        final[update_mask] = (final[update_mask] + unroll_steps) % 16
-        logits = torch.nn.functional.one_hot(final, num_classes=16).float() * 20
-        return SimpleNamespace(logits=logits, denoised_input_ids=final)
-
-    monkeypatch.setattr(EncoderCanvasBackend, "forward", forward)
-    canvas = _free_canvas()
-    initial = torch.tensor(canvas.canvas_ids)
-    result = HFReader(attention_backend="dense", free_update_policy="argmax").read(
-        Model(),
-        _spec(layout=DiffusionLayout.ENCODER_CANVAS, noise=DiffusionNoise.UNIFORM),
-        canvas,
-        steps=steps,
-        initial_canvas_ids=initial,
-        diagnostics=True,
-    )
-
-    assert result.diagnostics is not None
-    assert result.diagnostics.update_policy == "free_slot_argmax_held_labels"
-    assert result.diagnostics.forward_count == steps
-    assert captured["update_mask"].tolist() == [
-        [True, False, False, False, False, False, False, False]
-    ]
-    assert result.diagnostics.final_canvas_ids[0].item() == (9 + steps) % 16
-    assert torch.equal(
-        result.diagnostics.initial_canvas_ids[torch.tensor(canvas.label_positions)],
-        result.diagnostics.final_canvas_ids[torch.tensor(canvas.label_positions)],
-    )
-
-
-def test_hf_reader_runs_tiny_pinned_dream_source():
-    from transformers import AutoConfig
-
-    from axolotl.model_support.dream import _model_class
-    from tests.native_source_fixtures import native_source_fixture_path
-
-    source = native_source_fixture_path("dream")
-    if source is None:
-        pytest.skip("native Dream source fixture unavailable")
-    config = AutoConfig.from_pretrained(
-        source, trust_remote_code=True, local_files_only=True
-    )
-    for name, value in {
-        "vocab_size": 32,
-        "hidden_size": 32,
-        "intermediate_size": 64,
-        "num_hidden_layers": 1,
-        "num_attention_heads": 4,
-        "num_key_value_heads": 2,
-        "head_dim": 8,
-        "max_position_embeddings": 64,
-        "max_window_layers": 1,
-        "bos_token_id": 1,
-        "eos_token_id": 1,
-        "pad_token_id": 1,
-        "mask_token_id": 2,
-        "use_cache": False,
-    }.items():
-        setattr(config, name, value)
-    config._name_or_path = str(source)
-    model = (
-        _model_class()
-        .from_config(config, trust_remote_code=True, torch_dtype=torch.float32)
-        .eval()
-    )
-    canvas = DecisionCanvas(
-        prompt_ids=(3, 4, 5),
-        canvas_ids=(6, 7, 8, 9, 1, 1, 1, 1),
-        label_positions=(1,),
-        allowed_ids=((2, 6, 7),),
-        question_ids=("dream",),
-        targets=(0,),
-        pinned_mask=(True, False, True, True, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(False,) * 8,
-        template_length=4,
-    )
-    result = HFReader(attention_backend="dense").read(
-        model,
-        _spec(
-            layout=DiffusionLayout.FULL_SEQUENCE,
-            noise=DiffusionNoise.ABSORBING,
-            shifted=True,
-        ),
-        canvas,
-        steps=1,
-        diagnostics=True,
-    )
-
-    assert result.diagnostics is not None
-    assert result.full_vocab_logprobs.shape == (1, 32)
-    assert result.diagnostics.forward_count == 1
-    assert torch.isfinite(result.full_vocab_logprobs).all()
-
-
-def test_hf_reader_free_seeded_initialization_and_explicit_override():
-    canvas = _free_canvas()
-    reader = HFReader(attention_backend="dense", free_update_policy="argmax")
-    spec = _spec(layout=DiffusionLayout.FULL_SEQUENCE, noise=DiffusionNoise.UNIFORM)
-    first = reader.read(
-        _FullSequenceIncrement(), spec, canvas, steps=2, seed=7, diagnostics=True
-    )
-    second = reader.read(
-        _FullSequenceIncrement(), spec, canvas, steps=2, seed=7, diagnostics=True
-    )
-    changed = reader.read(
-        _FullSequenceIncrement(), spec, canvas, steps=2, seed=8, diagnostics=True
-    )
-    override = reader.read(
-        _FullSequenceIncrement(),
-        spec,
-        canvas,
-        steps=2,
-        seed=7,
-        initial_canvas_ids=torch.tensor(canvas.canvas_ids),
-        diagnostics=True,
-    )
-    assert first.diagnostics is not None and second.diagnostics is not None
-    assert changed.diagnostics is not None and override.diagnostics is not None
-    assert first.diagnostics.slot_init_policy == "fresh_read_seed_v1"
-    assert torch.equal(
-        first.diagnostics.initial_canvas_ids, second.diagnostics.initial_canvas_ids
-    )
-    assert (
-        first.diagnostics.initial_canvas_ids[0]
-        != changed.diagnostics.initial_canvas_ids[0]
-    )
-    assert override.diagnostics.slot_init_policy == "explicit_canvas_v1"
-    assert override.diagnostics.initial_canvas_ids[0].item() == canvas.canvas_ids[0]
-
-
-@pytest.mark.parametrize(
-    "layout", [DiffusionLayout.FULL_SEQUENCE, DiffusionLayout.ENCODER_CANVAS]
-)
-def test_hf_reader_free_seeded_slots_are_reproducible_in_each_layout(
-    monkeypatch, layout
-):
-    canvas = DecisionCanvas(
-        prompt_ids=(3, 4),
-        canvas_ids=(9, 6, 7, 8, 4, 5, 0, 0),
-        label_positions=(1, 3),
-        allowed_ids=((1, 2), (3, 4)),
-        question_ids=("q0", "q1"),
-        targets=(0, 0),
-        pinned_mask=(False, False, False, False, False, False, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, True, False, True, False, False, False),
-        template_length=4,
-    )
-    if layout is DiffusionLayout.ENCODER_CANVAS:
-        from axolotl.integrations.diffusion.lm.backends.encoder_canvas import (
-            EncoderCanvasBackend,
-        )
-
-        class Model(nn.Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.anchor = nn.Parameter(torch.zeros(()))
-                self.config = SimpleNamespace(
-                    vocab_size=16,
-                    sliding_window=8,
-                    text_config=SimpleNamespace(vocab_size=16, sliding_window=8),
-                )
-
-        def forward(self, model, packed, input_ids, **kwargs):
-            del self, model, packed, kwargs
-            logits = torch.nn.functional.one_hot(input_ids, num_classes=16).float()
-            return SimpleNamespace(logits=logits, denoised_input_ids=input_ids)
-
-        monkeypatch.setattr(EncoderCanvasBackend, "forward", forward)
-        model = Model()
-    else:
-        model = _FullSequenceEcho()
-    reader = HFReader(attention_backend="dense", free_update_policy="argmax")
-    spec = _spec(layout=layout, noise=DiffusionNoise.UNIFORM)
-    first = reader.read(model, spec, canvas, steps=2, seed=71, diagnostics=True)
-    second = reader.read(model, spec, canvas, steps=2, seed=71, diagnostics=True)
-    changed = reader.read(model, spec, canvas, steps=2, seed=72, diagnostics=True)
-
-    slots = torch.tensor(canvas.slot_mask)
-    assert first.diagnostics is not None
-    assert second.diagnostics is not None
-    assert changed.diagnostics is not None
-    assert torch.equal(
-        first.diagnostics.initial_canvas_ids, second.diagnostics.initial_canvas_ids
-    )
-    assert not torch.equal(
-        first.diagnostics.initial_canvas_ids[slots],
-        changed.diagnostics.initial_canvas_ids[slots],
-    )
-
-
-def test_hf_reader_free_unseeded_slots_draw_fresh_rng_and_absorbing_uses_override():
-    canvas = DecisionCanvas(
-        prompt_ids=(3, 4),
-        canvas_ids=(9, 6, 7, 8, 4, 5, 0, 0),
-        label_positions=(1, 3),
-        allowed_ids=((1, 2), (3, 4)),
-        question_ids=("q0", "q1"),
-        targets=(0, 0),
-        pinned_mask=(False, False, False, False, False, False, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, True, False, True, False, False, False),
-        template_length=4,
-    )
-    reader = HFReader(
-        attention_backend="dense", free_update_policy="argmax", mask_token_id=11
-    )
-    uniform = _spec(layout=DiffusionLayout.FULL_SEQUENCE, noise=DiffusionNoise.UNIFORM)
-    first = reader.read(_FullSequenceEcho(), uniform, canvas, steps=2, diagnostics=True)
-    second = reader.read(
-        _FullSequenceEcho(), uniform, canvas, steps=2, diagnostics=True
-    )
-    absorbing = reader.read(
-        _FullSequenceEcho(),
-        _spec(layout=DiffusionLayout.FULL_SEQUENCE, noise=DiffusionNoise.ABSORBING),
-        canvas,
-        steps=2,
-        diagnostics=True,
-    )
-
-    slots = torch.tensor(canvas.slot_mask)
-    assert first.diagnostics is not None and second.diagnostics is not None
-    assert absorbing.diagnostics is not None
-    assert not torch.equal(
-        first.diagnostics.initial_canvas_ids[slots],
-        second.diagnostics.initial_canvas_ids[slots],
-    )
-    assert torch.equal(
-        absorbing.diagnostics.initial_canvas_ids[slots], torch.full((3,), 11)
-    )
-
-
-def test_hf_reader_fixed_mode_does_not_draw_free_slot_rng(monkeypatch):
-    def fail(*args, **kwargs):
-        raise AssertionError("fixed modes must not initialize free slots")
-
-    monkeypatch.setattr(torch, "randint", fail)
-    result = HFReader(attention_backend="dense").read(
-        _FullSequenceEcho(),
-        _spec(layout=DiffusionLayout.FULL_SEQUENCE, noise=DiffusionNoise.UNIFORM),
-        _canvas(),
-        steps=2,
-        seed=7,
-        diagnostics=True,
-    )
-    assert result.diagnostics is not None
-    assert result.diagnostics.slot_init_policy == "prepared_canvas_v0"
-
-
 def test_hf_reader_defaults_to_flex_attention():
     assert HFReader().attention_backend == "flex_attention"
 
@@ -878,11 +325,12 @@ def test_hf_reader_varlen_rejects_encoder_canvas_before_model_execution():
 def test_hf_reader_matches_pinned_nemotron_bidirectional_forward():
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
-    from tests.native_source_fixtures import native_source_fixture_path
     from axolotl.model_support.nemotron_diffusion import NemotronDiffusionSupport
     from axolotl.model_support.nemotron_diffusion.compat import (
         resolve_nemotron_model_class,
     )
+
+    from tests.native_source_fixtures import native_source_fixture_path
 
     source = native_source_fixture_path("nemotron")
     if source is None:
@@ -936,11 +384,12 @@ def test_hf_reader_varlen_matches_pinned_nemotron_per_document_forward(monkeypat
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
     from axolotl.integrations.diffusion.lm import varlen
-    from tests.native_source_fixtures import native_source_fixture_path
     from axolotl.model_support.nemotron_diffusion import NemotronDiffusionSupport
     from axolotl.model_support.nemotron_diffusion.compat import (
         resolve_nemotron_model_class,
     )
+
+    from tests.native_source_fixtures import native_source_fixture_path
 
     source = native_source_fixture_path("nemotron")
     if source is None:
@@ -1027,11 +476,12 @@ def test_hf_reader_varlen_batch_matches_pinned_nemotron_independent_reads(
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
     from axolotl.integrations.diffusion.lm import varlen
-    from tests.native_source_fixtures import native_source_fixture_path
     from axolotl.model_support.nemotron_diffusion import NemotronDiffusionSupport
     from axolotl.model_support.nemotron_diffusion.compat import (
         resolve_nemotron_model_class,
     )
+
+    from tests.native_source_fixtures import native_source_fixture_path
 
     source = native_source_fixture_path("nemotron")
     if source is None:
@@ -1126,3 +576,45 @@ def test_hf_reader_varlen_batch_matches_pinned_nemotron_independent_reads(
         torch.testing.assert_close(
             left.diagnostics.final_canvas_ids, right.diagnostics.final_canvas_ids
         )
+
+
+@pytest.mark.parametrize("fixed,held", [(False, False), (True, False), (False, True)])
+def test_explicit_initial_state_and_model_mode_survive_shared_read(fixed, held):
+    canvas = _canvas()
+    initial = torch.tensor(canvas.canvas_ids)
+    initial[list(canvas.label_positions)] = 1
+    spec = _spec(layout=DiffusionLayout.FULL_SEQUENCE, noise=DiffusionNoise.UNIFORM)
+    reader = HFReader(attention_backend="dense")
+    model = _FullSequenceIncrement().train()
+    result = reader.read(
+        model,
+        spec,
+        canvas,
+        steps=2,
+        initial_canvas_ids=initial,
+        fixed_label_noise=fixed,
+        hold_label_noise=held,
+        diagnostics=True,
+    )
+    assert model.training
+    torch.testing.assert_close(result.diagnostics.initial_canvas_ids, initial)
+    expected = initial.clone()
+    if not (fixed or held):
+        expected[list(canvas.label_positions)] += 2
+    torch.testing.assert_close(result.diagnostics.final_canvas_ids, expected)
+
+
+def test_shared_reader_restores_model_mode_after_forward_error():
+    model = _FullSequenceEcho().train()
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("forward failed")
+
+    model.forward = fail
+    with pytest.raises(RuntimeError, match="forward failed"):
+        HFReader(attention_backend="dense").read(
+            model,
+            _spec(layout=DiffusionLayout.FULL_SEQUENCE, noise=DiffusionNoise.UNIFORM),
+            _canvas(),
+        )
+    assert model.training

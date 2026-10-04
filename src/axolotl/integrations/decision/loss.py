@@ -286,54 +286,14 @@ def decision_label_loss(
             torch.stack(full_vocab_dft_hard_counts).sum()
         )
         brier_examples.append(torch.stack(brier_questions).mean() * weight)
-    restricted_loss = torch.stack(restricted_examples).mean()
-    full_vocab_loss = torch.stack(full_vocab_examples).mean()
-    effective_full_vocab_loss = torch.stack(effective_full_vocab_examples).mean()
-    full_vocab_dft_hard_weight_sum = torch.stack(
-        full_vocab_dft_hard_weight_sum_examples
-    ).sum()
-    full_vocab_dft_hard_count = torch.stack(full_vocab_dft_hard_count_examples).sum()
-    brier_loss = torch.stack(brier_examples).mean()
-    metric_restricted = (
-        restricted_examples
-        if label_softmax != "full"
-        else [restricted_loss.new_zeros(()) for _ in examples]
-    )
-    return DecisionLossResult(
-        loss=restricted_loss + effective_full_vocab_loss + brier_weight * brier_loss,
-        restricted_loss=restricted_loss,
-        full_vocab_loss=full_vocab_loss,
-        brier_loss=brier_loss,
-        effective_full_vocab_loss=effective_full_vocab_loss,
-        full_vocab_dft_hard_weight_sum=full_vocab_dft_hard_weight_sum,
-        full_vocab_dft_hard_count=full_vocab_dft_hard_count,
-        per_example_loss=tuple(
-            restricted.detach()
-            + effective_full.detach()
-            + brier_weight * brier.detach()
-            for restricted, effective_full, brier in zip(
-                metric_restricted,
-                effective_full_vocab_examples,
-                brier_examples,
-                strict=True,
-            )
-        ),
-        per_example_restricted_loss=(
-            tuple(value.detach() for value in metric_restricted)
-        ),
-        per_example_full_vocab_loss=tuple(
-            value.detach() for value in full_vocab_examples
-        ),
-        per_example_effective_full_vocab_loss=tuple(
-            value.detach() for value in effective_full_vocab_examples
-        ),
-        per_example_full_vocab_dft_hard_weight_sum=tuple(
-            value.detach() for value in full_vocab_dft_hard_weight_sum_examples
-        ),
-        per_example_full_vocab_dft_hard_count=tuple(
-            value.detach() for value in full_vocab_dft_hard_count_examples
-        ),
-        per_example_brier_loss=tuple(value.detach() for value in brier_examples),
+    return _loss_result(
+        restricted_examples,
+        full_vocab_examples,
+        effective_full_vocab_examples,
+        brier_examples,
+        full_vocab_dft_hard_weight_sum_examples,
+        full_vocab_dft_hard_count_examples,
+        brier_weight,
     )
 
 
@@ -450,11 +410,7 @@ def decision_label_loss_from_hidden(
         restricted_examples.append(torch.stack(restricted_questions).mean() * weight)
         brier_examples.append(torch.stack(brier_questions).mean() * weight)
     restricted_loss = torch.stack(restricted_examples).mean()
-    brier_loss = torch.stack(brier_examples).mean()
     full_vocab_loss = hidden.new_zeros((), dtype=torch.float32)
-    effective_full_vocab_loss = hidden.new_zeros((), dtype=torch.float32)
-    full_vocab_dft_hard_weight_sum = hidden.new_zeros((), dtype=torch.float32)
-    full_vocab_dft_hard_count = hidden.new_zeros((), dtype=torch.float32)
     dft_hard_weight_sum_per_example = [
         hidden.new_zeros((), dtype=torch.float32) for _ in examples
     ]
@@ -524,11 +480,6 @@ def decision_label_loss_from_hidden(
             torch.stack(losses).mean() * examples[index].source_weight
             for index, losses in enumerate(effective_per_example)
         ]
-        effective_full_vocab_loss = torch.stack(effective_weighted).mean()
-        full_vocab_dft_hard_weight_sum = torch.stack(
-            dft_hard_weight_sum_per_example
-        ).sum()
-        full_vocab_dft_hard_count = torch.stack(dft_hard_count_per_example).sum()
         if label_softmax == "full":
             restricted_loss = restricted_loss.new_zeros(())
     metric_restricted = (
@@ -541,44 +492,46 @@ def decision_label_loss_from_hidden(
         if label_softmax != "restricted"
         else [full_vocab_loss.new_zeros(()) for _ in examples]
     )
+    return _loss_result(
+        metric_restricted,
+        metric_full,
+        effective_weighted if label_softmax != "restricted" else metric_full,
+        brier_examples,
+        dft_hard_weight_sum_per_example,
+        dft_hard_count_per_example,
+        brier_weight,
+    )
+
+
+def _loss_result(
+    restricted, full, effective, brier, hard_weights, hard_counts, brier_weight: float
+) -> DecisionLossResult:
+    restricted_loss = torch.stack(restricted).mean()
+    full_loss = torch.stack(full).mean()
+    effective_loss = torch.stack(effective).mean()
+    brier_loss = torch.stack(brier).mean()
+
+    def detached(values):
+        return tuple(value.detach() for value in values)
+
     return DecisionLossResult(
-        loss=restricted_loss + effective_full_vocab_loss + brier_weight * brier_loss,
+        loss=restricted_loss + effective_loss + brier_weight * brier_loss,
         restricted_loss=restricted_loss,
-        full_vocab_loss=full_vocab_loss,
+        full_vocab_loss=full_loss,
+        effective_full_vocab_loss=effective_loss,
         brier_loss=brier_loss,
-        effective_full_vocab_loss=effective_full_vocab_loss,
-        full_vocab_dft_hard_weight_sum=full_vocab_dft_hard_weight_sum,
-        full_vocab_dft_hard_count=full_vocab_dft_hard_count,
+        full_vocab_dft_hard_weight_sum=torch.stack(hard_weights).sum(),
+        full_vocab_dft_hard_count=torch.stack(hard_counts).sum(),
         per_example_loss=tuple(
-            restricted.detach()
-            + effective_full.detach()
-            + brier_weight * brier.detach()
-            for restricted, effective_full, brier in zip(
-                metric_restricted,
-                effective_weighted if label_softmax != "restricted" else metric_full,
-                brier_examples,
-                strict=True,
-            )
+            r.detach() + e.detach() + brier_weight * b.detach()
+            for r, e, b in zip(restricted, effective, brier, strict=True)
         ),
-        per_example_restricted_loss=tuple(
-            value.detach() for value in metric_restricted
-        ),
-        per_example_full_vocab_loss=tuple(value.detach() for value in metric_full),
-        per_example_effective_full_vocab_loss=tuple(
-            value.detach()
-            for value in (
-                effective_weighted if label_softmax != "restricted" else metric_full
-            )
-        ),
-        per_example_full_vocab_dft_hard_weight_sum=tuple(
-            value.detach() for value in dft_hard_weight_sum_per_example
-        )
-        if label_softmax != "restricted"
-        else tuple(hidden.new_zeros(()) for _ in examples),
-        per_example_full_vocab_dft_hard_count=tuple(
-            value.detach() for value in dft_hard_count_per_example
-        ),
-        per_example_brier_loss=tuple(value.detach() for value in brier_examples),
+        per_example_restricted_loss=detached(restricted),
+        per_example_full_vocab_loss=detached(full),
+        per_example_effective_full_vocab_loss=detached(effective),
+        per_example_full_vocab_dft_hard_weight_sum=detached(hard_weights),
+        per_example_full_vocab_dft_hard_count=detached(hard_counts),
+        per_example_brier_loss=detached(brier),
     )
 
 

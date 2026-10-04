@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 from axolotl.integrations.decision import datasets
+from axolotl.integrations.decision.records import DecisionCanvas
 
 
 def test_canvas_row_uses_model_vocabulary_without_counting_tokenizer(monkeypatch):
@@ -53,12 +54,26 @@ def test_missing_model_metadata_counts_vocabulary_once_per_pool(monkeypatch):
 
     def build_row(_tokenizer, record, cfg, weight, **kwargs):
         seen.append(kwargs["vocab_size"])
-        return record
+        return {
+            "record": record,
+            "canvas": DecisionCanvas(
+                prompt_ids=(1,),
+                canvas_ids=(2, 3),
+                label_positions=(0,),
+                allowed_ids=((2, 3),),
+                question_ids=("q",),
+                targets=({"kind": "hard", "gold_idx": 0},),
+                pinned_mask=(False, True),
+                semantic_mask=(True, True),
+                slot_mask=(False, False),
+                template_length=1,
+            ),
+        }
 
     monkeypatch.setattr(datasets, "_canvas_row", build_row)
     rows = [{"source": "test", "id": str(index)} for index in range(20)]
     actual, dropped = datasets._canvas_rows(tokenizer, rows, {}, {}, None)
-    assert actual == rows
+    assert [row["record"] for row in actual] == rows
     assert dropped == 0
     assert seen == [131072] * 20
     assert tokenizer.calls == 1

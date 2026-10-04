@@ -8,7 +8,6 @@ from typing import Any
 
 import torch
 
-from axolotl.integrations.decision.collator import DecisionCanvasCollator
 from axolotl.integrations.decision.loss import (
     DecisionLabelExample,
     decision_example_from_canvas,
@@ -147,8 +146,6 @@ class DecisionTrainingCollator:
         loss: list[bool] = []
         corruptible: list[bool] = []
         pinned: list[bool] = []
-        slots: list[bool] = []
-        prompt_slots: list[bool] = []
         label_positions: list[list[int]] = []
         offset = 0
         for document, canvas in enumerate(canvases):
@@ -162,9 +159,6 @@ class DecisionTrainingCollator:
             loss.extend([False] * len(prompt) + output_loss)
             corruptible.extend([False] * len(prompt) + output_loss)
             pinned.extend([True] * len(prompt) + list(canvas.pinned_mask))
-            slots.extend([False] * len(prompt) + list(canvas.slot_mask))
-            prompt_slots.extend(canvas.prompt_slot_mask or (False,) * len(prompt))
-            prompt_slots.extend([False] * len(output))
             label_positions.append(
                 [offset + len(prompt) + position for position in canvas.label_positions]
             )
@@ -192,13 +186,6 @@ class DecisionTrainingCollator:
                 ],
                 "canvas_update_mask": torch.tensor(corruptible, dtype=torch.bool)[None]
                 & ~torch.tensor(pinned, dtype=torch.bool)[None],
-                "decision_slot_mask": torch.tensor(slots, dtype=torch.bool)[None],
-                "decision_prompt_slot_mask": torch.tensor(
-                    prompt_slots, dtype=torch.bool
-                )[None],
-                "decision_prompt_input_pinned_mask": torch.tensor(
-                    [True] * len(ids), dtype=torch.bool
-                )[None],
                 "decision_label_rows": _label_rows(label_positions),
                 "decision_label_positions": _label_positions(label_positions),
             }
@@ -215,26 +202,11 @@ def _decision_metadata(
     question_mask = torch.zeros((batch, width), dtype=torch.bool)
     logical_rows = torch.full((batch, width), -1, dtype=torch.long)
     positions = torch.full((batch, width), -1, dtype=torch.long)
-    slot_mask = torch.zeros(
-        (batch, max(len(canvas.canvas_ids) for canvas in canvases)), dtype=torch.bool
-    )
-    prompt_slot_mask = torch.zeros(
-        (batch, max(len(canvas.prompt_ids) for canvas in canvases)), dtype=torch.bool
-    )
     for row, canvas in enumerate(canvases):
         count = len(canvas.question_ids)
         question_mask[row, :count] = True
         logical_rows[row, :count] = row
         positions[row, :count] = torch.tensor(canvas.label_positions, dtype=torch.long)
-        slot_mask[row, : len(canvas.slot_mask)] = torch.tensor(
-            canvas.slot_mask, dtype=torch.bool
-        )
-        if canvas.prompt_slot_mask:
-            if len(canvas.prompt_slot_mask) != len(canvas.prompt_ids):
-                raise ValueError("prompt_slot_mask must align with prompt_ids")
-            prompt_slot_mask[row, : len(canvas.prompt_slot_mask)] = torch.tensor(
-                canvas.prompt_slot_mask, dtype=torch.bool
-            )
     return {
         "decision_examples": examples,
         "decision_question_mask": question_mask,
@@ -242,8 +214,6 @@ def _decision_metadata(
         "decision_logical_rows": logical_rows,
         "decision_label_rows": logical_rows.clone(),
         "decision_label_positions": positions,
-        "decision_slot_mask": slot_mask,
-        "decision_prompt_slot_mask": prompt_slot_mask,
     }
 
 

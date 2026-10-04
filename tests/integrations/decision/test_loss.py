@@ -192,43 +192,49 @@ def test_151_candidate_final_index_has_normalized_loss_and_gradients(target):
     assert head.weight.grad is not None and torch.isfinite(head.weight.grad).all()
 
 
-def test_hidden_cce_matches_dense_loss_and_gradients_for_typed_unequal_questions():
-    torch.manual_seed(11)
+@pytest.mark.parametrize(
+    ("full_ce_weighting", "seed"),
+    [("ce", 11), ("dft", 47)],
+)
+def test_hidden_loss_matches_dense_for_typed_unequal_questions(full_ce_weighting, seed):
+    torch.manual_seed(seed)
     hidden = torch.randn(2, 3, 4, dtype=torch.float64, requires_grad=True)
     dense_hidden = hidden.detach().clone().requires_grad_()
     head = torch.nn.Linear(4, 7, bias=True, dtype=torch.float64)
     dense_head = torch.nn.Linear(4, 7, bias=True, dtype=torch.float64)
-    dense_head.weight.data.copy_(head.weight.data)
-    dense_head.bias.data.copy_(head.bias.data)
-    examples = [
-        _example(_question(0, (0, 3), SetLabel((0, 1))), weight=1.75),
-        _example(
-            _question(1, (1, 2, 4), DistributionLabel((0.0, 0.4, 0.6))),
-            _question(2, (2, 5), HardLabel(0)),
-            weight=0.25,
-        ),
-    ]
+    dense_head.load_state_dict(head.state_dict())
+    examples = _unequal_questions(full_ce_weighting)
     mask = torch.tensor([[True, False, False], [False, True, True]])
-    cce = decision_label_loss_from_hidden(
+    hidden_result = decision_label_loss_from_hidden(
         hidden,
         head,
         examples,
         mask,
         linear_token_loss=_dense_linear_token_loss,
+        full_ce_weighting=full_ce_weighting,
         brier_weight=0.1,
     )
-    dense = decision_label_loss(
+    dense_result = decision_label_loss(
         F.linear(dense_hidden, dense_head.weight, dense_head.bias),
         examples,
         mask,
+        full_ce_weighting=full_ce_weighting,
         brier_weight=0.1,
     )
-    torch.testing.assert_close(cce.loss, dense.loss)
-    torch.testing.assert_close(cce.restricted_loss, dense.restricted_loss)
-    torch.testing.assert_close(cce.full_vocab_loss, dense.full_vocab_loss)
-    torch.testing.assert_close(cce.brier_loss, dense.brier_loss)
-    cce.loss.backward()
-    dense.loss.backward()
+    for name in (
+        "loss",
+        "restricted_loss",
+        "full_vocab_loss",
+        "effective_full_vocab_loss",
+        "full_vocab_dft_hard_weight_sum",
+        "full_vocab_dft_hard_count",
+        "brier_loss",
+    ):
+        torch.testing.assert_close(
+            getattr(hidden_result, name), getattr(dense_result, name)
+        )
+    hidden_result.loss.backward()
+    dense_result.loss.backward()
     torch.testing.assert_close(hidden.grad, dense_hidden.grad)
     torch.testing.assert_close(head.weight.grad, dense_head.weight.grad)
     torch.testing.assert_close(head.bias.grad, dense_head.bias.grad)
@@ -326,64 +332,32 @@ def test_dft_leaves_distribution_and_set_full_ce_unchanged():
     )
 
 
-def test_dft_hidden_path_matches_dense_for_mixed_target_semantics():
-    torch.manual_seed(47)
-    hidden = torch.randn(2, 3, 4, dtype=torch.float64, requires_grad=True)
-    dense_hidden = hidden.detach().clone().requires_grad_()
-    head = torch.nn.Linear(4, 7, dtype=torch.float64)
-    dense_head = torch.nn.Linear(4, 7, dtype=torch.float64)
-    dense_head.load_state_dict(head.state_dict())
-    examples = [
-        _example(_question(0, (0, 3), HardLabel(1)), weight=1.25),
-        _example(
-            _question(1, (1, 2, 4), DistributionLabel((0.1, 0.3, 0.6))),
-            _question(2, (0, 5, 6), SetLabel((0, 2))),
-            weight=0.5,
-        ),
-    ]
-    mask = torch.tensor([[True, False, False], [False, True, True]])
-
-    hidden_result = decision_label_loss_from_hidden(
-        hidden,
-        head,
-        examples,
-        mask,
-        linear_token_loss=_dense_linear_token_loss,
-        full_ce_weighting="dft",
-        brier_weight=0.1,
-    )
-    dense_result = decision_label_loss(
-        F.linear(dense_hidden, dense_head.weight, dense_head.bias),
-        examples,
-        mask,
-        full_ce_weighting="dft",
-        brier_weight=0.1,
-    )
-    for name in (
-        "loss",
-        "restricted_loss",
-        "full_vocab_loss",
-        "effective_full_vocab_loss",
-        "full_vocab_dft_hard_weight_sum",
-        "full_vocab_dft_hard_count",
-        "brier_loss",
-    ):
-        torch.testing.assert_close(
-            getattr(hidden_result, name), getattr(dense_result, name)
-        )
-    hidden_result.loss.backward()
-    dense_result.loss.backward()
-    torch.testing.assert_close(hidden.grad, dense_hidden.grad)
-    torch.testing.assert_close(head.weight.grad, dense_head.weight.grad)
-    torch.testing.assert_close(head.bias.grad, dense_head.bias.grad)
-
-
 def _example(*questions, weight=1.0):
     return DecisionLabelExample(questions=tuple(questions), source_weight=weight)
 
 
 def _question(position, ids, target):
     return DecisionLabelQuestion(position, tuple(ids), target)
+
+
+def _unequal_questions(full_ce_weighting):
+    if full_ce_weighting == "dft":
+        return [
+            _example(_question(0, (0, 3), HardLabel(1)), weight=1.25),
+            _example(
+                _question(1, (1, 2, 4), DistributionLabel((0.1, 0.3, 0.6))),
+                _question(2, (0, 5, 6), SetLabel((0, 2))),
+                weight=0.5,
+            ),
+        ]
+    return [
+        _example(_question(0, (0, 3), SetLabel((0, 1))), weight=1.75),
+        _example(
+            _question(1, (1, 2, 4), DistributionLabel((0.0, 0.4, 0.6))),
+            _question(2, (2, 5), HardLabel(0)),
+            weight=0.25,
+        ),
+    ]
 
 
 def test_hard_label_combines_restricted_full_vocab_and_brier_at_supervised_position():
@@ -510,37 +484,28 @@ def test_sparse_one_hot_distribution_smoothing_covers_the_full_allowed_support()
     assert logits.grad[0, 0, 4] > 0
 
 
-def test_hard_label_smoothing_does_not_change_soft_distribution_targets():
+@pytest.mark.parametrize(
+    ("target", "smoothing"),
+    [
+        pytest.param(DistributionLabel((0.25, 0.75)), 0.1, id="soft-target"),
+        pytest.param(DistributionLabel((0.0, 1.0)), 0.0, id="zero-smoothing"),
+    ],
+)
+def test_distribution_loss_is_unchanged_when_smoothing_does_not_apply(
+    target, smoothing
+):
     logits = torch.tensor([[[0.2, 1.5, -0.4, 0.7]]])
     mask = torch.tensor([[True]])
-    example = _example(_question(0, (0, 3), DistributionLabel((0.25, 0.75))))
-    baseline = decision_label_loss(
-        logits, [example], mask, label_softmax="full", brier_weight=0.1
-    )
+    example = _example(_question(0, (0, 3), target))
+    baseline = decision_label_loss(logits, [example], mask, label_softmax="full")
     smoothed = decision_label_loss(
         logits,
         [example],
         mask,
         label_softmax="full",
-        brier_weight=0.1,
-        hard_label_smoothing=0.1,
+        hard_label_smoothing=smoothing,
     )
     torch.testing.assert_close(smoothed.loss, baseline.loss)
-
-
-def test_zero_hard_label_smoothing_preserves_one_hot_distribution_loss():
-    logits = torch.tensor([[[0.2, 1.5, -0.4, 0.7]]])
-    mask = torch.tensor([[True]])
-    example = _example(_question(0, (0, 3), DistributionLabel((0.0, 1.0))))
-    baseline = decision_label_loss(logits, [example], mask, label_softmax="full")
-    zero = decision_label_loss(
-        logits,
-        [example],
-        mask,
-        label_softmax="full",
-        hard_label_smoothing=0.0,
-    )
-    torch.testing.assert_close(zero.loss, baseline.loss)
 
 
 def test_distribution_uses_restricted_kl_and_full_vocab_soft_ce():

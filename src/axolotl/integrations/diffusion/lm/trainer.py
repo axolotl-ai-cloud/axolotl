@@ -9,7 +9,6 @@ from torch import nn
 from axolotl.core.trainers.base import AxolotlTrainer
 from axolotl.model_support import (
     DiffusionLayout,
-    FirstPositionAlignment,
     LogitAlignment,
     ObjectiveReduction,
     ReductionScope,
@@ -21,7 +20,6 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler
 
 from .backends import FullSequenceBackend
-from .backends.encoder_canvas import EncoderCanvasBackend
 from .batch import DiffusionBatch
 from .callbacks import DiffusionGenerationCallback
 from .config import get_diffusion_config
@@ -29,10 +27,7 @@ from .sampling import native_packing_lengths, resolve_native_packing_budget
 from .tokens import resolve_mask_token_id
 from .unroll import run_unroll
 from .weighting import (
-    cart_weights,
-    focal_weighted_nll,
     reduce_objective,
-    rhine_loo_nll,
     time_weights,
 )
 
@@ -167,36 +162,6 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
 
         if self._native_spec is None:
             return super()._get_num_items_in_batch(batch_samples, device)
-        if self._native_spec.layout is DiffusionLayout.ENCODER_CANVAS:
-            if not batch_samples:
-                return None
-            canvas_count = sum(
-                batch["canvas_loss_mask"].sum() for batch in batch_samples
-            ).to(device)
-            ar_count = sum(
-                (
-                    batch["encoder_ar_valid_mask"][:, 1:]
-                    & batch["encoder_ar_valid_mask"][:, :-1]
-                    & (
-                        batch["encoder_document_ids"][:, 1:]
-                        == batch["encoder_document_ids"][:, :-1]
-                    )
-                ).sum()
-                for batch in batch_samples
-            ).to(device)
-            example_count = sum(
-                batch["canvas_loss_mask"].any(dim=1).sum() for batch in batch_samples
-            )
-            example_count = torch.as_tensor(example_count, device=device)
-            if self.args.world_size > 1:
-                canvas_count = self.accelerator.gather(canvas_count).sum()
-                ar_count = self.accelerator.gather(ar_count).sum()
-                example_count = self.accelerator.gather(example_count).sum()
-            return {
-                "canvas": canvas_count,
-                "encoder_ar": ar_count,
-                "examples": example_count,
-            }
         counts = []
         for batch in batch_samples:
             prepared_count = batch.get("native_num_items")
@@ -246,12 +211,6 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
                 dataset,
                 eos_tail=diffusion_cfg.eos_tail,
                 logical_sequence_length=self.axolotl_cfg.sequence_len,
-                layout=spec.layout.value,
-                canvas_width=(
-                    diffusion_cfg.canvas_width
-                    if diffusion_cfg.canvas_width is not None
-                    else spec.max_canvas
-                ),
             ),
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
             batch_max_len=batch_max_len,
@@ -345,20 +304,20 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
 
     def _native_time_weighting(self, spec) -> TimeWeighting:
         value = self._native_value("time_weighting")
-        return spec.default_time_weighting if value is None else TimeWeighting(value)
+        weighting = (
+            spec.default_time_weighting if value is None else TimeWeighting(value)
+        )
+        if weighting not in {
+            TimeWeighting.NONE,
+            TimeWeighting.INV_T,
+            TimeWeighting.LINEAR,
+        }:
+            raise ValueError("Nemotron supports time_weighting: none, inv_t, or linear")
+        return weighting
 
     def _native_reduction(self, spec) -> ObjectiveReduction:
         value = self._native_value("objective_reduction")
         return spec.objective_reduction if value is None else ObjectiveReduction(value)
-
-    @staticmethod
-    def _native_lm_logits(model, hidden_states: torch.Tensor) -> torch.Tensor:
-        native_model = getattr(model, "module", model)
-        logits = native_model.lm_head(hidden_states).float()
-        softcap = getattr(native_model, "final_logit_softcapping", None)
-        if softcap is None:
-            return logits
-        return torch.tanh(logits / softcap) * softcap
 
     @staticmethod
     def _native_mask(inputs, name: str, fallback: torch.Tensor) -> torch.Tensor:
@@ -388,19 +347,11 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
             raise RuntimeError(
                 "native diffusion loss requires a resolved DiffusionSpec"
             )
-        if self._native_value("token_reweighting", False) and (
-            spec.layout is not DiffusionLayout.FULL_SEQUENCE
-            or spec.first_position_alignment
-            is not FirstPositionAlignment.DUPLICATE_FIRST
-        ):
-            raise ValueError(
-                "token_reweighting is currently supported only by native Dream"
-            )
-        if spec.layout is DiffusionLayout.FULL_SEQUENCE:
-            return self._compute_native_full_sequence_loss(
-                model, inputs, spec, num_items_in_batch=num_items_in_batch
-            )
-        return self._compute_native_encoder_canvas_loss(
+        if spec.layout is not DiffusionLayout.FULL_SEQUENCE:
+            raise ValueError("native diffusion supports full-sequence layout only")
+        if self._native_value("token_reweighting", False):
+            raise ValueError("token_reweighting is unsupported for Nemotron")
+        return self._compute_native_full_sequence_loss(
             model, inputs, spec, num_items_in_batch=num_items_in_batch
         )
 
@@ -458,30 +409,6 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
             final_logits_from_outputs=final_logits_from_outputs,
         )
         return outputs, logits, final_state, steps
-
-    @staticmethod
-    def _packed_cart_weights(
-        events: torch.Tensor,
-        semantic: torch.Tensor,
-        document_ids: torch.Tensor,
-        cart_p: float,
-    ) -> torch.Tensor:
-        weights = torch.zeros_like(events, dtype=torch.float)
-        groups: dict[int, list[tuple[int, torch.Tensor]]] = {}
-        for row in range(events.shape[0]):
-            for document in document_ids[row][semantic[row]].unique().tolist():
-                positions = torch.where(
-                    (document_ids[row] == document) & semantic[row]
-                )[0]
-                groups.setdefault(positions.numel(), []).append((row, positions))
-        for documents in groups.values():
-            unmasked = torch.stack(
-                [~events[row, positions] for row, positions in documents]
-            )
-            document_weights = cart_weights(unmasked, cart_p).to(weights.dtype)
-            for index, (row, positions) in enumerate(documents):
-                weights[row, positions] = document_weights[index]
-        return weights
 
     @staticmethod
     def _logical_row_indices(
@@ -600,10 +527,6 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
                 raise ValueError(
                     "cut_cross_entropy native Nemotron requires aligned diffusion logits."
                 )
-            if weighting is TimeWeighting.LOO:
-                raise ValueError(
-                    "cut_cross_entropy native Nemotron does not support loo time weighting."
-                )
             cce_options = get_cce_options(model)
             cce_enabled = model.training or not bool(
                 getattr(cce_options, "train_only", False)
@@ -669,36 +592,16 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
             token_loss = token_loss.float()
         else:
             token_loss = (
-                rhine_loo_nll(
-                    logits, targets, final_state, times[logical_rows.clamp_min(0)]
-                )
-                if weighting is TimeWeighting.LOO
-                else F.cross_entropy(
+                F.cross_entropy(
                     logits.flatten(0, -2), targets.flatten(), reduction="none"
                 )
                 .float()
                 .view_as(targets)
             )
         support = events & loss_mask
-        if self._native_value("token_reweighting", False):
-            token_loss = focal_weighted_nll(
-                token_loss,
-                float(self._native_value("alpha", 0.25)),
-                float(self._native_value("gamma", 2.0)),
-            )
-        if weighting is TimeWeighting.CART:
-            token_loss = token_loss * self._packed_cart_weights(
-                events,
-                semantic,
-                document_ids,
-                0.1
-                if self._native_value("cart_p") is None
-                else self._native_value("cart_p"),
-            )
-        else:
-            token_loss = (
-                token_loss * time_weights(times, weighting)[logical_rows.clamp_min(0)]
-            )
+        token_loss = (
+            token_loss * time_weights(times, weighting)[logical_rows.clamp_min(0)]
+        )
         denominator = None
         if spec.reduction_scope is ReductionScope.GLOBAL_WINDOW:
             if num_items_in_batch is not None:
@@ -809,184 +712,6 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
             "canvas_input_pinned_mask": torch.cat(pinned)[None],
             "canvas_update_mask": torch.cat(update)[None],
         }
-
-    def _compute_native_encoder_canvas_loss(
-        self, model, inputs, spec, *, num_items_in_batch=None
-    ):
-        weighting = self._native_time_weighting(spec)
-        reduction = self._native_reduction(spec)
-        rhine_objective = weighting in {
-            TimeWeighting.LOO,
-            TimeWeighting.INV_ONE_MINUS_T,
-        }
-        if weighting not in {
-            TimeWeighting.NONE,
-            TimeWeighting.LOO,
-            TimeWeighting.INV_ONE_MINUS_T,
-        }:
-            raise ValueError(
-                "DiffusionGemma supports time_weighting: none, loo, or inv_one_minus_t"
-            )
-        if rhine_objective and reduction is not ObjectiveReduction.EXAMPLE_MEAN:
-            raise ValueError(
-                "DiffusionGemma Rhine objectives require "
-                "objective_reduction: example_mean"
-            )
-        if (
-            not rhine_objective
-            and reduction is not ObjectiveReduction.SUPERVISED_TOKEN_MEAN
-        ):
-            raise ValueError(
-                "DiffusionGemma plain CE requires "
-                "objective_reduction: supervised_token_mean"
-            )
-        batch = inputs.get("diffusion_batch")
-        if batch is None:
-            fields = DiffusionBatch.__dataclass_fields__
-            batch = DiffusionBatch(**{name: inputs[name] for name in fields})
-        model_config = getattr(model, "config", None)
-        if model_config is None:
-            model_config = getattr(getattr(model, "module", None), "config", None)
-        if model_config is None:
-            raise TypeError("native encoder/canvas model must expose a config")
-        text_config = getattr(model_config, "text_config", model_config)
-        backend = EncoderCanvasBackend(
-            vocab_size=int(text_config.vocab_size),
-            sliding_window=int(getattr(text_config, "sliding_window", 1024)),
-            attention_backend=(
-                "flex_attention"
-                if getattr(self.axolotl_cfg, "attn_implementation", None)
-                == "flex_attention"
-                else "dense"
-            ),
-        )
-        packed = backend.pack(batch)
-        times = self._sample_native_times(
-            batch.logical_ids.numel(), packed.device, spec.time_floor
-        )
-        corrupted = backend.corrupt(packed, times)
-        sc_cfg = self._native_value("self_conditioning")
-        sc_probability = float(getattr(sc_cfg, "p", 0.5) if sc_cfg is not None else 0.5)
-        k1_conditioning_mask = None
-        if sc_probability:
-            per_document_gate = (
-                torch.rand(batch.logical_ids.numel(), device=packed.device)
-                < sc_probability
-            )
-            sc_gate = per_document_gate[packed.canvas_logical_row_indices]
-            k1_conditioning_mask = (
-                packed.canvas_sc_eligible_mask
-                & ~packed.canvas_input_pinned_mask
-                & sc_gate
-            )
-        recurrent_conditioning_mask = (
-            packed.canvas_sc_eligible_mask & ~packed.canvas_input_pinned_mask
-        )
-        update_mask = packed.canvas_update_mask & ~packed.canvas_input_pinned_mask
-        k_max, grad_through_steps = self._native_unroll_settings()
-        steps = self._sample_native_unroll_steps(k_max, packed.device)
-        outputs = backend.forward(
-            model,
-            packed,
-            corrupted.input_ids,
-            unroll_steps=steps,
-            grad_through_steps=grad_through_steps,
-            k1_conditioning_mask=k1_conditioning_mask,
-            recurrent_conditioning_mask=recurrent_conditioning_mask,
-            update_mask=update_mask,
-            kernel_options=getattr(self.axolotl_cfg, "flex_attn_compile_kwargs", None),
-        )
-        logits = outputs.logits
-        token_loss = (
-            rhine_loo_nll(
-                logits,
-                packed.canvas_clean_ids,
-                corrupted.input_ids,
-                times[packed.canvas_logical_row_indices],
-            )
-            if rhine_objective
-            else F.cross_entropy(
-                logits.float().flatten(0, -2),
-                packed.canvas_clean_ids.flatten(),
-                reduction="none",
-            ).view_as(packed.canvas_clean_ids)
-        )
-        if weighting is TimeWeighting.INV_ONE_MINUS_T:
-            rhine_weights = time_weights(times, weighting)[
-                packed.canvas_logical_row_indices
-            ]
-            rhine_weight_clip = self._native_value("rhine_weight_clip")
-            if rhine_weight_clip is not None:
-                rhine_weights = rhine_weights.clamp_max(rhine_weight_clip)
-            token_loss = token_loss * rhine_weights
-        canvas_denominator = None
-        if spec.reduction_scope is ReductionScope.GLOBAL_WINDOW:
-            if rhine_objective:
-                canvas_denominator = (
-                    num_items_in_batch["examples"]
-                    if isinstance(num_items_in_batch, dict)
-                    and "examples" in num_items_in_batch
-                    else batch.canvas_loss_mask.any(dim=1).sum().to(token_loss.device)
-                )
-            else:
-                canvas_denominator = (
-                    num_items_in_batch["canvas"]
-                    if isinstance(num_items_in_batch, dict)
-                    else packed.canvas_loss_mask.sum().detach().to(token_loss.dtype)
-                )
-            if self.args.world_size > 1:
-                canvas_denominator = canvas_denominator / self.args.world_size
-        loss = reduce_objective(
-            token_loss,
-            packed.canvas_loss_mask,
-            reduction,
-            logical_ids=(
-                packed.canvas_logical_row_indices if rhine_objective else None
-            ),
-            logical_count=batch.logical_ids.numel() if rhine_objective else None,
-            denominator=canvas_denominator,
-        )
-        encoder_weight = self._native_value("encoder_ar_weight")
-        encoder_weight = 1.0 if encoder_weight is None else encoder_weight
-        if encoder_weight:
-            encoder_logits = getattr(outputs, "encoder_logits", None)
-            if encoder_logits is None:
-                if hasattr(model, "module"):
-                    raise RuntimeError(
-                        "packed DiffusionGemma DDP forward must return encoder_logits"
-                    )
-                encoder_logits = self._native_lm_logits(
-                    model, outputs.encoder_last_hidden_state
-                )
-            ar_loss = F.cross_entropy(
-                encoder_logits[:, :-1].float().flatten(0, -2),
-                packed.encoder_input_ids[:, 1:].flatten(),
-                reduction="none",
-            )
-            valid = (
-                packed.encoder_ar_valid_mask[:, 1:]
-                & packed.encoder_ar_valid_mask[:, :-1]
-                & (
-                    packed.encoder_document_ids[:, 1:]
-                    == packed.encoder_document_ids[:, :-1]
-                )
-            )
-            ar_denominator = None
-            if spec.reduction_scope is ReductionScope.GLOBAL_WINDOW:
-                ar_denominator = (
-                    num_items_in_batch["encoder_ar"]
-                    if isinstance(num_items_in_batch, dict)
-                    else valid.sum().detach().to(token_loss.dtype)
-                )
-                if self.args.world_size > 1:
-                    ar_denominator = ar_denominator / self.args.world_size
-            loss = loss + encoder_weight * reduce_objective(
-                ar_loss,
-                valid,
-                ObjectiveReduction.SUPERVISED_TOKEN_MEAN,
-                denominator=ar_denominator,
-            )
-        return loss, outputs
 
     def _cache_special_token_ids(self):
         if self.processing_class is None:

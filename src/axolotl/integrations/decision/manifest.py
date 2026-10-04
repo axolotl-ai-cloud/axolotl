@@ -127,78 +127,16 @@ class DiffusionSpecManifest(BaseModel):
         return self
 
 
-class _SlotConfiguration(BaseModel):
+class ConfiguredSlots(BaseModel):
+    """Read legacy no-slot adapter metadata without supporting slot experiments."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-    mode: Literal["none", "pad", "pinned", "learned", "free", "mask", "prompt"]
-    num_slots: StrictInt = Field(ge=0)
-    token_ids: list[StrictInt] = Field(default_factory=list)
-    free_update_policy: Literal["argmax"] | None = None
-    free_slot_init_policy: Literal["prepared_canvas_v0", "fresh_runtime_v1"] = (
-        "prepared_canvas_v0"
-    )
-
-    @field_validator("token_ids")
-    @classmethod
-    def validate_token_ids(cls, value: list[int]) -> list[int]:
-        if any(token < 0 for token in value):
-            raise ValueError("configured slot token IDs must be nonnegative")
-        return value
-
-
-class ConfiguredSlots(_SlotConfiguration):
-    """Static slot configuration without runtime count sampling."""
-
+    mode: Literal["none"] = "none"
+    num_slots: Literal[0] = 0
+    token_ids: list[StrictInt] = Field(default_factory=list, max_length=0)
     sample_num_slots: Literal[False] = False
-
-
-class SampledTrainingSlots(BaseModel):
-    """Versioned per-logical-draw slot-count policy for a sampled-slot run."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    policy: Literal["uniform_inclusive_v1"] = "uniform_inclusive_v1"
-    min_slots: StrictInt = Field(default=0, ge=0)
-    max_slots: StrictInt = Field(ge=1)
-    draw_unit: Literal["logical_draw"] = "logical_draw"
-    seed_derivation: Literal["seed_epoch_global_draw_ordinal_v1"] = (
-        "seed_epoch_global_draw_ordinal_v1"
-    )
-
-    @model_validator(mode="after")
-    def validate_bounds(self) -> "SampledTrainingSlots":
-        if self.min_slots > self.max_slots:
-            raise ValueError("sampled slot minimum cannot exceed its maximum")
-        return self
-
-
-class FixedMaxEvaluationSlots(BaseModel):
-    """Fixed evaluation materialization used for a sampled-slot training run."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    policy: Literal["fixed_configured_max_v1"] = "fixed_configured_max_v1"
-    count: StrictInt = Field(ge=1)
-
-
-class SampledConfiguredSlots(_SlotConfiguration):
-    """Configured slots with distinct training-sampling and evaluation policies."""
-
-    sample_num_slots: Literal[True] = True
-    sampled_training: SampledTrainingSlots
-    fixed_max_evaluation: FixedMaxEvaluationSlots
-
-    @model_validator(mode="after")
-    def validate_sampled_contract(self) -> "SampledConfiguredSlots":
-        if self.mode == "none" or self.num_slots < 1:
-            raise ValueError("sampled slots require a non-none mode and positive count")
-        if self.sampled_training.max_slots != self.num_slots:
-            raise ValueError("sampled slot maximum must equal configured num_slots")
-        if self.fixed_max_evaluation.count != self.num_slots:
-            raise ValueError(
-                "fixed evaluation slot count must equal configured num_slots"
-            )
-        return self
+    free_update_policy: None = None
+    free_slot_init_policy: Literal["prepared_canvas_v0"] = "prepared_canvas_v0"
 
 
 class NoiseReadProtocol(BaseModel):
@@ -206,11 +144,11 @@ class NoiseReadProtocol(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    reader: Literal["hf", "djev"]
+    reader: Literal["hf"]
     read_fraction: float
     eval_steps: list[StrictInt]
     noise_draws: StrictInt = Field(ge=1)
-    carry_enabled: bool
+    carry_enabled: Literal[False]
     diffusion_steps: StrictInt = Field(ge=1)
     t_eps: float | None = Field(default=None, ge=0.0, le=1.0)
     time_weighting: str | None = None
@@ -240,12 +178,12 @@ class DecisionManifest(BaseModel):
     schema_version: Literal[1] = 1
     model: ModelIdentity
     diffusion_spec: DiffusionSpecManifest
-    decision_layout: Literal["thought_block", "prompt_slots"]
+    decision_layout: Literal["thought_block"]
     canvas_width: StrictInt = Field(ge=1)
     label_codebook: Literal[
         "vendored26", "expanded52", "spreadsheet151", "reserved151"
     ] = "vendored26"
-    configured_slots: ConfiguredSlots | SampledConfiguredSlots
+    configured_slots: ConfiguredSlots
     noise_read_protocol: NoiseReadProtocol
     tokenizer_special_ids: TokenizerSpecialIds
     initial_common_adapter_sha256: str | None = None
@@ -281,9 +219,7 @@ def _diffusion_spec(cfg: Any) -> DiffusionSpec:
     profile = resolve_model_support(get_model_support_for_cfg(cfg))
     spec = None if profile is None else profile.diffusion
     if not isinstance(spec, DiffusionSpec):
-        raise ValueError(
-            "decision manifest requires a resolved DiffusionSpec"
-        )
+        raise ValueError("decision manifest requires a resolved DiffusionSpec")
     return spec
 
 
@@ -318,44 +254,13 @@ def build_decision_manifest(
         decision_layout=decision.layout,
         canvas_width=canvas_width,
         label_codebook=decision.labels.codebook,
-        configured_slots=(
-            SampledConfiguredSlots(
-                mode=decision.latent.mode,
-                num_slots=decision.latent.num_slots,
-                token_ids=list(decision.latent.token_ids),
-                free_update_policy=decision.latent.free_update_policy,
-                free_slot_init_policy=(
-                    "fresh_runtime_v1"
-                    if decision.latent.mode == "free"
-                    else "prepared_canvas_v0"
-                ),
-                sampled_training=SampledTrainingSlots(
-                    max_slots=decision.latent.num_slots
-                ),
-                fixed_max_evaluation=FixedMaxEvaluationSlots(
-                    count=decision.latent.num_slots
-                ),
-            )
-            if decision.latent.sample_num_slots
-            else ConfiguredSlots(
-                mode=decision.latent.mode,
-                num_slots=decision.latent.num_slots,
-                token_ids=list(decision.latent.token_ids),
-                sample_num_slots=False,
-                free_update_policy=decision.latent.free_update_policy,
-                free_slot_init_policy=(
-                    "fresh_runtime_v1"
-                    if decision.latent.mode == "free"
-                    else "prepared_canvas_v0"
-                ),
-            )
-        ),
+        configured_slots=ConfiguredSlots(mode="none", num_slots=0),
         noise_read_protocol=NoiseReadProtocol(
             reader=decision.reader,
             read_fraction=decision.read_fraction,
             eval_steps=list(decision.eval.steps),
             noise_draws=decision.eval.noise_draws,
-            carry_enabled=decision.carry.enabled,
+            carry_enabled=False,
             diffusion_steps=_value(diffusion, "num_diffusion_steps", 1),
             t_eps=_value(diffusion, "t_eps"),
             time_weighting=_value(diffusion, "time_weighting"),

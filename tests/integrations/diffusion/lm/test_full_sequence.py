@@ -105,12 +105,10 @@ def test_mask_token_resolution_preserves_top_level_legacy_fallback():
 
     canonical = DictDefault(
         {
-            "diffusion": {"mask_token_str": "<legacy>"},
-            "diffusion": {"mask_token_id": 1},
+            "diffusion": {"mask_token_str": "<legacy>", "mask_token_id": None},
         }
     )
     assert resolve_mask_token_id(Tokenizer(), canonical, allow_add=False) == 8
-    assert canonical.diffusion.mask_token_id == 8
     assert canonical.diffusion.mask_token_id == 8
 
 
@@ -413,10 +411,11 @@ def test_native_nemotron_flex_packed_logits_loss_and_gradients_match_dense(
 ):
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
-    from tests.native_source_fixtures import native_source_fixture_path
     from axolotl.model_support.nemotron_diffusion.compat import (
         resolve_nemotron_model_class,
     )
+
+    from tests.native_source_fixtures import native_source_fixture_path
 
     source = native_source_fixture_path("nemotron")
     if source is None:

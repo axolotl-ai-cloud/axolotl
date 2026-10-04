@@ -17,9 +17,7 @@ class NativePackingBudget:
 
     total: int
     payload_capacity: int
-    layout: str
     bucket_size: int | None
-    reserved_capacity: int
 
 
 def resolve_native_packing_budget(
@@ -38,27 +36,15 @@ def resolve_native_packing_budget(
         batch_size if batch_size is not None else getattr(cfg, "micro_batch_size", None)
     )
     total = int(cfg.sequence_len) * int(effective_batch_size or 1)
-    layout = options["layout"]
     if getattr(cfg, "attn_implementation", None) != "flex_attention":
-        return NativePackingBudget(total, total, layout, None, 0)
+        return NativePackingBudget(total, total, None)
     rounded_total = total // FLEX_BUCKET_SIZE * FLEX_BUCKET_SIZE
-    reserved_capacity = FLEX_BUCKET_SIZE if layout == "encoder_canvas" else 0
-    payload_capacity = rounded_total - reserved_capacity
-    if payload_capacity <= 0:
-        minimum = (
-            2 * FLEX_BUCKET_SIZE if layout == "encoder_canvas" else FLEX_BUCKET_SIZE
-        )
+    if rounded_total <= 0:
         raise ValueError(
-            "native Flex packed-row budget is too small for "
-            f"{layout}: got {total}, require at least {minimum} tokens"
+            "native Flex packed-row budget is too small for full_sequence: "
+            f"got {total}, require at least {FLEX_BUCKET_SIZE} tokens"
         )
-    return NativePackingBudget(
-        total,
-        payload_capacity,
-        layout,
-        FLEX_BUCKET_SIZE,
-        reserved_capacity,
-    )
+    return NativePackingBudget(total, rounded_total, FLEX_BUCKET_SIZE)
 
 
 def native_packing_lengths(
@@ -66,8 +52,6 @@ def native_packing_lengths(
     *,
     eos_tail: str | None,
     logical_sequence_length: int | None,
-    layout: str = "full_sequence",
-    canvas_width: int | None = None,
 ) -> Sequence[int]:
     """Return the post-collation length charged by the multipack sampler."""
     lengths = (
@@ -81,23 +65,7 @@ def native_packing_lengths(
                 "diffusion logical example exceeds configured logical length"
             )
         lengths = [logical_sequence_length] * len(lengths)
-    if layout == "full_sequence":
-        return lengths
-    if layout != "encoder_canvas" or canvas_width is None:
-        raise ValueError("encoder_canvas scheduling requires canvas_width")
-    costs: list[int] = []
-    for index, encoder_length in enumerate(lengths):
-        record = dataset[index]
-        supervised = [
-            position for position, label in enumerate(record["labels"]) if label != -100
-        ]
-        if encoder_length > len(record["input_ids"]):
-            supervised.extend(range(len(record["input_ids"]), encoder_length))
-        if not supervised:
-            raise ValueError("encoder_canvas scheduling requires supervised tokens")
-        span = supervised[-1] - supervised[0] + 1
-        costs.append(encoder_length + min(canvas_width, span))
-    return costs
+    return lengths
 
 
 def native_packing_options(cfg: Any) -> dict[str, Any] | None:
@@ -113,10 +81,7 @@ def native_packing_options(cfg: Any) -> dict[str, Any] | None:
     support = resolve_model_support(get_model_support(cfg.model_config_type))
     if support is None or support.diffusion is None:
         return None
-    spec = support.diffusion
     return {
-        "layout": spec.layout.value,
-        "canvas_width": getattr(config, "canvas_width", None) or spec.max_canvas,
         "eos_tail": getattr(config, "eos_tail", None),
         "logical_sequence_length": int(cfg.sequence_len),
     }
