@@ -161,6 +161,56 @@ def test_greedy_uses_mean_likelihood_and_does_not_score_proposals():
     assert not any(call[0] == "proposal" for call in backend.calls)
 
 
+@pytest.mark.parametrize("proposal_batch_size", [1, 2])
+def test_greedy_does_not_regrow_an_eos_shortened_proposal(proposal_batch_size):
+    class BudgetBackend(ScriptedBackend):
+        def sample(self, context, max_tokens):
+            return super().sample(context, max_tokens)[:max_tokens]
+
+    values = {2: -3.0, 7: -3.0, 3: -4.0, 4: -4.0, 5: -0.1, 6: -0.1}
+    backend = BudgetBackend(
+        [[2, 7]] + [[3, 4, 5, 6]] * proposal_batch_size,
+        target=lambda tokens: sum(values[token] for token in tokens),
+    )
+    sampler = ProjectionSampler(
+        backend,
+        ProjectionSamplingConfig(
+            acceptance="greedy",
+            block_size=4,
+            max_new_tokens=4,
+            mcmc_steps=1,
+            proposal_batch_size=proposal_batch_size,
+        ),
+    )
+    sampler.rng = FixedRNG()
+    result = sampler.sample("question", "expert")
+    assert result.token_ids == [2, 7]
+    assert result.finished
+    assert result.accepted == 0
+    assert [call[2] for call in backend.calls if call[0] == "sample"] == [
+        4,
+        *([2] * proposal_batch_size),
+    ]
+
+
+def test_greedy_extends_current_length_after_losing_eos():
+    backend = ScriptedBackend(
+        [[2, 7], [3, 4], [5, 5, 5, 5], [3, 4, 5, 5, 5, 7]],
+        target=lambda tokens: -6.0 if tokens[-1] == 7 else -2.0 * len(tokens),
+    )
+    sampler = ProjectionSampler(
+        backend,
+        ProjectionSamplingConfig(
+            acceptance="greedy", block_size=4, max_new_tokens=8, mcmc_steps=1
+        ),
+    )
+    sampler.rng = FixedRNG()
+    result = sampler.sample("question", "expert")
+    assert result.token_ids == [3, 4, 5, 5, 5, 7]
+    assert result.finished
+    assert [call[2] for call in backend.calls if call[0] == "sample"] == [4, 2, 4, 6]
+
+
 def test_partial_last_block_and_rewrite_baseline():
     backend = ScriptedBackend([[2, 3], [4, 5], [7]])
     sampler = ProjectionSampler(
@@ -260,6 +310,52 @@ def test_teacher_forcing_matches_generation_log_densities(real_backend):
     )
 
 
+@pytest.mark.parametrize(
+    "defaults",
+    [
+        {"forced_eos_token_id": 7},
+        {"min_new_tokens": 3},
+        {"suppress_tokens": [2]},
+        {"min_p": 0.9},
+    ],
+)
+def test_model_generation_filters_do_not_change_proposal_density(
+    real_backend, monkeypatch, defaults
+):
+    from copy import deepcopy
+
+    model = real_backend.model
+    for name, value in defaults.items():
+        setattr(model.generation_config, name, value)
+    model.generation_config.eos_token_id = 7
+    backend = TransformersBackend(model, TinyTokenizer(), real_backend.config)
+    generate = model.generate
+    captured = []
+
+    def capture(**kwargs):
+        config = deepcopy(kwargs["generation_config"])
+        config.return_dict_in_generate = True
+        config.output_scores = True
+        kwargs["generation_config"] = config
+        output = generate(**kwargs)
+        captured.append(output)
+        return output.sequences
+
+    monkeypatch.setattr(model, "generate", capture)
+    context = [1, 2, 1]
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(42)
+        tokens = backend.sample(context, 3)
+    expected = sum(
+        scores[0].log_softmax(-1)[token].item()
+        for scores, token in zip(captured[0].scores, tokens, strict=True)
+    )
+    assert backend.eos_token_ids == {7}
+    assert backend.proposal_logprob(context, tokens) == pytest.approx(
+        expected, abs=1e-6
+    )
+
+
 def test_real_model_sampling_and_context_limit(real_backend):
     sampler = ProjectionSampler(
         real_backend,
@@ -322,6 +418,19 @@ def test_fingerprint_tracks_data_and_sampling_but_not_training(cfg):
         '{"prompt": "changed", "response": "expert"}\n'
     )
     assert cache_path(cfg, config) != original
+
+
+@pytest.mark.parametrize("weight", [0.5, 0.01])
+def test_small_positive_weight_retains_a_nonempty_source(cfg, monkeypatch, weight):
+    cfg.datasets[0].weight = weight
+    backend = ScriptedBackend([[2, 7]])
+    monkeypatch.setattr(TransformersBackend, "from_config", lambda *args: backend)
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    path = cache_path(cfg, config)
+    path.parent.mkdir()
+    ProjectionSamplingPlugin()._generate_cache(cfg, config, path)
+    assert len(path.read_text().splitlines()) == 1
+    assert backend.closed
 
 
 def test_training_requires_cache_without_loading_model(cfg, monkeypatch):

@@ -21,6 +21,8 @@ class TransformersBackend(SamplingBackend):
         if eos is None:
             eos = tokenizer.eos_token_id
         self.eos_token_ids = set(eos if isinstance(eos, list) else [eos]) - {None}
+        # Transformers fills unspecified generation settings from the model defaults.
+        self.model.generation_config = GenerationConfig()
         self.device = model.get_input_embeddings().weight.device
 
     @classmethod

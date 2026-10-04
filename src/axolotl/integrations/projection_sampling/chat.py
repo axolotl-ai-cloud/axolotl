@@ -115,9 +115,13 @@ def sample_chat(
         fallback = not result.finished or not response.strip() or verified is False
         fallback_reason = None
         if not fallback:
+            candidate_row = deepcopy(prefix_row)
+            candidate_row[prompter.field_messages][-1][
+                prompter.message_property_mappings["content"]
+            ] = response
             rendered = list(
                 prompter.build_prompt(
-                    turns[:-1] + [{**turn, "content": response}], tools=tools
+                    strategy.get_conversation_thread(candidate_row), tools=tools
                 )
             )
             # Retokenization must retain the trajectory whose density was scored.

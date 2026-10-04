@@ -80,6 +80,10 @@ class ProjectionSampler:
             self.config.block_size,
         ):
             horizon = min(horizon, self.config.max_new_tokens)
+            if self.config.acceptance == "greedy":
+                horizon = min(
+                    len(current) + self.config.block_size, self.config.max_new_tokens
+                )
             current += self.backend.sample(
                 self.proposal_ids(question, expert, current, prompt_builder),
                 horizon - len(current),
@@ -90,15 +94,25 @@ class ProjectionSampler:
                 index = self.rng.randrange(len(current))
                 prefix = current[:index]
                 context = self.proposal_ids(question, expert, prefix, prompt_builder)
+                proposal_horizon = (
+                    len(current) if self.config.acceptance == "greedy" else horizon
+                )
                 if self.config.proposal_batch_size > 1:
                     current, target, accept = self._batched_step(
-                        target_context, current, target, context, prefix, horizon
+                        target_context,
+                        current,
+                        target,
+                        context,
+                        prefix,
+                        proposal_horizon,
                     )
                     attempts += 1
                     accepted += int(accept)
                     continue
-                candidate = prefix + self.backend.sample(context, horizon - index)
-                self._validate_tokens(candidate, horizon)
+                candidate = prefix + self.backend.sample(
+                    context, proposal_horizon - index
+                )
+                self._validate_tokens(candidate, proposal_horizon)
                 proposed_target = self.backend.target_logprob(target_context, candidate)
                 attempts += 1
                 if self.config.acceptance == "greedy":

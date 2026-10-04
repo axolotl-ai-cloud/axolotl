@@ -225,6 +225,53 @@ def test_drop_system_and_eos_policy_follow_parser(tokenizer, cfg):
     assert tokenizer.convert_tokens_to_ids("system") not in context
 
 
+@pytest.mark.parametrize("template_uses_thinking", [False, True])
+def test_split_thinking_checks_transformed_reply_tokens(
+    tokenizer, cfg, template_uses_thinking
+):
+    tokenizer.add_special_tokens({"additional_special_tokens": ["<think>", "</think>"]})
+    if template_uses_thinking:
+        tokenizer.chat_template = (
+            "{% for message in messages %}{{ '<' + message['role'] + '> ' }}"
+            "{% if message.get('reasoning_content') %}"
+            "{{ '<think> ' + message['reasoning_content'] + ' </think> ' }}"
+            "{% endif %}{{ message['content'] + eos_token }}{% endfor %}"
+            "{% if add_generation_prompt %}{{ '<assistant> ' }}{% endif %}"
+        )
+    row = {
+        "messages": [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "expert"},
+        ]
+    }
+    strategy = load(tokenizer, cfg, {"split_thinking": True})
+    generated = tokenizer.encode(
+        "<think> system </think> rewritten", add_special_tokens=False
+    ) + [tokenizer.eos_token_id]
+    backend = ScriptedBackend([generated])
+    backend.tokenizer = tokenizer
+    backend.eos_token_ids = {tokenizer.eos_token_id}
+    sampler = ProjectionSampler(
+        backend,
+        ProjectionSamplingConfig(
+            block_size=len(generated), max_new_tokens=len(generated), mcmc_steps=0
+        ),
+    )
+    record = sample_chat(row, strategy, sampler)
+    metadata = record["sampling"][0]
+    assert metadata["fallback_to_expert"] is not template_uses_thinking
+    if template_uses_thinking:
+        context = strategy.prompter.build_prompt(
+            row["messages"][:-1], add_generation_prompt=True
+        )
+        assert record["input_ids"][len(context) :] == generated
+        assert record["messages"][-1]["reasoning_content"] == "system"
+    else:
+        assert metadata["fallback_reason"] == "template_token_mismatch"
+        expected = strategy.tokenize_prompt(row)
+        assert {key: record[key] for key in expected} == expected
+
+
 @pytest.mark.parametrize("reason", ["verification", "template"])
 def test_chat_fallback_keeps_original_parser_labels(tokenizer, cfg, reason):
     row = {

@@ -20,7 +20,7 @@ from .inspection import export_dataset
 from .sampler import ProjectionSampler
 
 LOG = get_logger(__name__)
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
@@ -219,7 +219,12 @@ class ProjectionSamplingPlugin(BasePlugin):
                             )
                         if source.weight is not None and source.weight < 1:
                             dataset = dataset.shuffle(seed=get_seed(cfg)).select(
-                                range(int(len(dataset) * source.weight))
+                                range(
+                                    min(
+                                        len(dataset),
+                                        max(1, int(len(dataset) * source.weight)),
+                                    )
+                                )
                             )
                         chat_strategy = None
                         if source.type == "chat_template":
