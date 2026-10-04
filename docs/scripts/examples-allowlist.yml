@@ -1,4 +1,7 @@
 examples:
+  - name: nemotron-diffusion
+    title: Nemotron Diffusion
+
   # September 2026
   - name: k2-horizon
     title: K2-Horizon

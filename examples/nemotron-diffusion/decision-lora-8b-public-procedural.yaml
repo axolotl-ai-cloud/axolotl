@@ -1,4 +1,4 @@
-# See PUBLIC_PROCEDURAL_DECISION_MIX.md for data preparation and benchmark scope.
+# See docs/decision.qmd#public-example-data for data preparation and benchmark scope.
 base_model: nvidia/Nemotron-Labs-Diffusion-8B
 revision_of_model: 16c67f0560b912e93e0cabb6e0c4f5c3086d95fc
 trust_remote_code: true

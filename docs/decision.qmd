@@ -1,4 +1,76 @@
-# Public procedural decision mix
+---
+title: Typed decision training
+---
+
+The decision plugin currently targets native diffusion models; AR model
+support is not implemented yet. Use both plugins: `DiffusionPlugin` supplies
+native diffusion training;
+`DecisionPlugin` supplies typed datasets, answer supervision and readout.
+The normalized format supports Choice, finite Score and Noul, with hard and soft
+labels mixed within a record or batch.
+
+```yaml
+plugins:
+  - axolotl.integrations.diffusion.DiffusionPlugin
+  - axolotl.integrations.decision.DecisionPlugin
+```
+
+## Data
+
+Prepare separate train and dev JSONL files using
+[the decision dataset format](dataset-formats/decision.qmd), then set their
+`data_files` paths in your training YAML. Preserve source row provenance and
+keep protected test data out of train and dev. For public example data use
+[the public procedural mix](#public-example-data).
+
+```bash
+axolotl preprocess examples/nemotron-diffusion/decision-lora-8b.yaml
+axolotl train examples/nemotron-diffusion/decision-lora-8b.yaml
+```
+
+## Objectives and batching
+
+See the [Nemotron model guide](models/nemotron-diffusion.qmd)
+for model-specific YAML recipes, adapter targets, and memory measurements.
+
+With `decision.labels.label_softmax: both`, the objective combines
+candidate-restricted CE or KL, full-vocabulary CE, and the configured Brier
+term (weight 0.1 in the examples). Full-vocabulary CE discourages probability outside valid answers.
+For hard targets, optional `decision.labels.hard_label_smoothing` spreads its fraction
+uniformly over that question's valid answers; non-one-hot soft targets remain
+unchanged. Brier and development targets remain unchanged.
+
+Denoising read counts come from the selected recipe; keep training and
+inference read settings aligned.
+`batch_flattening: true` preserves logical examples per microbatch. Physical
+`sample_packing` is opt-in, with token budget implied by `sequence_len` and
+`micro_batch_size`.
+
+## Evaluation and export
+
+Configure evaluation and checkpoint intervals in the YAML. When enabled,
+`load_best_model_at_end` selects by dev loss; choose the explicit terminal
+checkpoint when benchmarking terminal weights. Heldout results must not select checkpoints.
+
+Use `src/axolotl/integrations/decision/scripts/decision_evaluate.py --help` for batched local reads.
+The checkpoint's `diffusion_decision_manifest.json` records codebook, canvas,
+read settings and model identity. Keep it with the adapter and use matching
+settings for inference.
+
+AutoJev routing examples can be normalized using
+[the AutoJev route adapter](dataset-formats/decision.qmd#autojev-route-captures). Choice
+candidate IDs and their order must be preserved between training and deployment.
+
+## Jev and AutoJev compatibility
+
+Training labels describe the valid alternatives in each question. The codebook
+encodes those alternatives into model tokens internally; source datasets and
+API-facing decisions retain their semantic names and values. Score levels must
+keep their declared rubric order. The route adapter covers AutoJev choice
+requests; it is a dataset adapter, not an HTTP server or an implementation of
+the complete Jev API.
+
+## Public example data
 
 `build_public_decision_mix.py` materializes a reproducible local train/dev mix
 from `tasksource/procedural-typed-decisions` at revision
@@ -13,7 +85,7 @@ Callers who are authorized to hold normalized JevBench and Nimble data can add
 each local file with `--protected-normalized`; the generator uses it only for
 canonical-state exclusion and never copies it to the output.
 
-## License and attribution
+### License and attribution
 
 The pinned dataset card declares `Apache-2.0` for the dataset. The separate
 tasksource generator repository publishes its code under `CC-BY-4.0`; that is
@@ -25,7 +97,7 @@ The recipe uses `nvidia/Nemotron-Labs-Diffusion-8B`; its model card specifies
 the NVIDIA Nemotron Open Model License. This document makes no claim about
 redistributing model weights or adapters.
 
-## Heldout semantics
+### Heldout semantics
 
 When optional normalized JevBench and Nimble heldouts are supplied, the
 generator removes any public candidate with the same canonical state. This is

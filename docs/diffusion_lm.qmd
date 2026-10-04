@@ -61,8 +61,8 @@ plugins:
 The decision plugin adds Choice, finite ordered Score, and yes/no Noul schemas;
 hard labels and probability targets can coexist within one batch. It supervises
 answer positions and preserves the candidate ordering used for inference.
-See [the training recipe](../examples/nemotron-diffusion/DECISION_TRAINING.md)
-and [normalized JSONL format](../examples/nemotron-diffusion/DECISION_DATASET_FORMAT.md).
+See [the decision training guide](decision.qmd)
+and [normalized JSONL format](dataset-formats/decision.qmd).
 
 ## Attention and batch geometry
 

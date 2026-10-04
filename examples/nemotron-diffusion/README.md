@@ -1,4 +1,9 @@
-# Nemotron diffusion LoRA smoke
+# Nemotron diffusion
+
+Nemotron text and vision models use the diffusion plugin for native training
+and the decision plugin for typed answer supervision.
+
+## Text diffusion smoke
 
 This two-step synthetic chat run checks absorbing-mask diffusion training through `DiffusionPlugin`,
 physical sample packing, gradient accumulation and adapter saving. It is not a
@@ -34,14 +39,26 @@ evidence ledger; native-core integration acceptance passed.
 See [the native diffusion guide](../../docs/diffusion_lm.qmd) for FlexAttention,
 packing budgets, objective options and adapter constraints.
 
-See [the 8B decision training recipe](DECISION_TRAINING.md) for the plugin YAML,
+See [the decision training guide](../../docs/decision.qmd) for the plugin YAML,
 portable dataset paths, batch flattening, and opt-in typed-decision packing.
 For the reproducibly materialized public procedural decision mix, see
-[PUBLIC_PROCEDURAL_DECISION_MIX.md](PUBLIC_PROCEDURAL_DECISION_MIX.md).
+[the public procedural mix](../../docs/decision.qmd#public-example-data).
+
+## Text decision recipe
+
+The 8B recipe uses rank 64/alpha 128 LoRA on q/k/v/o and gate/up/down projections,
+LoRA+ ratio 8, AdamW LR 6.5e-6, constant scheduling, and no warmup. Microbatch 16
+with eight accumulation steps gives EBS 128. `sequence_len` is 2048. Adjust batch
+size to fit your hardware.
+
+Use [decision-lora-8b.yaml](../../examples/nemotron-diffusion/decision-lora-8b.yaml).
+It uses two held-noise reads, no latent slots, and evaluates/saves every 50 steps.
+
+## Vision decision recipe
 
 For image-conditioned choice, score, and noul training, see
-[the VLM starter recipe](decision-vlm-lora-8b.yaml) and
-[the image dataset contract](DECISION_DATASET_FORMAT.md#image-conditioned-decisions).
+[the VLM starter recipe](../../examples/nemotron-diffusion/decision-vlm-lora-8b.yaml) and
+[the image dataset contract](../../docs/dataset-formats/decision.qmd#image-conditioned-decisions).
 It shares the decision objectives and core media collation with text-only
 training, with adapters scoped to the language decoder.
 
@@ -51,6 +68,11 @@ FlexAttention compiles both the attention kernel and block-mask construction;
 whole-model compilation is optional. Selected-position logits avoid projecting
 image/context positions through the vocabulary head. QLoRA is not enabled for
 native diffusion yet.
+
+Install the image dependencies with `pip install -e '.[vision]'` from a
+checkout. Set `processor_kwargs.max_image_size` to bound image resolution
+before patch alignment. Nemotron VLM reserves image marker IDs 18–21; custom
+codebooks must not reuse them. Start with `spreadsheet151`.
 
 ### VLM memory measurements
 

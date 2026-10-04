@@ -442,6 +442,7 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/nemotron-diffusion.qmd
                 - docs/models/k2-horizon.qmd
                 - docs/models/nex-n2.5.qmd
                 - docs/models/minicpm5.qmd
@@ -522,6 +523,7 @@ website:
             - docs/multimodal.qmd
             - docs/rlhf.qmd
             - docs/diffusion_lm.qmd
+            - docs/decision.qmd
             - docs/grpo.qmd
             - docs/ebft.qmd
             - docs/vllm_serving.qmd
