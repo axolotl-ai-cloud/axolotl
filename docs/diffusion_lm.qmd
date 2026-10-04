@@ -7,13 +7,13 @@ Their configuration fields and validation are registered through plugin args.
 
 ## Install
 
-Use Torch **2.14.0** and the dependencies in
-`requirements/diffusion-lm-torch214.txt` in an isolated environment:
+Use the normal Axolotl dependencies in an isolated environment. These recipes
+were validated with Torch **2.14.0**:
 
 ```bash
 python -m venv .venv-nemotron
 source .venv-nemotron/bin/activate
-python -m pip install -r requirements/diffusion-lm-torch214.txt -e .
+python -m pip install -e .
 ```
 
 Choose the Torch wheel index appropriate for your accelerator when installing.

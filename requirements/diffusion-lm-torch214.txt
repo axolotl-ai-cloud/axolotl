@@ -1,8 +1,0 @@
-# Verified Nemotron native-diffusion environment. Install this checkout with this
-# file; accelerator wheel selection remains the platform-specific PyTorch choice.
-torch==2.14.0
-transformers==5.18.0
-accelerate==1.15.0
-peft==0.21.1
-datasets==5.0.1
-trl==1.14.1

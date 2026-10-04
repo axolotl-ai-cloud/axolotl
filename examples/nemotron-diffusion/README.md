@@ -4,10 +4,10 @@ This two-step synthetic chat run checks absorbing-mask diffusion training throug
 physical sample packing, gradient accumulation and adapter saving. It is not a
 quality benchmark or a production fine-tuning recipe.
 
-Use the isolated Torch 2.14 environment described in
+Use the installation instructions in
 [`docs/diffusion_lm.qmd`](../../docs/diffusion_lm.qmd). From the repository
 root, install this checkout with
-`python -m pip install -r requirements/diffusion-lm-torch214.txt -e .` in that
+`python -m pip install -e .` in an isolated
 environment, then put its `bin` directory first on `PATH` so `axolotl train`
 launches the matching Accelerate installation:
 
