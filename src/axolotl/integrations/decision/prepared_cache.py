@@ -136,8 +136,8 @@ def _processor_identity(cfg: Any) -> dict[str, Any]:
 def _uses_vlm(cfg: Any) -> bool:
     return (
         _value(_value(cfg, "model_config"), "model_type")
-        == "nemotron_labs_diffusion_vlm"
-    )
+        or _value(cfg, "model_config_type")
+    ) == "nemotron_labs_diffusion_vlm"
 
 
 def _value(value: Any, name: str, default: Any = None) -> Any:

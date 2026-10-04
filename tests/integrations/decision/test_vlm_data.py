@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import sys
 import types
+from types import SimpleNamespace
 
 import pytest
 
+from axolotl.integrations.decision import datasets
 from axolotl.integrations.decision.grouping import group_records
 from axolotl.integrations.decision.prepared_cache import _image_identity
 from axolotl.integrations.decision.preprocessing import build_decision_canvas
@@ -184,3 +186,44 @@ def test_processor_cache_identity_tracks_resolution_and_local_source(tmp_path):
     cfg["processor_kwargs"] = {"max_image_size": 560}
     source.write_text("version = 2")
     assert _processor_identity(cfg) != first
+
+
+def test_dataset_uses_canonical_model_type_before_model_config_is_available(
+    monkeypatch,
+):
+    captured = {}
+
+    def build(_tokenizer, _record, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(prompt_ids=(1,), canvas_ids=(100,) * 128)
+
+    monkeypatch.setattr(datasets, "build_decision_canvas", build)
+    monkeypatch.setattr(datasets, "permute_record", lambda value, **kwargs: value)
+    monkeypatch.setattr(
+        datasets, "decision_example_from_canvas", lambda *args, **kwargs: None
+    )
+    tokenizer = Tokenizer()
+    tokenizer.eos_token_id = 1
+    tokenizer.pad_token_id = 1
+    datasets._canvas_row(
+        tokenizer,
+        {"source": "synthetic"},
+        {
+            "base_model": "example/vlm",
+            "model_config": {"vocab_size": 256},
+            "model_config_type": "nemotron_labs_diffusion_vlm",
+            "diffusion": {"mask_token_id": 100},
+            "decision": {},
+        },
+        1.0,
+        spec=SimpleNamespace(max_canvas=128, noise=datasets.DiffusionNoise.ABSORBING),
+    )
+    assert captured["model_type"] == "nemotron_labs_diffusion_vlm"
+
+
+def test_prepared_cache_uses_canonical_model_type_for_image_identity():
+    from axolotl.integrations.decision.prepared_cache import _uses_vlm
+
+    assert _uses_vlm(
+        {"model_config": {}, "model_config_type": "nemotron_labs_diffusion_vlm"}
+    )

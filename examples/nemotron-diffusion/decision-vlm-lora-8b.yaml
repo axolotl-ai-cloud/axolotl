@@ -16,7 +16,7 @@ loraplus_lr_ratio: 8
 
 attn_implementation: flex_attention
 bf16: true
-sequence_len: 4096
+sequence_len: 2048
 batch_flattening: true
 sample_packing: false
 eval_sample_packing: false

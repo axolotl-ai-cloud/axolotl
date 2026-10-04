@@ -260,7 +260,8 @@ def _canvas_row(
         model_source=_value(cfg, "base_model"),
         processor_kwargs=_value(cfg, "processor_kwargs"),
         model_revision=_value(cfg, "revision_of_model"),
-        model_type=_value(model_config, "model_type"),
+        model_type=_value(model_config, "model_type")
+        or _value(cfg, "model_config_type"),
     )
     row = {
         "canvas": canvas,
