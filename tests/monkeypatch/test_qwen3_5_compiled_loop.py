@@ -5,6 +5,7 @@ import torch
 
 pytestmark = [
     pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
+    pytest.mark.gpu,
 ]
 
 pytest.importorskip("transformers.models.qwen3_5")
