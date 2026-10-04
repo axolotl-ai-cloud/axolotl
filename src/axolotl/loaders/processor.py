@@ -6,6 +6,7 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 
+from axolotl.model_support import get_model_support_for_cfg, resolve_model_support
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -16,8 +17,17 @@ LOG = get_logger(__name__)
 @send_errors
 def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
     processor_cls = AutoProcessor
+    custom_processor = False
     if cfg.processor_type:
         processor_cls = getattr(transformers, cfg.processor_type)
+    else:
+        profile = resolve_model_support(get_model_support_for_cfg(cfg))
+        provider = None if profile is None else profile.strategies.auto_processor_cls
+        if provider is not None:
+            provided_cls = provider()
+            if provided_cls is not None:
+                processor_cls = provided_cls
+                custom_processor = True
 
     # Build common kwargs for processor loading
     processor_kwargs = {}
@@ -57,6 +67,8 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         )
 
     processor_kwargs["trust_remote_code"] = cfg.trust_remote_code or False
+    if custom_processor:
+        processor_kwargs["tokenizer"] = tokenizer
 
     processor = processor_cls.from_pretrained(
         cfg.processor_config,

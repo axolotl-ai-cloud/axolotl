@@ -126,7 +126,9 @@ def resolve_nemotron_model_class(
                     kwargs["cache_position"] = position_ids[0]
             if selected is None:
                 return super().forward(*args, **kwargs)
-            if kwargs.get("labels") is not None:
+            if kwargs.get("labels") is not None or (
+                len(args) > 3 and args[3] is not None
+            ):
                 raise ValueError("selected logits do not accept labels")
             if not isinstance(selected, tuple) or len(selected) != 2:
                 raise TypeError("axolotl_selected_logits must be (rows, positions)")
@@ -361,6 +363,226 @@ def resolve_nemotron_model_class(
     return MaskAwareNemotron
 
 
+def resolve_nemotron_vlm_source(
+    model_source: str | Path, *, revision: str | None = None
+) -> Path:
+    """Resolve the VLM's native source files at the requested Hub revision."""
+    source = Path(model_source)
+    required_files = (
+        "configuration_nemotron_labs_diffusion_vlm.py",
+        "modeling_ministral.py",
+        "modeling_nemotron_labs_diffusion_vlm.py",
+        "image_processing.py",
+    )
+    if not all((source / name).is_file() for name in required_files):
+        from huggingface_hub import snapshot_download
+
+        source = Path(
+            snapshot_download(
+                repo_id=str(model_source),
+                revision=revision,
+                allow_patterns=[
+                    "config.json",
+                    "chat_utils.py",
+                    *required_files,
+                ],
+            )
+        )
+    missing = [name for name in required_files if not (source / name).is_file()]
+    if missing:
+        raise ValueError(f"Nemotron VLM source lacks required native files: {missing}")
+    return source
+
+
+def _cast_nemotron_vlm_pixels(model: Any, kwargs: dict[str, Any]) -> None:
+    pixel_values = kwargs.get("pixel_values")
+    image_sizes = kwargs.get("image_sizes")
+    if pixel_values is None and image_sizes is None:
+        return
+    if pixel_values is None or image_sizes is None:
+        raise ValueError("Nemotron VLM requires pixel_values and image_sizes together")
+    if not isinstance(pixel_values, torch.Tensor) or pixel_values.ndim != 4:
+        raise ValueError(
+            "Nemotron VLM pixel_values must have shape [images, channels, height, width]"
+        )
+    if (
+        not isinstance(image_sizes, torch.Tensor)
+        or image_sizes.ndim != 2
+        or image_sizes.shape != (pixel_values.shape[0], 2)
+    ):
+        raise ValueError("Nemotron VLM image_sizes must have shape [images, 2]")
+    vision_tower = model.encoder.vision_tower
+    vision_parameter = next(vision_tower.parameters(), None)
+    if vision_parameter is None:
+        raise ValueError("Nemotron VLM vision tower has no parameters")
+    kwargs["pixel_values"] = pixel_values.to(dtype=vision_parameter.dtype)
+    kwargs["image_sizes"] = image_sizes.to(dtype=torch.long)
+
+
+def resolve_nemotron_vlm_model_class(
+    model_source: str | Path, *, revision: str | None = None
+) -> type:
+    """Resolve and adapt the native Nemotron Diffusion VLM implementation."""
+    source = resolve_nemotron_vlm_source(model_source, revision=revision)
+    import transformers.masking_utils as masking_utils
+
+    added_legacy_sdpa_alias = not hasattr(masking_utils, "sdpa_mask_older_torch")
+    if added_legacy_sdpa_alias:
+        masking_utils.sdpa_mask_older_torch = masking_utils.sdpa_mask
+    from transformers.dynamic_module_utils import get_class_from_dynamic_module
+
+    try:
+        model_class = get_class_from_dynamic_module(
+            "modeling_nemotron_labs_diffusion_vlm.NemotronLabsDiffusionVLMModel",
+            str(source),
+            local_files_only=True,
+        )
+    finally:
+        if added_legacy_sdpa_alias:
+            del masking_utils.sdpa_mask_older_torch
+    resolved_revision = (
+        source.name
+        if source.parent.name == "snapshots"
+        and re.fullmatch(r"[0-9a-f]{40}", source.name)
+        else None
+    )
+
+    class MaskAwareNemotronVLM(model_class):  # type: ignore[valid-type, misc]
+        _supports_flex_attn = True
+        supports_diffusion_varlen = True
+        supports_selected_logits = True
+        _axolotl_resolved_revision = resolved_revision
+
+        def __init__(self, config):
+            if config.dlm_paradigm != "bidirectional":
+                raise ValueError(
+                    "Native Nemotron VLM support currently requires "
+                    "dlm_paradigm='bidirectional'."
+                )
+            super().__init__(config)
+            enable_nemotron_explicit_attention_mask(self)
+
+        def _embed_with_vision(self, input_ids, pixel_values, image_sizes):
+            """Scatter each image once for Axolotl's externally-corrupted canvases."""
+            inputs_embeds = self.encoder.embed_tokens(input_ids)
+            image_features = self.get_image_features(pixel_values, image_sizes).to(
+                inputs_embeds.device, inputs_embeds.dtype
+            )
+            special_image_mask = input_ids == self.IMAGE_TOKEN_ID
+            torch._assert_async(
+                special_image_mask.sum() == image_features.shape[0],
+                "Nemotron VLM image token count does not match image features",
+            )
+            return inputs_embeds.masked_scatter(
+                special_image_mask.unsqueeze(-1).expand_as(inputs_embeds),
+                image_features,
+            )
+
+        def get_image_features(self, pixel_values, image_sizes):
+            vision_feature_layer = getattr(self.config, "vision_feature_layer", -1)
+            image_outputs = self.encoder.vision_tower(
+                pixel_values,
+                image_sizes=image_sizes,
+                output_hidden_states=True,
+                return_dict=True,
+            )
+            if isinstance(vision_feature_layer, int):
+                selected_image_feature = image_outputs.hidden_states[
+                    vision_feature_layer
+                ]
+            else:
+                selected_image_feature = torch.cat(
+                    [
+                        image_outputs.hidden_states[index]
+                        for index in vision_feature_layer
+                    ],
+                    dim=-1,
+                )
+            return self.encoder.multi_modal_projector(
+                selected_image_feature.squeeze(0), image_sizes
+            )
+
+        def forward(self, *args, **kwargs):
+            selected = kwargs.pop("axolotl_selected_logits", None)
+            if kwargs.get("labels") is not None or (
+                len(args) > 3 and args[3] is not None
+            ):
+                raise ValueError(
+                    "Nemotron VLM decision support uses externally-corrupted inputs and "
+                    "does not accept native labels."
+                )
+            _cast_nemotron_vlm_pixels(self, kwargs)
+            metadata = kwargs.get("diffusion_varlen")
+            if metadata is not None:
+                from axolotl.integrations.diffusion.lm.varlen import VarlenMetadata
+
+                if (
+                    not isinstance(metadata, VarlenMetadata)
+                    or kwargs.get("attention_mask") is not None
+                    or kwargs.get("past_key_values") is not None
+                    or kwargs.get("use_cache")
+                    or kwargs.get("use_causal_mask")
+                    or kwargs.get("labels") is not None
+                    or len(args) > 1
+                ):
+                    raise ValueError(
+                        "Nemotron VLM varlen requires VarlenMetadata, no mask/cache, "
+                        "and bidirectional mode"
+                    )
+                position_ids = kwargs.get("position_ids")
+                if position_ids is None or position_ids.shape != (
+                    metadata.batch_size,
+                    metadata.sequence_length,
+                ):
+                    raise ValueError(
+                        "Nemotron VLM varlen requires document-local position_ids"
+                    )
+                if kwargs.get("cache_position") is None:
+                    kwargs["cache_position"] = position_ids[0]
+                kwargs["use_cache"] = False
+                kwargs["use_causal_mask"] = False
+            attention_mask = kwargs.get("attention_mask")
+            is_block_mask = type(attention_mask).__name__ == "BlockMask"
+            if getattr(attention_mask, "ndim", None) == 4 or is_block_mask:
+                kwargs["use_causal_mask"] = True
+                position_ids = kwargs.get("position_ids")
+                if position_ids is not None and kwargs.get("cache_position") is None:
+                    kwargs["cache_position"] = position_ids[0]
+            if selected is None:
+                return super().forward(*args, **kwargs)
+            if kwargs.get("labels") is not None:
+                raise ValueError("selected logits do not accept labels")
+            if not isinstance(selected, tuple) or len(selected) != 2:
+                raise TypeError("axolotl_selected_logits must be (rows, positions)")
+            rows, positions = selected
+            if not isinstance(rows, torch.Tensor) or not isinstance(
+                positions, torch.Tensor
+            ):
+                raise TypeError("selected logits coordinates must be tensors")
+            if rows.shape != positions.shape or rows.ndim != 2:
+                raise ValueError(
+                    "selected logits coordinates must be matching [examples, questions]"
+                )
+            hidden_output = super().forward(
+                *args, output_last_hidden_states_only=True, **kwargs
+            )
+            return SelectedLogitsOutput(
+                logits=project_selected_logits(
+                    hidden_output.last_hidden_state,
+                    self.diffusion_head,
+                    rows,
+                    positions,
+                ),
+                axolotl_selected_logits=True,
+            )
+
+    MaskAwareNemotronVLM.__name__ = model_class.__name__
+    from .cut_cross_entropy import apply_pending_nemotron_cce_patch
+
+    apply_pending_nemotron_cce_patch(MaskAwareNemotronVLM)
+    return MaskAwareNemotronVLM
+
+
 def enable_nemotron_explicit_attention_mask(model: Any) -> None:
     """Make the native bidirectional implementation honor an explicit 4D mask.
 
@@ -384,6 +606,29 @@ def enable_nemotron_explicit_attention_mask(model: Any) -> None:
         return
     attention_type = type(encoder.layers[0].self_attn)
     source = importlib.import_module(attention_type.__module__)
+
+    if getattr(model.config, "model_type", None) == "nemotron_labs_diffusion_vlm":
+
+        def _mask_bridge(mask_function):
+            def bridge(*args, **kwargs):
+                attention_mask = kwargs.get("attention_mask")
+                if getattr(attention_mask, "ndim", None) == 4 or (
+                    type(attention_mask).__name__ == "BlockMask"
+                ):
+                    return attention_mask
+                if "input_embeds" in kwargs:
+                    kwargs["inputs_embeds"] = kwargs.pop("input_embeds")
+                kwargs.pop("cache_position", None)
+                return mask_function(*args, **kwargs)
+
+            return bridge
+
+        if not getattr(source, "_axolotl_vlm_mask_bridge_enabled", False):
+            source.create_causal_mask = _mask_bridge(source.create_causal_mask)
+            source.create_sliding_window_causal_mask = _mask_bridge(
+                source.create_sliding_window_causal_mask
+            )
+            source._axolotl_vlm_mask_bridge_enabled = True
 
     class MaskAwareAttention(attention_type):  # type: ignore[valid-type, misc]
         def forward(

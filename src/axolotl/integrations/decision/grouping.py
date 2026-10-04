@@ -15,9 +15,9 @@ def group_records(
     """Combine only records with identical serving context and split without loss."""
     if max_questions <= 0:
         raise ValueError("max_questions must be positive")
-    groups: OrderedDict[tuple[str, str, str, bytes, bytes], list[Mapping[str, Any]]] = (
-        OrderedDict()
-    )
+    groups: OrderedDict[
+        tuple[str, str, str, bytes, bytes, bytes], list[Mapping[str, Any]]
+    ] = OrderedDict()
     for record in records:
         groups.setdefault(_key(record), []).append(record)
     result: list[dict[str, Any]] = []
@@ -26,7 +26,7 @@ def group_records(
     return result
 
 
-def _key(record: Mapping[str, Any]) -> tuple[str, str, str, bytes, bytes]:
+def _key(record: Mapping[str, Any]) -> tuple[str, str, str, bytes, bytes, bytes]:
     source = record.get("source")
     group = record.get("group")
     if not isinstance(source, str) or not source:
@@ -42,6 +42,7 @@ def _key(record: Mapping[str, Any]) -> tuple[str, str, str, bytes, bytes]:
         family,
         _bytes(record.get("state")),
         _bytes(record.get("instructions", "")),
+        _bytes(record.get("images", ())),
     )
 
 

@@ -14,6 +14,7 @@ from torch.utils.data import BatchSampler, Dataset, SequentialSampler
 from axolotl.integrations.diffusion.lm.batch import DiffusionBatch
 from axolotl.integrations.diffusion.lm.trainer import AxolotlDiffusionTrainer
 from axolotl.model_support import DiffusionLayout, LogitAlignment
+from axolotl.utils.collators.multimodal import image_model_inputs
 
 from .args import DecisionConfig
 from .loss import (
@@ -370,6 +371,7 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
         _require_fields(inputs, required, "full-sequence decision batch")
         backend = self._full_sequence_backend()
         input_ids = inputs["input_ids"].long()
+        media = image_model_inputs(inputs.get("model_inputs", {}), input_ids.device)
         packed = backend.pack(
             input_ids,
             inputs["document_ids"].long(),
@@ -421,10 +423,11 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
                         model_kwargs={
+                            **media,
                             "axolotl_selected_logits": (
                                 selected_rows,
                                 selected_positions,
-                            )
+                            ),
                         },
                     )
                 ),
@@ -440,7 +443,7 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs={"cce_return_hidden_states": True},
+                        model_kwargs={**media, "cce_return_hidden_states": True},
                     )
                 ),
                 "final_logits_from_outputs": lambda output: output.last_hidden_state,
@@ -460,6 +463,7 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
+                        model_kwargs=media,
                     )
                 ),
                 logits_from_outputs=lambda current_outputs: backend.canvas_logits(
@@ -496,6 +500,7 @@ class DecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
+                        model_kwargs=media,
                     )
                 ),
                 logits_from_outputs=lambda current_outputs: backend.canvas_logits(

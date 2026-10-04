@@ -257,6 +257,10 @@ def _canvas_row(
         mask_token_id=mask_token_id,
         codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
         prevalidated_record=True,
+        model_source=_value(cfg, "base_model"),
+        processor_kwargs=_value(cfg, "processor_kwargs"),
+        model_revision=_value(cfg, "revision_of_model"),
+        model_type=_value(model_config, "model_type"),
     )
     row = {
         "canvas": canvas,

@@ -1,4 +1,6 @@
-"""Native descriptor for Nemotron Labs Diffusion."""
+"""Native descriptors for Nemotron Labs Diffusion text and vision checkpoints."""
+
+from dataclasses import replace
 
 from axolotl.model_support.base import ModelSupport, Supported, Unsupported
 from axolotl.model_support.diffusion import (
@@ -26,8 +28,16 @@ from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import DIFFUSION_LM
 
 
-def _model_class() -> type:
-    from .compat import resolve_nemotron_model_class
+def _model_class(*, default_vlm: bool = False) -> type:
+    from .compat import resolve_nemotron_model_class, resolve_nemotron_vlm_model_class
+
+    def resolve(config, model_source, revision):
+        if (
+            default_vlm
+            or getattr(config, "model_type", None) == "nemotron_labs_diffusion_vlm"
+        ):
+            return resolve_nemotron_vlm_model_class(model_source, revision=revision)
+        return resolve_nemotron_model_class(model_source, revision=revision)
 
     class AutoNemotronModel:
         def __new__(cls, config, **kwargs):
@@ -35,8 +45,8 @@ def _model_class() -> type:
 
         @classmethod
         def from_pretrained(cls, model_source, **kwargs):
-            model_class = resolve_nemotron_model_class(
-                model_source, revision=kwargs.get("revision")
+            model_class = resolve(
+                kwargs.get("config"), model_source, kwargs.get("revision")
             )
             resolved_revision = getattr(model_class, "_axolotl_resolved_revision", None)
             config = kwargs.get("config")
@@ -54,15 +64,19 @@ def _model_class() -> type:
                     "Nemotron from_config requires config._name_or_path for native source resolution."
                 )
             kwargs.pop("trust_remote_code", None)
-            model_class = resolve_nemotron_model_class(
-                source, revision=getattr(config, "_commit_hash", None)
-            )
+            model_class = resolve(config, source, getattr(config, "_commit_hash", None))
             resolved_revision = getattr(model_class, "_axolotl_resolved_revision", None)
             if resolved_revision:
                 config._commit_hash = resolved_revision
             return model_class._from_config(config, **kwargs)
 
     return AutoNemotronModel
+
+
+def _processor_class() -> type:
+    from .processing import NemotronVLMProcessor
+
+    return NemotronVLMProcessor
 
 
 def _before_model_build(context: ModelHookContext) -> None:
@@ -74,6 +88,10 @@ def _before_model_build(context: ModelHookContext) -> None:
     from cut_cross_entropy.transformers.patch import PATCH_FNS
 
     PATCH_FNS["nemotron_labs_diffusion"] = (
+        "axolotl.model_support.nemotron_diffusion.cut_cross_entropy",
+        "patch_nemotron",
+    )
+    PATCH_FNS["nemotron_labs_diffusion_vlm"] = (
         "axolotl.model_support.nemotron_diffusion.cut_cross_entropy",
         "patch_nemotron",
     )
@@ -91,6 +109,19 @@ def _validate(context: ModelHookContext) -> None:
     ):
         raise ValueError(
             "Native Nemotron support currently requires dlm_paradigm: bidirectional."
+        )
+    model_type = getattr(model_config, "model_type", None) or getattr(
+        context.cfg, "model_config_type", None
+    )
+    if (
+        model_type == "nemotron_labs_diffusion_vlm"
+        and not (context.inference or getattr(context.cfg, "inference", False))
+        and not getattr(context.cfg, "merge_lora", False)
+        and getattr(context.cfg, "decision", None) is None
+    ):
+        raise ValueError(
+            "Nemotron VLM image training currently requires the decision plugin and "
+            "a decision configuration; native image SFT collation is not implemented."
         )
     validate_native_diffusion_lora(context.cfg, model_name="Nemotron")
 
@@ -139,5 +170,21 @@ class NemotronDiffusionSupport(ModelSupport):
                 ModelHookPhase.CONFIGURE_RUN: (_validate,),
                 ModelHookPhase.BEFORE_MODEL_BUILD: (_before_model_build,),
             }
+        ),
+    )
+
+
+@register_model_support
+class NemotronDiffusionVLMSupport(NemotronDiffusionSupport):
+    """Native image-conditioned Nemotron diffusion model."""
+
+    model_types = ("nemotron_labs_diffusion_vlm",)
+    profile = replace(
+        NemotronDiffusionSupport.profile,
+        is_multimodal=True,
+        strategies=replace(
+            NemotronDiffusionSupport.profile.strategies,
+            auto_model_cls=lambda: _model_class(default_vlm=True),
+            auto_processor_cls=_processor_class,
         ),
     )

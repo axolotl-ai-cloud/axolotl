@@ -19,6 +19,7 @@ from axolotl.model_support import (
     get_model_support_for_cfg,
     resolve_model_support,
 )
+from axolotl.utils.collators.multimodal import collate_image_inputs
 
 
 def _value(config: Any, key: str, default: Any = None) -> Any:
@@ -191,6 +192,9 @@ class DecisionTrainingCollator:
             }
         )
         metadata["decision_examples"] = examples
+        media = collate_image_inputs([canvas.model_inputs for canvas in canvases])
+        if media:
+            metadata["model_inputs"] = media
         return metadata
 
 

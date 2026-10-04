@@ -93,6 +93,14 @@ def _canvas_mapping(
         "template_length": canvas.template_length,
         "prompt_slot_mask": list(canvas.prompt_slot_mask),
     }
+    if canvas.model_inputs:
+        digest = hashlib.sha256()
+        for key in ("image_sizes", "pixel_values"):
+            for item in canvas.model_inputs[key]:
+                tensor = torch.as_tensor(item).detach().cpu().contiguous()
+                digest.update(str((key, tuple(tensor.shape), tensor.dtype)).encode())
+                digest.update(tensor.numpy().tobytes())
+        value["image_inputs_sha256"] = digest.hexdigest()
     if ordinal_metadata:
         value["ordinal_metadata"] = _ordinal_metadata_mapping(canvas.ordinal_metadata)
     return value

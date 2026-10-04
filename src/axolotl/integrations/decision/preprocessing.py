@@ -39,6 +39,10 @@ def build_decision_canvas(
     codebook: str = "vendored26",
     prevalidated_record: bool = False,
     label_free: bool = False,
+    model_source: str | None = None,
+    model_revision: str | None = None,
+    processor_kwargs: Mapping[str, Any] | None = None,
+    model_type: str | None = None,
 ) -> DecisionCanvas:
     if steps < 1 or width < 2 or vocab_size < 2:
         raise ValueError("steps, canvas width, and vocabulary must be positive")
@@ -73,10 +77,42 @@ def build_decision_canvas(
         },
         codebook=codebook,
     )
+    images = normalized.get("images", ())
+    prepared: Mapping[str, Any] = {}
+    model_inputs: Mapping[str, Any] = {}
+    if images and prompt_ids is not None:
+        raise ValueError("decision images require processor-expanded prompt inputs")
     if prompt_ids is None:
-        prompt_ids = decision_prompt_ids(
-            tokenizer, system_text(schema), normalized["state"]
-        )
+        if images:
+            if model_type != "nemotron_labs_diffusion_vlm":
+                raise ValueError(
+                    "decision images require model_type nemotron_labs_diffusion_vlm"
+                )
+            if not isinstance(model_source, str) or not model_source:
+                raise ValueError("decision images require a supported VLM model source")
+            from axolotl.model_support.nemotron_diffusion.processing import (
+                prepare_decision_prompt,
+            )
+
+            prepared = prepare_decision_prompt(
+                tokenizer,
+                system_text(schema),
+                normalized["state"],
+                images,
+                model_source=model_source,
+                revision=model_revision,
+                **dict(processor_kwargs or {}),
+            )
+            prompt_ids = prepared["input_ids"]
+            model_inputs = {
+                key: value
+                for key, value in prepared.items()
+                if key in {"pixel_values", "image_sizes"}
+            }
+        else:
+            prompt_ids = decision_prompt_ids(
+                tokenizer, system_text(schema), normalized["state"]
+            )
     prompt_ids = tuple(prompt_ids)
     if slot_plan is not None:
         raise ValueError("decision latent slots were removed")
@@ -91,6 +127,15 @@ def build_decision_canvas(
         raise SchemaError("decision canvas exceeds width")
     ids.extend([pad_id] * (width - len(ids)))
     positions = tuple(slot["pos"] for slot in slots)
+    image_marker_ids = tuple(prepared.get("image_token_ids", ())) if images else ()
+    if image_marker_ids and any(
+        marker in allowed
+        for marker in image_marker_ids
+        for allowed in (slot["label_ids"] for slot in slots)
+    ):
+        raise ValueError(
+            "image marker IDs must not overlap decision answer codebook IDs"
+        )
     generator = random.Random(seed)  # nosec B311 - Reproduce pinned serving noise.
     for position in positions:
         if noise_kind == "uniform":
@@ -111,7 +156,9 @@ def build_decision_canvas(
                 normalized["labels"][question["id"]] for question in schema["questions"]
             )
         ),
-        pinned_mask=tuple(steps > 1 and index not in positions for index in range(width)),
+        pinned_mask=tuple(
+            steps > 1 and index not in positions for index in range(width)
+        ),
         semantic_mask=(True,) * width,
         slot_mask=(False,) * width,
         template_length=len(base),
@@ -123,6 +170,7 @@ def build_decision_canvas(
             if include_ordinal_metadata
             else ()
         ),
+        model_inputs=model_inputs,
     )
     validate_canvas(result)
     if any(

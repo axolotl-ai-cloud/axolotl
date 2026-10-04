@@ -28,6 +28,8 @@ ROW_FEATURES = Features(
         "template_length": Value("int64"),
         "targets_json": Value("string"),
         "ordinal_metadata_json": Value("string"),
+        "model_input_pixel_values": List(List(List(List(Value("float32"))))),
+        "model_input_image_sizes": List(List(Value("int64"))),
         "record_json": Value("string"),
         "source": Value("string"),
         "source_weight": Value("float64"),
@@ -76,6 +78,7 @@ def _canvas_from_json(data: Mapping[str, Any]) -> DecisionCanvas:
         template_length=int(data["template_length"]),
         prompt_slot_mask=tuple(data.get("prompt_slot_mask", ())),
         ordinal_metadata=ordinal,
+        model_inputs=data.get("model_inputs", {}),
     )
 
 
@@ -116,6 +119,13 @@ def row_to_arrow(row: Mapping[str, Any], *, split: str = "train") -> dict[str, A
     source_weight = value.pop(
         "_decision_example_source_weight", value.get("source_weight", 1.0)
     )
+    model_inputs = canvas.pop("model_inputs", {})
+    pixel_values = model_inputs.get("pixel_values", ())
+    image_sizes = model_inputs.get("image_sizes", ())
+    if hasattr(pixel_values, "tolist"):
+        pixel_values = pixel_values.tolist()
+    if hasattr(image_sizes, "tolist"):
+        image_sizes = image_sizes.tolist()
     return {
         "split": split,
         "canvas_prompt_ids": canvas["prompt_ids"],
@@ -130,6 +140,8 @@ def row_to_arrow(row: Mapping[str, Any], *, split: str = "train") -> dict[str, A
         "template_length": canvas["template_length"],
         "targets_json": _json(canvas["targets"]),
         "ordinal_metadata_json": _json(canvas["ordinal_metadata"]),
+        "model_input_pixel_values": pixel_values,
+        "model_input_image_sizes": image_sizes,
         "record_json": _json(record),
         "source": None if source is None else str(source),
         "source_weight": float(source_weight),
@@ -153,6 +165,14 @@ def row_from_arrow(value: Mapping[str, Any]) -> dict[str, Any]:
         "prompt_slot_mask": value["prompt_slot_mask"],
         "template_length": value["template_length"],
         "ordinal_metadata": json.loads(value["ordinal_metadata_json"]),
+        "model_inputs": {
+            key: media
+            for key, media in {
+                "pixel_values": value.get("model_input_pixel_values", ()),
+                "image_sizes": value.get("model_input_image_sizes", ()),
+            }.items()
+            if media
+        },
     }
     record = json.loads(value["record_json"])
     if record is not None:

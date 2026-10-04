@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -33,7 +34,7 @@ from .row_codec import (
     rows_to_dataset,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 PRODUCER = "decision-prepared-arrow-v1"
 LOG = logging.getLogger(__name__)
 
@@ -70,6 +71,73 @@ def _file_hash(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _image_identity(source_paths: Sequence[Path]) -> list[tuple[str, str]] | None:
+    """Hash local image bytes referenced by JSONL sources; remote media is uncached."""
+    images: list[Path] = []
+    for source in source_paths:
+        try:
+            handle = source.open(encoding="utf-8")
+        except OSError:
+            return None
+        with handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    return None
+                values = row.get("images") if isinstance(row, Mapping) else None
+                if values is None:
+                    continue
+                if not isinstance(values, list):
+                    return None
+                for image in values:
+                    if not isinstance(image, str) or not image:
+                        return None
+                    if "://" in image:
+                        return None
+                    path = Path(image)
+                    # Processor paths are interpreted from the preparation cwd.
+                    path = path.resolve()
+                    if not path.is_file():
+                        return None
+                    images.append(path.resolve())
+    return [(str(path), _file_hash(path)) for path in dict.fromkeys(images)]
+
+
+def _processor_identity(cfg: Any) -> dict[str, Any]:
+    spec = importlib.util.find_spec(
+        "axolotl.model_support.nemotron_diffusion.processing"
+    )
+    origin = None if spec is None else spec.origin
+    model_source = _value(cfg, "base_model")
+    source = Path(model_source) if isinstance(model_source, str) else None
+    return {
+        "model_source": model_source,
+        "settings": _value(cfg, "processor_kwargs"),
+        "default_max_image_size": os.environ.get("DEFAULT_MAX_IMAGE_SIZE"),
+        "model_revision": _value(_value(cfg, "model_config"), "_commit_hash")
+        or _value(cfg, "revision_of_model")
+        or _value(cfg, "_commit_hash"),
+        "local_processor_files": {
+            name: _file_hash(source / name)
+            for name in ("image_processing.py", "config.json")
+            if source is not None and (source / name).is_file()
+        },
+        "module_sha256": _file_hash(Path(origin))
+        if isinstance(origin, str) and Path(origin).is_file()
+        else None,
+    }
+
+
+def _uses_vlm(cfg: Any) -> bool:
+    return (
+        _value(_value(cfg, "model_config"), "model_type")
+        == "nemotron_labs_diffusion_vlm"
+    )
 
 
 def _value(value: Any, name: str, default: Any = None) -> Any:
@@ -198,6 +266,11 @@ def identity(
     )
     if not tokenizer_files or not source_paths:
         return None
+    image_inputs: list[tuple[str, str]] = []
+    if _uses_vlm(cfg):
+        image_inputs = _image_identity(source_paths)
+        if image_inputs is None:
+            return None
     try:
         spec_value = asdict(spec) if is_dataclass(spec) else vars(spec)  # type: ignore[arg-type]
         audit_config = build_preparation_audit(cfg, (), (), {})["config"]
@@ -216,6 +289,7 @@ def identity(
             "batch_flattening": _value(cfg, "batch_flattening"),
             "eval_batch_size": _value(cfg, "eval_batch_size"),
         },
+        "processor": _processor_identity(cfg) if _uses_vlm(cfg) else None,
         "spec": spec_value,
         "tokenizer": {
             "files": [
@@ -244,6 +318,7 @@ def identity(
             "transformers_version": transformers.__version__,
         },
         "sources": [(str(path.resolve()), _file_hash(path)) for path in source_paths],
+        "images": image_inputs,
     }
     if hub_identity is not None:
         payload["tokenizer"]["hub"] = hub_identity

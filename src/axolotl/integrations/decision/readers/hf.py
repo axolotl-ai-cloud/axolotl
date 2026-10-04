@@ -19,6 +19,10 @@ from axolotl.model_support.diffusion import (
     LogitAlignment,
     MaskTokenPolicy,
 )
+from axolotl.utils.collators.multimodal import (
+    collate_image_inputs,
+    image_model_inputs,
+)
 
 from ..records import DecisionCanvas
 from .base import (
@@ -210,6 +214,9 @@ class HFReader:
         device: torch.device,
     ):
         vocab_size = self._vocab_size(model)
+        media = image_model_inputs(
+            collate_image_inputs([canvas.model_inputs for canvas in canvases]), device
+        )
         pieces: list[torch.Tensor] = []
         documents: list[torch.Tensor] = []
         validity: list[torch.Tensor] = []
@@ -282,7 +289,11 @@ class HFReader:
             recurrent_conditioning_mask=torch.zeros_like(update_mask),
             forward_step=lambda state, _conditioning, _conditioning_mask: (
                 backend.forward(
-                    model, packed, state, kernel_options=self.kernel_options
+                    model,
+                    packed,
+                    state,
+                    kernel_options=self.kernel_options,
+                    model_kwargs=media,
                 )
             ),
             logits_from_outputs=lambda output: backend.canvas_logits(

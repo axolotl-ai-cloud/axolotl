@@ -1346,3 +1346,42 @@ def test_decision_cce_final_read_matches_dense_loss_and_gradients(
             assert trainers[1]._decision_metrics[phase][source] == pytest.approx(
                 values, rel=1e-6, abs=1e-7
             )
+
+
+@pytest.mark.parametrize("steps", [1, 2])
+@pytest.mark.parametrize("mode", ["full", "selected", "hidden"])
+def test_multimodal_inputs_reach_each_decision_forward(steps, mode):
+    class ImageModel(_SelectedTinyNativeModel):
+        supports_selected_logits = mode == "selected"
+
+        def forward(self, *args, **kwargs):
+            output = super().forward(*args, **kwargs)
+            if kwargs.get("cce_return_hidden_states"):
+                output.last_hidden_state = output.logits
+            return output
+
+    trainer = _MultistepTrainerHarness(
+        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+        k_max=steps,
+        sampled_steps=steps,
+    )
+    model = ImageModel()
+    inputs = _full_sequence_multistep_inputs()
+    media = {
+        "pixel_values": torch.ones(2, 3, 2, 2),
+        "image_sizes": torch.tensor([[2, 2], [2, 2]]),
+    }
+    inputs["model_inputs"] = media
+    logits, _ = trainer._full_sequence_logits(
+        model,
+        inputs,
+        trainer._native_spec,
+        trainer._decision_config(),
+        return_hidden_states=mode == "hidden",
+    )
+    logits.sum().backward()
+    assert model.calls
+    for call in model.calls:
+        torch.testing.assert_close(call["pixel_values"], media["pixel_values"])
+        torch.testing.assert_close(call["image_sizes"], media["image_sizes"])
+    assert model.logit_bias.grad is not None

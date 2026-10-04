@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Any, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -25,3 +25,4 @@ class DecisionCanvas:
     template_length: int
     prompt_slot_mask: Sequence[bool] = ()
     ordinal_metadata: Sequence[OrdinalMetadata | None] = ()
+    model_inputs: Mapping[str, Any] = field(default_factory=dict)

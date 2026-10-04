@@ -10,6 +10,13 @@ except ImportError:
     create_block_mask = None
 
 
+_compiled_create_block_mask = (
+    torch.compile(create_block_mask, dynamic=True)
+    if create_block_mask is not None and hasattr(torch, "compile")
+    else create_block_mask
+)
+
+
 def full_sequence_flex_block_mask(
     document_ids: torch.Tensor,
     semantic_validity: torch.Tensor,
@@ -17,7 +24,7 @@ def full_sequence_flex_block_mask(
     sliding_window: int | None = None,
 ):
     """Create a bidirectional mask restricted to each logical document."""
-    if create_block_mask is None:
+    if _compiled_create_block_mask is None:
         raise RuntimeError(
             "flex_attention requires a PyTorch build with BlockMask support"
         )
@@ -35,7 +42,10 @@ def full_sequence_flex_block_mask(
             & (document_ids[batch, query] == document_ids[batch, key])
         )
 
-    return create_block_mask(
+    block_mask_factory = (
+        _compiled_create_block_mask if document_ids.is_cuda else create_block_mask
+    )
+    return block_mask_factory(
         mask_mod,
         B=batch_size,
         H=None,

@@ -613,3 +613,25 @@ def test_cli_explicit_split_uses_only_evaluation_loader_and_records_selection(
         "canvas_too_long": {"eval": 0},
         "budget_drops": {"eval": {"logical": 0, "physical": 0}},
     }
+
+
+def test_prepared_digest_includes_visual_context():
+    from axolotl.integrations.decision.evaluation import prepared_rows_canvas_sha256
+
+    row = _prepared_row()
+    row["canvas"] = replace(
+        row["canvas"],
+        model_inputs={
+            "pixel_values": [torch.zeros(3, 2, 2).tolist()],
+            "image_sizes": [[2, 2]],
+        },
+    )
+    original = prepared_rows_canvas_sha256([row])
+    row["canvas"] = replace(
+        row["canvas"],
+        model_inputs={
+            "pixel_values": [torch.ones(3, 2, 2).tolist()],
+            "image_sizes": [[2, 2]],
+        },
+    )
+    assert prepared_rows_canvas_sha256([row]) != original

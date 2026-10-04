@@ -38,3 +38,16 @@ See [the 8B decision training recipe](DECISION_TRAINING.md) for the plugin YAML,
 portable dataset paths, batch flattening, and opt-in typed-decision packing.
 For the reproducibly materialized public procedural decision mix, see
 [PUBLIC_PROCEDURAL_DECISION_MIX.md](PUBLIC_PROCEDURAL_DECISION_MIX.md).
+
+For image-conditioned choice, score, and noul training, see
+[the VLM starter recipe](decision-vlm-lora-8b.yaml) and
+[the image dataset contract](DECISION_DATASET_FORMAT.md#image-conditioned-decisions).
+It shares the decision objectives and core media collation with text-only
+training, with adapters scoped to the language decoder.
+
+The VLM recipe uses BF16 LoRA with a frozen vision tower and projector. It is
+a starting configuration, not a tuned accuracy or VRAM guarantee. CUDA
+FlexAttention compiles both the attention kernel and block-mask construction;
+whole-model compilation is optional. Selected-position logits avoid projecting
+image/context positions through the vocabulary head. QLoRA is not enabled for
+native diffusion yet.

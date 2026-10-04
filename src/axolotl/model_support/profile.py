@@ -60,6 +60,7 @@ class ModelHookContext:
 
 ModelHook = Callable[[ModelHookContext], None]
 AutoModelClassProvider = Callable[[], type | None]
+AutoProcessorClassProvider = Callable[[], type | None]
 ProcessingStrategyClassProvider = Callable[[], type["ProcessingStrategy"] | None]
 ConfigMatcher = Callable[["DictDefault"], bool]
 ProcessorMatcher = Callable[["ProcessorMixin"], bool]
@@ -93,10 +94,16 @@ class ModelStrategies:
     """
 
     auto_model_cls: AutoModelClassProvider | None = None
+    auto_processor_cls: AutoProcessorClassProvider | None = None
     processing_strategy_cls: ProcessingStrategyClassProvider | None = None
 
     def with_overrides(self, overrides: ModelStrategyOverrides) -> ModelStrategies:
         return ModelStrategies(
+            auto_processor_cls=(
+                self.auto_processor_cls
+                if isinstance(overrides.auto_processor_cls, _InheritStrategy)
+                else overrides.auto_processor_cls
+            ),
             auto_model_cls=(
                 self.auto_model_cls
                 if isinstance(overrides.auto_model_cls, _InheritStrategy)
@@ -119,6 +126,9 @@ class ModelStrategyOverrides:
     """
 
     auto_model_cls: AutoModelClassProvider | None | _InheritStrategy = _INHERIT_STRATEGY
+    auto_processor_cls: AutoProcessorClassProvider | None | _InheritStrategy = (
+        _INHERIT_STRATEGY
+    )
     processing_strategy_cls: (
         ProcessingStrategyClassProvider | None | _InheritStrategy
     ) = _INHERIT_STRATEGY

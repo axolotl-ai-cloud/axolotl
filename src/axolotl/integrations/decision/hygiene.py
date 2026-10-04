@@ -31,6 +31,18 @@ def state_fingerprint(state: Any) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def context_fingerprint(record: Mapping[str, Any]) -> str:
+    """Identify the complete conditioning context, including ordered images."""
+    state = state_fingerprint(record.get("state"))
+    images = record.get("images", ())
+    if not isinstance(images, (list, tuple)) or any(
+        not isinstance(image, str) or not image for image in images
+    ):
+        raise ValueError("decision record images must be ordered nonempty strings")
+    encoded = json.dumps(list(images), ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(f"{state}:{encoded}".encode("utf-8")).hexdigest()
+
+
 def family_key(record: Mapping[str, Any]) -> tuple[str, str]:
     source = record.get("source")
     family = record.get("family") or record.get("group")
@@ -51,14 +63,14 @@ def decontaminate(
     eval_states: set[str] = set()
     eval_families: set[tuple[str, str]] = set()
     for record in evaluation:
-        eval_states.add(state_fingerprint(record["state"]))
+        eval_states.add(context_fingerprint(record))
         eval_families.add(family_key(record))
     kept = []
     counts = {"input": 0, "state_overlap": 0, "family_overlap": 0, "kept": 0}
     for record in training:
         counts["input"] += 1
         key = family_key(record)
-        if state_fingerprint(record["state"]) in eval_states:
+        if context_fingerprint(record) in eval_states:
             counts["state_overlap"] += 1
         elif exclude_families and key in eval_families:
             counts["family_overlap"] += 1
@@ -76,7 +88,7 @@ def assert_split_isolation(
     families: dict[tuple[str, str], str] = {}
     for split, records in splits.items():
         for record in records:
-            fingerprint = state_fingerprint(record["state"])
+            fingerprint = context_fingerprint(record)
             key = family_key(record)
             if fingerprint in states and states[fingerprint] != split:
                 raise ValueError(

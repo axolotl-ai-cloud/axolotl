@@ -179,3 +179,28 @@ def test_full_sequence_rejects_microbatch_above_payload_capacity():
     )
     with pytest.raises(ValueError, match="physical payload capacity"):
         collator(_rows())
+
+
+def test_image_collation_preserves_flattened_document_order_and_supervision():
+    from dataclasses import replace
+
+    rows = _rows()
+    rows[0]["canvas"] = replace(
+        rows[0]["canvas"],
+        model_inputs={"pixel_values": [torch.ones(3, 2, 4)], "image_sizes": [[2, 4]]},
+    )
+    rows[1]["canvas"] = replace(
+        rows[1]["canvas"],
+        model_inputs={
+            "pixel_values": [torch.full((3, 4, 2), 2.0)],
+            "image_sizes": [[4, 2]],
+        },
+    )
+    batch = DecisionTrainingCollator(_spec(DiffusionLayout.FULL_SEQUENCE))(
+        [[rows[0]], [rows[1]]]
+    )
+    assert batch["model_inputs"]["image_sizes"].tolist() == [[2, 4], [4, 2]]
+    assert batch["model_inputs"]["pixel_values"][:, 0, 0, 0].tolist() == [1, 2]
+    assert batch["decision_label_positions"].tolist() == [[3, 5], [11, -1]]
+    assert not batch["canvas_corruptible_mask"][0, :2].any()
+    assert not batch["canvas_corruptible_mask"][0, 6:9].any()

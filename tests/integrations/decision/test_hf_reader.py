@@ -618,3 +618,28 @@ def test_shared_reader_restores_model_mode_after_forward_error():
             _canvas(),
         )
     assert model.training
+
+
+def test_multimodal_reader_forwards_media_on_every_denoising_step():
+    class ImageEcho(_FullSequenceEcho):
+        def __init__(self):
+            super().__init__()
+            self.media = []
+
+        def forward(self, *args, **kwargs):
+            self.media.append((kwargs.pop("pixel_values"), kwargs.pop("image_sizes")))
+            return super().forward(*args, **kwargs)
+
+    canvas = replace(
+        _canvas(),
+        model_inputs={"pixel_values": [torch.ones(3, 2, 4)], "image_sizes": [[2, 4]]},
+    )
+    model = ImageEcho()
+    reader = HFReader(attention_backend="dense", mask_token_id=2)
+    spec = _spec(layout=DiffusionLayout.FULL_SEQUENCE, noise=DiffusionNoise.ABSORBING)
+    reads = reader.read_batch(model, spec, [canvas, _canvas()], steps=2)
+    assert len(reads) == 2
+    assert len(model.media) == 2
+    for pixels, sizes in model.media:
+        assert pixels.shape == (1, 3, 2, 4)
+        assert sizes.tolist() == [[2, 4]]

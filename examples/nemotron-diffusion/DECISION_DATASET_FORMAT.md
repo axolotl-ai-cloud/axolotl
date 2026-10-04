@@ -84,3 +84,36 @@ partial-distribution renormalization, ranking/Plackett--Luce target, or
 hard/soft blending field. Those are proposed formats, not dataset fields. A
 partial label must be modeled explicitly in a future contract; silently
 renormalizing it would change the loss.
+
+## Image-conditioned decisions
+
+Nemotron-Labs-Diffusion-VLM-8B accepts an optional top-level `images` list of
+local image paths or HTTP(S) URLs. Images appear in list order before `state`
+in the user message. Use `state` and question instructions to identify images
+by their order when comparing several images. Supply paths relative to the
+training process's working directory, or use absolute paths.
+
+```json
+{"source":"visual-inspection","id":"parcel-42","group":"parcel-42","images":["/data/parcel-42.jpg"],"state":"Inspect the parcel shown in the image.","questions":{"action":{"type":"choice","instructions":"Choose the appropriate next action.","options":["accept","inspect manually","reject"]},"damage":{"type":"score","instructions":"Rate visible damage.","levels":["none","minor","major"]},"open":{"type":"noul","instructions":"Is the parcel visibly open?"}},"labels":{"action":{"kind":"hard","gold_idx":1},"damage":{"kind":"dist","probs":[0.1,0.8,0.1]},"open":{"kind":"hard","gold_idx":1}}}
+```
+
+All questions share the visual context and are scored in the same decision
+canvas. Hard and soft targets use the same semantics as text-only records.
+Use `processor_kwargs.max_image_size` to bound the longest image edge before
+patch alignment (the starter recipe uses 560 pixels). Image expansion counts
+toward `sequence_len`; images and their marker tokens
+are context, never decision-loss targets. Oversized examples follow the
+existing decision length policy rather than truncating through an image.
+
+Install the image preprocessing dependencies with `pip install 'axolotl[vision]'`
+(or `pip install -e '.[vision]'` from a checkout), then start from
+[decision-vlm-lora-8b.yaml](decision-vlm-lora-8b.yaml). Its LoRA
+module pattern targets only the language decoder; vision and the projector
+remain frozen. This is a starter configuration, not a benchmark-tuned recipe.
+The VLM reserves image marker IDs 18–21, so a reserved-token codebook must not
+reuse these IDs. Use the example's `spreadsheet151` codebook initially.
+
+Decoded Hugging Face `Image` columns are not a normalized decision source yet;
+materialize their images to local files and supply those paths when converting
+the source into this format. Local-image cache identity includes image contents;
+remote image URLs bypass prepared-cache reuse.

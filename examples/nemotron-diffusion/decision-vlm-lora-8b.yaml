@@ -1,0 +1,78 @@
+base_model: nvidia/Nemotron-Labs-Diffusion-VLM-8B
+trust_remote_code: true
+processor_kwargs:
+  max_image_size: 560
+plugins:
+  - axolotl.integrations.diffusion.DiffusionPlugin
+  - axolotl.integrations.decision.DecisionPlugin
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+# Scope adapters to the language decoder, leaving vision and its projector frozen.
+lora_target_modules: 'encoder\.layers\.\d+\.(self_attn\.(q_proj|k_proj|v_proj|o_proj)|mlp\.(gate_proj|up_proj|down_proj))'
+loraplus_lr_ratio: 8
+
+attn_implementation: flex_attention
+bf16: true
+sequence_len: 4096
+batch_flattening: true
+sample_packing: false
+eval_sample_packing: false
+micro_batch_size: 1
+gradient_accumulation_steps: 8
+num_epochs: 1
+learning_rate: 2.5e-5
+optimizer: adamw_torch
+lr_scheduler: constant
+warmup_steps: 0
+max_grad_norm: 1.0
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+dataset_num_proc: 4
+dataloader_num_workers: 0
+val_set_size: 0
+remove_unused_columns: false
+
+datasets:
+  - path: json
+    data_files: ./data/visual-decision-train.jsonl
+    split: train
+    type: decision.jsonl
+test_datasets:
+  - path: json
+    data_files: ./data/visual-decision-dev.jsonl
+    split: dev
+    type: decision.jsonl
+
+dataset_prepared_path: ./last_run_prepared/nemotron-decision-vlm-8b
+output_dir: ./outputs/nemotron-decision-vlm-8b
+logging_steps: 1
+save_strategy: steps
+save_steps: 50
+eval_strategy: steps
+eval_steps: 50
+load_best_model_at_end: false
+
+diffusion:
+  from_causal_lm: false
+  generate_samples: false
+  canvas_width: 128
+  mask_token_id: 100
+  eos_tail: none
+  unroll:
+    k_max: 1
+    grad_through_steps: false
+decision:
+  read_fraction: 1.0
+  mixture:
+    per_batch_stratified: false
+  labels:
+    label_softmax: both
+    brier_weight: 0.1
+    codebook: spreadsheet151
+  eval:
+    steps: [1]
+seed: 42
