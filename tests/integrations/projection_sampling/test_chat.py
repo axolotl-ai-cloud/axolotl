@@ -610,6 +610,7 @@ def test_plugin_batches_chat_proposals_and_preserves_parser_masks(
     monkeypatch.setattr(TransformersBackend, "from_config", lambda *args: backend)
     config = ProjectionSamplingConfig(
         cache_dir=str(tmp_path / "cache"),
+        device="cpu",
         dataset_batch_size=2,
         proposal_batch_size=2,
         acceptance="logprob_improvement",
