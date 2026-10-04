@@ -1144,7 +1144,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#license" id="toc-license" class="nav-link" data-scroll-target="#license">License</a></li>
   <li><a href="#acknowledgements" id="toc-acknowledgements" class="nav-link" data-scroll-target="#acknowledgements">Acknowledgements</a></li>
   </ul></li>
-  <li><a href="#adding-a-new-integration" id="toc-adding-a-new-integration" class="nav-link" data-scroll-target="#adding-a-new-integration">Adding a new integration</a></li>
+  <li><a href="#adding-a-new-integration" id="toc-adding-a-new-integration" class="nav-link" data-scroll-target="#adding-a-new-integration">Adding a new integration</a>
+  <ul class="collapse">
+  <li><a href="#publishing-an-always-on-training-plugin" id="toc-publishing-an-always-on-training-plugin" class="nav-link" data-scroll-target="#publishing-an-always-on-training-plugin">Publishing an always-on training plugin</a></li>
+  <li><a href="#publishing-model-support" id="toc-publishing-model-support" class="nav-link" data-scroll-target="#publishing-model-support">Publishing model support</a></li>
+  </ul></li>
   <li><a href="#adding-a-cli-command" id="toc-adding-a-cli-command" class="nav-link" data-scroll-target="#adding-a-cli-command">Adding a CLI command</a></li>
   <li><a href="#adding-a-cloud-launcher" id="toc-adding-a-cloud-launcher" class="nav-link" data-scroll-target="#adding-a-cloud-launcher">Adding a cloud launcher</a>
   <ul class="collapse">
@@ -4347,28 +4351,60 @@ Note
 <p>See this repo for an example: <a href="https://github.com/axolotl-ai-cloud/diff-transformer">https://github.com/axolotl-ai-cloud/diff-transformer</a></p>
 </div>
 </div>
+<section id="publishing-an-always-on-training-plugin" class="level3">
+<h3 class="anchored" data-anchor-id="publishing-an-always-on-training-plugin">Publishing an always-on training plugin</h3>
+<p>An installed integration can register itself before configuration validation.
+This is useful when it contributes configuration fields, an adapter, or hooks
+that must be available for every Axolotl invocation. Point the plugin package’s
+<code>pyproject.toml</code> at its <code>BasePlugin</code> subclass:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb123"><pre class="sourceCode toml code-with-copy"><code class="sourceCode toml"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[project.entry-points."</span><span class="dt">axolotl.plugins"</span><span class="kw">]</span></span>
+<span id="cb123-2"><a href="#cb123-2" aria-hidden="true" tabindex="-1"></a><span class="dt">my-integration</span> <span class="op">=</span> <span class="st">"my_package.integration:MyIntegrationPlugin"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Axolotl loads every <code>axolotl.plugins</code> entry point alongside its bundled plugins,
+so users do not need to repeat the plugin in <code>plugins:</code>. The entry-point target
+uses the usual <code>module:class</code> form and must be importable in the environment
+running Axolotl. Reinstall the package after changing this declaration; entry
+points are read from installed package metadata, not from a checkout’s
+<code>pyproject.toml</code>.</p>
+</section>
+<section id="publishing-model-support" class="level3">
+<h3 class="anchored" data-anchor-id="publishing-model-support">Publishing model support</h3>
+<p>A package can add support for a model architecture, or override Axolotl’s
+descriptor for an existing <code>model_type</code>, with a model-support entry point:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb124"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb124-1"><a href="#cb124-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.model_support <span class="im">import</span> ModelSupport</span>
+<span id="cb124-2"><a href="#cb124-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb124-3"><a href="#cb124-3" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyModelSupport(ModelSupport):</span>
+<span id="cb124-4"><a href="#cb124-4" aria-hidden="true" tabindex="-1"></a>    model_types <span class="op">=</span> (<span class="st">"my_model"</span>,)</span>
+<span id="cb124-5"><a href="#cb124-5" aria-hidden="true" tabindex="-1"></a>    <span class="co"># profile, matchers, hooks, and registrations as needed</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb125"><pre class="sourceCode toml code-with-copy"><code class="sourceCode toml"><span id="cb125-1"><a href="#cb125-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[project.entry-points."</span><span class="dt">axolotl.model_support"</span><span class="kw">]</span></span>
+<span id="cb125-2"><a href="#cb125-2" aria-hidden="true" tabindex="-1"></a><span class="dt">my-model</span> <span class="op">=</span> <span class="st">"my_package.model_support:MyModelSupport"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The target must be a <code>ModelSupport</code> subclass. Axolotl imports bundled descriptors
+first and registers entry-point descriptors after them, so an external descriptor
+with the same <code>model_type</code> replaces the bundled one. Entry points load lazily on
+the first model-support lookup and then remain registered for that process.</p>
+</section>
 </section>
 <section id="adding-a-cli-command" class="level2">
 <h2 class="anchored" data-anchor-id="adding-a-cli-command">Adding a CLI command</h2>
-<p>An integration can contribute its own <code>axolotl</code> subcommand. Unlike plugin hooks, which are
-loaded from the <code>plugins:</code> list of a config file, a subcommand has to be discoverable before
-any config is read, so it is registered through a packaging entry point instead.</p>
+<p>An integration can contribute its own <code>axolotl</code> subcommand. Unlike training plugins selected
+through a config file’s <code>plugins:</code> list, a subcommand has to be discoverable before any config
+is read, so it is registered through a packaging entry point instead. Always-on training plugins
+can also use the <code>axolotl.plugins</code> entry-point group described above.</p>
 <p>Define a regular <code>click</code> command in your package:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb123"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a><span class="co"># my_package/cli.py</span></span>
-<span id="cb123-2"><a href="#cb123-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> click</span>
-<span id="cb123-3"><a href="#cb123-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb123-4"><a href="#cb123-4" aria-hidden="true" tabindex="-1"></a><span class="at">@click.command</span>()</span>
-<span id="cb123-5"><a href="#cb123-5" aria-hidden="true" tabindex="-1"></a><span class="at">@click.argument</span>(<span class="st">"config"</span>, <span class="bu">type</span><span class="op">=</span>click.Path(exists<span class="op">=</span><span class="va">True</span>, path_type<span class="op">=</span><span class="bu">str</span>))</span>
-<span id="cb123-6"><a href="#cb123-6" aria-hidden="true" tabindex="-1"></a><span class="at">@click.option</span>(<span class="st">"--rank-ratio"</span>, <span class="bu">type</span><span class="op">=</span><span class="bu">float</span>, default<span class="op">=</span><span class="fl">0.01</span>)</span>
-<span id="cb123-7"><a href="#cb123-7" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> my_command(config: <span class="bu">str</span>, rank_ratio: <span class="bu">float</span>):</span>
-<span id="cb123-8"><a href="#cb123-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""one-line summary shown in `axolotl --help`"""</span></span>
-<span id="cb123-9"><a href="#cb123-9" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> my_package.core <span class="im">import</span> run  <span class="co"># keep heavy imports inside the function</span></span>
-<span id="cb123-10"><a href="#cb123-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb123-11"><a href="#cb123-11" aria-hidden="true" tabindex="-1"></a>    run(config, rank_ratio<span class="op">=</span>rank_ratio)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb126"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb126-1"><a href="#cb126-1" aria-hidden="true" tabindex="-1"></a><span class="co"># my_package/cli.py</span></span>
+<span id="cb126-2"><a href="#cb126-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> click</span>
+<span id="cb126-3"><a href="#cb126-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb126-4"><a href="#cb126-4" aria-hidden="true" tabindex="-1"></a><span class="at">@click.command</span>()</span>
+<span id="cb126-5"><a href="#cb126-5" aria-hidden="true" tabindex="-1"></a><span class="at">@click.argument</span>(<span class="st">"config"</span>, <span class="bu">type</span><span class="op">=</span>click.Path(exists<span class="op">=</span><span class="va">True</span>, path_type<span class="op">=</span><span class="bu">str</span>))</span>
+<span id="cb126-6"><a href="#cb126-6" aria-hidden="true" tabindex="-1"></a><span class="at">@click.option</span>(<span class="st">"--rank-ratio"</span>, <span class="bu">type</span><span class="op">=</span><span class="bu">float</span>, default<span class="op">=</span><span class="fl">0.01</span>)</span>
+<span id="cb126-7"><a href="#cb126-7" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> my_command(config: <span class="bu">str</span>, rank_ratio: <span class="bu">float</span>):</span>
+<span id="cb126-8"><a href="#cb126-8" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""one-line summary shown in `axolotl --help`"""</span></span>
+<span id="cb126-9"><a href="#cb126-9" aria-hidden="true" tabindex="-1"></a>    <span class="im">from</span> my_package.core <span class="im">import</span> run  <span class="co"># keep heavy imports inside the function</span></span>
+<span id="cb126-10"><a href="#cb126-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb126-11"><a href="#cb126-11" aria-hidden="true" tabindex="-1"></a>    run(config, rank_ratio<span class="op">=</span>rank_ratio)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>and advertise it under the <code>axolotl.cli_commands</code> entry point group:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb124"><pre class="sourceCode toml code-with-copy"><code class="sourceCode toml"><span id="cb124-1"><a href="#cb124-1" aria-hidden="true" tabindex="-1"></a><span class="co"># my_package/pyproject.toml</span></span>
-<span id="cb124-2"><a href="#cb124-2" aria-hidden="true" tabindex="-1"></a><span class="kw">[project.entry-points."</span><span class="dt">axolotl.cli_commands"</span><span class="kw">]</span></span>
-<span id="cb124-3"><a href="#cb124-3" aria-hidden="true" tabindex="-1"></a><span class="dt">my-command</span> <span class="op">=</span> <span class="st">"my_package.cli:my_command"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb127"><pre class="sourceCode toml code-with-copy"><code class="sourceCode toml"><span id="cb127-1"><a href="#cb127-1" aria-hidden="true" tabindex="-1"></a><span class="co"># my_package/pyproject.toml</span></span>
+<span id="cb127-2"><a href="#cb127-2" aria-hidden="true" tabindex="-1"></a><span class="kw">[project.entry-points."</span><span class="dt">axolotl.cli_commands"</span><span class="kw">]</span></span>
+<span id="cb127-3"><a href="#cb127-3" aria-hidden="true" tabindex="-1"></a><span class="dt">my-command</span> <span class="op">=</span> <span class="st">"my_package.cli:my_command"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Installing your package makes <code>axolotl my-command</code> available, and it will be listed in
 <code>axolotl --help</code>. The entry point name is the subcommand name, and the value is
 <code>&lt;module&gt;:&lt;attribute&gt;</code>.</p>
@@ -4411,31 +4447,31 @@ loading. They implement <code>axolotl.cli.cloud.base.CloudLauncher</code> and ar
 the <code>axolotl.cloud_providers</code> entry-point group. Modal and Baseten use this same
 contract as built-in providers. <code>Cloud</code> remains an alias for <code>CloudLauncher</code>
 for existing integrations.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb125"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb125-1"><a href="#cb125-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.cloud.base <span class="im">import</span> CloudLauncher</span>
-<span id="cb125-2"><a href="#cb125-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb125-3"><a href="#cb125-3" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyCloud(CloudLauncher):</span>
-<span id="cb125-4"><a href="#cb125-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> train(</span>
-<span id="cb125-5"><a href="#cb125-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>,</span>
-<span id="cb125-6"><a href="#cb125-6" aria-hidden="true" tabindex="-1"></a>        config_yaml,</span>
-<span id="cb125-7"><a href="#cb125-7" aria-hidden="true" tabindex="-1"></a>        launcher<span class="op">=</span><span class="st">"accelerate"</span>,</span>
-<span id="cb125-8"><a href="#cb125-8" aria-hidden="true" tabindex="-1"></a>        launcher_args<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb125-9"><a href="#cb125-9" aria-hidden="true" tabindex="-1"></a>        local_dirs<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb125-10"><a href="#cb125-10" aria-hidden="true" tabindex="-1"></a>        <span class="op">**</span>kwargs,</span>
-<span id="cb125-11"><a href="#cb125-11" aria-hidden="true" tabindex="-1"></a>    ):</span>
-<span id="cb125-12"><a href="#cb125-12" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Validate self.config and submit the remote Axolotl process here.</span></span>
-<span id="cb125-13"><a href="#cb125-13" aria-hidden="true" tabindex="-1"></a>        ...</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb128"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb128-1"><a href="#cb128-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.cloud.base <span class="im">import</span> CloudLauncher</span>
+<span id="cb128-2"><a href="#cb128-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb128-3"><a href="#cb128-3" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyCloud(CloudLauncher):</span>
+<span id="cb128-4"><a href="#cb128-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> train(</span>
+<span id="cb128-5"><a href="#cb128-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>,</span>
+<span id="cb128-6"><a href="#cb128-6" aria-hidden="true" tabindex="-1"></a>        config_yaml,</span>
+<span id="cb128-7"><a href="#cb128-7" aria-hidden="true" tabindex="-1"></a>        launcher<span class="op">=</span><span class="st">"accelerate"</span>,</span>
+<span id="cb128-8"><a href="#cb128-8" aria-hidden="true" tabindex="-1"></a>        launcher_args<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb128-9"><a href="#cb128-9" aria-hidden="true" tabindex="-1"></a>        local_dirs<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb128-10"><a href="#cb128-10" aria-hidden="true" tabindex="-1"></a>        <span class="op">**</span>kwargs,</span>
+<span id="cb128-11"><a href="#cb128-11" aria-hidden="true" tabindex="-1"></a>    ):</span>
+<span id="cb128-12"><a href="#cb128-12" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Validate self.config and submit the remote Axolotl process here.</span></span>
+<span id="cb128-13"><a href="#cb128-13" aria-hidden="true" tabindex="-1"></a>        ...</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Register the provider in the <strong>plugin package’s</strong> <code>pyproject.toml</code> (not in
 Axolotl’s):</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb126"><pre class="sourceCode toml code-with-copy"><code class="sourceCode toml"><span id="cb126-1"><a href="#cb126-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[project.entry-points."</span><span class="dt">axolotl.cloud_providers"</span><span class="kw">]</span></span>
-<span id="cb126-2"><a href="#cb126-2" aria-hidden="true" tabindex="-1"></a><span class="dt">my-cloud</span> <span class="op">=</span> <span class="st">"my_package.cloud:MyCloud"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb129"><pre class="sourceCode toml code-with-copy"><code class="sourceCode toml"><span id="cb129-1"><a href="#cb129-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[project.entry-points."</span><span class="dt">axolotl.cloud_providers"</span><span class="kw">]</span></span>
+<span id="cb129-2"><a href="#cb129-2" aria-hidden="true" tabindex="-1"></a><span class="dt">my-cloud</span> <span class="op">=</span> <span class="st">"my_package.cloud:MyCloud"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Building the plugin wheel stores this declaration in its installed
 <code>.dist-info/entry_points.txt</code> metadata. Axolotl reads that metadata at runtime;
 no editable checkout or <code>pyproject.toml</code> is required on the user’s machine.
 Install the plugin alongside Axolotl in the same Python environment, then select
 it in a separate cloud YAML:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb127"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb127-1"><a href="#cb127-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> my-cloud</span></span>
-<span id="cb127-2"><a href="#cb127-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Provider-specific connection, image, and resource settings go here.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb128"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb128-1"><a href="#cb128-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yaml <span class="at">--cloud</span> cloud.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb130"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb130-1"><a href="#cb130-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> my-cloud</span></span>
+<span id="cb130-2"><a href="#cb130-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Provider-specific connection, image, and resource settings go here.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb131"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb131-1"><a href="#cb131-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yaml <span class="at">--cloud</span> cloud.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The provider constructor receives a plain dictionary containing the cloud
 configuration, including <code>provider</code>, and owns validation of its settings. The
 registry calls <code>CloudLauncher.from_config(config, config_dir=...)</code>; the default
@@ -4449,7 +4485,7 @@ checkouts with missing or stale installed metadata. Omitting <code>provider</cod
 the Modal default.</p>
 <p>For a provider that has no entry-point declaration, specify its import target
 directly in the cloud YAML:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb129"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb129-1"><a href="#cb129-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> my_package.cloud:MyCloud</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb132"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb132-1"><a href="#cb132-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> my_package.cloud:MyCloud</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The class must be importable in the launching Python environment. This works
 with an existing installed package, or a local module made available through
 <code>PYTHONPATH</code>; neither requires editing or reinstalling Axolotl. The target must
@@ -4478,8 +4514,8 @@ image build paths when a provider explicitly opts into that shared schema;
 core dispatch does not assume providers have an image-building configuration.
 Training plugins and provider SDKs are not loaded for discovery.</p>
 <p>Install provider dependencies separately while the implementations remain bundled:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb130"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb130-1"><a href="#cb130-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">'axolotl[modal]'</span>     <span class="co"># Modal SDK</span></span>
-<span id="cb130-2"><a href="#cb130-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">'axolotl[baseten]'</span>   <span class="co"># Truss SDK</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb133"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb133-1"><a href="#cb133-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">'axolotl[modal]'</span>     <span class="co"># Modal SDK</span></span>
+<span id="cb133-2"><a href="#cb133-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="st">'axolotl[baseten]'</span>   <span class="co"># Truss SDK</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>To extract a provider later, move its integration directory with its schemas,
 templates, tests, and dependency declaration into its own package. Register its
 launcher through that package’s <code>axolotl.cloud_providers</code> entry point, and remove
@@ -4536,16 +4572,16 @@ the submitting process.</p>
 <p>Image preparation is separate from the launcher and training backend. Modal and
 Baseten accept <code>image</code> for a prebuilt image containing Axolotl and any custom
 plugins:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb131"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb131-1"><a href="#cb131-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
-<span id="cb131-2"><a href="#cb131-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb134"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb134-1"><a href="#cb134-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
+<span id="cb134-2"><a href="#cb134-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Alternatively, use <code>image_build</code> to build from an explicit local context:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb132"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb132-1"><a href="#cb132-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
-<span id="cb132-2"><a href="#cb132-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image_build</span><span class="kw">:</span></span>
-<span id="cb132-3"><a href="#cb132-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context</span><span class="kw">:</span><span class="at"> ../my-training-source</span></span>
-<span id="cb132-4"><a href="#cb132-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dockerfile</span><span class="kw">:</span><span class="at"> Dockerfile</span></span>
-<span id="cb132-5"><a href="#cb132-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tag</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span>
-<span id="cb132-6"><a href="#cb132-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">build_args</span><span class="kw">:</span></span>
-<span id="cb132-7"><a href="#cb132-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">AXOLOTL_EXTRAS</span><span class="kw">:</span><span class="at"> deepspeed</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb135"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb135-1"><a href="#cb135-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
+<span id="cb135-2"><a href="#cb135-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image_build</span><span class="kw">:</span></span>
+<span id="cb135-3"><a href="#cb135-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context</span><span class="kw">:</span><span class="at"> ../my-training-source</span></span>
+<span id="cb135-4"><a href="#cb135-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dockerfile</span><span class="kw">:</span><span class="at"> Dockerfile</span></span>
+<span id="cb135-5"><a href="#cb135-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tag</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span>
+<span id="cb135-6"><a href="#cb135-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">build_args</span><span class="kw">:</span></span>
+<span id="cb135-7"><a href="#cb135-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">AXOLOTL_EXTRAS</span><span class="kw">:</span><span class="at"> deepspeed</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><code>context</code> is relative to the cloud YAML file; <code>dockerfile</code> is relative to that
 context and must be inside it. Use either <code>image</code> or <code>image_build</code>. Omitting both
 preserves the provider’s existing default image. Builds target <code>linux/amd64</code> by
@@ -4554,10 +4590,10 @@ default; <code>image_build.platform</code> can select <code>linux/arm64</code> f
 before submission. The Dockerfile controls installation of Axolotl, dependencies,
 and custom plugins; building a context does not automatically install its files.
 For example, a context containing <code>axolotl/</code> and <code>my-plugin/</code> could use:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb133"><pre class="sourceCode dockerfile code-with-copy"><code class="sourceCode dockerfile"><span id="cb133-1"><a href="#cb133-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> axolotlai/axolotl:main-py3.11-cu128-2.9.1</span>
-<span id="cb133-2"><a href="#cb133-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> axolotl/ /opt/axolotl-fork/</span>
-<span id="cb133-3"><a href="#cb133-3" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> my-plugin/ /opt/my-plugin/</span>
-<span id="cb133-4"><a href="#cb133-4" aria-hidden="true" tabindex="-1"></a><span class="kw">RUN</span> <span class="ex">python</span> <span class="at">-m</span> pip install <span class="at">--no-build-isolation</span> /opt/axolotl-fork /opt/my-plugin</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb136"><pre class="sourceCode dockerfile code-with-copy"><code class="sourceCode dockerfile"><span id="cb136-1"><a href="#cb136-1" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> axolotlai/axolotl:main-py3.11-cu128-2.9.1</span>
+<span id="cb136-2"><a href="#cb136-2" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> axolotl/ /opt/axolotl-fork/</span>
+<span id="cb136-3"><a href="#cb136-3" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> my-plugin/ /opt/my-plugin/</span>
+<span id="cb136-4"><a href="#cb136-4" aria-hidden="true" tabindex="-1"></a><span class="kw">RUN</span> <span class="ex">python</span> <span class="at">-m</span> pip install <span class="at">--no-build-isolation</span> /opt/axolotl-fork /opt/my-plugin</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This includes local edits selected by the Dockerfile’s <code>COPY</code> instructions and
 the context’s <code>.dockerignore</code>. Choose a base image with a compatible Python,
 PyTorch, and CUDA environment, and install into the environment used by the
@@ -4611,8 +4647,8 @@ released training SDK’s <code>Image</code>, <code>Compute</code>, <code>Runtim
 models. <code>gpu</code> selects the SDK accelerator name, for example <code>h100</code> or <code>h200</code>.</p>
 <p>The integration tests construct real SDK job definitions without submitting
 jobs. Run them in an isolated environment when updating the pin:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb134"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb134-1"><a href="#cb134-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run <span class="at">--no-project</span> <span class="at">--with</span> truss==0.18.30 <span class="at">--with</span> pytest python <span class="at">-m</span> pytest <span class="dt">\</span></span>
-<span id="cb134-2"><a href="#cb134-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--confcutdir</span><span class="op">=</span>tests/cli tests/cli/test_baseten_sdk.py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb137"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb137-1"><a href="#cb137-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run <span class="at">--no-project</span> <span class="at">--with</span> truss==0.18.30 <span class="at">--with</span> pytest python <span class="at">-m</span> pytest <span class="dt">\</span></span>
+<span id="cb137-2"><a href="#cb137-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--confcutdir</span><span class="op">=</span>tests/cli tests/cli/test_baseten_sdk.py</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>These checks cover CLI syntax, selected images, accelerator settings, secrets,
 and registry authentication. They do not verify live provisioning or multi-node
 training. Upstream documentation and the SDK’s main branch may expose fields
@@ -4631,11 +4667,11 @@ through the providers’ secret stores or workload identities, independently of 
 source build context. These settings concern container images; checkpoint and
 dataset object stores are separate provider settings.</p>
 <p>For Modal, choose its native registry loader and a named Modal secret:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb135"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb135-1"><a href="#cb135-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> modal</span></span>
-<span id="cb135-2"><a href="#cb135-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com/team/axolotl:fork</span></span>
-<span id="cb135-3"><a href="#cb135-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image_registry</span><span class="kw">:</span></span>
-<span id="cb135-4"><a href="#cb135-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">provider</span><span class="kw">:</span><span class="at"> aws_ecr</span></span>
-<span id="cb135-5"><a href="#cb135-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">secret</span><span class="kw">:</span><span class="at"> ecr-pull</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb138"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb138-1"><a href="#cb138-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> modal</span></span>
+<span id="cb138-2"><a href="#cb138-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com/team/axolotl:fork</span></span>
+<span id="cb138-3"><a href="#cb138-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image_registry</span><span class="kw">:</span></span>
+<span id="cb138-4"><a href="#cb138-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">provider</span><span class="kw">:</span><span class="at"> aws_ecr</span></span>
+<span id="cb138-5"><a href="#cb138-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">secret</span><span class="kw">:</span><span class="at"> ecr-pull</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Use <code>aws_ecr</code> with an AWS IAM/OIDC secret, <code>gcp_artifact_registry</code> with a GCP
 service-account secret, or <code>registry</code> with <code>REGISTRY_USERNAME</code> and
 <code>REGISTRY_PASSWORD</code> in the named secret (for example, GHCR or ACR). See
@@ -4646,16 +4682,16 @@ for a Dockerfile with private base images, use the tagged local build path with
 Docker credentials for those bases.</p>
 <p>For Baseten, <code>docker_auth</code> follows its SDK’s <code>DockerAuth</code> configuration. For
 example, ECR with named Baseten secrets:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb136"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb136-1"><a href="#cb136-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
-<span id="cb136-2"><a href="#cb136-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com/team/axolotl:fork</span></span>
-<span id="cb136-3"><a href="#cb136-3" aria-hidden="true" tabindex="-1"></a><span class="fu">docker_auth</span><span class="kw">:</span></span>
-<span id="cb136-4"><a href="#cb136-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auth_method</span><span class="kw">:</span><span class="at"> AWS_IAM</span></span>
-<span id="cb136-5"><a href="#cb136-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">registry</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com</span></span>
-<span id="cb136-6"><a href="#cb136-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">aws_iam_docker_auth</span><span class="kw">:</span></span>
-<span id="cb136-7"><a href="#cb136-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access_key_secret_ref</span><span class="kw">:</span></span>
-<span id="cb136-8"><a href="#cb136-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ecr-access-key</span></span>
-<span id="cb136-9"><a href="#cb136-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">secret_access_key_secret_ref</span><span class="kw">:</span></span>
-<span id="cb136-10"><a href="#cb136-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ecr-secret-key</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb139"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb139-1"><a href="#cb139-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> baseten</span></span>
+<span id="cb139-2"><a href="#cb139-2" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com/team/axolotl:fork</span></span>
+<span id="cb139-3"><a href="#cb139-3" aria-hidden="true" tabindex="-1"></a><span class="fu">docker_auth</span><span class="kw">:</span></span>
+<span id="cb139-4"><a href="#cb139-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auth_method</span><span class="kw">:</span><span class="at"> AWS_IAM</span></span>
+<span id="cb139-5"><a href="#cb139-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">registry</span><span class="kw">:</span><span class="at"> 123456789012.dkr.ecr.us-east-1.amazonaws.com</span></span>
+<span id="cb139-6"><a href="#cb139-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">aws_iam_docker_auth</span><span class="kw">:</span></span>
+<span id="cb139-7"><a href="#cb139-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access_key_secret_ref</span><span class="kw">:</span></span>
+<span id="cb139-8"><a href="#cb139-8" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ecr-access-key</span></span>
+<span id="cb139-9"><a href="#cb139-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">secret_access_key_secret_ref</span><span class="kw">:</span></span>
+<span id="cb139-10"><a href="#cb139-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">name</span><span class="kw">:</span><span class="at"> ecr-secret-key</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This also works with <code>image_build.tag</code> pointing at ECR. Baseten validates the
 native authentication fields when Truss loads the job definition. GCP
 service-account JSON and generic registry secret references (for GHCR or ACR)

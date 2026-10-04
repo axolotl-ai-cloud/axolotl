@@ -938,7 +938,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.integrations.base.get_builtin_plugins" id="toc-axolotl.integrations.base.get_builtin_plugins" class="nav-link" data-scroll-target="#axolotl.integrations.base.get_builtin_plugins">get_builtin_plugins</a></li>
   <li><a href="#axolotl.integrations.base.load_plugin" id="toc-axolotl.integrations.base.load_plugin" class="nav-link" data-scroll-target="#axolotl.integrations.base.load_plugin">load_plugin</a></li>
+  <li><a href="#axolotl.integrations.base.normalize_plugin_name" id="toc-axolotl.integrations.base.normalize_plugin_name" class="nav-link" data-scroll-target="#axolotl.integrations.base.normalize_plugin_name">normalize_plugin_name</a></li>
+  <li><a href="#axolotl.integrations.base.reset_plugin_entry_points_cache" id="toc-axolotl.integrations.base.reset_plugin_entry_points_cache" class="nav-link" data-scroll-target="#axolotl.integrations.base.reset_plugin_entry_points_cache">reset_plugin_entry_points_cache</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -3034,16 +3037,16 @@ has been loaded inclusive of any adapters.</p>
 </section>
 <section id="axolotl.integrations.base.PluginManager.register" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.register">register</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb56"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.register(plugin_name)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb56"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb56-1"><a href="#cb56-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.register(plugin_name, <span class="op">*</span>, required<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Registers a new plugin by its name.</p>
 <section id="parameters-33" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-33">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 17%">
-<col style="width: 10%">
-<col style="width: 56%">
-<col style="width: 16%">
+<col style="width: 14%">
+<col style="width: 9%">
+<col style="width: 62%">
+<col style="width: 13%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -3059,6 +3062,12 @@ has been loaded inclusive of any adapters.</p>
 <td>str</td>
 <td>The name of the plugin to be registered.</td>
 <td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>required</td>
+<td>bool</td>
+<td>Raise a load failure instead of skipping the plugin.</td>
+<td><code>False</code></td>
 </tr>
 </tbody>
 </table>
@@ -3076,8 +3085,8 @@ has been loaded inclusive of any adapters.</p>
 <tbody>
 <tr class="odd">
 <td></td>
-<td>ImportError</td>
-<td>If the plugin module cannot be imported.</td>
+<td>Exception</td>
+<td>If a required plugin cannot be loaded.</td>
 </tr>
 </tbody>
 </table>
@@ -3102,14 +3111,31 @@ has been loaded inclusive of any adapters.</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.integrations.base.get_builtin_plugins">get_builtin_plugins</a></td>
+<td>Return bundled and installed plugins without importing their modules.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.integrations.base.load_plugin">load_plugin</a></td>
 <td>Loads a plugin based on the given plugin name.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.integrations.base.normalize_plugin_name">normalize_plugin_name</a></td>
+<td>Normalize an entry-point target to the legacy dotted plugin name.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.base.reset_plugin_entry_points_cache">reset_plugin_entry_points_cache</a></td>
+<td>Clear cached plugin entry points, primarily for test isolation.</td>
+</tr>
 </tbody>
 </table>
+<section id="axolotl.integrations.base.get_builtin_plugins" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.base.get_builtin_plugins">get_builtin_plugins</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a>integrations.base.get_builtin_plugins()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Return bundled and installed plugins without importing their modules.</p>
+</section>
 <section id="axolotl.integrations.base.load_plugin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.base.load_plugin">load_plugin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a>integrations.base.load_plugin(plugin_name)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb59"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a>integrations.base.load_plugin(plugin_name)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Loads a plugin based on the given plugin name.</p>
 <p>The plugin name should be in the format “module_name.class_name”. This function
 splits the plugin name into module and class, imports the module, retrieves the
@@ -3178,9 +3204,19 @@ class from the module, and creates an instance of the class.</p>
 </tr>
 </tbody>
 </table>
-
-
 </section>
+</section>
+<section id="axolotl.integrations.base.normalize_plugin_name" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.base.normalize_plugin_name">normalize_plugin_name</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb60"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a>integrations.base.normalize_plugin_name(target)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Normalize an entry-point target to the legacy dotted plugin name.</p>
+</section>
+<section id="axolotl.integrations.base.reset_plugin_entry_points_cache" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.base.reset_plugin_entry_points_cache">reset_plugin_entry_points_cache</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb61"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a>integrations.base.reset_plugin_entry_points_cache()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Clear cached plugin entry points, primarily for test isolation.</p>
+
+
 </section>
 </section>
 </section>

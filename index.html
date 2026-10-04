@@ -982,6 +982,22 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="latest-updates" class="level2">
 <h2 class="anchored" data-anchor-id="latest-updates">🎉 Latest Updates</h2>
 <ul>
+<li>2026/10:
+<ul>
+<li><a href="https://github.com/axolotl-ai-cloud/axolotl/pull/4091">Distributed training improvements</a> keep EP groups node-local when the topology permits, add DeepSpeed Ulysses support through <code>context_parallel_size</code>, and fix expert-LoRA resume and FSDP2 activation checkpointing with LoRA.</li>
+</ul></li>
+<li>2026/09:
+<ul>
+<li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/minicpm5.html">MiniCPM5</a>, <a href="https://docs.axolotl.ai/docs/models/nex-n2.5.html">Nex-N2.5-mini</a>, <a href="https://docs.axolotl.ai/docs/models/qwen3.5.html">Qwen3.6</a>, <a href="https://docs.axolotl.ai/docs/models/qwen3.8-flash-next.html">Qwen3.8-Flash-Next</a>, and <a href="https://docs.axolotl.ai/docs/models/k2-horizon.html">K2 Horizon</a>.</li>
+<li><a href="https://docs.axolotl.ai/docs/expert_quantization.html#cpu-staged-fsdp2-qlora-loading">CPU-staged FSDP2 QLoRA loading</a> lets you load models larger than a single GPU’s memory without materializing a full quantized replica on each GPU.</li>
+<li><a href="https://docs.axolotl.ai/docs/export.html">GGUF export</a> is now available via <code>axolotl export</code>, with optional quantization for deployment with llama.cpp and Ollama.</li>
+<li><a href="https://docs.axolotl.ai/docs/nvfp4_lora.html">NVFP4 LoRA</a> now supports native TorchAO dense weights and merge-aware training, optimizing against the quantized merged weights for deployment.</li>
+<li>New training options: <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/mixlora">MixLoRA</a> adds routed LoRA experts to dense models, and <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/4008">Dynamic Fine-Tuning (DFT)</a> weights the SFT loss by token probability.</li>
+<li><a href="https://docs.axolotl.ai/docs/sequence_parallelism.html">Ringmaster context parallelism</a> adds Ulysses and combined Ulysses/Ring (USP) support, sample packing, and CP fixes for GDN, KDA, and Mamba/Mamba2 models.</li>
+<li><a href="https://docs.axolotl.ai/docs/custom_integrations.html#expert-parallelism-integration">Torch all-to-all Expert Parallelism</a> enables MoE training over NVLink or PCIe without requiring DeepEP. Expanded <a href="https://docs.axolotl.ai/docs/nd_parallelism.html">N-D parallelism</a> supports EP with FSDP2, HSDP, and context parallelism, plus FSDP2 + tensor parallelism.</li>
+<li><a href="https://docs.axolotl.ai/docs/gradient_checkpointing.html#selective-activation-checkpointing-sac">Selective activation checkpointing</a> adds rules to save specific projections or large matrix multiplications, with optional CPU offload to tune the memory/recomputation tradeoff.</li>
+<li>Improved <a href="https://docs.axolotl.ai/docs/custom_integrations.html">plugin integration</a> includes new cloud provider interfaces for launching training jobs, with support for <a href="https://docs.axolotl.ai/docs/nebius-serverless.html">Nebius Serverless Jobs</a>.</li>
+</ul></li>
 <li>2026/08:
 <ul>
 <li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/ling3.html">Ling 3.0</a>, <a href="https://docs.axolotl.ai/docs/models/muse-glimmer.html">Muse Glimmer</a>, <a href="https://docs.axolotl.ai/docs/models/cohere-north-micro-vision-instruct.html">North Micro Vision Instruct</a> and <a href="https://docs.axolotl.ai/docs/models/shieldstral.html">Shieldstral</a>.</li>
@@ -992,8 +1008,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </ul></li>
 <li>2026/06:
 <ul>
-<li><a href="https://docs.axolotl.ai/docs/nd_parallelism.html">Expert Parallelism (EP)</a> for distributed MoE training via DeepEP or plain NCCL/gloo <code>all_to_all_single</code>, remote training through <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3614">Tinker-compatible APIs</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3572">Context Parallelism for hybrid SSM models</a> (Nemotron-H, Falcon-H1, Bamba), <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3634">BitNet 1.58-bit</a> fine-tuning, and a <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3625">multimodal assistant-only loss-masking fix</a>.</li>
+<li><a href="https://docs.axolotl.ai/docs/nd_parallelism.html">Expert Parallelism (EP)</a> for distributed MoE training via DeepEP, remote training through <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3614">Tinker-compatible APIs</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3572">Context Parallelism for hybrid SSM models</a> (Nemotron-H, Falcon-H1, Bamba), <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3634">BitNet 1.58-bit</a> fine-tuning, and a <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3625">multimodal assistant-only loss-masking fix</a>.</li>
 </ul></li>
+</ul>
+<details>
+<summary>
+Expand older updates
+</summary>
+<ul>
 <li>2026/04:
 <ul>
 <li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/mistral-medium-3_5.html">Mistral Medium 3.5</a> and <a href="https://docs.axolotl.ai/docs/models/gemma4.html">Gemma 4</a>.</li>
@@ -1005,12 +1027,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>New model support has been added in Axolotl for <a href="https://docs.axolotl.ai/docs/models/mistral4.html">Mistral Small 4</a>, <a href="https://docs.axolotl.ai/docs/models/qwen3.5.html">Qwen3.5, Qwen3.5 MoE</a>, <a href="https://docs.axolotl.ai/docs/models/glm47-flash.html">GLM-4.7-Flash</a>, <a href="https://docs.axolotl.ai/docs/models/glm46v.html">GLM-4.6V</a>, and <a href="https://docs.axolotl.ai/docs/models/glm45.html">GLM-4.5-Air</a>.</li>
 <li><a href="https://docs.axolotl.ai/docs/expert_quantization.html">MoE expert quantization</a> support (via <code>quantize_moe_experts: true</code>) greatly reduces VRAM when training MoE models (FSDP2 compat).</li>
 </ul></li>
-</ul>
-<details>
-<summary>
-Expand older updates
-</summary>
-<ul>
 <li>2026/02:
 <ul>
 <li><a href="https://github.com/axolotl-ai-cloud/axolotl/pull/3410">ScatterMoE LoRA</a> support. LoRA fine-tuning directly on MoE expert weights using custom Triton kernels.</li>
