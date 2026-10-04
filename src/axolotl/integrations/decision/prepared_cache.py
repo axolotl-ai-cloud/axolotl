@@ -15,14 +15,26 @@ from typing import Any, Literal, Mapping, Sequence, overload
 
 import tokenizers
 import transformers
+from filelock import FileLock
 from huggingface_hub import hf_hub_download
 
-from .data_audit import build_preparation_audit
-from .loss import decision_example_from_canvas
-from .records import DecisionCanvas, OrdinalMetadata
+from axolotl.utils.data.shared import (
+    get_prepared_dataset_path,
+    load_preprocessed_dataset,
+    save_preprocessed_dataset,
+)
+from axolotl.utils.dict import DictDefault
 
-SCHEMA_VERSION = 1
-PRODUCER = "decision-prepared-rows-v2"
+from .data_audit import build_preparation_audit
+from .row_codec import (
+    _row_from_json as _row_from_json,
+    _row_to_json as _row_to_json,
+    dataset_to_rows,
+    rows_to_dataset,
+)
+
+SCHEMA_VERSION = 2
+PRODUCER = "decision-prepared-arrow-v1"
 LOG = logging.getLogger(__name__)
 
 
@@ -194,12 +206,6 @@ def identity(
     payload = {
         "schema_version": SCHEMA_VERSION,
         "producer": PRODUCER,
-        "producer_sha256": _file_hash(Path(__file__)),
-        "producer_dependencies": [
-            (str(path.relative_to(Path(__file__).parent)), _file_hash(path))
-            for path in sorted(Path(__file__).parent.rglob("*.py"))
-            if "__pycache__" not in path.parts
-        ],
         "config": audit_config,
         "entries": _entry_identity(cfg, selected_entries),
         "scope": dict(scope or {}),
@@ -228,11 +234,11 @@ def identity(
             },
             "vocab_size": len(tokenizer),
             "chat_template": getattr(tokenizer, "chat_template", None),
-            "vocab": sorted(vocabulary().items()),
+            "vocab_sha256": _sha(sorted(vocabulary().items())),
             "added_vocab": sorted(
                 getattr(tokenizer, "get_added_vocab", lambda: {})().items()
             ),
-            "backend": backend(),
+            "backend_sha256": hashlib.sha256(backend().encode()).hexdigest(),
             "class": f"{type(tokenizer).__module__}.{type(tokenizer).__qualname__}",
             "tokenizers_version": tokenizers.__version__,
             "transformers_version": transformers.__version__,
@@ -244,64 +250,15 @@ def identity(
     return _sha(payload), payload
 
 
-def _canvas_to_json(canvas: DecisionCanvas) -> dict[str, Any]:
-    data = asdict(canvas)
-    return data
-
-
-def _canvas_from_json(data: Mapping[str, Any]) -> DecisionCanvas:
-    ordinal = tuple(
-        None
-        if item is None
-        else OrdinalMetadata(
-            levels=tuple(item["levels"]),
-            source_ids=tuple(item["source_ids"]),
-            candidate_ranks=tuple(item["candidate_ranks"]),
-        )
-        for item in data.get("ordinal_metadata", ())
+def _cache_cfg(root: Path, cfg: Any | None = None) -> DictDefault:
+    return DictDefault(
+        dataset_prepared_path=str(root / "decision_cache"),
+        dataset_num_proc=1,
+        num_dataset_shards_to_save=None,
+        push_dataset_to_hub=False,
+        skip_prepare_dataset=bool(_value(cfg, "skip_prepare_dataset", False)),
+        is_preprocess=bool(_value(cfg, "is_preprocess", False)),
     )
-    return DecisionCanvas(
-        prompt_ids=tuple(data["prompt_ids"]),
-        canvas_ids=tuple(data["canvas_ids"]),
-        label_positions=tuple(data["label_positions"]),
-        allowed_ids=tuple(tuple(value) for value in data["allowed_ids"]),
-        question_ids=tuple(data["question_ids"]),
-        targets=tuple(data["targets"]),
-        pinned_mask=tuple(data["pinned_mask"]),
-        semantic_mask=tuple(data["semantic_mask"]),
-        slot_mask=tuple(data["slot_mask"]),
-        template_length=int(data["template_length"]),
-        prompt_slot_mask=tuple(data.get("prompt_slot_mask", ())),
-        ordinal_metadata=ordinal,
-    )
-
-
-def _row_to_json(row: Mapping[str, Any]) -> dict[str, Any]:
-    value = {
-        key: item
-        for key, item in row.items()
-        if key not in {"canvas", "decision_example", "slot_plan"}
-    }
-    value["canvas"] = _canvas_to_json(row["canvas"])
-    example = row.get("decision_example")
-    if example is not None:
-        value["_decision_example_source_weight"] = example.source_weight
-    return value
-
-
-def _row_from_json(data: Mapping[str, Any]) -> dict[str, Any]:
-    row = dict(data)
-    if isinstance(row.get("record"), dict) and "grouped_record_ids" in row["record"]:
-        row["record"] = dict(row["record"])
-        row["record"]["grouped_record_ids"] = tuple(row["record"]["grouped_record_ids"])
-    row["canvas"] = _canvas_from_json(row["canvas"])
-    source_weight = float(
-        row.pop("_decision_example_source_weight", row.get("source_weight", 1.0))
-    )
-    row["decision_example"] = decision_example_from_canvas(
-        row["canvas"], source_weight=source_weight
-    )
-    return row
 
 
 @overload
@@ -311,6 +268,7 @@ def load(
     identity_payload: Mapping[str, Any],
     *,
     include_audit: Literal[True],
+    cfg: Any | None = None,
 ) -> (
     tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]
     | None
@@ -324,6 +282,7 @@ def load(
     identity_payload: Mapping[str, Any],
     *,
     include_audit: Literal[False] = False,
+    cfg: Any | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]] | None: ...
 
 
@@ -333,39 +292,50 @@ def load(
     identity_payload: Mapping[str, Any],
     *,
     include_audit: bool = False,
+    cfg: Any | None = None,
 ) -> (
     tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]
     | tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]
     | None
 ):
-    path = root / "decision_cache" / f"{key}.json"
+    parent = root / "decision_cache"
+    path = parent / f"{key}.json"
+    if not path.is_file():
+        return None
+    cache_cfg = _cache_cfg(root, cfg)
+    if cache_cfg.skip_prepare_dataset or cache_cfg.is_preprocess:
+        return None
     try:
-        payload = json.loads(path.read_text())
-        if _sha(payload["content"]) != payload["sha256"]:
-            return None
-        metadata = payload["content"]
-        if _sha(metadata["identity"]) != _sha(identity_payload):
-            LOG.info("Decision prepared-row cache identity mismatch")
-            return None
-        rows = metadata["rows"]
-        train = [_row_from_json(row) for row in rows["train"]]
-        eval_rows = [_row_from_json(row) for row in rows["eval"]]
-        manifest = dict(metadata["manifest"])
-        if "stratified_epoch_batches" in manifest:
-            manifest["stratified_epoch_batches"] = tuple(
-                tuple(batch) for batch in manifest["stratified_epoch_batches"]
+        with FileLock(str(parent / f"{key}.lock")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            metadata = payload["content"]
+            if _sha(metadata) != payload["sha256"]:
+                return None
+            if _sha(metadata["identity"]) != _sha(identity_payload):
+                LOG.info("Decision prepared-row cache identity mismatch")
+                return None
+            if not get_prepared_dataset_path(cache_cfg, key).is_dir():
+                return None
+            dataset = load_preprocessed_dataset(cache_cfg, key)
+            if dataset is None:
+                return None
+            train, eval_rows = dataset_to_rows(dataset)
+            manifest = dict(metadata["manifest"])
+            if "stratified_epoch_batches" in manifest:
+                manifest["stratified_epoch_batches"] = tuple(
+                    tuple(batch) for batch in manifest["stratified_epoch_batches"]
+                )
+            audit = build_preparation_audit(
+                metadata["config"], train, eval_rows, manifest
             )
-        audit = build_preparation_audit(metadata["config"], train, eval_rows, manifest)
-        if (
-            audit["splits"] != metadata["audit"]["splits"]
-            or _sha(rows) != metadata["rows_sha256"]
-        ):
-            LOG.info("Decision prepared-row cache payload validation mismatch")
-            return None
-        if include_audit:
-            return train, eval_rows, manifest, dict(metadata["audit"])
-        return train, eval_rows, manifest
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            if audit["splits"] != metadata["audit"]["splits"]:
+                LOG.info("Decision prepared-row cache audit mismatch")
+                return None
+            if include_audit:
+                return train, eval_rows, manifest, dict(metadata["audit"])
+            return train, eval_rows, manifest
+    except Exception:
+        LOG.warning("Decision prepared-row cache could not be read", exc_info=True)
         return None
 
 
@@ -385,35 +355,34 @@ def store(
         if audit is not None
         else build_preparation_audit(cfg, train, eval_rows, manifest)
     )
-    rows = {
-        "train": [_row_to_json(row) for row in train],
-        "eval": [_row_to_json(row) for row in eval_rows],
-    }
+    parent = root / "decision_cache"
+    parent.mkdir(parents=True, exist_ok=True)
+    cache_cfg = _cache_cfg(root, cfg)
     content = {
         "identity": identity_payload,
         "config": audit["config"],
         "manifest": manifest,
         "audit": audit,
-        "rows_sha256": _sha(rows),
-        "rows": rows,
+        "train_count": len(train),
+        "eval_count": len(eval_rows),
     }
-    parent = root / "decision_cache"
-    parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{key}.", suffix=".tmp", dir=parent, text=True
-    )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(
-                {"sha256": _sha(content), "content": content},
-                handle,
-                sort_keys=True,
-                default=_json_default,
-            )
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, parent / f"{key}.json")
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+    with FileLock(str(parent / f"{key}.lock")):
+        dataset = rows_to_dataset(train, eval_rows)
+        save_preprocessed_dataset(cache_cfg, dataset, key, "train")
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{key}.", suffix=".tmp", dir=parent, text=True
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {"sha256": _sha(content), "content": content},
+                    handle,
+                    sort_keys=True,
+                    default=_json_default,
+                )
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary.replace(parent / f"{key}.json")
+        finally:
+            temporary.unlink(missing_ok=True)

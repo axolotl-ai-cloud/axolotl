@@ -7,16 +7,14 @@ import json
 import logging
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from glob import glob
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
-from datasets import load_dataset
+from datasets import Dataset as ArrowDataset
 from torch.utils.data import Dataset
 
+from axolotl.common.const import DEFAULT_DATASET_PREPARED_PATH
 from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.integrations.diffusion.lm.sampling import resolve_native_packing_budget
 from axolotl.loaders import load_tokenizer
@@ -25,9 +23,9 @@ from axolotl.model_support import (
     get_model_support_for_cfg,
     resolve_model_support,
 )
+from axolotl.utils.data.lock import FileLockLoader
 from axolotl.utils.dict import DictDefault
 
-from .adapters import normalize_record
 from .budgets import decision_budget, exceeds_budget
 from .data_audit import build_preparation_audit, write_preparation_audit
 from .grouping import group_records
@@ -45,6 +43,8 @@ from .prepared_cache import (
     store as store_prepared_cache,
 )
 from .preprocessing import build_decision_canvas
+from .row_codec import ROW_FEATURES, row_from_arrow, row_to_arrow
+from .sources import local_jsonl_paths, normalize_source
 from .template import SchemaError
 
 LOG = logging.getLogger(__name__)
@@ -56,66 +56,10 @@ def _value(value: Any, key: str, default: Any = None) -> Any:
     return getattr(value, key, default)
 
 
-def _rows(entry: Any) -> list[dict[str, Any]]:
-    path = _value(entry, "path")
-    if not isinstance(path, str) or not path:
-        raise ValueError("decision dataset requires a path")
-    split = str(_value(entry, "split", "train"))
-    kwargs = {
-        key: _value(entry, key)
-        for key in ("name", "revision")
-        if _value(entry, key) is not None
-    }
-    data_files = _value(entry, "data_files")
-    local_jsonl = _local_jsonl_paths(path, data_files, split)
-    if local_jsonl is not None:
-        return _read_jsonl(local_jsonl)
-    if (
-        data_files is not None
-        and path in {"json", "parquet", "csv", "text"}
-        and not isinstance(data_files, Mapping)
-    ):
-        kwargs["data_files"] = {split: data_files}
-    elif data_files is not None:
-        kwargs["data_files"] = data_files
-    dataset = load_dataset(path, split=split, **kwargs)
-    return [dict(row) for row in dataset]
-
-
-def _local_jsonl_paths(path: str, data_files: Any, split: str) -> list[Path] | None:
-    if path != "json" or data_files is None:
-        return None
-    selected = data_files.get(split) if isinstance(data_files, Mapping) else data_files
-    if isinstance(selected, str):
-        names = [selected]
-    elif isinstance(selected, Sequence) and not isinstance(selected, (str, bytes)):
-        names = list(selected)
-    else:
-        return None
-    if not names or not all(isinstance(name, str) for name in names):
-        raise ValueError("local JSONL data_files must be a nonempty path or path list")
-    expanded: list[Path] = []
-    for name in names:
-        if urlparse(name).scheme:
-            return None
-        matches = sorted(Path(match) for match in glob(name))
-        if matches:
-            if any(match.suffix != ".jsonl" for match in matches):
-                return None
-            expanded.extend(matches)
-        elif Path(name).suffix == ".jsonl":
-            raise ValueError(f"local JSONL path matched no files: {name}")
-        else:
-            return None
-    if not expanded or not all(item.is_file() for item in expanded):
-        raise ValueError("local JSONL data_files must resolve to regular files")
-    return expanded
-
-
 def _prepared_cache_source_paths(entries: Sequence[Any]) -> list[Path] | None:
     paths: list[Path] = []
     for entry in entries:
-        resolved = _local_jsonl_paths(
+        resolved = local_jsonl_paths(
             _value(entry, "path"),
             _value(entry, "data_files"),
             str(_value(entry, "split", "train")),
@@ -177,27 +121,6 @@ def _validate_premixed_records(records: Sequence[Mapping[str, Any]]) -> None:
             raise ValueError(
                 "premixed copies of one decision record must have identical content"
             )
-
-
-def _read_jsonl(paths: Sequence[Path]) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    for path in paths:
-        with path.open(encoding="utf-8") as handle:
-            for line_number, line in enumerate(handle, start=1):
-                if not line.strip():
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError as error:
-                    raise ValueError(
-                        f"invalid JSONL at {path}:{line_number}: {error.msg}"
-                    ) from error
-                if not isinstance(record, dict):
-                    raise ValueError(
-                        f"JSONL record at {path}:{line_number} must be an object"
-                    )
-                records.append(record)
-    return records
 
 
 def _is_eval(entry: Any) -> bool:
@@ -348,29 +271,27 @@ def _canvas_row(
     return row
 
 
-def _build_canvas_worker(
-    item: tuple[int, dict[str, Any], float],
-    *,
-    tokenizer: Any,
-    cfg: Any,
-    spec: Any,
-    vocab_size: int,
-) -> tuple[int, dict[str, Any] | None, bool]:
-    index, record, source_weight = item
-    try:
-        row = _canvas_row(
-            tokenizer,
-            record,
-            cfg,
-            source_weight,
-            spec=spec,
-            vocab_size=vocab_size,
-        )
-    except SchemaError as error:
-        if not _is_canvas_overflow(error):
-            raise
-        return index, None, True
-    return index, row, False
+def _canvas_batch(batch, *, tokenizer, cfg, weights, spec, vocab_size):
+    columns = {name: [] for name in ROW_FEATURES}
+    for value in batch["record_json"]:
+        record = json.loads(value)
+        try:
+            row = _canvas_row(
+                tokenizer,
+                record,
+                cfg,
+                float(weights.get(record["source"], 1.0)),
+                spec=spec,
+                vocab_size=vocab_size,
+            )
+        except SchemaError as error:
+            if not _is_canvas_overflow(error):
+                raise
+            continue
+        encoded = row_to_arrow(row)
+        for name in columns:
+            columns[name].append(encoded[name])
+    return columns
 
 
 class DecisionDataset(Dataset):
@@ -425,61 +346,37 @@ def _is_canvas_overflow(error: SchemaError) -> bool:
     )
 
 
-def _canvas_rows(
-    tokenizer: Any,
-    records: Sequence[dict[str, Any]],
-    cfg: Any,
-    weights: Mapping[str, float],
-    spec,
-) -> tuple[list[dict[str, Any]], int]:
-    rows: list[dict[str, Any]] = []
-    canvas_too_long = 0
+def _canvas_rows(tokenizer, records, cfg, weights, spec):
+    if not records:
+        return [], 0
     vocab_size = _value(_value(cfg, "model_config"), "vocab_size")
     if vocab_size is None:
         vocab_size = len(tokenizer)
-    workers = _value(cfg, "dataset_num_proc", 1) or 1
-    workers = int(workers)
-    if workers > 1:
-        LOG.info(
-            "Preparing %s decision canvases with %s worker threads",
-            len(records),
-            workers,
-        )
-        work = (
-            (index, record, float(weights.get(record["source"], 1.0)))
-            for index, record in enumerate(records)
-        )
-        worker = partial(
-            _build_canvas_worker,
+    source = ArrowDataset.from_dict(
+        {"record_json": [json.dumps(record, ensure_ascii=False) for record in records]}
+    )
+    prepared = source.map(
+        partial(
+            _canvas_batch,
             tokenizer=tokenizer,
             cfg=cfg,
+            weights=weights,
             spec=spec,
             vocab_size=int(vocab_size),
-        )
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            prepared = list(executor.map(worker, work))
-        prepared.sort(key=lambda item: item[0])
-        rows = [row for _, row, _ in prepared if row is not None]
-        return rows, sum(overflow for _, _, overflow in prepared)
-    for index, record in enumerate(records):
-        if index % 1000 == 0:
-            LOG.info("Preparing decision canvases: %s/%s", index, len(records))
-        try:
-            rows.append(
-                _canvas_row(
-                    tokenizer,
-                    record,
-                    cfg,
-                    float(weights.get(record["source"], 1.0)),
-                    spec=spec,
-                    vocab_size=int(vocab_size),
-                )
-            )
-        except SchemaError as error:
-            if not _is_canvas_overflow(error):
-                raise
-            canvas_too_long += 1
-    return rows, canvas_too_long
+        ),
+        batched=True,
+        batch_size=256,
+        num_proc=(
+            min(int(_value(cfg, "dataset_num_proc", 1)), len(source))
+            if int(_value(cfg, "dataset_num_proc", 1) or 1) > 1
+            else None
+        ),
+        remove_columns=source.column_names,
+        features=ROW_FEATURES,
+        load_from_cache_file=False,
+        desc="Preparing decision canvases",
+    )
+    return [row_from_arrow(row) for row in prepared], len(records) - len(prepared)
 
 
 def _filter_budget_rows(
@@ -573,7 +470,7 @@ def _evaluation_entries(cfg: Any, split: str) -> list[tuple[str, int, Any]]:
     return selected
 
 
-def load_decision_evaluation_dataset(
+def _load_decision_evaluation_dataset(
     cfg: Any, tokenizer: Any, split: str
 ) -> DecisionDataset:
     """Prepare only explicitly declared evaluation sources for one original split."""
@@ -615,7 +512,7 @@ def load_decision_evaluation_dataset(
     if cache_identity is not None:
         cache_key, cache_payload = cache_identity
         cached = load_prepared_cache(
-            Path(prepared_path), cache_key, cache_payload, include_audit=True
+            Path(prepared_path), cache_key, cache_payload, include_audit=True, cfg=cfg
         )
         if cached is not None:
             _cached_train, cached_rows, cached_output_manifest, cached_audit = cached
@@ -646,19 +543,16 @@ def load_decision_evaluation_dataset(
         )
     normalized: list[dict[str, Any]] = []
     for _collection, _index, entry in selected:
-        adapter = str(_value(entry, "type"))
         normalized.extend(
-            normalize_record(
-                adapter,
-                row,
+            normalize_source(
+                entry,
+                cfg,
                 training=False,
-                source_split=str(_value(entry, "split", "train")).lower(),
                 target_basis=_value(
                     _value(decision, "labels"), "open_jev_target_basis"
                 ),
                 codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
             )
-            for row in _rows(entry)
         )
     grouped = group_records(normalized, max_questions=max_questions)
     rows, canvas_too_long = _canvas_rows(tokenizer, grouped, cfg, weights, spec)
@@ -705,11 +599,8 @@ def load_decision_evaluation_dataset(
     return DecisionDataset(rows, manifest)
 
 
-def load_decision_datasets(
-    cfg: Any, preprocess: bool = False, *, tokenizer: Any = None
-) -> TrainDatasetMeta:
+def _load_decision_datasets(cfg: Any, *, tokenizer: Any = None) -> TrainDatasetMeta:
     """Load, normalize, decontaminate, canvasize, and return plugin-owned splits."""
-    del preprocess
     decision = _value(cfg, "decision")
     profile = resolve_model_support(get_model_support_for_cfg(cfg))
     spec = None if profile is None else profile.diffusion
@@ -746,7 +637,7 @@ def load_decision_datasets(
     if cache_identity is not None:
         cache_key, cache_payload = cache_identity
         cached = load_prepared_cache(
-            Path(prepared_path), cache_key, cache_payload, include_audit=True
+            Path(prepared_path), cache_key, cache_payload, include_audit=True, cfg=cfg
         )
         if cached is not None:
             cached_train, cached_eval, cached_manifest, cached_audit = cached
@@ -769,25 +660,18 @@ def load_decision_datasets(
         *((entry, False) for entry in train_entries),
         *((entry, True) for entry in test_entries),
     ]:
-        adapter = str(_value(entry, "type"))
         LOG.info(
             "Loading decision source %s (%s)",
             _value(entry, "path"),
             _value(entry, "split", "train"),
         )
-        normalized = [
-            normalize_record(
-                adapter,
-                row,
-                training=not (_is_eval(entry) or force_dev),
-                source_split=str(_value(entry, "split", "train")).lower(),
-                target_basis=_value(
-                    _value(decision, "labels"), "open_jev_target_basis"
-                ),
-                codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
-            )
-            for row in _rows(entry)
-        ]
+        normalized = normalize_source(
+            entry,
+            cfg,
+            training=not (_is_eval(entry) or force_dev),
+            target_basis=_value(_value(decision, "labels"), "open_jev_target_basis"),
+            codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
+        )
         split = str(_value(entry, "split", "train")).lower()
         if split in {"test", "calibration", "ood"}:
             protected_eval.extend(normalized)
@@ -941,4 +825,34 @@ def load_decision_datasets(
         train_dataset=DecisionDataset(train_rows, manifest),
         eval_dataset=DecisionDataset(eval_rows, manifest) if eval_rows else None,
         total_num_steps=None,
+    )
+
+
+def _prepare_with_lock(cfg, prepare, *, preprocess=False):
+    values = dict(cfg) if isinstance(cfg, Mapping) else vars(cfg)
+    prepared_cfg = DictDefault(values)
+    prepared_cfg.dataset_prepared_path = (
+        _value(cfg, "dataset_prepared_path") or DEFAULT_DATASET_PREPARED_PATH
+    )
+    prepared_cfg.is_preprocess = preprocess or bool(_value(cfg, "is_preprocess", False))
+    Path(prepared_cfg.dataset_prepared_path).mkdir(parents=True, exist_ok=True)
+    loader = FileLockLoader(prepared_cfg)
+    try:
+        return loader.load(lambda: prepare(prepared_cfg))
+    finally:
+        loader.cleanup()
+
+
+def load_decision_datasets(cfg, preprocess=False, *, tokenizer=None):
+    return _prepare_with_lock(
+        cfg,
+        lambda settings: _load_decision_datasets(settings, tokenizer=tokenizer),
+        preprocess=preprocess,
+    )
+
+
+def load_decision_evaluation_dataset(cfg, tokenizer, split):
+    return _prepare_with_lock(
+        cfg,
+        lambda settings: _load_decision_evaluation_dataset(settings, tokenizer, split),
     )

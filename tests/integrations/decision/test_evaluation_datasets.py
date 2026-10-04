@@ -8,11 +8,13 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from datasets import Dataset as ArrowDataset
 
 from axolotl.integrations.decision import (
     data_audit,
     datasets,
     prepared_cache,
+    sources,
 )
 from axolotl.model_support import (
     DiffusionLayout,
@@ -118,14 +120,16 @@ def _cfg(tmp_path) -> dict[str, Any]:
 def _patch_sources(monkeypatch, rows_by_path):
     calls = []
 
-    def rows(entry):
+    def rows(entry, cfg=None):
         path = entry["path"]
         calls.append(path)
-        return rows_by_path[path]
+        return ArrowDataset.from_dict(
+            {"raw_json": [json.dumps(row) for row in rows_by_path[path]]}
+        )
 
-    monkeypatch.setattr(datasets, "_rows", rows)
+    monkeypatch.setattr(sources, "load_source", rows)
     monkeypatch.setattr(
-        datasets, "normalize_record", lambda _adapter, row, **_kwargs: dict(row)
+        sources, "normalize_record", lambda _adapter, row, **_kwargs: dict(row)
     )
     monkeypatch.setattr(datasets, "get_model_support_for_cfg", lambda _cfg: object())
     monkeypatch.setattr(
@@ -176,9 +180,7 @@ def test_evaluation_dev_canvas_matches_existing_explicit_dev_path(
         }
     ]
     audit = json.loads(
-        (
-            tmp_path / "prepared" / "decision_dev_preparation_audit.json"
-        ).read_text()
+        (tmp_path / "prepared" / "decision_dev_preparation_audit.json").read_text()
     )
     assert audit["source_inputs"] == selected.manifest["selected_source_inputs"]
     assert audit["preparation_manifest"]["selected_split"] == "dev"
@@ -243,9 +245,7 @@ def test_explicit_evaluation_reuses_only_selected_split_cache(tmp_path, monkeypa
     }
     calls = _patch_sources(monkeypatch, rows)
     cfg = _cfg(tmp_path)
-    cfg["datasets"] = [
-        {"path": "train", "type": "decision.nimble", "split": "train"}
-    ]
+    cfg["datasets"] = [{"path": "train", "type": "decision.nimble", "split": "train"}]
     cfg["test_datasets"] = [
         {
             "path": "json",
@@ -271,9 +271,7 @@ def test_explicit_evaluation_reuses_only_selected_split_cache(tmp_path, monkeypa
     first = datasets.load_decision_evaluation_dataset(cfg, tokenizer, "test")
     assert calls == ["json"]
     cold_audit = json.loads(
-        (
-            tmp_path / "prepared" / "decision_test_preparation_audit.json"
-        ).read_text()
+        (tmp_path / "prepared" / "decision_test_preparation_audit.json").read_text()
     )
     cfg["_decision_preparation_audit_dir"] = str(tmp_path / "run-two" / "prepared")
     calls.clear()

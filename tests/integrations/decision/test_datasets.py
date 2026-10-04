@@ -1,16 +1,19 @@
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from datasets import Dataset as ArrowDataset
 from transformers import PretrainedConfig
 
 from axolotl.integrations.decision import (
     data_audit,
     datasets,
     prepared_cache,
+    sources,
 )
 from axolotl.integrations.decision.args import DecisionMixtureConfig
 from axolotl.integrations.decision.data_audit import build_preparation_audit
@@ -51,9 +54,15 @@ def _cfg(*entries: dict[str, Any], test_datasets=()) -> dict[str, Any]:
 
 
 def _patch_loader(monkeypatch, rows_by_path: dict[str, list[dict[str, str]]]) -> None:
-    monkeypatch.setattr(datasets, "_rows", lambda entry: rows_by_path[entry["path"]])
     monkeypatch.setattr(
-        datasets, "normalize_record", lambda _adapter, row, **_kwargs: dict(row)
+        sources,
+        "load_source",
+        lambda entry, cfg=None: ArrowDataset.from_dict(
+            {"raw_json": [json.dumps(row) for row in rows_by_path[entry["path"]]]}
+        ),
+    )
+    monkeypatch.setattr(
+        sources, "normalize_record", lambda _adapter, row, **_kwargs: dict(row)
     )
     monkeypatch.setattr(datasets, "load_tokenizer", lambda _cfg: range(131072))
     monkeypatch.setattr(datasets, "get_model_support_for_cfg", lambda _cfg: object())
@@ -72,7 +81,7 @@ def _patch_loader(monkeypatch, rows_by_path: dict[str, list[dict[str, str]]]) ->
         datasets,
         "_canvas_row",
         lambda _tokenizer, row, _cfg, source_weight, **_kwargs: {
-            "canvas": SimpleNamespace(prompt_ids=(1,), canvas_ids=(2,) * 128),
+            "canvas": _stub_canvas(),
             "record": row,
             "source": row["source"],
             "source_weight": source_weight,
@@ -349,7 +358,7 @@ def test_local_jsonl_preserves_heterogeneous_nested_records_and_glob_order(tmp_p
         '{"state":{"scenario":"two","items":[{"x":2}]},"options":{"yes":1}}\n'
     )
 
-    rows = datasets._rows(
+    rows = _raw_rows(
         {"path": "json", "split": "train", "data_files": str(tmp_path / "*.jsonl")}
     )
 
@@ -363,7 +372,7 @@ def test_local_jsonl_reports_path_and_line_for_invalid_json(tmp_path):
     path.write_text('{"ok":true}\n{"broken":\n')
 
     with pytest.raises(ValueError, match=r"invalid JSONL at .*bad\.jsonl:2:"):
-        datasets._rows({"path": "json", "split": "train", "data_files": str(path)})
+        _raw_rows({"path": "json", "split": "train", "data_files": str(path)})
 
 
 @pytest.mark.parametrize("name", ["https://example.org/data.jsonl", "local.json"])
@@ -376,13 +385,15 @@ def test_nonlocal_or_non_jsonl_inputs_use_hf_loader(monkeypatch, tmp_path, name)
 
     def load(path, **kwargs):
         calls.append((path, kwargs))
-        return [{"value": 1}]
+        return ArrowDataset.from_list([{"value": 1}])
 
-    monkeypatch.setattr(datasets, "load_dataset", load)
-    assert datasets._rows({"path": "json", "data_files": name, "split": "dev"}) == [
+    monkeypatch.setattr(sources, "load_dataset", load)
+    assert _raw_rows({"path": "json", "data_files": name, "split": "dev"}) == [
         {"value": 1}
     ]
-    assert calls == [("json", {"split": "dev", "data_files": {"dev": name}})]
+    assert calls == [
+        ("json", {"split": "dev", "data_files": {"dev": name}, "name": None})
+    ]
 
 
 def test_canvas_named_invalid_question_is_not_silently_dropped(monkeypatch):
@@ -402,25 +413,18 @@ def test_canvas_named_invalid_question_is_not_silently_dropped(monkeypatch):
 def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
     monkeypatch,
 ):
-    class InlineExecutor:
-        def __init__(self, **_kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def map(self, fn, values, **_kwargs):
-            return [fn(value) for value in reversed(list(values))]
-
     def canvas_row(_tokenizer, row, _cfg, source_weight, **_kwargs):
         if row["id"] == "overflow":
             raise datasets.SchemaError(
                 "answer template is 140 tokens; the canvas holds 127"
             )
-        return {"id": row["id"], "source_weight": source_weight}
+        return {
+            "id": row["id"],
+            "record": row,
+            "source": row["source"],
+            "canvas": _stub_canvas(),
+            "source_weight": source_weight,
+        }
 
     records = [
         {"id": "first", "source": "alpha"},
@@ -428,7 +432,6 @@ def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
         {"id": "last", "source": "beta"},
     ]
     monkeypatch.setattr(datasets, "_canvas_row", canvas_row)
-    monkeypatch.setattr(datasets, "ThreadPoolExecutor", InlineExecutor)
     spec = SimpleNamespace(max_canvas=None)
     serial, serial_drops = datasets._canvas_rows(
         range(100), records, {"dataset_num_proc": 1}, {"alpha": 2.0}, spec
@@ -452,9 +455,9 @@ def test_budget_filter_precedes_source_probabilities_and_sampling(monkeypatch):
 
     def canvas_row(_tokenizer, row, _cfg, source_weight, **kwargs):
         return {
-            "canvas": SimpleNamespace(
+            "canvas": replace(
+                _stub_canvas(),
                 prompt_ids=(1,) * (50 if row["source"] == "alpha" else 1),
-                canvas_ids=(2,) * 128,
             ),
             "record": row,
             "source": row["source"],
@@ -484,7 +487,7 @@ def test_budget_filter_uses_resolved_payload_capacity(monkeypatch):
         return SimpleNamespace(payload_capacity=128)
 
     monkeypatch.setattr(datasets, "resolve_native_packing_budget", resolve)
-    row = {"canvas": SimpleNamespace(prompt_ids=(1,), canvas_ids=(2,) * 128)}
+    row = {"canvas": _stub_canvas()}
     cfg = {
         "sample_packing": False,
         "batch_flattening": True,
@@ -558,14 +561,14 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(tmp_path, monkeyp
         }
     )
     calls = 0
-    original_rows = datasets._rows
+    original_rows = sources.load_source
 
-    def rows(entry):
+    def rows(entry, cfg=None):
         nonlocal calls
         calls += 1
-        return original_rows(entry)
+        return original_rows(entry, cfg)
 
-    monkeypatch.setattr(datasets, "_rows", rows)
+    monkeypatch.setattr(sources, "load_source", rows)
     monkeypatch.setattr(datasets, "load_tokenizer", lambda _cfg: Tokenizer())
     monkeypatch.setattr(datasets, "get_model_support_for_cfg", lambda _cfg: object())
     monkeypatch.setattr(
@@ -954,3 +957,22 @@ def test_prepared_cache_atomic_same_key_writers_and_readers(tmp_path):
         futures[1].result()
     assert set(seen) <= {"old", "a", "b"}
     assert prepared_cache.load(tmp_path, "shared", identity) is not None
+
+
+def _raw_rows(entry):
+    return [json.loads(row["raw_json"]) for row in sources.load_source(entry)]
+
+
+def _stub_canvas():
+    return DecisionCanvas(
+        prompt_ids=(1,),
+        canvas_ids=(2,) * 128,
+        label_positions=(0,),
+        allowed_ids=((3, 4),),
+        question_ids=("q",),
+        targets=({"kind": "hard", "gold_idx": 0},),
+        pinned_mask=(False,) * 128,
+        semantic_mask=(True,) * 128,
+        slot_mask=(False,) * 128,
+        template_length=128,
+    )
