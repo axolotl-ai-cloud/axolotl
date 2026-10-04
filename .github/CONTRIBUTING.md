@@ -141,6 +141,50 @@ The label handler uses `pull_request_target` with trusted inline code only and m
 
 Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
 
+##### Selected e2e arms (experimental)
+
+Alongside the full suites, every PR run selects the e2e test files its diff can affect
+and runs just those in two extra arms, `docker-e2e-tests-selected` (single GPU) and
+`multigpu-selected`. They gate nothing today; they exist to be compared against the
+full suites. The `select-e2e` job writes the selection and the reason for every file
+to its job summary and uploads it as the `e2e-selection` artifact.
+
+`cicd/select_e2e_tests.py` derives the selection from the tree, so new features need
+no registration:
+
+- A changed module selects the tests whose config sets a key it reads, names it as a
+  config value (a `plugins` entry, a dataset `type`, an `rl` method, a `base_model`
+  containing a model-support package name), or imports it directly.
+- Plugins, prompt strategies and other packages reached by config value are
+  "registry" entries. A member no test names selects nothing.
+- A module that reads a key most e2e configs set (`base_model`, `sequence_len`,
+  `micro_batch_size`, ...) is core and runs the whole scope, as does a module with no
+  derivable edges, a deleted module, a console-script entry point, `pyproject.toml`,
+  anything under `cicd/` or `.github/workflows/`, a `conftest.py`, and any error
+  inside the selector. The selector can over-select, never silently under-select.
+- Worker scripts and helpers next to a test (`_*_worker.py`, parity probes) count as
+  part of the tests that name or import them. A test with no visible config at all
+  rides along with every subset.
+
+When a module is enabled by one config key but reached through a hub that reads
+ubiquitous keys, declare the key so the selector can narrow instead of running
+everything:
+
+```python
+__ci_config_keys__ = ("activation_offloading",)
+```
+
+The selector then picks exactly the tests that set any declared key. A declared
+name that is not a config field runs the whole scope, so typos fail safe.
+
+Put `[test all]` in a commit message to force the full scope. Preview locally with:
+
+```bash
+python cicd/select_e2e_tests.py --base origin/main --explain \
+  --exclude tests/e2e/multigpu --exclude tests/e2e/kernels   # single-GPU scope
+python cicd/select_e2e_tests.py --base origin/main --explain --scope tests/e2e/multigpu
+```
+
 CPU NF4 tests marked `nf4_distributed` run in a dedicated job with its own timeout,
 across the same PyTorch versions as the main CPU matrix. The source, sdist, nightly,
 and single-GPU general suites exclude this marker while keeping the quick NF4 tests.

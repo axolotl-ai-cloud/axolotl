@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.nvfp4
+
 
 @pytest.mark.skipif(
     not __import__("torch").cuda.is_available(), reason="requires two CUDA GPUs"

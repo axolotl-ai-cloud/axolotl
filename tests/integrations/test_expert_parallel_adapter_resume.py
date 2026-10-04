@@ -10,6 +10,8 @@ from peft import LoraConfig, PeftModel, get_peft_model
 from axolotl.integrations.expert_parallel.shard import ep_local_adapter_dir
 from axolotl.utils.dict import DictDefault
 
+pytestmark = pytest.mark.gpu
+
 E_GLOBAL, EP_SIZE, HIDDEN, RANK = 8, 2, 6, 2
 
 

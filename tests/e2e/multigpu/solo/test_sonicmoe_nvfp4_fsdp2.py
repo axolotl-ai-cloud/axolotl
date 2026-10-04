@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.nvfp4
+
 
 def test_sonicmoe_grouped_lora_dispatch_keeps_scaling_separate():
     from ._sonicmoe_nvfp4_fsdp2_worker import _grouped_lora

@@ -17,19 +17,8 @@ for name in ("torch", "transformers", "accelerate", "torchao", "deepspeed", "pef
     print(f"{name}=={importlib.metadata.version(name)}", flush=True)
 NVFP4_ENV
 
-pytest -v --durations=10 -n0 \
-  tests/e2e/multigpu/solo/test_native_nvfp4_dynamic_ste.py \
-  tests/e2e/multigpu/solo/test_sonicmoe_nvfp4_fsdp2.py \
-  tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_lora_parity.py \
-  tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_merge_aware_resume.py \
-  tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_recipe.py \
-  tests/e2e/multigpu/solo/test_native_nvfp4_tp_hf_load.py \
-  tests/e2e/multigpu/solo/test_native_nvfp4_tp_lora_parity.py \
-  tests/e2e/multigpu/solo/test_torchao_lora_deepspeed.py \
-  tests/e2e/multigpu/solo/test_torchao_lora_deepspeed_checkpoint.py \
-  tests/e2e/multigpu/solo/test_torchao_lora_deepspeed_zero3_checkpoint.py \
-  tests/e2e/multigpu/solo/test_native_nvfp4_deepspeed_lora_merge_aware.py \
-  tests/e2e/multigpu/solo/test_native_nvfp4_deepspeed_lora_merge_lifecycle.py \
+pytest -v --durations=10 -n0 -m "nvfp4 and not slow" \
+  tests/e2e/multigpu/solo/ \
   --junitxml=nvfp4-junit.xml --cov=axolotl --cov-report=xml:nvfp4-coverage.xml
 
 python - <<'NVFP4_JUNIT'
@@ -42,6 +31,6 @@ assert not skipped, f"NVFP4 GPU CI unexpectedly skipped {len(skipped)} tests: {s
 NVFP4_JUNIT
 
 if [ -n "${CODECOV_TOKEN:-}" ]; then
-  codecov upload-process -t "$CODECOV_TOKEN" -f nvfp4-coverage.xml \
+  codecovcli upload-process -t "$CODECOV_TOKEN" -f nvfp4-coverage.xml \
     -F nvfp4,multigpu,docker-tests,pytorch-${PYTORCH_VERSION} || true
 fi

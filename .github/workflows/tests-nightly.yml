@@ -103,7 +103,7 @@ jobs:
           uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+            codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Override with nightly HF packages
         run: |
@@ -197,6 +197,8 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -253,6 +255,8 @@ jobs:
           echo "NF4_TEST_STACK=${{ matrix.nf4_test_stack }}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -307,6 +311,8 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.nvfp4
+
 
 @pytest.mark.parametrize(
     ("cpu_ram_efficient", "cpu_offload"),

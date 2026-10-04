@@ -1,5 +1,6 @@
 from functools import partial
 
+import pytest
 import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
@@ -16,6 +17,7 @@ class TinyCheckpointLayer(GradientCheckpointingLayer):
         return hidden_states * hidden_states
 
 
+@pytest.mark.gpu
 def test_checkpoint_offload_marks_non_reentrant_checkpoint_input():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     layer = TinyCheckpointLayer()

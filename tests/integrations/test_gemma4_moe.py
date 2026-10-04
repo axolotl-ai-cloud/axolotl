@@ -19,6 +19,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+pytestmark = pytest.mark.gpu
+
 # ============================================================================
 # Gemma4 reference implementation (extracted from transformers)
 # ============================================================================

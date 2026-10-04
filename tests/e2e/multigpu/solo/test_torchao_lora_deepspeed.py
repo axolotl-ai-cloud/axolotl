@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 import torch
 
+pytestmark = pytest.mark.nvfp4
+
 
 @pytest.mark.parametrize("stage", [1, 2])
 @pytest.mark.skipif(

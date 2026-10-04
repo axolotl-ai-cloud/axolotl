@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 import torch
 
+pytestmark = pytest.mark.nvfp4
+
 
 def _require_dynamic_nvfp4():
     if any(torch.cuda.get_device_capability(index)[0] < 10 for index in range(2)):

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.nvfp4
+
 
 @pytest.mark.parametrize("dtype", ["float32", "bfloat16"])
 @pytest.mark.skipif(

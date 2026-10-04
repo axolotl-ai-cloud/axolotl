@@ -44,6 +44,6 @@ assert not skipped, (
 PY
 
 if [ -n "${CODECOV_TOKEN:-}" ]; then
-  codecov upload-process -t "$CODECOV_TOKEN" -f nf4-coverage.xml \
+  codecovcli upload-process -t "$CODECOV_TOKEN" -f nf4-coverage.xml \
     -F nf4,multigpu,docker-tests,pytorch-${PYTORCH_VERSION} || true
 fi

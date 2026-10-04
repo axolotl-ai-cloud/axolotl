@@ -2,6 +2,8 @@
 tests for loading loras
 """
 
+import pytest
+
 from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
@@ -22,6 +24,7 @@ minimal_config = DictDefault(
 )
 
 
+@pytest.mark.gpu
 class TestLoRALoad:
     """
     Test class for loading LoRA weights
