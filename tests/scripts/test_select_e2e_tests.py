@@ -274,3 +274,27 @@ def test_run_all_reason_lists_every_trigger(repo):
     )
     assert sel.mode == "all"
     assert "pyproject.toml" in sel.reason and "builder.py" in sel.reason
+
+
+def test_declared_keys_are_authoritative(repo):
+    sel = _select(
+        repo,
+        {
+            "src/axolotl/monkeypatch/offload.py": '__ci_config_keys__ = ("gradient_checkpointing",)\n'
+            + "def offload(cfg):\n    return cfg.base_model\n"
+        },
+    )
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_lora.py"]
+
+
+def test_declared_unknown_key_runs_everything(repo):
+    sel = _select(
+        repo,
+        {
+            "src/axolotl/monkeypatch/offload.py": '__ci_config_keys__ = ("no_such_key",)\n'
+            + OFFLOAD
+        },
+    )
+    assert sel.mode == "all"
+    assert "no_such_key" in sel.reason

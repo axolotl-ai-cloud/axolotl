@@ -11,6 +11,9 @@ Every edge is derived from the tree, so new features need no registration:
 * Otherwise a changed module selects the tests that import it directly, that name
   its module path, file stem or package in a config string, or that set a key it
   reads. A module with no edges at all runs the whole scope.
+* A module may declare ``__ci_config_keys__ = ("activation_offloading",)`` when the
+  graph cannot see what enables it; the selector then picks exactly the tests that set
+  those keys. A declared key that is not a config field runs the whole scope.
 * Changed test files select themselves. Any other change under ``tests/``, a
   deleted module, a build or CI file, or an exception in the selector itself runs
   the whole scope. Nothing here can select fewer tests than the graph supports.
@@ -49,6 +52,7 @@ RUN_ALL_GLOBS = (
 )
 FORCE_ALL_TOKENS = ("[test all]", "[no filter]")
 # Stems and package names too generic to identify a feature from a config string.
+DECLARED_KEYS_NAME = "__ci_config_keys__"
 GENERIC_NAMES = frozenset(
     {
         "__init__",
@@ -205,6 +209,27 @@ class Selector:
                 mods |= self._import_targets(node, package)
         return mods
 
+    @staticmethod
+    def _declared_keys(tree: ast.AST) -> tuple[str, ...] | None:
+        for node in getattr(tree, "body", []):
+            if not isinstance(node, ast.Assign):
+                continue
+            if not any(
+                isinstance(t, ast.Name) and t.id == DECLARED_KEYS_NAME
+                for t in node.targets
+            ):
+                continue
+            keys: list[str] = []
+            elts = (
+                node.value.elts if isinstance(node.value, (ast.Tuple, ast.List)) else []
+            )
+            for elt in elts:
+                if not (isinstance(elt, ast.Constant) and isinstance(elt.value, str)):
+                    return ()
+                keys.append(elt.value)
+            return tuple(keys)
+        return None
+
     def _scan_source(
         self, tree: ast.AST, package: str
     ) -> tuple[set[str], set[str], set[str]]:
@@ -311,6 +336,7 @@ class Selector:
         all_fields: set[str] = set()
         src_trees = {}
         src_names: dict[str, set[str]] = {}
+        src_declared: dict[str, tuple[str, ...]] = {}
         by_module = {self.module_name(rel): rel for rel in sources}
         importers: dict[str, set[str]] = defaultdict(set)
         for rel in sources:
@@ -325,6 +351,9 @@ class Selector:
             fields, imports, names = self._scan_source(tree, package)
             all_fields |= fields
             src_names[rel] = names
+            declared = self._declared_keys(tree)
+            if declared is not None:
+                src_declared[rel] = declared
             for imp in imports:
                 target = by_module.get(imp)
                 if target is None and "." in imp:
@@ -362,6 +391,8 @@ class Selector:
         self.test_imports = test_imports
         self.src_trees = src_trees
         self.src_names = src_names
+        self.src_declared = src_declared
+        self.all_fields = all_fields
         self.universe = universe
         self.ubiquitous = ubiquitous
 
@@ -502,6 +533,16 @@ class Selector:
     def _compute_own_edges(self, rel: str) -> tuple[set[str] | None, str] | None:
         if rel in self.script_modules:
             return None, "console script entry point"
+        declared = self.src_declared.get(rel)
+        if declared is not None:
+            unknown = [k for k in declared if k not in self.all_fields]
+            if not declared or unknown:
+                return (
+                    None,
+                    f"{DECLARED_KEYS_NAME} names no config field: {unknown or declared}",
+                )
+            hits = {t for t, keys in self.test_keys.items() if keys & set(declared)}
+            return hits, f"declared keys {list(declared)}"
         names = self.src_names.get(rel)
         if names is None:
             tree = _safe_parse(self.repo / rel)
