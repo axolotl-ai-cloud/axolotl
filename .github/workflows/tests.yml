@@ -337,17 +337,17 @@ jobs:
 
   check-gpu-label:
     # Deferred so a label added while CPU jobs run is seen without a rerun
-    needs: [pre-commit, nf4-distributed, pytest, sdist]
+    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist]
     uses: ./.github/workflows/gpu-pr-gate.yml
 
   docker-e2e:
-    needs: [pre-commit, nf4-distributed, pytest, sdist, check-gpu-label]
+    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist, check-gpu-label]
     if: needs.check-gpu-label.outputs.enabled == 'true'
     uses: ./.github/workflows/docker-e2e.yml
     secrets: inherit
 
   multi-gpu-e2e:
-    needs: [pre-commit, nf4-distributed, pytest, sdist, check-gpu-label, multigpu-paths]
+    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist, check-gpu-label, multigpu-paths]
     if: github.event_name == 'pull_request' && needs.check-gpu-label.outputs.enabled == 'true' && needs.multigpu-paths.outputs.run_multigpu == 'true'
     uses: ./.github/workflows/multi-gpu-e2e.yml
     secrets: inherit
