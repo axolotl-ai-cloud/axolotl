@@ -198,21 +198,7 @@ jobs:
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
       - name: Compute deps hash
-        run: |
-          deps_hash=$(
-            {
-              cat pyproject.toml scripts/cutcrossentropy_install.py cicd/Dockerfile-uv.jinja
-              if [ -n "${E2E_DOCKERFILE:-}" ] && [ "$E2E_DOCKERFILE" != "Dockerfile-uv.jinja" ]; then
-                cat "cicd/$E2E_DOCKERFILE"
-              fi
-              echo "extras=${AXOLOTL_EXTRAS:-} args=${AXOLOTL_ARGS:-} base=${BASE_TAG:-}"
-              if [ "${NIGHTLY_BUILD:-}" = "true" ]; then
-                date -u +%F
-              fi
-            } | sha256sum | cut -c1-16
-          )
-          echo "DEPS_HASH=${deps_hash}" >> "$GITHUB_ENV"
-          echo "DEPS_HASH=${deps_hash}"
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -270,21 +256,7 @@ jobs:
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
       - name: Compute deps hash
-        run: |
-          deps_hash=$(
-            {
-              cat pyproject.toml scripts/cutcrossentropy_install.py cicd/Dockerfile-uv.jinja
-              if [ -n "${E2E_DOCKERFILE:-}" ] && [ "$E2E_DOCKERFILE" != "Dockerfile-uv.jinja" ]; then
-                cat "cicd/$E2E_DOCKERFILE"
-              fi
-              echo "extras=${AXOLOTL_EXTRAS:-} args=${AXOLOTL_ARGS:-} base=${BASE_TAG:-}"
-              if [ "${NIGHTLY_BUILD:-}" = "true" ]; then
-                date -u +%F
-              fi
-            } | sha256sum | cut -c1-16
-          )
-          echo "DEPS_HASH=${deps_hash}" >> "$GITHUB_ENV"
-          echo "DEPS_HASH=${deps_hash}"
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -340,21 +312,7 @@ jobs:
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
       - name: Compute deps hash
-        run: |
-          deps_hash=$(
-            {
-              cat pyproject.toml scripts/cutcrossentropy_install.py cicd/Dockerfile-uv.jinja
-              if [ -n "${E2E_DOCKERFILE:-}" ] && [ "$E2E_DOCKERFILE" != "Dockerfile-uv.jinja" ]; then
-                cat "cicd/$E2E_DOCKERFILE"
-              fi
-              echo "extras=${AXOLOTL_EXTRAS:-} args=${AXOLOTL_ARGS:-} base=${BASE_TAG:-}"
-              if [ "${NIGHTLY_BUILD:-}" = "true" ]; then
-                date -u +%F
-              fi
-            } | sha256sum | cut -c1-16
-          )
-          echo "DEPS_HASH=${deps_hash}" >> "$GITHUB_ENV"
-          echo "DEPS_HASH=${deps_hash}"
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
