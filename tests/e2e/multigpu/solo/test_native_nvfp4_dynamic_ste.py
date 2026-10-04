@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.nvfp4
+
 
 @pytest.mark.skipif(not __import__("torch").cuda.is_available(), reason="requires CUDA")
 def test_native_nvfp4_dynamic_ste_non_target_lora_gradients(tmp_path):

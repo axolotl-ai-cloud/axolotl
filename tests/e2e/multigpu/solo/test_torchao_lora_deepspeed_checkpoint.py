@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import torch
 
+pytestmark = pytest.mark.nvfp4
+
 
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="two CUDA devices required")
 @pytest.mark.parametrize("stage", [1, 2])

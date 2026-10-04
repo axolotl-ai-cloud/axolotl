@@ -30,8 +30,8 @@ pytest -v --durations=10 -n2 --maxfail=10 \
   /workspace/axolotl/tests/e2e/multigpu/ \
   --cov=axolotl
 
-# Run solo tests with coverage append
-pytest -v --durations=10 -n1 --maxfail=10 \
+# Run solo tests with coverage append; the NVFP4 suite has its own SM100 job
+pytest -v --durations=10 -n1 --maxfail=10 -m "not nvfp4 and not slow" \
   /workspace/axolotl/tests/e2e/multigpu/solo/ \
   --cov=axolotl \
   --cov-append
@@ -48,5 +48,5 @@ pytest -v  --durations=10 -n1 --maxfail=10 /workspace/axolotl/tests/e2e/multigpu
 
 # Upload coverage to Codecov if CODECOV_TOKEN is available
 if [ -n "$CODECOV_TOKEN" ]; then
-  codecov upload-process -t "${CODECOV_TOKEN}" -f multigpu-coverage.xml -F multigpu,docker-tests,pytorch-${PYTORCH_VERSION} || true
+  codecovcli upload-process -t "${CODECOV_TOKEN}" -f multigpu-coverage.xml -F multigpu,docker-tests,pytorch-${PYTORCH_VERSION} || true
 fi

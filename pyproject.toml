@@ -261,6 +261,7 @@ markers = [
     "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
     "integration: marks tests as integration tests (real model modeling paths)",
     "gpu: tests that require a CUDA device; auto-applied from CUDA skipif reasons (see tests/conftest.py)",
+    "nvfp4: NVFP4 multi-GPU tests that need SM100+ GPUs; run by cicd/nvfp4.sh",
 ]
 
 # UV specific configuration

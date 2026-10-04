@@ -29,4 +29,4 @@ pytest -v --durations=10 --maxfail=10 -m slow \
   --cov-append \
   --cov-report=xml:e2e-kernel-coverage.xml
 
-codecov upload-process -t "$CODECOV_TOKEN" -f e2e-kernel-coverage.xml -F e2e,kernels,pytorch-${PYTORCH_VERSION} || true
+codecovcli upload-process -t "$CODECOV_TOKEN" -f e2e-kernel-coverage.xml -F e2e,kernels,pytorch-${PYTORCH_VERSION} || true

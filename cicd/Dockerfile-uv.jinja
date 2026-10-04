@@ -43,7 +43,7 @@ RUN python scripts/cutcrossentropy_install.py --uv | sh
 
 # So we can test the Docker image
 RUN uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-    codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-testmon pytest-xdist tbparse
+    codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-testmon pytest-xdist tbparse
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
