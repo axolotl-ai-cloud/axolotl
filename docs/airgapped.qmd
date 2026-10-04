@@ -48,6 +48,51 @@ The staging host needs:
 Some dependencies are x86_64 only in this dependency set: DeepSpeed, xformers, torchao and flash-linear-attention (the `fla` extra). The demo config needs none of them. The bundle also carries the extras the Docker image ships, listed in [Resolve the pins](#sec-wheelhouse-resolve).
 :::
 
+### Quick reference {#sec-airgap-quickref}
+
+The fastest path: export the [shared variables](#sec-airgap-variables), pick a kernel from the [table by GPU](#sec-airgap-kernels), and run the staging script. It executes every staging command in this guide in order, into the [bundle layout](#sec-airgap-layout) described below:
+
+```{.bash}
+BUNDLE=$HOME/axolotl-airgap AXOLOTL_REF=$AXOLOTL_REF TARGET_ARCH=x86_64 KERNELS="fa2 fa3" \
+  scripts/airgap/build_bundle.sh                 # every staging step
+scripts/airgap/build_bundle.sh hf_cache manifest archive   # rerun a subset
+```
+
+`EXTRAS` defaults to `fla,ringmaster,ray,deepspeed` (`ringmaster,ray` for an aarch64 target) and `WITH_CCE=1` builds the cut-cross-entropy wheel; set `PREPROCESS=0` to skip tokenizing on staging and `SPLIT_SIZE=4000M` to split the archive. When the staging and target architectures differ, the script downloads the wheels but leaves the `zstandard` and DeepSpeed builds to you, as described in [Build zstandard](#sec-wheelhouse-zstd).
+
+The same work, condensed to one command per step. Each one is explained in full in the sections that follow, which is where to go when a step fails or your target differs from the worked example:
+
+```{.bash}
+# ---------- staging host (online) ----------
+# toolchain
+git clone https://github.com/axolotl-ai-cloud/axolotl.git "$BUNDLE/axolotl" && git -C "$BUNDLE/axolotl" checkout "$AXOLOTL_REF"
+curl -LsSf "https://astral.sh/uv/$UV_VERSION/install.sh" | UV_NO_MODIFY_PATH=1 sh
+curl -fLO "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz"   # into $BUNDLE/uv
+curl -fL -o "$BUNDLE/python-mirror/$PBS_RELEASE/cpython-$PY_VERSION+$PBS_RELEASE-..." "https://releases.astral.sh/..."
+# wheelhouse
+uv pip compile pyproject.toml --extra fla --extra ringmaster --extra ray --extra deepspeed --python-version 3.14 --python-platform $TARGET_ARCH-manylinux_2_28 --torch-backend cu130 -o requirements.target.txt
+uvx pip download --no-deps --only-binary=:all: --platform ... -r requirements.binary.txt -d wheelhouse
+uvx --python 3.14 pip wheel --no-deps -w wheelhouse <pure-python sdists>     # plus zstandard and deepspeed on a target-arch builder
+uv build --wheel --python 3.14 --out-dir wheelhouse                           # axolotl itself
+uvx --python 3.14 pip wheel --no-deps -w wheelhouse "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.0-rc0"
+# HF cache (HF_HOME=$BUNDLE/hf)
+hf download NousResearch/Llama-3.2-1B --exclude 'original/*'
+hf download teknium/GPT4-LLM-Cleaned --repo-type dataset
+hf download kernels-community/flash-attn2 --repo-type kernel --revision v3 --include 'build/<variant>/*'
+axolotl preprocess config.yaml --dataset-prepared-path "$BUNDLE/prepared"   # optional
+# bundle
+MANIFEST.txt, SYMLINKS.txt, SHA256SUMS; tar -cf axolotl-airgap.tar; split -b 4000M (optional)
+
+# ---------- target host (offline) ----------
+tar -C /opt/axolotl/bundle --strip-components=1 -xf axolotl-airgap.tar && sha256sum -c SHA256SUMS
+tar -xzf uv/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz -C /opt/axolotl/bin --strip-components=1
+uv python install 3.14.4 --mirror file:///opt/axolotl/bundle/python-mirror --no-bin
+uv venv --python 3.14 --managed-python /opt/axolotl/venv
+uv pip sync --offline --no-index --no-build --find-links wheelhouse requirements.target.txt
+uv pip install --offline --no-index --no-build --no-deps wheelhouse/axolotl-*.whl wheelhouse/cut_cross_entropy-*.whl
+source /opt/axolotl/airgap.env && axolotl train config.yaml
+```
+
 ### Bundle layout {#sec-airgap-layout}
 
 Everything that ships lives under one directory, `$BUNDLE`. On the target it is unpacked to `/opt/axolotl/bundle`, and the toolchain is installed beside it under `$PREFIX=/opt/axolotl`.
@@ -111,49 +156,6 @@ The demo config uses `flash_attention_2`, which also runs on Hopper and Blackwel
 - Hopper on aarch64 (GH200) has no cu130 FA3 build. Use `flash_attention_2` or `sdpa` there.
 - FA4 needs extra Python packages (`einops`, `apache-tvm-ffi`, `nvidia-cutlass-dsl[cu13]`) that are not Axolotl dependencies. See [Build a wheelhouse](#sec-wheelhouse).
 - Axolotl's config pre-flight check covers only the canonical names `flash_attention_2` and `flash_attention_3`. With a hub-kernel path or `flash_attention_4`, a missing kernel surfaces at model load rather than at validation.
-
-### Quick reference {#sec-airgap-quickref}
-
-A condensed view of every step. The sections below give each command in full. The staging half is also scripted in `scripts/airgap/build_bundle.sh`, which runs the same commands in the same order and takes its settings from the variables above:
-
-```{.bash}
-BUNDLE=$HOME/axolotl-airgap AXOLOTL_REF=$AXOLOTL_REF TARGET_ARCH=x86_64 KERNELS="fa2 fa3" \
-  scripts/airgap/build_bundle.sh                 # every staging step
-scripts/airgap/build_bundle.sh hf_cache manifest archive   # rerun a subset
-```
-
-`EXTRAS` defaults to `fla,ringmaster,ray,deepspeed` (`ringmaster,ray` for an aarch64 target) and `WITH_CCE=1` builds the cut-cross-entropy wheel; set `PREPROCESS=0` to skip tokenizing on staging and `SPLIT_SIZE=4000M` to split the archive. When the staging and target architectures differ, the script downloads the wheels but leaves the `zstandard` and DeepSpeed builds to you, as described in [Build zstandard](#sec-wheelhouse-zstd).
-
-```{.bash}
-# ---------- staging host (online) ----------
-# toolchain
-git clone https://github.com/axolotl-ai-cloud/axolotl.git "$BUNDLE/axolotl" && git -C "$BUNDLE/axolotl" checkout "$AXOLOTL_REF"
-curl -LsSf "https://astral.sh/uv/$UV_VERSION/install.sh" | UV_NO_MODIFY_PATH=1 sh
-curl -fLO "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz"   # into $BUNDLE/uv
-curl -fL -o "$BUNDLE/python-mirror/$PBS_RELEASE/cpython-$PY_VERSION+$PBS_RELEASE-..." "https://releases.astral.sh/..."
-# wheelhouse
-uv pip compile pyproject.toml --extra fla --extra ringmaster --extra ray --extra deepspeed --python-version 3.14 --python-platform $TARGET_ARCH-manylinux_2_28 --torch-backend cu130 -o requirements.target.txt
-uvx pip download --no-deps --only-binary=:all: --platform ... -r requirements.binary.txt -d wheelhouse
-uvx --python 3.14 pip wheel --no-deps -w wheelhouse <pure-python sdists>     # plus zstandard and deepspeed on a target-arch builder
-uv build --wheel --python 3.14 --out-dir wheelhouse                           # axolotl itself
-uvx --python 3.14 pip wheel --no-deps -w wheelhouse "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.0-rc0"
-# HF cache (HF_HOME=$BUNDLE/hf)
-hf download NousResearch/Llama-3.2-1B --exclude 'original/*'
-hf download teknium/GPT4-LLM-Cleaned --repo-type dataset
-hf download kernels-community/flash-attn2 --repo-type kernel --revision v3 --include 'build/<variant>/*'
-axolotl preprocess config.yaml --dataset-prepared-path "$BUNDLE/prepared"   # optional
-# bundle
-MANIFEST.txt, SYMLINKS.txt, SHA256SUMS; tar -cf axolotl-airgap.tar; split -b 4000M (optional)
-
-# ---------- target host (offline) ----------
-tar -C /opt/axolotl/bundle --strip-components=1 -xf axolotl-airgap.tar && sha256sum -c SHA256SUMS
-tar -xzf uv/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz -C /opt/axolotl/bin --strip-components=1
-uv python install 3.14.4 --mirror file:///opt/axolotl/bundle/python-mirror --no-bin
-uv venv --python 3.14 --managed-python /opt/axolotl/venv
-uv pip sync --offline --no-index --no-build --find-links wheelhouse requirements.target.txt
-uv pip install --offline --no-index --no-build --no-deps wheelhouse/axolotl-*.whl wheelhouse/cut_cross_entropy-*.whl
-source /opt/axolotl/airgap.env && axolotl train config.yaml
-```
 
 ## Stage the toolchain: repo, uv, and Python {#sec-staging-toolchain}
 
