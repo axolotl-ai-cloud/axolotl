@@ -42,12 +42,18 @@ jobs:
                 continue;
               }
 
-              // Wait for CPU tests to finish, but leave a running GPU rerun alone.
+              // The gate job runs after the CPU jobs and re-reads labels, so an
+              // in-flight run that has not evaluated it yet will see this label.
               let status = run.status;
               for (let attempt = 0; status !== 'completed' && attempt < 360; attempt++) {
                 const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
                   ...context.repo, run_id: run.id, per_page: 100,
                 });
+                const gate = jobs.find(job => job.name.startsWith('check-gpu-label /'));
+                if (!gate || gate.status !== 'completed') {
+                  core.info(`${workflow}: run ${run.id} has not evaluated the GPU label gate yet; it will pick up the label.`);
+                  return;
+                }
                 if (jobs.some(job => job.name.startsWith('docker-e2e /') ||
                                      job.name.startsWith('multi-gpu-e2e /'))) break;
                 await new Promise(resolve => setTimeout(resolve, 10000));

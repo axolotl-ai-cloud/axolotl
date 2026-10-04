@@ -441,6 +441,8 @@ jobs:
             core.setOutput('run_multigpu', String(hits.length > 0));
 
   check-gpu-label:
+    # Deferred so a label added while CPU jobs run is seen without a rerun
+    needs: [pre-commit, nf4-distributed, pytest, sdist]
     uses: ./.github/workflows/gpu-pr-gate.yml
 
   docker-e2e:
