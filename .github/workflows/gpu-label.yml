@@ -50,12 +50,14 @@ jobs:
                   ...context.repo, run_id: run.id, per_page: 100,
                 });
                 const gate = jobs.find(job => job.name.startsWith('check-gpu-label /'));
-                if (!gate || gate.status !== 'completed') {
+                const gateDone = gate !== undefined && gate.status === 'completed';
+                if (!gate || (!gateDone && gate.status !== 'in_progress')) {
                   core.info(`${workflow}: run ${run.id} has not evaluated the GPU label gate yet; it will pick up the label.`);
                   return;
                 }
-                if (jobs.some(job => job.name.startsWith('docker-e2e /') ||
-                                     job.name.startsWith('multi-gpu-e2e /'))) break;
+                // A gate already in progress may have read the labels before this one was added.
+                if (gateDone && jobs.some(job => job.name.startsWith('docker-e2e /') ||
+                                                 job.name.startsWith('multi-gpu-e2e /'))) break;
                 await new Promise(resolve => setTimeout(resolve, 10000));
                 const { data: current } = await github.rest.actions.getWorkflowRun({
                   ...context.repo, run_id: run.id,

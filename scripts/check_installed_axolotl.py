@@ -69,7 +69,9 @@ def import_walk() -> bool:
 def check_entry_points() -> bool:
     ok = True
     for group in ENTRY_POINT_GROUPS:
-        eps = md.entry_points(group=group)
+        eps = [
+            ep for ep in md.distribution("axolotl").entry_points if ep.group == group
+        ]
         print(f"{group}: {len(eps)}")
         for ep in eps:
             try:

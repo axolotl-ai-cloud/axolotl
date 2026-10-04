@@ -3,6 +3,7 @@
 
 import argparse
 import fnmatch
+import os
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -16,11 +17,21 @@ PACKAGE_DIR = "src/axolotl"
 WHEEL_PREFIX = "axolotl/"
 SDIST_REQUIRED = ("AGENTS.md", "README.md", "LICENSE", "VERSION")
 SDIST_REQUIRED_GLOBS = ("docs/agents/*.md",)
+GIT_LOCATION_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+)
 
 
 def tracked_package_files(repo_root: Path) -> set[str]:
+    env = {k: v for k, v in os.environ.items() if k not in GIT_LOCATION_VARS}
     out = subprocess.check_output(  # nosec B603 B607
-        ["git", "ls-files", PACKAGE_DIR], cwd=repo_root, text=True
+        ["git", "ls-files", PACKAGE_DIR], cwd=repo_root, text=True, env=env
     )
     files = set()
     for line in out.splitlines():
