@@ -102,6 +102,18 @@ class SamplingBackend(ABC):
     def close(self) -> None:
         """Release owned resources; repeated calls must be safe."""
 
+    def proposal_kl(
+        self,
+        target_context: list[int],
+        proposal_context: list[int],
+        tokens: list[int],
+        positions: list[int],
+    ) -> list[float]:
+        """Full-vocabulary KL(proposal || base) at selected continuation positions."""
+        raise NotImplementedError(
+            "This backend does not support full-vocabulary proposal KL scoring"
+        )
+
 
 BACKENDS = {
     "transformers": "axolotl.integrations.projection_sampling.backends.transformers.TransformersBackend",
@@ -132,6 +144,13 @@ def load_backend(
     with backend_cls.rng_context(cfg, config):
         backend = backend_cls.from_config(cfg, config)
         try:
+            if (
+                config.max_proposal_kl is not None
+                and type(backend).proposal_kl is SamplingBackend.proposal_kl
+            ):
+                raise ValueError(
+                    "max_proposal_kl requires a backend with full-vocabulary proposal KL scoring"
+                )
             for token in cfg.get("eot_tokens") or []:
                 ids = backend.tokenizer.encode(token, add_special_tokens=False)
                 if len(ids) != 1:

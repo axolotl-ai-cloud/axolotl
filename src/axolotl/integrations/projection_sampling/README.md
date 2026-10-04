@@ -49,6 +49,27 @@ Caches depend on backend selection and backend options, sampling settings, model
 This integration supports text SFT and adapters, including LoRA/QLoRA training after sampling. Transformers preserves the model's EOS IDs and resets its inherited generation filters so proposal scoring matches the configured temperature and repetition penalty. Transformers sampling loads full base-model weights on one device; vLLM supports its own tensor parallelism. Standard training quantization, distributed sharding, custom model-loading patches, and adapters do not apply to the sampler. Adding vocabulary tokens to the base model is unsupported. Streaming, RL, pretraining, multimodal processors, `skip_prepare_dataset`, dataset `input_transform`, and `preprocess_shards` are unsupported. Teacher-forced scoring can be expensive for long traces, particularly MH proposal scoring. Neither backend promises the paper's reported throughput or benchmark results.
 
 
+An optional final-response gate keeps a rewrite only when its mean labeled-token base-model log probability exceeds the original reply's by a configured margin:
+
+```yaml
+projection_sampling:
+  min_logprob_improvement: 0.01
+```
+
+The margin is in nats per labeled token; `0.01` requires roughly a 1% increase in geometric mean token probability. Omit it or set `null` to disable the gate and retain the reference behavior. Setting `0` requires a strictly positive gain. This gate applies after sampling and verification and leaves greedy/MH updates unchanged. It works with every backend and both chat and flat-pair datasets. For chat, the standard parser determines labeled tokens, including reasoning and EOS/EOT policies, for the final assistant reply being rewritten. Earlier turns and prompt tokens condition predictions without contributing to the score. Both replies use the same preceding history, including earlier accepted rewrites in a multi-turn conversation. A failed margin or missing reply labels preserves the expert response and its parser labels. Cache and inspection metadata record both means, labeled-token counts, the observed gain, and the gate result. The gate adds teacher-forced scoring of the original and final replies; enabling it or changing its value uses a different sampling cache. Different reply lengths and reasoning styles change the token mixture, so calibrate the margin on your own data.
+
+An optional `max_proposal_kl` applies a second final-response gate. It retains the rewrite when the mean full-vocabulary `KL(proposal || base)` across labeled sampled reply positions is at most the configured ceiling, in nats per position. Omit it or set `null` to disable it; `0` requires identical distributions. For example:
+
+```yaml
+projection_sampling:
+  min_logprob_improvement: 0.01
+  max_proposal_kl: 0.5
+```
+
+This diagnostic compares the expert-conditioned rewrite proposal with the raw base model at identical continuation histories. The proposal uses the configured temperature and repetition penalty and the rewrite prompt with an empty partial reply. It measures that fixed proposal's conditional divergence, not the full accepted sampler policy, the mixture of cut-specific proposals, or the paper's sequence-policy KL. Prompt positions, masked continuation tokens, and fixed generation-prefix template tokens are excluded from the average; their tokens remain conditioning context. Standard parser labels select reasoning and EOS/EOT positions in chat datasets. Flat-pair datasets score their sampled continuation, including EOS. Calibrate the ceiling on representative completed rewrites; `0.5` is an example, not a universal threshold.
+
+The gate runs after verification and the optional logprob margin. A failure preserves the original response and labels. Metadata records `proposal_to_base_mean_kl`, `proposal_kl_labeled_tokens`, the ceiling, and the gate result. Enabling the gate or changing its ceiling changes the sampling-cache fingerprint. Transformers and vLLM support it; external backends must implement the optional `proposal_kl(target_context, proposal_context, tokens, positions)` method, returning one full-vocabulary conditional KL value per selected position in input order. An unsupported backend fails before sampling. Full-vocabulary scoring costs more than scoring a single token. vLLM scores two next-token distributions per selected position, with at most `2 * backend_kwargs.score_batch_size` requests per batch; reduce that setting to bound host memory with large vocabularies.
+
 ## Inference backends
 
 `projection_sampling.backend` defaults to `transformers`. Select `vllm` to use a local vLLM engine during preprocessing; install Axolotl's optional `vllm` dependencies first. The sampling engine shuts down before standard dataset preparation, and training consumes cached tokens without requiring the selected inference runtime to be installed. [Example vLLM config](../../../../examples/projection-sampling/qwen2.5-3b-vllm.yaml):

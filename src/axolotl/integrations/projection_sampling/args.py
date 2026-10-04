@@ -38,6 +38,8 @@ class ProjectionSamplingConfig(BaseModel):
     device: str = Field("cuda", pattern=r"^(cpu|cuda(:\d+)?)$")
     dtype: Literal["auto", "float32", "bfloat16", "float16"] = "auto"
     verifier: str | None = None
+    min_logprob_improvement: float | None = Field(None, ge=0)
+    max_proposal_kl: float | None = Field(None, ge=0)
 
     @model_validator(mode="after")
     def validate_backend(self):

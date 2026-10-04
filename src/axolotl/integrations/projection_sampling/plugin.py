@@ -18,6 +18,7 @@ from .args import ProjectionSamplingConfig, get_seed
 from .backend import load_backend
 from .inspection import export_dataset
 from .sampler import ProjectionSampler
+from .scoring import evaluate_logprob_margin, evaluate_proposal_kl
 
 LOG = get_logger(__name__)
 CACHE_VERSION = 2
@@ -26,6 +27,10 @@ CACHE_VERSION = 2
 def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
     """Fingerprint settings, tokenization, source configuration, and local data."""
     settings = config.model_dump(exclude={"cache_dir", "device"})
+    if config.min_logprob_improvement is None:
+        settings.pop("min_logprob_improvement")
+    if config.max_proposal_kl is None:
+        settings.pop("max_proposal_kl")
     settings["seed"] = get_seed(cfg)
     if config.proposal_batch_size == 1:
         settings.pop("proposal_batch_size")
@@ -281,21 +286,69 @@ class ProjectionSamplingPlugin(BasePlugin):
                                 or not response.strip()
                                 or verified is False
                             )
-                            if fallback:
-                                tokens = backend.tokenizer.encode(
+                            context = sampler.prompt_ids(question)
+                            margin_metadata = {}
+                            kl_metadata = {}
+                            if (
+                                fallback
+                                or config.min_logprob_improvement is not None
+                                or config.max_proposal_kl is not None
+                            ):
+                                expert_tokens = backend.tokenizer.encode(
                                     expert, add_special_tokens=False
                                 )
                                 eos = backend.tokenizer.eos_token_id
                                 if eos is not None and (
-                                    not tokens or tokens[-1] != eos
+                                    not expert_tokens or expert_tokens[-1] != eos
                                 ):
-                                    tokens.append(eos)
+                                    expert_tokens.append(eos)
+                            if (
+                                not fallback
+                                and config.min_logprob_improvement is not None
+                            ):
+                                margin_metadata = evaluate_logprob_margin(
+                                    backend,
+                                    {
+                                        "input_ids": context + expert_tokens,
+                                        "labels": [-100] * len(context) + expert_tokens,
+                                    },
+                                    {
+                                        "input_ids": context + tokens,
+                                        "labels": [-100] * len(context) + tokens,
+                                    },
+                                    config.min_logprob_improvement,
+                                    starts=(len(context), len(context)),
+                                )
+                                if not margin_metadata["logprob_margin_passed"]:
+                                    fallback = True
+                                    margin_metadata["fallback_reason"] = (
+                                        "insufficient_logprob_improvement"
+                                    )
+                            if not fallback and config.max_proposal_kl is not None:
+                                kl_metadata = evaluate_proposal_kl(
+                                    backend,
+                                    context,
+                                    sampler.proposal_ids(question, expert, []),
+                                    tokens,
+                                    {
+                                        "input_ids": context + tokens,
+                                        "labels": [-100] * len(context) + tokens,
+                                    },
+                                    config.max_proposal_kl,
+                                )
+                                if not kl_metadata["proposal_kl_gate_passed"]:
+                                    fallback = True
+                                    kl_metadata["fallback_reason"] = (
+                                        "excessive_proposal_kl"
+                                    )
+                            if fallback:
+                                tokens = expert_tokens
                                 response = expert
                             record = {
                                 "prompt": question,
                                 "response": response,
                                 "expert_response": expert,
-                                "prompt_token_ids": sampler.prompt_ids(question),
+                                "prompt_token_ids": context,
                                 "response_token_ids": tokens,
                                 "sampling": {
                                     "attempts": result.attempts,
@@ -304,6 +357,8 @@ class ProjectionSamplingPlugin(BasePlugin):
                                     "finished": result.finished,
                                     "verified": verified,
                                     "fallback_to_expert": fallback,
+                                    **margin_metadata,
+                                    **kl_metadata,
                                     **sampler.proposal_statistics(result),
                                 },
                             }

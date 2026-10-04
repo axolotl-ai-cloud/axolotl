@@ -7,6 +7,7 @@ from typing import Any, Callable
 from axolotl.prompt_strategies.chat_template import ChatTemplateStrategy
 
 from .sampler import ProjectionSampler
+from .scoring import evaluate_logprob_margin, evaluate_proposal_kl
 
 
 def sample_chat(
@@ -114,6 +115,8 @@ def sample_chat(
         )
         fallback = not result.finished or not response.strip() or verified is False
         fallback_reason = None
+        margin_metadata = {}
+        kl_metadata = {}
         if not fallback:
             candidate_row = deepcopy(prefix_row)
             candidate_row[prompter.field_messages][-1][
@@ -131,6 +134,80 @@ def sample_chat(
             ):
                 fallback = True
                 fallback_reason = "template_token_mismatch"
+        if not fallback and sampler.config.min_logprob_improvement is not None:
+            original_ids = list(prompter.build_prompt(turns, tools=tools))
+            candidate_full = deepcopy(rewritten)
+            candidate_full[prompter.field_messages][index][
+                prompter.message_property_mappings["content"]
+            ] = response
+            original_tokenized = strategy.tokenize_prompt(deepcopy(rewritten))
+            candidate_tokenized = strategy.tokenize_prompt(candidate_full)
+            if (
+                original_tokenized["input_ids"][: len(original_ids)] != original_ids
+                or candidate_tokenized["input_ids"][: len(rendered)] != rendered
+            ):
+                fallback = True
+                fallback_reason = "template_token_mismatch"
+            else:
+                turn_index = len(turns) - 1
+                original_start, _ = strategy.find_turn(
+                    strategy.get_conversation_thread(rewritten), turn_index, tools=tools
+                )
+                candidate_start, _ = strategy.find_turn(
+                    strategy.get_conversation_thread(candidate_full),
+                    turn_index,
+                    tools=tools,
+                )
+                # Full-conversation masks retain last-turn EOS/EOT semantics.
+                margin_metadata = evaluate_logprob_margin(
+                    sampler.backend,
+                    {
+                        key: original_tokenized[key][: len(original_ids)]
+                        for key in ("input_ids", "labels")
+                    },
+                    {
+                        key: candidate_tokenized[key][: len(rendered)]
+                        for key in ("input_ids", "labels")
+                    },
+                    sampler.config.min_logprob_improvement,
+                    starts=(
+                        original_start if original_start >= 0 else len(original_ids),
+                        candidate_start if candidate_start >= 0 else len(rendered),
+                    ),
+                )
+                if not margin_metadata["logprob_margin_passed"]:
+                    fallback = True
+                    fallback_reason = (
+                        "no_labeled_response_tokens"
+                        if margin_metadata["logprob_improvement"] is None
+                        else "insufficient_logprob_improvement"
+                    )
+        if not fallback and sampler.config.max_proposal_kl is not None:
+            if sampler.config.min_logprob_improvement is None:
+                candidate_full = deepcopy(rewritten)
+                candidate_full[prompter.field_messages][index][
+                    prompter.message_property_mappings["content"]
+                ] = response
+                candidate_tokenized = strategy.tokenize_prompt(candidate_full)
+                if candidate_tokenized["input_ids"][: len(rendered)] != rendered:
+                    fallback = True
+                    fallback_reason = "template_token_mismatch"
+            if not fallback:
+                kl_metadata = evaluate_proposal_kl(
+                    sampler.backend,
+                    context,
+                    sampler.proposal_ids(question, expert, [], proposal_prompt),
+                    tokens,
+                    candidate_tokenized,
+                    sampler.config.max_proposal_kl,
+                )
+                if not kl_metadata["proposal_kl_gate_passed"]:
+                    fallback = True
+                    fallback_reason = (
+                        "no_labeled_response_tokens"
+                        if kl_metadata["proposal_to_base_mean_kl"] is None
+                        else "excessive_proposal_kl"
+                    )
         if not fallback:
             message[prompter.message_property_mappings["content"]] = response
         metadata.append(
@@ -145,6 +222,8 @@ def sample_chat(
                 "verified": verified,
                 "fallback_to_expert": fallback,
                 "fallback_reason": fallback_reason,
+                **margin_metadata,
+                **kl_metadata,
                 **sampler.proposal_statistics(result),
             }
         )

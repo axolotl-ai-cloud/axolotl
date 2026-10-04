@@ -340,6 +340,73 @@ class VLLMBackend(SamplingBackend):
             result.append(self._logprob(rows[0], token))
         return result
 
+    def proposal_kl(self, target_context, proposal_context, tokens, positions):
+        if not positions:
+            return []
+        if any(position < 0 or position >= len(tokens) for position in positions):
+            raise ValueError("KL positions must index continuation tokens")
+        self._check_context(target_context, max(positions) + 1)
+        self._check_context(proposal_context, max(positions) + 1)
+        vocab_size = self.engine.llm_engine.model_config.get_vocab_size()
+        result = []
+        for first in range(0, len(positions), self.options.score_batch_size):
+            selected = positions[first : first + self.options.score_batch_size]
+            prompts = []
+            params = []
+            for position in selected:
+                for context, proposal in (
+                    (target_context, False),
+                    (proposal_context, True),
+                ):
+                    prompts.append({"prompt_token_ids": context + tokens[:position]})
+                    params.append(
+                        self._params(1, proposal=proposal, seed=self.seed, logprobs=-1)
+                    )
+            outputs = self.engine.generate(
+                prompts, sampling_params=params, use_tqdm=False
+            )
+            if len(outputs) != len(prompts):
+                raise ValueError("vLLM returned a misaligned KL-score batch")
+            distributions = []
+            for output in outputs:
+                if len(output.outputs) != 1:
+                    raise ValueError(
+                        "vLLM returned an unexpected number of completions"
+                    )
+                rows = output.outputs[0].logprobs
+                if rows is None or len(rows) != 1 or not rows[0]:
+                    raise ValueError("vLLM returned missing KL log probabilities")
+                row = rows[0]
+                if (
+                    len(row) != vocab_size
+                    or min(row) != 0
+                    or max(row) != vocab_size - 1
+                ):
+                    raise ValueError(
+                        "Proposal KL requires full-vocabulary vLLM log probabilities"
+                    )
+                values = [self._logprob(row, token) for token in range(vocab_size)]
+                if not math.isclose(
+                    math.fsum(math.exp(value) for value in values),
+                    1.0,
+                    rel_tol=1e-4,
+                    abs_tol=1e-4,
+                ):
+                    raise ValueError(
+                        "vLLM returned unnormalized full-vocabulary KL log probabilities"
+                    )
+                distributions.append(values)
+            for index in range(0, len(distributions), 2):
+                base, proposal = distributions[index : index + 2]
+                kl = math.fsum(
+                    math.exp(logq) * (logq - logp)
+                    for logp, logq in zip(base, proposal, strict=True)
+                )
+                if not math.isfinite(kl):
+                    raise ValueError("vLLM returned non-finite proposal KL")
+                result.append(max(0.0, kl))
+        return result
+
     def close(self):
         if self.engine is not None:
             engine, self.engine = self.engine, None

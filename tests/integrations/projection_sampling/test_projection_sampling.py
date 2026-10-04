@@ -433,6 +433,72 @@ def test_small_positive_weight_retains_a_nonempty_source(cfg, monkeypatch, weigh
     assert backend.closed
 
 
+def test_final_margin_changes_cache_fingerprint(cfg):
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    disabled = cache_path(cfg, config)
+    config.min_logprob_improvement = 0
+    positive_only = cache_path(cfg, config)
+    assert positive_only != disabled
+    config.min_logprob_improvement = 0.01
+    assert cache_path(cfg, config) not in (disabled, positive_only)
+    config.min_logprob_improvement = None
+    assert cache_path(cfg, config) == disabled
+
+
+def test_final_kl_gate_changes_cache_fingerprint(cfg):
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    disabled = cache_path(cfg, config)
+    config.max_proposal_kl = 0
+    identical_only = cache_path(cfg, config)
+    assert identical_only != disabled
+    config.max_proposal_kl = 0.5
+    assert cache_path(cfg, config) not in (disabled, identical_only)
+    config.max_proposal_kl = None
+    assert cache_path(cfg, config) == disabled
+
+
+@pytest.mark.parametrize("ceiling,retained", [(0.5, True), (0.49, False)])
+def test_final_kl_gate_for_flat_pairs(cfg, monkeypatch, ceiling, retained):
+    from unittest.mock import Mock
+
+    cfg.projection_sampling.max_proposal_kl = ceiling
+    backend = ScriptedBackend([[3, 7]])
+    kl_scores = Mock(return_value=[0.5, 0.5])
+    monkeypatch.setattr(ScriptedBackend, "proposal_kl", kl_scores)
+    monkeypatch.setattr(TransformersBackend, "from_config", lambda *args: backend)
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    path = cache_path(cfg, config)
+    path.parent.mkdir()
+    ProjectionSamplingPlugin()._generate_cache(cfg, config, path)
+    record = json.loads(path.read_text())
+    assert record["sampling"]["proposal_kl_gate_passed"] is retained
+    assert record["sampling"]["proposal_kl_labeled_tokens"] == 2
+    assert record["sampling"]["fallback_to_expert"] is not retained
+    assert record["response_token_ids"] == ([3, 7] if retained else [1, 2, 7])
+    assert backend.proposal_kl.call_args.args[-1] == [0, 1]
+
+
+@pytest.mark.parametrize("gain,retained", [(0.5, True), (-0.5, False)])
+def test_final_margin_for_flat_pairs(cfg, monkeypatch, gain, retained):
+    cfg.projection_sampling.min_logprob_improvement = 0.125
+    backend = ScriptedBackend(
+        [[3, 7]],
+        target=lambda tokens: (-1 + gain if tokens[0] == 3 else -1) * len(tokens),
+    )
+    monkeypatch.setattr(TransformersBackend, "from_config", lambda *args: backend)
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    path = cache_path(cfg, config)
+    path.parent.mkdir()
+    ProjectionSamplingPlugin()._generate_cache(cfg, config, path)
+    record = json.loads(path.read_text())
+    metadata = record["sampling"]
+    assert metadata["original_labeled_tokens"] == 3
+    assert metadata["rewritten_labeled_tokens"] == 2
+    assert metadata["logprob_improvement"] == gain
+    assert metadata["fallback_to_expert"] is not retained
+    assert record["response_token_ids"] == ([3, 7] if retained else [1, 2, 7])
+
+
 def test_training_requires_cache_without_loading_model(cfg, monkeypatch):
     def fail(*args, **kwargs):
         pytest.fail("Training loaded the sampling model")
@@ -531,6 +597,12 @@ def test_disabled_plugin_and_distributed_preprocess(cfg, monkeypatch):
         ("temperature", float("nan")),
         ("block_size", 0),
         ("mcmc_steps", -1),
+        ("min_logprob_improvement", -0.01),
+        ("min_logprob_improvement", float("nan")),
+        ("min_logprob_improvement", float("inf")),
+        ("max_proposal_kl", -0.01),
+        ("max_proposal_kl", float("nan")),
+        ("max_proposal_kl", float("inf")),
         ("acceptance", "unknown"),
         ("device", "mps"),
         ("proposal_template", "{question} {invalid}"),

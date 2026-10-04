@@ -78,6 +78,197 @@ def setup_sampler(tokenizer, count=1):
     return sampler, backend
 
 
+@pytest.mark.parametrize(
+    "gain,margin,retained",
+    [(0.25, 0.125, True), (0.125, 0.125, False), (0, 0, False), (-0.25, 0, False)],
+)
+@pytest.mark.parametrize("train_on_inputs", [False, True])
+def test_final_margin_compares_original_labeled_reply(
+    tokenizer, cfg, gain, margin, retained, train_on_inputs
+):
+    cfg.train_on_inputs = train_on_inputs
+    strategy = load(tokenizer, cfg, {"train_on_eos": "none"})
+    row = {
+        "messages": [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "expert"},
+        ]
+    }
+    sampler, backend = setup_sampler(tokenizer)
+    sampler.config.min_logprob_improvement = margin
+    rewritten_id = tokenizer.convert_tokens_to_ids("rewritten")
+    expert_id = tokenizer.convert_tokens_to_ids("expert")
+    backend.target = lambda tokens: sum(
+        -1 + gain if token == rewritten_id else -1 if token == expert_id else -100
+        for token in tokens
+    )
+    record = sample_chat(row, strategy, sampler)
+    metadata = record["sampling"][0]
+    assert metadata["original_labeled_tokens"] == 1
+    assert metadata["rewritten_labeled_tokens"] == 1
+    assert metadata["original_mean_logprob"] == -1
+    assert metadata["logprob_improvement"] == gain
+    assert metadata["logprob_margin_passed"] is retained
+    assert metadata["fallback_to_expert"] is not retained
+    assert record["messages"][-1]["content"] == ("rewritten" if retained else "expert")
+    if not retained:
+        assert metadata["fallback_reason"] == "insufficient_logprob_improvement"
+        assert record["labels"] == strategy.tokenize_prompt(row)["labels"]
+    margin_calls = [call for call in backend.calls if call[0] == "target"][1:]
+    assert [call[2] for call in margin_calls] == [[expert_id], [rewritten_id]]
+
+
+def test_final_margin_counts_only_current_turn_with_rewritten_history(tokenizer, cfg):
+    row = {
+        "messages": [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "expert"},
+            {"role": "user", "content": "followup"},
+            {"role": "assistant", "content": "expert"},
+        ]
+    }
+    strategy = load(
+        tokenizer, cfg, {"roles_to_train": ["assistant"], "train_on_eos": "none"}
+    )
+    sampler, backend = setup_sampler(tokenizer, count=2)
+    sampler.config.min_logprob_improvement = 0.125
+    rewritten_id = tokenizer.convert_tokens_to_ids("rewritten")
+    backend.target = lambda tokens: sum(
+        -0.5 if token == rewritten_id else -1 for token in tokens
+    )
+    record = sample_chat(row, strategy, sampler)
+    assert all(not item["fallback_to_expert"] for item in record["sampling"])
+    assert all(
+        item["original_labeled_tokens"] == item["rewritten_labeled_tokens"] == 1
+        for item in record["sampling"]
+    )
+    last_comparison = [call for call in backend.calls if call[0] == "target"][-2:]
+    assert all(rewritten_id in call[1] for call in last_comparison)
+    assert all(len(call[2]) == 1 for call in last_comparison)
+
+
+def test_final_margin_respects_last_eos_policy_in_full_conversation(tokenizer, cfg):
+    row = {
+        "messages": [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "expert"},
+            {"role": "user", "content": "followup"},
+            {"role": "assistant", "content": "expert"},
+        ]
+    }
+    strategy = load(
+        tokenizer, cfg, {"roles_to_train": ["assistant"], "train_on_eos": "last"}
+    )
+    sampler, backend = setup_sampler(tokenizer, count=2)
+    sampler.config.min_logprob_improvement = 0
+    rewritten_id = tokenizer.convert_tokens_to_ids("rewritten")
+    backend.target = lambda tokens: sum(
+        -0.5 if token == rewritten_id else -1 for token in tokens
+    )
+    record = sample_chat(row, strategy, sampler)
+    assert [item["original_labeled_tokens"] for item in record["sampling"]] == [1, 2]
+    assert [item["rewritten_labeled_tokens"] for item in record["sampling"]] == [1, 2]
+
+
+@pytest.mark.parametrize("eos_policy,expected_tokens", [("none", 1), ("all", 2)])
+def test_final_margin_locates_original_and_rewritten_headers_independently(
+    tokenizer, cfg, eos_policy, expected_tokens
+):
+    tokenizer.chat_template = "{% for message in messages %}{{ '<' + message['role'] + '> ' }}{% if message['role'] == 'assistant' and message['content'] != 'expert' %}{{ 'masked ' }}{% endif %}{{ message['content'] + eos_token }}{% endfor %}{% if add_generation_prompt %}{{ '<assistant> masked ' }}{% endif %}"
+    strategy = load(
+        tokenizer, cfg, {"roles_to_train": ["assistant"], "train_on_eos": eos_policy}
+    )
+    row = {
+        "messages": [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "expert"},
+        ]
+    }
+    sampler, backend = setup_sampler(tokenizer)
+    sampler.config.min_logprob_improvement = 0
+    rewritten_id = tokenizer.convert_tokens_to_ids("rewritten")
+    backend.target = lambda tokens: sum(
+        -0.5 if token == rewritten_id else -1 for token in tokens
+    )
+    record = sample_chat(row, strategy, sampler)
+    metadata = record["sampling"][0]
+    assert metadata["original_labeled_tokens"] == expected_tokens
+    assert metadata["rewritten_labeled_tokens"] == expected_tokens
+    assert metadata["logprob_improvement"] == 0.5 / expected_tokens
+    assert not metadata["fallback_to_expert"]
+
+
+def test_disabled_margin_does_not_score_expert_reply(tokenizer, cfg):
+    row = {
+        "messages": [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "expert"},
+        ]
+    }
+    sampler, backend = setup_sampler(tokenizer)
+    record = sample_chat(row, load(tokenizer, cfg), sampler)
+    assert "logprob_improvement" not in record["sampling"][0]
+    assert len([call for call in backend.calls if call[0] == "target"]) == 1
+
+
+@pytest.mark.parametrize("ceiling,retained", [(0.5, True), (0.49, False)])
+@pytest.mark.parametrize("train_on_inputs", [False, True])
+@pytest.mark.parametrize("eos_policy,count", [("none", 1), ("all", 2)])
+def test_final_kl_gate_uses_only_labeled_sampled_reply_positions(
+    tokenizer, cfg, ceiling, retained, train_on_inputs, eos_policy, count
+):
+    from unittest.mock import Mock
+
+    cfg.train_on_inputs = train_on_inputs
+    strategy = load(tokenizer, cfg, {"train_on_eos": eos_policy})
+    row = {
+        "messages": [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "expert"},
+        ]
+    }
+    sampler, backend = setup_sampler(tokenizer)
+    sampler.config.max_proposal_kl = ceiling
+    backend.proposal_kl = Mock(return_value=[0.5] * count)
+    record = sample_chat(row, strategy, sampler)
+    metadata = record["sampling"][0]
+    assert metadata["proposal_to_base_mean_kl"] == 0.5
+    assert metadata["proposal_kl_labeled_tokens"] == count
+    assert metadata["proposal_kl_gate_passed"] is retained
+    assert metadata["fallback_to_expert"] is not retained
+    target, proposal, tokens, positions = backend.proposal_kl.call_args.args
+    assert positions == list(range(count))
+    assert target == [call[1] for call in backend.calls if call[0] == "target"][0]
+    assert tokens == [
+        tokenizer.convert_tokens_to_ids("rewritten"),
+        tokenizer.eos_token_id,
+    ]
+    assert proposal != target
+    if not retained:
+        assert metadata["fallback_reason"] == "excessive_proposal_kl"
+        assert record["labels"] == strategy.tokenize_prompt(row)["labels"]
+
+
+def test_failed_margin_skips_kl_scoring(tokenizer, cfg):
+    from unittest.mock import Mock
+
+    row = {
+        "messages": [
+            {"role": "user", "content": "question"},
+            {"role": "assistant", "content": "expert"},
+        ]
+    }
+    sampler, backend = setup_sampler(tokenizer)
+    sampler.config.min_logprob_improvement = 1
+    sampler.config.max_proposal_kl = 1
+    backend.proposal_kl = Mock(side_effect=AssertionError("margin already failed"))
+    record = sample_chat(row, load(tokenizer, cfg), sampler)
+    assert (
+        record["sampling"][0]["fallback_reason"] == "insufficient_logprob_improvement"
+    )
+    backend.proposal_kl.assert_not_called()
+
+
 @pytest.mark.parametrize("serialized", [False, True])
 @pytest.mark.parametrize("train_on_inputs", [False, True])
 def test_custom_fields_roles_and_parser_mask_parity(

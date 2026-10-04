@@ -212,6 +212,7 @@ def test_scoring_does_not_advance_generation_seeds(vllm_backend):
     vllm_backend.sample([1, 3], 3)
     vllm_backend.proposal_logprob([1, 3], [4, 7])
     vllm_backend.target_logprob([1, 3], [4, 7])
+    vllm_backend.proposal_kl([1, 3], [1, 4], [4, 7], [0, 1])
     vllm_backend.sample([1, 3], 3)
     calls = vllm_backend.engine.calls
     assert calls[0][1].seed == 42
@@ -220,6 +221,76 @@ def test_scoring_does_not_advance_generation_seeds(vllm_backend):
     assert calls[0][1].stop_token_ids == [6, 7]
     assert calls[0][1].top_k == -1
     assert calls[0][1].top_p == 1.0
+
+
+def test_vllm_kl_uses_full_processed_distributions_at_identical_histories(vllm_backend):
+    target, proposal, tokens, positions = [1, 3], [1, 4, 5], [3, 4, 7], [2, 0, 1]
+    params = FakeSamplingParams(temperature=0.6, repetition_penalty=1.1)
+    expected = []
+    for position in positions:
+        base = FakeEngine.logits(target + tokens[:position]).log_softmax(-1)
+        logq = vllm_backend.engine.distribution(proposal + tokens[:position], params)
+        expected.append((logq.exp() * (logq - base)).sum().item())
+    assert vllm_backend.proposal_kl(
+        target, proposal, tokens, positions
+    ) == pytest.approx(expected, abs=1e-6)
+    assert [len(prompts) for prompts, _ in vllm_backend.engine.calls] == [4, 2]
+    observed = []
+    for prompts, parameters in vllm_backend.engine.calls:
+        observed.extend(prompt["prompt_token_ids"] for prompt in prompts)
+        assert all(parameter.logprobs == -1 for parameter in parameters)
+        assert all(parameter.temperature == 1 for parameter in parameters[::2])
+        assert all(parameter.temperature == 0.6 for parameter in parameters[1::2])
+    assert observed == [
+        context + tokens[:position]
+        for position in positions
+        for context in (target, proposal)
+    ]
+    assert vllm_backend.request_number == 0
+
+
+def test_vllm_kl_rejects_truncated_vocabulary(vllm_backend):
+    generate = vllm_backend.engine.generate
+
+    def truncated(*args, **kwargs):
+        outputs = generate(*args, **kwargs)
+        for output in outputs:
+            output.outputs[0].logprobs[0].pop(0)
+        return outputs
+
+    vllm_backend.engine.generate = truncated
+    with pytest.raises(ValueError, match="full-vocabulary"):
+        vllm_backend.proposal_kl([1], [2], [3], [0])
+
+
+def test_vllm_kl_rejects_unnormalized_finite_distributions(vllm_backend):
+    generate = vllm_backend.engine.generate
+
+    def unnormalized(*args, **kwargs):
+        outputs = generate(*args, **kwargs)
+        for output in outputs:
+            for score in output.outputs[0].logprobs[0].values():
+                score.logprob -= 1
+        return outputs
+
+    vllm_backend.engine.generate = unnormalized
+    with pytest.raises(ValueError, match="unnormalized"):
+        vllm_backend.proposal_kl([1], [2], [3], [0])
+
+
+def test_external_backend_without_kl_support_fails_before_sampling_and_closes(
+    monkeypatch,
+):
+    backend = ExternalBackend.from_config(DictDefault(), ProjectionSamplingConfig())
+    monkeypatch.setattr(ExternalBackend, "from_config", lambda *args: backend)
+    monkeypatch.setattr(
+        "axolotl.integrations.projection_sampling.backend.resolve_backend",
+        lambda name: ExternalBackend,
+    )
+    with pytest.raises(ValueError, match="full-vocabulary"):
+        with load_backend(DictDefault(), ProjectionSamplingConfig(max_proposal_kl=1)):
+            pytest.fail("unsupported KL backend entered")
+    backend.close.assert_called_once()
 
 
 def test_target_handles_exact_context_limit(vllm_backend):

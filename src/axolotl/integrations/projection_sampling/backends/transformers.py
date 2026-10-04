@@ -132,6 +132,55 @@ class TransformersBackend(SamplingBackend):
             raise ValueError("Model returned non-finite token log probabilities")
         return result
 
+    @torch.inference_mode()
+    def proposal_kl(self, target_context, proposal_context, tokens, positions):
+        if not positions:
+            return []
+        if any(position < 0 or position >= len(tokens) for position in positions):
+            raise ValueError("KL positions must index continuation tokens")
+        self._check_context(target_context, len(tokens))
+        self._check_context(proposal_context, len(tokens))
+        target_ids = torch.tensor([target_context + tokens], device=self.device)
+        proposal_ids = torch.tensor([proposal_context + tokens], device=self.device)
+        target_logits = self.model(
+            input_ids=target_ids,
+            attention_mask=torch.ones_like(target_ids),
+            use_cache=False,
+        ).logits[0]
+        proposal_logits = self.model(
+            input_ids=proposal_ids,
+            attention_mask=torch.ones_like(proposal_ids),
+            use_cache=False,
+        ).logits[0]
+        result = []
+        for first in range(0, len(positions), 16):
+            selected = positions[first : first + 16]
+            target_rows = target_logits[
+                [len(target_context) + pos - 1 for pos in selected]
+            ].float()
+            proposal_rows = proposal_logits[
+                [len(proposal_context) + pos - 1 for pos in selected]
+            ].float()
+            if self.config.repetition_penalty != 1.0:
+                for row, position in zip(proposal_rows, selected, strict=True):
+                    previous = proposal_ids[
+                        0, : len(proposal_context) + position
+                    ].unique()
+                    values = row[previous]
+                    row[previous] = torch.where(
+                        values < 0,
+                        values * self.config.repetition_penalty,
+                        values / self.config.repetition_penalty,
+                    )
+            proposal_rows /= self.config.temperature
+            target_logp = target_rows.log_softmax(-1)
+            proposal_logp = proposal_rows.log_softmax(-1)
+            kl = (proposal_logp.exp() * (proposal_logp - target_logp)).sum(-1)
+            if not torch.isfinite(kl).all():
+                raise ValueError("Model returned non-finite proposal KL")
+            result.extend(kl.clamp_min(0).tolist())
+        return result
+
     def close(self):
         self.model = None
         gc.collect()
