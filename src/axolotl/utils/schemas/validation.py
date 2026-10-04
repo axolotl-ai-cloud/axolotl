@@ -2,6 +2,7 @@
 
 import fnmatch
 import json
+import os
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -180,17 +181,39 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
 
 
 def _get_kernel_from_cache(repo_id: str, version: int):
-    """Resolve a hub kernel from the local HF cache without touching the network."""
+    """Load a hub kernel from a cached snapshot without touching the network."""
     from huggingface_hub import constants
-    from kernels import get_kernel
+    from huggingface_hub.file_download import repo_folder_name
+    from kernels import get_local_kernel
 
-    # kernels picks its cache-only resolver from this flag at call time
-    previous = constants.HF_HUB_OFFLINE
-    constants.HF_HUB_OFFLINE = True
-    try:
-        return get_kernel(repo_id, version=version, trust_remote_code=True)
-    finally:
-        constants.HF_HUB_OFFLINE = previous
+    cache_dir = Path(os.environ.get("KERNELS_CACHE") or constants.HF_HUB_CACHE)
+    # get_kernel(version=N) downloads by commit and writes no refs entry, so the
+    # kernels offline resolver cannot map the version; read the snapshots directly
+    candidates: list[Path] = []
+    for repo_type in ("kernel", "model"):
+        repo_dir = cache_dir / repo_folder_name(repo_id=repo_id, repo_type=repo_type)
+        ref = repo_dir / "refs" / f"v{version}"
+        if ref.is_file():
+            pinned = repo_dir / "snapshots" / ref.read_text().strip()
+            if pinned.is_dir():
+                candidates.append(pinned)
+        snapshots = repo_dir / "snapshots"
+        if snapshots.is_dir():
+            candidates.extend(
+                sorted(
+                    (p for p in snapshots.iterdir() if (p / "build").is_dir()),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+            )
+    errors = []
+    for snapshot in dict.fromkeys(candidates):
+        try:
+            return get_local_kernel(snapshot, trust_remote_code=True)
+        except Exception as err:  # noqa: BLE001
+            errors.append(f"{snapshot.name}: {type(err).__name__}: {err}")
+    detail = f": {'; '.join(errors)}" if errors else ""
+    raise FileNotFoundError(f"no loadable cached snapshot of {repo_id}{detail}")
 
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}

@@ -20,6 +20,8 @@ class TestFlashAttnAvailabilityValidator:
         import kernels
         import transformers.utils
 
+        import axolotl.utils.schemas.validation as validation
+
         monkeypatch.setattr(
             transformers.utils, "is_flash_attn_2_available", lambda **_: value
         )
@@ -28,11 +30,12 @@ class TestFlashAttnAvailabilityValidator:
         )
         if not value:
             # a hub lookup that succeeds overrides transformers' verdict, so
-            # "unavailable" has to fail there as well
+            # "unavailable" has to fail there as well, online and from the cache
             def no_build(*_, **__):
                 raise FileNotFoundError("Cannot find a build variant")
 
             monkeypatch.setattr(kernels, "get_kernel", no_build)
+            monkeypatch.setattr(validation, "_get_kernel_from_cache", no_build)
 
     def test_fa2_unavailable_raises(self, min_base_cfg, monkeypatch):
         self._force_availability(monkeypatch, False)
@@ -82,6 +85,8 @@ class TestFlashAttnAvailabilityValidator:
         import transformers.integrations.hub_kernels as hub_kernels
         import transformers.utils
 
+        import axolotl.utils.schemas.validation as validation
+
         checker = Mock(return_value=False)
         monkeypatch.setattr(
             transformers.utils, f"is_flash_attn_{attn_version}_available", checker
@@ -96,6 +101,11 @@ class TestFlashAttnAvailabilityValidator:
             return object()
 
         monkeypatch.setattr(kernels, "get_kernel", get_kernel)
+
+        def no_cached_build(*_, **__):
+            raise FileNotFoundError("no loadable cached snapshot")
+
+        monkeypatch.setattr(validation, "_get_kernel_from_cache", no_cached_build)
         attn_implementation = f"flash_attention_{attn_version}"
         cfg = min_base_cfg | DictDefault(attn_implementation=attn_implementation)
         if has_build:
@@ -138,20 +148,41 @@ class TestFlashAttnAvailabilityValidator:
             with pytest.raises(ValueError, match="Connection reset by peer"):
                 validate_config(cfg)
 
-    def test_cache_lookup_restores_offline_flag(self, monkeypatch):
+    def test_cache_lookup_prefers_version_ref_then_newest_build(
+        self, monkeypatch, tmp_path
+    ):
         import kernels
         from huggingface_hub import constants
 
         import axolotl.utils.schemas.validation as validation
 
-        seen = {}
+        repo = tmp_path / "kernels--kernels-community--flash-attn2"
+        for sha in ("aaa", "bbb"):
+            (repo / "snapshots" / sha / "build").mkdir(parents=True)
+        (repo / "snapshots" / "ccc").mkdir()  # no build dir: never a candidate
+        monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tmp_path))
+        monkeypatch.delenv("KERNELS_CACHE", raising=False)
+        loaded = []
+        monkeypatch.setattr(
+            kernels,
+            "get_local_kernel",
+            lambda path, **_: loaded.append(path.name) or object(),
+        )
 
-        def get_kernel(repo_id, *, version, trust_remote_code=False):
-            seen["offline"] = constants.HF_HUB_OFFLINE
-            return object()
-
-        monkeypatch.setattr(kernels, "get_kernel", get_kernel)
-        monkeypatch.setattr(constants, "HF_HUB_OFFLINE", False)
         validation._get_kernel_from_cache("kernels-community/flash-attn2", 3)
-        assert seen["offline"] is True
-        assert constants.HF_HUB_OFFLINE is False
+        assert loaded[-1] in {"aaa", "bbb"}
+
+        (repo / "refs").mkdir()
+        (repo / "refs" / "v3").write_text("bbb")
+        validation._get_kernel_from_cache("kernels-community/flash-attn2", 3)
+        assert loaded[-1] == "bbb"
+
+    def test_cache_lookup_without_snapshot_raises(self, monkeypatch, tmp_path):
+        from huggingface_hub import constants
+
+        import axolotl.utils.schemas.validation as validation
+
+        monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tmp_path))
+        monkeypatch.delenv("KERNELS_CACHE", raising=False)
+        with pytest.raises(FileNotFoundError, match="no loadable cached snapshot"):
+            validation._get_kernel_from_cache("kernels-community/flash-attn2", 3)
