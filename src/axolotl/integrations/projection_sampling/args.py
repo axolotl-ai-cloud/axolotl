@@ -3,7 +3,7 @@
 from string import Formatter
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 PROPOSAL_TEMPLATE = """You are given a question, an expert solution, and a partial response.
 Use the expert solution to identify the necessary facts and reasoning. Continue
@@ -30,9 +30,13 @@ class ProjectionSamplingConfig(BaseModel):
     max_new_tokens: int = Field(1856, ge=1)
     mcmc_steps: int = Field(10, ge=0)
     proposal_batch_size: int = Field(1, ge=1)
+    dataset_batch_size: int = Field(1, ge=1)
     temperature: float = Field(0.6, gt=0)
     repetition_penalty: float = Field(1.0, gt=0)
-    acceptance: Literal["metropolis_hastings", "greedy"] = "metropolis_hastings"
+    acceptance: Literal["metropolis_hastings", "logprob_improvement", "greedy"] = Field(
+        "metropolis_hastings",
+        description="Proposal acceptance rule; greedy is an alias for logprob_improvement, not greedy decoding.",
+    )
     prompt_format: Literal["chat", "raw"] = "chat"
     proposal_template: str = PROPOSAL_TEMPLATE
     device: str = Field("cuda", pattern=r"^(cpu|cuda(:\d+)?)$")
@@ -40,6 +44,11 @@ class ProjectionSamplingConfig(BaseModel):
     verifier: str | None = None
     min_logprob_improvement: float | None = Field(None, ge=0)
     max_proposal_kl: float | None = Field(None, ge=0)
+
+    @field_validator("acceptance")
+    @classmethod
+    def normalize_acceptance(cls, value):
+        return "logprob_improvement" if value == "greedy" else value
 
     @model_validator(mode="after")
     def validate_backend(self):

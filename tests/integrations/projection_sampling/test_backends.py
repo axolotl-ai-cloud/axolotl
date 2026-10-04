@@ -474,6 +474,34 @@ def test_vllm_batches_generation_with_ordered_seeds_and_ragged_budgets(vllm_back
     assert batched == sequential
 
 
+def test_vllm_explicit_seeds_do_not_depend_on_other_requests(vllm_backend):
+    contexts, budgets, seeds = [[1, 3], [1, 3]], [3, 2], [17, 42]
+    expected = vllm_backend.sample_batch_seeded(contexts, budgets, seeds)
+    vllm_backend.sample([1], 1)
+    assert vllm_backend.sample_batch_seeded(contexts, budgets, seeds) == expected
+    prompts, parameters = vllm_backend.engine.calls[-1]
+    assert [parameter.seed for parameter in parameters] == seeds
+    assert [prompt["prompt_token_ids"] for prompt in prompts] == contexts
+    assert vllm_backend.request_number == 5
+    with pytest.raises(ValueError, match="align"):
+        vllm_backend.sample_batch_seeded(contexts, budgets, [17])
+
+
+def test_external_backend_without_seeded_batches_fails_and_closes(monkeypatch):
+    backend = ExternalBackend.from_config(DictDefault(), ProjectionSamplingConfig())
+    monkeypatch.setattr(ExternalBackend, "from_config", lambda *args: backend)
+    monkeypatch.setattr(
+        "axolotl.integrations.projection_sampling.backend.resolve_backend",
+        lambda name: ExternalBackend,
+    )
+    with pytest.raises(ValueError, match="independently seeded"):
+        with load_backend(
+            DictDefault(), ProjectionSamplingConfig(dataset_batch_size=2)
+        ):
+            pytest.fail("unsupported batching backend entered")
+    backend.close.assert_called_once()
+
+
 @pytest.mark.parametrize("limit", [128, 3])
 def test_vllm_target_batch_handles_empty_suffixes_and_context_boundary(
     vllm_backend, limit

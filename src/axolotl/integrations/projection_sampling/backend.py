@@ -68,6 +68,17 @@ class SamplingBackend(ABC):
             for context, budget in zip(contexts, max_tokens, strict=True)
         ]
 
+    def sample_batch_seeded(
+        self,
+        contexts: list[list[int]],
+        max_tokens: list[int],
+        seeds: list[int],
+    ) -> list[list[int]]:
+        """Generate ordered requests with independent, explicit per-request seeds."""
+        raise NotImplementedError(
+            "This backend does not support independently seeded dataset batches"
+        )
+
     @abstractmethod
     def target_logprob(self, context: list[int], tokens: list[int]) -> float:
         """Sum base-model log probabilities of tokens conditioned on context."""
@@ -144,6 +155,14 @@ def load_backend(
     with backend_cls.rng_context(cfg, config):
         backend = backend_cls.from_config(cfg, config)
         try:
+            if (
+                config.dataset_batch_size > 1
+                and type(backend).sample_batch_seeded
+                is SamplingBackend.sample_batch_seeded
+            ):
+                raise ValueError(
+                    "dataset_batch_size > 1 requires a backend with independently seeded batching"
+                )
             if (
                 config.max_proposal_kl is not None
                 and type(backend).proposal_kl is SamplingBackend.proposal_kl

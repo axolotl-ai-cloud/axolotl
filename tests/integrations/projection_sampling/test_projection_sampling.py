@@ -144,16 +144,29 @@ def test_eos_length_changes_include_cut_probability():
     assert sampler.sample("question", "expert").token_ids == [7]
 
 
-def test_greedy_uses_mean_likelihood_and_does_not_score_proposals():
+@pytest.mark.parametrize("acceptance", ["greedy", "logprob_improvement"])
+@pytest.mark.parametrize("validate", [True, False])
+@pytest.mark.parametrize("proposal_batch_size", [1, 2])
+def test_improvement_acceptance_uses_mean_likelihood_and_does_not_score_proposals(
+    acceptance, validate, proposal_batch_size
+):
     backend = ScriptedBackend(
-        [[2, 3], [7]], target=lambda tokens: -3.0 if len(tokens) == 2 else -2.0
+        [[2, 3]] + [[7]] * proposal_batch_size,
+        target=lambda tokens: -3.0 if len(tokens) == 2 else -2.0,
     )
-    sampler = ProjectionSampler(
-        backend,
-        ProjectionSamplingConfig(
-            acceptance="greedy", block_size=2, max_new_tokens=2, mcmc_steps=1
-        ),
+    settings = dict(
+        acceptance=acceptance,
+        block_size=2,
+        max_new_tokens=2,
+        mcmc_steps=1,
+        proposal_batch_size=proposal_batch_size,
     )
+    config = (
+        ProjectionSamplingConfig(**settings)
+        if validate
+        else ProjectionSamplingConfig().model_copy(update=settings)
+    )
+    sampler = ProjectionSampler(backend, config)
     sampler.rng = FixedRNG()
     result = sampler.sample("question", "expert")
     assert result.token_ids == [2, 3]
@@ -457,6 +470,78 @@ def test_final_kl_gate_changes_cache_fingerprint(cfg):
     assert cache_path(cfg, config) == disabled
 
 
+def test_acceptance_alias_preserves_cache_and_sampling_temperature(cfg):
+    legacy = ProjectionSamplingConfig(acceptance="greedy", temperature=0.6)
+    preferred = ProjectionSamplingConfig(
+        acceptance="logprob_improvement", temperature=0.6
+    )
+    assert legacy.acceptance == preferred.acceptance == "logprob_improvement"
+    assert legacy.temperature == preferred.temperature == 0.6
+    assert cache_path(cfg, legacy) == cache_path(cfg, preferred)
+    assert cache_path(
+        cfg, preferred.model_copy(update={"acceptance": "greedy"})
+    ) == cache_path(cfg, preferred)
+
+
+def test_dataset_batch_fingerprint_preserves_default(cfg):
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    default = cache_path(cfg, config)
+    config.dataset_batch_size = 2
+    assert cache_path(cfg, config) != default
+    config.dataset_batch_size = 1
+    assert cache_path(cfg, config) == default
+
+
+def test_transformers_explicit_batch_seeds_are_repeatable_and_restore_rng(real_backend):
+    contexts, budgets, seeds = [[1, 2], [1, 2]], [3, 2], [17, 42]
+    before = torch.random.get_rng_state().clone()
+    expected = real_backend.sample_batch_seeded(contexts, budgets, seeds)
+    assert torch.equal(before, torch.random.get_rng_state())
+    torch.rand(4)
+    before = torch.random.get_rng_state().clone()
+    assert real_backend.sample_batch_seeded(contexts, budgets, seeds) == expected
+    assert torch.equal(before, torch.random.get_rng_state())
+
+
+@pytest.mark.parametrize("margin,kl", [(None, None), (0, 0.5)])
+def test_plugin_batches_rows_and_candidates_into_native_calls(
+    cfg, monkeypatch, margin, kl
+):
+    from test_batching import BatchBackend
+
+    Path(cfg.datasets[0].path).write_text(
+        "".join(
+            json.dumps({"prompt": f"question {index}", "response": "expert"}) + "\n"
+            for index in range(3)
+        )
+    )
+    cfg.projection_sampling.update(
+        {
+            "dataset_batch_size": 2,
+            "proposal_batch_size": 2,
+            "mcmc_steps": 1,
+            "acceptance": "logprob_improvement",
+            "min_logprob_improvement": margin,
+            "max_proposal_kl": kl,
+        }
+    )
+    backend = BatchBackend()
+    monkeypatch.setattr(TransformersBackend, "from_config", lambda *args: backend)
+    config = ProjectionSamplingConfig.model_validate(cfg.projection_sampling)
+    path = cache_path(cfg, config)
+    path.parent.mkdir()
+    ProjectionSamplingPlugin()._generate_cache(cfg, config, path)
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [row["prompt"] for row in records] == [
+        f"question {index}" for index in range(3)
+    ]
+    assert [len(contexts) for contexts, _, _ in backend.generation] == [2, 4, 1, 2]
+    assert all(row["sampling"]["proposal_batch_size"] == 2 for row in records)
+    if kl is not None:
+        assert all(row["sampling"]["proposal_kl_gate_passed"] for row in records)
+    assert backend.closed
+
+
 @pytest.mark.parametrize("ceiling,retained", [(0.5, True), (0.49, False)])
 def test_final_kl_gate_for_flat_pairs(cfg, monkeypatch, ceiling, retained):
     from unittest.mock import Mock
@@ -603,6 +688,7 @@ def test_disabled_plugin_and_distributed_preprocess(cfg, monkeypatch):
         ("max_proposal_kl", -0.01),
         ("max_proposal_kl", float("nan")),
         ("max_proposal_kl", float("inf")),
+        ("dataset_batch_size", 0),
         ("acceptance", "unknown"),
         ("device", "mps"),
         ("proposal_template", "{question} {invalid}"),

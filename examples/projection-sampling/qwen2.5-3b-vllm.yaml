@@ -21,6 +21,8 @@ projection_sampling:
     score_batch_size: 4
   cache_dir: ./last_run_prepared/projection-sampling
   acceptance: metropolis_hastings
+  dataset_batch_size: 8
+  proposal_batch_size: 2
   block_size: 32
   max_new_tokens: 1856
   mcmc_steps: 10

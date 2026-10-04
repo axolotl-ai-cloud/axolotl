@@ -555,6 +555,96 @@ def test_plugin_chat_cache_and_training_reuse(tmp_path, tokenizer, cfg, monkeypa
     assert plugin.load_datasets(cfg) == "prepared"
 
 
+def test_plugin_batches_chat_proposals_and_preserves_parser_masks(
+    tmp_path, tokenizer, cfg, monkeypatch
+):
+    from axolotl.integrations.projection_sampling.backends.transformers import (
+        TransformersBackend,
+    )
+
+    rows = [
+        {
+            "messages": [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": "expert"},
+            ]
+        }
+        for question in ("question", "followup")
+    ]
+    source = tmp_path / "chat.jsonl"
+    source.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    cfg.datasets = [
+        {
+            "path": str(source),
+            "ds_type": "json",
+            "split": "train",
+            "type": "chat_template",
+            "roles_to_train": ["assistant"],
+            "train_on_eos": "none",
+        }
+    ]
+    rewritten_id = tokenizer.convert_tokens_to_ids("rewritten")
+    backend = ScriptedBackend(
+        [],
+        target=lambda tokens: sum(
+            -0.5 if token == rewritten_id else -1 for token in tokens
+        ),
+    )
+    backend.tokenizer = tokenizer
+    backend.eos_token_ids = {tokenizer.eos_token_id}
+    calls = []
+
+    def seeded(self, contexts, budgets, seeds):
+        calls.append((contexts, budgets, seeds))
+        return [
+            [rewritten_id] * (budget - 1) + [tokenizer.eos_token_id]
+            for budget in budgets
+        ]
+
+    monkeypatch.setattr(ScriptedBackend, "sample_batch_seeded", seeded)
+    monkeypatch.setattr(
+        ScriptedBackend,
+        "proposal_kl",
+        lambda self, target, proposal, tokens, positions: [0.1] * len(positions),
+    )
+    monkeypatch.setattr(TransformersBackend, "from_config", lambda *args: backend)
+    config = ProjectionSamplingConfig(
+        cache_dir=str(tmp_path / "cache"),
+        dataset_batch_size=2,
+        proposal_batch_size=2,
+        acceptance="logprob_improvement",
+        block_size=2,
+        max_new_tokens=2,
+        mcmc_steps=1,
+        min_logprob_improvement=0.01,
+        max_proposal_kl=0.5,
+    )
+    path = cache_path(cfg, config)
+    path.parent.mkdir()
+    ProjectionSamplingPlugin()._generate_cache(cfg, config, path)
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert [len(contexts) for contexts, _, _ in calls] == [2, 4]
+    assert [record["messages"][0]["content"] for record in records] == [
+        "question",
+        "followup",
+    ]
+    strategy = load(tokenizer, cfg, cfg.datasets[0])
+    for original, record in zip(rows, records, strict=True):
+        expected = deepcopy(original)
+        expected["messages"][-1]["content"] = "rewritten"
+        tokenized = strategy.tokenize_prompt(expected)
+        assert {key: record[key] for key in tokenized} == tokenized
+        metadata = record["sampling"][0]
+        assert metadata["proposal_batch_size"] == 2
+        assert (
+            metadata["rewritten_labeled_tokens"]
+            == metadata["proposal_kl_labeled_tokens"]
+            == 1
+        )
+        assert not metadata["fallback_to_expert"]
+    assert backend.closed
+
+
 def test_legacy_last_reply_policy(tokenizer, cfg):
     row = {
         "messages": [

@@ -28,7 +28,7 @@ projection_sampling:
     enable_prefix_caching: true
     score_batch_size: 32
   cache_dir: ./last_run_prepared/projection-sampling-qwen35-math
-  acceptance: greedy
+  acceptance: logprob_improvement
   block_size: 58
   max_new_tokens: 1856
   mcmc_steps: 10

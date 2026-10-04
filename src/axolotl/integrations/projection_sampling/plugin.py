@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 from glob import glob
+from itertools import islice
 from pathlib import Path
 
 from filelock import FileLock
@@ -16,6 +17,7 @@ from axolotl.utils.logging import get_logger
 
 from .args import ProjectionSamplingConfig, get_seed
 from .backend import load_backend
+from .batching import row_seed, run_ordered_batch
 from .inspection import export_dataset
 from .sampler import ProjectionSampler
 from .scoring import evaluate_logprob_margin, evaluate_proposal_kl
@@ -27,6 +29,13 @@ CACHE_VERSION = 2
 def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
     """Fingerprint settings, tokenization, source configuration, and local data."""
     settings = config.model_dump(exclude={"cache_dir", "device"})
+    if config.acceptance == "logprob_improvement":
+        # Preserve existing cache fingerprints across the acceptance alias.
+        settings["acceptance"] = "greedy"
+    if config.dataset_batch_size == 1:
+        settings.pop("dataset_batch_size")
+    else:
+        settings["dataset_seed_policy"] = "sha256_seed_row_request_v1"
     if config.min_logprob_improvement is None:
         settings.pop("min_logprob_improvement")
     if config.max_proposal_kl is None:
@@ -114,6 +123,106 @@ def cache_path(cfg, config: ProjectionSamplingConfig) -> Path:
         json.dumps(payload, sort_keys=True, default=str).encode()
     ).hexdigest()
     return Path(config.cache_dir).resolve() / f"{digest}.jsonl"
+
+
+def sample_flat(row, sampler: ProjectionSampler, verifier=None) -> dict:
+    """Rewrite a flat pair with the same final gates as chat datasets."""
+    config = sampler.config
+    backend = sampler.backend
+    question, expert = (
+        row[config.question_field],
+        row[config.response_field],
+    )
+    if (
+        not isinstance(question, str)
+        or not isinstance(expert, str)
+        or not question.strip()
+        or not expert.strip()
+    ):
+        raise ValueError(
+            "Projection sampling requires nonempty string questions and expert responses"
+        )
+    result = sampler.sample(question, expert)
+    tokens = result.token_ids
+    response = backend.tokenizer.decode(tokens, skip_special_tokens=True)
+    verified = (
+        None
+        if verifier is None
+        else bool(
+            verifier(
+                question=question,
+                expert_response=expert,
+                response=response,
+            )
+        )
+    )
+    fallback = not result.finished or not response.strip() or verified is False
+    context = sampler.prompt_ids(question)
+    margin_metadata = {}
+    kl_metadata = {}
+    if (
+        fallback
+        or config.min_logprob_improvement is not None
+        or config.max_proposal_kl is not None
+    ):
+        expert_tokens = backend.tokenizer.encode(expert, add_special_tokens=False)
+        eos = backend.tokenizer.eos_token_id
+        if eos is not None and (not expert_tokens or expert_tokens[-1] != eos):
+            expert_tokens.append(eos)
+    if not fallback and config.min_logprob_improvement is not None:
+        margin_metadata = evaluate_logprob_margin(
+            backend,
+            {
+                "input_ids": context + expert_tokens,
+                "labels": [-100] * len(context) + expert_tokens,
+            },
+            {
+                "input_ids": context + tokens,
+                "labels": [-100] * len(context) + tokens,
+            },
+            config.min_logprob_improvement,
+            starts=(len(context), len(context)),
+        )
+        if not margin_metadata["logprob_margin_passed"]:
+            fallback = True
+            margin_metadata["fallback_reason"] = "insufficient_logprob_improvement"
+    if not fallback and config.max_proposal_kl is not None:
+        kl_metadata = evaluate_proposal_kl(
+            backend,
+            context,
+            sampler.proposal_ids(question, expert, []),
+            tokens,
+            {
+                "input_ids": context + tokens,
+                "labels": [-100] * len(context) + tokens,
+            },
+            config.max_proposal_kl,
+        )
+        if not kl_metadata["proposal_kl_gate_passed"]:
+            fallback = True
+            kl_metadata["fallback_reason"] = "excessive_proposal_kl"
+    if fallback:
+        tokens = expert_tokens
+        response = expert
+    record = {
+        "prompt": question,
+        "response": response,
+        "expert_response": expert,
+        "prompt_token_ids": context,
+        "response_token_ids": tokens,
+        "sampling": {
+            "attempts": result.attempts,
+            "accepted": result.accepted,
+            "target_logprob": result.target_logprob,
+            "finished": result.finished,
+            "verified": verified,
+            "fallback_to_expert": fallback,
+            **margin_metadata,
+            **kl_metadata,
+            **sampler.proposal_statistics(result),
+        },
+    }
+    return record
 
 
 class ProjectionSamplingPlugin(BasePlugin):
@@ -236,13 +345,51 @@ class ProjectionSamplingPlugin(BasePlugin):
                             from axolotl.prompt_strategies.chat_template import load
 
                             chat_strategy = load(backend.tokenizer, cfg, source)
-                        for row in dataset:
-                            if chat_strategy is not None:
+
+                        def process(row, chain, _strategy=chat_strategy):
+                            if _strategy is not None:
                                 from .chat import sample_chat
 
-                                record = sample_chat(
-                                    row, chat_strategy, sampler, verifier
+                                return sample_chat(row, _strategy, chain, verifier)
+                            return sample_flat(row, chain, verifier)
+
+                        def status(method, requests, seconds, calls, results):
+                            LOG.info(
+                                "Projection inference batch: operation=%s requests=%s completed=%s/%s seconds=%.2f",
+                                method,
+                                requests,
+                                sum(result is not None for result in results),
+                                len(results),
+                                seconds,
+                            )
+
+                        iterator = iter(dataset)
+                        while rows := list(islice(iterator, config.dataset_batch_size)):
+                            if config.dataset_batch_size == 1:
+                                records = [process(rows[0], sampler)]
+                            else:
+                                jobs = []
+                                for index, row in enumerate(rows, count):
+
+                                    def job(
+                                        proxy, _row=row, _index=index, _process=process
+                                    ):
+                                        chain = ProjectionSampler(
+                                            proxy,
+                                            config,
+                                            seed=row_seed(get_seed(cfg), _index),
+                                        )
+                                        return _process(_row, chain)
+
+                                    jobs.append(job)
+                                records = run_ordered_batch(
+                                    backend,
+                                    jobs,
+                                    seed=get_seed(cfg),
+                                    row_offset=count,
+                                    status=status,
                                 )
+                            for record in records:
                                 output.write(
                                     json.dumps(
                                         record, ensure_ascii=False, allow_nan=False
@@ -250,130 +397,7 @@ class ProjectionSamplingPlugin(BasePlugin):
                                     + "\n"
                                 )
                                 count += 1
-                                LOG.info("Projection sampled chat row %s", count)
-                                continue
-                            question, expert = (
-                                row[config.question_field],
-                                row[config.response_field],
-                            )
-                            if (
-                                not isinstance(question, str)
-                                or not isinstance(expert, str)
-                                or not question.strip()
-                                or not expert.strip()
-                            ):
-                                raise ValueError(
-                                    "Projection sampling requires nonempty string questions and expert responses"
-                                )
-                            result = sampler.sample(question, expert)
-                            tokens = result.token_ids
-                            response = backend.tokenizer.decode(
-                                tokens, skip_special_tokens=True
-                            )
-                            verified = (
-                                None
-                                if verifier is None
-                                else bool(
-                                    verifier(
-                                        question=question,
-                                        expert_response=expert,
-                                        response=response,
-                                    )
-                                )
-                            )
-                            fallback = (
-                                not result.finished
-                                or not response.strip()
-                                or verified is False
-                            )
-                            context = sampler.prompt_ids(question)
-                            margin_metadata = {}
-                            kl_metadata = {}
-                            if (
-                                fallback
-                                or config.min_logprob_improvement is not None
-                                or config.max_proposal_kl is not None
-                            ):
-                                expert_tokens = backend.tokenizer.encode(
-                                    expert, add_special_tokens=False
-                                )
-                                eos = backend.tokenizer.eos_token_id
-                                if eos is not None and (
-                                    not expert_tokens or expert_tokens[-1] != eos
-                                ):
-                                    expert_tokens.append(eos)
-                            if (
-                                not fallback
-                                and config.min_logprob_improvement is not None
-                            ):
-                                margin_metadata = evaluate_logprob_margin(
-                                    backend,
-                                    {
-                                        "input_ids": context + expert_tokens,
-                                        "labels": [-100] * len(context) + expert_tokens,
-                                    },
-                                    {
-                                        "input_ids": context + tokens,
-                                        "labels": [-100] * len(context) + tokens,
-                                    },
-                                    config.min_logprob_improvement,
-                                    starts=(len(context), len(context)),
-                                )
-                                if not margin_metadata["logprob_margin_passed"]:
-                                    fallback = True
-                                    margin_metadata["fallback_reason"] = (
-                                        "insufficient_logprob_improvement"
-                                    )
-                            if not fallback and config.max_proposal_kl is not None:
-                                kl_metadata = evaluate_proposal_kl(
-                                    backend,
-                                    context,
-                                    sampler.proposal_ids(question, expert, []),
-                                    tokens,
-                                    {
-                                        "input_ids": context + tokens,
-                                        "labels": [-100] * len(context) + tokens,
-                                    },
-                                    config.max_proposal_kl,
-                                )
-                                if not kl_metadata["proposal_kl_gate_passed"]:
-                                    fallback = True
-                                    kl_metadata["fallback_reason"] = (
-                                        "excessive_proposal_kl"
-                                    )
-                            if fallback:
-                                tokens = expert_tokens
-                                response = expert
-                            record = {
-                                "prompt": question,
-                                "response": response,
-                                "expert_response": expert,
-                                "prompt_token_ids": context,
-                                "response_token_ids": tokens,
-                                "sampling": {
-                                    "attempts": result.attempts,
-                                    "accepted": result.accepted,
-                                    "target_logprob": result.target_logprob,
-                                    "finished": result.finished,
-                                    "verified": verified,
-                                    "fallback_to_expert": fallback,
-                                    **margin_metadata,
-                                    **kl_metadata,
-                                    **sampler.proposal_statistics(result),
-                                },
-                            }
-                            output.write(
-                                json.dumps(record, ensure_ascii=False, allow_nan=False)
-                                + "\n"
-                            )
-                            count += 1
-                            LOG.info(
-                                "Projection sampled row %s: accepted %s/%s, fallback=%s",
-                                count,
-                                result.accepted,
-                                result.attempts,
-                                fallback,
-                            )
+                                LOG.info("Projection sampled row %s", count)
             if not count:
                 raise ValueError("Projection sampling source dataset is empty")
             temporary.replace(path)

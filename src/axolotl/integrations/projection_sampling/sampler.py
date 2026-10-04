@@ -30,6 +30,10 @@ class ProjectionSampler:
         self.config = config
         self.rng = random.Random(seed)  # nosec B311
 
+    @property
+    def _improvement_acceptance(self) -> bool:
+        return self.config.acceptance in ("logprob_improvement", "greedy")
+
     def prompt_ids(self, text: str) -> list[int]:
         tokenizer = self.backend.tokenizer
         if self.config.prompt_format == "chat":
@@ -80,7 +84,7 @@ class ProjectionSampler:
             self.config.block_size,
         ):
             horizon = min(horizon, self.config.max_new_tokens)
-            if self.config.acceptance == "greedy":
+            if self._improvement_acceptance:
                 horizon = min(
                     len(current) + self.config.block_size, self.config.max_new_tokens
                 )
@@ -95,7 +99,7 @@ class ProjectionSampler:
                 prefix = current[:index]
                 context = self.proposal_ids(question, expert, prefix, prompt_builder)
                 proposal_horizon = (
-                    len(current) if self.config.acceptance == "greedy" else horizon
+                    len(current) if self._improvement_acceptance else horizon
                 )
                 if self.config.proposal_batch_size > 1:
                     current, target, accept = self._batched_step(
@@ -115,7 +119,7 @@ class ProjectionSampler:
                 self._validate_tokens(candidate, proposal_horizon)
                 proposed_target = self.backend.target_logprob(target_context, candidate)
                 attempts += 1
-                if self.config.acceptance == "greedy":
+                if self._improvement_acceptance:
                     accept = proposed_target / len(candidate) > target / len(current)
                 else:
                     forward = self.backend.proposal_logprob(context, candidate[index:])
@@ -191,7 +195,7 @@ class ProjectionSampler:
             [target_context] * count, candidates
         )
         self._check_batch(targets, count)
-        if self.config.acceptance == "greedy":
+        if self._improvement_acceptance:
             selected = max(
                 range(count), key=lambda index: targets[index] / len(candidates[index])
             )

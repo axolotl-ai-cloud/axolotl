@@ -99,6 +99,28 @@ class TransformersBackend(SamplingBackend):
     def target_logprob(self, context: list[int], tokens: list[int]) -> float:
         return self._score(context, tokens, proposal=False)
 
+    def sample_batch_seeded(self, contexts, max_tokens, seeds):
+        if len(contexts) != len(max_tokens) or len(contexts) != len(seeds):
+            raise ValueError("Sampling batch contexts, budgets and seeds must align")
+        results = []
+        devices = (
+            [
+                self.device.index
+                if self.device.index is not None
+                else torch.cuda.current_device()
+            ]
+            if self.device.type == "cuda"
+            else []
+        )
+        for context, budget, seed in zip(contexts, max_tokens, seeds, strict=True):
+            with torch.random.fork_rng(devices=devices):
+                torch.random.default_generator.manual_seed(seed)
+                if devices:
+                    with torch.cuda.device(devices[0]):
+                        torch.cuda.manual_seed(seed)
+                results.append(self.sample(context, budget))
+        return results
+
     def proposal_logprob(self, context: list[int], tokens: list[int]) -> float:
         return self._score(context, tokens, proposal=True)
 

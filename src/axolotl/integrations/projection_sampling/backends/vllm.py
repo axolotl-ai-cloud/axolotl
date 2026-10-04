@@ -144,19 +144,30 @@ class VLLMBackend(SamplingBackend):
             return [self.sample(contexts[0], max_tokens[0])]
         if not contexts:
             return []
+        seeds = [
+            (self.seed + self.request_number + index) % (2**32)
+            for index in range(len(contexts))
+        ]
+        return self.sample_batch_seeded(contexts, max_tokens, seeds)
+
+    def sample_batch_seeded(self, contexts, max_tokens, seeds):
+        if len(contexts) != len(max_tokens) or len(contexts) != len(seeds):
+            raise ValueError("Sampling batch contexts, budgets and seeds must align")
+        if not contexts:
+            return []
         for context, budget in zip(contexts, max_tokens, strict=True):
             self._check_context(context, budget)
         params = []
-        for budget in max_tokens:
+        for budget, seed in zip(max_tokens, seeds, strict=True):
             params.append(
                 self._params(
                     budget,
                     proposal=True,
-                    seed=(self.seed + self.request_number) % (2**32),
+                    seed=seed % (2**32),
                     stop_token_ids=sorted(self.eos_token_ids),
                 )
             )
-            self.request_number += 1
+        self.request_number += len(contexts)
         outputs = self.engine.generate(
             [{"prompt_token_ids": context} for context in contexts],
             sampling_params=params,
