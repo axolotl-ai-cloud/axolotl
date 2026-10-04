@@ -1,5 +1,6 @@
 """AMP decorators in the gradient-checkpointing offload paths."""
 
+import pytest
 import torch
 
 from axolotl.kernels.utils import torch_amp_custom_fwd
@@ -23,6 +24,7 @@ def test_amp_decorators_resolve_a_valid_device_type():
     torch.testing.assert_close(double(torch.ones(3)), torch.full((3,), 2.0))
 
 
+@pytest.mark.gpu
 def test_cpu_offloaded_checkpointer_matches_baseline():
     """Forward/backward roundtrip on whichever device this test runs on."""
     device = "cuda" if torch.cuda.is_available() else "cpu"

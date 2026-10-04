@@ -297,6 +297,7 @@ def test_mixed_merge_aware_qkv_keeps_other_projections_optimized(monkeypatch):
     )
 
 
+@pytest.mark.gpu
 @pytest.mark.parametrize("autocast", [False, True])
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 def test_fp32_adapter_matches_export_effective_weight(autocast, device):

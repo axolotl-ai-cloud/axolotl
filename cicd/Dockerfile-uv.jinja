@@ -1,4 +1,5 @@
 FROM axolotlai/axolotl-base-uv:{{ BASE_TAG }}
+ENV AXOLOTL_DEPS_HASH="{{ DEPS_HASH }}"
 
 ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
@@ -6,7 +7,6 @@ ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
 ENV CUDA="{{ CUDA }}"
 ENV PYTORCH_VERSION="{{ PYTORCH_VERSION }}"
 ENV GITHUB_REF="{{ GITHUB_REF }}"
-ENV GITHUB_SHA="{{ GITHUB_SHA }}"
 ENV NIGHTLY_BUILD="{{ NIGHTLY_BUILD }}"
 ENV HF_HOME="{{ HF_HOME }}"
 
@@ -43,7 +43,7 @@ RUN python scripts/cutcrossentropy_install.py --uv | sh
 
 # So we can test the Docker image
 RUN uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-    codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+    codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-testmon pytest-xdist tbparse
 
 # fix so that git fetch/pull from remote works
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \

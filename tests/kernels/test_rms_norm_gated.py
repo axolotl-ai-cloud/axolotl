@@ -10,10 +10,12 @@ import torch.nn.functional as F
 
 pytest.importorskip("triton", reason="triton required for fused kernels")
 
+pytestmark = pytest.mark.gpu
+
 if not torch.cuda.is_available():
     pytest.skip("CUDA required for fused kernel tests", allow_module_level=True)
 
-from axolotl.kernels.rms_norm_gated import FusedRMSNormGated
+from axolotl.kernels.rms_norm_gated import FusedRMSNormGated  # noqa: E402
 
 
 class EagerRMSNormGated(torch.nn.Module):

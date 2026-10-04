@@ -179,6 +179,7 @@ def test_gate_up_interleave_perm():
     assert torch.equal(wi[inv], w)
 
 
+@pytest.mark.gpu
 def test_fp4_cute_unavailable_without_sm100():
     from axolotl.integrations.kernels.libs.sonicmoe.fp4_cute import fp4_cute_available
 

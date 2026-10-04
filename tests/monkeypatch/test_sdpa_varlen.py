@@ -10,9 +10,12 @@ from axolotl.monkeypatch.attention.sdpa_varlen import (
     varlen_available,
 )
 
-pytestmark = pytest.mark.skipif(
-    not varlen_available(), reason="torch.nn.attention.varlen needs torch >= 2.10"
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not varlen_available(), reason="torch.nn.attention.varlen needs torch >= 2.10"
+    ),
+    pytest.mark.gpu,
+]
 
 requires_cuda = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="varlen_attn needs CUDA"
