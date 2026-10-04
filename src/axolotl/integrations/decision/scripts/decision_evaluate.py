@@ -19,7 +19,6 @@ from axolotl.integrations.decision.datasets import (
     load_decision_evaluation_dataset,
 )
 from axolotl.integrations.decision.evaluation import (
-    adapter_payload_fingerprint,
     evaluate_artifacts,
     evaluate_prepared_rows,
     file_sha256,
@@ -161,23 +160,11 @@ def _provenance(
 ) -> dict[str, Any]:
     config = getattr(model, "config", None)
     config_path = Path(str(_value(cfg, "axolotl_config_path")))
-    adapter_fingerprint = (
-        None if adapter is None else adapter_payload_fingerprint(adapter)
-    )
     return {
         "base_model": _value(cfg, "base_model"),
         "requested_model_revision": _value(cfg, "revision_of_model"),
         "resolved_model_revision": _value(config, "_commit_hash"),
         "adapter": None if adapter is None else str(adapter),
-        "adapter_sha256": (
-            None if adapter_fingerprint is None else adapter_fingerprint["sha256"]
-        ),
-        "adapter_fingerprint_version": (
-            None if adapter_fingerprint is None else adapter_fingerprint["version"]
-        ),
-        "adapter_payload_files": (
-            None if adapter_fingerprint is None else adapter_fingerprint["files"]
-        ),
         "config": str(config_path),
         "config_sha256": file_sha256(config_path),
         "dataset_manifest_sha256": _mapping_sha256(dataset_manifest),
