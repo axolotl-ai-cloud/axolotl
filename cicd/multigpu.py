@@ -36,6 +36,7 @@ df_args = {
     "HF_HOME": "/workspace/data/huggingface-cache/hub",
     "PYTHONUNBUFFERED": os.environ.get("PYTHONUNBUFFERED", "1"),
     "DEEPSPEED_LOG_LEVEL": os.environ.get("DEEPSPEED_LOG_LEVEL", "WARNING"),
+    "E2E_SELECTED_TESTS": os.environ.get("E2E_SELECTED_TESTS", ""),
 }
 
 dockerfile_contents = df_template.render(**df_args)
@@ -147,6 +148,7 @@ def cicd_pytest():
         "multigpu": "./cicd/multigpu.sh",
         "nf4": "bash ./cicd/nf4.sh",
         "nvfp4": "bash ./cicd/nvfp4.sh",
+        "multigpu_selected": "bash ./cicd/multigpu_selected.sh",
     }
     run_cmd(scripts[suite], "/workspace/axolotl")
 

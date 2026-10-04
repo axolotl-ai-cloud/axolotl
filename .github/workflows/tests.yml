@@ -279,6 +279,50 @@ jobs:
         run: |
           pytest -v --durations=10 tests/cli/
 
+  select-e2e:
+    name: Select e2e tests
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # the PR merge commit plus both parents, so the diff is exactly the PR
+          fetch-depth: 2
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Preview only: the selected-e2e GPU arms run this subset alongside the full suites.
+      # Anything the selector cannot reason about resolves to "all", and those arms then skip.
+      - name: Select impacted e2e test files
+        continue-on-error: true
+        run: |
+          out="$RUNNER_TEMP/e2e-selection"
+          mkdir -p "$out"
+          args=()
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            args=(--merge-commit)
+          fi
+          python cicd/select_e2e_tests.py "${args[@]}" --name single --explain \
+            --exclude tests/e2e/multigpu --exclude tests/e2e/kernels \
+            --output "$out/single.txt"
+          python cicd/select_e2e_tests.py "${args[@]}" --name multigpu --explain \
+            --scope tests/e2e/multigpu \
+            --output "$out/multigpu.txt"
+
+      - name: Upload selection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-selection
+          path: ${{ runner.temp }}/e2e-selection
+          if-no-files-found: warn
+          retention-days: 7
+
   multigpu-paths:
     name: Multi-GPU path filter
     runs-on: ubuntu-latest

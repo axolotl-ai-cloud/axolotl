@@ -33,6 +33,7 @@ df_args = {
     "HF_HOME": "/workspace/data/huggingface-cache/hub",
     "PYTHONUNBUFFERED": os.environ.get("PYTHONUNBUFFERED", "1"),
     "DEEPSPEED_LOG_LEVEL": os.environ.get("DEEPSPEED_LOG_LEVEL", "WARNING"),
+    "E2E_SELECTED_TESTS": os.environ.get("E2E_SELECTED_TESTS", ""),
 }
 
 dockerfile_contents = df_template.render(**df_args)
