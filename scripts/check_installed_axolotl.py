@@ -14,6 +14,11 @@ ENTRY_POINT_GROUPS = (
     "axolotl.cli_commands",
 )
 REQUIRED_ENTRY_POINTS = {"axolotl.plugins": 2, "axolotl.cloud_providers": 3}
+# trl removed its vLLM weight-sync server; these are being replaced by the native vLLM path
+KNOWN_BROKEN_MODULES = {
+    "axolotl.scripts.vllm_serve_lora",
+    "axolotl.scripts.vllm_worker_ext",
+}
 
 
 def import_walk() -> bool:
@@ -21,6 +26,7 @@ def import_walk() -> bool:
 
     optional: list[tuple[str, str]] = []
     failed: list[tuple[str, str]] = []
+    known: list[tuple[str, str]] = []
     names = [
         m.name
         for m in pkgutil.walk_packages(
@@ -38,13 +44,23 @@ def import_walk() -> bool:
                 and not top.startswith("axolotl")
                 and importlib.util.find_spec(top) is None
             )
-            (optional if absent else failed).append(
-                (name, f"{type(exc).__name__}: {exc}")
+            bucket = (
+                known
+                if name in KNOWN_BROKEN_MODULES
+                else optional
+                if absent
+                else failed
             )
-    ok = len(names) - len(optional) - len(failed)
-    print(f"import-walk: ok={ok} optional={len(optional)} failed={len(failed)}")
+            bucket.append((name, f"{type(exc).__name__}: {exc}"))
+    ok = len(names) - len(optional) - len(failed) - len(known)
+    print(
+        f"import-walk: ok={ok} optional={len(optional)} "
+        f"known-broken={len(known)} failed={len(failed)}"
+    )
     for name, why in optional:
         print(f"  optional: {name}: {why}")
+    for name, why in known:
+        print(f"  known-broken: {name}: {why}")
     for name, why in failed:
         print(f"  FAILED: {name}: {why}")
     return not failed

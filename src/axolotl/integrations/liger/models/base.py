@@ -5,8 +5,8 @@ Generic FLCE patch for untested models similar to Llama
 from typing import Optional, Tuple, Union
 
 import torch
+from liger_kernel.transformers.fsdp import _FSDPForwardRedirection
 from liger_kernel.transformers.model.loss_utils import LigerForCausalLMLoss
-from liger_kernel.transformers.trainer.orpo_trainer import _FSDPForwardRedirection
 from liger_kernel.utils import PEFT_AVAILABLE
 from peft.utils import ModulesToSaveWrapper
 from torch.distributed.fsdp import FullyShardedDataParallel
