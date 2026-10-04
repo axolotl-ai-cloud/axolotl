@@ -131,13 +131,13 @@ step_wheels() {
   if [ "$HOST_ARCH" = "$TARGET_ARCH" ]; then
     log "build zstandard (no build isolation)"
     local zpin; zpin=$(grep -i '^zstandard==' "$BUNDLE/requirements.target.txt")
-    uv venv --seed --python "$PY_MINOR" "$BUNDLE/../.zstd-build"
+    uv venv --clear --seed --python "$PY_MINOR" "$BUNDLE/../.zstd-build"
     "$BUNDLE/../.zstd-build/bin/python" -m pip install -q setuptools wheel cffi
     "$BUNDLE/../.zstd-build/bin/python" -m pip wheel --no-deps --no-build-isolation -w "$BUNDLE/wheelhouse" "$zpin"
     if grep -qi '^deepspeed==' "$BUNDLE/requirements.target.txt"; then
       log "build deepspeed (DS_BUILD_OPS=0; ops JIT-compile on the target)"
       local dpin; dpin=$(grep -i '^deepspeed==' "$BUNDLE/requirements.target.txt")
-      uv venv --seed --python "$PY_MINOR" "$BUNDLE/../.ds-build"
+      uv venv --clear --seed --python "$PY_MINOR" "$BUNDLE/../.ds-build"
       uv pip install --python "$BUNDLE/../.ds-build/bin/python" --torch-backend "$TORCH_BACKEND" setuptools wheel ninja "$(grep -i '^torch==' "$BUNDLE/requirements.target.txt" | sed 's/+.*//')"
       DS_BUILD_OPS=0 "$BUNDLE/../.ds-build/bin/python" -m pip wheel --no-deps --no-build-isolation -w "$BUNDLE/wheelhouse" "$dpin"
     fi
@@ -160,19 +160,21 @@ step_wheels() {
     ls "$BUNDLE/wheelhouse" | tr 'A-Z.-' 'a-z__' | grep -q "^${norm}-" || { echo "MISSING: $name"; missing=1; }
   done < <(grep '==' "$BUNDLE/requirements.target.txt" | cut -d= -f1 | sed 's/\[.*//')
   ls "$BUNDLE"/wheelhouse/axolotl-*.whl >/dev/null
-  [ "$WITH_CCE" = 1 ] && ls "$BUNDLE"/wheelhouse/cut_cross_entropy-*.whl >/dev/null
+  if [ "$WITH_CCE" = 1 ]; then ls "$BUNDLE"/wheelhouse/cut_cross_entropy-*.whl >/dev/null; fi
   [ $missing = 0 ] || log "WARNING: wheels are missing (see above); the target install will fail until they are added"
 }
 
 step_staging_env() {
   log "staging environment at $STAGING_VENV"
   local whl; whl=$(ls "$BUNDLE"/wheelhouse/axolotl-*.whl | head -1)
+  local extra_whl=()
+  if [ "$WITH_CCE" = 1 ]; then extra_whl=("$BUNDLE"/wheelhouse/cut_cross_entropy-*.whl); fi
   if [ "$HOST_ARCH" = "$TARGET_ARCH" ]; then
-    uv venv --python "$PY_MINOR" "$STAGING_VENV"
+    uv venv --clear --python "$PY_MINOR" "$STAGING_VENV"
     uv pip sync --python "$STAGING_VENV/bin/python" --offline --no-index --no-build --find-links "$BUNDLE/wheelhouse" "$BUNDLE/requirements.target.txt"
-    uv pip install --python "$STAGING_VENV/bin/python" --offline --no-index --no-build --no-deps "$whl" "$BUNDLE"/wheelhouse/cut_cross_entropy-*.whl
+    uv pip install --python "$STAGING_VENV/bin/python" --offline --no-index --no-build --no-deps "$whl" "${extra_whl[@]}"
   else
-    uv venv --python 3.12 "$STAGING_VENV"
+    uv venv --clear --python 3.12 "$STAGING_VENV"
     uv pip install --python "$STAGING_VENV/bin/python" --torch-backend "$TORCH_BACKEND" "$whl"
   fi
 }
@@ -225,7 +227,7 @@ step_manifest() {
     echo "python_file:    $(ls "python-mirror/$PBS_RELEASE/")"
     echo "target_arch:    $TARGET_ARCH"
     echo "torch_backend:  $TORCH_BACKEND"
-    echo "extras:         $EXTRAS${WITH_CCE:+ + cut-cross-entropy}"
+    echo "extras:         $EXTRAS$([ "$WITH_CCE" = 1 ] && echo ' + cut-cross-entropy')"
     echo "kernels:        $KERNELS"
     echo "wheel_count:    $(find wheelhouse -name '*.whl' | wc -l)"
     echo "hf_refs:"
