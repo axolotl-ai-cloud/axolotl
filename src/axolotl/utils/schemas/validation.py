@@ -162,8 +162,10 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
     repo_id = FLASH_ATTN_KERNEL_FALLBACK.get(attn_implementation)
     if repo_id is None:
         return None
-    version = get_attn_kernel_version(repo_id)
+    version: int | None = None
     try:
+        # resolving the pinned version lists hub refs, so it fails offline too
+        version = get_attn_kernel_version(repo_id)
         # Direct kernels calls do not read Transformers' allow_all_hub_kernels flag.
         get_kernel(repo_id, version=version, trust_remote_code=True)
     except Exception as err:  # noqa: BLE001
@@ -180,7 +182,7 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
     return None
 
 
-def _get_kernel_from_cache(repo_id: str, version: int):
+def _get_kernel_from_cache(repo_id: str, version: int | None):
     """Load a hub kernel from a cached snapshot without touching the network."""
     from huggingface_hub import constants
     from huggingface_hub.file_download import repo_folder_name
@@ -193,7 +195,7 @@ def _get_kernel_from_cache(repo_id: str, version: int):
     for repo_type in ("kernel", "model"):
         repo_dir = cache_dir / repo_folder_name(repo_id=repo_id, repo_type=repo_type)
         ref = repo_dir / "refs" / f"v{version}"
-        if ref.is_file():
+        if version is not None and ref.is_file():
             pinned = repo_dir / "snapshots" / ref.read_text().strip()
             if pinned.is_dir():
                 candidates.append(pinned)

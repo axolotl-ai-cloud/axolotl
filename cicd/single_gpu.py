@@ -27,6 +27,8 @@ df_args = {
     "DEPS_HASH": os.environ.get("DEPS_HASH", "dev"),
     "CUDA": os.environ.get("CUDA", "130"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
+    "IMAGE_REF": os.environ.get("IMAGE_REF")
+    or os.environ.get("GITHUB_REF", "refs/heads/main"),
     "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""),
     "NIGHTLY_BUILD": os.environ.get("NIGHTLY_BUILD", ""),
     "CODECOV_TOKEN": os.environ.get("CODECOV_TOKEN", ""),

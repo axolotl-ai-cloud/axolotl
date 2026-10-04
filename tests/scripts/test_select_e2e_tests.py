@@ -361,3 +361,44 @@ def test_opaque_test_does_not_turn_none_into_subset(repo):
     )
     sel = _select(repo, {"docs/readme.md": "changed again\n"})
     assert sel.mode == "none"
+
+
+def test_deleted_helper_runs_everything(repo):
+    _grow_base(
+        repo,
+        {
+            "tests/e2e/_fast_worker.py": _cfg_test("worker"),
+            "tests/e2e/test_worker_launcher.py": WORKER_TEST,
+        },
+    )
+    sel = _select(repo, {}, delete=("tests/e2e/_fast_worker.py",))
+    assert sel.mode == "all"
+    assert "deleted test support" in sel.reason
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/axolotl/utils/chat_templates/templates/new.jinja",
+        "deepspeed_configs/zero2.json",
+        "cicd/anything.txt",
+    ],
+)
+def test_unmodeled_files_run_everything(repo, path):
+    sel = _select(repo, {path: "data\n"})
+    assert sel.mode == "all"
+    assert "not modeled" in sel.reason or "run-all" in sel.reason
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "docs/guide.qmd",
+        "examples/llama/lora.yml",
+        "src/axolotl/integrations/kd/README.md",
+        "LICENSE",
+    ],
+)
+def test_inert_files_select_nothing(repo, path):
+    sel = _select(repo, {path: "text\n"})
+    assert sel.mode == "none"

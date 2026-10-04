@@ -51,6 +51,27 @@ RUN_ALL_GLOBS = (
     f"{SRC_ROOT}/__init__.py",
 )
 FORCE_ALL_TOKENS = ("[test all]", "[no filter]")
+# files that cannot reach a test at runtime; anything else unmodeled runs the whole scope
+INERT_GLOBS = (
+    "docs/*",
+    "docs/**/*",
+    "examples/*",
+    "examples/**/*",
+    "*.md",
+    "**/*.md",
+    "*.qmd",
+    "**/*.qmd",
+    "**/LICENSE",
+    "LICENSE",
+    ".gitignore",
+    ".pre-commit-config.yaml",
+    "*.png",
+    "**/*.png",
+    "*.svg",
+    "**/*.svg",
+    "*.jpg",
+    "**/*.jpg",
+)
 # Stems and package names too generic to identify a feature from a config string.
 DECLARED_KEYS_NAME = "__ci_config_keys__"
 GENERIC_NAMES = frozenset(
@@ -668,6 +689,10 @@ class Selector:
 
     # -- decision ----------------------------------------------------------
 
+    @staticmethod
+    def _inert(path: str) -> bool:
+        return any(fnmatch.fnmatch(path, g) for g in INERT_GLOBS)
+
     def select(self, base: str | None, merge_commit: bool) -> Selection:
         if not merge_commit and not base:
             return Selection("all", self.test_files(), "no base ref")
@@ -691,6 +716,12 @@ class Selector:
         for path in deleted:
             if path.startswith(SRC_ROOT + "/") and path.endswith(".py"):
                 run_all.append(f"deleted module {path}")
+            elif path.startswith("tests/") and not Path(path).name.startswith("test_"):
+                run_all.append(f"deleted test support {path}")
+            elif not self._inert(path) and not path.startswith(
+                ("tests/", SRC_ROOT + "/")
+            ):
+                run_all.append(f"deleted unmodeled file {path}")
 
         selected: dict[str, set[str]] = defaultdict(set)
         in_scope = set(self.tests)
@@ -714,6 +745,10 @@ class Selector:
                     continue
                 for test in hits:
                     selected[test].add(f"{path} ({reason})")
+                continue
+            if not self._inert(path):
+                # package data, deepspeed configs, anything the graph does not model
+                run_all.append(f"{path} is not modeled")
         if run_all:
             return Selection("all", self.tests, "; ".join(run_all), dict(selected))
         if selected:

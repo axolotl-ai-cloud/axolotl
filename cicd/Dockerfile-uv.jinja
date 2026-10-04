@@ -6,7 +6,7 @@ ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
 ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
 ENV CUDA="{{ CUDA }}"
 ENV PYTORCH_VERSION="{{ PYTORCH_VERSION }}"
-ENV GITHUB_REF="{{ GITHUB_REF }}"
+ENV IMAGE_REF="{{ IMAGE_REF }}"
 ENV NIGHTLY_BUILD="{{ NIGHTLY_BUILD }}"
 ENV HF_HOME="{{ HF_HOME }}"
 
@@ -16,7 +16,7 @@ RUN git clone --depth=1 https://github.com/axolotl-ai-cloud/axolotl.git
 
 WORKDIR /workspace/axolotl
 
-RUN git fetch origin +$GITHUB_REF && \
+RUN git fetch origin +$IMAGE_REF && \
     git checkout FETCH_HEAD
 
 RUN uv pip install packaging==26.0 setuptools==78.1.1

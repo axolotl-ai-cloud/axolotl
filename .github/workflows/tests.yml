@@ -9,11 +9,8 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
-      - "cicd/cicd.sh"
-      - "cicd/cicd_testmon.sh"
-      - "cicd/cicd_cuda_kernels.sh"
-      - "cicd/prepare_hf_cache.sh"
-      - "cicd/Dockerfile-uv.jinja"
+      - "cicd/*.sh"
+      - "cicd/*.jinja"
   pull_request:
     # GPU tests are label-gated, so adding the label re-runs this workflow via
     # gpu-label.yml after the initial CPU run has completed.
@@ -22,11 +19,8 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
-      - "cicd/cicd.sh"
-      - "cicd/cicd_testmon.sh"
-      - "cicd/cicd_cuda_kernels.sh"
-      - "cicd/prepare_hf_cache.sh"
-      - "cicd/Dockerfile-uv.jinja"
+      - "cicd/*.sh"
+      - "cicd/*.jinja"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
@@ -374,7 +368,7 @@ jobs:
               pull_number: context.payload.pull_request.number,
               per_page: 100,
             });
-            const hits = files.map((f) => f.filename).filter(matches);
+            const hits = files.flatMap((f) => [f.filename, f.previous_filename]).filter((name) => name && matches(name));
             core.info(`${files.length} changed file(s); ${hits.length} matched multigpu paths`);
             for (const hit of hits) core.info(`  ${hit}`);
             core.setOutput('run_multigpu', String(hits.length > 0));
