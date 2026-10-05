@@ -51,12 +51,6 @@ pytest -v --durations=10 --maxfail=10 \
 pytest -v --durations=10 -n8 --dist loadfile --maxfail=10 -m gpu \
   --ignore=tests/e2e/kernels/ \
   --ignore=tests/integrations/kernels/ \
-  --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-  --ignore=tests/integrations/test_gemma4_moe.py \
-  --ignore=tests/integrations/test_scattermoe_lora.py \
-  --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
-  --ignore=tests/integrations/test_scattermoe_multi_lora.py \
-  --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
   /workspace/axolotl/tests/integrations/ \
   --cov=axolotl \
   --cov-append

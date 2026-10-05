@@ -74,6 +74,15 @@ run order. Put single-GPU kernel correctness and numerical parity tests under
 kernel lane. LoRA kernel patching runs in its own process there; the slow FLA
 Mamba CUDA tests are selected explicitly. Model training smoke tests stay in the
 general lane, including the lightweight FLA/TileLang installation smoke test.
+
+Unit tests for a plugin live in `tests/integrations/<plugin>/` (`context_parallel/`
+also holds the Ringmaster probes, since Ringmaster is the CP library extracted from
+Axolotl). A test that exercises two plugins together stays in `tests/integrations/`.
+CPU jobs run `tests/integrations/` with `-m "not gpu"` and GPU jobs with `-m gpu`;
+there are no per-file exclusion lists. Mark a test that needs CUDA with
+`@pytest.mark.gpu` (or `pytestmark = pytest.mark.gpu` for a whole module). A CUDA
+`skipif` without the marker is flagged by `tests/conftest.py`, and
+`AXOLOTL_CI_ENFORCE_GPU_MARKER=1` turns that into a failure.
 Both single-GPU lanes resume interrupted cache downloads with a shared 15-minute
 download budget, then extract the completed archive without clearing the shared
 Hub cache.

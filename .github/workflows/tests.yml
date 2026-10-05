@@ -158,15 +158,7 @@ jobs:
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 \
-            --ignore=tests/integrations/kernels/ \
-            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-            --ignore=tests/integrations/test_gemma4_moe.py \
-            --ignore=tests/integrations/test_scattermoe_lora.py \
-            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
-            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
-            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
-            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -m "not gpu" tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
