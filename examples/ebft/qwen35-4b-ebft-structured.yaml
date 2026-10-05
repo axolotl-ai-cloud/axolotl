@@ -38,6 +38,11 @@ trl:
   chat_template_kwargs:
     enable_thinking: false  # disable Qwen3.5 thinking mode for shorter completions
 
+vllm:
+  gpu_memory_utilization: 0.5
+  max_model_len: 2048
+  enforce_eager: true
+
 datasets:
   - path: nvidia/OpenCodeInstruct
     type: ebft_opencode.transform
