@@ -61,8 +61,8 @@ class ModelHookContext:
 ModelHook = Callable[[ModelHookContext], None]
 AutoModelClassProvider = Callable[[], type | None]
 ProcessingStrategyClassProvider = Callable[[], type["ProcessingStrategy"] | None]
-TrainerClassProvider = Callable[[], type | None]
-CollatorClassProvider = Callable[[], type | None]
+TrainerClassProvider = Callable[["DictDefault"], type | None]
+CollatorFactory = Callable[["DictDefault", "PreTrainedTokenizerBase", bool], Any]
 ConfigMatcher = Callable[["DictDefault"], bool]
 ProcessorMatcher = Callable[["ProcessorMixin"], bool]
 WeightConversionsProvider = Callable[
@@ -90,14 +90,18 @@ _ACTIVE_LEGACY_HOOK: ContextVar[tuple[int, ModelHookPhase, int] | None] = Contex
 class ModelStrategies:
     """Lazy component providers supplied by a model family.
 
-    Each field is a zero-argument callable that returns a component class or ``None``.
-    Providers should import optional or heavyweight implementations only when called.
+    ``auto_model_cls`` and ``processing_strategy_cls`` are zero-argument callables
+    returning a component class or ``None``. ``trainer_cls`` receives the run config
+    and returns a trainer class or ``None``. ``collator_factory`` receives the run
+    config, tokenizer, and an ``is_eval`` flag and returns a built collator or
+    ``None``. ``None`` from any provider selects the generic fallback. Providers
+    should import optional or heavyweight implementations only when called.
     """
 
     auto_model_cls: AutoModelClassProvider | None = None
     processing_strategy_cls: ProcessingStrategyClassProvider | None = None
     trainer_cls: TrainerClassProvider | None = None
-    collator_cls: CollatorClassProvider | None = None
+    collator_factory: CollatorFactory | None = None
 
     def with_overrides(self, overrides: ModelStrategyOverrides) -> ModelStrategies:
         return ModelStrategies(
@@ -116,10 +120,10 @@ class ModelStrategies:
                 if isinstance(overrides.trainer_cls, _InheritStrategy)
                 else overrides.trainer_cls
             ),
-            collator_cls=(
-                self.collator_cls
-                if isinstance(overrides.collator_cls, _InheritStrategy)
-                else overrides.collator_cls
+            collator_factory=(
+                self.collator_factory
+                if isinstance(overrides.collator_factory, _InheritStrategy)
+                else overrides.collator_factory
             ),
         )
 
@@ -137,7 +141,7 @@ class ModelStrategyOverrides:
         ProcessingStrategyClassProvider | None | _InheritStrategy
     ) = _INHERIT_STRATEGY
     trainer_cls: TrainerClassProvider | None | _InheritStrategy = _INHERIT_STRATEGY
-    collator_cls: CollatorClassProvider | None | _InheritStrategy = _INHERIT_STRATEGY
+    collator_factory: CollatorFactory | None | _InheritStrategy = _INHERIT_STRATEGY
 
 
 @dataclass(frozen=True)

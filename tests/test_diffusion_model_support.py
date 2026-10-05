@@ -95,8 +95,8 @@ def test_profile_propagates_immutable_diffusion_facts_and_strategy_none_override
     family = ModelFamilyTemplate(
         name="diffusion_profile_test",
         strategies=ModelStrategies(
-            trainer_cls=lambda: FamilyTrainer,
-            collator_cls=lambda: FamilyCollator,
+            trainer_cls=lambda cfg: FamilyTrainer,
+            collator_factory=lambda cfg, tokenizer, is_eval: FamilyCollator(),
         ),
     )
 
@@ -118,11 +118,13 @@ def test_profile_propagates_immutable_diffusion_facts_and_strategy_none_override
     assert inherited.diffusion == _dream_spec()
     assert Inheriting.diffusion == _dream_spec()
     assert inherited.strategies.trainer_cls is not None
-    assert inherited.strategies.trainer_cls() is FamilyTrainer
-    assert inherited.strategies.collator_cls is not None
-    assert inherited.strategies.collator_cls() is FamilyCollator
+    assert inherited.strategies.trainer_cls(None) is FamilyTrainer
+    assert inherited.strategies.collator_factory is not None
+    assert isinstance(
+        inherited.strategies.collator_factory(None, None, False), FamilyCollator
+    )
     assert cleared.strategies.trainer_cls is None
-    assert cleared.strategies.collator_cls is not None
+    assert cleared.strategies.collator_factory is not None
 
 
 def test_diffusion_family_providers_are_lazy_in_a_fresh_process():
@@ -131,7 +133,7 @@ import sys
 from axolotl.model_support import DIFFUSION_LM
 assert 'axolotl.core.trainers' not in sys.modules
 assert DIFFUSION_LM.strategies.trainer_cls is not None
-assert DIFFUSION_LM.strategies.collator_cls is not None
+assert DIFFUSION_LM.strategies.collator_factory is not None
 assert 'axolotl.core.trainers' not in sys.modules
 """
     env = os.environ.copy()

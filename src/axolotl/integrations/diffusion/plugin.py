@@ -118,9 +118,3 @@ class DiffusionPlugin(BasePlugin):
         from axolotl.core.trainers.diffusion_lm.trainer import AxolotlDiffusionTrainer
 
         return AxolotlDiffusionTrainer
-
-    def post_trainer_create(self, cfg: DictDefault, trainer: Any):
-        """Configure trainer after creation."""
-        if hasattr(trainer, "axolotl_cfg"):
-            trainer.axolotl_cfg = cfg
-        trainer.post_set_axolotl_cfg()

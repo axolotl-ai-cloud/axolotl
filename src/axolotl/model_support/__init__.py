@@ -30,7 +30,7 @@ from .diffusion import (
 )
 from .profile import (
     AutoModelClassProvider,
-    CollatorClassProvider,
+    CollatorFactory,
     ConfigMatcher,
     ModelFamilyTemplate,
     ModelHook,
@@ -62,7 +62,7 @@ from .templates import DIFFUSION_LM, IMAGE_TEXT_TO_TEXT, VANILLA_CAUSAL_LM
 
 __all__ = [
     "AutoModelClassProvider",
-    "CollatorClassProvider",
+    "CollatorFactory",
     "Capability",
     "ConfigMatcher",
     "DiffusionLayout",

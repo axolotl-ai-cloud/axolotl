@@ -59,6 +59,10 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
         super().__init__(*args, **kwargs)
         self._special_token_ids = None
 
+    @classmethod
+    def requires_all_columns(cls, cfg) -> bool:
+        return is_native_diffusion(cfg)
+
     @property
     def _native_spec(self):
         """Resolve immutable native facts without borrowing legacy defaults."""

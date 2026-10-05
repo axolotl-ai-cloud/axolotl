@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence, Sized
+from typing import Any
 
 import torch
 
 from .batch import DiffusionBatch
-from .sampling import native_packing_lengths
+from .sampling import native_packing_lengths, resolve_native_packing_budget
 
 
 class DiffusionCollator:
@@ -268,3 +269,36 @@ class DiffusionCollator:
             decoder_prefix_lengths=torch.zeros(batch_size, dtype=torch.long),
             selected_block_ids=torch.zeros(batch_size, dtype=torch.long),
         )
+
+
+def build_diffusion_collator(
+    cfg: Any, tokenizer: Any, is_eval: bool = False
+) -> DiffusionCollator | None:
+    """Build the native diffusion collator for ``cfg``'s model profile."""
+    from axolotl.model_support import get_model_support_for_cfg, resolve_model_support
+
+    profile = resolve_model_support(get_model_support_for_cfg(cfg))
+    spec = None if profile is None else profile.diffusion
+    if spec is None:
+        return None
+    diffusion_cfg = cfg.diffusion_lm
+    canvas_width = getattr(diffusion_cfg, "canvas_width", None)
+    if (
+        canvas_width is not None
+        and spec.max_canvas is not None
+        and canvas_width > spec.max_canvas
+    ):
+        raise ValueError("diffusion_lm.canvas_width exceeds the model's maximum canvas")
+    packing_budget = resolve_native_packing_budget(cfg, is_eval=is_eval)
+    return DiffusionCollator(
+        pad_token_id=int(tokenizer.pad_token_id),
+        canvas_width=canvas_width or spec.max_canvas,
+        layout=spec.layout.value,
+        logical_sequence_length=cfg.sequence_len,
+        physical_pack_budget=(
+            None if packing_budget is None else packing_budget.payload_capacity
+        ),
+        eos_tail=getattr(diffusion_cfg, "eos_tail", None),
+        eos_token_id=getattr(tokenizer, "eos_token_id", None),
+        overflow_policy=getattr(diffusion_cfg, "overflow_policy", "error"),
+    )

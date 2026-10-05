@@ -1,6 +1,9 @@
 """Reusable model-family templates for the vanilla loading path."""
 
+from typing import Any
+
 from .base import Unsupported
+from .diffusion import is_native_diffusion
 from .profile import ModelFamilyTemplate, ModelStrategies
 
 
@@ -16,16 +19,20 @@ def _image_text_to_text_auto_model_cls() -> type:
     return AutoModelForImageTextToText
 
 
-def _diffusion_lm_trainer_cls() -> type:
+def _diffusion_lm_trainer_cls(cfg: Any) -> type | None:
+    if not is_native_diffusion(cfg):
+        return None
     from axolotl.core.trainers.diffusion_lm.trainer import AxolotlDiffusionTrainer
 
     return AxolotlDiffusionTrainer
 
 
-def _diffusion_lm_collator_cls() -> type:
-    from axolotl.core.trainers.diffusion_lm.collator import DiffusionCollator
+def _diffusion_lm_collator_factory(cfg: Any, tokenizer: Any, is_eval: bool) -> Any:
+    if not is_native_diffusion(cfg):
+        return None
+    from axolotl.core.trainers.diffusion_lm.collator import build_diffusion_collator
 
-    return DiffusionCollator
+    return build_diffusion_collator(cfg, tokenizer, is_eval=is_eval)
 
 
 VANILLA_CAUSAL_LM = ModelFamilyTemplate(
@@ -55,6 +62,6 @@ DIFFUSION_LM = ModelFamilyTemplate(
     },
     strategies=ModelStrategies(
         trainer_cls=_diffusion_lm_trainer_cls,
-        collator_cls=_diffusion_lm_collator_cls,
+        collator_factory=_diffusion_lm_collator_factory,
     ),
 )

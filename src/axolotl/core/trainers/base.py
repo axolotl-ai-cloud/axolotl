@@ -124,6 +124,14 @@ class AxolotlTrainer(
     def axolotl_cfg(self, cfg):
         self._axolotl_cfg = cfg
 
+    @classmethod
+    def requires_all_columns(cls, cfg: DictDefault) -> bool:
+        """Whether the collator needs dataset columns the model forward does not take."""
+        return False
+
+    def post_set_axolotl_cfg(self):
+        """Finish configuration that depends on ``axolotl_cfg``."""
+
     def __init__(
         self,
         *_args,
