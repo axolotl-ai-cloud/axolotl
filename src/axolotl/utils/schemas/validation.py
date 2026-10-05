@@ -2558,6 +2558,12 @@ class GRPOVllmValidationMixin:
                 "trainer (`async_prefetch` / `use_data_producer`): its LoRA weight sync only "
                 "targets a vLLM server. Remove those options or use `vllm_mode: server`."
             )
+        if not (self.vllm and self.vllm.max_model_len):
+            LOG.warning(
+                "Set `vllm.max_model_len` (longest prompt + max_completion_length) for "
+                "`vllm_mode: colocate`; otherwise vLLM reserves KV cache for the model's "
+                "full context and may fail to start on the shared GPU."
+            )
         return self
 
 
