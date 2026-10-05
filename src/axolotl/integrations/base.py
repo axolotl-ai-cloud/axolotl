@@ -352,6 +352,17 @@ class BasePlugin:
             model: The loaded model.
         """
 
+    def post_lora_merge(
+        self, cfg: DictDefault, adapter_path: str, output_path: str
+    ) -> None:
+        """Runs after a LoRA merge has been saved successfully.
+
+        Args:
+            cfg: The axolotl configuration.
+            adapter_path: Directory containing the source adapter.
+            output_path: Directory containing the merged model.
+        """
+
     def post_train_unload(self, cfg: DictDefault):
         """Performs actions after training is complete and the model is unloaded.
 
@@ -792,6 +803,13 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.post_train(cfg, model)
+
+    def post_lora_merge(
+        self, cfg: DictDefault, adapter_path: str, output_path: str
+    ) -> None:
+        """Calls plugins after a LoRA merge has been saved successfully."""
+        for plugin in self.plugins.values():
+            plugin.post_lora_merge(cfg, adapter_path, output_path)
 
     def on_rollouts_scored(
         self,

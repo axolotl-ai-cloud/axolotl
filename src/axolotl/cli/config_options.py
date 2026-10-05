@@ -928,7 +928,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--merge-method",),
         None,
         None,
-        "Method to use for LoRA merging. 'memory_efficient' (default) processes shards individually to reduce memory usage, 'legacy' loads the full model into memory.",
+        "Optional LoRA merge method. The generic default is 'memory_efficient'; model profiles can select a verified method when omitted.",
     ),
     (
         ("--output-dir",),

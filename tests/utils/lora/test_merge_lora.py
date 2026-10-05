@@ -1,5 +1,7 @@
 import json
 import math
+from collections import OrderedDict
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -19,7 +21,154 @@ from axolotl.cli.utils.lora_merge import (
     find_lora_weights,
     merge_lora_sharded_efficient,
 )
+from axolotl.integrations.base import BasePlugin
 from axolotl.utils.dict import DictDefault
+
+
+class _PostMergeRecorder(BasePlugin):
+    def __init__(self):
+        self.calls = []
+
+    def post_lora_merge(self, cfg, adapter_path, output_path):
+        self.calls.append((cfg, adapter_path, output_path))
+
+
+def _merge_hook_cfg(tmp_path, *, local_rank=0):
+    return DictDefault(
+        {
+            "base_model": "base",
+            "lora_model_dir": str(tmp_path / "adapter"),
+            "output_dir": str(tmp_path / "output"),
+            "local_rank": local_rank,
+            "torch_dtype": torch.float32,
+            "tokenizer_save_jinja_files": False,
+            "save_safetensors": True,
+            "model_config_type": "llama",
+            "nf4_backend": "bitsandbytes",
+            "revision_of_model": None,
+        }
+    )
+
+
+def test_legacy_merge_dispatches_post_merge_hook_only_from_writer(
+    tmp_path, monkeypatch
+):
+    from axolotl.cli.merge_lora import _do_merge_lora_legacy
+    from axolotl.integrations.base import PluginManager
+
+    recorder = _PostMergeRecorder()
+    monkeypatch.setattr(
+        PluginManager.get_instance(), "plugins", OrderedDict({"record": recorder})
+    )
+    model = Mock()
+    model.merge_and_unload.return_value = model
+    model.generation_config = SimpleNamespace()
+    model.config = SimpleNamespace()
+    tokenizer = Mock()
+    monkeypatch.setattr(
+        "axolotl.cli.merge_lora.load_model_and_tokenizer",
+        lambda *, cfg: (model, tokenizer, None),
+    )
+
+    cfg = _merge_hook_cfg(tmp_path)
+    _do_merge_lora_legacy(cfg=cfg)
+    assert recorder.calls == [
+        (cfg, str(tmp_path / "adapter"), str(tmp_path / "output" / "merged"))
+    ]
+
+    recorder.calls.clear()
+    cfg.local_rank = 1
+    _do_merge_lora_legacy(cfg=cfg)
+    assert recorder.calls == []
+
+
+def test_efficient_merge_dispatches_post_merge_hook_after_success(
+    tmp_path, monkeypatch
+):
+    from axolotl.cli.merge_lora import _do_merge_lora_efficient
+    from axolotl.integrations.base import PluginManager
+
+    recorder = _PostMergeRecorder()
+    monkeypatch.setattr(
+        PluginManager.get_instance(), "plugins", OrderedDict({"record": recorder})
+    )
+    merged = []
+    monkeypatch.setattr(
+        "axolotl.cli.merge_lora.merge_lora_sharded_efficient",
+        lambda **kwargs: merged.append(kwargs),
+    )
+    cfg = _merge_hook_cfg(tmp_path)
+
+    _do_merge_lora_efficient(cfg=cfg)
+
+    assert len(merged) == 1
+    assert recorder.calls == [
+        (cfg, str(tmp_path / "adapter"), str(tmp_path / "output" / "merged"))
+    ]
+
+
+def test_efficient_merge_does_not_dispatch_post_merge_hook_after_failure(
+    tmp_path, monkeypatch
+):
+    from axolotl.cli.merge_lora import _do_merge_lora_efficient
+    from axolotl.integrations.base import PluginManager
+
+    recorder = _PostMergeRecorder()
+    monkeypatch.setattr(
+        PluginManager.get_instance(), "plugins", OrderedDict({"record": recorder})
+    )
+    monkeypatch.setattr(
+        "axolotl.cli.merge_lora.merge_lora_sharded_efficient",
+        Mock(side_effect=RuntimeError("merge failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="merge failed"):
+        _do_merge_lora_efficient(cfg=_merge_hook_cfg(tmp_path))
+    assert recorder.calls == []
+
+
+def _dispatch_merge(monkeypatch, cfg, support=None):
+    import axolotl.cli.merge_lora as merge_lora
+
+    calls = []
+    monkeypatch.setattr(merge_lora, "get_model_support", lambda _model_type: support)
+    monkeypatch.setattr(
+        merge_lora, "_do_merge_lora_legacy", lambda *, cfg: calls.append("legacy")
+    )
+    monkeypatch.setattr(
+        merge_lora,
+        "_do_merge_lora_efficient",
+        lambda *, cfg: calls.append("memory_efficient"),
+    )
+    merge_lora.do_merge_lora(cfg=cfg)
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [(None, "memory_efficient"), ("legacy", "legacy")],
+)
+def test_merge_method_defaults_without_profile_hook(
+    tmp_path, monkeypatch, configured, expected
+):
+    cfg = _merge_hook_cfg(tmp_path)
+    cfg.merge_method = configured
+    assert _dispatch_merge(monkeypatch, cfg) == [expected]
+
+
+def test_merge_method_profile_hook_receives_configured_value(tmp_path, monkeypatch):
+    seen = []
+
+    def resolve(cfg, requested):
+        seen.append(requested)
+        return "legacy"
+
+    support = SimpleNamespace(resolve_lora_merge_method=resolve)
+    cfg = _merge_hook_cfg(tmp_path)
+    cfg.merge_method = None
+
+    assert _dispatch_merge(monkeypatch, cfg, support) == ["legacy"]
+    assert seen == [None]
 
 
 class TestAdapterMergeUnmerge:

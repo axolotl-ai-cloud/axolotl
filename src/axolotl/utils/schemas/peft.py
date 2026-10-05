@@ -190,9 +190,9 @@ class LoraConfig(BaseModel):
 
     merge_lora: bool | None = None
     merge_method: Literal["legacy", "memory_efficient"] | None = Field(
-        default="memory_efficient",
+        default=None,
         json_schema_extra={
-            "description": "Method to use for LoRA merging. 'memory_efficient' (default) processes shards individually to reduce memory usage, 'legacy' loads the full model into memory."
+            "description": "Optional LoRA merge method. The generic default is 'memory_efficient'; model profiles can select a verified method when omitted."
         },
     )
 
