@@ -543,57 +543,6 @@ def _gather_adapter_tensor(parameter: torch.Tensor) -> torch.Tensor:
         del temporary
 
 
-def gather_ep_experts_into_state_dict(state_dict: dict, model, ep_group) -> int:
-    """All-gather each EP-sharded expert weight across ``ep_group`` and write the full
-    ``[E_global, ...]`` tensor into ``state_dict`` in place.
-
-    A full state dict gathered by FSDP alone holds only the calling rank's ep-slice of
-    the experts (their FSDP mesh excludes the ep axis). Collective: call on every rank;
-    ranks whose state dict is empty (CPU-offloaded full state dicts live on rank 0 only)
-    take part in the gather and write nothing. Returns the number of tensors replaced.
-    """
-    ep_size = dist.get_world_size(ep_group)
-    if ep_size <= 1:
-        return 0
-    keys = list(state_dict.keys())
-    replaced = 0
-    for name, module in _detect_experts_modules(model):
-        e_global = getattr(module, "num_experts_global", None)
-        e_local = getattr(module, "num_local_experts", None)
-        if e_global is None or e_local is None or e_local >= e_global:
-            continue
-        for attr in (
-            "gate_up_proj",
-            "down_proj",
-            "gate_up_proj_bias",
-            "down_proj_bias",
-        ):
-            param = getattr(module, attr, None)
-            if not isinstance(param, torch.nn.Parameter):
-                continue
-            local = _gather_adapter_tensor(param).contiguous()
-            chunks = [torch.empty_like(local) for _ in range(ep_size)]
-            dist.all_gather(chunks, local, group=ep_group)
-            full = torch.cat(chunks, dim=0)
-            target = _strip_checkpoint_wrapper(f"{name}.{attr}")
-            matches = [
-                k
-                for k in keys
-                if _strip_checkpoint_wrapper(k) == target
-                or _strip_checkpoint_wrapper(k).endswith("." + target)
-            ]
-            if not matches and not state_dict:
-                continue
-            if len(matches) != 1:
-                raise RuntimeError(
-                    f"expert_parallel: expected one state-dict key for {target!r}, "
-                    f"found {matches}"
-                )
-            state_dict[matches[0]] = full.to(state_dict[matches[0]].device)
-            replaced += 1
-    return replaced
-
-
 def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     """Write a complete LoRA adapter when experts are EP-sharded.
 
