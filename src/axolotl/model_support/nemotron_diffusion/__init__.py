@@ -1,5 +1,8 @@
 """Native descriptor for Nemotron Labs Diffusion."""
 
+import sys
+from pathlib import Path
+
 from axolotl.model_support.base import ModelSupport, Supported, Unsupported
 from axolotl.model_support.diffusion import (
     DiffusionLayout,
@@ -19,6 +22,7 @@ from axolotl.model_support.profile import (
     ModelHookContext,
     ModelHookPhase,
     ModelHooks,
+    ModelMatchers,
     ModelProfile,
     ModelStrategyOverrides,
 )
@@ -65,6 +69,33 @@ def _model_class() -> type:
     return AutoNemotronModel
 
 
+def _matches_cfg(cfg) -> bool:
+    source = getattr(cfg, "base_model", None)
+    if not isinstance(source, str):
+        return False
+    if "nemotron-labs-diffusion" in source.lower():
+        return True
+    return (Path(source) / "modeling_nemotron_labs_diffusion.py").is_file()
+
+
+def _lora_attention_cls(cfg) -> type:
+    from .compat import resolve_nemotron_model_class
+
+    model_class = resolve_nemotron_model_class(
+        cfg.base_model, revision=getattr(cfg, "revision_of_model", None)
+    )
+    name = (
+        "NemotronLabsDiffusionFlexAttention"
+        if getattr(cfg, "attn_implementation", None) == "flex_attention"
+        else "Ministral3Attention"
+    )
+    for klass in model_class.__mro__:
+        module = sys.modules.get(klass.__module__)
+        if hasattr(module, name):
+            return getattr(module, name)
+    raise ValueError(f"Nemotron native source does not define {name}.")
+
+
 def _before_model_build(context: ModelHookContext) -> None:
     if not getattr(context.cfg, "cut_cross_entropy", False):
         from .cut_cross_entropy import reset_pending_nemotron_cce_options
@@ -92,7 +123,9 @@ def _validate(context: ModelHookContext) -> None:
         raise ValueError(
             "Native Nemotron support currently requires dlm_paradigm: bidirectional."
         )
-    validate_native_diffusion_lora(context.cfg, model_name="Nemotron")
+    validate_native_diffusion_lora(
+        context.cfg, model_name="Nemotron", allow_4bit=True, allow_fsdp=True
+    )
 
 
 @register_model_support
@@ -128,12 +161,16 @@ class NemotronDiffusionSupport(ModelSupport):
             "fused_attn_kernel": Unsupported(
                 "Native attention parity is not verified."
             ),
-            "fsdp": Unsupported("Native Nemotron LoRA has no FSDP validation."),
-            "quantized_lora": Unsupported(
-                "Native Nemotron LoRA has no quantized validation."
+            "fsdp": Supported("FSDP2 LoRA and QLoRA match DDP step losses."),
+            "quantized_lora": Supported("4-bit LoRA; 8-bit is rejected."),
+            "lora_kernels": Supported(
+                "Fused QKV/O/MLP kernels patch the native attention class."
             ),
         },
-        strategies=ModelStrategyOverrides(auto_model_cls=_model_class),
+        strategies=ModelStrategyOverrides(
+            auto_model_cls=_model_class, lora_attention_cls=_lora_attention_cls
+        ),
+        matchers=ModelMatchers(cfg=_matches_cfg),
         hooks=ModelHooks(
             by_phase={
                 ModelHookPhase.CONFIGURE_RUN: (_validate,),

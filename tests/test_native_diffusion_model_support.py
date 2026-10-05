@@ -133,6 +133,24 @@ def test_native_lora_validation_rejects_unsafe_modes_and_unscoped_targets():
         )
 
 
+def test_native_lora_validation_allows_opted_in_4bit_and_fsdp_but_never_8bit():
+    cfg = _native_cfg(adapter="qlora", load_in_4bit=True, fsdp_config={"x": 1})
+    validate_native_diffusion_lora(
+        cfg, model_name="Nemotron", allow_4bit=True, allow_fsdp=True
+    )
+    with pytest.raises(ValueError, match="quantized"):
+        validate_native_diffusion_lora(cfg, model_name="Nemotron", allow_fsdp=True)
+    with pytest.raises(ValueError, match="FSDP"):
+        validate_native_diffusion_lora(cfg, model_name="Nemotron", allow_4bit=True)
+    with pytest.raises(ValueError, match="8-bit"):
+        validate_native_diffusion_lora(
+            _native_cfg(load_in_8bit=True),
+            model_name="Nemotron",
+            allow_4bit=True,
+            allow_fsdp=True,
+        )
+
+
 def test_diffusion_gemma_self_conditioning_module_is_trainable_and_saved(tmp_path):
     from axolotl.model_support.diffusion_gemma import _validate
     from axolotl.model_support.profile import ModelHookContext

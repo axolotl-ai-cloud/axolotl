@@ -181,10 +181,14 @@ self-conditioning.
 
 ## Adapters, merging and inference
 
-Native training requires unquantized LoRA with explicit text attention or
-dense-MLP projection targets. Quantized adapters, FSDP, DoRA, layer
-replication, `lora_target_linear` and `lora_target_parameters` are rejected.
-Native vocabulary resizing is disabled.
+Native training requires LoRA with explicit text attention or dense-MLP
+projection targets. DoRA, layer replication, `lora_target_linear` and
+`lora_target_parameters` are rejected, and native vocabulary resizing is
+disabled. Nemotron additionally supports `adapter: qlora` (4-bit; 8-bit is
+rejected), FSDP2 via `fsdp_config`, and the fused LoRA kernels
+(`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`) together with
+`lora_fp32_gradients`; Dream and DiffusionGemma remain unquantized LoRA
+without FSDP.
 
 DiffusionGemma's encoder and decoder text weights are tied, so their LoRA
 factors are shared. Its targets must be a single expression naming both the

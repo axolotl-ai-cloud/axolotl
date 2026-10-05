@@ -19,7 +19,13 @@ _FORBIDDEN_TARGET_WORDS = ("vision", "router")
 _NATIVE_DIFFUSION_ATTN_IMPLS = {"eager", "sdpa", "flex_attention"}
 
 
-def validate_native_diffusion_lora(cfg: Any, *, model_name: str) -> None:
+def validate_native_diffusion_lora(
+    cfg: Any,
+    *,
+    model_name: str,
+    allow_4bit: bool = False,
+    allow_fsdp: bool = False,
+) -> None:
     """Reject native adapter modes whose correctness has not been established."""
 
     if not getattr(cfg, "diffusion_lm", None):
@@ -43,15 +49,15 @@ def validate_native_diffusion_lora(cfg: Any, *, model_name: str) -> None:
             f"{model_name} native diffusion training currently requires adapter: lora; "
             f"got {adapter!r}."
         )
-    if (
-        adapter == "qlora"
-        or getattr(cfg, "load_in_4bit", False)
-        or getattr(cfg, "load_in_8bit", False)
-    ):
+    if getattr(cfg, "load_in_8bit", False):
+        raise ValueError(
+            f"{model_name} native diffusion LoRA does not support 8-bit quantization."
+        )
+    if not allow_4bit and (adapter == "qlora" or getattr(cfg, "load_in_4bit", False)):
         raise ValueError(
             f"{model_name} native diffusion LoRA does not support quantized adapters."
         )
-    if getattr(cfg, "fsdp_config", None):
+    if not allow_fsdp and getattr(cfg, "fsdp_config", None):
         raise ValueError(
             f"{model_name} native diffusion LoRA does not support FSDP yet."
         )
