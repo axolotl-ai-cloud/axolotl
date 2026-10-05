@@ -1,5 +1,5 @@
 ---
-title: "RLHF (Beta)"
+title: "RLHF"
 description: "Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback."
 back-to-top-navigation: true
 toc: true
@@ -25,10 +25,6 @@ For help choosing between these methods, see [Choosing a Fine-Tuning Method](cho
 
 
 ## RLHF using Axolotl
-
-::: {.callout-important}
-This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.
-:::
 
 We rely on the [TRL](https://github.com/huggingface/trl) library for implementations of various RL training methods, which we wrap around to expose in axolotl. Each method has their own supported ways of loading datasets and prompt formats.
 
