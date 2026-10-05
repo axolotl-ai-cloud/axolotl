@@ -94,9 +94,19 @@ fsdp_config:
 
 When using `auto_wrap_policy: SIZE_BASED_WRAP`, set `min_num_params` to the minimum parameter count a module must have to be wrapped (e.g. `100000000`).
 
+### Full checkpoints and resume
+
+`fsdp_config.state_dict_type: FULL_STATE_DICT` saves a single full model checkpoint and `optimizer.bin`. With expert parallelism, both checkpoints include every EP group's experts. Restore selects each rank's expert ownership before applying its FSDP/HSDP shard, including the different row and column packing of expert LoRA factors.
+
+For `adamw_torch_8bit`, the full optimizer file records quantized codes, block scales, lookup tables, and shard ownership. Resuming with the same layout preserves these exactly. Changing the mesh is supported when the saved blocks remain compatible with the new optimizer shards. A change that regroups blocks with different scales raises a restore-time error; it does not silently requantize optimizer state or disallow the training configuration.
+
+Full checkpoints assemble tensors on rank 0's CPU and use bounded GPU transfer buffers. Adapter-only runs save trainable adapter tensors without materializing frozen base weights. Revisit streamed CPU transfers for large adapters or full fine-tuning to reduce transfer overhead and host memory requirements.
+
 ### FSDP + QLoRA {#sec-fsdp-qlora}
 
 For combining FSDP with QLoRA, see our [dedicated guide](fsdp_qlora.qmd).
+
+With `quantize_moe_experts: true` and expert parallelism, EP slices the packed bitsandbytes expert weights and their block scales together. Double-quantized scales remain compressed when shard boundaries align. If only a nested scale block crosses a boundary, EP unpacks those scales without dequantizing or requantizing the weights. Expert slices must align with the weight quantization blocks. The packed parameters and quantization metadata stay on the same device, and FSDP wraps them on the expert mesh.
 
 ### Migrating from FSDP1 to FSDP2 {#sec-migrate-fsdp1-fsdp2}
 

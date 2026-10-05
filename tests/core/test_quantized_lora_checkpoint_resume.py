@@ -127,3 +127,17 @@ def test_quantized_lora_checkpoint_uses_ep_adapter_save(monkeypatch, tmp_path):
     resolve_ep_group.assert_called_once_with(stub.axolotl_cfg)
     save_ep_lora_adapter.assert_called_once()
     save_fsdp2_lora_adapter.assert_not_called()
+
+
+def test_ep_full_checkpoint_uses_complete_trainer_pipeline(tmp_path):
+    stub = SimpleNamespace(
+        axolotl_cfg=SimpleNamespace(expert_parallel_size=2),
+        accelerator=SimpleNamespace(
+            state=SimpleNamespace(
+                fsdp_plugin=SimpleNamespace(
+                    fsdp_version=2, state_dict_type="FULL_STATE_DICT"
+                )
+            )
+        ),
+    )
+    assert not AxolotlTrainer._save_gathered_lora_adapter(stub, object(), str(tmp_path))

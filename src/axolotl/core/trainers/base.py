@@ -919,6 +919,13 @@ class AxolotlTrainer(
         """
         cfg = getattr(self, "axolotl_cfg", None)
         ep_size = (getattr(cfg, "expert_parallel_size", 1) or 1) if cfg else 1
+        plugin = getattr(getattr(self.accelerator, "state", None), "fsdp_plugin", None)
+        if (
+            ep_size > 1
+            and getattr(plugin, "fsdp_version", None) == 2
+            and "FULL_STATE_DICT" in str(getattr(plugin, "state_dict_type", ""))
+        ):
+            return False
         if ep_size <= 1 and not self._is_fsdp2_checkpoint_save_enabled():
             return False
         try:

@@ -240,30 +240,7 @@ class DistributedParallelMixin(Trainer):
                     is_main_process=False,
                 )
             return result
-        if not self._ep_full_param_experts():
-            return self._save_model_native(output_dir, _internal_call)
-
-        # The FSDP full state dict holds only this rank's ep-slice of the experts; gather them
-        # across the EP axis on every rank before rank 0 writes.
-        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
-        from axolotl.integrations.expert_parallel.shard import (
-            gather_ep_experts_into_state_dict,
-        )
-
-        ep_group = ExpertParallelPlugin._resolve_ep_group(self.axolotl_cfg)
-        accelerator = self.accelerator
-        orig_get_state_dict = accelerator.get_state_dict
-
-        def _get_state_dict(model, unwrap=True):
-            state_dict = orig_get_state_dict(model, unwrap=unwrap)
-            gather_ep_experts_into_state_dict(state_dict, model, ep_group)
-            return state_dict
-
-        accelerator.get_state_dict = _get_state_dict
-        try:
-            return self._save_model_native(output_dir, _internal_call)
-        finally:
-            accelerator.__dict__.pop("get_state_dict", None)
+        return self._save_model_native(output_dir, _internal_call)
 
     def _save(self, output_dir: str | None = None, state_dict=None):
         if (
@@ -272,6 +249,23 @@ class DistributedParallelMixin(Trainer):
             and self.accelerator.parallelism_config.dp_shard_enabled
         ):
             state_dict = self.accelerator.get_state_dict(self.model)
+        plugin = getattr(getattr(self.accelerator, "state", None), "fsdp_plugin", None)
+        if (
+            state_dict is not None
+            and self.args.should_save
+            and getattr(plugin, "fsdp_version", None) == 2
+            and "FULL_STATE_DICT" in str(getattr(plugin, "state_dict_type", ""))
+        ):
+            from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+                _model_needs_ownership,
+            )
+
+            if _model_needs_ownership(self.model):
+                import torch
+
+                target = output_dir or self.args.output_dir
+                os.makedirs(target, exist_ok=True)
+                torch.save(state_dict, os.path.join(target, "pytorch_model_fsdp.bin"))
         super()._save(output_dir, state_dict=state_dict)
 
     def create_accelerator_and_postprocess(self):

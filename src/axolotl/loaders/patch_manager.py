@@ -454,6 +454,11 @@ class PatchManager:
             )
 
             patch_accelerate_fsdp2()
+            from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+                patch_fsdp2_full_checkpoint,
+            )
+
+            patch_fsdp2_full_checkpoint()
             # FSDP2 sharding for any torchao Float8Tensor weights (no-op without torchao)
             patch_float8_fsdp()
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
