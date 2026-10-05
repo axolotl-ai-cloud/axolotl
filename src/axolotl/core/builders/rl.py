@@ -240,10 +240,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 f"rl: {RLType(self.cfg.rl).value}. Supported: "
                 f"{', '.join(sorted(rl.value for rl in VISION_RL_TYPES))}."
             )
-        if (
-            self.cfg.rl in {RLType.GRPO, RLType.GDPO}
-            and (self.cfg.context_parallel_size or 1) > 1
-        ):
+        is_grpo = self.cfg.rl in {RLType.GRPO, RLType.GDPO}
+        if is_grpo and (self.cfg.context_parallel_size or 1) > 1:
             raise ValueError(
                 "Multimodal GRPO does not support context_parallel_size > 1."
             )
@@ -254,18 +252,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         sample = self.train_dataset[0]
         prompt = sample.get("prompt")
-        image_token = getattr(self.processor, "image_token", None)
-        if (
-            isinstance(prompt, str)
-            and (sample.get("images") or sample.get("image"))
-            and image_token
-            and image_token not in prompt
-        ):
-            raise ValueError(
-                "Multimodal RL needs conversational prompts (e.g. dataset `type: "
-                "chat_template`) or string prompts that already contain the "
-                f"processor's image token {image_token!r}."
-            )
+        if isinstance(prompt, str) and (sample.get("images") or sample.get("image")):
+            image_token = getattr(self.processor, "image_token", None)
+            # DPO/KTO accept pre-rendered prompts; GRPO always renders them itself.
+            if is_grpo or (image_token and image_token not in prompt):
+                raise ValueError(
+                    "Multimodal RL needs conversational prompts "
+                    "(e.g. dataset `type: chat_template`)."
+                )
         return True
 
     def _build_vision_collator(self):
