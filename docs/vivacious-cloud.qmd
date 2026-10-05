@@ -1,51 +1,55 @@
 ---
 title: Vivacious Cloud
-description: How to launch Axolotl with preflight VRAM estimation and multi-cloud GPU provisioning on Vivacious Cloud
+description: How to launch Axolotl model training across multi-cloud GPU instances with Vivacious Cloud
 ---
 
-[Vivacious Cloud](https://vivaciouscloud.com) is a unified multi-cloud GPU orchestrator and preflight validation platform designed to prevent Out-Of-Memory (CUDA OOM) failures and simplify distributed training. It allows developers to run Axolotl jobs across heterogeneous cloud providers (including AWS, RunPod, Lambda Labs, and GCP) with automatic preflight memory verification.
+[Vivacious Cloud](https://vivaciouscloud.com) is a multi-cloud GPU orchestration platform designed to provision compute and manage training workloads across heterogeneous providers (including AWS, RunPod, Lambda Labs, and GCP). 
 
-You can also use the open-source companion CLI [`vivacious-cli`](https://github.com/Viavcious-cloud/vivacious-cli) to calculate exact model weight, optimizer state, and activation memory requirements locally before spinning up cloud instances.
+Developers can manage and deploy training jobs using the official open-source companion CLI [`vivacious-cli`](https://github.com/Viavcious-cloud/vivacious-cli).
 
-## Preflight Memory Check
+## Vivacious CLI Setup
 
-Before launching training runs, verify that your model, sequence length, and batch configuration will fit within your target GPU VRAM:
-
-```bash
-pip install vivacious-cli
-```
-
-Estimate memory requirements for your Axolotl training configuration:
+Install the CLI globally via npm or clone from GitHub:
 
 ```bash
-vivacious estimate \
-  --model meta-llama/Llama-3.2-3B \
-  --seq-len 4096 \
-  --batch-size 4 \
-  --method lora \
-  --rank 16
+npm install -g vivacious-cli
 ```
 
-The CLI outputs an allocation audit:
-- **Base Model Parameters**: Raw bfloat16 weight allocation
-- **Optimizer States**: AdamW / 8-bit AdamW memory footprint
-- **Activation Memory**: Attention context expansion with sequence packing
-- **Headroom Margin**: Safety buffer required to avoid allocator thrashing
-
-## Launching Axolotl with Vivacious Cloud
-
-### 1. Provision GPU Compute
-
-Select your optimal hardware through Vivacious Cloud or via CLI:
+Authenticate with your Vivacious Cloud account token:
 
 ```bash
-# Provision a spot or on-demand RTX 4090 or A100 across 12+ cloud providers
-vivacious provision --gpu rtx4090 --provider auto
+vivacious login --token <YOUR_VIVACIOUS_TOKEN>
 ```
 
-### 2. Run Axolotl Fine-Tuning
+## Preparing and Deploying Workloads
 
-Inside your instance, clone your repository or use the pre-configured Axolotl environment:
+### 1. Validate Dataset Structure
+
+Before deploying compute, validate your training dataset format:
+
+```bash
+vivacious prepare --data ./dataset.jsonl
+```
+
+### 2. Request Hardware Permit
+
+Vivacious Cloud manages server-authoritative GPU sizing and workload scheduling. Request a permit for your target GPU architecture:
+
+```bash
+vivacious permit --gpu-type A100 --hours 4
+```
+
+### 3. Deploy Training Job
+
+Launch the provisioned workload using your issued permit:
+
+```bash
+vivacious deploy --name axolotl-llama3-job --permit-id <PERMIT_ID>
+```
+
+## Running Axolotl Training
+
+On your provisioned GPU instance, clone Axolotl and install dependencies:
 
 ```bash
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
@@ -53,18 +57,20 @@ cd axolotl
 pip install -e .
 ```
 
-Launch training with your YAML config:
+Launch fine-tuning using an existing configuration from the checkout:
 
 ```bash
-accelerate launch -m axolotl.cli.train examples/llama-3/lora-3b.yml
+accelerate launch -m axolotl.cli.train examples/llama-3/lora-8b.yml
 ```
 
-### 3. Failover & Checkpoint Resilience
+Alternatively, fetch community examples using the Axolotl CLI:
 
-Vivacious Cloud monitors spot instance health. If an upstream cloud provider signals instance reclamation, warm checkpoints saved to your configured S3/GCS bucket ensure seamless resumption without loss of training progress.
+```bash
+axolotl fetch examples
+```
 
 ## Resources
 
 - [Vivacious Cloud Official Platform](https://vivaciouscloud.com)
-- [vivacious-cli GitHub](https://github.com/Viavcious-cloud/vivacious-cli)
-- [Free VRAM Calculator](https://vivaciouscloud.com/calculator)
+- [vivacious-cli GitHub Repository](https://github.com/Viavcious-cloud/vivacious-cli)
+- [Axolotl GitHub Repository](https://github.com/axolotl-ai-cloud/axolotl)
