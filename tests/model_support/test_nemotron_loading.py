@@ -227,3 +227,23 @@ def test_incompatible_encoder_fails_before_attention_patching(monkeypatch, tmp_p
     model_class = compat.resolve_nemotron_model_class(tmp_path)
     with pytest.raises(ValueError, match="encoder.layers with self_attn"):
         model_class(SimpleNamespace(dlm_paradigm="bidirectional"))
+
+
+def test_keep_rotary_fp32_disables_autocast_inside_rotary_forward():
+    import torch
+
+    from axolotl.model_support.nemotron_diffusion.compat import keep_rotary_fp32
+
+    class Rotary(torch.nn.Module):
+        def forward(self, x, position_ids):
+            freqs = torch.ones(1, 4, 1) @ position_ids[:, None, :].float()
+            return freqs.cos(), torch.tensor(torch.is_autocast_enabled("cpu"))
+
+    rotary = Rotary()
+    keep_rotary_fp32(rotary)
+    x = torch.zeros(1, 8, 4)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        cos, autocast_inside = rotary(x, torch.arange(8)[None])
+
+    assert cos.dtype == torch.float32
+    assert not bool(autocast_inside)

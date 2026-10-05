@@ -21,6 +21,7 @@ from peft import (
     get_peft_model,
 )
 from transformers import PreTrainedModel
+from transformers.trainer_utils import set_seed
 
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.mixlora.constants import (
@@ -470,6 +471,8 @@ def load_lora(
             if adapter_dir != cfg.lora_model_dir:
                 shutil.rmtree(adapter_dir, ignore_errors=True)
     else:
+        if cfg.seed is not None:
+            set_seed(cfg.seed)
         model = get_peft_model(model, lora_config, **model_kwargs)
 
     # FP8 models: LoRA A/B inherit FP8 dtype from base weights, but training

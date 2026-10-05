@@ -84,6 +84,7 @@ def resolve_nemotron_model_class(
                 )
             super().__init__(config)
             enable_nemotron_explicit_attention_mask(self)
+            keep_rotary_fp32(self.encoder.rotary_emb)
 
         supports_selected_logits = True
 
@@ -359,6 +360,19 @@ def resolve_nemotron_model_class(
 
     apply_pending_nemotron_cce_patch(MaskAwareNemotron)
     return MaskAwareNemotron
+
+
+def keep_rotary_fp32(rotary: torch.nn.Module) -> None:
+    """The native rotary omits transformers' autocast guard, so under bf16 autocast its
+    frequency matmul runs in bf16 and the angles drift at long positions."""
+
+    original_forward = rotary.forward
+
+    def forward(x, position_ids):
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            return original_forward(x, position_ids)
+
+    rotary.forward = forward
 
 
 def enable_nemotron_explicit_attention_mask(model: Any) -> None:
