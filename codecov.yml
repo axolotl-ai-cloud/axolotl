@@ -39,6 +39,14 @@ coverage:
         paths: null
         informational: true
 
+# Carried forward per flag when a commit has no upload for it, so a run where only the
+# testmon or selected arms execute keeps the last full-suite report instead of dropping
+# the flag. Those arms must never upload under the full suites' flags: any upload for a
+# flag replaces the carried report, so a partial run would become the number.
+flag_management:
+  default_rules:
+    carryforward: true
+
 parsers:
   gcov:
     branch_detection:
