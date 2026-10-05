@@ -5,19 +5,19 @@ from __future__ import annotations
 import contextlib
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import Any, NamedTuple
 
 import pytest
 import torch
+from peft import LoraConfig, TaskType, get_peft_model
 from torch import nn
 from torch.utils.data import BatchSampler, DataLoader, Dataset, SequentialSampler
 
 import axolotl.core.trainers.base as trainer_base
+import axolotl.model_support.diffusion_gemma.modeling as gemma_modeling
 from axolotl.core.trainers.base import AxolotlTrainer
 from axolotl.core.trainers.diffusion_lm.backends.encoder_canvas import (
     EncoderCanvasBackend,
-)
-from axolotl.core.trainers.diffusion_lm.backends.full_sequence import (
-    FullSequenceBackend,
 )
 from axolotl.core.trainers.diffusion_lm.trainer import AxolotlDiffusionTrainer
 from axolotl.core.training_args import AxolotlTrainingArguments
@@ -32,7 +32,6 @@ from axolotl.integrations.diffusion_decision.loss import (
     decision_example_from_canvas,
     decision_label_loss,
 )
-from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 from axolotl.integrations.diffusion_decision.slot_sampling import DecisionDraw
 from axolotl.integrations.diffusion_decision.slots import SlotPlan
 from axolotl.integrations.diffusion_decision.trainer import (
@@ -60,41 +59,115 @@ from tests.integrations.diffusion_decision.helpers import (
     trainer_spec,
 )
 
+_FULL = DiffusionLayout.FULL_SEQUENCE
+_ENCODER = DiffusionLayout.ENCODER_CANVAS
+_LAYOUTS = pytest.mark.parametrize("layout", [_FULL, _ENCODER])
+_DEVICES = pytest.mark.parametrize(
+    "device",
+    [
+        pytest.param(torch.device("cpu"), id="cpu"),
+        pytest.param(
+            torch.device("cuda"),
+            id="cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="requires CUDA"
+            ),
+        ),
+    ],
+)
+_GEMMA_Q_PROJ = (
+    r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+    r"\.0\.self_attn\.q_proj$"
+)
+_FIRST = make_canvas((1, 2), (4, 5, 6, 7), (1,), "first")
+_SECOND = make_canvas((3, 4, 5), (6, 7, 8, 9), (0, 3), "second")
+
+
+def _spec(layout: DiffusionLayout = _FULL) -> DiffusionSpec:
+    return trainer_spec(layout, LogitAlignment.ALIGNED)
+
+
+def _harness(decision=None, layout: DiffusionLayout = _FULL, **kwargs):
+    return TrainerHarness(_spec(layout), decision, **kwargs)
+
+
+def _multistep(
+    steps: int,
+    *,
+    k_max: int = 3,
+    layout: DiffusionLayout = _FULL,
+    decision=None,
+    cls=MultistepTrainerHarness,
+    **kwargs,
+):
+    return cls(
+        _spec(layout), k_max=k_max, sampled_steps=steps, decision=decision, **kwargs
+    )
+
+
+def _latent(mode: str, **extra) -> dict[str, object]:
+    return {"latent": {"mode": mode, "num_slots": 1, **extra}}
+
+
+def _collate(*canvases, layout: DiffusionLayout = _ENCODER):
+    return DecisionTrainingCollator(_spec(layout))(
+        [
+            {"canvas": canvas, "source": chr(ord("a") + index)}
+            for index, canvas in enumerate(canvases)
+        ]
+    )
+
+
+def _final_only(steps: int) -> list[bool]:
+    return [False] * (steps - 1) + [True]
+
 
 class _TinyNativeModel(nn.Module):
-    def __init__(self, vocab_size: int = 11) -> None:
+    """Fixed-bias native model that records every forward it sees."""
+
+    def __init__(
+        self, vocab_size: int = 11, *, sliding_window: int = 8, slopes: bool = True
+    ) -> None:
         super().__init__()
         self.logit_bias = nn.Parameter(torch.linspace(-0.4, 0.6, vocab_size))
         self.config = SimpleNamespace(
             vocab_size=vocab_size,
-            sliding_window=8,
-            text_config=SimpleNamespace(vocab_size=vocab_size, sliding_window=8),
+            sliding_window=sliding_window,
+            text_config=SimpleNamespace(
+                vocab_size=vocab_size, sliding_window=sliding_window
+            ),
         )
+        self.slopes = slopes
         self.calls: list[dict[str, object]] = []
+        self.forward_states: list[torch.Tensor] = []
+        self.forward_grad_enabled: list[bool] = []
+        self.forward_logits: list[torch.Tensor] = []
+
+    def _logits(self, ids: torch.Tensor) -> torch.Tensor:
+        if not self.slopes:
+            return self.logit_bias.expand(ids.shape[0], ids.shape[1], -1)
+        dtype = self.logit_bias.dtype
+        token_slopes = torch.arange(
+            self.logit_bias.numel(), device=ids.device, dtype=dtype
+        )
+        positions = torch.arange(ids.shape[1], device=ids.device, dtype=dtype)
+        logits = self.logit_bias + positions[None, :, None] * token_slopes
+        return logits.expand(ids.shape[0], -1, -1)
 
     def forward(self, input_ids=None, decoder_input_ids=None, **kwargs):
         ids = input_ids if input_ids is not None else decoder_input_ids
         assert ids is not None
         self.calls.append(kwargs)
-        token_slopes = torch.arange(
-            self.logit_bias.numel(), device=ids.device, dtype=self.logit_bias.dtype
-        )
-        positions = torch.arange(
-            ids.shape[1], device=ids.device, dtype=self.logit_bias.dtype
-        )
-        logits = self.logit_bias + positions[None, :, None] * token_slopes
-        logits = logits.expand(ids.shape[0], -1, -1)
+        self.forward_states.append(ids.detach().clone())
+        self.forward_grad_enabled.append(torch.is_grad_enabled())
+        logits = self._logits(ids)
+        if torch.is_grad_enabled():
+            logits.retain_grad()
+            self.forward_logits.append(logits)
         encoder_ids = kwargs.get("encoder_input_ids")
-        encoder_logits = None
-        if isinstance(encoder_ids, torch.Tensor):
-            encoder_positions = torch.arange(
-                encoder_ids.shape[1],
-                device=encoder_ids.device,
-                dtype=self.logit_bias.dtype,
-            )
-            encoder_logits = self.logit_bias + (
-                encoder_positions[None, :, None] * token_slopes
-            )
+        encoder_logits = (
+            self._logits(encoder_ids) if isinstance(encoder_ids, torch.Tensor) else None
+        )
         return SimpleNamespace(logits=logits, encoder_logits=encoder_logits)
 
 
@@ -119,54 +192,8 @@ class _SelectedTinyNativeModel(_TinyNativeModel):
         return output
 
 
-class _TraceNativeModel(_TinyNativeModel):
-    def __init__(self, vocab_size: int = 11) -> None:
-        super().__init__(vocab_size)
-        self.forward_states: list[torch.Tensor] = []
-        self.forward_grad_enabled: list[bool] = []
-        self.forward_logits: list[torch.Tensor] = []
-
-    def forward(self, input_ids=None, decoder_input_ids=None, **kwargs):
-        ids = input_ids if input_ids is not None else decoder_input_ids
-        assert ids is not None
-        self.forward_states.append(ids.detach().clone())
-        self.forward_grad_enabled.append(torch.is_grad_enabled())
-        outputs = super().forward(
-            input_ids=input_ids, decoder_input_ids=decoder_input_ids, **kwargs
-        )
-        if torch.is_grad_enabled():
-            outputs.logits.retain_grad()
-            self.forward_logits.append(outputs.logits)
-        return outputs
-
-
-class _LoopNativeModel(nn.Module):
-    """Small native model whose logits expose whether labels were corrupted."""
-
-    def __init__(self, vocab_size: int = 11) -> None:
-        super().__init__()
-        self.logit_bias = nn.Parameter(torch.linspace(-0.4, 0.6, vocab_size))
-        self.config = SimpleNamespace(
-            vocab_size=vocab_size,
-            sliding_window=128,
-            text_config=SimpleNamespace(vocab_size=vocab_size, sliding_window=128),
-        )
-        self.observed_input_ids: list[torch.Tensor] = []
-
-    def forward(self, input_ids=None, decoder_input_ids=None, **kwargs):
-        ids = input_ids if input_ids is not None else decoder_input_ids
-        assert ids is not None
-        self.observed_input_ids.append(ids.detach().cpu().clone())
-        encoder_ids = kwargs.get("encoder_input_ids")
-        encoder_logits = None
-        if isinstance(encoder_ids, torch.Tensor):
-            encoder_logits = self.logit_bias.expand(
-                encoder_ids.shape[0], encoder_ids.shape[1], -1
-            )
-        return SimpleNamespace(
-            logits=self.logit_bias.expand(ids.shape[0], ids.shape[1], -1),
-            encoder_logits=encoder_logits,
-        )
+def _loop_model() -> _TinyNativeModel:
+    return _TinyNativeModel(sliding_window=128, slopes=False)
 
 
 class _NoCommitMultistepTrainerHarness(MultistepTrainerHarness):
@@ -194,34 +221,12 @@ class _TrainingStepHarness(TrainerHarness):
         return model.logit_bias.sum()
 
 
-class _LoopTrainer(DiffusionDecisionTrainer):
+class _LoopTrainer(TrainerHarness):
     def __init__(self, *args, spec: DiffusionSpec, **kwargs) -> None:
-        self._loop_spec = spec
-        super().__init__(*args, **kwargs)
-
-    @property
-    def _native_spec(self) -> DiffusionSpec:
-        return self._loop_spec
-
-    def _full_sequence_backend(self) -> FullSequenceBackend:
-        return FullSequenceBackend(mask_token_id=10, attention_backend="dense")
-
-    def _native_value(self, name: str, default=None):
-        return {"t_eps": 0.0, "self_conditioning": None}.get(name, default)
-
-    def _native_unroll_settings(self) -> tuple[int, bool]:
-        return 1, False
-
-    @staticmethod
-    def _sample_native_unroll_steps(k_max: int, device: torch.device) -> int:
-        del k_max, device
-        return 1
-
-    def _sample_native_times(
-        self, count: int, device: torch.device, default_eps: float
-    ) -> torch.Tensor:
-        del default_eps
-        return torch.ones(count, device=device)
+        TrainerHarness.__init__(
+            self, spec, native_values={"t_eps": 0.0}, native_time=1.0
+        )
+        DiffusionDecisionTrainer.__init__(self, *args, **kwargs)
 
     def _get_train_sampler(self, train_dataset=None):
         return SequentialSampler(
@@ -260,6 +265,25 @@ class _PredictionHarness(TrainerHarness):
         return model.logit_bias.square().sum()
 
 
+class _ManifestDataset:
+    def __init__(self, manifest=None, size: int = 6) -> None:
+        self.manifest = {} if manifest is None else manifest
+        self.size = size
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, index):
+        return index
+
+
+class _Decode(NamedTuple):
+    state: torch.Tensor
+    grad_enabled: bool
+    conditioning: torch.Tensor | None
+    gate: torch.Tensor | None
+
+
 def _example(question_count: int, *, weight: float = 1.0) -> DecisionLabelExample:
     return DecisionLabelExample(
         questions=tuple(
@@ -274,26 +298,182 @@ def _example(question_count: int, *, weight: float = 1.0) -> DecisionLabelExampl
     )
 
 
-@pytest.mark.parametrize("alignment", [LogitAlignment.SHIFTED, LogitAlignment.ALIGNED])
-def test_full_sequence_trainer_uses_raw_input_columns_and_spec_alignment(alignment):
-    trainer = TrainerHarness(trainer_spec(DiffusionLayout.FULL_SEQUENCE, alignment))
-    model = _TinyNativeModel()
-    inputs = {
+def _label_columns() -> torch.Tensor:
+    return torch.tensor([[False, True, False, False, False, True]])
+
+
+def _full_sequence_inputs(**overrides) -> dict[str, object]:
+    inputs: dict[str, object] = {
         "input_ids": torch.tensor([[1, 4, 5, 2, 6, 7]]),
         "document_ids": torch.tensor([[0, 0, 0, 1, 1, 1]]),
         "semantic_validity": torch.ones((1, 6), dtype=torch.bool),
         "position_ids": torch.tensor([[0, 1, 2, 0, 1, 2]]),
-        "canvas_corruptible_mask": torch.tensor(
-            [[False, True, False, False, False, True]]
-        ),
+        "canvas_corruptible_mask": _label_columns(),
         "canvas_input_pinned_mask": torch.zeros((1, 6), dtype=torch.bool),
-        "canvas_update_mask": torch.tensor([[False, True, False, False, False, True]]),
+        "canvas_update_mask": _label_columns(),
         "decision_examples": (_example(2),),
         "decision_question_mask": torch.tensor([[True, True]]),
         "decision_supervision_mask": torch.tensor([[True, True]]),
         "decision_label_rows": torch.tensor([[0, 0]], dtype=torch.long),
         "decision_label_positions": torch.tensor([[1, 5]], dtype=torch.long),
     }
+    inputs.update(overrides)
+    return inputs
+
+
+def _full_sequence_multistep_inputs() -> dict[str, object]:
+    return _full_sequence_inputs(
+        canvas_input_pinned_mask=torch.tensor([[False] * 5 + [True]])
+    )
+
+
+def _free_slot_canvas(prompt_ids, canvas_ids, name: str):
+    return make_canvas(
+        prompt_ids,
+        canvas_ids,
+        (1,),
+        name,
+        allowed=(1, 2),
+        pinned_mask=(False, False, True, True),
+        slot_mask=(True, False, False, False),
+        template_length=3,
+    )
+
+
+def _gemma_canvas(*, pinned_slot: bool):
+    return make_canvas(
+        (2, 3),
+        (25, 6, 7, 8, 0, 0, 0, 0),
+        (1, 3),
+        "q",
+        allowed_ids=((1, 2, 3), (4, 5, 6)),
+        question_ids=("q0", "q1"),
+        pinned_mask=(pinned_slot, False, False, False, True, True, True, True),
+        slot_mask=(True,) + (False,) * 7,
+        template_length=4,
+    )
+
+
+def _gemma_peft_model(device, *, trainable_token_indices=None, mask_token_id=None):
+    torch.manual_seed(17)
+    base = gemma_modeling.AxolotlDiffusionGemmaForBlockDiffusion(tiny_gemma_config())
+    if mask_token_id is not None:
+        base.config.mask_token_id = mask_token_id
+    config = LoraConfig(
+        r=2,
+        lora_alpha=2,
+        target_modules=_GEMMA_Q_PROJ,
+        task_type=None,
+        trainable_token_indices=trainable_token_indices,
+    )
+    return get_peft_model(base, config).to(device).train()
+
+
+def _to_device(inputs, device):
+    return {
+        name: (
+            value.to(device)
+            if isinstance(value, torch.Tensor) or name == "diffusion_batch"
+            else value
+        )
+        for name, value in inputs.items()
+    }
+
+
+def _trace_gemma_decode(monkeypatch, *, force_slot_token=None) -> list[_Decode]:
+    observed: list[_Decode] = []
+    original_decode = gemma_modeling.decode_packed_canvas
+
+    def traced_decode(model, decoder_input_ids, *args, **kwargs):
+        conditioning = args[3] if len(args) >= 4 else kwargs.get("logits")
+        token_gate = args[4] if len(args) >= 5 else kwargs.get("token_gate")
+        observed.append(
+            _Decode(
+                decoder_input_ids.detach().clone(),
+                torch.is_grad_enabled(),
+                conditioning,
+                token_gate,
+            )
+        )
+        logits = original_decode(model, decoder_input_ids, *args, **kwargs)
+        if force_slot_token is None:
+            return logits
+        forced = logits.clone()
+        forced[:, 0] = -torch.inf
+        forced[:, 0, force_slot_token] = 0
+        return forced
+
+    monkeypatch.setattr(gemma_modeling, "decode_packed_canvas", traced_decode)
+    return observed
+
+
+def _assert_peft_grads(model, *, tokens: bool = True) -> None:
+    def nonzero(fragment: str) -> bool:
+        return any(
+            parameter.grad is not None and torch.count_nonzero(parameter.grad)
+            for name, parameter in model.named_parameters()
+            if fragment in name
+        )
+
+    assert nonzero(".lora_")
+    if tokens:
+        assert nonzero("trainable_tokens_delta")
+
+
+def _patch_reads(monkeypatch, *, randint: bool = False) -> None:
+    calls = 0
+
+    def controlled_rand(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        shape = args[0] if args else kwargs["size"]
+        if calls == 1:
+            return torch.tensor([0.1, 0.9], device=kwargs.get("device"))
+        size = (shape,) if isinstance(shape, int) else shape
+        return torch.full(size, 0.75, device=kwargs.get("device"))
+
+    monkeypatch.setattr(torch, "rand", controlled_rand)
+    if randint:
+        monkeypatch.setattr(
+            torch,
+            "randint",
+            lambda low, high, size, **kwargs: torch.zeros(
+                size, dtype=kwargs.get("dtype", torch.long), device=kwargs.get("device")
+            ),
+        )
+
+
+def _times(trainer, count: int, read_fraction: float | None = None) -> torch.Tensor:
+    decision = trainer._decision_config()
+    if read_fraction is not None:
+        decision = decision.model_copy(update={"read_fraction": read_fraction})
+    return trainer._decision_times(count, torch.device("cpu"), 0.0, decision)
+
+
+def _epoch_lists(sampler):
+    first = list(sampler)
+    sampler.set_epoch(0)
+    repeated = list(sampler)
+    sampler.set_epoch(1)
+    next_epoch = list(sampler)
+    assert first == repeated
+    assert next_epoch != first
+    return first, next_epoch
+
+
+def _loop_loss(trainer, batch):
+    return trainer.compute_loss(
+        trainer.model,
+        trainer._prepare_inputs(batch),
+        num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
+    )
+
+
+@pytest.mark.parametrize("alignment", [LogitAlignment.SHIFTED, LogitAlignment.ALIGNED])
+def test_full_sequence_trainer_uses_raw_input_columns_and_spec_alignment(alignment):
+    trainer = TrainerHarness(trainer_spec(_FULL, alignment))
+    model = _TinyNativeModel()
+    inputs = _full_sequence_inputs()
 
     aligned_logits, raw_outputs = trainer._full_sequence_logits(
         model, inputs, trainer._native_spec, trainer._decision_config()
@@ -311,33 +491,7 @@ def test_full_sequence_trainer_uses_raw_input_columns_and_spec_alignment(alignme
     assert model.logit_bias.grad is not None
     assert torch.isfinite(model.logit_bias.grad).all()
     assert torch.count_nonzero(model.logit_bias.grad)
-    torch.testing.assert_close(
-        trainer._decision_times(
-            2, torch.device("cpu"), 0.0, trainer._decision_config()
-        ),
-        torch.ones(2),
-    )
-
-
-def _full_sequence_multistep_inputs() -> dict[str, object]:
-    return {
-        "input_ids": torch.tensor([[1, 4, 5, 2, 6, 7]]),
-        "document_ids": torch.tensor([[0, 0, 0, 1, 1, 1]]),
-        "semantic_validity": torch.ones((1, 6), dtype=torch.bool),
-        "position_ids": torch.tensor([[0, 1, 2, 0, 1, 2]]),
-        "canvas_corruptible_mask": torch.tensor(
-            [[False, True, False, False, False, True]]
-        ),
-        "canvas_input_pinned_mask": torch.tensor(
-            [[False, False, False, False, False, True]]
-        ),
-        "canvas_update_mask": torch.tensor([[False, True, False, False, False, True]]),
-        "decision_examples": (_example(2),),
-        "decision_question_mask": torch.tensor([[True, True]]),
-        "decision_supervision_mask": torch.tensor([[True, True]]),
-        "decision_label_rows": torch.tensor([[0, 0]], dtype=torch.long),
-        "decision_label_positions": torch.tensor([[1, 5]], dtype=torch.long),
-    }
+    torch.testing.assert_close(_times(trainer, 2), torch.ones(2))
 
 
 @pytest.mark.parametrize("steps", [1, 2])
@@ -345,50 +499,33 @@ def test_selected_logits_match_dense_full_ce_brier_for_multistep_padded_question
     steps,
 ):
     decision = {"labels": {"label_softmax": "full", "brier_weight": 0.1}}
-    dense_trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=2,
-        sampled_steps=steps,
-        decision=decision,
-    )
-    selected_trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=2,
-        sampled_steps=steps,
-        decision=decision,
-    )
+    dense_trainer = _multistep(steps, k_max=2, decision=decision)
+    selected_trainer = _multistep(steps, k_max=2, decision=decision)
     dense_model = _TinyNativeModel()
     selected_model = _SelectedTinyNativeModel()
     selected_model.load_state_dict(dense_model.state_dict())
-    inputs = _full_sequence_multistep_inputs()
-    inputs.update(
-        {
-            "input_ids": torch.tensor([[1, 4, 5, 2, 6, 7], [3, 4, 6, 1, 5, 2]]),
-            "document_ids": torch.tensor([[0] * 6, [1] * 6]),
-            "semantic_validity": torch.ones((2, 6), dtype=torch.bool),
-            "position_ids": torch.arange(6)[None].expand(2, -1),
-            "canvas_corruptible_mask": torch.tensor(
-                [
-                    [False, True, False, False, False, True],
-                    [False, False, True, False, False, False],
-                ]
-            ),
-            "canvas_input_pinned_mask": torch.tensor(
-                [[False, False, False, False, False, True], [False] * 6]
-            ),
-            "canvas_update_mask": torch.tensor(
-                [
-                    [False, True, False, False, False, True],
-                    [False, False, True, False, False, False],
-                ]
-            ),
-            "decision_examples": (_example(2), _example(1)),
-            "decision_question_mask": torch.tensor([[True, True], [True, False]]),
-            "decision_supervision_mask": torch.tensor([[True, True], [True, False]]),
-            "decision_label_rows": torch.tensor([[0, 0], [1, -1]]),
-            "decision_label_positions": torch.tensor([[1, 5], [2, -1]]),
-        }
+    question_columns = torch.tensor(
+        [
+            [False, True, False, False, False, True],
+            [False, False, True, False, False, False],
+        ]
     )
+    inputs = {
+        "input_ids": torch.tensor([[1, 4, 5, 2, 6, 7], [3, 4, 6, 1, 5, 2]]),
+        "document_ids": torch.tensor([[0] * 6, [1] * 6]),
+        "semantic_validity": torch.ones((2, 6), dtype=torch.bool),
+        "position_ids": torch.arange(6)[None].expand(2, -1),
+        "canvas_corruptible_mask": question_columns,
+        "canvas_input_pinned_mask": torch.tensor(
+            [[False, False, False, False, False, True], [False] * 6]
+        ),
+        "canvas_update_mask": question_columns.clone(),
+        "decision_examples": (_example(2), _example(1)),
+        "decision_question_mask": torch.tensor([[True, True], [True, False]]),
+        "decision_supervision_mask": torch.tensor([[True, True], [True, False]]),
+        "decision_label_rows": torch.tensor([[0, 0], [1, -1]]),
+        "decision_label_positions": torch.tensor([[1, 5], [2, -1]]),
+    }
 
     torch.manual_seed(19)
     dense_loss = dense_trainer.compute_loss(dense_model, inputs)
@@ -409,13 +546,8 @@ def test_selected_logits_match_dense_full_ce_brier_for_multistep_padded_question
 
 @pytest.mark.parametrize("steps", [2, 3])
 def test_full_sequence_multistep_holds_noisy_labels_and_pinned_slots(steps):
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=steps,
-        decision={"latent": {"mode": "pinned", "num_slots": 1}},
-    )
-    model = _TraceNativeModel()
+    trainer = _multistep(steps, decision=_latent("pinned"))
+    model = _TinyNativeModel()
     inputs = _full_sequence_multistep_inputs()
 
     logits, _ = trainer._full_sequence_logits(
@@ -425,7 +557,7 @@ def test_full_sequence_multistep_holds_noisy_labels_and_pinned_slots(steps):
     expected_state = torch.tensor([[1, 10, 5, 2, 6, 7]])
     assert len(model.forward_states) == steps
     assert all(torch.equal(state, expected_state) for state in model.forward_states)
-    assert model.forward_grad_enabled == [False] * (steps - 1) + [True]
+    assert model.forward_grad_enabled == _final_only(steps)
     logits.sum().backward()
     assert model.logit_bias.grad is not None
     assert torch.count_nonzero(model.logit_bias.grad)
@@ -433,20 +565,14 @@ def test_full_sequence_multistep_holds_noisy_labels_and_pinned_slots(steps):
 
 
 def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state():
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=2,
-        sampled_steps=2,
-    )
+    trainer = _multistep(2, k_max=2)
     trainer._decision_times = lambda count, device, default_eps, decision: torch.tensor(
         [0.0, 1.0], device=device
     )
-    inputs = _full_sequence_multistep_inputs()
-    inputs["canvas_input_pinned_mask"] = torch.zeros((1, 6), dtype=torch.bool)
-    model = _TraceNativeModel()
+    model = _TinyNativeModel()
 
     trainer._full_sequence_logits(
-        model, inputs, trainer._native_spec, trainer._decision_config()
+        model, _full_sequence_inputs(), trainer._native_spec, trainer._decision_config()
     )
 
     expected_state = torch.tensor([[1, 4, 5, 2, 6, 10]])
@@ -455,12 +581,8 @@ def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state():
 
 
 def test_full_sequence_multistep_config_sampled_to_one_never_uses_native_commit():
-    trainer = _NoCommitMultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=1,
-    )
-    model = _TraceNativeModel()
+    trainer = _multistep(1, cls=_NoCommitMultistepTrainerHarness)
+    model = _TinyNativeModel()
 
     trainer._full_sequence_logits(
         model,
@@ -476,23 +598,10 @@ def test_full_sequence_multistep_config_sampled_to_one_never_uses_native_commit(
 
 
 @pytest.mark.parametrize("steps", [1, 2, 3])
-@pytest.mark.parametrize(
-    "device",
-    [
-        pytest.param(torch.device("cpu"), id="cpu"),
-        pytest.param(
-            torch.device("cuda"),
-            id="cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="requires CUDA"
-            ),
-        ),
-    ],
-)
+@_DEVICES
 def test_native_nemotron_peft_learned_slot_rows_receive_final_step_gradients(
     steps, device
 ):
-    from peft import LoraConfig, TaskType, get_peft_model
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
     from axolotl.model_support.nemotron_diffusion.compat import (
@@ -546,12 +655,7 @@ def test_native_nemotron_peft_learned_slot_rows_receive_final_step_gradients(
             trainable_token_indices=[120],
         ),
     )
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=steps,
-        decision={"latent": {"mode": "learned", "num_slots": 1}},
-    )
+    trainer = _multistep(steps, decision=_latent("learned"))
     inputs = {
         "input_ids": torch.tensor([[1, 120, 4, 5, 2]], device=device),
         "document_ids": torch.zeros((1, 5), dtype=torch.long, device=device),
@@ -578,271 +682,64 @@ def test_native_nemotron_peft_learned_slot_rows_receive_final_step_gradients(
     loss = trainer.compute_loss(model, inputs)
     loss.backward()
 
-    assert calls == [False] * (steps - 1) + [True]
-    lora_grads = [
-        parameter.grad
-        for name, parameter in model.named_parameters()
-        if ".lora_" in name
-    ]
-    token_grads = [
-        parameter.grad
-        for name, parameter in model.named_parameters()
-        if "trainable_tokens_delta" in name
-    ]
-    assert any(
-        gradient is not None and torch.count_nonzero(gradient)
-        for gradient in lora_grads
-    )
-    assert any(
-        gradient is not None and torch.count_nonzero(gradient)
-        for gradient in token_grads
-    )
+    assert calls == _final_only(steps)
+    _assert_peft_grads(model)
 
 
 @pytest.mark.parametrize("steps", [1, 2, 3])
-@pytest.mark.parametrize(
-    "device",
-    [
-        pytest.param(torch.device("cpu"), id="cpu"),
-        pytest.param(
-            torch.device("cuda"),
-            id="cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="requires CUDA"
-            ),
-        ),
-    ],
-)
+@_DEVICES
 def test_native_gemma_peft_multistep_holds_canvas_and_trains_final_read(
     steps, device, monkeypatch
 ):
-    from peft import LoraConfig, get_peft_model
+    model = _gemma_peft_model(device, trainable_token_indices=[25])
+    trainer = _multistep(steps, layout=_ENCODER, decision=_latent("learned"))
+    inputs = _to_device(_collate(_gemma_canvas(pinned_slot=True)), device)
+    observed = _trace_gemma_decode(monkeypatch)
 
-    import axolotl.model_support.diffusion_gemma.modeling as gemma_modeling
-    from axolotl.model_support.diffusion_gemma.modeling import (
-        AxolotlDiffusionGemmaForBlockDiffusion,
-    )
-
-    torch.manual_seed(17)
-    base = AxolotlDiffusionGemmaForBlockDiffusion(tiny_gemma_config()).to(device)
-    model = get_peft_model(
-        base,
-        LoraConfig(
-            r=2,
-            lora_alpha=2,
-            target_modules=(
-                r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
-                r"\.0\.self_attn\.q_proj$"
-            ),
-            task_type=None,
-            trainable_token_indices=[25],
-        ),
-    ).train()
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=steps,
-        decision={"latent": {"mode": "learned", "num_slots": 1}},
-    )
-    canvas = DecisionCanvas(
-        prompt_ids=(2, 3),
-        canvas_ids=(25, 6, 7, 8, 0, 0, 0, 0),
-        label_positions=(1, 3),
-        allowed_ids=((1, 2, 3), (4, 5, 6)),
-        question_ids=("q0", "q1"),
-        targets=({"kind": "hard", "gold_idx": 0},) * 2,
-        pinned_mask=(True, False, False, False, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, False, False, False, False, False, False),
-        template_length=4,
-    )
-    inputs = DecisionTrainingCollator(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
-    )([{"canvas": canvas, "source": "native"}])
-    inputs["diffusion_batch"] = inputs["diffusion_batch"].to(device)
-    for name, value in tuple(inputs.items()):
-        if isinstance(value, torch.Tensor):
-            inputs[name] = value.to(device)
-
-    observed: list[
-        tuple[torch.Tensor, bool, torch.Tensor | None, torch.Tensor | None]
-    ] = []
-    original_decode = gemma_modeling.decode_packed_canvas
-
-    def traced_decode(model, decoder_input_ids, *args, **kwargs):
-        conditioning = args[3] if len(args) >= 4 else kwargs.get("logits")
-        token_gate = args[4] if len(args) >= 5 else kwargs.get("token_gate")
-        observed.append(
-            (
-                decoder_input_ids.detach().clone(),
-                torch.is_grad_enabled(),
-                conditioning,
-                token_gate,
-            )
-        )
-        return original_decode(model, decoder_input_ids, *args, **kwargs)
-
-    monkeypatch.setattr(gemma_modeling, "decode_packed_canvas", traced_decode)
     torch.manual_seed(29)
     loss, outputs = trainer.compute_loss(model, inputs, return_outputs=True)
     assert outputs.denoised_input_ids is not None
     assert len(observed) == steps
-    assert all(
-        torch.equal(state, outputs.denoised_input_ids) for state, _, _, _ in observed
-    )
-    assert [enabled for _, enabled, _, _ in observed] == [False] * (steps - 1) + [True]
-    assert observed[0][2] is None
-    assert all(conditioning is not None for _, _, conditioning, _ in observed[1:])
-    assert all(gate is not None for _, _, _, gate in observed)
-    assert all(gate[0, 0] for _, _, _, gate in observed if gate is not None)
+    assert all(torch.equal(d.state, outputs.denoised_input_ids) for d in observed)
+    assert [d.grad_enabled for d in observed] == _final_only(steps)
+    assert observed[0].conditioning is None
+    assert all(d.conditioning is not None for d in observed[1:])
+    assert all(d.gate is not None and d.gate[0, 0] for d in observed)
     assert outputs.denoised_input_ids[0, 0].item() == 25
 
     loss.backward()
-    lora_grads = [
-        parameter.grad
-        for name, parameter in model.named_parameters()
-        if ".lora_" in name
-    ]
-    token_grads = [
-        parameter.grad
-        for name, parameter in model.named_parameters()
-        if "trainable_tokens_delta" in name
-    ]
-    assert any(
-        gradient is not None and torch.count_nonzero(gradient)
-        for gradient in lora_grads
-    )
-    assert any(
-        gradient is not None and torch.count_nonzero(gradient)
-        for gradient in token_grads
-    )
+    _assert_peft_grads(model)
 
 
 @pytest.mark.parametrize("steps", [2, 3])
-@pytest.mark.parametrize(
-    "device",
-    [
-        pytest.param(torch.device("cpu"), id="cpu"),
-        pytest.param(
-            torch.device("cuda"),
-            id="cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="requires CUDA"
-            ),
-        ),
-    ],
-)
+@_DEVICES
 def test_native_gemma_peft_free_slots_evolve_without_supervising_slots(
     steps, device, monkeypatch
 ):
-    from peft import LoraConfig, get_peft_model
+    model = _gemma_peft_model(device, mask_token_id=2)
+    trainer = _multistep(
+        steps, layout=_ENCODER, decision=_latent("free", free_update_policy="argmax")
+    )
+    inputs = _to_device(_collate(_gemma_canvas(pinned_slot=False)), device)
+    observed = _trace_gemma_decode(monkeypatch, force_slot_token=24)
 
-    import axolotl.model_support.diffusion_gemma.modeling as gemma_modeling
-    from axolotl.model_support.diffusion_gemma.modeling import (
-        AxolotlDiffusionGemmaForBlockDiffusion,
-    )
-
-    torch.manual_seed(17)
-    base = AxolotlDiffusionGemmaForBlockDiffusion(tiny_gemma_config())
-    base.config.mask_token_id = 2
-    model = (
-        get_peft_model(
-            base,
-            LoraConfig(
-                r=2,
-                lora_alpha=2,
-                target_modules=(
-                    r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
-                    r"\.0\.self_attn\.q_proj$"
-                ),
-                task_type=None,
-            ),
-        )
-        .to(device)
-        .train()
-    )
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=steps,
-        decision={
-            "latent": {
-                "mode": "free",
-                "num_slots": 1,
-                "free_update_policy": "argmax",
-            }
-        },
-    )
-    canvas = DecisionCanvas(
-        prompt_ids=(2, 3),
-        canvas_ids=(25, 6, 7, 8, 0, 0, 0, 0),
-        label_positions=(1, 3),
-        allowed_ids=((1, 2, 3), (4, 5, 6)),
-        question_ids=("q0", "q1"),
-        targets=({"kind": "hard", "gold_idx": 0},) * 2,
-        pinned_mask=(False, False, False, False, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, False, False, False, False, False, False),
-        template_length=4,
-    )
-    inputs = DecisionTrainingCollator(trainer._native_spec)(
-        [{"canvas": canvas, "source": "native"}]
-    )
-    inputs["diffusion_batch"] = inputs["diffusion_batch"].to(device)
-    for name, value in tuple(inputs.items()):
-        if isinstance(value, torch.Tensor):
-            inputs[name] = value.to(device)
-    observed: list[tuple[torch.Tensor, torch.Tensor | None]] = []
-    original_decode = gemma_modeling.decode_packed_canvas
-
-    def traced_decode(model, decoder_input_ids, *args, **kwargs):
-        token_gate = args[4] if len(args) >= 5 else kwargs.get("token_gate")
-        observed.append((decoder_input_ids.detach().clone(), token_gate))
-        logits = original_decode(model, decoder_input_ids, *args, **kwargs)
-        forced = logits.clone()
-        forced[:, 0] = -torch.inf
-        forced[:, 0, 24] = 0
-        return forced
-
-    monkeypatch.setattr(gemma_modeling, "decode_packed_canvas", traced_decode)
     loss, _ = trainer.compute_loss(model, inputs, return_outputs=True)
+    first = observed[0].state
     assert len(observed) == steps
-    assert all(
-        torch.equal(state[0, [1, 3]], observed[0][0][0, [1, 3]])
-        for state, _ in observed
-    )
-    assert all(
-        torch.equal(state[0, 4:], observed[0][0][0, 4:]) for state, _ in observed
-    )
-    assert all(gate is not None and gate[0, 0] for _, gate in observed)
-    assert observed[0][0][0, 0].item() != 24
-    assert all(state[0, 0].item() == 24 for state, _ in observed[1:])
+    assert all(torch.equal(d.state[0, [1, 3]], first[0, [1, 3]]) for d in observed)
+    assert all(torch.equal(d.state[0, 4:], first[0, 4:]) for d in observed)
+    assert all(d.gate is not None and d.gate[0, 0] for d in observed)
+    assert first[0, 0].item() != 24
+    assert all(d.state[0, 0].item() == 24 for d in observed[1:])
     assert not inputs["diffusion_batch"].canvas_loss_mask[0, 0]
     loss.backward()
-    assert any(
-        parameter.grad is not None and torch.count_nonzero(parameter.grad)
-        for name, parameter in model.named_parameters()
-        if ".lora_" in name
-    )
+    _assert_peft_grads(model, tokens=False)
 
 
 def test_encoder_canvas_trainer_remaps_logical_positions_after_packing():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
-    )
+    trainer = _harness(layout=_ENCODER)
     model = _TinyNativeModel()
-    collator = DecisionTrainingCollator(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
-    )
-    inputs = collator(
-        [
-            {"canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"},
-            {
-                "canvas": make_canvas((3, 4, 5), (6, 7, 8, 9), (0, 3), "second"),
-                "source": "b",
-            },
-        ]
-    )
+    inputs = _collate(_FIRST, _SECOND)
 
     _, pre_outputs, packed, _ = trainer._encoder_canvas_logits(
         model, inputs, trainer._native_spec, trainer._decision_config()
@@ -861,26 +758,20 @@ def test_encoder_canvas_trainer_remaps_logical_positions_after_packing():
     assert model.calls[0]["update_mask"] is not None
 
 
-def _encoder_ar_packed(prompt_ids, prompt_slot_mask):
-    canvas = DecisionCanvas(
-        prompt_ids=prompt_ids,
-        canvas_ids=(1, 2, 3, 0),
-        label_positions=(1,),
-        allowed_ids=((1, 2),),
-        question_ids=("encoder-ar",),
-        targets=({"kind": "hard", "gold_idx": 0},),
-        pinned_mask=(False,) * 4,
-        semantic_mask=(True,) * 4,
-        slot_mask=(False,) * 4,
-        template_length=4,
+def _encoder_ar_case(prompt_ids, prompt_slot_mask):
+    canvas = make_canvas(
+        prompt_ids,
+        (1, 2, 3, 0),
+        (1,),
+        "encoder-ar",
+        allowed=(1, 2),
         prompt_slot_mask=prompt_slot_mask,
     )
-    batch = DecisionTrainingCollator(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
-    )([{"canvas": canvas, "source": "encoder-ar"}])
-    return EncoderCanvasBackend(vocab_size=11, sliding_window=8).pack(
-        batch["diffusion_batch"]
+    packed = EncoderCanvasBackend(vocab_size=11, sliding_window=8).pack(
+        _collate(canvas)["diffusion_batch"]
     )
+    logits = torch.randn((*packed.encoder_input_ids.shape, 11), requires_grad=True)
+    return packed, logits, SimpleNamespace(encoder_logits=logits, logits=logits)
 
 
 @pytest.mark.parametrize(
@@ -890,13 +781,8 @@ def _encoder_ar_packed(prompt_ids, prompt_slot_mask):
 def test_encoder_ar_loss_is_finite_zero_without_supported_prompt_targets(
     global_count, world_size
 ):
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        world_size=world_size,
-    )
-    packed = _encoder_ar_packed((7,), (True,))
-    logits = torch.randn((*packed.encoder_input_ids.shape, 11), requires_grad=True)
-    outputs = SimpleNamespace(encoder_logits=logits, logits=logits)
+    trainer = _harness(layout=_ENCODER, world_size=world_size)
+    packed, logits, outputs = _encoder_ar_case((7,), (True,))
 
     loss = trainer._encoder_ar_loss(SimpleNamespace(), outputs, packed, global_count)
     loss.backward()
@@ -907,13 +793,8 @@ def test_encoder_ar_loss_is_finite_zero_without_supported_prompt_targets(
 
 
 def test_encoder_ar_loss_preserves_positive_fractional_global_denominator():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        world_size=2,
-    )
-    packed = _encoder_ar_packed((7, 8, 9), (False, False, False))
-    logits = torch.randn((*packed.encoder_input_ids.shape, 11), requires_grad=True)
-    outputs = SimpleNamespace(encoder_logits=logits, logits=logits)
+    trainer = _harness(layout=_ENCODER, world_size=2)
+    packed, logits, outputs = _encoder_ar_case((7, 8, 9), (False, False, False))
     token_loss = torch.nn.functional.cross_entropy(
         logits[:, :-1].float().flatten(0, -2),
         packed.encoder_input_ids[:, 1:].flatten(),
@@ -936,26 +817,15 @@ def test_encoder_ar_loss_preserves_positive_fractional_global_denominator():
     assert torch.count_nonzero(logits.grad)
 
 
-@pytest.mark.parametrize("steps", [2, 3])
-def test_encoder_canvas_multistep_holds_canvas_and_uses_outer_unroll(steps):
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=steps,
-        decision={"latent": {"mode": "learned", "num_slots": 1}},
-    )
+@pytest.mark.parametrize(
+    ("steps", "decision"),
+    [(1, None), (2, _latent("learned")), (3, _latent("learned"))],
+    ids=["sampled-to-one", "two-steps", "three-steps"],
+)
+def test_encoder_canvas_multistep_holds_canvas_and_uses_outer_unroll(steps, decision):
+    trainer = _multistep(steps, layout=_ENCODER, decision=decision)
     model = _TinyNativeModel()
-    collator = DecisionTrainingCollator(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
-    )
-    inputs = collator(
-        [
-            {
-                "canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"),
-                "source": "a",
-            }
-        ]
-    )
+    inputs = _collate(_FIRST)
 
     trainer._encoder_canvas_logits(
         model, inputs, trainer._native_spec, trainer._decision_config()
@@ -966,6 +836,9 @@ def test_encoder_canvas_multistep_holds_canvas_and_uses_outer_unroll(steps):
     update_mask = call["update_mask"]
     assert isinstance(update_mask, torch.Tensor)
     assert not update_mask.any()
+    if steps == 1:
+        assert call["pilot_for_single_step"] is False
+        return
     recurrent = call["recurrent_conditioning_mask"]
     assert isinstance(recurrent, torch.Tensor)
     assert torch.equal(
@@ -975,77 +848,32 @@ def test_encoder_canvas_multistep_holds_canvas_and_uses_outer_unroll(steps):
     )
 
 
-def test_encoder_canvas_multistep_config_sampled_to_one_holds_update_mask():
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=1,
-    )
-    model = _TinyNativeModel()
-    collator = DecisionTrainingCollator(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
-    )
-    inputs = collator(
-        [
-            {
-                "canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"),
-                "source": "a",
-            }
-        ]
-    )
-
-    trainer._encoder_canvas_logits(
-        model, inputs, trainer._native_spec, trainer._decision_config()
-    )
-
-    assert model.calls[-1]["unroll_steps"] == 1
-    assert model.calls[-1]["pilot_for_single_step"] is False
-    update_mask = model.calls[-1]["update_mask"]
-    assert isinstance(update_mask, torch.Tensor)
-    assert not update_mask.any()
-
-
 @pytest.mark.parametrize("attention_backend", ["dense", "flex_attention"])
 def test_packed_slot_mask_remaps_multiple_canvases_and_excludes_bucket_padding(
     attention_backend,
 ):
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=2,
-    )
-    first = DecisionCanvas(
-        prompt_ids=(1, 2),
-        canvas_ids=(9, 3, 4, 0, 0, 0, 0, 0),
-        label_positions=(1,),
-        allowed_ids=((1, 2),),
-        question_ids=("first",),
-        targets=({"kind": "hard", "gold_idx": 0},),
-        pinned_mask=(True, False, True, True, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, False, False, False, False, False, False),
+    trainer = _multistep(2, layout=_ENCODER)
+    pinned = (True, False) + (True,) * 6
+    first = make_canvas(
+        (1, 2),
+        (9, 3, 4, 0, 0, 0, 0, 0),
+        (1,),
+        "first",
+        allowed=(1, 2),
+        pinned_mask=pinned,
+        slot_mask=(True,) + (False,) * 7,
         template_length=3,
     )
-    second = DecisionCanvas(
-        prompt_ids=(3,),
-        canvas_ids=(5, 6, 7, 0, 0, 0, 0, 0),
-        label_positions=(1,),
-        allowed_ids=((1, 2),),
-        question_ids=("second",),
-        targets=({"kind": "hard", "gold_idx": 0},),
-        pinned_mask=(True, False, True, True, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(False,) * 8,
+    second = make_canvas(
+        (3,),
+        (5, 6, 7, 0, 0, 0, 0, 0),
+        (1,),
+        "second",
+        allowed=(1, 2),
+        pinned_mask=pinned,
         template_length=3,
     )
-    inputs = DecisionTrainingCollator(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
-    )(
-        [
-            {"canvas": first, "source": "a"},
-            {"canvas": second, "source": "b"},
-        ]
-    )
+    inputs = _collate(first, second)
     backend = EncoderCanvasBackend(
         vocab_size=11,
         sliding_window=8,
@@ -1063,63 +891,18 @@ def test_packed_slot_mask_remaps_multiple_canvases_and_excludes_bucket_padding(
 
 @pytest.mark.parametrize("steps", [2, 3])
 def test_full_sequence_free_slots_use_flattened_collator_mask_for_two_documents(steps):
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=steps,
-        decision={
-            "latent": {
-                "mode": "free",
-                "num_slots": 1,
-                "free_update_policy": "argmax",
-            }
-        },
-    )
-    first = DecisionCanvas(
-        prompt_ids=(1, 2),
-        canvas_ids=(9, 3, 4, 0),
-        label_positions=(1,),
-        allowed_ids=((1, 2),),
-        question_ids=("first",),
-        targets=({"kind": "hard", "gold_idx": 0},),
-        pinned_mask=(False, False, True, True),
-        semantic_mask=(True,) * 4,
-        slot_mask=(True, False, False, False),
-        template_length=3,
-    )
-    second = DecisionCanvas(
-        prompt_ids=(3,),
-        canvas_ids=(8, 5, 6, 0),
-        label_positions=(1,),
-        allowed_ids=((1, 2),),
-        question_ids=("second",),
-        targets=({"kind": "hard", "gold_idx": 0},),
-        pinned_mask=(False, False, True, True),
-        semantic_mask=(True,) * 4,
-        slot_mask=(True, False, False, False),
-        template_length=3,
-    )
-    inputs = DecisionTrainingCollator(trainer._native_spec)(
-        [{"canvas": first, "source": "a"}, {"canvas": second, "source": "b"}]
+    trainer = _multistep(steps, decision=_latent("free", free_update_policy="argmax"))
+    inputs = _collate(
+        _free_slot_canvas((1, 2), (9, 3, 4, 0), "first"),
+        _free_slot_canvas((3,), (8, 5, 6, 0), "second"),
+        layout=_FULL,
     )
     assert inputs["decision_slot_mask"].shape == inputs["input_ids"].shape
     assert inputs["decision_slot_mask"].tolist() == [
-        [
-            False,
-            False,
-            True,
-            False,
-            False,
-            False,
-            False,
-            True,
-            False,
-            False,
-            False,
-        ]
+        [index in (2, 7) for index in range(11)]
     ]
 
-    model = _TraceNativeModel()
+    model = _TinyNativeModel()
     logits, _ = trainer._full_sequence_logits(
         model, inputs, trainer._native_spec, trainer._decision_config()
     )
@@ -1130,11 +913,10 @@ def test_full_sequence_free_slots_use_flattened_collator_mask_for_two_documents(
         torch.equal(state[0, [3, 8]], initial[0, [3, 8]])
         for state in model.forward_states
     )
-    if steps > 1:
-        assert all(
-            torch.equal(state[0, [2, 7]], torch.tensor([10, 10]))
-            for state in model.forward_states[1:]
-        )
+    assert all(
+        torch.equal(state[0, [2, 7]], torch.tensor([10, 10]))
+        for state in model.forward_states[1:]
+    )
     assert torch.equal(inputs["canvas_loss_mask"], inputs["canvas_corruptible_mask"])
     assert not torch.any(inputs["decision_slot_mask"] & inputs["canvas_loss_mask"])
     logits.sum().backward()
@@ -1143,32 +925,9 @@ def test_full_sequence_free_slots_use_flattened_collator_mask_for_two_documents(
 
 
 def test_full_sequence_free_slots_use_effective_backend_mask_at_k1():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        {
-            "latent": {
-                "mode": "free",
-                "num_slots": 1,
-                "free_update_policy": "argmax",
-            }
-        },
-    )
-    canvas = DecisionCanvas(
-        prompt_ids=(1,),
-        canvas_ids=(7, 3, 4, 0),
-        label_positions=(1,),
-        allowed_ids=((1, 2),),
-        question_ids=("q",),
-        targets=({"kind": "hard", "gold_idx": 0},),
-        pinned_mask=(False, False, True, True),
-        semantic_mask=(True,) * 4,
-        slot_mask=(True, False, False, False),
-        template_length=3,
-    )
-    inputs = DecisionTrainingCollator(trainer._native_spec)(
-        [{"canvas": canvas, "source": "test"}]
-    )
-    model = _TraceNativeModel()
+    trainer = _harness(_latent("free", free_update_policy="argmax"))
+    inputs = _collate(_free_slot_canvas((1,), (7, 3, 4, 0), "q"), layout=_FULL)
+    model = _TinyNativeModel()
     model.config.mask_token_id = 2
 
     trainer._full_sequence_logits(
@@ -1179,10 +938,7 @@ def test_full_sequence_free_slots_use_effective_backend_mask_at_k1():
 
 
 def test_global_example_scaling_matches_ddp_average_for_unequal_windows():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        world_size=2,
-    )
+    trainer = _harness(world_size=2)
     result = DecisionLossResult(
         loss=torch.tensor(2.0),
         restricted_loss=torch.tensor(0.0),
@@ -1198,23 +954,11 @@ def test_global_example_scaling_matches_ddp_average_for_unequal_windows():
 
 
 def test_encoder_gradient_window_counts_examples_and_ar_tokens_globally():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        world_size=2,
-    )
+    trainer = _harness(layout=_ENCODER, world_size=2)
     trainer.accelerator = SimpleNamespace(
         gather=lambda count: torch.stack((count, count + 1))
     )
-    collator = DecisionTrainingCollator(trainer._native_spec)
-    batch = collator(
-        [
-            {"canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"},
-            {
-                "canvas": make_canvas((3, 4, 5), (6, 7, 8, 9), (0, 3), "second"),
-                "source": "b",
-            },
-        ]
-    )
+    batch = _collate(_FIRST, _SECOND)
 
     _batches, counts = trainer.get_batch_samples(
         iter((batch,)), num_batches=2, device=torch.device("cpu")
@@ -1227,9 +971,7 @@ def test_encoder_gradient_window_counts_examples_and_ar_tokens_globally():
 def test_post_config_prevents_training_step_from_dividing_global_loss_again(
     monkeypatch,
 ):
-    trainer = _TrainingStepHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    trainer = _TrainingStepHarness(_spec())
     monkeypatch.setattr(
         AxolotlDiffusionTrainer,
         "post_set_axolotl_cfg",
@@ -1272,14 +1014,9 @@ def test_post_config_prevents_training_step_from_dividing_global_loss_again(
 
 
 def test_prepare_inputs_moves_encoder_canvas_dataclass(monkeypatch):
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
-    )
+    trainer = _harness(layout=_ENCODER)
     trainer.args.device = torch.device("cpu")
-    collator = DecisionTrainingCollator(trainer._native_spec)
-    batch = collator(
-        [{"canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"}]
-    )["diffusion_batch"]
+    batch = _collate(_FIRST)["diffusion_batch"]
     monkeypatch.setattr(
         AxolotlDiffusionTrainer, "_prepare_inputs", lambda _self, inputs: inputs
     )
@@ -1293,14 +1030,8 @@ def test_prepare_inputs_moves_encoder_canvas_dataclass(monkeypatch):
 def test_stratified_sampler_shuffles_whole_microbatches_per_epoch():
     sampler = _StratifiedDecisionBatchSampler(dataset_size=12, batch_size=3, seed=17)
 
-    first = list(sampler)
-    sampler.set_epoch(0)
-    repeated = list(sampler)
-    sampler.set_epoch(1)
-    next_epoch = list(sampler)
+    _, next_epoch = _epoch_lists(sampler)
 
-    assert first == repeated
-    assert next_epoch != first
     assert sorted(index for batch in next_epoch for index in batch) == list(range(12))
     assert all(batch == list(range(batch[0], batch[0] + 3)) for batch in next_epoch)
 
@@ -1324,15 +1055,9 @@ def test_stratified_draw_descriptors_are_unique_before_distributed_sharding():
         world_size=8,
         emit_draw_descriptors=True,
     )
-    first = list(sampler)
-    sampler.set_epoch(0)
-    repeated = list(sampler)
-    sampler.set_epoch(1)
-    next_epoch = list(sampler)
+    first, _ = _epoch_lists(sampler)
     draws = [draw for batch in first for draw in batch]
 
-    assert first == repeated
-    assert next_epoch != first
     assert all(isinstance(draw, DecisionDraw) for draw in draws)
     assert [draw.global_draw_ordinal for draw in draws] == list(range(16))
     assert {draw.index for draw in draws} == {0, 1}
@@ -1343,15 +1068,9 @@ def test_non_stratified_draw_descriptors_are_deterministic_and_resume_stable():
     sampler = _DecisionDrawBatchSampler(
         dataset_size=6, batch_size=2, seed=23, world_size=4
     )
-    first = list(sampler)
-    sampler.set_epoch(0)
-    repeated = list(sampler)
-    sampler.set_epoch(1)
-    next_epoch = list(sampler)
+    first, _ = _epoch_lists(sampler)
     draws = [draw for batch in first for draw in batch]
 
-    assert first == repeated
-    assert next_epoch != first
     assert [draw.global_draw_ordinal for draw in draws] == list(range(8))
     assert [draw.global_draw_ordinal for batch in first[2:] for draw in batch] == [
         4,
@@ -1382,20 +1101,11 @@ def test_draw_batch_sampler_is_accepted_by_a_real_dataloader():
 
 
 def test_trainer_uses_draw_batch_sampler_for_non_stratified_sampled_slots():
-    class _Dataset:
-        manifest = {}
-
-        def __len__(self):
-            return 6
-
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        decision={
-            "latent": {"mode": "pinned", "num_slots": 2, "sample_num_slots": True}
-        },
+    trainer = _harness(
+        {"latent": {"mode": "pinned", "num_slots": 2, "sample_num_slots": True}},
         world_size=2,
     )
-    trainer.train_dataset = _Dataset()
+    trainer.train_dataset = _ManifestDataset()
     trainer.args.per_device_train_batch_size = 2
     trainer.args.seed = 29
     trainer.args.dataloader_drop_last = None
@@ -1409,18 +1119,11 @@ def test_trainer_uses_draw_batch_sampler_for_non_stratified_sampled_slots():
 
 
 def test_stratified_batch_sampler_is_accepted_by_a_real_dataloader():
-    class _Dataset:
-        def __len__(self):
-            return 6
-
-        def __getitem__(self, index):
-            return index
-
     sampler = _StratifiedDecisionBatchSampler(
         dataset_size=6, batch_size=2, seed=17, world_size=2
     )
 
-    batches = list(DataLoader(_Dataset(), batch_sampler=sampler))
+    batches = list(DataLoader(_ManifestDataset(), batch_sampler=sampler))
 
     assert isinstance(sampler, BatchSampler)
     assert len(batches) == 4
@@ -1428,18 +1131,8 @@ def test_stratified_batch_sampler_is_accepted_by_a_real_dataloader():
 
 
 def test_trainer_uses_core_multipack_for_typed_packing(monkeypatch):
-    class _Dataset:
-        manifest = {
-            "per_batch_stratified": False,
-        }
-
-        def __len__(self):
-            return 6
-
-    dataset = _Dataset()
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    dataset = _ManifestDataset({"per_batch_stratified": False})
+    trainer = _harness()
     trainer.train_dataset = dataset
     trainer.args.per_device_train_batch_size = 2
     trainer.args.sample_packing = True
@@ -1457,13 +1150,8 @@ def test_trainer_uses_core_multipack_for_typed_packing(monkeypatch):
 
 
 def test_trainer_rejects_packing_that_would_bypass_stratified_quotas():
-    class _Dataset:
-        manifest = {"per_batch_stratified": True}
-
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
-    trainer.train_dataset = _Dataset()
+    trainer = _harness()
+    trainer.train_dataset = _ManifestDataset({"per_batch_stratified": True})
     trainer.args.sample_packing = True
 
     with pytest.raises(ValueError, match="per_batch_stratified: false"):
@@ -1471,7 +1159,6 @@ def test_trainer_rejects_packing_that_would_bypass_stratified_quotas():
 
 
 def test_decision_dataset_exposes_canvas_lengths_to_multipack():
-    from axolotl.integrations.diffusion_decision.datasets import DecisionDataset
     from axolotl.utils.samplers import get_dataset_lengths
 
     dataset = DecisionDataset(
@@ -1495,9 +1182,7 @@ def test_core_dataloader_removes_only_a_lengthless_decision_dataset_copy(
     dataset = DecisionDataset(
         [{"length": 5}, {"length": 7}], {"per_batch_stratified": False}
     )
-    trainer = _CoreDataLoaderHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    trainer = _CoreDataLoaderHarness(_spec())
     trainer.data_collator = lambda rows: rows
     trainer.eval_data_collator = trainer.data_collator
     trainer.args = SimpleNamespace(
@@ -1535,13 +1220,8 @@ def test_core_dataloader_removes_only_a_lengthless_decision_dataset_copy(
 def test_train_dataloader_accepts_typed_dataset_and_restores_even_batches(
     monkeypatch,
 ):
-    class _Dataset:
-        manifest = {"per_batch_stratified": True}
-
-    dataset = _Dataset()
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    dataset = _ManifestDataset({"per_batch_stratified": True})
+    trainer = _harness()
     trainer.accelerator = SimpleNamespace(even_batches=False)
     trainer.args.sample_packing = True
     trainer.args.dataloader_drop_last = None
@@ -1552,18 +1232,9 @@ def test_train_dataloader_accepts_typed_dataset_and_restores_even_batches(
         observed_packing.append(_self.args.sample_packing)
         return dataset
 
-    monkeypatch.setattr(
-        AxolotlDiffusionTrainer,
-        "_get_dataloader",
-        _base_loader,
-    )
+    monkeypatch.setattr(AxolotlDiffusionTrainer, "_get_dataloader", _base_loader)
 
-    result = trainer._get_dataloader(
-        dataset,
-        "training",
-        2,
-        is_training=True,
-    )
+    result = trainer._get_dataloader(dataset, "training", 2, is_training=True)
 
     assert result is dataset
     assert dataset.column_names == ()
@@ -1573,19 +1244,8 @@ def test_train_dataloader_accepts_typed_dataset_and_restores_even_batches(
 
 
 def test_eval_sample_packing_false_keeps_typed_eval_unpacked(monkeypatch):
-    class _Dataset:
-        manifest = {}
-
-        def __len__(self):
-            return 9
-
-        def __getitem__(self, index):
-            return index
-
-    dataset = _Dataset()
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    dataset = _ManifestDataset(size=9)
+    trainer = _harness()
     trainer.eval_dataset = dataset
     trainer.accelerator = SimpleNamespace(even_batches=True)
     trainer.args.sample_packing = True
@@ -1608,9 +1268,7 @@ def test_eval_sample_packing_false_keeps_typed_eval_unpacked(monkeypatch):
 
 
 def test_prediction_step_uses_typed_loss_without_retaining_full_logits():
-    trainer = _PredictionHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    trainer = _PredictionHarness(_spec())
     model = _TinyNativeModel()
 
     loss, logits, labels = trainer.prediction_step(
@@ -1626,9 +1284,7 @@ def test_prediction_step_uses_typed_loss_without_retaining_full_logits():
 
 
 def test_interval_metrics_are_source_weighted_and_cleared_after_logging(monkeypatch):
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    trainer = _harness()
     decision = trainer._decision_config()
     selected = torch.tensor(
         [
@@ -1663,12 +1319,11 @@ def test_interval_metrics_are_source_weighted_and_cleared_after_logging(monkeypa
         brier_weight=0.1,
     )
     captured: dict[str, float] = {}
-
-    def _base_log(_self, logs, start_time=None):
-        del _self, start_time
-        captured.update(logs)
-
-    monkeypatch.setattr(AxolotlDiffusionTrainer, "log", _base_log)
+    monkeypatch.setattr(
+        AxolotlDiffusionTrainer,
+        "log",
+        lambda _self, logs, start_time=None: captured.update(logs),
+    )
     trainer.log({"loss": 1.0})
 
     for name in (
@@ -1697,43 +1352,32 @@ def test_interval_metrics_are_source_weighted_and_cleared_after_logging(monkeypa
     assert not trainer._decision_metric_totals("train")
 
 
-def test_eval_metric_keys_are_prefixed_and_distributed_totals_merge(monkeypatch):
-    local = {
-        "decision/alpha": {
-            "loss": 2.0,
-            "restricted_loss": 1.0,
-            "full_vocab_loss": 1.0,
-            "brier_loss": 0.0,
-            "examples": 2.0,
-        }
+def _totals(loss, restricted, full_vocab, brier, examples) -> dict[str, float]:
+    return {
+        "loss": loss,
+        "restricted_loss": restricted,
+        "full_vocab_loss": full_vocab,
+        "brier_loss": brier,
+        "examples": examples,
     }
+
+
+def test_eval_metric_keys_are_prefixed_and_distributed_totals_merge(monkeypatch):
+    local = {"decision/alpha": _totals(2.0, 1.0, 1.0, 0.0, 2.0)}
 
     monkeypatch.setattr(torch.distributed, "is_available", lambda: True)
     monkeypatch.setattr(torch.distributed, "is_initialized", lambda: True)
     monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2)
 
     def _gather(output, value):
-        output[:] = [
-            value,
-            {
-                "decision/beta": {
-                    "loss": 3.0,
-                    "restricted_loss": 2.0,
-                    "full_vocab_loss": 1.0,
-                    "brier_loss": 0.5,
-                    "examples": 1.0,
-                }
-            },
-        ]
+        output[:] = [value, {"decision/beta": _totals(3.0, 2.0, 1.0, 0.5, 1.0)}]
 
     monkeypatch.setattr(torch.distributed, "all_gather_object", _gather)
     merged = _reduce_decision_metric_totals(local)
     assert merged["decision/alpha"]["examples"] == 2
     assert merged["decision/beta"]["brier_loss"] == 0.5
 
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    trainer = _harness()
     trainer._decision_metrics = {"train": {}, "eval": local}
     captured: dict[str, float] = {}
     monkeypatch.setattr(
@@ -1757,9 +1401,7 @@ def test_decision_objective_does_not_report_token_perplexity(monkeypatch):
         lambda _self, logs, start_time=None: forwarded.append(dict(logs)),
     )
 
-    decision = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    decision = _harness()
     decision._stored_metrics = {"train": {}, "eval": {}}
     decision.args.include_tkps = False
     AxolotlTrainer.log(decision, {"loss": 2.0, "eval_loss": 2.0})
@@ -1769,9 +1411,7 @@ def test_decision_objective_does_not_report_token_perplexity(monkeypatch):
 
 
 def test_get_batch_samples_counts_logical_examples_and_handles_last_short_window():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    trainer = _harness()
     batches, count = trainer.get_batch_samples(
         iter(
             (
@@ -1845,32 +1485,44 @@ def _loop_rows(count: int):
     return rows
 
 
-def _sampled_slot_rows(count: int) -> list[dict[str, object]]:
+def _sampled_rows(count: int, placement: str = "thought") -> list[dict[str, object]]:
+    prompt = placement == "prompt"
     plan = SlotPlan(
         ids=(7, 8, 9),
-        placement="thought",
-        pinned_mask=(True, True, True),
-        update_mask=(False, False, False),
-        loss_mask=(False, False, False),
-        trainable_token_ids=(),
+        placement=placement,
+        pinned_mask=(True,) * 3,
+        update_mask=(False,) * 3,
+        loss_mask=(False,) * 3,
+        trainable_token_ids=(7, 8, 9) if prompt else (),
     )
     rows: list[dict[str, object]] = []
     for index in range(count):
-        canvas = DecisionCanvas(
-            prompt_ids=(1, 2 + (index % 3)),
-            canvas_ids=(7, 8, 9, 4, 5, 6),
-            label_positions=(3, 4),
-            allowed_ids=((1, 2, 3), (2, 4, 6)),
-            question_ids=(f"sampled-{index}-a", f"sampled-{index}-b"),
-            targets=(
+        labels = {
+            "allowed_ids": ((1, 2, 3), (2, 4, 6)),
+            "targets": (
                 {"kind": "hard", "gold_idx": index % 3},
                 {"kind": "dist", "probs": (0.2, 0.3, 0.5)},
             ),
-            pinned_mask=(True, True, True, False, False, False),
-            semantic_mask=(True,) * 6,
-            slot_mask=(True, True, True, False, False, False),
-            template_length=6,
-        )
+        }
+        if prompt:
+            canvas = make_canvas(
+                (7, 8, 9, 1, 2 + (index % 3)),
+                (4, 5, 6, 0),
+                (1, 2),
+                f"prompt-{index}",
+                prompt_slot_mask=(True, True, True, False, False),
+                **labels,
+            )
+        else:
+            canvas = make_canvas(
+                (1, 2 + (index % 3)),
+                (7, 8, 9, 4, 5, 6),
+                (3, 4),
+                f"sampled-{index}",
+                pinned_mask=(True,) * 3 + (False,) * 3,
+                slot_mask=(True,) * 3 + (False,) * 3,
+                **labels,
+            )
         rows.append(
             {
                 "canvas": canvas,
@@ -1890,50 +1542,24 @@ def _sampled_slot_rows(count: int) -> list[dict[str, object]]:
     return rows
 
 
-def _sampled_prompt_slot_rows(count: int) -> list[dict[str, object]]:
-    plan = SlotPlan(
-        ids=(7, 8, 9),
-        placement="prompt",
-        pinned_mask=(True, True, True),
-        update_mask=(False, False, False),
-        loss_mask=(False, False, False),
-        trainable_token_ids=(7, 8, 9),
-    )
-    rows: list[dict[str, object]] = []
-    for index in range(count):
-        canvas = DecisionCanvas(
-            prompt_ids=(7, 8, 9, 1, 2 + (index % 3)),
-            canvas_ids=(4, 5, 6, 0),
-            label_positions=(1, 2),
-            allowed_ids=((1, 2, 3), (2, 4, 6)),
-            question_ids=(f"prompt-{index}-a", f"prompt-{index}-b"),
-            targets=(
-                {"kind": "hard", "gold_idx": index % 3},
-                {"kind": "dist", "probs": (0.2, 0.3, 0.5)},
-            ),
-            pinned_mask=(False,) * 4,
-            semantic_mask=(True,) * 4,
-            slot_mask=(False,) * 4,
-            template_length=4,
-            prompt_slot_mask=(True, True, True, False, False),
-        )
-        rows.append(
-            {
-                "canvas": canvas,
-                "slot_plan": plan,
-                "slot_sampling": {
-                    "seed": 29,
-                    "max_slots": 3,
-                    "pad_token_id": 0,
-                    "padding_pinned": True,
-                },
-                "decision_example": decision_example_from_canvas(
-                    canvas, source_weight=1.0 + (index % 2) / 2
-                ),
-                "source": "alpha" if index % 2 else "beta",
-            }
-        )
-    return rows
+def _loop_args(tmp_path, **overrides) -> AxolotlTrainingArguments:
+    values: dict[str, object] = {
+        "output_dir": str(tmp_path),
+        "per_device_train_batch_size": 2,
+        "gradient_accumulation_steps": 1,
+        "learning_rate": 0.05,
+        "max_steps": 1,
+        "lr_scheduler_type": "constant",
+        "report_to": [],
+        "disable_tqdm": True,
+        "remove_unused_columns": False,
+        "dataloader_drop_last": True,
+        "seed": 29,
+        "data_seed": 29,
+        "optim": "sgd",
+    }
+    values.update(overrides)
+    return AxolotlTrainingArguments(**values)
 
 
 def _sampled_loop_trainer(
@@ -1942,43 +1568,25 @@ def _sampled_loop_trainer(
     *,
     stratified: bool,
     mode: str = "pinned",
-    layout: DiffusionLayout = DiffusionLayout.FULL_SEQUENCE,
+    layout: DiffusionLayout = _FULL,
 ):
-    spec = trainer_spec(layout, LogitAlignment.ALIGNED)
-    args = AxolotlTrainingArguments(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=1,
-        learning_rate=0.05,
-        max_steps=1,
-        lr_scheduler_type="constant",
-        report_to=[],
-        disable_tqdm=True,
-        remove_unused_columns=False,
-        dataloader_drop_last=True,
-        seed=29,
-        data_seed=29,
-        optim="sgd",
-    )
+    spec = _spec(layout)
     trainer = _SampledLoopTrainer(
-        model=_LoopNativeModel(),
-        args=args,
+        model=_loop_model(),
+        args=_loop_args(tmp_path),
         train_dataset=dataset,
         eval_dataset=dataset,
         data_collator=DecisionTrainingCollator(spec),
         spec=spec,
     )
-    trainer.axolotl_cfg = {
+    cfg: dict[str, Any] = {
         "seed": 29,
         "diffusion_decision": {
             "read_fraction": 1.0,
-            "latent": {
-                "mode": mode,
-                "num_slots": 3,
-                "sample_num_slots": True,
-            },
+            "latent": {"mode": mode, "num_slots": 3, "sample_num_slots": True},
         },
     }
+    trainer.axolotl_cfg = cfg
     if stratified:
         dataset.manifest.update(
             {
@@ -1991,39 +1599,36 @@ def _sampled_loop_trainer(
     return trainer
 
 
+def _assert_slot_counts_match_masks(batch) -> None:
+    observed = torch.zeros_like(batch["decision_slot_counts"])
+    observed.scatter_add_(
+        0,
+        batch["document_ids"].reshape(-1),
+        batch["decision_slot_mask"].reshape(-1).long(),
+    )
+    assert torch.equal(observed, batch["decision_slot_counts"])
+
+
 @pytest.mark.parametrize("stratified", [False, True])
 def test_sampled_slots_survive_trainer_dataloader_and_drive_typed_loss(
     tmp_path, stratified
 ):
-    dataset = DecisionDataset(_sampled_slot_rows(12), {})
+    dataset = DecisionDataset(_sampled_rows(12), {})
     trainer = _sampled_loop_trainer(tmp_path, dataset, stratified=stratified)
 
-    loader = trainer.get_train_dataloader()
-    first_epoch = list(loader)
-    sampler = trainer._get_train_sampler()
-    epoch_zero = list(sampler)
-    sampler.set_epoch(1)
-    second_epoch = list(sampler)
+    first_epoch = list(trainer.get_train_dataloader())
+    epoch_zero, second_epoch = _epoch_lists(trainer._get_train_sampler())
+    assert epoch_zero != second_epoch
     draws = [draw for batch in first_epoch for draw in batch["decision_draws"]]
     counts = torch.cat([batch["decision_slot_counts"] for batch in first_epoch])
 
     assert all(isinstance(draw, DecisionDraw) for draw in draws)
     assert len({draw.global_draw_ordinal for draw in draws}) == len(draws)
     assert len(set(counts.tolist())) > 1
-    assert second_epoch != epoch_zero
     for batch in first_epoch:
-        slots = batch["decision_slot_mask"]
-        docs = batch["document_ids"]
-        observed = torch.zeros_like(batch["decision_slot_counts"])
-        observed.scatter_add_(0, docs.reshape(-1), slots.reshape(-1).long())
-        assert torch.equal(observed, batch["decision_slot_counts"])
-        assert not torch.any(slots & batch["canvas_loss_mask"])
-        loss = trainer.compute_loss(
-            trainer.model,
-            trainer._prepare_inputs(batch),
-            num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-        )
-        loss.backward()
+        _assert_slot_counts_match_masks(batch)
+        assert not torch.any(batch["decision_slot_mask"] & batch["canvas_loss_mask"])
+        _loop_loss(trainer, batch).backward()
         assert trainer.model.logit_bias.grad is not None
         assert torch.count_nonzero(trainer.model.logit_bias.grad)
         trainer.model.logit_bias.grad = None
@@ -2034,51 +1639,34 @@ def test_sampled_slots_survive_trainer_dataloader_and_drive_typed_loss(
 
 
 def test_sampled_slots_evaluation_uses_static_maximum_canvases(tmp_path):
-    dataset = DecisionDataset(_sampled_slot_rows(4), {})
+    dataset = DecisionDataset(_sampled_rows(4), {})
     trainer = _sampled_loop_trainer(tmp_path, dataset, stratified=False)
 
-    loader = trainer.get_eval_dataloader()
-    batch = next(iter(loader))
+    batch = next(iter(trainer.get_eval_dataloader()))
 
     assert batch["decision_draws"] == (None,) * len(dataset)
     assert batch["decision_slot_counts"].tolist() == [3] * len(dataset)
-    observed = torch.zeros_like(batch["decision_slot_counts"])
-    observed.scatter_add_(
-        0,
-        batch["document_ids"].reshape(-1),
-        batch["decision_slot_mask"].reshape(-1).long(),
-    )
-    assert torch.equal(batch["decision_slot_counts"], observed)
+    _assert_slot_counts_match_masks(batch)
     with pytest.raises(ValueError, match="training batches require DecisionDraw"):
-        trainer.compute_loss(
-            trainer.model,
-            trainer._prepare_inputs(batch),
-            num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-        )
+        _loop_loss(trainer, batch)
     trainer.model.eval()
-    loss = trainer.compute_loss(
-        trainer.model,
-        trainer._prepare_inputs(batch),
-        num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-    )
-    assert torch.isfinite(loss)
+    assert torch.isfinite(_loop_loss(trainer, batch))
 
 
-@pytest.mark.parametrize(
-    "layout", [DiffusionLayout.FULL_SEQUENCE, DiffusionLayout.ENCODER_CANVAS]
-)
+@_LAYOUTS
 def test_sampled_prompt_slots_validate_positions_and_train(tmp_path, layout):
-    dataset = DecisionDataset(_sampled_prompt_slot_rows(8), {})
+    dataset = DecisionDataset(_sampled_rows(8, "prompt"), {})
     trainer = _sampled_loop_trainer(
         tmp_path, dataset, stratified=False, mode="prompt", layout=layout
     )
     batch = next(iter(trainer.get_train_dataloader()))
     counts = batch["decision_slot_counts"]
     prompt_slots = batch["decision_prompt_slot_mask"]
-    if layout is DiffusionLayout.FULL_SEQUENCE:
+    if layout is _FULL:
         positions = batch["position_ids"]
         documents = batch["document_ids"]
         assert torch.equal(prompt_slots, positions < counts[documents])
+        assert torch.all(prompt_slots <= batch["canvas_input_pinned_mask"])
     else:
         logical = batch["diffusion_batch"]
         positions = torch.arange(prompt_slots.shape[1])[None]
@@ -2086,78 +1674,48 @@ def test_sampled_prompt_slots_validate_positions_and_train(tmp_path, layout):
             prompt_slots, logical.encoder_validity & (positions < counts[:, None])
         )
         assert not torch.any(prompt_slots & logical.encoder_ar_valid_mask)
-    assert not torch.any(batch["decision_slot_mask"])
-    if layout is DiffusionLayout.FULL_SEQUENCE:
-        assert torch.all(prompt_slots <= batch["canvas_input_pinned_mask"])
-    else:
         assert torch.all(prompt_slots <= batch["decision_prompt_input_pinned_mask"])
+    assert not torch.any(batch["decision_slot_mask"])
 
-    loss = trainer.compute_loss(
-        trainer.model,
-        trainer._prepare_inputs(batch),
-        num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-    )
-    loss.backward()
+    _loop_loss(trainer, batch).backward()
     assert trainer.model.logit_bias.grad is not None
     assert torch.count_nonzero(trainer.model.logit_bias.grad)
 
     malformed = dict(batch)
     malformed["decision_prompt_slot_mask"] = prompt_slots.roll(1, dims=1)
     with pytest.raises(RuntimeError, match="logical prompt prefix"):
-        trainer.compute_loss(
-            trainer.model,
-            trainer._prepare_inputs(malformed),
-            num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-        )
+        _loop_loss(trainer, malformed)
 
     missing = dict(batch)
     missing.pop("decision_prompt_slot_mask")
     with pytest.raises(ValueError, match="sampled prompt slots require"):
-        trainer.compute_loss(
-            trainer.model,
-            trainer._prepare_inputs(missing),
-            num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-        )
-    if layout is DiffusionLayout.ENCODER_CANVAS:
+        _loop_loss(trainer, missing)
+    if layout is _ENCODER:
         missing = dict(batch)
         missing.pop("decision_prompt_input_pinned_mask")
         with pytest.raises(ValueError, match="prompt pinned metadata"):
-            trainer.compute_loss(
-                trainer.model,
-                trainer._prepare_inputs(missing),
-                num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-            )
+            _loop_loss(trainer, missing)
 
 
 def test_sampled_slot_runtime_rejects_descriptor_mask_mismatch(tmp_path):
-    dataset = DecisionDataset(_sampled_slot_rows(4), {})
+    dataset = DecisionDataset(_sampled_rows(4), {})
     trainer = _sampled_loop_trainer(tmp_path, dataset, stratified=False)
     batch = next(iter(trainer.get_train_dataloader()))
     malformed = dict(batch)
     malformed["decision_slot_counts"] = batch["decision_slot_counts"] + 1
 
     with pytest.raises(RuntimeError, match="slot masks do not match descriptor counts"):
-        trainer.compute_loss(
-            trainer.model,
-            trainer._prepare_inputs(malformed),
-            num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-        )
+        _loop_loss(trainer, malformed)
 
     malformed = dict(batch)
     malformed["canvas_loss_mask"] = batch["decision_slot_mask"].clone()
     with pytest.raises(RuntimeError, match="cannot receive direct supervised loss"):
-        trainer.compute_loss(
-            trainer.model,
-            trainer._prepare_inputs(malformed),
-            num_items_in_batch=torch.tensor(len(batch["decision_examples"])),
-        )
+        _loop_loss(trainer, malformed)
 
 
 def test_sampled_slot_draws_are_resume_stable_through_dataloader_workers():
-    dataset = DecisionDataset(_sampled_slot_rows(12), {})
-    collator = DecisionTrainingCollator(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    )
+    dataset = DecisionDataset(_sampled_rows(12), {})
+    collator = DecisionTrainingCollator(_spec())
 
     def batches(epoch: int, workers: int):
         sampler = _DecisionDrawBatchSampler(
@@ -2235,29 +1793,23 @@ def _manual_typed_objective(bias: torch.Tensor, examples):
 
 
 def _run_actual_decision_loop(
-    tmp_path, *, microbatch_size, accumulation_steps, row_count=67, max_steps=2
+    tmp_path, *, microbatch_size, accumulation_steps, row_count, max_steps
 ):
+    torch.manual_seed(0)
     rows = _loop_rows(row_count)
-    spec = trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
-    model = _LoopNativeModel()
-    args = AxolotlTrainingArguments(
-        output_dir=str(tmp_path),
-        per_device_train_batch_size=microbatch_size,
-        gradient_accumulation_steps=accumulation_steps,
-        learning_rate=0.05,
-        max_steps=max_steps,
-        lr_scheduler_type="constant",
-        report_to=[],
-        disable_tqdm=True,
-        remove_unused_columns=False,
-        dataloader_drop_last=False,
-        seed=0,
-        data_seed=0,
-        optim="sgd",
-    )
+    spec = _spec()
+    model = _loop_model()
     trainer = _LoopTrainer(
         model=model,
-        args=args,
+        args=_loop_args(
+            tmp_path,
+            per_device_train_batch_size=microbatch_size,
+            gradient_accumulation_steps=accumulation_steps,
+            max_steps=max_steps,
+            dataloader_drop_last=False,
+            seed=0,
+            data_seed=0,
+        ),
         train_dataset=_LoopDataset(rows),
         data_collator=DecisionTrainingCollator(spec),
         spec=spec,
@@ -2268,122 +1820,79 @@ def _run_actual_decision_loop(
     return model, rows
 
 
-def test_actual_trainer_loop_matches_manual_typed_labels_under_gradient_accumulation(
-    tmp_path,
-):
-    """The Trainer loop uses logical examples across full and short windows."""
-    torch.manual_seed(0)
-    accumulated, rows = _run_actual_decision_loop(
-        tmp_path / "microbatch", microbatch_size=8, accumulation_steps=8
-    )
-    torch.manual_seed(0)
-    full, _ = _run_actual_decision_loop(
-        tmp_path / "full", microbatch_size=64, accumulation_steps=1
-    )
-
+def _manual_sgd(rows, window_sizes) -> torch.Tensor:
     expected = torch.linspace(-0.4, 0.6, 11).requires_grad_(True)
-    for window in (rows[:64], rows[64:]):
+    start = 0
+    for size in window_sizes:
+        window = rows[start : start + size]
+        start += size
         objective = _manual_typed_objective(
             expected, [row["decision_example"] for row in window]
         )
         (gradient,) = torch.autograd.grad(objective, expected)
         expected = (expected - 0.05 * gradient).detach().requires_grad_(True)
-
-    torch.testing.assert_close(
-        accumulated.logit_bias, expected.detach(), rtol=1e-5, atol=1e-6
-    )
-    torch.testing.assert_close(full.logit_bias, expected.detach(), rtol=1e-5, atol=1e-6)
-    torch.testing.assert_close(
-        accumulated.logit_bias, full.logit_bias, rtol=1e-5, atol=1e-6
-    )
-    assert len(accumulated.observed_input_ids) == 9
-    assert len(full.observed_input_ids) == 2
-    assert all(torch.any(ids.eq(10)) for ids in accumulated.observed_input_ids)
-    assert all(torch.any(ids.eq(10)) for ids in full.observed_input_ids)
+    return expected.detach()
 
 
-def test_actual_trainer_final_six_microbatch_window_matches_one_48_example_update(
-    tmp_path,
+@pytest.mark.parametrize(
+    ("row_count", "max_steps", "window_sizes", "forward_counts"),
+    [(67, 2, (64, 3), (9, 2)), (48, 1, (48,), (6, 1))],
+    ids=["full-then-short-window", "six-microbatch-terminal-window"],
+)
+def test_actual_trainer_loop_matches_manual_typed_labels_under_gradient_accumulation(
+    tmp_path, row_count, max_steps, window_sizes, forward_counts
 ):
-    """A six-microbatch terminal window is one 48-example mean, not a 64-example mean."""
-    torch.manual_seed(0)
+    """Each optimizer step is one mean over the logical examples in its window."""
     accumulated, rows = _run_actual_decision_loop(
-        tmp_path / "six-microbatches",
+        tmp_path / "microbatch",
         microbatch_size=8,
         accumulation_steps=8,
-        row_count=48,
-        max_steps=1,
+        row_count=row_count,
+        max_steps=max_steps,
     )
-    torch.manual_seed(0)
     full, _ = _run_actual_decision_loop(
-        tmp_path / "one-batch",
-        microbatch_size=48,
+        tmp_path / "full",
+        microbatch_size=window_sizes[0],
         accumulation_steps=1,
-        row_count=48,
-        max_steps=1,
+        row_count=row_count,
+        max_steps=max_steps,
     )
 
-    expected = torch.linspace(-0.4, 0.6, 11).requires_grad_(True)
-    objective = _manual_typed_objective(
-        expected, [row["decision_example"] for row in rows]
-    )
-    (gradient,) = torch.autograd.grad(objective, expected)
-    expected = (expected - 0.05 * gradient).detach()
+    expected = _manual_sgd(rows, window_sizes)
 
     torch.testing.assert_close(accumulated.logit_bias, expected, rtol=1e-5, atol=1e-6)
     torch.testing.assert_close(full.logit_bias, expected, rtol=1e-5, atol=1e-6)
     torch.testing.assert_close(
         accumulated.logit_bias, full.logit_bias, rtol=1e-5, atol=1e-6
     )
-    assert len(accumulated.observed_input_ids) == 6
-    assert len(full.observed_input_ids) == 1
+    assert len(accumulated.forward_states) == forward_counts[0]
+    assert len(full.forward_states) == forward_counts[1]
+    assert all(torch.any(ids.eq(10)) for ids in accumulated.forward_states)
+    assert all(torch.any(ids.eq(10)) for ids in full.forward_states)
 
 
 def test_unwired_decision_controls_fail_explicitly():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        {"latent": {"mode": "free", "num_slots": 1}},
-    )
+    trainer = _harness(_latent("free"))
 
     with pytest.raises((NotImplementedError, ValueError)):
         trainer._validate_decision_config(trainer._decision_config())
 
 
 def test_fractional_read_times_preserve_endpoint_rng_and_select_logical_examples():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        {"read_fraction": 0.4},
-    )
+    trainer = _harness({"read_fraction": 0.4})
     native = torch.full((5,), 0.5)
 
-    torch.manual_seed(19)
-    before = torch.get_rng_state()
-    zero = trainer._decision_times(
-        5,
-        torch.device("cpu"),
-        0.0,
-        trainer._decision_config().model_copy(update={"read_fraction": 0.0}),
-    )
-    assert torch.equal(torch.get_rng_state(), before)
-    torch.testing.assert_close(zero, native)
-
-    torch.manual_seed(19)
-    before = torch.get_rng_state()
-    one = trainer._decision_times(
-        5,
-        torch.device("cpu"),
-        0.0,
-        trainer._decision_config().model_copy(update={"read_fraction": 1.0}),
-    )
-    assert torch.equal(torch.get_rng_state(), before)
-    torch.testing.assert_close(one, torch.ones(5))
+    for read_fraction, expected in ((0.0, native), (1.0, torch.ones(5))):
+        torch.manual_seed(19)
+        before = torch.get_rng_state()
+        times = _times(trainer, 5, read_fraction)
+        assert torch.equal(torch.get_rng_state(), before)
+        torch.testing.assert_close(times, expected)
 
     torch.manual_seed(19)
     expected_reads = torch.rand(5) < 0.4
     torch.manual_seed(19)
-    fractional = trainer._decision_times(
-        5, torch.device("cpu"), 0.0, trainer._decision_config()
-    )
+    fractional = _times(trainer, 5)
     torch.testing.assert_close(
         fractional, torch.where(expected_reads, torch.ones(5), native)
     )
@@ -2391,42 +1900,25 @@ def test_fractional_read_times_preserve_endpoint_rng_and_select_logical_examples
 
 
 def test_fractional_read_times_preserve_native_sampler_rng_contract():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        native_values={"t_eps": 0.2},
-    )
+    trainer = _harness(native_values={"t_eps": 0.2})
     trainer._sample_native_times = AxolotlDiffusionTrainer._sample_native_times.__get__(
         trainer, type(trainer)
     )
-    count = 4
-    device = torch.device("cpu")
-    base = trainer._decision_config()
 
     torch.manual_seed(31)
-    expected_native = torch.rand(count) * 0.8 + 0.2
+    expected_native = torch.rand(4) * 0.8 + 0.2
     native_state = torch.get_rng_state()
-    torch.manual_seed(31)
-    one = trainer._decision_times(
-        count, device, 0.0, base.model_copy(update={"read_fraction": 1.0})
-    )
-    torch.testing.assert_close(one, torch.ones(count))
-    assert torch.equal(torch.get_rng_state(), native_state)
+    for read_fraction, expected in ((1.0, torch.ones(4)), (0.0, expected_native)):
+        torch.manual_seed(31)
+        torch.testing.assert_close(_times(trainer, 4, read_fraction), expected)
+        assert torch.equal(torch.get_rng_state(), native_state)
 
     torch.manual_seed(31)
-    zero = trainer._decision_times(
-        count, device, 0.0, base.model_copy(update={"read_fraction": 0.0})
-    )
-    torch.testing.assert_close(zero, expected_native)
-    assert torch.equal(torch.get_rng_state(), native_state)
-
-    torch.manual_seed(31)
-    expected_native = torch.rand(count) * 0.8 + 0.2
-    expected_reads = torch.rand(count) < 0.5
+    expected_native = torch.rand(4) * 0.8 + 0.2
+    expected_reads = torch.rand(4) < 0.5
     expected_state = torch.get_rng_state()
     torch.manual_seed(31)
-    fractional = trainer._decision_times(
-        count, device, 0.0, base.model_copy(update={"read_fraction": 0.5})
-    )
+    fractional = _times(trainer, 4, 0.5)
     torch.testing.assert_close(
         fractional,
         torch.where(expected_reads, torch.ones_like(expected_native), expected_native),
@@ -2434,57 +1926,44 @@ def test_fractional_read_times_preserve_native_sampler_rng_contract():
     assert torch.equal(torch.get_rng_state(), expected_state)
 
 
-@pytest.mark.parametrize("mode", ["pad", "pinned", "learned", "prompt", "mask"])
-def test_fixed_decision_slots_are_supported_for_one_step(mode):
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        {"latent": {"mode": mode, "num_slots": 1}},
-    )
+@pytest.mark.parametrize(
+    ("mode", "k_max"),
+    [
+        ("pad", 1),
+        ("pinned", 1),
+        ("learned", 1),
+        ("prompt", 1),
+        ("mask", 1),
+        ("pinned", 2),
+    ],
+    ids=["pad", "pinned", "learned", "prompt", "mask", "pinned-multistep"],
+)
+def test_fixed_decision_slots_are_supported(mode, k_max):
+    trainer = _harness(_latent(mode))
 
     trainer._validate_decision_config(
-        trainer._decision_config(), k_max=1, spec=trainer._native_spec
+        trainer._decision_config(), k_max=k_max, spec=trainer._native_spec
     )
 
 
-def test_fixed_decision_slots_support_multistep_unroll():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        {"latent": {"mode": "pinned", "num_slots": 1}},
-    )
+@pytest.mark.parametrize(
+    ("harness_kwargs", "match"),
+    [
+        ({"grad_through_steps": True}, "grad-through-steps"),
+        ({"spec": replace(_spec(), self_conditioning=True)}, "self-conditioning"),
+    ],
+    ids=["grad-through-steps", "self-conditioning"],
+)
+def test_decision_multistep_rejects_unsupported_native_settings(harness_kwargs, match):
+    spec = harness_kwargs.pop("spec", _spec())
+    trainer = MultistepTrainerHarness(spec, k_max=2, sampled_steps=2, **harness_kwargs)
 
-    trainer._validate_decision_config(
-        trainer._decision_config(), k_max=2, spec=trainer._native_spec
-    )
-
-
-def test_decision_multistep_rejects_grad_through_steps():
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=2,
-        sampled_steps=2,
-        grad_through_steps=True,
-    )
-
-    with pytest.raises(NotImplementedError, match="grad-through-steps"):
-        trainer.compute_loss(_TinyNativeModel(), _full_sequence_multistep_inputs())
-
-
-def test_full_sequence_multistep_rejects_unsupported_self_conditioning():
-    spec = replace(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        self_conditioning=True,
-    )
-    trainer = MultistepTrainerHarness(spec, k_max=2, sampled_steps=2)
-
-    with pytest.raises(NotImplementedError, match="self-conditioning"):
+    with pytest.raises(NotImplementedError, match=match):
         trainer.compute_loss(_TinyNativeModel(), _full_sequence_multistep_inputs())
 
 
 def test_mask_decision_slots_require_absorbing_diffusion():
-    trainer = TrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        {"latent": {"mode": "mask", "num_slots": 1}},
-    )
+    trainer = _harness(_latent("mask"))
     uniform_spec = replace(
         trainer._native_spec,
         noise=DiffusionNoise.UNIFORM,
@@ -2497,51 +1976,18 @@ def test_mask_decision_slots_require_absorbing_diffusion():
         )
 
 
-@pytest.mark.parametrize(
-    "layout", [DiffusionLayout.FULL_SEQUENCE, DiffusionLayout.ENCODER_CANVAS]
-)
+@_LAYOUTS
 def test_fractional_reads_change_actual_forward_inputs_per_logical_example(
     monkeypatch, layout
 ):
-    trainer = TrainerHarness(
-        trainer_spec(layout, LogitAlignment.ALIGNED), {"read_fraction": 0.5}
-    )
-    model = _TraceNativeModel()
-    calls = 0
-
-    def controlled_rand(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        shape = args[0] if args else kwargs["size"]
-        if calls == 1:
-            return torch.tensor([0.1, 0.9], device=kwargs.get("device"))
-        size = (shape,) if isinstance(shape, int) else shape
-        return torch.full(size, 0.75, device=kwargs.get("device"))
-
-    monkeypatch.setattr(torch, "rand", controlled_rand)
-    monkeypatch.setattr(
-        torch,
-        "randint",
-        lambda low, high, size, **kwargs: torch.zeros(
-            size, dtype=kwargs.get("dtype", torch.long), device=kwargs.get("device")
-        ),
-    )
-    if layout is DiffusionLayout.FULL_SEQUENCE:
-        inputs = {
-            "input_ids": torch.tensor([[1, 4, 5, 2, 6, 7]]),
-            "document_ids": torch.tensor([[0, 0, 0, 1, 1, 1]]),
-            "semantic_validity": torch.ones((1, 6), dtype=torch.bool),
-            "canvas_corruptible_mask": torch.tensor(
-                [[False, True, False, False, False, True]]
-            ),
-            "canvas_input_pinned_mask": torch.zeros((1, 6), dtype=torch.bool),
-            "canvas_update_mask": torch.zeros((1, 6), dtype=torch.bool),
-            "decision_examples": (_example(2),),
-            "decision_question_mask": torch.tensor([[True, True]]),
-            "decision_supervision_mask": torch.tensor([[True, True]]),
-            "decision_label_rows": torch.tensor([[0, 0]]),
-            "decision_label_positions": torch.tensor([[1, 5]]),
-        }
+    trainer = _harness({"read_fraction": 0.5}, layout=layout)
+    model = _TinyNativeModel()
+    _patch_reads(monkeypatch, randint=True)
+    if layout is _FULL:
+        inputs = _full_sequence_inputs(
+            canvas_update_mask=torch.zeros((1, 6), dtype=torch.bool)
+        )
+        inputs.pop("position_ids")
         trainer._full_sequence_logits(
             model, inputs, trainer._native_spec, trainer._decision_config()
         )
@@ -2549,11 +1995,9 @@ def test_fractional_reads_change_actual_forward_inputs_per_logical_example(
         assert state[0, 1].item() == 10
         assert state[0, 5].item() == 7
     else:
-        inputs = DecisionTrainingCollator(trainer._native_spec)(
-            [
-                {"canvas": make_canvas((1,), (4, 5, 6), (0,), "first"), "source": "a"},
-                {"canvas": make_canvas((2,), (7, 8, 9), (0,), "second"), "source": "b"},
-            ]
+        inputs = _collate(
+            make_canvas((1,), (4, 5, 6), (0,), "first"),
+            make_canvas((2,), (7, 8, 9), (0,), "second"),
         )
         trainer._encoder_canvas_logits(
             model, inputs, trainer._native_spec, trainer._decision_config()
@@ -2567,31 +2011,10 @@ def test_fractional_reads_change_actual_forward_inputs_per_logical_example(
 def test_fractional_reads_hold_actual_label_states_across_full_sequence_unroll(
     monkeypatch, steps
 ):
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=steps,
-        decision={"read_fraction": 0.5, "latent": {"mode": "pinned", "num_slots": 1}},
-    )
-    calls = 0
-
-    def controlled_rand(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        shape = args[0] if args else kwargs["size"]
-        if calls == 1:
-            return torch.tensor([0.1, 0.9], device=kwargs.get("device"))
-        return torch.full(
-            (shape,) if isinstance(shape, int) else shape,
-            0.75,
-            device=kwargs.get("device"),
-        )
-
-    monkeypatch.setattr(torch, "rand", controlled_rand)
-    model = _TraceNativeModel()
-    inputs = _full_sequence_multistep_inputs()
-    inputs["canvas_input_pinned_mask"] = torch.zeros((1, 6), dtype=torch.bool)
-    loss, _ = trainer.compute_loss(model, inputs, return_outputs=True)
+    trainer = _multistep(steps, decision={"read_fraction": 0.5, **_latent("pinned")})
+    _patch_reads(monkeypatch)
+    model = _TinyNativeModel()
+    loss, _ = trainer.compute_loss(model, _full_sequence_inputs(), return_outputs=True)
     expected = torch.tensor([[1, 10, 5, 2, 6, 7]])
     assert len(model.forward_states) == steps
     assert all(torch.equal(state, expected) for state in model.forward_states)
@@ -2610,58 +2033,21 @@ def test_fractional_reads_hold_actual_label_states_across_full_sequence_unroll(
 def test_fractional_reads_hold_encoder_canvas_labels_and_supervise_only_labels(
     monkeypatch, steps
 ):
-    import axolotl.model_support.diffusion_gemma.modeling as gemma_modeling
-
-    trainer = MultistepTrainerHarness(
-        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
-        k_max=3,
-        sampled_steps=steps,
-        decision={"read_fraction": 0.5},
-    )
+    trainer = _multistep(steps, layout=_ENCODER, decision={"read_fraction": 0.5})
     model = gemma_modeling.AxolotlDiffusionGemmaForBlockDiffusion(
         tiny_gemma_config()
     ).train()
-    observed = []
-    original_decode = gemma_modeling.decode_packed_canvas
-
-    def traced_decode(model, decoder_input_ids, *args, **kwargs):
-        observed.append((decoder_input_ids.detach().clone(), torch.is_grad_enabled()))
-        return original_decode(model, decoder_input_ids, *args, **kwargs)
-
-    monkeypatch.setattr(gemma_modeling, "decode_packed_canvas", traced_decode)
-    calls = 0
-
-    def controlled_rand(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        shape = args[0] if args else kwargs["size"]
-        if calls == 1:
-            return torch.tensor([0.1, 0.9], device=kwargs.get("device"))
-        return torch.full(
-            (shape,) if isinstance(shape, int) else shape,
-            0.75,
-            device=kwargs.get("device"),
-        )
-
-    monkeypatch.setattr(torch, "rand", controlled_rand)
-    monkeypatch.setattr(
-        torch,
-        "randint",
-        lambda low, high, size, **kwargs: torch.zeros(
-            size, dtype=kwargs.get("dtype", torch.long), device=kwargs.get("device")
-        ),
-    )
-    inputs = DecisionTrainingCollator(trainer._native_spec)(
-        [
-            {"canvas": make_canvas((1,), (4, 5, 6), (0,), "first"), "source": "a"},
-            {"canvas": make_canvas((2,), (7, 8, 9), (0,), "second"), "source": "b"},
-        ]
+    observed = _trace_gemma_decode(monkeypatch)
+    _patch_reads(monkeypatch, randint=True)
+    inputs = _collate(
+        make_canvas((1,), (4, 5, 6), (0,), "first"),
+        make_canvas((2,), (7, 8, 9), (0,), "second"),
     )
     loss, outputs = trainer.compute_loss(model, inputs, return_outputs=True)
     assert len(observed) == steps
     expected = torch.tensor([[0, 5, 6, 7, 8, 9]])
-    assert all(torch.equal(state, expected) for state, _ in observed)
-    assert [enabled for _, enabled in observed] == [False] * (steps - 1) + [True]
+    assert all(torch.equal(d.state, expected) for d in observed)
+    assert [d.grad_enabled for d in observed] == _final_only(steps)
     outputs.logits.retain_grad()
     loss.backward()
     grad = outputs.logits.grad
@@ -2714,11 +2100,7 @@ def test_decision_cce_final_read_matches_dense_loss_and_gradients(
     monkeypatch.setattr(cce, "linear_token_loss", reference_loss)
     losses, trainers = [], []
     for enabled, model in ((False, dense_model), (True, cce_model)):
-        trainer = MultistepTrainerHarness(
-            trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
-            k_max=steps,
-            sampled_steps=steps,
-        )
+        trainer = _multistep(steps, k_max=steps)
         trainer.axolotl_cfg = SimpleNamespace(
             diffusion_decision={}, cut_cross_entropy=enabled
         )

@@ -26,9 +26,20 @@ from axolotl.integrations.diffusion_decision.slot_sampling import (
 from axolotl.integrations.diffusion_decision.slots import SlotPlan
 from axolotl.model_support import DiffusionLayout
 
-from tests.integrations.diffusion_decision.helpers import (
-    make_record,
+from tests.integrations.diffusion_decision.helpers import make_canvas, make_record
+
+PREMIXED = {"premixed": True, "per_batch_stratified": False}
+DEFAULT_MIXTURE = {
+    "weights": {"alpha": 0.8, "beta": 0.2},
+    "max_examples_per_source": {"alpha": 2, "beta": 2},
+    "per_batch_stratified": True,
+}
+SPEC = SimpleNamespace(
+    max_canvas=128,
+    noise=datasets.DiffusionNoise.UNIFORM,
+    layout=DiffusionLayout.FULL_SEQUENCE,
 )
+IDENTITY = {"identity": 1}
 
 
 def _record(source: str, group: str, state: str, identifier: str) -> dict[str, Any]:
@@ -37,7 +48,33 @@ def _record(source: str, group: str, state: str, identifier: str) -> dict[str, A
     )
 
 
-def _cfg(*entries: dict[str, Any], test_datasets=()) -> dict[str, Any]:
+def _premixed(draw_id: str, state: str = "state", **fields: Any) -> dict[str, Any]:
+    record = _record("alpha", "same", state, "origin")
+    record["source_metadata"] = {
+        "premix": {
+            "draw_id": draw_id,
+            "origin": {"source": "alpha", "id": "origin", "group": "same"},
+        }
+    }
+    record.update(fields)
+    return record
+
+
+def _entry(path: str, split: str | None = None, **fields: Any) -> dict[str, Any]:
+    entry = {"path": path, "type": "diffusion_decision.jsonl", **fields}
+    if split is not None:
+        entry["split"] = split
+    return entry
+
+
+DEV_ENTRY = _entry("dev", "validation")
+
+
+def _cfg(
+    *entries: dict[str, Any],
+    test_datasets: tuple[dict[str, Any], ...] = (),
+    mixture: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "seed": 13,
         "micro_batch_size": 2,
@@ -45,30 +82,18 @@ def _cfg(*entries: dict[str, Any], test_datasets=()) -> dict[str, Any]:
         "test_datasets": list(test_datasets),
         "diffusion_decision": {
             "labels": {},
-            "mixture": {
-                "weights": {"alpha": 0.8, "beta": 0.2},
-                "max_examples_per_source": {"alpha": 2, "beta": 2},
-                "per_batch_stratified": True,
-            },
+            "mixture": DEFAULT_MIXTURE if mixture is None else mixture,
         },
     }
 
 
-def _patch_loader(monkeypatch, rows_by_path: dict[str, list[dict[str, str]]]) -> None:
+def _patch_loader(monkeypatch, rows_by_path: dict[str, list[dict[str, Any]]]) -> None:
     monkeypatch.setattr(datasets, "_rows", lambda entry: rows_by_path[entry["path"]])
     monkeypatch.setattr(
         datasets, "normalize_record", lambda _adapter, row, **_kwargs: dict(row)
     )
     monkeypatch.setattr(datasets, "load_tokenizer", lambda _cfg: range(131072))
-    monkeypatch.setattr(
-        datasets,
-        "require_diffusion_spec",
-        lambda _cfg: SimpleNamespace(
-            max_canvas=128,
-            noise=datasets.DiffusionNoise.UNIFORM,
-            layout=DiffusionLayout.FULL_SEQUENCE,
-        ),
-    )
+    monkeypatch.setattr(datasets, "require_diffusion_spec", lambda _cfg: SPEC)
     monkeypatch.setattr(
         datasets,
         "_canvas_row",
@@ -81,43 +106,81 @@ def _patch_loader(monkeypatch, rows_by_path: dict[str, list[dict[str, str]]]) ->
     )
 
 
-def test_loader_protects_official_test_calibration_and_ood(monkeypatch):
-    train = [
-        _record("alpha", "keep", "train-keep", "a0"),
-        _record("alpha", "state-overlap", "shared", "a1"),
-        _record("beta", "family-overlap", "train-family", "b0"),
-        _record("beta", "keep-b", "train-b", "b1"),
-    ]
-    calibration = [_record("alpha", "cal", "shared", "c0")]
-    ood = [_record("beta", "family-overlap", "ood-state", "o0")]
-    heldout = [_record("alpha", "heldout", "heldout-state", "h0")]
-    dev = [_record("gamma", "dev", "dev-state", "d0")]
+def _unit_canvas(**fields: Any) -> DecisionCanvas:
+    values: dict[str, Any] = {
+        "prompt_ids": (1,),
+        "canvas_ids": (2,),
+        "label_positions": (0,),
+        "allowed": (3,),
+        "question_ids": ("q",),
+    }
+    return make_canvas(**{**values, **fields})
+
+
+def _cache_row(identifier: str = "x") -> dict[str, Any]:
+    return {"canvas": _unit_canvas(), "record": {"id": identifier}, "source": "x"}
+
+
+class FakeTokenizer(SimpleNamespace):
+    backend_tokenizer = SimpleNamespace(to_str=lambda: "backend")
+    pad_token_id = bos_token_id = eos_token_id = unk_token_id = mask_token_id = 0
+    vocab: dict[str, int] = {"x": 0}
+
+    def __len__(self) -> int:
+        return getattr(self, "vocab_size", len(self.vocab))
+
+    def get_vocab(self) -> dict[str, int]:
+        return self.vocab
+
+
+@pytest.fixture
+def tokenizer_root(tmp_path):
+    root = tmp_path / "tokenizer"
+    root.mkdir()
+    (root / "tokenizer.json").write_text("tokenizer")
+    return root
+
+
+@pytest.fixture
+def empty_source(tmp_path):
+    source = tmp_path / "source.jsonl"
+    source.write_text("{}\n")
+    return source
+
+
+@pytest.fixture
+def two_source_cfg(monkeypatch):
     _patch_loader(
         monkeypatch,
         {
-            "train": train,
-            "cal": calibration,
-            "ood": ood,
-            "heldout": heldout,
-            "dev": dev,
+            "train": [_record("alpha", "a", "a", "a"), _record("beta", "b", "b", "b")],
+            "dev": [_record("gamma", "g", "g", "g")],
+        },
+    )
+    return _cfg(_entry("train"), test_datasets=(_entry("dev", "dev"),))
+
+
+def test_loader_protects_official_test_calibration_and_ood(monkeypatch):
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [
+                _record("alpha", "keep", "train-keep", "a0"),
+                _record("alpha", "state-overlap", "shared", "a1"),
+                _record("beta", "family-overlap", "train-family", "b0"),
+                _record("beta", "keep-b", "train-b", "b1"),
+            ],
+            "cal": [_record("alpha", "cal", "shared", "c0")],
+            "ood": [_record("beta", "family-overlap", "ood-state", "o0")],
+            "heldout": [_record("alpha", "heldout", "heldout-state", "h0")],
+            "dev": [_record("gamma", "dev", "dev-state", "d0")],
         },
     )
     cfg = _cfg(
-        {"path": "train", "type": "diffusion_decision.jsonl", "split": "train"},
-        {"path": "cal", "type": "diffusion_decision.jsonl", "split": "calibration"},
-        {"path": "ood", "type": "diffusion_decision.jsonl", "split": "ood"},
-        test_datasets=(
-            {
-                "path": "dev",
-                "type": "diffusion_decision.jsonl",
-                "split": "validation",
-            },
-            {
-                "path": "heldout",
-                "type": "diffusion_decision.jsonl",
-                "split": "test",
-            },
-        ),
+        _entry("train", "train"),
+        _entry("cal", "calibration"),
+        _entry("ood", "ood"),
+        test_datasets=(DEV_ENTRY, _entry("heldout", "test")),
     )
 
     result = datasets.load_decision_datasets(cfg)
@@ -133,28 +196,14 @@ def test_loader_protects_official_test_calibration_and_ood(monkeypatch):
 
 def test_loader_realizes_each_capped_record_once_in_stratified_batches(monkeypatch):
     records = [
-        *[
-            _record("alpha", f"a{index}", f"sa{index}", f"a{index}")
-            for index in range(3)
-        ],
-        *[
-            _record("beta", f"b{index}", f"sb{index}", f"b{index}")
-            for index in range(3)
-        ],
+        _record(source, f"{tag}{index}", f"s{tag}{index}", f"{tag}{index}")
+        for source, tag in (("alpha", "a"), ("beta", "b"))
+        for index in range(3)
     ]
     _patch_loader(
         monkeypatch, {"train": records, "dev": [_record("gamma", "g", "sg", "g")]}
     )
-    cfg = _cfg(
-        {"path": "train", "type": "diffusion_decision.jsonl", "split": "train"},
-        test_datasets=(
-            {
-                "path": "dev",
-                "type": "diffusion_decision.jsonl",
-                "split": "validation",
-            },
-        ),
-    )
+    cfg = _cfg(_entry("train", "train"), test_datasets=(DEV_ENTRY,))
 
     result = datasets.load_decision_datasets(cfg)
     retained = [row["record"] for row in result.train_dataset]
@@ -175,36 +224,14 @@ def test_loader_realizes_each_capped_record_once_in_stratified_batches(monkeypat
 def test_loader_preserves_premixed_draw_multiplicity_without_mixture_expansion(
     monkeypatch,
 ):
-    copied = _record("alpha", "same", "state", "origin")
-    copied["source_metadata"] = {
-        "premix": {
-            "draw_id": "draw-1",
-            "origin": {"source": "alpha", "id": "origin", "group": "same"},
-        }
-    }
-    repeated = dict(copied)
-    repeated["source_metadata"] = {
-        "premix": {
-            "draw_id": "draw-2",
-            "origin": {"source": "alpha", "id": "origin", "group": "same"},
-        }
-    }
-    dev = _record("gamma", "dev", "dev-state", "dev")
-    _patch_loader(monkeypatch, {"train": [copied, repeated], "dev": [dev]})
-    cfg = _cfg(
-        {"path": "train", "type": "diffusion_decision.jsonl", "split": "train"},
-        test_datasets=(
-            {
-                "path": "dev",
-                "type": "diffusion_decision.jsonl",
-                "split": "validation",
-            },
-        ),
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [_premixed("draw-1"), _premixed("draw-2")],
+            "dev": [_record("gamma", "dev", "dev-state", "dev")],
+        },
     )
-    cfg["diffusion_decision"]["mixture"] = {
-        "premixed": True,
-        "per_batch_stratified": False,
-    }
+    cfg = _cfg(_entry("train", "train"), test_datasets=(DEV_ENTRY,), mixture=PREMIXED)
 
     result = datasets.load_decision_datasets(cfg)
 
@@ -239,85 +266,47 @@ def test_premixed_mixture_accepts_unweighted_unstratified_rows():
     assert DecisionMixtureConfig(premixed=True, per_batch_stratified=False).premixed
 
 
-def test_premixed_rejects_changed_content_for_one_origin(monkeypatch):
-    first = _record("alpha", "same", "state", "origin")
-    second = _record("alpha", "same", "state", "origin")
-    for draw_id, record in (("draw-1", first), ("draw-2", second)):
-        record["source_metadata"] = {
-            "premix": {
-                "draw_id": draw_id,
-                "origin": {"source": "alpha", "id": "origin", "group": "same"},
-            }
-        }
-    second["labels"] = {"q": {"kind": "hard", "gold_idx": 1}}
-    _patch_loader(monkeypatch, {"train": [first, second]})
-    cfg = _cfg({"path": "train", "type": "diffusion_decision.jsonl", "split": "train"})
-    cfg["diffusion_decision"]["mixture"] = {
-        "premixed": True,
-        "per_batch_stratified": False,
-    }
-
-    with pytest.raises(ValueError, match="identical content"):
-        datasets.load_decision_datasets(cfg)
-
-
-def test_premixed_rejects_duplicate_draw_id(monkeypatch):
-    first = _record("alpha", "same", "state", "origin")
-    second = _record("alpha", "same", "state", "origin")
-    for record in (first, second):
-        record["source_metadata"] = {
-            "premix": {
-                "draw_id": "draw-1",
-                "origin": {"source": "alpha", "id": "origin", "group": "same"},
-            }
-        }
-    _patch_loader(monkeypatch, {"train": [first, second]})
-    cfg = _cfg({"path": "train", "type": "diffusion_decision.jsonl", "split": "train"})
-    cfg["diffusion_decision"]["mixture"] = {
-        "premixed": True,
-        "per_batch_stratified": False,
-    }
-
-    with pytest.raises(ValueError, match="draw_id is duplicated"):
-        datasets.load_decision_datasets(cfg)
-
-
-def test_premixed_rejects_decontamination_drop(monkeypatch):
-    train = _record("alpha", "same", "shared", "origin")
-    train["source_metadata"] = {
-        "premix": {
-            "draw_id": "draw-1",
-            "origin": {"source": "alpha", "id": "origin", "group": "same"},
-        }
-    }
-    dev = _record("gamma", "dev", "shared", "dev")
-    _patch_loader(monkeypatch, {"train": [train], "dev": [dev]})
-    cfg = _cfg(
-        {"path": "train", "type": "diffusion_decision.jsonl", "split": "train"},
-        test_datasets=(
-            {
-                "path": "dev",
-                "type": "diffusion_decision.jsonl",
-                "split": "validation",
-            },
+@pytest.mark.parametrize(
+    ("train", "dev", "match"),
+    [
+        pytest.param(
+            [
+                _premixed("draw-1"),
+                _premixed("draw-2", labels={"q": {"kind": "hard", "gold_idx": 1}}),
+            ],
+            None,
+            "identical content",
+            id="changed-content-for-one-origin",
         ),
+        pytest.param(
+            [_premixed("draw-1"), _premixed("draw-1")],
+            None,
+            "draw_id is duplicated",
+            id="duplicate-draw-id",
+        ),
+        pytest.param(
+            [_premixed("draw-1", state="shared")],
+            [_record("gamma", "dev", "shared", "dev")],
+            "overlap an evaluation split",
+            id="decontamination-drop",
+        ),
+    ],
+)
+def test_premixed_rejects_invalid_draws(monkeypatch, train, dev, match):
+    _patch_loader(monkeypatch, {"train": train, "dev": dev or []})
+    cfg = _cfg(
+        _entry("train", "train"),
+        test_datasets=(DEV_ENTRY,) if dev else (),
+        mixture=PREMIXED,
     )
-    cfg["diffusion_decision"]["mixture"] = {
-        "premixed": True,
-        "per_batch_stratified": False,
-    }
 
-    with pytest.raises(ValueError, match="overlap an evaluation split"):
+    with pytest.raises(ValueError, match=match):
         datasets.load_decision_datasets(cfg)
 
 
 def test_premixed_toggle_changes_preparation_audit_config():
-    regular = _cfg({"path": "train", "type": "diffusion_decision.jsonl"})
-    premixed = _cfg({"path": "train", "type": "diffusion_decision.jsonl"})
-    premixed["diffusion_decision"]["mixture"] = {
-        "premixed": True,
-        "per_batch_stratified": False,
-    }
+    regular = _cfg(_entry("train"))
+    premixed = _cfg(_entry("train"), mixture=PREMIXED)
 
     assert (
         build_preparation_audit(regular, [], [], {})["config"]
@@ -343,10 +332,10 @@ def test_family_split_and_protected_split_names():
 
 
 def test_local_jsonl_preserves_heterogeneous_nested_records_and_glob_order(tmp_path):
-    first = tmp_path / "01.jsonl"
-    second = tmp_path / "02.jsonl"
-    first.write_text('{"state":{"scenario":"one","items":[1]},"options":["a"]}\n')
-    second.write_text(
+    (tmp_path / "01.jsonl").write_text(
+        '{"state":{"scenario":"one","items":[1]},"options":["a"]}\n'
+    )
+    (tmp_path / "02.jsonl").write_text(
         '{"state":{"scenario":"two","items":[{"x":2}]},"options":{"yes":1}}\n'
     )
 
@@ -430,11 +419,7 @@ def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
     ]
     monkeypatch.setattr(datasets, "_canvas_row", canvas_row)
     monkeypatch.setattr(datasets, "ThreadPoolExecutor", InlineExecutor)
-    monkeypatch.setattr(
-        datasets,
-        "_resolve_slot_plan",
-        lambda *_args: (None, (), ()),
-    )
+    monkeypatch.setattr(datasets, "_resolve_slot_plan", lambda *_args: (None, (), ()))
     spec = SimpleNamespace(max_canvas=None)
     serial, serial_drops = datasets._canvas_rows(
         range(100), records, {"dataset_num_proc": 1}, {"alpha": 2.0}, spec
@@ -447,15 +432,9 @@ def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
     assert parallel_drops == serial_drops == 1
 
 
-def test_budget_filter_precedes_source_probabilities_and_sampling(monkeypatch):
-    _patch_loader(
-        monkeypatch,
-        {
-            "train": [_record("alpha", "a", "a", "a"), _record("beta", "b", "b", "b")],
-            "dev": [_record("gamma", "g", "g", "g")],
-        },
-    )
-
+def test_budget_filter_precedes_source_probabilities_and_sampling(
+    monkeypatch, two_source_cfg
+):
     def canvas_row(_tokenizer, row, _cfg, source_weight, **kwargs):
         return {
             "canvas": SimpleNamespace(
@@ -467,14 +446,8 @@ def test_budget_filter_precedes_source_probabilities_and_sampling(monkeypatch):
         }
 
     monkeypatch.setattr(datasets, "_canvas_row", canvas_row)
-    cfg = _cfg(
-        {"path": "train", "type": "diffusion_decision.jsonl"},
-        test_datasets=(
-            {"path": "dev", "type": "diffusion_decision.jsonl", "split": "dev"},
-        ),
-    )
-    cfg["sequence_len"] = 150
-    result = datasets.load_decision_datasets(cfg)
+    two_source_cfg["sequence_len"] = 150
+    result = datasets.load_decision_datasets(two_source_cfg)
     manifest = result.train_dataset.manifest
     assert manifest["budget_drops"]["train"] == {"logical": 1, "physical": 0}
     assert manifest["mixture_probabilities"] == {"beta": 1.0}
@@ -500,68 +473,41 @@ def test_budget_filter_uses_resolved_payload_capacity(monkeypatch):
         "micro_batch_size": 1,
         "diffusion_lm": {},
     }
-    rows, drops = datasets._filter_budget_rows(
-        [row], cfg, SimpleNamespace(layout=DiffusionLayout.FULL_SEQUENCE)
-    )
+    rows, drops = datasets._filter_budget_rows([row], cfg, SPEC)
     assert not rows
     assert drops == {"logical": 0, "physical": 1}
     assert calls == [True]
 
 
-def test_loader_reuses_supplied_tokenizer(monkeypatch):
-    _patch_loader(
-        monkeypatch,
-        {
-            "train": [_record("alpha", "a", "a", "a"), _record("beta", "b", "b", "b")],
-            "dev": [_record("gamma", "g", "g", "g")],
-        },
-    )
-
+def test_loader_reuses_supplied_tokenizer(monkeypatch, two_source_cfg):
     def unexpected(_cfg):
         raise AssertionError("must reuse the supplied tokenizer")
 
     monkeypatch.setattr(datasets, "load_tokenizer", unexpected)
-    cfg = _cfg(
-        {"path": "train", "type": "diffusion_decision.jsonl"},
-        test_datasets=(
-            {"path": "dev", "type": "diffusion_decision.jsonl", "split": "dev"},
-        ),
-    )
-    result = datasets.load_decision_datasets(cfg, tokenizer=range(131072))
+    result = datasets.load_decision_datasets(two_source_cfg, tokenizer=range(131072))
     assert len(result.train_dataset) > 0
 
 
-def test_local_prepared_cache_reuses_typed_rows_in_exact_order(tmp_path, monkeypatch):
+def test_local_prepared_cache_reuses_typed_rows_in_exact_order(
+    tmp_path, tokenizer_root, monkeypatch
+):
     source = tmp_path / "source.jsonl"
-    source.write_text(json.dumps(_record("alpha", "a", "state", "id")) + "\n")
-    token_root = tmp_path / "tokenizer"
-    token_root.mkdir()
-    (token_root / "tokenizer.json").write_text("tokenizer")
 
-    class Tokenizer:
-        name_or_path = str(token_root)
-        pad_token_id = 0
-        bos_token_id = 1
-        eos_token_id = 2
-        unk_token_id = 3
-        mask_token_id = 4
-        chat_template = "base"
-        backend_tokenizer = SimpleNamespace(to_str=lambda: "backend")
+    def write_source(state: str) -> None:
+        source.write_text(json.dumps(_record("alpha", "a", state, "id")) + "\n")
 
-        def __len__(self):
-            return 256
-
-        def get_vocab(self):
-            return {"token": 0}
-
-    cfg = _cfg(
-        {"path": "json", "type": "diffusion_decision.jsonl", "data_files": str(source)}
+    write_source("state")
+    tokenizer = FakeTokenizer(
+        name_or_path=str(tokenizer_root), chat_template="base", vocab_size=256
     )
-    cfg["diffusion_decision"]["mixture"] = {
-        "weights": {"alpha": 1.0},
-        "max_examples_per_source": {"alpha": 1},
-        "per_batch_stratified": True,
-    }
+    cfg = _cfg(
+        _entry("json", data_files=str(source)),
+        mixture={
+            "weights": {"alpha": 1.0},
+            "max_examples_per_source": {"alpha": 1},
+            "per_batch_stratified": True,
+        },
+    )
     cfg.update(
         {
             "dataset_prepared_path": str(tmp_path / "prepared"),
@@ -569,6 +515,7 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(tmp_path, monkeyp
             "diffusion_lm": {"canvas_width": 128},
         }
     )
+    audit_path = tmp_path / "prepared" / "diffusion_decision_preparation_audit.json"
     calls = 0
     original_rows = datasets._rows
 
@@ -578,29 +525,12 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(tmp_path, monkeyp
         return original_rows(entry)
 
     monkeypatch.setattr(datasets, "_rows", rows)
-    monkeypatch.setattr(datasets, "load_tokenizer", lambda _cfg: Tokenizer())
-    monkeypatch.setattr(
-        datasets,
-        "require_diffusion_spec",
-        lambda _cfg: SimpleNamespace(
-            max_canvas=128,
-            noise=datasets.DiffusionNoise.UNIFORM,
-            layout=DiffusionLayout.FULL_SEQUENCE,
-        ),
-    )
+    monkeypatch.setattr(datasets, "load_tokenizer", lambda _cfg: tokenizer)
+    monkeypatch.setattr(datasets, "require_diffusion_spec", lambda _cfg: SPEC)
 
     def canvas_row(_tokenizer, row, _cfg, source_weight, **_kwargs):
-        canvas = DecisionCanvas(
-            (1,),
-            (2,) * 128,
-            (3,),
-            ((4,),),
-            ("q",),
-            ({"kind": "hard", "gold_idx": 0},),
-            (False,) * 128,
-            (True,) * 128,
-            (False,) * 128,
-            1,
+        canvas = _unit_canvas(
+            canvas_ids=(2,) * 128, label_positions=(3,), allowed=(4,), template_length=1
         )
         return {
             "canvas": canvas,
@@ -620,11 +550,7 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(tmp_path, monkeyp
     first_rows = [dict(row) for row in first.train_dataset]
     first_schedule = first.train_dataset.manifest["stratified_epoch_batches"]
     first_calls = calls
-    cold_audit = json.loads(
-        (
-            tmp_path / "prepared" / "diffusion_decision_preparation_audit.json"
-        ).read_text()
-    )
+    cold_audit = json.loads(audit_path.read_text())
     cfg["seed"] = 14
     datasets.load_decision_datasets(cfg)
     assert calls > first_calls
@@ -652,11 +578,7 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(tmp_path, monkeyp
     assert [dict(row) for row in second.train_dataset] == first_rows
     assert second.train_dataset.manifest["stratified_epoch_batches"] == first_schedule
     assert isinstance(second.train_dataset[0]["canvas"], DecisionCanvas)
-    audit = json.loads(
-        (
-            tmp_path / "prepared" / "diffusion_decision_preparation_audit.json"
-        ).read_text()
-    )
+    audit = json.loads(audit_path.read_text())
     assert audit == cold_audit
     assert audit["config"]["seed"] == 13
     assert (
@@ -677,17 +599,10 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(tmp_path, monkeyp
         datasets.load_decision_datasets(cfg)
         assert calls == before
 
+    requires_rebuild(lambda: write_source("changed"), lambda: write_source("state"))
     requires_rebuild(
-        lambda: source.write_text(
-            json.dumps(_record("alpha", "a", "changed", "id")) + "\n"
-        ),
-        lambda: source.write_text(
-            json.dumps(_record("alpha", "a", "state", "id")) + "\n"
-        ),
-    )
-    requires_rebuild(
-        lambda: setattr(Tokenizer, "chat_template", "changed"),
-        lambda: setattr(Tokenizer, "chat_template", "base"),
+        lambda: setattr(tokenizer, "chat_template", "changed"),
+        lambda: setattr(tokenizer, "chat_template", "base"),
     )
     requires_rebuild(
         lambda: cfg["diffusion_lm"].update(canvas_width=129),
@@ -698,48 +613,22 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(tmp_path, monkeyp
     )
 
 
-def test_prepared_cache_preserves_nested_typed_values_and_live_vocab_identity(tmp_path):
-    root = tmp_path / "tokenizer"
-    root.mkdir()
-    (root / "tokenizer.json").write_text("tokenizer")
-    source = tmp_path / "source.jsonl"
-    source.write_text("{}\n")
-
-    class Tokenizer:
-        name_or_path = str(root)
-        pad_token_id = 0
-        bos_token_id = 1
-        eos_token_id = 2
-        unk_token_id = 3
-        mask_token_id = 4
-        chat_template = "template"
-        backend_tokenizer = SimpleNamespace(to_str=lambda: "backend")
-
-        def __init__(self, vocab):
-            self.vocab = vocab
-
-        def __len__(self):
-            return len(self.vocab)
-
-        def get_vocab(self):
-            return self.vocab
-
-    spec = SimpleNamespace(layout=DiffusionLayout.FULL_SEQUENCE)
-    first = prepared_cache.identity({}, Tokenizer({"a": 1}), spec, [source])
-    second = prepared_cache.identity({}, Tokenizer({"b": 1}), spec, [source])
+def test_prepared_cache_preserves_nested_typed_values_and_live_vocab_identity(
+    tokenizer_root, empty_source
+):
+    first, second = (
+        prepared_cache.identity(
+            {},
+            FakeTokenizer(name_or_path=str(tokenizer_root), vocab=vocab),
+            SPEC,
+            [empty_source],
+        )
+        for vocab in ({"a": 1}, {"b": 1})
+    )
     assert first is not None and second is not None
     assert first[0] != second[0]
-    canvas = DecisionCanvas(
-        (1,),
-        (2,),
-        (0,),
-        ((3,),),
-        ("q",),
-        ({"kind": "hard", "gold_idx": 0},),
-        (False,),
-        (True,),
-        (True,),
-        1,
+    canvas = _unit_canvas(
+        slot_mask=(True,),
         ordinal_metadata=(OrdinalMetadata(("low",), ("0",), (0,)),),
     )
     row = {
@@ -758,7 +647,9 @@ def test_prepared_cache_preserves_nested_typed_values_and_live_vocab_identity(tm
     assert restored["record"] == row["record"]
 
 
-def test_prepared_cache_uses_exact_cached_hub_tokenizer_snapshot(tmp_path, monkeypatch):
+def test_prepared_cache_uses_exact_cached_hub_tokenizer_snapshot(
+    tmp_path, empty_source, monkeypatch
+):
     import huggingface_hub
 
     cache = tmp_path / "hub"
@@ -782,39 +673,16 @@ def test_prepared_cache_uses_exact_cached_hub_tokenizer_snapshot(tmp_path, monke
         return hf_hub_download(*args, **kwargs)
 
     monkeypatch.setattr(prepared_cache, "hf_hub_download", local_tokenizer_file)
-    source = tmp_path / "source.jsonl"
-    source.write_text("{}\n")
 
-    class Tokenizer:
-        name_or_path = repo_id
-        pad_token_id = bos_token_id = eos_token_id = unk_token_id = mask_token_id = 0
-        backend_tokenizer = SimpleNamespace(to_str=lambda: "backend")
+    def identity(cfg):
+        return prepared_cache.identity(
+            cfg, FakeTokenizer(name_or_path=repo_id), SPEC, [empty_source]
+        )
 
-        def __len__(self):
-            return 1
-
-        def get_vocab(self):
-            return {"x": 0}
-
-    spec = SimpleNamespace(layout=DiffusionLayout.FULL_SEQUENCE)
-    first = prepared_cache.identity(
-        {"model_config": {"_commit_hash": revisions[0]}},
-        Tokenizer(),
-        spec,
-        [source],
-    )
-    second = prepared_cache.identity(
-        {"model_config": {"_commit_hash": revisions[1]}},
-        Tokenizer(),
-        spec,
-        [source],
-    )
-    from_immutable_request = prepared_cache.identity(
-        {"revision_of_model": revisions[0]}, Tokenizer(), spec, [source]
-    )
-    from_moving_request = prepared_cache.identity(
-        {"revision_of_model": "main"}, Tokenizer(), spec, [source]
-    )
+    first = identity({"model_config": {"_commit_hash": revisions[0]}})
+    second = identity({"model_config": {"_commit_hash": revisions[1]}})
+    from_immutable_request = identity({"revision_of_model": revisions[0]})
+    from_moving_request = identity({"revision_of_model": "main"})
 
     assert (
         first is not None and second is not None and from_immutable_request is not None
@@ -827,51 +695,22 @@ def test_prepared_cache_uses_exact_cached_hub_tokenizer_snapshot(tmp_path, monke
     }
     assert [kwargs["local_files_only"] for _, kwargs in calls] == [True, True, True]
     assert [kwargs["revision"] for _, kwargs in calls] == [*revisions, revisions[0]]
-    assert [kwargs["filename"] for _, kwargs in calls] == [
-        "tokenizer_config.json",
-        "tokenizer_config.json",
-        "tokenizer_config.json",
-    ]
-    validated_shape = prepared_cache.identity(
+    assert [kwargs["filename"] for _, kwargs in calls] == ["tokenizer_config.json"] * 3
+    validated_shape = identity(
         {
             "model_config": None,
             "overrides_of_model_config": {"_commit_hash": revisions[0]},
-        },
-        Tokenizer(),
-        spec,
-        [source],
+        }
     )
     assert validated_shape is not None
     assert validated_shape[1]["tokenizer"]["hub"]["resolved_revision"] == revisions[0]
 
 
-def test_prepared_cache_identity_binds_entry_roles_and_model_controls(tmp_path):
-    root = tmp_path / "tokenizer"
-    root.mkdir()
-    (root / "tokenizer.json").write_text("tokenizer")
-    source = tmp_path / "source.jsonl"
-    source.write_text("{}\n")
-
-    class Tokenizer:
-        name_or_path = str(root)
-        pad_token_id = bos_token_id = eos_token_id = unk_token_id = mask_token_id = 0
-        backend_tokenizer = SimpleNamespace(to_str=lambda: "backend")
-
-        def __len__(self):
-            return 1
-
-        def get_vocab(self):
-            return {"x": 0}
-
+def test_prepared_cache_identity_binds_entry_roles_and_model_controls(
+    tokenizer_root, empty_source
+):
     base = {
-        "datasets": [
-            {
-                "type": "diffusion_decision.jsonl",
-                "path": "json",
-                "data_files": str(source),
-                "split": "train",
-            }
-        ],
+        "datasets": [_entry("json", "train", data_files=str(empty_source))],
         "test_datasets": [],
         "model_config": {"vocab_size": 8, "turn_close_token_id": 2},
     }
@@ -881,96 +720,52 @@ def test_prepared_cache_identity_binds_entry_roles_and_model_controls(tmp_path):
         "test_datasets": [{**base["datasets"][0], "split": "dev"}],
     }
     controls = {**base, "model_config": {"vocab_size": 8, "turn_close_token_id": 3}}
-    spec = SimpleNamespace(layout=DiffusionLayout.FULL_SEQUENCE)
     keys = [
-        prepared_cache.identity(cfg, Tokenizer(), spec, [source])[0]
+        prepared_cache.identity(
+            cfg, FakeTokenizer(name_or_path=str(tokenizer_root)), SPEC, [empty_source]
+        )[0]
         for cfg in (base, role, controls)
     ]
     assert len(set(keys)) == 3
 
 
 def test_prepared_cache_repairs_corrupt_payload_and_warms(tmp_path):
-    canvas = DecisionCanvas(
-        (1,),
-        (2,),
-        (0,),
-        ((3,),),
-        ("q",),
-        ({"kind": "hard", "gold_idx": 0},),
-        (False,),
-        (True,),
-        (False,),
-        1,
-    )
-    row = {"canvas": canvas, "record": {"id": "x"}, "source": "x"}
-    prepared_cache.store(tmp_path, "key", {"identity": 1}, {}, [row], [], {})
+    row = _cache_row()
+    prepared_cache.store(tmp_path, "key", IDENTITY, {}, [row], [], {})
     path = tmp_path / "diffusion_decision_cache" / "key.json"
     payload = json.loads(path.read_text())
     payload["content"]["manifest"] = {"bad": True}
     path.write_text(json.dumps(payload))
-    assert prepared_cache.load(tmp_path, "key", {"identity": 1}) is None
-    prepared_cache.store(tmp_path, "key", {"identity": 1}, {}, [row], [], {})
-    first = prepared_cache.load(tmp_path, "key", {"identity": 1})
-    second = prepared_cache.load(tmp_path, "key", {"identity": 1})
+    assert prepared_cache.load(tmp_path, "key", IDENTITY) is None
+    prepared_cache.store(tmp_path, "key", IDENTITY, {}, [row], [], {})
+    first = prepared_cache.load(tmp_path, "key", IDENTITY)
+    second = prepared_cache.load(tmp_path, "key", IDENTITY)
     assert first is not None and second is not None
-    assert first[0][0]["canvas"] == canvas
+    assert first[0][0]["canvas"] == row["canvas"]
 
 
 def test_prepared_cache_serializes_pretrained_model_config(tmp_path):
-    canvas = DecisionCanvas(
-        (1,),
-        (2,),
-        (0,),
-        ((3,),),
-        ("q",),
-        ({"kind": "hard", "gold_idx": 0},),
-        (False,),
-        (True,),
-        (False,),
-        1,
-    )
-    row = {"canvas": canvas, "record": {"id": "x"}, "source": "x"}
     cfg = {"model_config": PretrainedConfig(vocab_size=8, pad_token_id=0)}
-    prepared_cache.store(
-        tmp_path, "config", {"model": cfg["model_config"]}, cfg, [row], [], {}
-    )
-    assert (
-        prepared_cache.load(tmp_path, "config", {"model": cfg["model_config"]})
-        is not None
-    )
+    identity = {"model": cfg["model_config"]}
+    prepared_cache.store(tmp_path, "config", identity, cfg, [_cache_row()], [], {})
+    assert prepared_cache.load(tmp_path, "config", identity) is not None
 
 
 def test_prepared_cache_atomic_same_key_writers_and_readers(tmp_path):
-    def row(identifier):
-        canvas = DecisionCanvas(
-            (1,),
-            (2,),
-            (0,),
-            ((3,),),
-            ("q",),
-            ({"kind": "hard", "gold_idx": 0},),
-            (False,),
-            (True,),
-            (False,),
-            1,
-        )
-        return {"canvas": canvas, "record": {"id": identifier}, "source": "x"}
-
-    identity = {"identity": 1}
-    prepared_cache.store(tmp_path, "shared", identity, {}, [row("old")], [], {})
+    prepared_cache.store(tmp_path, "shared", IDENTITY, {}, [_cache_row("old")], [], {})
     barrier = threading.Barrier(3)
 
     def writer(identifier):
         barrier.wait()
         prepared_cache.store(
-            tmp_path, "shared", identity, {}, [row(identifier)], [], {}
+            tmp_path, "shared", IDENTITY, {}, [_cache_row(identifier)], [], {}
         )
 
     def reader():
         barrier.wait()
         seen = []
         for _ in range(30):
-            loaded = prepared_cache.load(tmp_path, "shared", identity)
+            loaded = prepared_cache.load(tmp_path, "shared", IDENTITY)
             assert loaded is not None
             seen.append(loaded[0][0]["record"]["id"])
         return seen
@@ -985,30 +780,21 @@ def test_prepared_cache_atomic_same_key_writers_and_readers(tmp_path):
         futures[0].result()
         futures[1].result()
     assert set(seen) <= {"old", "a", "b"}
-    assert prepared_cache.load(tmp_path, "shared", identity) is not None
+    assert prepared_cache.load(tmp_path, "shared", IDENTITY) is not None
 
 
 def test_decision_draw_projects_maximum_row_and_preserves_weight():
-    canvas = DecisionCanvas(
-        (1,),
-        (7, 8, 9, 4, 0, 0),
-        (3,),
-        ((4,),),
-        ("q",),
-        ({"kind": "hard", "gold_idx": 0},),
-        (True, True, True, False, True, True),
-        (True,) * 6,
-        (True, True, True, False, False, False),
-        4,
+    canvas = make_canvas(
+        prompt_ids=(1,),
+        canvas_ids=(7, 8, 9, 4, 0, 0),
+        label_positions=(3,),
+        allowed=(4,),
+        question_ids=("q",),
+        pinned_mask=(True, True, True, False, True, True),
+        slot_mask=(True, True, True, False, False, False),
+        template_length=4,
     )
-    plan = SlotPlan(
-        (7, 8, 9),
-        "thought",
-        (True, True, True),
-        (False, False, False),
-        (False, False, False),
-        (),
-    )
+    plan = SlotPlan((7, 8, 9), "thought", (True,) * 3, (False,) * 3, (False,) * 3, ())
     row = {
         "canvas": canvas,
         "slot_plan": plan,
