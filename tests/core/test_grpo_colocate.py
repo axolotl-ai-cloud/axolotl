@@ -45,6 +45,12 @@ class TestColocateTrainingArgs:
         ):
             assert key not in kwargs
 
+    def test_colocate_max_model_len_defaults_to_prompt_plus_completion(self):
+        cfg = _cfg({"vllm_mode": "colocate"})
+        cfg.sequence_len = 512
+        kwargs = GRPOStrategy.set_training_args_kwargs(cfg)
+        assert kwargs["vllm_max_model_length"] == 512 + 64
+
     def test_server_mode_does_not_forward_engine_options(self):
         kwargs = GRPOStrategy.set_training_args_kwargs(
             _cfg(

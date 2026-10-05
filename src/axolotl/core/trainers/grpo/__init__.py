@@ -103,6 +103,15 @@ class GRPOStrategy:
                         trl.vllm_enable_sleep_mode
                     )
                 grpo_args_kwargs.update(cls.get_colocate_vllm_kwargs(vllm_cfg))
+                # Unset, vLLM reserves KV cache for the model's full context (e.g. 128k).
+                if (
+                    "vllm_max_model_length" not in grpo_args_kwargs
+                    and cfg.sequence_len
+                    and trl.max_completion_length
+                ):
+                    grpo_args_kwargs["vllm_max_model_length"] = (
+                        cfg.sequence_len + trl.max_completion_length
+                    )
             server_host = trl.vllm_server_host or (vllm_cfg.host if vllm_cfg else None)
             if server_host:
                 grpo_args_kwargs["vllm_server_host"] = server_host
