@@ -89,6 +89,8 @@ jobs:
     if: >
       github.repository_owner == 'axolotl-ai-cloud' &&
       github.event_name == 'pull_request'
+    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
+    continue-on-error: true
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     strategy:

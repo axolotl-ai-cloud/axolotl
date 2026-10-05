@@ -26,6 +26,20 @@ from tests.hf_offline_utils import (
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
 
 
+@pytest.fixture(autouse=True)
+def _propagate_axolotl_logs():
+    """configure_logging() sets propagate=False on the axolotl logger, hiding its records from caplog.
+
+    Importing axolotl.cli runs it at collection time, so any session that collects a CLI
+    test would otherwise break every caplog assertion on an axolotl.* logger.
+    """
+    ax_logger = logging.getLogger("axolotl")
+    old_propagate = ax_logger.propagate
+    ax_logger.propagate = True
+    yield
+    ax_logger.propagate = old_propagate
+
+
 @contextmanager
 def capture_axolotl_warnings(caplog):
     """Re-enable propagation on the `axolotl` logger so caplog captures records."""

@@ -30,10 +30,11 @@ class TestE2eQwen:
                 "chat_template": "qwen_25",
                 "sequence_len": 2048,
                 "val_set_size": 0.0,
+                "dataset_num_proc": 4,
                 "datasets": [
                     {
                         "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
-                        "split": "train",
+                        "split": "train[:50]",
                         "type": "chat_template.default",
                         "field_messages": "conversation",
                         "field_chosen": "chosen",

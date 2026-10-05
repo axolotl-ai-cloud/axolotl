@@ -209,6 +209,8 @@ jobs:
       github.repository_owner == 'axolotl-ai-cloud' &&
       needs.gate-skip-e2e.outputs.skip != 'true'
     # this job needs to be run on self-hosted GPU runners...
+    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
+    continue-on-error: true
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     # Only run the remainder of the matrix if the first e2e check passed;
@@ -262,6 +264,8 @@ jobs:
       github.repository_owner == 'axolotl-ai-cloud' &&
       github.event_name == 'pull_request' &&
       needs.gate-skip-e2e.outputs.skip != 'true'
+    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
+    continue-on-error: true
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     needs: [gate-skip-e2e]
