@@ -29,16 +29,18 @@ All paths tested end-to-end with Qwen3-0.6B + LoRA, logged to wandb project `nem
 ```bash
 git clone https://github.com/NVIDIA-NeMo/Gym.git ~/Gym
 cd ~/Gym
-uv venv --python 3.12 && source .venv/bin/activate && uv sync
+# Gym requires Python >= 3.13
+uv venv --python 3.13 && source .venv/bin/activate && uv sync
 
 # Fix pycosat build (GCC 13+)
 CFLAGS="" uv pip install pycosat --python .venv/bin/python --no-build-isolation
 
 # Pre-build resource server venvs
 for dir in resources_servers/reasoning_gym resources_servers/example_single_tool_call responses_api_models/vllm_model responses_api_agents/simple_agent; do
-    uv venv --seed --allow-existing --python 3.12 $dir/.venv
+    uv venv --seed --allow-existing --python 3.13 $dir/.venv
+    uv pip install --python $dir/.venv/bin/python setuptools wheel  # pycosat build deps
     CFLAGS="" uv pip install --python $dir/.venv/bin/python pycosat --no-build-isolation 2>/dev/null
-    uv pip install --python $dir/.venv/bin/python -e . "ray[default]==2.52.1"
+    uv pip install --python $dir/.venv/bin/python -e . "ray[default]==2.58.0"
 done
 
 # Install extra deps for reasoning_gym
@@ -86,9 +88,9 @@ example_single_tool_call_simple_agent:
         type: responses_api_models
         name: policy_model
       datasets:
-      - name: weather
+      - name: example
         type: example
-        jsonl_fpath: resources_servers/example_single_tool_call/data/weather_tool_calling.jsonl
+        jsonl_fpath: resources_servers/example_single_tool_call/data/example.jsonl
 ```
 
 **Step 2: Start three services**
@@ -144,11 +146,11 @@ nemo_gym_head_port: 11000
 nemo_gym_multi_turn: true
 nemo_gym_verify_timeout: 120
 nemo_gym_datasets:
-  - path: ~/Gym/resources_servers/example_single_tool_call/data/weather_tool_calling.jsonl
+  - path: ~/Gym/resources_servers/example_single_tool_call/data/example.jsonl
     server_name: example_single_tool_call
 
 datasets:
-  - path: ~/Gym/resources_servers/example_single_tool_call/data/weather_tool_calling.jsonl
+  - path: ~/Gym/resources_servers/example_single_tool_call/data/example.jsonl
     type: chat_template
     field_messages: responses_create_params.input
     message_field_content: content
@@ -370,7 +372,7 @@ from axolotl.integrations.nemo_gym import reward_env, reward_nemo_gym_verify
 
 ### NeMo Gym Server Setup
 - **pycosat build failure**: `CFLAGS="" uv pip install pycosat --no-build-isolation`
-- **Ray version mismatch**: Pin `ray[default]==2.52.1` in all server venvs
+- **Ray version mismatch**: Pin all server venvs to the `ray[default]` version in Gym's `pyproject.toml` (2.58.0 as of Oct 2026)
 - **Pre-build venvs**: `ng_run` creates per-server venvs via Ray. Pre-build them and use `+skip_venv_if_present=true`
 - **Tool `strict` field required**: Agent server validates tool definitions require `strict: true`
 
