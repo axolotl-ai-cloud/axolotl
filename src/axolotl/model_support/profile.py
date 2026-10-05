@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence, overload
 from weakref import WeakKeyDictionary
 
 from .base import Capability, ModelSupport
+from .diffusion import DiffusionSpec
 
 if TYPE_CHECKING:
     from peft import PeftModel
@@ -60,6 +61,10 @@ class ModelHookContext:
 ModelHook = Callable[[ModelHookContext], None]
 AutoModelClassProvider = Callable[[], type | None]
 ProcessingStrategyClassProvider = Callable[[], type["ProcessingStrategy"] | None]
+TrainerClassProvider = Callable[["DictDefault"], type | None]
+CollatorFactory = Callable[["DictDefault", "PreTrainedTokenizerBase", bool], Any]
+LoraAttentionClassProvider = Callable[[Any], type]
+
 ConfigMatcher = Callable[["DictDefault"], bool]
 ProcessorMatcher = Callable[["ProcessorMixin"], bool]
 WeightConversionsProvider = Callable[
@@ -87,12 +92,19 @@ _ACTIVE_LEGACY_HOOK: ContextVar[tuple[int, ModelHookPhase, int] | None] = Contex
 class ModelStrategies:
     """Lazy component providers supplied by a model family.
 
-    Each field is a zero-argument callable that returns a component class or ``None``.
-    Providers should import optional or heavyweight implementations only when called.
+    ``auto_model_cls`` and ``processing_strategy_cls`` are zero-argument callables
+    returning a component class or ``None``. ``trainer_cls`` receives the run config
+    and returns a trainer class or ``None``. ``collator_factory`` receives the run
+    config, tokenizer, and an ``is_eval`` flag and returns a built collator or
+    ``None``. ``None`` from any provider selects the generic fallback. Providers
+    should import optional or heavyweight implementations only when called.
     """
 
     auto_model_cls: AutoModelClassProvider | None = None
     processing_strategy_cls: ProcessingStrategyClassProvider | None = None
+    trainer_cls: TrainerClassProvider | None = None
+    collator_factory: CollatorFactory | None = None
+    lora_attention_cls: LoraAttentionClassProvider | None = None
 
     def with_overrides(self, overrides: ModelStrategyOverrides) -> ModelStrategies:
         return ModelStrategies(
@@ -105,6 +117,21 @@ class ModelStrategies:
                 self.processing_strategy_cls
                 if isinstance(overrides.processing_strategy_cls, _InheritStrategy)
                 else overrides.processing_strategy_cls
+            ),
+            trainer_cls=(
+                self.trainer_cls
+                if isinstance(overrides.trainer_cls, _InheritStrategy)
+                else overrides.trainer_cls
+            ),
+            collator_factory=(
+                self.collator_factory
+                if isinstance(overrides.collator_factory, _InheritStrategy)
+                else overrides.collator_factory
+            ),
+            lora_attention_cls=(
+                self.lora_attention_cls
+                if isinstance(overrides.lora_attention_cls, _InheritStrategy)
+                else overrides.lora_attention_cls
             ),
         )
 
@@ -121,6 +148,11 @@ class ModelStrategyOverrides:
     processing_strategy_cls: (
         ProcessingStrategyClassProvider | None | _InheritStrategy
     ) = _INHERIT_STRATEGY
+    trainer_cls: TrainerClassProvider | None | _InheritStrategy = _INHERIT_STRATEGY
+    collator_factory: CollatorFactory | None | _InheritStrategy = _INHERIT_STRATEGY
+    lora_attention_cls: LoraAttentionClassProvider | None | _InheritStrategy = (
+        _INHERIT_STRATEGY
+    )
 
 
 @dataclass(frozen=True)
@@ -269,6 +301,7 @@ class ModelProfile:
     family: ModelFamilyTemplate
     is_multimodal: bool | None = None
     capabilities: Mapping[str, Capability | None] = field(default_factory=dict)
+    diffusion: DiffusionSpec | None = None
     strategies: ModelStrategyOverrides = field(default_factory=ModelStrategyOverrides)
     registrations: ModelRegistrationOverrides = field(
         default_factory=ModelRegistrationOverrides
@@ -290,6 +323,7 @@ class ResolvedModelProfile:
     family: str | None
     is_multimodal: bool
     capabilities: Mapping[str, Capability]
+    diffusion: DiffusionSpec | None
     strategies: ModelStrategies
     registrations: ModelRegistrations
     matchers: ModelMatchers
@@ -379,6 +413,7 @@ def _build_declarative_model_support(
             family=None,
             is_multimodal=False,
             capabilities={},
+            diffusion=None,
             strategies=ModelStrategies(),
             registrations=ModelRegistrations(),
             matchers=ModelMatchers(),
@@ -403,6 +438,7 @@ def _build_declarative_model_support(
         family=family.name,
         is_multimodal=is_multimodal,
         capabilities=capabilities,
+        diffusion=profile.diffusion,
         strategies=family.strategies.with_overrides(profile.strategies),
         registrations=family.registrations.with_overrides(profile.registrations),
         matchers=family.matchers.with_overrides(profile.matchers),
@@ -425,6 +461,7 @@ def _run_model_profile_hooks(
 _LEGACY_DECLARATION_NAMES = (
     "is_multimodal",
     "capabilities",
+    "diffusion",
     "get_auto_model_cls",
     "get_processing_strategy_cls",
     "matches_cfg",
@@ -472,6 +509,7 @@ def resolve_model_support(
 
     is_multimodal = declarative.is_multimodal
     capabilities = dict(declarative.capabilities)
+    diffusion = declarative.diffusion
     strategies = declarative.strategies
     matchers = declarative.matchers
     hooks = declarative.hooks
@@ -482,6 +520,9 @@ def resolve_model_support(
     declares_capabilities, _ = _declared_value(support, "capabilities")
     if declares_capabilities:
         capabilities.update(support.capabilities)
+    declares_diffusion, _ = _declared_value(support, "diffusion")
+    if declares_diffusion:
+        diffusion = support.diffusion
     declares_auto_model, _ = _declared_value(support, "get_auto_model_cls")
     if declares_auto_model:
         strategies = strategies.with_overrides(
@@ -528,6 +569,7 @@ def resolve_model_support(
         family=declarative.family,
         is_multimodal=is_multimodal,
         capabilities=capabilities,
+        diffusion=diffusion,
         strategies=strategies,
         registrations=declarative.registrations,
         matchers=matchers,

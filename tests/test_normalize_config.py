@@ -3,9 +3,11 @@ Test classes for checking functionality of the cfg normalization
 """
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from axolotl.utils.config import (
+    MULTIMODAL_AUTO_MODEL_MAPPING,
     normalize_cfg_datasets,
     normalize_config,
     validate_config,
@@ -43,6 +45,194 @@ class NormalizeConfigTestCase(unittest.TestCase):
         normalize_config(cfg)
 
         assert cfg.base_model_config == cfg.base_model
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_diffusion_gemma_uses_text_only_processing(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.adapter = "lora"
+        cfg.lora_target_modules = [
+            r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+            r"\.0\.self_attn\.q_proj$"
+        ]
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        normalize_config(cfg)
+
+        assert cfg.is_multimodal is False
+        assert cfg.processor_config is None
+        assert cfg.attn_implementation == "flex_attention"
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_diffusion_preserves_explicit_attention_fallbacks(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+        for attn_implementation in ("eager", "sdpa"):
+            cfg = self._get_base_cfg()
+            cfg.base_model = "local/diffusion-gemma"
+            cfg.diffusion_lm = {"from_causal_lm": False}
+            cfg.adapter = "lora"
+            cfg.attn_implementation = attn_implementation
+            cfg.lora_target_modules = [
+                r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+                r"\.0\.self_attn\.q_proj$"
+            ]
+
+            normalize_config(cfg)
+
+            assert cfg.attn_implementation == attn_implementation
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_diffusion_descriptor_rejects_unsupported_attention(
+        self, load_config
+    ):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.adapter = "lora"
+        cfg.attn_implementation = "flash_attention_2"
+        cfg.lora_target_modules = [
+            r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+            r"\.0\.self_attn\.q_proj$"
+        ]
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        with self.assertRaisesRegex(ValueError, "attn_implementation values"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_nemotron_varlen_preserves_config_intent(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/nemotron-diffusion"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.adapter = "lora"
+        cfg.trust_remote_code = True
+        cfg.attn_implementation = "varlen"
+        cfg.lora_target_modules = ["q_proj"]
+        cfg.env_capabilities = {"torch_version": "2.14.0"}
+        load_config.return_value = SimpleNamespace(
+            model_type="nemotron_labs_diffusion", dlm_paradigm="bidirectional"
+        )
+
+        normalize_config(cfg)
+
+        assert cfg.attn_implementation == "varlen"
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_varlen_rejects_unsupported_native_layout(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.attn_implementation = "varlen"
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        with self.assertRaisesRegex(ValueError, "full-sequence diffusion"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_varlen_rejects_dream_legacy_and_ar_paths(self, load_config):
+        cases = (
+            ("Dream", {"from_causal_lm": False}),
+            ("nemotron_labs_diffusion", {"from_causal_lm": True}),
+            ("nemotron_labs_diffusion", None),
+        )
+        for model_type, diffusion_lm in cases:
+            with self.subTest(model_type=model_type, diffusion_lm=diffusion_lm):
+                cfg = self._get_base_cfg()
+                cfg.base_model = f"local/{model_type}"
+                cfg.attn_implementation = "varlen"
+                cfg.diffusion_lm = diffusion_lm
+                load_config.return_value = SimpleNamespace(model_type=model_type)
+
+                with self.assertRaisesRegex(ValueError, "full-sequence diffusion"):
+                    normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_varlen_requires_torch_214_public_gqa_api(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/nemotron-diffusion"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.adapter = "lora"
+        cfg.trust_remote_code = True
+        cfg.attn_implementation = "varlen"
+        cfg.lora_target_modules = ["q_proj"]
+        cfg.env_capabilities = {"torch_version": "2.13.0"}
+        load_config.return_value = SimpleNamespace(
+            model_type="nemotron_labs_diffusion", dlm_paradigm="bidirectional"
+        )
+
+        with self.assertRaisesRegex(ValueError, "torch >= 2.14"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_legacy_diffusion_conversion_keeps_attention_unspecified(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": True}
+        cfg.plugins = ["axolotl.integrations.diffusion.DiffusionPlugin"]
+        cfg.adapter = "lora"
+        cfg.lora_target_modules = [
+            r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+            r"\.0\.self_attn\.q_proj$"
+        ]
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        normalize_config(cfg)
+
+        assert cfg.attn_implementation is None
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_diffusion_lm_rejects_model_without_diffusion_profile(self, load_config):
+        for model_type in ("llama", "qwen2"):
+            with self.subTest(model_type=model_type):
+                cfg = self._get_base_cfg()
+                cfg.diffusion_lm = {"from_causal_lm": False}
+                load_config.return_value = SimpleNamespace(model_type=model_type)
+
+                with self.assertRaisesRegex(ValueError, "no native diffusion profile"):
+                    normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_from_causal_lm_requires_legacy_diffusion_plugin(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.diffusion_lm = {"from_causal_lm": True}
+        load_config.return_value = SimpleNamespace(model_type="llama")
+
+        with self.assertRaisesRegex(ValueError, "DiffusionPlugin"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_from_causal_lm_with_legacy_diffusion_plugin_is_accepted(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.diffusion_lm = {"from_causal_lm": True}
+        cfg.plugins = ["axolotl.integrations.diffusion:DiffusionPlugin"]
+        load_config.return_value = SimpleNamespace(model_type="llama")
+
+        normalize_config(cfg)
+
+        assert cfg.model_config_type == "llama"
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_diffusion_gemma_rejects_explicit_multimodal(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.is_multimodal = True
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        with self.assertRaisesRegex(ValueError, "text-only diffusion"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_legacy_multimodal_auto_detection_is_unchanged(self, load_config):
+        cfg = self._get_base_cfg()
+        load_config.return_value = SimpleNamespace(
+            model_type=next(iter(MULTIMODAL_AUTO_MODEL_MAPPING))
+        )
+
+        normalize_config(cfg)
+
+        assert cfg.is_multimodal is True
 
     def test_chat_template_chatml(self):
         cfg = DictDefault(

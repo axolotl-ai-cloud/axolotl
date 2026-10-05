@@ -1101,7 +1101,7 @@ class ModelLoader:
 
     def _set_attention_config(self):
         # fp8 replaces sdpa post-load (load as sdpa).
-        _LOAD_TIME_OVERRIDE = {"fp8": "sdpa"}
+        _LOAD_TIME_OVERRIDE = {"fp8": "sdpa", "varlen": "eager"}
         if self.cfg.attn_implementation:
             hf_impl = _LOAD_TIME_OVERRIDE.get(
                 self.cfg.attn_implementation, self.cfg.attn_implementation

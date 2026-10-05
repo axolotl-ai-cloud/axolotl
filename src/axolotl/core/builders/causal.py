@@ -22,6 +22,7 @@ from axolotl.core.trainers import (
     AxolotlTrainer,
 )
 from axolotl.integrations.base import PluginManager
+from axolotl.model_support import get_model_support_for_cfg, resolve_model_support
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.processing_strategies import get_processing_strategy
@@ -165,6 +166,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     f"Failed to load custom trainer class '{self.cfg.trainer_cls}': {e}"
                 ) from e
 
+        profile = resolve_model_support(get_model_support_for_cfg(self.cfg))
+        trainer_factory = None if profile is None else profile.strategies.trainer_cls
+        if trainer_factory is not None:
+            trainer_cls = trainer_factory(self.cfg)
+            if trainer_cls is not None:
+                return trainer_cls
+
         return AxolotlTrainer
 
     def build(self, total_num_steps):
@@ -196,10 +204,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.sample_packing and self.cfg.eval_sample_packing is False:
             training_arguments_kwargs["dataloader_drop_last"] = True
 
+        trainer_cls = self._get_trainer_cls()
         if self.cfg.remove_unused_columns is not None:
             training_arguments_kwargs["remove_unused_columns"] = (
                 self.cfg.remove_unused_columns
             )
+        elif getattr(trainer_cls, "requires_all_columns", lambda _cfg: False)(self.cfg):
+            training_arguments_kwargs["remove_unused_columns"] = False
 
         if self.cfg.do_bench_eval:
             training_arguments_kwargs["do_bench_eval"] = self.cfg.do_bench_eval
@@ -401,8 +412,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
             trainer_kwargs["compute_loss_func"] = dft_loss
 
-        trainer_cls = self._get_trainer_cls()
-
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
         )
@@ -450,6 +459,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         # if the trainer has the `axolotl_cfg` property, set it
         if hasattr(trainer, "axolotl_cfg"):
             trainer.axolotl_cfg = self.cfg
+            if hasattr(trainer, "post_set_axolotl_cfg"):
+                trainer.post_set_axolotl_cfg()
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
 
@@ -499,6 +510,16 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
             self.cfg, is_eval=is_eval
         )
+
+        if not collator_cls_and_kwargs:
+            profile = resolve_model_support(get_model_support_for_cfg(self.cfg))
+            collator_factory = (
+                None if profile is None else profile.strategies.collator_factory
+            )
+            if collator_factory is not None:
+                profile_collator = collator_factory(self.cfg, self.tokenizer, is_eval)
+                if profile_collator is not None:
+                    return profile_collator
 
         if collator_cls_and_kwargs:
             collator = collator_cls_and_kwargs[0]
