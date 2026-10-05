@@ -51,7 +51,8 @@ lora_alpha_pattern:
 
 ### Merging adapters trained with patterns
 
-`axolotl merge-lora` (default `merge_method: memory_efficient`) honors both
+`axolotl merge-lora` (default `merge_method: memory_efficient`; when the key is
+omitted, a model's support profile may select another method) honors both
 fields when merging: each module is merged with its own rank (inferred from
 the adapter weight shapes) and its own alpha (resolved against
 `alpha_pattern`). No extra flags are needed.

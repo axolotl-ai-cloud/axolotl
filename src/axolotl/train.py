@@ -24,6 +24,7 @@ from peft import PeftConfig, PeftModel
 from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
+from transformers.trainer_utils import enable_full_determinism, set_seed
 
 from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
@@ -617,6 +618,17 @@ def handle_untrained_tokens_fix(
         model.save_pretrained(str(Path(cfg.output_dir)))
 
 
+def seed_model_initialization(cfg: DictDefault) -> None:
+    """Seed all model and adapter initialization before the model loader runs."""
+    seed = cfg.seed
+    if seed is None:
+        return
+    if cfg.full_determinism:
+        enable_full_determinism(seed)
+    else:
+        set_seed(seed)
+
+
 def setup_model_and_trainer(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> tuple[
@@ -642,7 +654,7 @@ def setup_model_and_trainer(
             - PEFT config
             - Processor
     """
-    # Load tokenizer, processor and model
+    seed_model_initialization(cfg)
     model, tokenizer, peft_config, processor = setup_model_and_tokenizer(cfg)
 
     # Set up reference model for RL if needed

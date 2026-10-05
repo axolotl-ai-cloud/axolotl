@@ -500,6 +500,12 @@ class AxolotlInputConfig(
     seed: int | None = Field(
         default=None, json_schema_extra={"description": "Seed for reproducibility"}
     )
+    full_determinism: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Seed with transformers' enable_full_determinism (deterministic torch algorithms and CUBLAS workspace config) instead of set_seed. Slower."
+        },
+    )
     ddp_timeout: int | None = Field(
         default=None,
         json_schema_extra={"description": "Advanced DDP Arguments - timeout"},
@@ -1547,10 +1553,20 @@ class AxolotlInputConfig(
             if isinstance(peft_trainable_token_indices, int):
                 peft_trainable_token_indices = (peft_trainable_token_indices,)
 
+            trainable_token_ids = (
+                {
+                    token_id
+                    for indices in peft_trainable_token_indices.values()
+                    for token_id in indices
+                }
+                if isinstance(peft_trainable_token_indices, dict)
+                else set(peft_trainable_token_indices)
+            )
+
             for untrained_token_id in fix_untrained_tokens:
-                if untrained_token_id not in peft_trainable_token_indices:
+                if untrained_token_id not in trainable_token_ids:
                     LOG.warning_once(
-                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices: ` list. "
+                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices`. "
                         "Please add it, otherwise the token won't be trained on."
                     )
         return data
