@@ -7,6 +7,7 @@ from transformers.trainer_optimizer import is_optimizer_factory
 from transformers.utils import is_sagemaker_mp_enabled
 
 from axolotl.utils.logging import get_logger
+from axolotl.utils.optimizers.loraplus import apply_loraplus_lr_groups
 
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
@@ -139,7 +140,11 @@ class OptimizerMixin(Trainer):
                 opt_model, optimizer_kwargs
             )
 
-            if self.args.loraplus_lr_ratio is not None:
+            if (
+                self.args.loraplus_lr_ratio is not None
+                and self.args.embedding_lr_scale is None
+                and self.args.embedding_lr is None
+            ):
                 loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
                 loraplus_lr_embedding = getattr(
                     self.args, "loraplus_lr_embedding", 1e-6
@@ -153,6 +158,23 @@ class OptimizerMixin(Trainer):
                     **optimizer_kwargs,
                 )
             else:
+                if self.args.loraplus_lr_ratio is not None:
+                    if getattr(
+                        self.args, "loraplus_lr_embedding", None
+                    ) is not None and any(
+                        "lora_embedding_" in name
+                        for name, _ in opt_model.named_parameters()
+                    ):
+                        LOG.warning(
+                            "loraplus_lr_embedding is ignored when embedding_lr or embedding_lr_scale is set; LoRA embedding factors use those learning rates instead."
+                        )
+                    optimizer_grouped_parameters = apply_loraplus_lr_groups(
+                        optimizer_grouped_parameters,
+                        opt_model.named_parameters(),
+                        default_lr=optimizer_kwargs["lr"],
+                        loraplus_lr_ratio=self.args.loraplus_lr_ratio,
+                        eligible=lambda _name, _param, _group: True,
+                    )
                 # Overwrite `params` in case it's created by `get_optimizer_cls_and_kwargs`
                 # e.g. for GaLore optimizer.
                 if "params" in optimizer_kwargs:
