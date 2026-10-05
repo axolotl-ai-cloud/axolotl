@@ -230,17 +230,14 @@ class TrainerBuilderBase(abc.ABC):
             )
 
             callbacks.append(DeepSpeedNativeNVFP4MergeAwareCallback(trainer))
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            callbacks.extend(
-                [
-                    cb
-                    for cb in plugin_manager.add_callbacks_post_trainer(
-                        self.cfg, trainer
-                    )
-                    if cb
-                ]
-            )
+        plugin_manager = PluginManager.get_instance()
+        callbacks.extend(
+            [
+                cb
+                for cb in plugin_manager.add_callbacks_post_trainer(self.cfg, trainer)
+                if cb
+            ]
+        )
         return callbacks
 
     def hook_pre_create_training_args(self, training_arguments_kwargs):
@@ -556,6 +553,9 @@ class TrainerBuilderBase(abc.ABC):
         if not self.eval_dataset and self.cfg.val_set_size == 0:
             # do not eval if no eval_dataset and val_set_size=0
             training_args_kwargs["eval_strategy"] = "no"
+        elif self.cfg.eval_strategy == "no":
+            training_args_kwargs["eval_strategy"] = "no"
+            training_args_kwargs["eval_on_start"] = False
         elif self.cfg.eval_steps:
             training_args_kwargs["eval_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
@@ -688,6 +688,7 @@ class TrainerBuilderBase(abc.ABC):
             "save_only_model",
             "weight_decay",
             "seed",
+            "full_determinism",
             "dion_momentum",
             "dion_rank_fraction",
             "dion_rank_multiple_of",

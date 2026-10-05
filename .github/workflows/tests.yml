@@ -9,10 +9,8 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
-      - "cicd/cicd.sh"
-      - "cicd/cicd_cuda_kernels.sh"
-      - "cicd/prepare_hf_cache.sh"
-      - "cicd/Dockerfile-uv.jinja"
+      - "cicd/*.sh"
+      - "cicd/*.jinja"
   pull_request:
     # GPU tests are label-gated, so adding the label re-runs this workflow via
     # gpu-label.yml after the initial CPU run has completed.
@@ -21,10 +19,8 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
-      - "cicd/cicd.sh"
-      - "cicd/cicd_cuda_kernels.sh"
-      - "cicd/prepare_hf_cache.sh"
-      - "cicd/Dockerfile-uv.jinja"
+      - "cicd/*.sh"
+      - "cicd/*.jinja"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
@@ -90,6 +86,8 @@ jobs:
         python_version: ["3.12", "3.14"]
         pytorch_version: ["2.13.0", "2.14.0"]
     timeout-minutes: 45
+    env:
+      AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
 
     steps:
       - name: cleanup node
@@ -130,7 +128,7 @@ jobs:
           uv pip install --no-build-isolation -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+            codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -153,22 +151,14 @@ jobs:
         run: hf cache ls
 
       - name: Run tests
-        timeout-minutes: 30
+        timeout-minutes: 40
         run: |
           pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 \
-            --ignore=tests/integrations/kernels/ \
-            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-            --ignore=tests/integrations/test_gemma4_moe.py \
-            --ignore=tests/integrations/test_scattermoe_lora.py \
-            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
-            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
-            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
-            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -m "not gpu" --ignore=tests/integrations/kernels/ tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
@@ -181,18 +171,19 @@ jobs:
           flags: unittests,pytorch-${{ matrix.pytorch_version }}
           fail_ci_if_error: false
 
-  pytest-sdist:
-    name: PyTest SDist
+  pytest-testmon:
+    if: ${{ !github.event.pull_request.draft }}
+    needs: [prime-cdn-s3-cache, pre-commit]
+    uses: ./.github/workflows/testmon-cpu.yml
+
+  sdist:
+    name: SDist manifest and install
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
     needs: [prime-cdn-s3-cache, pre-commit]
-    strategy:
-      max-parallel: 2
-      fail-fast: false
-      matrix:
-        python_version: ["3.12", "3.14"]
-        pytorch_version: ["2.13.0", "2.14.0"]
     timeout-minutes: 45
+    env:
+      PYTORCH_VERSION: "2.14.0"
 
     steps:
       - name: cleanup node
@@ -214,7 +205,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ matrix.python_version }}
+          python-version: "3.12"
 
       - name: Install uv
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -223,34 +214,31 @@ jobs:
           prune-cache: true
           cache-dependency-glob: "pyproject.toml"
 
+      - name: Check sdist manifest
+        run: |
+          python scripts/check_sdist_manifest.py --out-dir dist
+
       - name: Install PyTorch
         run: |
-          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip install torch==${PYTORCH_VERSION} torchvision
           uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
 
-      - name: Install dependencies
+      - name: Install axolotl from the sdist-built wheel
         run: |
-          uv pip install packaging setuptools_scm build wheel psutil
-          python -m build --no-isolation --sdist
-          for sdist in dist/axolotl*.tar.gz; do
-            uv pip install --no-build-isolation "${sdist}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
-          done
+          wheel=$(ls dist/axolotl-*.whl)
+          uv pip install --no-build-isolation "${wheel}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+          uv pip install pytest pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
+          python -c "import torch; assert '${PYTORCH_VERSION}' in torch.__version__, f'Expected torch ${PYTORCH_VERSION} but got {torch.__version__}'"
 
       - name: Ensure axolotl CLI was installed
-        run: |
-          axolotl --help
+        run: axolotl --help
 
       - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.14.0' }}
-        run: |
-          axolotl generate-cli-config-options --check
+        run: axolotl generate-cli-config-options --check
 
       - name: Verify agent docs are discoverable
         run: |
@@ -262,41 +250,134 @@ jobs:
           axolotl agent-docs sft | grep -q "SFT"
           python -c "from axolotl.cli.agent_docs import get_doc, list_topics; assert len(list_topics()) >= 5; assert 'GRPO' in get_doc('grpo')"
 
-      - name: Show HF cache
-        run: hf cache ls
-
-      - name: Run tests
-        timeout-minutes: 30
+      - name: Import every axolotl module and resolve entry points
+        env:
+          AXOLOTL_DO_NOT_TRACK: "1"
         run: |
-          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 \
-            --ignore=tests/integrations/kernels/ \
-            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-            --ignore=tests/integrations/test_gemma4_moe.py \
-            --ignore=tests/integrations/test_scattermoe_lora.py \
-            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
-            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
-            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
-            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          python scripts/check_installed_axolotl.py --import-walk --entry-points --require-site-packages
 
-      - name: Show HF cache
-        run: hf cache ls
+      - name: Pre-Download dataset fixture
+        run: |
+          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+
+      - name: Run CLI tests against the installed wheel
+        timeout-minutes: 20
+        run: |
+          pytest -v --durations=10 tests/cli/
+
+  select-e2e:
+    name: Select e2e tests
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # the PR merge commit plus both parents, so the diff is exactly the PR
+          fetch-depth: 2
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Preview only: the selected-e2e GPU arms run this subset alongside the full suites.
+      # Anything the selector cannot reason about resolves to "all", and those arms then skip.
+      - name: Select impacted e2e test files
+        continue-on-error: true
+        run: |
+          out="$RUNNER_TEMP/e2e-selection"
+          mkdir -p "$out"
+          args=()
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            args=(--merge-commit)
+          fi
+          python cicd/select_e2e_tests.py "${args[@]}" --name single --explain \
+            --exclude tests/e2e/multigpu --exclude tests/e2e/kernels \
+            --output "$out/single.txt"
+          python cicd/select_e2e_tests.py "${args[@]}" --name multigpu --explain \
+            --scope tests/e2e/multigpu \
+            --output "$out/multigpu.txt"
+
+      - name: Upload selection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-selection
+          path: ${{ runner.temp }}/e2e-selection
+          if-no-files-found: warn
+          retention-days: 7
+
+  multigpu-paths:
+    name: Multi-GPU path filter
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    outputs:
+      run_multigpu: ${{ steps.filter.outputs.run_multigpu }}
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        id: filter
+        with:
+          script: |
+            // trailing '/' = prefix, '*' = glob within one path segment, otherwise exact path
+            const PATTERNS = [
+              'src/axolotl/core/',
+              'src/axolotl/loaders/',
+              'src/axolotl/model_support/',
+              'src/axolotl/monkeypatch/',
+              'src/axolotl/kernels/',
+              'src/axolotl/utils/distributed.py',
+              'src/axolotl/utils/schemas/',
+              'src/axolotl/utils/model_shard_quant.py',
+              'src/axolotl/integrations/expert_parallel/',
+              'src/axolotl/integrations/context_parallel/',
+              'src/axolotl/integrations/cut_cross_entropy/',
+              'src/axolotl/integrations/kernels/',
+              'src/axolotl/train.py',
+              'src/axolotl/cli/',
+              'deepspeed_configs/',
+              'tests/e2e/multigpu/',
+              'cicd/',
+              '.github/workflows/multi-gpu-e2e*.yml',
+              '.github/workflows/tests.yml',
+              'pyproject.toml',
+              'requirements*.txt',
+              'scripts/cutcrossentropy_install.py',
+              'cicd/Dockerfile*',
+            ];
+            if (context.eventName !== 'pull_request') {
+              core.info(`event ${context.eventName}: multigpu enabled`);
+              core.setOutput('run_multigpu', 'true');
+              return;
+            }
+            const escape = (s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+            const toRegex = (p) => new RegExp('^' + p.split('*').map(escape).join('[^/]*') + '$');
+            const matches = (file) => PATTERNS.some((p) =>
+              p.endsWith('/') ? file.startsWith(p) : p.includes('*') ? toRegex(p).test(file) : file === p);
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const hits = files.flatMap((f) => [f.filename, f.previous_filename]).filter((name) => name && matches(name));
+            core.info(`${files.length} changed file(s); ${hits.length} matched multigpu paths`);
+            for (const hit of hits) core.info(`  ${hit}`);
+            core.setOutput('run_multigpu', String(hits.length > 0));
 
   check-gpu-label:
+    # Deferred so a label added while CPU jobs run is seen without a rerun
+    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist]
     uses: ./.github/workflows/gpu-pr-gate.yml
 
   docker-e2e:
-    needs: [pre-commit, nf4-distributed, pytest, pytest-sdist, check-gpu-label]
+    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist, check-gpu-label]
     if: needs.check-gpu-label.outputs.enabled == 'true'
     uses: ./.github/workflows/docker-e2e.yml
     secrets: inherit
 
   multi-gpu-e2e:
-    needs: [pre-commit, nf4-distributed, pytest, pytest-sdist, check-gpu-label]
-    if: github.event_name == 'pull_request' && needs.check-gpu-label.outputs.enabled == 'true'
+    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist, check-gpu-label, multigpu-paths]
+    if: github.event_name == 'pull_request' && needs.check-gpu-label.outputs.enabled == 'true' && needs.multigpu-paths.outputs.run_multigpu == 'true'
     uses: ./.github/workflows/multi-gpu-e2e.yml
     secrets: inherit

@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import (
-    is_torch_greater_or_equal,
     is_torch_npu_available,
 )
 
@@ -181,13 +180,9 @@ def resolve_dtype(cfg):
     else:
         if cfg.tf32 is True:
             torch.set_float32_matmul_precision("high")
-            if is_torch_greater_or_equal("2.9.0"):
-                torch.backends.fp32_precision = "tf32"
-                torch.backends.cuda.matmul.fp32_precision = "tf32"
-                torch.backends.cudnn.fp32_precision = "tf32"
-            else:
-                torch.backends.cuda.matmul.allow_tf32 = True
-                torch.backends.cudnn.allow_tf32 = True
+            torch.backends.fp32_precision = "tf32"
+            torch.backends.cuda.matmul.fp32_precision = "tf32"
+            torch.backends.cudnn.fp32_precision = "tf32"
         if cfg.bf16:
             cfg.fp16 = False
 
@@ -459,10 +454,10 @@ def validate_config(
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
 ) -> DictDefault:
-    from axolotl.integrations.base import BUILTIN_PLUGINS
+    from axolotl.integrations.base import get_builtin_plugins
     from axolotl.utils.schemas import config as config_schema
 
-    if cfg.plugins or BUILTIN_PLUGINS:
+    if cfg.plugins or get_builtin_plugins():
         AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()
     else:
         AxolotlConfigWCapabilities = config_schema.AxolotlConfigWCapabilities
@@ -519,16 +514,28 @@ def validate_config(
 
 
 def prepare_plugins(cfg):
-    """Prepare built-in plugins and plugins explicitly selected by the config."""
-    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
+    """Prepare installed plugins and plugins explicitly selected by the config."""
+    from axolotl.integrations.base import (
+        PluginManager,
+        get_builtin_plugins,
+        normalize_plugin_name,
+    )
 
-    if not cfg.get("plugins") and not BUILTIN_PLUGINS:
+    builtin_plugins = get_builtin_plugins()
+    configured_plugins = tuple(
+        dict.fromkeys(
+            normalize_plugin_name(plugin_name)
+            for plugin_name in cfg.get("plugins") or []
+        )
+    )
+
+    if not configured_plugins and not builtin_plugins:
         return
 
     plugin_manager = PluginManager.get_instance()
-    for plugin_name in cfg.get("plugins") or []:
-        if plugin_name not in BUILTIN_PLUGINS:
-            plugin_manager.register(plugin_name)
-    for plugin_name in dict.fromkeys((*BUILTIN_PLUGINS, *(cfg.get("plugins") or []))):
+    for plugin_name in configured_plugins:
+        if plugin_name not in plugin_manager.plugins:
+            plugin_manager.register(plugin_name, required=True)
+    for plugin_name in dict.fromkeys((*builtin_plugins, *configured_plugins)):
         if plugin_name in plugin_manager.plugins:
             plugin_manager.plugins[plugin_name].register(cfg)

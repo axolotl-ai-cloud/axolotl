@@ -1,4 +1,5 @@
 import gc
+import json
 import math
 import os
 import re
@@ -22,6 +23,253 @@ from axolotl.cli.utils.param_wrapper_merge import (
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+def adapter_has_trainable_token_deltas(
+    lora_adapter_path: Union[str, Path, None],
+) -> bool:
+    """Return whether a PEFT adapter carries selectively trainable token rows."""
+    if lora_adapter_path is None:
+        return False
+    adapter_path = Path(lora_adapter_path)
+    config_path = adapter_path / "adapter_config.json"
+    if not config_path.exists():
+        return False
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid adapter configuration: {config_path}") from exc
+    if not isinstance(config, dict):
+        raise ValueError(f"Adapter configuration must be a JSON object: {config_path}")
+    configured = config.get("trainable_token_indices")
+    state_path = adapter_path / "adapter_model.safetensors"
+    if state_path.exists():
+        with safetensors.safe_open(state_path, framework="pt") as state:
+            has_delta = any(
+                key.endswith(".trainable_tokens_delta") for key in state.keys()
+            )
+    else:
+        state_path = adapter_path / "adapter_model.bin"
+        if not state_path.exists():
+            raise FileNotFoundError(
+                f"Adapter declares trainable_token_indices but has no weights in {adapter_path}"
+            )
+        state = torch.load(state_path, map_location="cpu", weights_only=True)  # nosec B614
+        has_delta = any(key.endswith(".trainable_tokens_delta") for key in state)
+    if bool(configured) != has_delta:
+        raise ValueError(
+            "Adapter trainable_token_indices and trainable_tokens_delta payload disagree. "
+            "Refusing to merge an incomplete adapter."
+        )
+    return has_delta
+
+
+def _trainable_token_indices(value, name: str) -> list[int]:
+    if not isinstance(value, (list, tuple)) or not value:
+        raise ValueError(f"trainable_token_indices for {name} must be a non-empty list")
+    if any(isinstance(index, bool) or not isinstance(index, int) for index in value):
+        raise ValueError(f"trainable_token_indices for {name} must contain integers")
+    if any(index < 0 for index in value) or len(set(value)) != len(value):
+        raise ValueError(
+            f"trainable_token_indices for {name} must be non-negative and unique"
+        )
+    return list(value)
+
+
+def _base_weight_metadata(
+    model_shards: list[Path],
+) -> dict[str, tuple[tuple[int, ...], str]]:
+    """Read checkpoint shapes and dtypes without materializing a complete model."""
+    result = {}
+    for shard_path in model_shards:
+        if shard_path.suffix != ".safetensors":
+            state = torch.load(shard_path, map_location="cpu", weights_only=True)  # nosec B614
+            result.update(
+                {
+                    key: (tuple(value.shape), str(value.dtype))
+                    for key, value in state.items()
+                }
+            )
+            continue
+        with safetensors.safe_open(shard_path, framework="pt", device="cpu") as shard:
+            result.update(
+                {
+                    key: (
+                        tuple(shard.get_slice(key).get_shape()),
+                        shard.get_slice(key).get_dtype(),
+                    )
+                    for key in shard.keys()
+                }
+            )
+    return result
+
+
+def _resolve_token_weight_keys(
+    module_name: str,
+    base_shapes: dict[str, tuple[tuple[int, ...], str]],
+    weight_renamings: Optional[Dict[str, str]],
+) -> list[str]:
+    matches = []
+    for key in base_shapes:
+        if not key.endswith(".weight"):
+            continue
+        clean_key = key.removesuffix(".weight")
+        if module_name == clean_key or module_name in _renamed_key_candidates(
+            clean_key, weight_renamings
+        ):
+            matches.append(key)
+    return matches
+
+
+def _plan_trainable_token_merges(
+    lora_state: Dict[str, torch.Tensor],
+    lora_config_dict: Dict,
+    model_shards: list[Path],
+    weight_renamings: Optional[Dict[str, str]],
+    meta_model=None,
+    tie_word_embeddings: bool = False,
+) -> dict[str, list[tuple[torch.Tensor, list[int], str]]]:
+    """Validate PEFT replacement rows and map them to sharded checkpoint tensors."""
+    payloads = {
+        key: value
+        for key, value in lora_state.items()
+        if key.endswith(".trainable_tokens_delta")
+    }
+    configured = lora_config_dict.get("trainable_token_indices")
+    if bool(configured) != bool(payloads):
+        raise ValueError(
+            "Adapter trainable_token_indices and trainable_tokens_delta payload disagree. "
+            "Refusing to merge an incomplete adapter."
+        )
+    if not payloads:
+        return {}
+    if not isinstance(configured, (list, tuple, dict)):
+        raise ValueError(
+            "trainable_token_indices must be a list or embedding-path mapping"
+        )
+
+    parsed = []
+    consumed_configured = set()
+    for payload_key, values in payloads.items():
+        prefix = "base_model.model."
+        suffix = ".token_adapter.trainable_tokens_delta"
+        if not payload_key.startswith(prefix) or not payload_key.endswith(suffix):
+            raise ValueError(f"Unsupported trainable token payload key: {payload_key}")
+        module_name = payload_key[len(prefix) : -len(suffix)]
+        if isinstance(configured, dict):
+            matching_names = [
+                name
+                for name in configured
+                if module_name == name or module_name.endswith(f".{name}")
+            ]
+            if len(matching_names) != 1:
+                raise ValueError(
+                    f"Could not uniquely associate {payload_key} with trainable_token_indices"
+                )
+            indices = _trainable_token_indices(
+                configured[matching_names[0]], matching_names[0]
+            )
+            consumed_configured.add(matching_names[0])
+        else:
+            if len(payloads) != 1:
+                raise ValueError(
+                    "List trainable_token_indices must produce exactly one token-row payload"
+                )
+            indices = _trainable_token_indices(configured, module_name)
+        if values.ndim != 2 or values.shape[0] != len(indices):
+            raise ValueError(
+                f"Trainable token payload {payload_key} has shape {tuple(values.shape)}, "
+                f"expected ({len(indices)}, hidden_size)"
+            )
+        if not torch.isfinite(values).all():
+            raise ValueError(
+                f"Trainable token payload {payload_key} contains non-finite values"
+            )
+        parsed.append((payload_key, module_name, values, indices))
+    if isinstance(configured, dict) and consumed_configured != set(configured):
+        missing = sorted(set(configured) - consumed_configured)
+        raise ValueError(f"trainable_token_indices entries have no payload: {missing}")
+
+    base_shapes = _base_weight_metadata(model_shards)
+    aliases: dict[str, set[str]] = {}
+    if meta_model is not None:
+        identity_groups: dict[int, set[str]] = {}
+        for name, parameter in meta_model.named_parameters(remove_duplicate=False):
+            if name.endswith(".weight"):
+                identity_groups.setdefault(id(parameter), set()).add(
+                    name.removesuffix(".weight")
+                )
+        for group in identity_groups.values():
+            for name in group:
+                aliases[name] = group
+
+    plan: dict[str, list[tuple[torch.Tensor, list[int], str]]] = {}
+    claimed_rows: dict[tuple[str, int], str] = {}
+    for payload_key, module_name, values, indices in parsed:
+        modules = aliases.get(module_name, {module_name})
+        if (
+            meta_model is None
+            and tie_word_embeddings
+            and module_name.endswith("embed_tokens")
+        ):
+            modules = {*modules, "lm_head"}
+        resolved = []
+        for module in modules:
+            candidates = _resolve_token_weight_keys(
+                module, base_shapes, weight_renamings
+            )
+            if len(candidates) > 1:
+                raise ValueError(
+                    f"Ambiguous base checkpoint mapping for trainable token module {module}: {candidates}"
+                )
+            resolved.extend(candidates)
+        resolved = list(dict.fromkeys(resolved))
+        if not resolved:
+            raise ValueError(f"No base checkpoint weight found for {payload_key}")
+        for key in resolved:
+            shape, dtype_name = base_shapes[key]
+            dtype = {
+                "F64": torch.float64,
+                "torch.float64": torch.float64,
+                "F32": torch.float32,
+                "torch.float32": torch.float32,
+                "BF16": torch.bfloat16,
+                "torch.bfloat16": torch.bfloat16,
+                "F16": torch.float16,
+                "torch.float16": torch.float16,
+            }.get(dtype_name)
+            if dtype is None:
+                raise ValueError(
+                    f"Unsupported trainable token base weight dtype for {key}: {dtype_name}"
+                )
+            if (
+                not values.is_floating_point()
+                or not torch.isfinite(values.to(dtype=dtype)).all()
+            ):
+                raise ValueError(
+                    f"Trainable token payload becomes non-finite or is non-floating in {key} dtype"
+                )
+            if len(shape) != 2 or shape[1] != values.shape[1]:
+                raise ValueError(
+                    f"Trainable token payload {payload_key} shape {tuple(values.shape)} "
+                    f"does not match base weight {key} shape {shape}"
+                )
+            if any(index >= shape[0] for index in indices):
+                raise ValueError(
+                    f"Trainable token index is out of bounds for base weight {key}"
+                )
+            for index in indices:
+                claim = (key, index)
+                prior = claimed_rows.get(claim)
+                if prior is not None and prior != payload_key:
+                    raise ValueError(
+                        f"Overlapping trainable token rows for base weight {key}"
+                    )
+                claimed_rows[claim] = payload_key
+            plan.setdefault(key, []).append((values, indices, payload_key))
+    if {payload_key for _, _, payload_key in sum(plan.values(), [])} != set(payloads):
+        raise ValueError("Could not consume every trainable token payload")
+    return plan
 
 
 def _renamed_key_candidates(
@@ -2482,11 +2730,44 @@ def merge_lora_sharded_efficient(
     )
     if param_wrapper_map is not None:
         param_wrapper_map = _MemoizedParamWrapperMap(param_wrapper_map)
-    del meta_model
 
     model_shards = get_model_shards(base_model_path)
     if not model_shards:
         raise FileNotFoundError(f"No model shards found in {base_model_path}")
+
+    token_row_merges = _plan_trainable_token_merges(
+        lora_state,
+        lora_config_dict,
+        model_shards,
+        weight_renamings,
+        meta_model,
+        tie_word_embeddings=bool(
+            json.loads((base_model_path / "config.json").read_text()).get(
+                "tie_word_embeddings", False
+            )
+        )
+        if (base_model_path / "config.json").exists()
+        else False,
+    )
+    for key in token_row_merges:
+        module = key.removesuffix(".weight")
+        module_names = [module, *_renamed_key_candidates(module, weight_renamings)]
+        if any(
+            _find_full_override(lora_state, name + ".weight") is not None
+            for name in module_names
+        ):
+            raise ValueError(
+                f"Trainable token rows conflict with a full-weight override for {key}"
+            )
+        if any(
+            adapter_key.startswith(f"base_model.model.{name}.lora_")
+            for name in module_names
+            for adapter_key in lora_state
+        ):
+            raise ValueError(
+                f"Trainable token rows conflict with LoRA weights for {key}"
+            )
+    del meta_model
 
     if bnb_4bit_base:
         bnb_split_components = _load_split_bnb_4bit_components(model_shards)
@@ -2682,6 +2963,24 @@ def merge_lora_sharded_efficient(
                     and override.shape[0] != tensor.shape[0]
                 ):
                     resized_vocab = int(override.shape[0])
+                continue
+            if key in token_row_merges:
+                merged_tensor = tensor.clone()
+                for values, indices, _ in token_row_merges[key]:
+                    replacement = values.to(
+                        device=merged_tensor.device, dtype=merged_tensor.dtype
+                    )
+                    if not torch.isfinite(replacement).all():
+                        raise ValueError(
+                            f"Trainable token payload becomes non-finite in {key} dtype"
+                        )
+                    merged_tensor.index_copy_(
+                        0,
+                        torch.tensor(indices, device=merged_tensor.device),
+                        replacement,
+                    )
+                    merged_count += 1
+                merged_tensors[key] = merged_tensor.detach().cpu()
                 continue
             merged_tensor, was_merged = _merge_tensor_with_lora(
                 tensor,

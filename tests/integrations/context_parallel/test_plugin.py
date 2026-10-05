@@ -267,6 +267,7 @@ def test_no_plugins_without_builtins(min_base_cfg, monkeypatch):
     from axolotl.integrations import base
 
     monkeypatch.setattr(base, "BUILTIN_PLUGINS", ())
+    monkeypatch.setattr(base, "entry_points", lambda **kwargs: [])
     merge = Mock(side_effect=AssertionError("plugin schema should not be merged"))
     monkeypatch.setattr("axolotl.utils.config.merge_input_args", merge)
     cfg = validate_config(min_base_cfg)
@@ -339,6 +340,7 @@ def test_cli_plugin_cleanup_guard(monkeypatch, builtin, explicit, fails):
     from axolotl.integrations import base
 
     monkeypatch.setattr(base, "BUILTIN_PLUGINS", (PLUGIN_PATH,) if builtin else ())
+    monkeypatch.setattr(base, "entry_points", lambda **kwargs: [])
     manager = Mock()
     manager.load_datasets.return_value = None
     get_manager = Mock(return_value=manager)

@@ -23,13 +23,13 @@ def test_fla_mamba_packed_cp_four_ranks(lora):
             "--standalone",
             "--nproc_per_node=4",
             "--module",
-            "tests.integrations._fla_mamba_cp_probe",
+            "tests.integrations.context_parallel._fla_mamba_cp_probe",
         ],
         env={
             **os.environ,
             "OMP_NUM_THREADS": "1",
             "RM_LORA": "1" if lora else "0",
-            "PYTHONPATH": str(Path(__file__).resolve().parents[2])
+            "PYTHONPATH": str(Path(__file__).resolve().parents[3])
             + os.pathsep
             + os.environ.get("PYTHONPATH", ""),
         },

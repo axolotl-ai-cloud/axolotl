@@ -5,7 +5,7 @@ import sys
 import torch
 import transformers
 from packaging import version
-from transformers.utils.import_utils import _torch_version, is_torch_less_or_equal
+from transformers.utils.import_utils import is_torch_less_or_equal
 
 from axolotl.utils.logging import get_logger
 
@@ -55,7 +55,10 @@ def patch_flex_wrapper(**flex_attn_compile_kwargs):
                 # In PyTorch 2.6.0, there's a known issue with flex attention compilation which may
                 # cause errors. The suggested fix is to compile with "max-autotune-no-cudagraphs"
                 # see https://github.com/pytorch/pytorch/issues/146260 for training
-                elif version.parse(_torch_version).base_version == "2.6.0" and training:
+                elif (
+                    version.parse(torch.__version__).base_version == "2.6.0"
+                    and training
+                ):
                     self._compiled_flex_attention = torch.compile(
                         flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
                     )

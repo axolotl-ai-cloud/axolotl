@@ -1,5 +1,6 @@
 """CLI to merge a trained LoRA into a base model."""
 
+import shutil
 from pathlib import Path
 from typing import Union
 
@@ -9,6 +10,8 @@ import torch
 from axolotl.cli.config import load_cfg
 from axolotl.cli.utils import load_model_and_tokenizer
 from axolotl.cli.utils.lora_merge import merge_lora_sharded_efficient
+from axolotl.integrations.base import PluginManager
+from axolotl.model_support import get_model_support
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -34,7 +37,12 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
             "directly via `lora_model_dir` instead."
         )
 
-    merge_method = str(getattr(cfg, "merge_method", "memory_efficient"))
+    configured_merge_method = getattr(cfg, "merge_method", None)
+    merge_method = configured_merge_method or "memory_efficient"
+    support = get_model_support(getattr(cfg, "model_config_type", None))
+    resolve_merge_method = getattr(support, "resolve_lora_merge_method", None)
+    if resolve_merge_method is not None:
+        merge_method = resolve_merge_method(cfg, configured_merge_method)
     if merge_method == "legacy":
         if (
             getattr(cfg, "_original_nf4_backend", None) or cfg.nf4_backend
@@ -75,6 +83,14 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
             str(Path(cfg.output_dir) / "merged"),
             progressbar=True,
         )
+        base_model = getattr(cfg, "base_model", None)
+        base_model_path = Path(base_model) if isinstance(base_model, str) else None
+        if (
+            getattr(cfg, "trust_remote_code", False)
+            and base_model_path is not None
+            and base_model_path.is_dir()
+        ):
+            _copy_remote_code_files(base_model_path, Path(cfg.output_dir) / "merged")
         tokenizer.save_pretrained(
             str(Path(cfg.output_dir) / "merged"),
             save_jinja_files=cfg.tokenizer_save_jinja_files,
@@ -82,6 +98,25 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
 
         if processor:
             processor.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+        PluginManager.get_instance().post_lora_merge(
+            cfg,
+            str(cfg.lora_model_dir),
+            str(Path(cfg.output_dir) / "merged"),
+        )
+
+
+def _copy_remote_code_files(base_model_path: Path, output_path: Path) -> None:
+    base_model_path = base_model_path.resolve()
+    output_path = output_path.resolve()
+    for source in base_model_path.rglob("*.py"):
+        relative = source.relative_to(base_model_path)
+        if any(part in {".git", "__pycache__"} for part in relative.parts):
+            continue
+        target = output_path / relative
+        if source == target or output_path in source.parents:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
@@ -154,6 +189,11 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         dequant=bool(getattr(cfg, "merge_dequant", False)),
         override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),
         revision=cfg.revision_of_model,
+    )
+    PluginManager.get_instance().post_lora_merge(
+        cfg,
+        str(cfg.lora_model_dir),
+        str(output_path),
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")

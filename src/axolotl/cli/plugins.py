@@ -36,7 +36,19 @@ def _import_command(target: str) -> click.Command:
     if not separator:
         raise ValueError(f"expected '<module>:<attribute>', got '{target}'")
 
-    command = getattr(importlib.import_module(module_name), attribute)
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        LOG.warning(
+            "Could not import plugin command '%s'; skipping it",
+            target,
+            exc_info=True,
+        )
+        raise click.ClickException(
+            f"Could not import plugin command '{target}'. See the warning above."
+        ) from exc
+
+    command = getattr(module, attribute)
     if not isinstance(command, click.Command):
         raise TypeError(f"'{target}' is not a click command")
 
@@ -66,12 +78,14 @@ class LazyCommand(click.Command):
 
         try:
             return self.resolve().get_short_help_str(limit)
-        except Exception as exc:
+        except click.ClickException:
+            return ""
+        except Exception:  # pylint: disable=broad-exception-caught
             LOG.warning(
-                "could not load plugin command '%s' from '%s': %s",
+                "Could not load plugin command '%s' from '%s'",
                 self.name,
                 self.spec.target,
-                exc,
+                exc_info=True,
             )
             return ""
 

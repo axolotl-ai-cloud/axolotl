@@ -162,6 +162,7 @@ class TestPeftPatchIdempotency:
             patch_peft_target_parameters_matching._axolotl_patched = False
 
 
+@pytest.mark.gpu
 class TestMoeAdapterTrainMergeRoundtrip:
     """E2E: train adapter on quantized MoE experts, then merge onto plain model.
 

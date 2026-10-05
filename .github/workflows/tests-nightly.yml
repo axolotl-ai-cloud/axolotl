@@ -103,7 +103,7 @@ jobs:
           uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+            codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Override with nightly HF packages
         run: |
@@ -132,15 +132,9 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed" \
+          pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed and not gpu" \
             --ignore=tests/e2e/ \
             --ignore=tests/integrations/kernels/ \
-            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-            --ignore=tests/integrations/test_gemma4_moe.py \
-            --ignore=tests/integrations/test_scattermoe_lora.py \
-            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
-            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
-            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
             --ignore=tests/patched/ \
             --ignore=tests/cli/ \
             tests/
@@ -197,6 +191,8 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -253,6 +249,8 @@ jobs:
           echo "NF4_TEST_STACK=${{ matrix.nf4_test_stack }}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -307,6 +305,8 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

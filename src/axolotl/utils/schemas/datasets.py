@@ -349,6 +349,39 @@ class SyntheticDataset(BaseModel):
         default=None,
         json_schema_extra={"description": "Random seed for reproducibility"},
     )
+    min_turns: int = Field(
+        default=1, ge=1, description="Minimum input/output pairs per row"
+    )
+    max_turns: int = Field(
+        default=1, ge=1, description="Maximum input/output pairs per row"
+    )
+    min_turn_length: int = Field(
+        default=32, ge=1, description="Minimum total tokens per input/output pair"
+    )
+    input_fraction: float = Field(
+        default=0,
+        ge=0,
+        lt=1,
+        allow_inf_nan=False,
+        description="Fraction of input tokens masked to -100 per turn; 0 labels all tokens",
+    )
+
+    @model_validator(mode="after")
+    def validate_turns(self):
+        if self.min_turns > 1 and self.max_turns <= self.min_turns:
+            raise ValueError("max_turns must exceed min_turns for multi-turn data")
+        if self.max_turns > 1 and "input_fraction" not in self.model_fields_set:
+            self.input_fraction = 0.25
+        tokens_per_turn = max(self.min_turn_length, 2 if self.input_fraction > 0 else 1)
+        if (
+            self.sequence_length is not None
+            and (self.max_turns > 1 or self.input_fraction > 0)
+            and self.sequence_length < tokens_per_turn * self.min_turns
+        ):
+            raise ValueError(
+                f"sequence_length must be at least {tokens_per_turn} * min_turns"
+            )
+        return self
 
 
 DatasetConfig = (

@@ -8,6 +8,7 @@ from test_lora_fp32_gradients import projection
 from torch import nn
 
 
+@pytest.mark.gpu
 @pytest.mark.parametrize("kind", ["linear", "qkv", "swiglu", "geglu"])
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 @pytest.mark.parametrize("fp32", [False, True])

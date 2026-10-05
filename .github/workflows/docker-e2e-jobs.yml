@@ -87,6 +87,8 @@ jobs:
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -138,6 +140,8 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -192,11 +196,141 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
           modal run -m cicd.e2e_cuda_kernels
+
+  docker-e2e-tests-testmon:
+    if: >
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      needs.gate-skip-e2e.outputs.skip != 'true'
+    # this job needs to be run on self-hosted GPU runners...
+    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
+    continue-on-error: true
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 120
+    # Only run the remainder of the matrix if the first e2e check passed;
+    # this is to save on wasted compute costs for known failures that get caught in the first run
+    needs: [gate-skip-e2e, docker-e2e-tests-1st]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.14.0
+            num_gpus: 1
+            axolotl_extras:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.3.0.post1 jinja2
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
+      - name: Run testmon e2e job on Modal
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          modal run -m cicd.e2e_testmon
+
+  docker-e2e-tests-selected:
+    if: >
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      github.event_name == 'pull_request' &&
+      needs.gate-skip-e2e.outputs.skip != 'true'
+    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
+    continue-on-error: true
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 120
+    needs: [gate-skip-e2e]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.14.0
+            axolotl_extras:
+            num_gpus: 1
+    steps:
+      - name: Download e2e selection
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: e2e-selection
+          path: ${{ runner.temp }}/e2e-selection
+      - name: Read selection
+        id: selection
+        run: |
+          dir="$RUNNER_TEMP/e2e-selection"
+          mode=$(cat "$dir/single.mode" 2>/dev/null || echo all)
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "selected-e2e (single): mode=$mode"
+          if [ "$mode" = "subset" ]; then
+            echo "E2E_SELECTED_TESTS=$(paste -sd, "$dir/single.txt")" >> "$GITHUB_ENV"
+            cat "$dir/single.txt"
+          fi
+      - name: Checkout
+        if: steps.selection.outputs.mode == 'subset'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Python
+        if: steps.selection.outputs.mode == 'subset'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install Modal
+        if: steps.selection.outputs.mode == 'subset'
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.3.0.post1 jinja2
+      - name: Update env vars
+        if: steps.selection.outputs.mode == 'subset'
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S' }}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+      - name: Compute deps hash
+        if: steps.selection.outputs.mode == 'subset'
+        run: python cicd/deps_hash.py
+      - name: Run selected tests on Modal
+        if: steps.selection.outputs.mode == 'subset'
+        run: |
+          modal run -m cicd.e2e_selected
 
   docker-e2e-cleanup:
     runs-on: [self-hosted, modal]
@@ -236,6 +370,8 @@ jobs:
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         run: |
           modal run -m cicd.cleanup

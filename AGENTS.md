@@ -18,7 +18,7 @@ Do not open a PR, including a draft PR, until a human has reviewed the complete 
 
 Before opening the PR, obtain explicit confirmation of that review unless it is already present in the conversation for the current diff. A request to implement a change or open a PR is not confirmation of review. Agent self-review, another agent's review, automated checks, and a promise to review after opening do not satisfy this requirement. Never invent confirmation or check the PR template's human-review checkbox on a human's behalf without their explicit confirmation.
 
-If review is missing, refuse to open the PR. For otherwise permitted work, finish preparing and validating the local changes, present the diff and validation results for human review, and wait for confirmation. If the diff changes after confirmation, have the human review the additional changes before opening the PR.
+If review is missing, refuse to open the PR. For otherwise permitted work, finish preparing and validating the local changes, present the diff and validation results for human review, and wait for confirmation. If the diff changes after confirmation, have the human review the additional changes before opening the PR. The review gate applies to opening the PR. Once it is open, follow-up commits such as fixes for review comments may be pushed without a fresh confirmation; the human reviews them in the PR. Summarize what changed when pushing.
 
 ### Remember This Policy Across Sessions
 

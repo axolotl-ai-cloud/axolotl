@@ -176,8 +176,7 @@ def test_ray_train_func_registers_plugins_before_validate_config(monkeypatch):
 
 
 def test_ray_train_func_skips_plugin_registration_when_no_plugins(monkeypatch):
-    """When no plugins are configured, neither `prepare_plugins` nor
-    `plugin_set_cfg` should be invoked on the worker."""
+    """A worker skips plugin setup when no YAML or installed plugin exists."""
     cfg_dict = {
         "base_model": "HuggingFaceTB/SmolLM2-135M",
         "micro_batch_size": 1,
@@ -198,8 +197,39 @@ def test_ray_train_func_skips_plugin_registration_when_no_plugins(monkeypatch):
     monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
     monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+    monkeypatch.setattr("axolotl.integrations.base.get_builtin_plugins", lambda: ())
 
     ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
 
     prepare_plugins_mock.assert_not_called()
     plugin_set_cfg_mock.assert_not_called()
+
+
+def test_ray_train_func_registers_installed_plugins(monkeypatch):
+    cfg_dict = {
+        "base_model": "HuggingFaceTB/SmolLM2-135M",
+        "micro_batch_size": 1,
+        "gradient_accumulation_steps": 1,
+    }
+    prepare_plugins_mock = MagicMock()
+    plugin_set_cfg_mock = MagicMock()
+
+    monkeypatch.setattr("axolotl.cli.train.prepare_plugins", prepare_plugins_mock)
+    monkeypatch.setattr("axolotl.cli.train.plugin_set_cfg", plugin_set_cfg_mock)
+    monkeypatch.setattr(
+        "axolotl.cli.train.validate_config", MagicMock(side_effect=lambda cfg, **_: cfg)
+    )
+    monkeypatch.setattr("axolotl.cli.train.gpu_capabilities", lambda: ({}, {}))
+    monkeypatch.setattr("axolotl.cli.train.do_train", MagicMock())
+    monkeypatch.setattr("axolotl.cli.train.prepare_optim_env", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+    monkeypatch.setattr(
+        "axolotl.integrations.base.get_builtin_plugins", lambda: ("external.Plugin",)
+    )
+
+    ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
+
+    prepare_plugins_mock.assert_called_once()
+    plugin_set_cfg_mock.assert_called_once()

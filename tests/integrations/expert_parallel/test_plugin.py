@@ -537,6 +537,25 @@ class TestCheckpointSaveScoping:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.parametrize("rank", [0, 1])
+def test_sharding_marks_experts_parallel(fake_ep_sharder, rank):
+    model = torch.nn.Module()
+    model.experts = torch.nn.Module()
+    model.experts.gate_up_proj = torch.nn.Parameter(torch.randn(4, 8, 4))
+    model.experts.down_proj = torch.nn.Parameter(torch.randn(4, 4, 4))
+    model.experts.num_experts = 4
+    model.experts._is_expert_parallel = False
+    model.dense = torch.nn.Linear(4, 4)
+    original = model.experts.gate_up_proj.detach().clone()
+    assert fake_ep_sharder(model, rank) == 1
+    assert model.experts._is_expert_parallel is True
+    assert model.experts.num_experts == model.experts.num_local_experts == 2
+    torch.testing.assert_close(
+        model.experts.gate_up_proj, original[rank * 2 : (rank + 1) * 2]
+    )
+    assert not getattr(model.dense, "_is_expert_parallel", False)
+
+
 class TestShardingSingleRank:
     """At world_size=1, sharding is a no-op."""
 
@@ -558,11 +577,13 @@ class TestShardingSingleRank:
         n = shard_expert_weights(block, dist.group.WORLD)
         assert n == 0
         assert tuple(block.experts.gate_up_proj.shape) == original_shape
+        assert not block.experts._is_expert_parallel
 
     def test_none_group_no_op(self):
         block = _build_qwen3moe_block(num_experts=16)
         n = shard_expert_weights(block, None)
         assert n == 0
+        assert not block.experts._is_expert_parallel
 
 
 # --------------------------------------------------------------------------- #

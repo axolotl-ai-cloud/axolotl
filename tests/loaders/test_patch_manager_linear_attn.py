@@ -47,7 +47,7 @@ def _manager(model_type, **overrides):
 def test_gdn_patch_applies_without_cuda(monkeypatch, model_type, target, mode):
     """The patch must not depend on a CUDA device being visible at load time."""
     calls = []
-    monkeypatch.setattr(target, lambda: calls.append(model_type))
+    monkeypatch.setattr(target, lambda torch_compile: calls.append(model_type))
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
     _manager(model_type, **{mode: True})._apply_model_specific_patches()
@@ -56,9 +56,25 @@ def test_gdn_patch_applies_without_cuda(monkeypatch, model_type, target, mode):
 
 
 @pytest.mark.parametrize("model_type,target", GDN_PATCHES.items())
+@pytest.mark.parametrize("torch_compile", [False, True])
+def test_gdn_patch_threads_torch_compile(
+    monkeypatch, model_type, target, torch_compile
+):
+    """The compiled decoder loop is only installed when the run compiles."""
+    calls = []
+    monkeypatch.setattr(target, lambda torch_compile: calls.append(torch_compile))
+
+    _manager(
+        model_type, sample_packing=True, torch_compile=torch_compile
+    )._apply_model_specific_patches()
+
+    assert calls == [torch_compile]
+
+
+@pytest.mark.parametrize("model_type,target", GDN_PATCHES.items())
 def test_gdn_patch_skipped_when_unpacked(monkeypatch, model_type, target):
     calls = []
-    monkeypatch.setattr(target, lambda: calls.append(model_type))
+    monkeypatch.setattr(target, lambda torch_compile: calls.append(model_type))
 
     _manager(model_type)._apply_model_specific_patches()
 

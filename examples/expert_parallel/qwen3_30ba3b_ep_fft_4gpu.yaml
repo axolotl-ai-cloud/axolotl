@@ -1,8 +1,5 @@
 base_model: Qwen/Qwen3-30B-A3B-Instruct-2507
 
-plugins:
-  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
-
 experts_implementation: grouped_mm
 expert_parallel_size: 4 # world size 4
 

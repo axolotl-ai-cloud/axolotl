@@ -24,29 +24,35 @@ done
 env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
 
 # Only run two tests at a time to avoid OOM on GPU (with coverage collection)
-pytest -v --durations=10 -n2 --maxfail=3 \
+pytest -v --durations=10 -n2 --maxfail=10 \
   --ignore=/workspace/axolotl/tests/e2e/multigpu/solo/ \
   --ignore=/workspace/axolotl/tests/e2e/multigpu/patched/ \
   /workspace/axolotl/tests/e2e/multigpu/ \
   --cov=axolotl
 
-# Run solo tests with coverage append
-pytest -v --durations=10 -n1 \
+pytest -v --durations=10 -n1 --maxfail=10 -m slow \
+  /workspace/axolotl/tests/e2e/multigpu/test_ringmaster.py \
+  -k test_axolotl_gdn_cp_parity \
+  --cov=axolotl \
+  --cov-append
+
+# Run solo tests with coverage append; the NVFP4 suite has its own SM100 job
+pytest -v --durations=10 -n1 --maxfail=10 -m "not nvfp4 and not slow" \
   /workspace/axolotl/tests/e2e/multigpu/solo/ \
   --cov=axolotl \
   --cov-append
 
-pytest -v --durations=10 -n1 \
-  /workspace/axolotl/tests/integrations/test_expert_parallel_nvfp4_wrap.py \
+pytest -v --durations=10 -n1 --maxfail=10 \
+  /workspace/axolotl/tests/integrations/expert_parallel/test_nvfp4_wrap.py \
   --cov=axolotl \
   --cov-append
 
-pytest -v  --durations=10 -n1 /workspace/axolotl/tests/e2e/multigpu/patched/ \
+pytest -v  --durations=10 -n1 --maxfail=10 /workspace/axolotl/tests/e2e/multigpu/patched/ \
   --cov=axolotl \
   --cov-append \
   --cov-report=xml:multigpu-coverage.xml
 
 # Upload coverage to Codecov if CODECOV_TOKEN is available
 if [ -n "$CODECOV_TOKEN" ]; then
-  codecov upload-process -t "${CODECOV_TOKEN}" -f multigpu-coverage.xml -F multigpu,docker-tests,pytorch-${PYTORCH_VERSION} || true
+  codecovcli upload-process -t "${CODECOV_TOKEN}" -f multigpu-coverage.xml -F multigpu,docker-tests,pytorch-${PYTORCH_VERSION} || true
 fi

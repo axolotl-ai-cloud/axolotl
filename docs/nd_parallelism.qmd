@@ -106,7 +106,7 @@ See our example configs [here](https://github.com/axolotl-ai-cloud/axolotl/tree/
 
 4.  FSDP + EP on a 4-GPU MoE training run:
     - You want EP to shard the experts and FSDP to shard non-expert params on orthogonal mesh axes.
-    - Set `expert_parallel_size: 2` and `dp_shard_size: 2` (`ep × dp_shard == world_size`). Add the `ExpertParallelPlugin` to `plugins:`.
+    - Set `expert_parallel_size: 2` and `dp_shard_size: 2` (`ep × dp_shard == world_size`).
 
 5.  EP + CP on a 4-GPU long-context MoE run:
     - You want the experts sharded and each sequence split across 2 GPUs.
@@ -121,8 +121,6 @@ Minimal MoE configs for the two EP compositions (4 and 8 GPUs; everything else i
 ```yaml
 # EP x CP on 4 GPUs: experts sharded 2 ways, each sequence split across 2 GPUs
 base_model: Qwen/Qwen3-30B-A3B
-plugins:
-  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
 expert_parallel_size: 2
 context_parallel_size: 2
 fsdp_version: 2
@@ -138,8 +136,6 @@ sample_packing: false
 ```yaml
 # HSDP x EP on 2 nodes x 4 GPUs: replicate across nodes, EP x FSDP inside each node
 base_model: Qwen/Qwen3-30B-A3B
-plugins:
-  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
 dp_replicate_size: 2
 expert_parallel_size: 2
 dp_shard_size: 2

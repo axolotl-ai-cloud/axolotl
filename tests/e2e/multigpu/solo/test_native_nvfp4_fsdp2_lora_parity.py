@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.nvfp4
+
 
 @pytest.mark.parametrize("offload", [False, True])
 @pytest.mark.parametrize("dynamic_activation", [False, True])

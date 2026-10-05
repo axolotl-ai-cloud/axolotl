@@ -67,13 +67,23 @@ pytest tests/e2e/test_lora_llama.py          # LoRA smoke test
 pytest tests/e2e/multigpu/                    # needs >= 2 GPUs
 ```
 
-Some tests require flash-attn (`uv pip install flash-attn --no-build-isolation`).
+Flash Attention 2 is fetched from the Hub kernels registry at runtime; nothing extra to install.
 `cicd/cicd.sh`, `cicd/cicd_cuda_kernels.sh`, and `cicd/multigpu.sh` list CI's exact
 run order. Put single-GPU kernel correctness and numerical parity tests under
 `tests/e2e/kernels/` or `tests/integrations/kernels/` so they run in the dedicated
 kernel lane. LoRA kernel patching runs in its own process there; the slow FLA
 Mamba CUDA tests are selected explicitly. Model training smoke tests stay in the
 general lane, including the lightweight FLA/TileLang installation smoke test.
+
+Unit tests for a plugin live in `tests/integrations/<plugin>/` (`context_parallel/`
+also holds the Ringmaster probes, since Ringmaster is the CP library extracted from
+Axolotl). A test that exercises two plugins together stays in `tests/integrations/`.
+CPU jobs run `tests/integrations/` with `-m "not gpu"` and GPU jobs with `-m gpu`;
+there are no per-file exclusion lists. `tests/integrations/kernels/` belongs to the kernel
+lane and is excluded from the CPU jobs as a directory. Mark a test that needs CUDA with
+`@pytest.mark.gpu` (or `pytestmark = pytest.mark.gpu` for a whole module). A CUDA
+`skipif` without the marker is flagged by `tests/conftest.py`, and
+`AXOLOTL_CI_ENFORCE_GPU_MARKER=1` turns that into a failure.
 Both single-GPU lanes resume interrupted cache downloads with a shared 15-minute
 download budget, then extract the completed archive without clearing the shared
 Hub cache.
@@ -110,7 +120,7 @@ Maintainers may close contributions that do not meet this policy without reviewi
 
 Every PR, including a draft PR, must have its complete diff reviewed by a human **before it is opened**. The contributor may perform this review; a separate reviewer is not required. The reviewing human must understand the changes and take responsibility for them. This applies to maintainer-directed work as well as other contributions.
 
-Agents must refuse to open a PR without explicit human confirmation that the diff being submitted has been reviewed. An instruction to implement a change or open a PR, automated checks, agent reviews, and a promise of later human review do not count. For otherwise permitted work, agents should prepare and validate the local changes, present the diff and results, and wait for human review. Any subsequent changes must also be reviewed before opening the PR.
+Agents must refuse to open a PR without explicit human confirmation that the diff being submitted has been reviewed. An instruction to implement a change or open a PR, automated checks, agent reviews, and a promise of later human review do not count. For otherwise permitted work, agents should prepare and validate the local changes, present the diff and results, and wait for human review. Any subsequent changes must also be reviewed before opening the PR. The gate applies to opening the PR: once it is open, follow-up commits such as fixes for review comments may be pushed without a fresh confirmation, since the human reviews them in the PR.
 
 Complete the human-review confirmation in the [PR template](PULL_REQUEST_TEMPLATE.md) truthfully. Agents must not fabricate confirmation or mark the checkbox without explicit confirmation from the human.
 
@@ -140,6 +150,59 @@ The GPU workflows keep their path filters in `docker-e2e.yml` and `multi-gpu-e2e
 The label handler uses `pull_request_target` with trusted inline code only and must be present on the default branch; it never checks out PR code.
 
 Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
+
+##### Selected e2e arms (experimental)
+
+Alongside the full suites, every PR run selects the e2e test files its diff can affect
+and runs just those in two extra arms, `docker-e2e-tests-selected` (single GPU) and
+`multigpu-selected`. They gate nothing today and run with `continue-on-error`, as does
+the testmon arm, so a failure there never fails the run; they exist to be compared
+against the full suites in both directions. The `select-e2e` job writes the selection and the reason for every file
+to its job summary and uploads it as the `e2e-selection` artifact.
+
+`cicd/select_e2e_tests.py` derives the selection from the tree, so new features need
+no registration:
+
+- A changed module selects the tests whose config sets a key it reads, names it as a
+  config value (a `plugins` entry, a dataset `type`, an `rl` method, a `base_model`
+  containing a model-support package name), or imports it directly.
+- Plugins, prompt strategies and other packages reached by config value are
+  "registry" entries. A member no test names selects nothing.
+- A module that reads a key most e2e configs set (`base_model`, `sequence_len`,
+  `micro_batch_size`, ...) is core and runs the whole scope, as does a module with no
+  derivable edges, a deleted module, a console-script entry point, anything under
+  `cicd/` or `.github/workflows/`, a `conftest.py`, and any error inside the
+  selector. The selector can over-select, never silently under-select.
+- A `pyproject.toml` change that only touches requirement strings is resolved per
+  distribution through `[tool.axolotl.ci.deps]`, which maps a distribution to its
+  import roots. The bump then selects whatever the modules importing those roots
+  select, plus tests that import or `importorskip` the root. A distribution without an
+  entry, an entry nothing imports, an added or removed extra, an edit to the map
+  itself, or any other pyproject change runs the whole scope. List a distribution only
+  when every behaviour it changes sits behind a static import; `torch`, `transformers`
+  and `triton` stay unlisted on purpose.
+- Worker scripts and helpers next to a test (`_*_worker.py`, parity probes) count as
+  part of the tests that name or import them. A test with no visible config at all
+  rides along with every subset.
+
+When a module is enabled by one config key but reached through a hub that reads
+ubiquitous keys, declare the key so the selector can narrow instead of running
+everything:
+
+```python
+__ci_config_keys__ = ("activation_offloading",)
+```
+
+The selector then picks exactly the tests that set any declared key. A declared
+name that is not a config field runs the whole scope, so typos fail safe.
+
+Put `[test all]` in a commit message to force the full scope. Preview locally with:
+
+```bash
+python cicd/select_e2e_tests.py --base origin/main --explain \
+  --exclude tests/e2e/multigpu --exclude tests/e2e/kernels   # single-GPU scope
+python cicd/select_e2e_tests.py --base origin/main --explain --scope tests/e2e/multigpu
+```
 
 CPU NF4 tests marked `nf4_distributed` run in a dedicated job with its own timeout,
 across the same PyTorch versions as the main CPU matrix. The source, sdist, nightly,

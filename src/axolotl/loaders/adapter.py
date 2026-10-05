@@ -29,7 +29,6 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_quantized_meta_for_peft(model: torch.nn.Module):
@@ -183,7 +182,7 @@ def _build_peft_lora_config(
         lora_target_modules = list(set(lora_target_modules_as_list + linear_names))
 
     lora_config_kwargs = _build_lora_config_kwargs(cfg)
-    lora_config_kwargs.update(PLUGIN_MANAGER.get_lora_config_kwargs(cfg))
+    lora_config_kwargs.update(PluginManager.get_instance().get_lora_config_kwargs(cfg))
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
@@ -522,7 +521,7 @@ def load_adapter(
         peft_model, lora_config = load_llama_adapter(model, cfg)
         return peft_model, lora_config
 
-    plugin_loaded = PLUGIN_MANAGER.load_adapter(
+    plugin_loaded = PluginManager.get_instance().load_adapter(
         model,
         cfg,
         inference=inference,
@@ -531,14 +530,14 @@ def load_adapter(
     if plugin_loaded is not None:
         return plugin_loaded
 
-    adapter_capability = PLUGIN_MANAGER.get_adapter_capability(adapter)
+    adapter_capability = PluginManager.get_instance().get_adapter_capability(adapter)
     if adapter_capability and adapter_capability.lora_like:
         peft_model, lora_config = load_lora(
             model, cfg, inference=inference, config_only=config_only
         )
         return peft_model, lora_config
 
-    registered = sorted(PLUGIN_MANAGER.adapter_capabilities())
+    registered = sorted(PluginManager.get_instance().adapter_capabilities())
     registered_msg = ", ".join(registered) if registered else "none"
     raise NotImplementedError(
         f"Adapter '{adapter}' is not built in and was not registered by a plugin "

@@ -2,6 +2,8 @@
 DISCO - DIsk-based Storage and Checkpointing with Optimized prefetching
 """
 
+__ci_config_keys__ = ("activation_offloading",)
+
 # Copyright 2025 Axolotl AI. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,18 +33,8 @@ from typing import Dict
 
 import torch
 
+from axolotl.kernels.utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 from axolotl.utils.logging import get_logger
-
-# Detect the actual accelerator (cuda/npu/xpu/...) so the AMP custom_fwd/bwd
-# decorators are device-agnostic.
-_accelerator = (
-    torch.accelerator.current_accelerator() if hasattr(torch, "accelerator") else None
-)
-# torch.amp.custom_fwd/bwd expect a device type string ("cuda", "npu", ...);
-# str(device) would be the invalid device type "None" on builds without one.
-_amp_device_type = _accelerator.type if _accelerator is not None else "cuda"
-torch_cuda_amp_custom_fwd = torch.amp.custom_fwd(device_type=_amp_device_type)
-torch_cuda_amp_custom_bwd = torch.amp.custom_bwd(device_type=_amp_device_type)
 
 # Setup logger
 logger = get_logger(__name__)
@@ -451,7 +443,7 @@ class Disco(torch.autograd.Function):
         return Disco._manager
 
     @staticmethod
-    @torch_cuda_amp_custom_fwd
+    @torch_amp_custom_fwd
     def forward(
         ctx,
         forward_function,
@@ -488,7 +480,7 @@ class Disco(torch.autograd.Function):
         return output
 
     @staticmethod
-    @torch_cuda_amp_custom_bwd
+    @torch_amp_custom_bwd
     def backward(ctx, *grad_outputs):
         """Backward pass that loads activations from disk with prefetching"""
         # Get the manager

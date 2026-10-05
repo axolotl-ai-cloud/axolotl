@@ -2,12 +2,12 @@
 
 import fnmatch
 import json
+import os
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from packaging import version as packaging_version
 from pydantic import (
     field_validator,
     model_validator,
@@ -119,30 +119,6 @@ def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     ):
         return False
 
-    # MoE without native grouped_mm (torch < 2.9): transformers' fallback uses
-    # torch.mm(out=) which bypasses autocast and fails on mixed dtypes in eval
-    torch_version = (get("env_capabilities") or {}).get("torch_version")
-    if torch_version is None:
-        import torch
-
-        torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-    if packaging_version.parse(torch_version) >= packaging_version.parse("2.9.0"):
-        return True
-    model_type = get("model_config_type") or ""
-    if "moe" in model_type.lower():
-        return False
-    base_model = get("base_model")
-    if base_model:
-        try:
-            from transformers import AutoConfig
-
-            auto_cfg = AutoConfig.from_pretrained(base_model, trust_remote_code=False)
-            if getattr(auto_cfg, "num_local_experts", None) or getattr(
-                auto_cfg, "num_experts", None
-            ):
-                return False
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
     return True
 
 
@@ -186,14 +162,60 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
     repo_id = FLASH_ATTN_KERNEL_FALLBACK.get(attn_implementation)
     if repo_id is None:
         return None
+    version: int | None = None
     try:
+        # resolving the pinned version lists hub refs, so it fails offline too
+        version = get_attn_kernel_version(repo_id)
         # Direct kernels calls do not read Transformers' allow_all_hub_kernels flag.
-        get_kernel(
-            repo_id, version=get_attn_kernel_version(repo_id), trust_remote_code=True
-        )
+        get_kernel(repo_id, version=version, trust_remote_code=True)
     except Exception as err:  # noqa: BLE001
-        return f"{type(err).__name__}: {err}"
+        try:
+            _get_kernel_from_cache(repo_id, version)
+        except Exception:  # noqa: BLE001
+            return f"{type(err).__name__}: {err}"
+        LOG.warning(
+            "kernels hub lookup for %s failed (%s: %s); using the cached build",
+            repo_id,
+            type(err).__name__,
+            err,
+        )
     return None
+
+
+def _get_kernel_from_cache(repo_id: str, version: int | None):
+    """Load a hub kernel from a cached snapshot without touching the network."""
+    from huggingface_hub import constants
+    from huggingface_hub.file_download import repo_folder_name
+    from kernels import get_local_kernel
+
+    cache_dir = Path(os.environ.get("KERNELS_CACHE") or constants.HF_HUB_CACHE)
+    # get_kernel(version=N) downloads by commit and writes no refs entry, so the
+    # kernels offline resolver cannot map the version; read the snapshots directly
+    candidates: list[Path] = []
+    for repo_type in ("kernel", "model"):
+        repo_dir = cache_dir / repo_folder_name(repo_id=repo_id, repo_type=repo_type)
+        ref = repo_dir / "refs" / f"v{version}"
+        if version is not None and ref.is_file():
+            pinned = repo_dir / "snapshots" / ref.read_text().strip()
+            if pinned.is_dir():
+                candidates.append(pinned)
+        snapshots = repo_dir / "snapshots"
+        if snapshots.is_dir():
+            candidates.extend(
+                sorted(
+                    (p for p in snapshots.iterdir() if (p / "build").is_dir()),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+            )
+    errors = []
+    for snapshot in dict.fromkeys(candidates):
+        try:
+            return get_local_kernel(snapshot, trust_remote_code=True)
+        except Exception as err:  # noqa: BLE001
+            errors.append(f"{snapshot.name}: {type(err).__name__}: {err}")
+    detail = f": {'; '.join(errors)}" if errors else ""
+    raise FileNotFoundError(f"no loadable cached snapshot of {repo_id}{detail}")
 
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
@@ -226,6 +248,13 @@ class DatasetValidationMixin:
             LOG.info("`seed` not set in config; setting to 42")
             seed = 42
         return seed
+
+    @model_validator(mode="after")
+    def seed_full_determinism(self):
+        if self.full_determinism and self.seed is None:
+            LOG.info("`full_determinism` set without `seed`; setting seed to 42")
+            self.seed = 42
+        return self
 
     @field_validator("datasets", mode="before")
     @classmethod
@@ -1753,12 +1782,6 @@ class SystemValidationMixin:
             checker = is_flash_attn_3_available
         else:
             checker = is_flash_attn_2_available
-            # TODO: remove when transformers 5.18.0 is released
-            from transformers.integrations.hub_kernels import (
-                _FLASH_ATTN_KERNEL_VERSION_MAPPING,  # pylint: disable=protected-access
-            )
-
-            _FLASH_ATTN_KERNEL_VERSION_MAPPING[2] = 3
         with allow_all_hub_kernels():
             available = checker(kernels_fallback_ok=True)
         reason = None

@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import collections
 import importlib
-import traceback
 from dataclasses import dataclass
+from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
 from peft import PeftConfig, PeftMixedModel, PeftModel
@@ -38,7 +38,50 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-BUILTIN_PLUGINS = ("axolotl.integrations.context_parallel.ContextParallelPlugin",)
+PLUGIN_ENTRY_POINT_GROUP = "axolotl.plugins"
+_plugin_entry_points: tuple[str, ...] | None = None
+_plugin_entry_points_source = None
+
+# Entry-point registrations are authoritative for installed distributions. This
+# fallback keeps the bundled integration available from a source checkout with
+# missing or stale package metadata.
+BUILTIN_PLUGINS = (
+    "axolotl.integrations.context_parallel.ContextParallelPlugin",
+    "axolotl.integrations.expert_parallel.ExpertParallelPlugin",
+)
+
+
+def normalize_plugin_name(target: str) -> str:
+    """Normalize an entry-point target to the legacy dotted plugin name."""
+    module_name, separator, class_name = target.partition(":")
+    return f"{module_name}.{class_name}" if separator else target
+
+
+def reset_plugin_entry_points_cache() -> None:
+    """Clear cached plugin entry points, primarily for test isolation."""
+    global _plugin_entry_points, _plugin_entry_points_source  # pylint: disable=global-statement
+    _plugin_entry_points = None
+    _plugin_entry_points_source = None
+
+
+def get_builtin_plugins() -> tuple[str, ...]:
+    """Return bundled and installed plugins without importing their modules."""
+    global _plugin_entry_points, _plugin_entry_points_source  # pylint: disable=global-statement
+    if _plugin_entry_points is None or _plugin_entry_points_source is not entry_points:
+        _plugin_entry_points = tuple(
+            normalize_plugin_name(point.value)
+            for point in entry_points(group=PLUGIN_ENTRY_POINT_GROUP)
+        )
+        _plugin_entry_points_source = entry_points
+    return tuple(
+        dict.fromkeys(
+            (
+                *BUILTIN_PLUGINS,
+                *_plugin_entry_points,
+            )
+        )
+    )
+
 
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta
@@ -341,6 +384,17 @@ class BasePlugin:
             model: The loaded model.
         """
 
+    def post_lora_merge(
+        self, cfg: DictDefault, adapter_path: str, output_path: str
+    ) -> None:
+        """Runs after a LoRA merge has been saved successfully.
+
+        Args:
+            cfg: The axolotl configuration.
+            adapter_path: Directory containing the source adapter.
+            output_path: Directory containing the merged model.
+        """
+
     def post_train_unload(self, cfg: DictDefault):
         """Performs actions after training is complete and the model is unloaded.
 
@@ -366,8 +420,11 @@ def load_plugin(plugin_name: str) -> BasePlugin:
     Raises:
         ImportError: If the plugin module cannot be imported.
     """
-    # split the plugin name into module and class
-    module_name, class_name = plugin_name.rsplit(".", 1)
+    # Accept the entry-point ``module:class`` form as well as the established
+    # dotted config value.
+    module_name, separator, class_name = plugin_name.partition(":")
+    if not separator:
+        module_name, class_name = plugin_name.rsplit(".", 1)
 
     # import the module
     try:
@@ -423,9 +480,9 @@ class PluginManager:
         exist, it creates a new one.
         """
         manager = PluginManager()
-        for plugin_name in BUILTIN_PLUGINS:
+        for plugin_name in get_builtin_plugins():
             if plugin_name not in manager.plugins:
-                manager.plugins[plugin_name] = load_plugin(plugin_name)
+                manager.register(plugin_name)
         return manager
 
     @property
@@ -436,31 +493,44 @@ class PluginManager:
     def cfg(self, cfg):
         self._cfg = cfg
 
-    def register(self, plugin_name: str):
+    def register(self, plugin_name: str, *, required: bool = False):
         """Registers a new plugin by its name.
 
         Args:
             plugin_name: The name of the plugin to be registered.
+            required: Raise a load failure instead of skipping the plugin.
 
         Raises:
-            ImportError: If the plugin module cannot be imported.
+            Exception: If a required plugin cannot be loaded.
         """
         try:
             LOG.info(f"Attempting to load plugin: {plugin_name}")
             plugin = load_plugin(plugin_name)
             self.plugins[plugin_name] = plugin
             LOG.info(f"Plugin loaded successfully: {plugin_name}")
-        except ImportError as exc:
-            LOG.error(f"Failed to load plugin: {plugin_name}")
-            # print stacktrace
-            traceback.print_exc()
-            print(f"Error: {exc}")
+        except Exception:  # pylint: disable=broad-exception-caught
+            if required:
+                LOG.warning(
+                    "Could not load required plugin '%s'",
+                    plugin_name,
+                    exc_info=True,
+                )
+                raise
+            LOG.warning(
+                "Could not load plugin '%s'; skipping it",
+                plugin_name,
+                exc_info=True,
+            )
 
     def on_config_validation_error(self, cfg):
         """Lets plugins in the current config undo register()-time side effects."""
+        configured_plugins = {
+            normalize_plugin_name(name) for name in cfg.get("plugins") or []
+        }
         for plugin_name, plugin in self.plugins.items():
-            if plugin_name in BUILTIN_PLUGINS or plugin_name in (
-                cfg.get("plugins") or []
+            if (
+                plugin_name in get_builtin_plugins()
+                or plugin_name in configured_plugins
             ):
                 plugin.on_config_validation_error(cfg)
 
@@ -799,6 +869,13 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.post_train(cfg, model)
+
+    def post_lora_merge(
+        self, cfg: DictDefault, adapter_path: str, output_path: str
+    ) -> None:
+        """Calls plugins after a LoRA merge has been saved successfully."""
+        for plugin in self.plugins.values():
+            plugin.post_lora_merge(cfg, adapter_path, output_path)
 
     def on_rollouts_scored(
         self,

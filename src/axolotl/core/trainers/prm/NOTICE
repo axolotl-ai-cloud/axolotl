@@ -1,0 +1,8 @@
+PRM trainer and configuration vendored from Hugging Face TRL v1.13.0.
+Source: https://github.com/huggingface/trl/tree/v1.13.0/trl/experimental/prm
+Revision: 3d9261f1fec9f9a8140099c78a65c7da73dce79c
+Copyright 2020-2026 The HuggingFace Team. All rights reserved.
+Licensed under the Apache License, Version 2.0; see LICENSE.
+
+Axolotl modifications: import shared helpers from the installed TRL package,
+import PRM modules locally, and apply repository formatting.

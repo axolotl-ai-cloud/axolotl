@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 import torch
 
+pytestmark = pytest.mark.nvfp4
+
 
 def _dynamic_nvfp4_supported():
     return (

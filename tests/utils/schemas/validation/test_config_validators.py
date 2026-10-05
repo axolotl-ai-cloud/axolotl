@@ -11,10 +11,13 @@ Covers:
   - use_dft / use_eaft are SFT-only and reject each other, RL, reward models, CP and fused CE
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.config import AxolotlInputConfig
 
 
 class TestSaveStrategyBestValidator:
@@ -428,9 +431,37 @@ class TestFlashAttnAvailabilityMessage:
             raise RuntimeError("HTTP 429 Too Many Requests")
 
         monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
+        from axolotl.utils.schemas import validation
+
+        def no_cached_build(*_, **__):
+            raise FileNotFoundError("no loadable cached snapshot")
+
+        monkeypatch.setattr(validation, "_get_kernel_from_cache", no_cached_build)
         cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
         with pytest.raises(ValueError, match="HTTP 429 Too Many Requests"):
             validate_config(cfg)
+
+    def test_hub_failure_falls_back_to_cached_build(self, min_base_cfg, monkeypatch):
+        import kernels
+        import torch
+        from transformers import utils as transformers_utils
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(
+            transformers_utils, "is_flash_attn_2_available", lambda **_: False
+        )
+
+        def failing_get_kernel(*_, **__):
+            raise RuntimeError("HTTP 429 Too Many Requests")
+
+        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
+        from axolotl.utils.schemas import validation
+
+        monkeypatch.setattr(
+            validation, "_get_kernel_from_cache", lambda *_, **__: object()
+        )
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        validate_config(cfg)
 
     def test_successful_lookup_overrides_transformers_verdict(
         self, min_base_cfg, monkeypatch
@@ -495,3 +526,30 @@ class TestCustomLossConflictsValidator:
     def test_conflict_raises(self, loss, conflict):
         with pytest.raises(ValueError, match="SFT-only"):
             self._check({loss: True, **conflict})
+
+
+class TestTrainableTokenWarning:
+    def test_mapping_values_satisfy_fixed_token_check(self):
+        data = {
+            "fix_untrained_tokens": [200, 201],
+            "peft_trainable_token_indices": {
+                "encoder.embed_tokens": [200],
+                "other_embedding": [201],
+            },
+        }
+        with patch("axolotl.utils.schemas.config.LOG.warning_once") as warning:
+            assert (
+                AxolotlInputConfig.warn_peft_trainable_token_to_fix_untrained(data)
+                is data
+            )
+        warning.assert_not_called()
+
+    def test_missing_fixed_token_warns_for_mapping(self):
+        data = {
+            "fix_untrained_tokens": [200, 201],
+            "peft_trainable_token_indices": {"encoder.embed_tokens": [200]},
+        }
+        with patch("axolotl.utils.schemas.config.LOG.warning_once") as warning:
+            AxolotlInputConfig.warn_peft_trainable_token_to_fix_untrained(data)
+        warning.assert_called_once()
+        assert "Token 201" in warning.call_args.args[0]

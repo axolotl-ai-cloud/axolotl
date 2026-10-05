@@ -18,7 +18,7 @@ def test_usp_mesh_preserves_data_parallel_groups():
             "--standalone",
             "--nproc_per_node=8",
             "--module",
-            "tests.integrations._ringmaster_mesh_probe",
+            "tests.integrations.context_parallel._ringmaster_mesh_probe",
         ],
         env=os.environ | {"OMP_NUM_THREADS": "1"},
         capture_output=True,
@@ -42,7 +42,7 @@ def test_mamba_four_rank_forward_backward(packed):
             "--standalone",
             "--nproc_per_node=4",
             "--module",
-            "tests.integrations._mamba_cp_parity",
+            "tests.integrations.context_parallel._mamba_cp_parity",
         ],
         env=os.environ
         | {
@@ -73,7 +73,7 @@ def test_ringmaster_nd_cpu_parity():
             "--standalone",
             "--nproc_per_node=16",
             "--module",
-            "tests.integrations._ringmaster_nd_probe",
+            "tests.integrations.context_parallel._ringmaster_nd_probe",
         ],
         env=os.environ | {"CUDA_VISIBLE_DEVICES": "", "OMP_NUM_THREADS": "1"},
         capture_output=True,

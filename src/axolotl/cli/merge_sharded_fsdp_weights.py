@@ -14,7 +14,6 @@ from accelerate import PartialState
 from accelerate.utils import (
     SAFE_WEIGHTS_INDEX_NAME,
     SAFE_WEIGHTS_NAME,
-    is_torch_version,
 )
 from huggingface_hub import split_torch_state_dict_into_shards
 from safetensors.torch import save_file as safe_save_file
@@ -125,12 +124,9 @@ def merge_fsdp_weights(
             Whether to remove the checkpoint directory after merging.
 
     Raises:
-        ValueError: If torch version < 2.3.0, or if `checkpoint_dir` does not exist.
+        ValueError: If `checkpoint_dir` does not exist.
     """
     checkpoint_dir_ = Path(checkpoint_dir)
-
-    if not is_torch_version(">=", "2.3.0"):
-        raise ValueError("`merge_fsdp_weights` requires PyTorch >= 2.3.0`")
 
     # Verify that the checkpoint directory exists
     if not checkpoint_dir_.exists():

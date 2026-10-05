@@ -12,6 +12,7 @@ from transformers import (
     EarlyStoppingCallback,
     Trainer,
 )
+from transformers.utils.generic import is_flash_attention_requested
 from trl.trainer.reward_trainer import DataCollatorForPreference
 
 from axolotl.core.builders.base import TrainerBuilderBase
@@ -144,11 +145,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         """
         Gets the trainer class for the given configuration.
         """
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
-            if trainer_cls:
-                return trainer_cls
+        plugin_manager = PluginManager.get_instance()
+        trainer_cls = plugin_manager.get_trainer_cls(self.cfg)
+        if trainer_cls:
+            return trainer_cls
         if self.cfg.reward_model:
             return AxolotlRewardTrainer
         if self.cfg.process_reward_model:
@@ -347,11 +347,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 self.cfg.image_resize_algorithm
             )
 
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            plugin_training_args = plugin_manager.get_training_args(self.cfg)
-            if plugin_training_args:
-                training_arguments_kwargs.update(plugin_training_args)
+        plugin_manager = PluginManager.get_instance()
+        plugin_training_args = plugin_manager.get_training_args(self.cfg)
+        if plugin_training_args:
+            training_arguments_kwargs.update(plugin_training_args)
 
         if self.cfg.reward_model:
             training_args_cls = AxolotlRewardConfig
@@ -496,11 +495,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         collator_args = [self.tokenizer]
 
         collator_cls_and_kwargs = None
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
-                self.cfg, is_eval=is_eval
-            )
+        plugin_manager = PluginManager.get_instance()
+        collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
+            self.cfg, is_eval=is_eval
+        )
 
         if collator_cls_and_kwargs:
             collator = collator_cls_and_kwargs[0]
@@ -595,6 +593,29 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 collator = DataCollatorForSeq2Seq
 
         kwargs["return_tensors"] = "pt"
+
+        is_packed_mode = (
+            training_args.eval_sample_packing
+            if is_eval
+            else training_args.sample_packing
+        )
+        if (
+            collator
+            in (
+                V2BatchSamplerDataCollatorForSeq2Seq,
+                BatchSamplerDataCollatorForSeq2Seq,
+            )
+            and is_flash_attention_requested(
+                requested_attention_implementation=self.cfg.attn_implementation
+            )
+            and is_packed_mode
+            and self.cfg.torch_compile
+            and self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+        ):
+            # Model-agnostic: transformers consumes these FlashAttentionKwargs for any model, skipping its
+            # per-layer varlen derivation — a data-dependent op (aten.nonzero) that graph-breaks under compile.
+            # Gated on torch_compile so non-compiled runs keep the existing per-layer derivation behavior.
+            kwargs["emit_fa_varlen_kwargs"] = True
 
         return collator(
             *collator_args,

@@ -1,0 +1,116 @@
+name: testmon-cpu
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  TRANSFORMERS_IS_CI: "yes"
+  UV_SYSTEM_PYTHON: "1"
+  PYTHON_VERSION: "3.12"
+  PYTORCH_VERSION: "2.14.0"
+
+jobs:
+  pytest-testmon:
+    name: PyTest testmon (py3.12, torch 2.14.0)
+    runs-on: ubuntu-latest
+    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
+    continue-on-error: true
+    timeout-minutes: 45
+
+    steps:
+      - name: cleanup node
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Restore Cache from S3
+        id: hf-cache-restore-s3
+        run: |
+          mkdir -p ~/.cache/huggingface/hub
+          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd --strip-components=1
+          ls -ltr ~/.cache/huggingface/hub/
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install PyTorch
+        run: |
+          uv pip install torch==${PYTORCH_VERSION} torchvision
+          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
+
+      - name: Install dependencies
+        run: |
+          uv pip install --no-build-isolation -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov-cli pytest pytest-retry pytest-sugar pytest-testmon pytest-xdist tbparse
+
+      - name: Make sure PyTorch version wasn't clobbered
+        run: |
+          python -c "import torch; assert '${PYTORCH_VERSION}' in torch.__version__, f'Expected torch ${PYTORCH_VERSION} but got {torch.__version__}'"
+
+      - name: Ensure axolotl CLI was installed
+        run: |
+          axolotl --help
+
+      - name: Pre-Download dataset fixture
+        run: |
+          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+
+      - name: Show HF cache
+        run: hf cache ls
+
+      # testmon stores the package set and Python version itself and starts over when they change,
+      # so one baseline per arm is enough; the key only needs the commit.
+      - name: Restore testmon baseline
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .testmon
+          key: testmon-cpu-${{ github.sha }}
+          restore-keys: |
+            testmon-cpu-
+
+      - name: Run tests with testmon selection (xdist -n4 kept, pytest-testmon 2.2.0 syncs workers)
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          mkdir -p .testmon
+          tm() {
+            local name=$1; shift
+            TESTMON_DATAFILE=".testmon/${name}.testmondata" pytest --testmon-forceselect "$@" | tee -a testmon-run.log
+          }
+          tm core -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
+          tm monkeypatch -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/
+          tm patched -v --durations=10 tests/patched/
+          tm cli -v --durations=10 tests/cli/
+          tm utils -v --durations=10 tests/utils/
+          tm integrations -v --durations=10 -m "not gpu" --ignore=tests/integrations/kernels/ tests/integrations/
+
+      - name: testmon selection summary
+        if: always()
+        run: |
+          grep -hE "^testmon:|estmon savings|deselected" testmon-run.log || true
+
+      # Main is the only writer: PR runs read the baseline and discard their own datafile.
+      - name: Save testmon baseline
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .testmon
+          key: testmon-cpu-${{ github.sha }}

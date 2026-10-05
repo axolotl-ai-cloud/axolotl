@@ -206,6 +206,7 @@ class TestExpertsClassMetadata:
     Verify our forward respects these without an actual CUDA kernel call.
     """
 
+    @pytest.mark.gpu
     def test_non_gated_requires_relu2(self):
         # non-gated experts are supported only with relu²; any other act must fail loudly.
         from axolotl.integrations.kernels.libs.sonicmoe.experts import (

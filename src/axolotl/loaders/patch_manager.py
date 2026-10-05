@@ -20,7 +20,6 @@ from transformers import (
 )
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
-from axolotl.integrations.base import PluginManager
 from axolotl.model_support import (
     ModelHookContext,
     ModelHookPhase,
@@ -42,7 +41,6 @@ if TYPE_CHECKING:
     from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 class PatchManager:
@@ -153,7 +151,6 @@ class PatchManager:
         self._apply_voxtral_patches()
         self._apply_apertus_patches()
         self._apply_trl_vllm_patches()
-        self._apply_trl_trainer_utils_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -728,21 +725,27 @@ class PatchManager:
                 patch_qwen3_next_modeling_packing,
             )
 
-            patch_qwen3_next_modeling_packing()
+            patch_qwen3_next_modeling_packing(
+                torch_compile=bool(self.cfg.torch_compile),
+            )
 
         if model_type in ("qwen3_5", "qwen3_5_text"):
             from axolotl.monkeypatch.models.qwen3_5.modeling import (
                 patch_qwen3_5_modeling_packing,
             )
 
-            patch_qwen3_5_modeling_packing()
+            patch_qwen3_5_modeling_packing(
+                torch_compile=bool(self.cfg.torch_compile),
+            )
 
         if model_type in ("qwen3_5_moe", "qwen3_5_moe_text"):
             from axolotl.monkeypatch.models.qwen3_5.modeling import (
                 patch_qwen3_5_moe_modeling_packing,
             )
 
-            patch_qwen3_5_moe_modeling_packing()
+            patch_qwen3_5_moe_modeling_packing(
+                torch_compile=bool(self.cfg.torch_compile),
+            )
 
         if model_type in self._SEQ_IDX_INJECTED_MODELS:
             import importlib
@@ -1264,39 +1267,6 @@ class PatchManager:
             from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
 
             patch_trl_vllm()
-
-    def _apply_trl_trainer_utils_patches(self):
-        """Replace trl.trainer.utils.{selective_log_softmax, entropy_from_logits} with Triton kernels."""
-        if not self.cfg.rl:
-            return
-
-        try:
-            from axolotl.monkeypatch.trainer.utils import (
-                entropy_from_logits,
-                selective_log_softmax,
-            )
-        except (ImportError, ModuleNotFoundError):
-            LOG.warning("Triton not available — skipping trl.trainer.utils patches")
-            return
-
-        import trl.trainer.utils
-
-        # Guard against repeated calls: only stash the original if trl still
-        # points at its own implementation (not our wrapper).
-        if trl.trainer.utils.selective_log_softmax is not selective_log_softmax:
-            from axolotl.monkeypatch.trainer import utils as _axolotl_trainer_utils
-
-            _axolotl_trainer_utils.selective_log_softmax_original = (
-                trl.trainer.utils.selective_log_softmax
-            )
-            trl.trainer.utils.selective_log_softmax = selective_log_softmax
-
-        if trl.trainer.utils.entropy_from_logits is not entropy_from_logits:
-            trl.trainer.utils.entropy_from_logits = entropy_from_logits
-
-        LOG.info(
-            "Patched trl.trainer.utils with Triton selective_log_softmax and entropy_from_logits"
-        )
 
     def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
         """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""

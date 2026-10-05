@@ -638,10 +638,12 @@ def _local_impl_checks(rank, world_size):
 
         ep = copy.deepcopy(full)
         s = _shard_experts(ep, rank, world_size)
+        assert ep._is_expert_parallel is False
         xe, we = x.clone().requires_grad_(True), w.clone().requires_grad_(True)
         experts_fn.set_dispatch_chunks(chunks)
         try:
             ye = experts_fn._ep_forward(ep, xe, idx, we, local=local, backend="torch")
+            assert ep._is_expert_parallel is True
         finally:
             experts_fn.set_dispatch_chunks(1)
         (ye * gout).sum().backward()
@@ -1213,70 +1215,6 @@ class TestGatherEpExpertsIntoStateDict:
         assert torch.equal(r0["gate_up"][:2], torch.full((2, 4, 4), 1.0))
         assert torch.equal(r0["gate_up"][2:], torch.full((2, 4, 4), 2.0))
         assert torch.equal(r0["down"][2:], torch.full((2, 4, 2), 2.0))
-
-
-class TestEpClipGradNormPatchGate:
-    """The EP-aware clip engages for pure EP under FSDP2, not only for EP x dp_shard/cp."""
-
-    @staticmethod
-    def _fake_accelerator(ep, dp_shard, cp, fsdp2):
-        from types import SimpleNamespace
-
-        return SimpleNamespace(
-            parallelism_config=(
-                None
-                if ep == "env"
-                else SimpleNamespace(
-                    ep_enabled=ep, dp_shard_enabled=dp_shard, cp_enabled=cp
-                )
-            ),
-            is_fsdp2=fsdp2,
-            unscale_gradients=lambda: None,
-        )
-
-    @pytest.mark.parametrize(
-        "ep,dp_shard,cp,fsdp2,expect_ep_aware",
-        [
-            (True, False, False, True, True),
-            (True, True, False, False, True),
-            (True, False, True, False, True),
-            (True, False, False, False, False),
-            (False, False, False, True, False),
-            # pure EP: no ParallelismConfig at all, only the env var
-            ("env", False, False, True, True),
-            ("env", False, False, False, False),
-        ],
-    )
-    def test_gate(self, monkeypatch, ep, dp_shard, cp, fsdp2, expect_ep_aware):
-        from accelerate import Accelerator
-
-        from axolotl.monkeypatch.accelerate import parallelism_config as pc_mod
-
-        if ep == "env":
-            monkeypatch.setenv("PARALLELISM_CONFIG_EP_SIZE", "2")
-        else:
-            monkeypatch.delenv("PARALLELISM_CONFIG_EP_SIZE", raising=False)
-        calls = []
-        monkeypatch.setattr(
-            Accelerator,
-            "clip_grad_norm_",
-            lambda self, p, m, norm_type=2: calls.append("orig"),
-        )
-        monkeypatch.setattr(
-            Accelerator, "_AXOLOTL_EP_CLIP_PATCHED", False, raising=False
-        )
-        monkeypatch.setattr(
-            pc_mod,
-            "_ep_aware_clip_grad_norm",
-            lambda p, m, norm_type=2.0, **_kw: calls.append("ep_aware"),
-        )
-        pc_mod.patch_clip_grad_norm_for_ep()
-        param = torch.nn.Parameter(torch.ones(3))
-        param.grad = torch.ones(3)
-        Accelerator.clip_grad_norm_(
-            self._fake_accelerator(ep, dp_shard, cp, fsdp2), [param], 1.0
-        )
-        assert calls == (["ep_aware"] if expect_ep_aware else ["orig"])
 
 
 def _composed_fsdp_worker(rank, world_size, port, q):

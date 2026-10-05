@@ -36,11 +36,12 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
+                "dataset_num_proc": 4,
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
                         "type": "chatml.ultra",
-                        "split": "train",
+                        "split": "train[:200]",
                     },
                 ],
                 "num_epochs": 1,
@@ -84,12 +85,13 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
+                "dataset_num_proc": 4,
                 "dpo_use_weighting": True,
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
                         "type": "chatml.ultra",
-                        "split": "train",
+                        "split": "train[:200]",
                     },
                 ],
                 "num_epochs": 1,
@@ -135,13 +137,14 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
+                "dataset_num_proc": 4,
                 "dpo_loss_type": ["sigmoid", "sft"],
                 "dpo_loss_weights": [1.0, 1.0],
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
                         "type": "chatml.ultra",
-                        "split": "train",
+                        "split": "train[:200]",
                     },
                 ],
                 "num_epochs": 1,
@@ -186,11 +189,12 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "kto_pair",
+                "dataset_num_proc": 4,
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
                         "type": "chatml.ultra",
-                        "split": "train",
+                        "split": "train[:200]",
                     },
                 ],
                 "num_epochs": 1,
@@ -234,12 +238,13 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
+                "dataset_num_proc": 4,
                 "dpo_loss_type": ["ipo"],
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",
                         "type": "chatml.ultra",
-                        "split": "train",
+                        "split": "train[:200]",
                     },
                 ],
                 "num_epochs": 1,
@@ -284,6 +289,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "orpo",
+                "dataset_num_proc": 4,
                 "orpo_alpha": 0.1,
                 "remove_unused_columns": False,
                 "chat_template": "chatml",
@@ -291,7 +297,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                     {
                         "path": "argilla/distilabel-capybara-dpo-7k-binarized",
                         "type": "chat_template.argilla",
-                        "split": "train",
+                        "split": "train[:200]",
                     },
                 ],
                 "num_epochs": 1,
@@ -336,6 +342,7 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "kto",
+                "dataset_num_proc": 4,
                 "rl_beta": 0.5,
                 "kto_desirable_weight": 1.0,
                 "kto_undesirable_weight": 1.0,

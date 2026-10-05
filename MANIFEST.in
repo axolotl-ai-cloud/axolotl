@@ -1,5 +1,7 @@
 include README.md
 include LICENSE
+include src/axolotl/core/trainers/prm/LICENSE
+include src/axolotl/core/trainers/prm/NOTICE
 include VERSION
 include src/axolotl/utils/chat_templates/templates/*.jinja
 include src/axolotl/integrations/kernels/libs/scattermoe_lora/metadata.json

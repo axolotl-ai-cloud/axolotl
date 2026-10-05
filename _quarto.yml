@@ -224,7 +224,6 @@ quartodoc:
         - monkeypatch.trainer.lr
         - monkeypatch.trainer.trl
         - monkeypatch.trainer.trl_vllm
-        - monkeypatch.trainer.utils
         - monkeypatch.transformers.trainer_loss_calc
         - monkeypatch.xformers_
     - title: Utils
