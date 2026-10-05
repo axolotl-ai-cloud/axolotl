@@ -94,6 +94,43 @@ def test_ringmaster_mamba_fsdp2_parity(hub, packed):
 
 @pytest.mark.slow
 @pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
+@pytest.mark.parametrize("torch_compile", [False, True], ids=["uncompiled", "compiled"])
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA devices")
+def test_axolotl_gdn_cp_parity(packed, torch_compile):
+    pytest.importorskip("ringmaster")
+    pytest.importorskip("fla")
+    pytest.importorskip("tilelang")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            "--nproc_per_node=2",
+            "--module",
+            "tests.e2e.multigpu._fla_cp_parity",
+        ],
+        env=os.environ
+        | {
+            "OMP_NUM_THREADS": "1",
+            "RM_PACKED": "1" if packed else "0",
+            "USE_HUB_KERNELS": "0",
+            "RM_FLA_FAMILY": "gdn",
+            "RM_FLA_HYBRID": "0",
+            "RM_AXOLOTL_GDN_PATCHED": "1",
+            "RM_AXOLOTL_GDN_COMPILE": "1" if torch_compile else "0",
+        },
+        capture_output=True,
+        text=True,
+        timeout=1200,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("PASS FLA CP=2") == 2
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
 @pytest.mark.parametrize("family", ["gdn", "kda", "kimi"])
 def test_fla_cp_four_rank_parity(family, packed):
     pytest.importorskip("fla")

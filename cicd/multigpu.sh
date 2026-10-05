@@ -30,6 +30,12 @@ pytest -v --durations=10 -n2 --maxfail=10 \
   /workspace/axolotl/tests/e2e/multigpu/ \
   --cov=axolotl
 
+pytest -v --durations=10 -n1 --maxfail=10 -m slow \
+  /workspace/axolotl/tests/e2e/multigpu/test_ringmaster.py \
+  -k test_axolotl_gdn_cp_parity \
+  --cov=axolotl \
+  --cov-append
+
 # Run solo tests with coverage append; the NVFP4 suite has its own SM100 job
 pytest -v --durations=10 -n1 --maxfail=10 -m "not nvfp4 and not slow" \
   /workspace/axolotl/tests/e2e/multigpu/solo/ \
