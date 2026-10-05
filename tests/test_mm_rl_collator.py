@@ -69,7 +69,9 @@ def test_normalizer_multi_turn_prepends_leftover_images_and_resizes():
             {"role": "assistant", "content": "A square."},
             {"role": "user", "content": "Which color?"},
         ],
+        # Merging with an ``images`` dataset leaves that key None.
         "image": _b64_png((40, 20), "red"),
+        "images": None,
     }
 
     out = MultimodalRLExampleNormalizer(image_size=32)([example])[0]
@@ -79,16 +81,6 @@ def test_normalizer_multi_turn_prepends_leftover_images_and_resizes():
     assert out["prompt"][0]["content"][0] == {"type": "image"}
     # TRL must not add placeholders to the later string user turn.
     prepare_multimodal_messages(out["prompt"], images=out["images"])
-
-
-def test_normalizer_uses_image_when_merged_images_is_none():
-    example = {
-        "prompt": [{"role": "user", "content": "What?"}],
-        "image": Image.new("RGB", (8, 8), "red"),
-        "images": None,
-    }
-    out = MultimodalRLExampleNormalizer()([example])[0]
-    assert [img.size for img in out["images"]] == [(8, 8)]
 
 
 @enable_hf_offline

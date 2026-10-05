@@ -91,6 +91,7 @@ def default(cfg, dataset_idx=0, **kwargs):
             "role": role_map[rejected_msg[message_property_mappings["role"]]],
             "content": rejected_msg[message_property_mappings["content"]],
         }
+
         if is_vision_dataset(sample.keys()):
             # TRL renders vision samples with the processor at collate time.
             return {"prompt": messages, "chosen": [chosen], "rejected": [rejected]}

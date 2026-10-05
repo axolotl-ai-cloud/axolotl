@@ -42,8 +42,7 @@ class MultimodalRLExampleNormalizer:
         images = example.pop("images", None)
         # Merging an ``image`` dataset with an ``images`` one leaves the other key None.
         single = example.pop("image", None)
-        column_images = images or ([single] if single is not None else [])
-        column_images = [img for img in column_images if img is not None]
+        column_images = [img for img in (images or [single]) if img is not None]
 
         for key in MESSAGE_FIELDS:
             if isinstance(example.get(key), list):
@@ -117,24 +116,24 @@ class MultimodalRLExampleNormalizer:
 
 
 @dataclass
-class AxolotlVisionPreferenceCollator(DataCollatorForVisionPreference):
-    """TRL's DPO vision collator with axolotl image loading/resizing."""
-
+class _NormalizeImagesMixin:
     normalizer: MultimodalRLExampleNormalizer = field(
         default_factory=MultimodalRLExampleNormalizer
     )
 
     def torch_call(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
-        return super().torch_call(self.normalizer(examples))
+        return super().torch_call(self.normalizer(examples))  # type: ignore[misc]
 
 
 @dataclass
-class AxolotlVisionUnpairedPreferenceCollator(DataCollatorForVisionUnpairedPreference):
+class AxolotlVisionPreferenceCollator(
+    _NormalizeImagesMixin, DataCollatorForVisionPreference
+):
+    """TRL's DPO vision collator with axolotl image loading/resizing."""
+
+
+@dataclass
+class AxolotlVisionUnpairedPreferenceCollator(
+    _NormalizeImagesMixin, DataCollatorForVisionUnpairedPreference
+):
     """TRL's KTO vision collator with axolotl image loading/resizing."""
-
-    normalizer: MultimodalRLExampleNormalizer = field(
-        default_factory=MultimodalRLExampleNormalizer
-    )
-
-    def torch_call(self, examples: list[dict[str, Any]]) -> dict[str, Any]:
-        return super().torch_call(self.normalizer(examples))

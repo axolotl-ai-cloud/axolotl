@@ -15,6 +15,11 @@ from axolotl.utils.dict import DictDefault
 from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION, alpaca_messages_dpo_rows
 
 
+@pytest.fixture(name="processor")
+def fixture_processor(tokenizer):
+    return LlavaProcessor(image_processor=CLIPImageProcessor(), tokenizer=tokenizer)
+
+
 def _preference_dataset(cfg_string: str) -> Dataset:
     if cfg_string in {"dpo_cfg", "ipo_cfg", "grpo_cfg", "simpo_cfg"}:
         return Dataset.from_list(alpaca_messages_dpo_rows())
@@ -166,12 +171,11 @@ def rand_reward_func(prompts, completions) -> list[float]:
             if str(rewards_dir) in sys.path:
                 sys.path.remove(str(rewards_dir))
 
-    def test_dpo_vision_dataset_uses_processor(self, dpo_cfg, model, tokenizer):
+    def test_dpo_vision_dataset_uses_processor(
+        self, dpo_cfg, model, tokenizer, processor
+    ):
         from axolotl.utils.collators.mm_rl import AxolotlVisionPreferenceCollator
 
-        processor = LlavaProcessor(
-            image_processor=CLIPImageProcessor(), tokenizer=tokenizer
-        )
         builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer, processor=processor)
         builder.train_dataset = Dataset.from_list(
             [
@@ -192,7 +196,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
         assert isinstance(trainer.data_collator, AxolotlVisionPreferenceCollator)
 
     def test_grpo_vision_dataset_uses_processor(
-        self, grpo_cfg, model, tokenizer, tmp_path
+        self, grpo_cfg, model, tokenizer, processor, tmp_path
     ):
         from axolotl.utils.collators.mm_rl import MultimodalRLExampleNormalizer
 
@@ -200,9 +204,6 @@ def rand_reward_func(prompts, completions) -> list[float]:
         self._write_rewards_file(rewards_dir)
         sys.path.insert(0, str(rewards_dir))
         try:
-            processor = LlavaProcessor(
-                image_processor=CLIPImageProcessor(), tokenizer=tokenizer
-            )
             builder = HFRLTrainerBuilder(
                 grpo_cfg, model, tokenizer, processor=processor
             )
@@ -221,10 +222,9 @@ def rand_reward_func(prompts, completions) -> list[float]:
             if str(rewards_dir) in sys.path:
                 sys.path.remove(str(rewards_dir))
 
-    def test_vision_dataset_unsupported_rl_raises(self, orpo_cfg, model, tokenizer):
-        processor = LlavaProcessor(
-            image_processor=CLIPImageProcessor(), tokenizer=tokenizer
-        )
+    def test_vision_dataset_unsupported_rl_raises(
+        self, orpo_cfg, model, tokenizer, processor
+    ):
         builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer, processor=processor)
         builder.train_dataset = Dataset.from_list(
             [{"prompt": "Q?", "chosen": "Yes.", "rejected": "No.", "images": []}]

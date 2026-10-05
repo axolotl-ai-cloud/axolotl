@@ -798,7 +798,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             if _skip_nccl:
                 VLLMGeneration._init_vllm = _orig_init_vllm  # type: ignore[possibly-undefined]
 
-        # GRPOTrainer hardcodes an identity collator; set ours before dataloaders are built.
+        # GRPOTrainer hardcodes an identity collator.
         if data_collator is not None:
             self.data_collator = data_collator
 
