@@ -1,6 +1,5 @@
 """Shared pytest fixtures"""
 
-import collections
 import functools
 import importlib
 import logging
@@ -689,10 +688,7 @@ def _clear_plugin_manager():
     from axolotl.integrations.base import PluginManager
 
     PluginManager._cfg = None
-    # Don't reset _instance to None — module-level PLUGIN_MANAGER references
-    # in train.py, model.py, etc. would become stale
-    if PluginManager._instance is not None:
-        PluginManager._instance.plugins = collections.OrderedDict()
+    PluginManager._instance = None
 
 
 @pytest.fixture(scope="function", autouse=True)

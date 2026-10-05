@@ -48,7 +48,6 @@ if typing.TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 TELEMETRY_MANAGER = TelemetryManager.get_instance()
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_model_and_tokenizer(
@@ -246,7 +245,7 @@ def execute_training(
         LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        PLUGIN_MANAGER.post_train(cfg, trainer.model)
+        PluginManager.get_instance().post_train(cfg, trainer.model)
 
 
 def _rename_fsdp_merged_to_adapter(merged_dir: Path):
@@ -666,7 +665,7 @@ def setup_model_and_trainer(
         model_ref=model_ref,
         peft_config=peft_config,
     )
-    PLUGIN_MANAGER.post_trainer_create(cfg, trainer)
+    PluginManager.get_instance().post_trainer_create(cfg, trainer)
 
     if cfg.use_ray:
         try:
@@ -736,6 +735,6 @@ def train(
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
-    PLUGIN_MANAGER.post_train(cfg, model)
+    PluginManager.get_instance().post_train(cfg, model)
 
     return model, tokenizer, trainer
