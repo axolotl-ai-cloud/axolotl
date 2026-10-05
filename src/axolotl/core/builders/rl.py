@@ -348,8 +348,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         processing_class = self.tokenizer
         if is_vision:
-            # TRL renders vision prompts with the processor's template; use the resolved one.
-            if getattr(self.tokenizer, "chat_template", None):
+            # Like SFT, only an explicit chat_template overrides the processor's own.
+            if self.cfg.chat_template or not getattr(
+                self.processor, "chat_template", None
+            ):
                 self.processor.chat_template = self.tokenizer.chat_template
             processing_class = self.processor
 
