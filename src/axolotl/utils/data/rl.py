@@ -441,6 +441,12 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
                         f"Dropped {dropped} long samples from dataset index {i}"
                     )
 
+    is_vision = [is_vision_dataset(ds.column_names) for ds in split_datasets]
+    if any(is_vision) and not all(is_vision):
+        raise ValueError(
+            "Multimodal RL does not support mixing image and text-only datasets."
+        )
+
     # Merge datasets
     dataset = merge_datasets(split_datasets, cfg)
 

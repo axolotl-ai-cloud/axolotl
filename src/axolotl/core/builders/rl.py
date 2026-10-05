@@ -260,6 +260,17 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                     "Multimodal RL needs conversational prompts "
                     "(e.g. dataset `type: chat_template`)."
                 )
+
+        # TRL renders every sample with the processor's single template.
+        if any(
+            ds.get("chat_template")
+            not in (None, "tokenizer_default", self.cfg.chat_template)
+            for ds in self.cfg.datasets or []
+        ):
+            LOG.warning(
+                "Per-dataset chat_template is ignored for multimodal RL; set the "
+                "top-level chat_template instead."
+            )
         return True
 
     def _build_vision_collator(self):

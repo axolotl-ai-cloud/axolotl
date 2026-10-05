@@ -290,3 +290,30 @@ class TestTruncateLongSequencesRL(unittest.TestCase):
         )
         self.assertEqual(result["chosen"], sample["chosen"])
         self.assertEqual(result["rejected"], sample["rejected"])
+
+
+def test_load_split_rejects_mixed_image_and_text_datasets():
+    from unittest.mock import patch
+
+    import pytest
+    from datasets import Dataset
+
+    from axolotl.utils.data.rl import _load_split
+    from axolotl.utils.dict import DictDefault
+
+    row = {"prompt": "q", "chosen": "a", "rejected": "b"}
+    cfg = DictDefault(
+        rl=RLType.DPO,
+        skip_prepare_dataset=True,
+        datasets=[
+            DictDefault(path="img", type=None),
+            DictDefault(path="txt", type=None),
+        ],
+    )
+    loaded = [Dataset.from_list([{**row, "images": []}]), Dataset.from_list([row])]
+    with (
+        patch("axolotl.utils.data.rl.load_dataset_with_config", side_effect=loaded),
+        patch("axolotl.utils.data.rl.load_tokenizer"),
+        pytest.raises(ValueError, match="mixing image and text-only"),
+    ):
+        _load_split(cfg, "train")
