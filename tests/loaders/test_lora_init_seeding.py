@@ -30,6 +30,7 @@ def _lora_factors(seed: int, *, pre_draws: int) -> dict[str, torch.Tensor]:
         torch.rand(3)
     cfg = DictDefault(seed=seed, lora_fp32_gradients=False, deepspeed=None)
     peft_model, _ = adapter_module.load_lora(model, cfg, inference=False)
+    assert peft_model is not None
     factors = {
         name: param.detach().clone()
         for name, param in peft_model.named_parameters()
