@@ -153,11 +153,31 @@ def test_native_lora_sync_off(cli_runner, tmp_path, native_serve, monkeypatch):
     assert "VLLM_ALLOW_RUNTIME_LORA_UPDATING" not in env
 
 
-def test_legacy_serve_module_routes_to_native(cli_runner, tmp_path, native_serve):
-    calls = native_serve(vllm={"serve_module": "axolotl.scripts.vllm_serve_lora"})
+@pytest.mark.parametrize(
+    "serve_module", ["axolotl.scripts.vllm_serve_lora", "trl.scripts.vllm_serve"]
+)
+def test_legacy_serve_module_routes_to_native(
+    cli_runner, tmp_path, native_serve, serve_module
+):
+    calls = native_serve(vllm={"serve_module": serve_module})
     _run(cli_runner, tmp_path)
     assert len(calls) == 1
     assert calls[0][1][3] == "serve"
+
+
+@pytest.mark.parametrize(
+    "worker_extension_cls",
+    [
+        "trl.scripts.vllm_serve.WeightSyncWorkerExtension",
+        "axolotl.scripts.vllm_worker_ext.BatchWeightSyncWorkerExtension",
+    ],
+)
+def test_legacy_worker_extension_dropped(
+    cli_runner, tmp_path, native_serve, worker_extension_cls
+):
+    calls = native_serve(vllm={"worker_extension_cls": worker_extension_cls})
+    _run(cli_runner, tmp_path)
+    assert "--worker-extension-cls" not in calls[0][1]
 
 
 def test_native_reasoning_parser_forwarded(cli_runner, tmp_path, native_serve):

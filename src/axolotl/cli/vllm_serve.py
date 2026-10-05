@@ -18,7 +18,9 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-LEGACY_SERVE_MODULE = "axolotl.scripts.vllm_serve_lora"
+# Pre-native-server values; their modules/classes no longer exist.
+LEGACY_SERVE_MODULES = ("axolotl.scripts.vllm_serve_lora", "trl.scripts.vllm_serve")
+LEGACY_WORKER_EXTENSION_PREFIXES = ("axolotl.scripts.", "trl.scripts.vllm_serve.")
 SUPPORTED_MAX_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
 
 
@@ -175,12 +177,21 @@ def do_vllm_serve(
     serve_module = cli_args.get("serve_module") or getattr(
         cfg.vllm, "serve_module", None
     )
-    if serve_module == LEGACY_SERVE_MODULE:
+    if serve_module in LEGACY_SERVE_MODULES:
         LOG.warning(
-            f"vllm.serve_module '{LEGACY_SERVE_MODULE}' is deprecated and ignored; "
+            f"vllm.serve_module '{serve_module}' is deprecated and ignored; "
             "using vLLM's native server"
         )
         serve_module = None
+    worker_extension_cls = getattr(cfg.vllm, "worker_extension_cls", None)
+    if worker_extension_cls and worker_extension_cls.startswith(
+        LEGACY_WORKER_EXTENSION_PREFIXES
+    ):
+        LOG.warning(
+            f"vllm.worker_extension_cls '{worker_extension_cls}' is deprecated and "
+            "ignored; vLLM's native weight transfer replaces it"
+        )
+        worker_extension_cls = None
     tensor_parallel_size = 1
     data_parallel_size = 1
 
@@ -236,7 +247,7 @@ def do_vllm_serve(
         reasoning_parser=reasoning_parser,
         enable_reasoning=enable_reasoning,
         enable_lora=bool(getattr(cfg.trl, "vllm_lora_sync", False)),
-        worker_extension_cls=getattr(cfg.vllm, "worker_extension_cls", None),
+        worker_extension_cls=worker_extension_cls,
         **({"max_lora_rank": lora_r} if lora_r else {}),
     )
 
