@@ -704,16 +704,22 @@ class Selector:
         return re.sub(r"[-_.]+", "-", name).lower()
 
     def _requirements(self, pyproject: dict) -> dict[str, set[str]]:
-        """Requirement strings per normalized distribution, across every dependency table."""
+        """Requirement strings per normalized distribution, keyed by the table declaring them.
+
+        The same string can sit in several extras; moving it between them changes what
+        each extra installs, so the table name is part of the identity.
+        """
         project = pyproject.get("project", {})
-        reqs: list[str] = list(project.get("dependencies", []))
-        for extra in project.get("optional-dependencies", {}).values():
-            reqs.extend(extra)
+        tables: list[tuple[str, list[str]]] = [("", project.get("dependencies", []))]
+        tables.extend(project.get("optional-dependencies", {}).items())
         by_dist: dict[str, set[str]] = defaultdict(set)
-        for req in reqs:
-            match = REQUIREMENT_NAME_RE.match(req)
-            if match:
-                by_dist[self._normalize_dist(match.group(1))].add(req.strip())
+        for table, reqs in tables:
+            for req in reqs:
+                match = REQUIREMENT_NAME_RE.match(req)
+                if match:
+                    by_dist[self._normalize_dist(match.group(1))].add(
+                        f"{table}:{req.strip()}"
+                    )
         return by_dist
 
     @staticmethod

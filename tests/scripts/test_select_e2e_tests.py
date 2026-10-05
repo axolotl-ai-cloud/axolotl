@@ -494,6 +494,20 @@ def test_mapped_dependency_reaching_core_runs_everything(repo):
     assert "liger-kernel -> liger_kernel via src/axolotl/core/builder.py" in sel.reason
 
 
+def test_same_requirement_removed_from_one_of_two_extras_counts_as_changed(repo):
+    _deps_repo(repo)
+    shared = 'ringmaster = ["axolotl-ringmaster>=0.2.3"]'
+    base = DEPS_PYPROJECT.format(rm="0.2.3", extra_map="")
+    _grow_base(
+        repo,
+        {"pyproject.toml": base.replace(shared, shared + "\ncp = " + shared[13:])},
+    )
+    # the identical string survives in the other extra; a per-distribution set sees no change
+    sel = _select(repo, {"pyproject.toml": base.replace(shared, shared + "\ncp = []")})
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_lora.py"]
+
+
 def test_dependency_removed_from_one_extra_counts_as_changed(repo):
     _deps_repo(repo)
     sel = _bump(
