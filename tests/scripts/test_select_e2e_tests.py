@@ -402,3 +402,154 @@ def test_unmodeled_files_run_everything(repo, path):
 def test_inert_files_select_nothing(repo, path):
     sel = _select(repo, {path: "text\n"})
     assert sel.mode == "none"
+
+
+DEPS_PYPROJECT = """[project]
+name='axolotl'
+dependencies = [
+    "torch==2.14.0",
+    "liger-kernel==0.8.4 ; sys_platform != 'darwin'",
+]
+
+[project.optional-dependencies]
+ringmaster = ["axolotl-ringmaster>={rm}"]
+flash-attn = ["flash-attn==2.8.3"]
+
+[tool.axolotl.ci.deps]
+"axolotl-ringmaster" = ["ringmaster"]
+"flash-attn" = ["flash_attn"]
+"liger-kernel" = ["liger_kernel"]
+{extra_map}
+"""
+CP_PLUGIN = "import ringmaster\n\ndef hook(cfg):\n    return cfg.lora_r\n"
+LIGER_PLUGIN = "import liger_kernel\n\ndef hook(cfg):\n    return 1\n"
+
+
+def _deps_repo(repo: Path, extra_map: str = "") -> None:
+    _grow_base(
+        repo,
+        {
+            "pyproject.toml": DEPS_PYPROJECT.format(rm="0.2.3", extra_map=extra_map),
+            "src/axolotl/integrations/cp/__init__.py": "",
+            "src/axolotl/integrations/cp/plugin.py": CP_PLUGIN,
+            "src/axolotl/integrations/liger/plugin.py": LIGER_PLUGIN,
+        },
+    )
+
+
+def _bump(repo: Path, rm: str = "0.2.4", extra_map: str = "", **edits: str):
+    text = DEPS_PYPROJECT.format(rm=rm, extra_map=extra_map)
+    for old, new in edits.items():
+        assert old in text
+        text = text.replace(old, new)
+    return _select(repo, {"pyproject.toml": text})
+
+
+def test_mapped_dependency_bump_selects_through_importers(repo):
+    _deps_repo(repo)
+    sel = _bump(repo)
+    # ringmaster is imported only by the cp plugin, which reads lora_r
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_lora.py"]
+    assert "axolotl-ringmaster -> ringmaster" in sel.reason or any(
+        "axolotl-ringmaster" in why for why in sel.explain["tests/e2e/test_lora.py"]
+    )
+
+
+def test_mapped_dependency_bump_selects_tests_that_name_the_root(repo):
+    _deps_repo(repo)
+    _grow_base(
+        repo,
+        {
+            "tests/e2e/test_cp_parity.py": (
+                "import pytest\n\ndef test_cp():\n"
+                '    pytest.importorskip("ringmaster")\n'
+            )
+        },
+    )
+    sel = _bump(repo)
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_cp_parity.py", "tests/e2e/test_lora.py"]
+
+
+def test_unmapped_dependency_bump_runs_everything(repo):
+    _deps_repo(repo)
+    sel = _bump(repo, rm="0.2.3", **{'"torch==2.14.0"': '"torch==2.15.0"'})
+    assert sel.mode == "all"
+    assert "no [tool.axolotl.ci.deps] entry for ['torch']" in sel.reason
+
+
+def test_mapped_root_nobody_imports_runs_everything(repo):
+    _deps_repo(repo)
+    sel = _bump(repo, rm="0.2.3", **{'"flash-attn==2.8.3"': '"flash-attn==2.8.4"'})
+    assert sel.mode == "all"
+    assert "nothing imports flash_attn" in sel.reason
+
+
+def test_mapped_dependency_reaching_core_runs_everything(repo):
+    _deps_repo(repo)
+    _grow_base(repo, {"src/axolotl/core/builder.py": "import liger_kernel\n" + BUILDER})
+    sel = _bump(repo, rm="0.2.3", **{"liger-kernel==0.8.4": "liger-kernel==0.8.5"})
+    assert sel.mode == "all"
+    assert "liger-kernel -> liger_kernel via src/axolotl/core/builder.py" in sel.reason
+
+
+def test_dependency_removed_from_one_extra_counts_as_changed(repo):
+    _deps_repo(repo)
+    sel = _bump(
+        repo,
+        rm="0.2.3",
+        **{'ringmaster = ["axolotl-ringmaster>=0.2.3"]': "ringmaster = []"},
+    )
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_lora.py"]
+
+
+def test_added_extra_runs_everything(repo):
+    _deps_repo(repo)
+    sel = _bump(
+        repo,
+        rm="0.2.3",
+        **{
+            'flash-attn = ["flash-attn==2.8.3"]': 'flash-attn = ["flash-attn==2.8.3"]\nnew = []'
+        },
+    )
+    assert sel.mode == "all"
+    assert "adds or removes an extra" in sel.reason
+
+
+def test_pyproject_change_outside_dependencies_runs_everything(repo):
+    _deps_repo(repo)
+    sel = _bump(repo, rm="0.2.3", **{"name='axolotl'": "name='axolotl'\nversion='1'"})
+    assert sel.mode == "all"
+    assert "outside the dependency tables" in sel.reason
+
+
+def test_dependency_map_edit_runs_everything(repo):
+    _deps_repo(repo)
+    sel = _bump(repo, rm="0.2.3", extra_map='"torch" = ["torch"]')
+    assert sel.mode == "all"
+    assert "outside the dependency tables" in sel.reason
+
+
+def test_dependency_bump_combines_with_source_changes(repo):
+    _deps_repo(repo)
+    _write(repo, {"src/axolotl/loaders/adapter.py": ADAPTER + "\n# touched\n"})
+    sel = _bump(repo)
+    assert sel.mode == "subset"
+    assert sel.tests == ["tests/e2e/test_lora.py"]
+
+
+def test_dependency_bump_behind_unnamed_registry_leaf_selects_none(repo):
+    _deps_repo(repo)
+    _grow_base(
+        repo,
+        {
+            "src/axolotl/integrations/cp/plugin.py": (
+                "import ringmaster\n\ndef hook(cfg):\n    return cfg.sequence_len\n"
+            ),
+        },
+    )
+    # the only importer is a plugin package no e2e config names, which reaches no test
+    sel = _bump(repo)
+    assert sel.mode == "none"
