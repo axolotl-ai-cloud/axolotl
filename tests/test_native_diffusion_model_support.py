@@ -655,50 +655,6 @@ def test_dream_fp32_rms_norm_preserves_projection_dtype(dtype):
     assert torch.isfinite(gradient).all()
     assert gradient.abs().sum() > 0
 
-    from axolotl.integrations.diffusion_decision.readers.hf import HFReader
-    from axolotl.integrations.diffusion_decision.records import DecisionCanvas
-    from axolotl.model_support.dream import DreamSupport
-
-    model.get_input_embeddings().float()
-    model.get_output_embeddings().float()
-    canvas = DecisionCanvas(
-        prompt_ids=(1, 3),
-        canvas_ids=(4, 2, 1),
-        label_positions=(1,),
-        allowed_ids=((5, 6),),
-        question_ids=("q",),
-        targets=(0,),
-        pinned_mask=(True, False, True),
-        semantic_mask=(True, True, True),
-        slot_mask=(False, False, False),
-        template_length=2,
-    )
-    autocast_states = []
-    handle = model.model.layers[0].self_attn.q_proj.register_forward_pre_hook(
-        lambda _module, _args: autocast_states.append(torch.is_autocast_enabled("cpu"))
-    )
-    try:
-        result = HFReader(
-            vocab_size=32,
-            mask_token_id=2,
-            attention_backend="dense",
-            compute_dtype=dtype,
-        ).read(
-            model,
-            DreamSupport.profile.diffusion,
-            canvas,
-            steps=2,
-            seed=42,
-            hold_label_noise=True,
-        )
-    finally:
-        handle.remove()
-    assert autocast_states == [dtype is torch.bfloat16] * 2
-    assert torch.isfinite(result.full_vocab_logprobs).all()
-    assert model.get_input_embeddings().weight.dtype is torch.float32
-    assert model.get_output_embeddings().weight.dtype is torch.float32
-    assert model.model.layers[0].self_attn.q_proj.weight.dtype is dtype
-
 
 def test_dream_factory_from_pretrained_resets_nonpersistent_rope_buffers(tmp_path):
     from transformers import AutoConfig

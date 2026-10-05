@@ -38,7 +38,6 @@ from ._util import (
 )
 from .adapters import normalize_record
 from .budgets import decision_budget, exceeds_budget
-from .data_audit import build_preparation_audit, write_preparation_audit
 from .grouping import group_records
 from .hygiene import assert_split_isolation, decontaminate, family_key
 from .loss import decision_example_from_canvas
@@ -578,179 +577,6 @@ def _filter_budget_rows(
     return kept, drops
 
 
-_DECISION_EVALUATION_SPLITS = frozenset(
-    {"dev", "validation", "eval", "test", "calibration", "ood"}
-)
-
-
-def _evaluation_source_input(
-    entry: Any, *, collection: str, index: int
-) -> dict[str, Any]:
-    item = {
-        "collection": collection,
-        "index": index,
-        "adapter": _value(entry, "type"),
-        "path": _value(entry, "path"),
-        "revision": _value(entry, "revision"),
-        "name": _value(entry, "name"),
-        "split": _value(entry, "split", "train"),
-    }
-    data_files = _value(entry, "data_files")
-    if data_files is not None:
-        item["data_files"] = data_files
-    return item
-
-
-def _evaluation_entries(cfg: Any, split: str) -> list[tuple[str, int, Any]]:
-    if split not in _DECISION_EVALUATION_SPLITS:
-        choices = ", ".join(sorted(_DECISION_EVALUATION_SPLITS))
-        raise ValueError(f"decision evaluation split must be one of: {choices}")
-    selected: list[tuple[str, int, Any]] = []
-    for collection in ("test_datasets", "datasets"):
-        entries = _value(cfg, collection, ()) or ()
-        if not isinstance(entries, Sequence) or isinstance(entries, (str, bytes)):
-            raise ValueError(f"{collection} must be a sequence")
-        for index, entry in enumerate(entries):
-            if not str(_value(entry, "type", "")).startswith("diffusion_decision."):
-                continue
-            if str(_value(entry, "split", "train")).lower() != split:
-                continue
-            if collection == "datasets" and not _is_eval(entry):
-                continue
-            selected.append((collection, index, entry))
-    if not selected:
-        raise ValueError(
-            f"diffusion_decision has no explicitly declared evaluation dataset for split={split!r}"
-        )
-    return selected
-
-
-def load_decision_evaluation_dataset(
-    cfg: Any, tokenizer: Any, split: str
-) -> DecisionDataset:
-    """Prepare only explicitly declared evaluation sources for one original split."""
-    selected_split = str(split).lower()
-    selected = _evaluation_entries(cfg, selected_split)
-    decision = _value(cfg, "diffusion_decision")
-    spec = require_diffusion_spec(cfg)
-    weights = _value(_value(decision, "mixture"), "loss_weight", {}) or {}
-    max_questions = int(_value(decision, "max_questions_per_canvas", 20))
-    prepared_path = _value(cfg, "dataset_prepared_path")
-    cache_identity = None
-    selected_entries = [
-        (collection, index, entry) for collection, index, entry in selected
-    ]
-    source_inputs = [
-        _evaluation_source_input(entry, collection=collection, index=index)
-        for collection, index, entry in selected
-    ]
-    if (
-        isinstance(prepared_path, (str, Path))
-        and str(prepared_path)
-        and _prepared_cache_eligible(cfg)
-    ):
-        source_paths = _prepared_cache_source_paths(
-            [entry for _, _, entry in selected_entries]
-        )
-        if source_paths is not None:
-            cache_identity = prepared_cache_identity(
-                cfg,
-                tokenizer,
-                spec,
-                source_paths,
-                selected_entries=selected_entries,
-                scope={"kind": "explicit_evaluation", "split": selected_split},
-            )
-    if cache_identity is not None:
-        cache_key, cache_payload = cache_identity
-        cached = load_prepared_cache(
-            Path(prepared_path), cache_key, cache_payload, include_audit=True
-        )
-        if cached is not None:
-            _cached_train, cached_rows, cached_output_manifest, cached_audit = cached
-            cached_manifest = dict(cached_output_manifest)
-            filename = f"diffusion_decision_{selected_split}_preparation_audit.json"
-            cached_manifest["preparation_audit"] = str(
-                write_preparation_audit(
-                    cfg,
-                    (),
-                    cached_rows,
-                    cached_manifest,
-                    source_inputs=source_inputs,
-                    filename=filename,
-                    audit=(
-                        cached_audit
-                        if cached_audit.get("source_inputs") == source_inputs
-                        else None
-                    ),
-                )
-            )
-            LOG.info(
-                "Decision prepared-row cache hit for evaluation split %s",
-                selected_split,
-            )
-            return DecisionDataset(cached_rows, cached_manifest)
-        LOG.info(
-            "Decision prepared-row cache miss for evaluation split %s", selected_split
-        )
-    normalized: list[dict[str, Any]] = []
-    for _collection, _index, entry in selected:
-        adapter = str(_value(entry, "type"))
-        normalized.extend(
-            normalize_record(
-                adapter,
-                row,
-                training=False,
-                source_split=str(_value(entry, "split", "train")).lower(),
-                codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
-            )
-            for row in _rows(entry)
-        )
-    grouped = group_records(normalized, max_questions=max_questions)
-    rows, canvas_too_long = _canvas_rows(tokenizer, grouped, cfg, weights, spec)
-    rows, budget_drops = _filter_budget_rows(rows, cfg, spec, is_eval=True)
-    manifest: dict[str, Any] = {
-        "selected_split": selected_split,
-        "selected_source_inputs": source_inputs,
-        "input_rows": len(normalized),
-        "grouped_rows": len(grouped),
-        "eval_rows": len(rows),
-        "eval_sources": sorted({row["source"] for row in rows}),
-        "canvas_too_long": {"eval": canvas_too_long},
-        "budget_drops": {"eval": budget_drops},
-    }
-    if _value(cfg, "dataset_prepared_path") or _value(cfg, "output_dir"):
-        filename = f"diffusion_decision_{selected_split}_preparation_audit.json"
-        audit = build_preparation_audit(
-            cfg, (), rows, manifest, source_inputs=source_inputs
-        )
-        manifest["preparation_audit"] = str(
-            write_preparation_audit(
-                cfg,
-                (),
-                rows,
-                manifest,
-                source_inputs=source_inputs,
-                filename=filename,
-                audit=audit,
-            )
-        )
-    else:
-        audit = None
-    if cache_identity is not None:
-        store_prepared_cache(
-            Path(prepared_path),
-            cache_key,
-            cache_payload,
-            cfg,
-            (),
-            rows,
-            manifest,
-            audit=audit,
-        )
-    return DecisionDataset(rows, manifest)
-
-
 def load_decision_datasets(
     cfg: Any, preprocess: bool = False, *, tokenizer: Any = None
 ) -> TrainDatasetMeta:
@@ -788,14 +614,9 @@ def load_decision_datasets(
         LOG.info("Decision prepared-row cache bypassed: unsupported latent mode")
     if cache_identity is not None:
         cache_key, cache_payload = cache_identity
-        cached = load_prepared_cache(
-            Path(prepared_path), cache_key, cache_payload, include_audit=True
-        )
+        cached = load_prepared_cache(Path(prepared_path), cache_key, cache_payload)
         if cached is not None:
-            cached_train, cached_eval, cached_manifest, cached_audit = cached
-            write_preparation_audit(
-                cfg, cached_train, cached_eval, cached_manifest, audit=cached_audit
-            )
+            cached_train, cached_eval, cached_manifest = cached
             LOG.info("Decision prepared-row cache hit")
             return TrainDatasetMeta(
                 train_dataset=DecisionDataset(cached_train, cached_manifest),
@@ -959,8 +780,6 @@ def load_decision_datasets(
         manifest["procedural_grouping_limit"] = (
             "official partitions and state decontamination only; no parent-family key"
         )
-    if _value(cfg, "dataset_prepared_path") or _value(cfg, "output_dir"):
-        write_preparation_audit(cfg, train_rows, eval_rows, manifest)
     if cache_identity is not None:
         store_prepared_cache(
             Path(prepared_path),

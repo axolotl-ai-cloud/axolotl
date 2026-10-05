@@ -9,7 +9,6 @@ import pytest
 import torch
 
 from axolotl.integrations.diffusion_decision.loss import decision_label_loss
-from axolotl.integrations.diffusion_decision.readers.hf import HFReader
 from axolotl.integrations.diffusion_decision.trainer import DiffusionDecisionTrainer
 from axolotl.integrations.diffusion_decision.training_collator import (
     DecisionTrainingCollator,
@@ -73,7 +72,7 @@ def _slot_config(mode: str) -> dict[str, object]:
         ("mask", DiffusionNoise.ABSORBING),
     ],
 )
-def test_prepared_fixed_slots_stay_pinned_through_trainer_and_reader(mode, noise):
+def test_prepared_fixed_slots_stay_pinned_through_trainer(mode, noise):
     spec, plan, canvas = _prepared_canvas(mode, noise)
     fixed_canvas = torch.tensor(canvas.slot_mask, dtype=torch.bool)
     label_mask = torch.zeros(len(canvas.canvas_ids), dtype=torch.bool)
@@ -107,44 +106,6 @@ def test_prepared_fixed_slots_stay_pinned_through_trainer_and_reader(mode, noise
         dtype=torch.long,
     )
     torch.testing.assert_close(train_model.seen_input_ids[0, fixed_positions], expected)
-
-    read_model = EchoModel()
-    read = HFReader(vocab_size=256, mask_token_id=9, attention_backend="dense").read(
-        read_model, spec, canvas, steps=1, seed=17, diagnostics=True
-    )
-    assert read.diagnostics is not None
-    if mode == "prompt":
-        assert read_model.seen_input_ids is not None
-        torch.testing.assert_close(
-            read_model.seen_input_ids[0, : len(plan.ids)], expected
-        )
-    else:
-        positions = torch.where(fixed_canvas)[0]
-        clean = torch.tensor(canvas.canvas_ids)
-        torch.testing.assert_close(
-            read.diagnostics.initial_canvas_ids[positions], clean[positions]
-        )
-        torch.testing.assert_close(
-            read.diagnostics.final_canvas_ids[positions], clean[positions]
-        )
-
-
-@pytest.mark.parametrize("mode", ["pad", "pinned", "learned", "mask"])
-def test_reader_rejects_initial_canvas_override_of_prepared_fixed_slot(mode):
-    noise = DiffusionNoise.ABSORBING if mode == "mask" else DiffusionNoise.UNIFORM
-    spec, _plan, canvas = _prepared_canvas(mode, noise)
-    override = torch.tensor(canvas.canvas_ids)
-    fixed = torch.where(torch.tensor(canvas.slot_mask))[0][0]
-    override[fixed] = (override[fixed] + 1) % 256
-
-    with pytest.raises(ValueError, match="cannot alter pinned"):
-        HFReader(vocab_size=256, mask_token_id=9, attention_backend="dense").read(
-            EchoModel(),
-            spec,
-            canvas,
-            steps=1,
-            initial_canvas_ids=override,
-        )
 
 
 @pytest.mark.parametrize("steps", [1, 2, 3])

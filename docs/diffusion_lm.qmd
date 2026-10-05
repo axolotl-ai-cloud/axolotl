@@ -350,28 +350,14 @@ budget. It requires `mixture.per_batch_stratified: false` and does not support
 sampled latent-slot counts. Reduce `micro_batch_size` and raise
 `gradient_accumulation_steps` if the effective batch does not fit.
 
-### Outputs and evaluation
+### Outputs
 
-Preprocessing writes data audits to `dataset_prepared_path`. Each saved adapter
-includes `diffusion_decision_manifest.json`, which records the base model and
-revision, diffusion spec, canvas width, label codebook, latent slots, read
-protocol and tokenizer special IDs that an external inference integration must
-reproduce. Axolotl does not ship a decision-serving endpoint.
-
-Evaluate a saved adapter on a declared split with:
-
-```bash
-python scripts/diffusion_lm/decision_evaluate.py \
-  examples/nemotron-diffusion/decision-lora-8b.yaml \
-  --adapter ./outputs/nemotron-decision-8b/checkpoint-N \
-  --split dev --hold-label-noise \
-  --output-dir ./evaluation/nemotron-decision-8b
-```
-
-`--hold-label-noise` is required when `unroll.k_max` is above 1; it keeps the
-initially noised labels masked through every read. Use `--base` instead of
-`--adapter` to score the base model. Use a separate config for a frozen test
-split, and do not use test data for checkpoint selection.
+Each saved adapter includes `diffusion_decision_manifest.json`, which records
+the base model and revision, diffusion spec, canvas width, label codebook,
+latent slots, read protocol and tokenizer special IDs that an external
+inference integration must reproduce. Axolotl does not ship a decision-serving
+endpoint. Use a separate config for a frozen test split, and do not use test
+data for checkpoint selection.
 
 ### Public procedural decision mix
 

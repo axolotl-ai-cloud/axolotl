@@ -4,8 +4,10 @@ import random
 
 import pytest
 
+from axolotl.integrations.diffusion_decision.adapters import normalize_record
 from axolotl.integrations.diffusion_decision.adapters.jsonl import normalize_jsonl
 from axolotl.integrations.diffusion_decision.preprocessing import build_decision_canvas
+from axolotl.integrations.diffusion_decision.records import OrdinalMetadata
 from axolotl.integrations.diffusion_decision.slots import SlotInit
 
 from tests.integrations.diffusion_decision.helpers import (
@@ -179,3 +181,55 @@ def test_canvas_builds_source_prompt_from_validated_record(family):
     )
     assert result.prompt_ids == (1, 2, 3)
     assert result.targets == tuple(record["labels"].values())
+
+
+def test_soft_score_canvas_opt_in_ordinal_metadata(monkeypatch):
+    import axolotl.integrations.diffusion_decision.preprocessing as preprocessing
+
+    normalized = normalize_record(
+        "jsonl",
+        {
+            "id": "soft-score",
+            "source": "score_eval",
+            "group": "soft-score",
+            "state": {"evidence": "text"},
+            "questions": {
+                "q1": {
+                    "type": "score",
+                    "instructions": "",
+                    "levels": ["low", "medium", "high"],
+                }
+            },
+            "labels": {"q1": {"kind": "dist", "probs": [0.2, 0.5, 0.3]}},
+        },
+        training=False,
+    )
+
+    monkeypatch.setattr(
+        preprocessing,
+        "resolve_template",
+        lambda *_args, **_kwargs: (
+            [9, 31, 11],
+            [{"pos": 1, "label_ids": [31, 32, 33]}],
+        ),
+    )
+    kwargs = dict(
+        prompt_ids=(1,),
+        scaffold_ids=(),
+        turn_close_id=2,
+        pad_id=0,
+        vocab_size=64,
+        width=8,
+    )
+    default = build_decision_canvas(object(), normalized, **kwargs)
+    assert default.ordinal_metadata == ()
+    canvas = build_decision_canvas(
+        object(), normalized, include_ordinal_metadata=True, **kwargs
+    )
+    assert canvas.ordinal_metadata == (
+        OrdinalMetadata(
+            levels=("low", "medium", "high"),
+            source_ids=("0", "1", "2"),
+            candidate_ranks=(0, 1, 2),
+        ),
+    )

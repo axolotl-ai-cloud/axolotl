@@ -2,8 +2,8 @@
 
 Native diffusion recipes for Nemotron-Labs-Diffusion. See
 [`docs/diffusion_lm.qmd`](../../docs/diffusion_lm.qmd) for installation,
-attention, packing, objective options, adapter constraints, the typed-decision
-dataset format and evaluation.
+attention, packing, objective options, adapter constraints and the
+typed-decision dataset format.
 
 | Config | Purpose |
 |---|---|

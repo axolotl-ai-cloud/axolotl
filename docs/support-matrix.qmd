@@ -52,7 +52,7 @@ Most people start with two, each a single plugin to turn on: [Liger](#fused-trai
 | EAFT | `use_eaft: true` (+ `eaft_alpha`, `eaft_k`) | n/a | prompt to response | SFT loss weighted by top-k entropy |
 | DFT | `use_dft: true` | n/a | prompt to response | SFT loss weighted by detached token probability ([paper](https://arxiv.org/abs/2508.05629)) |
 | Native diffusion LM 🟡 | `diffusion_lm:` | n/a | prompt to response | masked/uniform-noise denoising objective from the model profile; LoRA only; see [diffusion_lm](diffusion_lm.qmd) |
-| Typed decisions 🟡 | plugin `diffusion_decision` + `diffusion_decision:` | n/a | typed decision JSONL | choice/score/yes-no labels on a diffusion canvas; eval via `scripts/diffusion_lm/decision_evaluate.py` |
+| Typed decisions 🟡 | plugin `diffusion_decision` + `diffusion_decision:` | n/a | typed decision JSONL | choice/score/yes-no labels on a diffusion canvas |
 
 Most runs start with **SFT** (the default). Reach for the preference methods (DPO and its variants) once you have chosen/rejected pairs, and GRPO when you have a verifiable reward. The rest are specialized.
 

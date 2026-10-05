@@ -8,7 +8,7 @@ import re
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence, overload
+from typing import Any, Mapping, Sequence
 
 import tokenizers
 import transformers
@@ -21,7 +21,6 @@ from ._util import (
     model_config_overrides,
     sha256_file,
 )
-from .data_audit import build_preparation_audit
 from .loss import decision_example_from_canvas
 from .records import DecisionCanvas, OrdinalMetadata
 from .slots import SlotPlan
@@ -45,6 +44,51 @@ def _json_default(item: Any) -> Any:
 
 def _sha(value: Any) -> str:
     return canonical_sha256(value, default=_json_default)
+
+
+def _json_value(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Enum):
+        return _json_value(value.value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return [_json_value(item) for item in value]
+    if hasattr(value, "model_dump"):
+        return _json_value(value.model_dump(mode="json"))
+    if hasattr(value, "to_dict"):
+        return _json_value(value.to_dict())
+    raise TypeError(f"cannot serialize decision preparation value {type(value)!r}")
+
+
+def _semantic_config(cfg: Any) -> dict[str, Any]:
+    fields = (
+        "base_model",
+        "revision_of_model",
+        "model_config_type",
+        "seed",
+        "sequence_len",
+        "micro_batch_size",
+        "eval_batch_size",
+        "gradient_accumulation_steps",
+        "attn_implementation",
+        "sample_packing",
+        "eval_sample_packing",
+        "batch_flattening",
+    )
+    result = {
+        name: _json_value(value)
+        for name in fields
+        if (value := _value(cfg, name)) is not None
+    }
+    for name in ("diffusion_lm", "diffusion_decision"):
+        value = _value(cfg, name)
+        if value is not None:
+            result[name] = _json_value(value)
+    return result
 
 
 def _entry_identity(
@@ -167,10 +211,10 @@ def identity(
         return None
     try:
         spec_value = asdict(spec) if is_dataclass(spec) else vars(spec)  # type: ignore[arg-type]
-        audit_config = build_preparation_audit(cfg, (), (), {})["config"]
+        semantic_config = _semantic_config(cfg)
     except (AttributeError, TypeError, ValueError):
         return None
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "producer": PRODUCER,
         "producer_sha256": sha256_file(Path(__file__)),
@@ -179,7 +223,7 @@ def identity(
             for path in sorted(Path(__file__).parent.rglob("*.py"))
             if "__pycache__" not in path.parts
         ],
-        "config": audit_config,
+        "config": semantic_config,
         "entries": _entry_identity(cfg, selected_entries),
         "scope": dict(scope or {}),
         "preparation": {
@@ -296,40 +340,11 @@ def _row_from_json(data: Mapping[str, Any]) -> dict[str, Any]:
     return row
 
 
-@overload
 def load(
     root: Path,
     key: str,
     identity_payload: Mapping[str, Any],
-    *,
-    include_audit: Literal[True],
-) -> (
-    tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]
-    | None
-): ...
-
-
-@overload
-def load(
-    root: Path,
-    key: str,
-    identity_payload: Mapping[str, Any],
-    *,
-    include_audit: Literal[False] = False,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]] | None: ...
-
-
-def load(
-    root: Path,
-    key: str,
-    identity_payload: Mapping[str, Any],
-    *,
-    include_audit: bool = False,
-) -> (
-    tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]
-    | tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], dict[str, Any]]
-    | None
-):
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]] | None:
     path = root / "diffusion_decision_cache" / f"{key}.json"
     try:
         payload = json.loads(path.read_text())
@@ -347,15 +362,9 @@ def load(
             manifest["stratified_epoch_batches"] = tuple(
                 tuple(batch) for batch in manifest["stratified_epoch_batches"]
             )
-        audit = build_preparation_audit(metadata["config"], train, eval_rows, manifest)
-        if (
-            audit["splits"] != metadata["audit"]["splits"]
-            or _sha(rows) != metadata["rows_sha256"]
-        ):
+        if _sha(rows) != metadata["rows_sha256"]:
             LOG.info("Decision prepared-row cache payload validation mismatch")
             return None
-        if include_audit:
-            return train, eval_rows, manifest, dict(metadata["audit"])
         return train, eval_rows, manifest
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
@@ -369,23 +378,15 @@ def store(
     train: Sequence[Mapping[str, Any]],
     eval_rows: Sequence[Mapping[str, Any]],
     manifest: Mapping[str, Any],
-    *,
-    audit: Mapping[str, Any] | None = None,
 ) -> None:
-    audit = (
-        dict(audit)
-        if audit is not None
-        else build_preparation_audit(cfg, train, eval_rows, manifest)
-    )
     rows = {
         "train": [_row_to_json(row) for row in train],
         "eval": [_row_to_json(row) for row in eval_rows],
     }
     content = {
         "identity": identity_payload,
-        "config": audit["config"],
+        "config": _semantic_config(cfg),
         "manifest": manifest,
-        "audit": audit,
         "rows_sha256": _sha(rows),
         "rows": rows,
     }

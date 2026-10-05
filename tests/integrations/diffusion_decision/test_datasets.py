@@ -7,13 +7,8 @@ from typing import Any
 import pytest
 from transformers import PretrainedConfig
 
-from axolotl.integrations.diffusion_decision import (
-    data_audit,
-    datasets,
-    prepared_cache,
-)
+from axolotl.integrations.diffusion_decision import datasets, prepared_cache
 from axolotl.integrations.diffusion_decision.args import DecisionMixtureConfig
-from axolotl.integrations.diffusion_decision.data_audit import build_preparation_audit
 from axolotl.integrations.diffusion_decision.loss import decision_example_from_canvas
 from axolotl.integrations.diffusion_decision.records import (
     DecisionCanvas,
@@ -304,13 +299,12 @@ def test_premixed_rejects_invalid_draws(monkeypatch, train, dev, match):
         datasets.load_decision_datasets(cfg)
 
 
-def test_premixed_toggle_changes_preparation_audit_config():
+def test_premixed_toggle_changes_prepared_cache_config():
     regular = _cfg(_entry("train"))
     premixed = _cfg(_entry("train"), mixture=PREMIXED)
 
-    assert (
-        build_preparation_audit(regular, [], [], {})["config"]
-        != build_preparation_audit(premixed, [], [], {})["config"]
+    assert prepared_cache._semantic_config(regular) != prepared_cache._semantic_config(
+        premixed
     )
 
 
@@ -515,7 +509,6 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(
             "diffusion_lm": {"canvas_width": 128},
         }
     )
-    audit_path = tmp_path / "prepared" / "diffusion_decision_preparation_audit.json"
     calls = 0
     original_rows = datasets._rows
 
@@ -550,43 +543,17 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(
     first_rows = [dict(row) for row in first.train_dataset]
     first_schedule = first.train_dataset.manifest["stratified_epoch_batches"]
     first_calls = calls
-    cold_audit = json.loads(audit_path.read_text())
     cfg["seed"] = 14
     datasets.load_decision_datasets(cfg)
     assert calls > first_calls
     second_cold_calls = calls
     cfg["seed"] = 13
-    audit_builds = {"cache_rows": 0, "sidecar": 0}
-    cache_build = prepared_cache.build_preparation_audit
-    sidecar_build = data_audit.build_preparation_audit
-
-    def count_cache_build(_cfg, train_rows, eval_rows, manifest, **kwargs):
-        if train_rows or eval_rows:
-            audit_builds["cache_rows"] += 1
-        return cache_build(_cfg, train_rows, eval_rows, manifest, **kwargs)
-
-    def count_sidecar_build(*args, **kwargs):
-        audit_builds["sidecar"] += 1
-        return sidecar_build(*args, **kwargs)
-
-    monkeypatch.setattr(prepared_cache, "build_preparation_audit", count_cache_build)
-    monkeypatch.setattr(data_audit, "build_preparation_audit", count_sidecar_build)
     second = datasets.load_decision_datasets(cfg)
     assert calls == second_cold_calls
-    assert audit_builds == {"cache_rows": 1, "sidecar": 0}
     assert [row["record"]["id"] for row in second.train_dataset] == first_ids
     assert [dict(row) for row in second.train_dataset] == first_rows
     assert second.train_dataset.manifest["stratified_epoch_batches"] == first_schedule
     assert isinstance(second.train_dataset[0]["canvas"], DecisionCanvas)
-    audit = json.loads(audit_path.read_text())
-    assert audit == cold_audit
-    assert audit["config"]["seed"] == 13
-    assert (
-        audit["splits"]["train"]["full_canvas_sha256"]
-        == prepared_cache.build_preparation_audit(
-            cfg, first_rows, [], first.train_dataset.manifest
-        )["splits"]["train"]["full_canvas_sha256"]
-    )
 
     def requires_rebuild(mutate, restore):
         nonlocal calls
