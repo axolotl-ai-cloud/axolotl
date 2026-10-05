@@ -11,6 +11,9 @@ lora_alpha: 128
 lora_dropout: 0.0
 lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
 loraplus_lr_ratio: 8
+# varlen is the only diffusion attention backend that supports batch_flattening: it runs
+# bidirectional attention over the concatenated microbatch from document offsets, with no
+# dense mask. flex_attention and sdpa isolate documents only via sample_packing's dense mask.
 attn_implementation: varlen
 bf16: true
 sequence_len: 2048
