@@ -191,6 +191,7 @@ axolotl = [
     "core/trainers/prm/LICENSE",
     "core/trainers/prm/NOTICE",
     "integrations/kernels/libs/scattermoe_lora/metadata.json",
+    "integrations/diffusion_decision/vendored/DJEV_LICENSE",
 ]
 
 "axolotl.integrations.baseten" = ["template/*.sh", "template/*.py"]
