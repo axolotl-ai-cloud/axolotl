@@ -14,6 +14,7 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 from accelerate.utils.fsdp_utils import fsdp2_canonicalize_names
+from accelerate.utils.modeling import is_peft_model
 from torch.distributed.tensor import DTensor
 from torch.distributed.tensor._utils import compute_local_shape_and_global_offset
 
@@ -276,6 +277,7 @@ def _gather_value(value, owner):
 
 
 def full_model_state(model, adapter_only=False):
+    adapter_only = adapter_only and is_peft_model(model)
     parameters = _parameters(model)
     if adapter_only:
         values = {name: p for name, p in parameters.items() if p.requires_grad}
@@ -521,6 +523,7 @@ def _restore_tensor(value, parameter, owner, quantized=False, optimizer=None):
 
 
 def restore_model_state(model, state, adapter_only=False):
+    adapter_only = adapter_only and is_peft_model(model)
     parameters = _parameters(model)
     targets = (
         {n: p for n, p in parameters.items() if p.requires_grad}
@@ -632,8 +635,7 @@ def _full(plugin):
 
 def _model_needs_ownership(model):
     return bool(expert_ownership(model)) or bool(
-        getattr(model, "_moe_experts_quantized", False)
-        and getattr(model, "peft_config", None)
+        getattr(model, "_moe_experts_quantized", False) and is_peft_model(model)
     )
 
 
@@ -685,6 +687,19 @@ def patch_fsdp2_full_checkpoint():
                 )
                 if not needed:
                     return original(*args, **kwargs)
+                adapter_only = values.get("adapter_only", False) and is_peft_model(
+                    model
+                )
+                packed = {}
+                if not optimizer_operation and not adapter_only:
+                    from .fsdp2_bnb_checkpoint import packed_parameters
+
+                    error = None
+                    try:
+                        packed = packed_parameters(model)
+                    except ValueError as exc:
+                        error = str(exc)
+                    _check_errors(error)
                 path = Path(
                     values["output_dir"] if "save" in operation else values["input_dir"]
                 )
@@ -695,13 +710,17 @@ def patch_fsdp2_full_checkpoint():
                 filename = path / (
                     f"{basename}_{index}.bin" if index else f"{basename}.bin"
                 )
-                adapter_only = values.get("adapter_only", False)
                 if "save" in operation:
-                    state = (
-                        full_optimizer_state(model, optimizer)
-                        if optimizer_operation
-                        else full_model_state(model, adapter_only)
-                    )
+                    if packed:
+                        from .fsdp2_bnb_checkpoint import full_packed_model_state
+
+                        state = full_packed_model_state(model, packed)
+                    else:
+                        state = (
+                            full_optimizer_state(model, optimizer)
+                            if optimizer_operation
+                            else full_model_state(model, adapter_only)
+                        )
                     error = None
                     if accelerator.is_main_process:
                         try:
@@ -722,11 +741,35 @@ def patch_fsdp2_full_checkpoint():
                     except Exception as exc:  # pylint: disable=broad-except
                         error = str(exc)
                 _check_errors(error)
-                result = (
-                    restore_optimizer_state(model, optimizer, state)
-                    if optimizer_operation
-                    else restore_model_state(model, state, adapter_only)
-                )
+                envelope = [
+                    "_axolotl_full_model_version" in state
+                    if accelerator.is_main_process and not optimizer_operation
+                    else False
+                ]
+                dist.broadcast_object_list(envelope, src=0)
+                if envelope[0] and adapter_only:
+                    error = None
+                    if accelerator.is_main_process:
+                        if state.get("_axolotl_full_model_version") != 1:
+                            error = "Unsupported native packed model checkpoint version"
+                        elif not isinstance(state.get("state"), dict):
+                            error = "Packed checkpoint is missing ordinary model state"
+                    _check_errors(error)
+                    result = restore_model_state(
+                        model,
+                        state["state"] if accelerator.is_main_process else {},
+                        adapter_only=True,
+                    )
+                elif packed:
+                    from .fsdp2_bnb_checkpoint import restore_packed_model_state
+
+                    result = restore_packed_model_state(model, state, packed)
+                else:
+                    result = (
+                        restore_optimizer_state(model, optimizer, state)
+                        if optimizer_operation
+                        else restore_model_state(model, state, adapter_only)
+                    )
                 accelerator.wait_for_everyone()
                 return result
 
@@ -744,9 +787,7 @@ def patch_fsdp2_full_checkpoint():
     def get_state_dict(self, model, unwrap=True):
         plugin = getattr(self.state, "fsdp_plugin", None)
         if plugin is not None and _full(plugin) and _model_needs_ownership(model):
-            return full_model_state(
-                model, adapter_only=bool(getattr(model, "peft_config", None))
-            )
+            return full_model_state(model, adapter_only=is_peft_model(model))
         return original_get(self, model, unwrap=unwrap)
 
     accelerate.Accelerator.get_state_dict = get_state_dict

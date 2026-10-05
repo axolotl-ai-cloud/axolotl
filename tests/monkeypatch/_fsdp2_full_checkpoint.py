@@ -62,8 +62,10 @@ class Model(nn.Module):
         self.register_buffer("counter", torch.tensor(3))
 
 
-def check_full_parameter_save_route(mesh):
+def check_full_parameter_save_route(mesh, root):
     from accelerate import Accelerator
+    from accelerate.utils import fsdp_utils
+    from transformers.distributed.fsdp import get_fsdp_ckpt_kwargs
 
     from axolotl.core.trainers.mixins.distributed_parallel import (
         DistributedParallelMixin,
@@ -86,11 +88,13 @@ def check_full_parameter_save_route(mesh):
     model.register_buffer("counter", torch.tensor(3))
     patch_fsdp2_full_checkpoint()
     accelerator = SimpleNamespace(
+        is_main_process=dist.get_rank() == 0,
+        wait_for_everyone=dist.barrier,
         state=SimpleNamespace(
             fsdp_plugin=SimpleNamespace(
                 fsdp_version=2, state_dict_type="FULL_STATE_DICT"
             )
-        )
+        ),
     )
     accelerator.get_state_dict = lambda model, unwrap=True: Accelerator.get_state_dict(
         accelerator, model, unwrap=unwrap
@@ -116,6 +120,34 @@ def check_full_parameter_save_route(mesh):
         print("PASS ep-full-parameter-save-route", flush=True)
     else:
         assert state == {}
+    plugin = accelerator.state.fsdp_plugin
+    directory = root / "native-full-parameter"
+    fsdp_utils.save_fsdp_model(
+        plugin, accelerator, model, directory, **get_fsdp_ckpt_kwargs()
+    )
+    if dist.get_rank() == 0:
+        saved = torch.load(directory / "pytorch_model_fsdp.bin", weights_only=True)
+        assert set(saved) == set(state)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            (
+                parameter.to_local() if isinstance(parameter, DTensor) else parameter
+            ).zero_()
+        model.counter.zero_()
+    fsdp_utils.load_fsdp_model(
+        plugin, accelerator, model, directory, **get_fsdp_ckpt_kwargs()
+    )
+    torch.testing.assert_close(model.frozen, torch.tensor([5.0]), rtol=0, atol=0)
+    assert model.counter.item() == 3
+    for parameter in model.experts.parameters():
+        torch.testing.assert_close(
+            parameter.to_local(),
+            torch.full_like(parameter.to_local(), ep_rank + 1.0),
+            rtol=0,
+            atol=0,
+        )
+    if dist.get_rank() == 0:
+        print("PASS native-trainer-non-peft-full-checkpoint", flush=True)
 
 
 def snapshot(value):
@@ -300,7 +332,7 @@ def main():
     root = Path(sys.argv[1])
     root.mkdir(exist_ok=True)
     mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("dp", "ep"))
-    check_full_parameter_save_route(mesh)
+    check_full_parameter_save_route(mesh, root)
     model = Model(mesh, mesh["dp"], (Shard(0),), (Shard(0), Shard(0)))
     optimizer = AdamW8bit(model.parameters(), lr=0.001)
     populate(model, optimizer, mesh.get_coordinate()[1], mesh.get_coordinate()[0])

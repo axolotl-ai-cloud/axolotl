@@ -38,6 +38,7 @@ def test_full_checkpoint_ownership_and_next_update(tmp_path):
     assert process.returncode == 0, stdout + stderr
     for case in (
         "ep-full-parameter-save-route",
+        "native-trainer-non-peft-full-checkpoint",
         "ep-dp",
         "ep-permuted-ranks",
         "ep-cp",
@@ -55,6 +56,7 @@ def test_full_model_file_written_without_optimizer(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
     import torch
+    from peft import LoraConfig, get_peft_model
     from torch import nn
     from transformers import Trainer
 
@@ -66,9 +68,12 @@ def test_full_model_file_written_without_optimizer(tmp_path, monkeypatch):
     trainer.args = SimpleNamespace(
         should_save=True, output_dir=str(tmp_path), save_only_model=True
     )
-    trainer.model = nn.Linear(2, 2)
+    base_model = nn.Module()
+    base_model.dense = nn.Linear(2, 2)
+    trainer.model = get_peft_model(
+        base_model, LoraConfig(target_modules=["dense"], r=2)
+    )
     trainer.model._moe_experts_quantized = True
-    trainer.model.peft_config = {"default": object()}
     trainer.accelerator = SimpleNamespace(
         parallelism_config=None,
         state=SimpleNamespace(

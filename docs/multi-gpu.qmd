@@ -102,6 +102,8 @@ For `adamw_torch_8bit`, the full optimizer file records quantized codes, block s
 
 Full checkpoints assemble tensors on rank 0's CPU and use bounded GPU transfer buffers. Adapter-only runs save trainable adapter tensors without materializing frozen base weights. Revisit streamed CPU transfers for large adapters or full fine-tuning to reduce transfer overhead and host memory requirements.
 
+Native full bitsandbytes checkpoints preserve each EP owner's packed weights and quantization metadata in a versioned `pytorch_model_fsdp.bin` payload. Resume supports rank rearrangements and compatible data-parallel resharding, but requires the same EP ownership ranges. Changing EP grouping requires an explicit checkpoint conversion. These files are training checkpoints; Hugging Face adapter exports retain their usual format. Ownership-aware full checkpoints support 4-bit dense weights and 4-bit or 8-bit parametrized experts; dense `Int8Params` in this path are rejected.
+
 ### FSDP + QLoRA {#sec-fsdp-qlora}
 
 For combining FSDP with QLoRA, see our [dedicated guide](fsdp_qlora.qmd).
