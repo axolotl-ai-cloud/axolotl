@@ -22,25 +22,22 @@ rejected rather than trained as causal SFT. See
 
 ## Installation
 
-Native diffusion training runs on Axolotl's supported Torch range.
-`attn_implementation: varlen` additionally requires Torch 2.14. The Nemotron
-recipes were tested with the dependency set pinned in
-`requirements/diffusion-lm-torch214.txt`; to reproduce that environment from the
-repository root:
+Native diffusion training runs on Axolotl's supported Torch range, using the
+dependency versions pinned in `pyproject.toml`. `attn_implementation: varlen`
+additionally requires Torch 2.14, so install the `torch==2.14.0` wheel for your
+accelerator from [PyTorch's installation guide](https://pytorch.org/get-started/locally/)
+before installing Axolotl:
 
 ```bash
 python -m venv .venv-diffusion
 source .venv-diffusion/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements/diffusion-lm-torch214.txt -e .
+python -m pip install torch==2.14.0  # or the accelerator-specific wheel
+python -m pip install -e .
 ```
 
-The requirements file does not choose a CUDA, ROCm, or CPU wheel index. If the
-default PyPI wheel does not match your accelerator, first install the
-`torch==2.14.0` wheel selected by
-[PyTorch's installation guide](https://pytorch.org/get-started/locally/), then
-run the final command. Put this environment's `bin` directory first on `PATH`
-so `axolotl train` launches the matching Accelerate installation.
+Put this environment's `bin` directory first on `PATH` so `axolotl train`
+launches the matching Accelerate installation.
 
 ## Start with Nemotron 3B
 
