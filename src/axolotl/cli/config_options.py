@@ -2025,6 +2025,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Seed for reproducibility",
     ),
     (
+        ("--full-determinism/--no-full-determinism",),
+        None,
+        None,
+        "Seed with transformers' enable_full_determinism (deterministic torch algorithms and CUBLAS workspace config) instead of set_seed. Slower.",
+    ),
+    (
         ("--ddp-timeout",),
         None,
         None,

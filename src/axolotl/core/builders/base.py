@@ -685,6 +685,7 @@ class TrainerBuilderBase(abc.ABC):
             "save_only_model",
             "weight_decay",
             "seed",
+            "full_determinism",
             "dion_momentum",
             "dion_rank_fraction",
             "dion_rank_multiple_of",

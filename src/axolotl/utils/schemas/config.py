@@ -500,6 +500,12 @@ class AxolotlInputConfig(
     seed: int | None = Field(
         default=None, json_schema_extra={"description": "Seed for reproducibility"}
     )
+    full_determinism: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Seed with transformers' enable_full_determinism (deterministic torch algorithms and CUBLAS workspace config) instead of set_seed. Slower."
+        },
+    )
     ddp_timeout: int | None = Field(
         default=None,
         json_schema_extra={"description": "Advanced DDP Arguments - timeout"},
