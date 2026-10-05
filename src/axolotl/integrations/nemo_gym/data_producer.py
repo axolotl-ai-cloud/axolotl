@@ -158,10 +158,7 @@ class NemoGymDataProducer(GRPODataProducer):
             loop.close()
 
         # Parse responses
-        tokenizer = getattr(
-            trainer.processing_class, "tokenizer", trainer.processing_class
-        )
-        eos_token_id = tokenizer.eos_token_id
+        eos_token_id = trainer._tokenizer.eos_token_id
         prompt_ids_list = []
         completion_ids_list = []
         env_mask_list = []
