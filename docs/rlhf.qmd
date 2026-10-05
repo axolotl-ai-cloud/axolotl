@@ -20,6 +20,7 @@ feedback. Various methods include, but not limited to:
 - [Group Reward-Decoupled Policy Optimization (GDPO)](#gdpo)
 - [Energy-Based Fine-Tuning (EBFT)](#ebft) — see also the [EBFT guide](ebft.qmd) for detailed mode comparisons and configuration
 - [NeMo Gym Integration](#nemo-gym-integration)
+- [Multimodal (vision) datasets](#multimodal) for DPO, KTO and GRPO
 
 For help choosing between these methods, see [Choosing a Fine-Tuning Method](choosing_method.qmd).
 
@@ -1339,6 +1340,44 @@ CFLAGS="" uv pip install pycosat --python .venv/bin/python --no-build-isolation
 |----------|------|-------------|
 | `axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify` | Single-turn | Calls `/verify`, returns binary reward |
 | `axolotl.integrations.nemo_gym.rewards.reward_env` | Multi-turn | Passthrough reward from agent `/run` |
+
+### Multimodal (vision) datasets {#multimodal}
+
+DPO, IPO, KTO, GRPO and GDPO can train vision-language models on image datasets. Load the model as for multimodal SFT (see [Multimodal usage](multimodal.qmd#usage)): `processor_type: AutoProcessor`, and optionally `image_size` / `image_resize_algorithm`. Sample packing is not supported.
+
+A dataset is treated as multimodal when it has an `images` (list) or `image` column. Images are loaded and resized at collate time, so any reference from [Multimodal image keys](multimodal.qmd#image) works: a PIL image, `path`, `url`, or `base64`.
+
+Prompts must be conversational (lists of `role`/`content` messages). Each `{"type": "image"}` placeholder in a message is filled, in order, with the next image from the column; images left over are placed at the start of the first user turn. An image block can also carry its own `path`/`url`/`base64` reference instead of using the column.
+
+| Method | Columns | Notes |
+|---|---|---|
+| DPO / IPO | `prompt`, `chosen`, `rejected`, `images` | no `type` needed if already in this shape, or `type: chat_template` with `messages` + `chosen`/`rejected` messages |
+| KTO | `prompt`, `completion`, `label`, `images` | needs `micro_batch_size` > 1 |
+| GRPO / GDPO | `prompt`, `images` or `image` | reward functions receive the loaded images as the `images` kwarg; works with vLLM generation |
+
+Example DPO config using [HuggingFaceH4/rlaif-v_formatted](https://huggingface.co/datasets/HuggingFaceH4/rlaif-v_formatted):
+
+```yaml
+base_model: Qwen/Qwen2.5-VL-3B-Instruct
+processor_type: AutoProcessor
+image_size: 448
+
+rl: dpo
+datasets:
+  - path: HuggingFaceH4/rlaif-v_formatted
+    split: train
+
+adapter: lora
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+sequence_len: 2048
+```
+
+Limitations:
+
+- `sequence_len` includes image tokens. Rows are not filtered by length beforehand; TRL truncates at collate time, which errors if it would cut image tokens.
+- All samples are rendered with one chat template (the processor's, or the top-level `chat_template`); per-dataset `chat_template` is ignored.
+- Image and text-only datasets cannot be mixed in one run, and exact deduplication is skipped for image datasets.
+- Not supported: ORPO, SimPO, EBFT, `tokenizer_use_mistral_common`, and GRPO with `context_parallel_size` > 1. `pad_to_multiple_of` is ignored for DPO/KTO.
 
 ### Using local dataset files
 

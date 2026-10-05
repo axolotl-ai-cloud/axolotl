@@ -407,6 +407,10 @@ Here is an example of a multi-modal dataset:
 ]
 ```
 
+## Preference and RL training
+
+DPO, KTO and GRPO also train on image datasets with the same model setup. See [Multimodal (vision) datasets](rlhf.qmd#multimodal) for the dataset shapes and limitations.
+
 ## FAQ
 
 1. `PIL.UnidentifiedImageError: cannot identify image file ...`
