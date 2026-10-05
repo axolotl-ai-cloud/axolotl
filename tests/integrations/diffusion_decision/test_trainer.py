@@ -1889,7 +1889,7 @@ def test_eval_metric_keys_are_prefixed_and_distributed_totals_merge(monkeypatch)
     assert "decision/alpha/loss" not in captured
 
 
-def test_base_reports_token_perplexity_but_decision_objective_does_not(monkeypatch):
+def test_decision_objective_does_not_report_token_perplexity(monkeypatch):
     forwarded: list[dict[str, float]] = []
     monkeypatch.setattr(trainer_base, "is_main_process", lambda: False)
     monkeypatch.setattr(
@@ -1898,20 +1898,15 @@ def test_base_reports_token_perplexity_but_decision_objective_does_not(monkeypat
         lambda _self, logs, start_time=None: forwarded.append(dict(logs)),
     )
 
-    legacy = object.__new__(AxolotlDiffusionTrainer)
-    legacy._stored_metrics = {"train": {}, "eval": {}}
-    legacy.args = SimpleNamespace(include_tkps=False)
-    AxolotlTrainer.log(legacy, {"loss": 2.0})
-
     decision = _TrainerHarness(
         _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     decision._stored_metrics = {"train": {}, "eval": {}}
     decision.args.include_tkps = False
-    AxolotlTrainer.log(decision, {"eval_loss": 2.0})
+    AxolotlTrainer.log(decision, {"loss": 2.0, "eval_loss": 2.0})
 
-    assert forwarded[0]["ppl"] == pytest.approx(torch.exp(torch.tensor(2.0)).item())
-    assert "eval_ppl" not in forwarded[1]
+    assert "ppl" not in forwarded[0]
+    assert "eval_ppl" not in forwarded[0]
 
 
 def test_get_batch_samples_counts_logical_examples_and_handles_last_short_window():
