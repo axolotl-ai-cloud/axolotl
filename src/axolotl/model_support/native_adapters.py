@@ -78,12 +78,11 @@ def validate_native_diffusion_lora(cfg: Any, *, model_name: str) -> None:
             "dense-MLP target paths."
         )
     values = [targets] if isinstance(targets, str) else list(targets)
-    if model_name == "DiffusionGemma" and any(
-        "encoder" not in str(target)
-        or "language_model" not in str(target)
-        or "decoder" not in str(target)
-        or any(word in str(target).lower() for word in _FORBIDDEN_TARGET_WORDS)
-        for target in values
+    names = [str(target) for target in values]
+    if model_name == "DiffusionGemma" and (
+        any(word in name.lower() for name in names for word in _FORBIDDEN_TARGET_WORDS)
+        or not any("encoder" in name and "language_model" in name for name in names)
+        or not any("decoder" in name for name in names)
     ):
         raise ValueError(
             "DiffusionGemma native LoRA targets must cover both tied encoder "

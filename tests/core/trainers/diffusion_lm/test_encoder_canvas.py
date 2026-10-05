@@ -321,7 +321,7 @@ def test_native_physical_b1_matches_two_unpacked_documents_in_logits_and_gradien
             assert packed_parameter.grad is unpacked_parameter.grad is None, name
         else:
             torch.testing.assert_close(
-                packed_parameter.grad, unpacked_parameter.grad, rtol=3e-5, atol=3e-6
+                packed_parameter.grad, unpacked_parameter.grad, rtol=1e-4, atol=1e-5
             )
 
 

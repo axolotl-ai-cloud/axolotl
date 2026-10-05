@@ -55,6 +55,8 @@ def normalized_sft_loss(
 class AxolotlDiffusionTrainer(AxolotlTrainer):
     """Trainer that computes the full-sequence diffusion objective."""
 
+    reports_token_perplexity = False
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._special_token_ids = None
@@ -744,7 +746,7 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
             denominator=denominator,
         )
         self.store_metrics(
-            {"loss": loss.detach().item(), "mask_ratio": events.float().mean().item()},
+            {"mask_ratio": events.float().mean().item()},
             train_eval="train" if model.training else "eval",
         )
         return loss, outputs
@@ -952,7 +954,7 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
                     if isinstance(num_items_in_batch, dict)
                     else packed.canvas_loss_mask.sum().detach().to(token_loss.dtype)
                 )
-            if self.args.world_size > 1:
+            if self.args.world_size > 1 and isinstance(num_items_in_batch, dict):
                 canvas_denominator = canvas_denominator / self.args.world_size
         loss = reduce_objective(
             token_loss,
@@ -996,7 +998,7 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
                     if isinstance(num_items_in_batch, dict)
                     else valid.sum().detach().to(token_loss.dtype)
                 )
-                if self.args.world_size > 1:
+                if self.args.world_size > 1 and isinstance(num_items_in_batch, dict):
                     ar_denominator = ar_denominator / self.args.world_size
             loss = loss + encoder_weight * reduce_objective(
                 ar_loss,

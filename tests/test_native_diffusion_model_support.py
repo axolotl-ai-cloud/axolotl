@@ -1562,3 +1562,43 @@ def test_dream_generation_config_resolves_remote_utils_through_peft(monkeypatch)
     assert config.mask_token_id == 5
     assert config.steps == 4
     assert config.max_new_tokens == 3
+
+
+def test_axolotl_subclass_built_first_keeps_grouped_mm_experts():
+    from axolotl.model_support.diffusion_gemma.modeling import (
+        AxolotlDiffusionGemmaForBlockDiffusion,
+    )
+
+    cls = AxolotlDiffusionGemmaForBlockDiffusion
+    for attr in (
+        "_can_set_experts_implementation_cached_value",
+        "_can_set_attn_implementation_cached_value",
+    ):
+        if attr in vars(cls):
+            delattr(cls, attr)
+    fresh_config = DiffusionGemmaConfig(**_tiny_model().config.to_dict())
+
+    first = cls(fresh_config)
+
+    assert first.config._experts_implementation == "grouped_mm"
+    assert "_can_set_experts_implementation_cached_value" not in vars(cls)
+    cls(_tiny_model().config)
+
+
+def test_diffusion_gemma_lora_targets_may_be_listed_per_path():
+    validate_native_diffusion_lora(
+        _native_cfg(
+            lora_target_modules=[
+                "model.encoder.language_model.layers.0.self_attn.q_proj",
+                "model.decoder.layers.0.self_attn.q_proj",
+            ]
+        ),
+        model_name="DiffusionGemma",
+    )
+    with pytest.raises(ValueError, match="cover both"):
+        validate_native_diffusion_lora(
+            _native_cfg(
+                lora_target_modules=["model.decoder.layers.0.self_attn.q_proj"]
+            ),
+            model_name="DiffusionGemma",
+        )

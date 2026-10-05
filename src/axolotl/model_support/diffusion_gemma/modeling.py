@@ -26,6 +26,16 @@ class PackedDiffusionGemmaOutput(ModelOutput):
 class AxolotlDiffusionGemmaForBlockDiffusion(DiffusionGemmaForBlockDiffusion):
     """DiffusionGemma with an explicit packed encoder/canvas forward contract."""
 
+    # transformers answers these by scanning the source of cls.__module__ for its
+    # decorators, which this module lacks; defer to the upstream class.
+    @classmethod
+    def _can_set_experts_implementation(cls) -> bool:
+        return DiffusionGemmaForBlockDiffusion._can_set_experts_implementation()
+
+    @classmethod
+    def _can_set_attn_implementation(cls) -> bool:
+        return DiffusionGemmaForBlockDiffusion._can_set_attn_implementation()
+
     def forward(
         self,
         *args,
@@ -229,10 +239,10 @@ def decode_packed_canvas(
             kernel_options=kernel_options,
         )
     logits = native_model.lm_head(decoder.norm(hidden)).float()
-    return (
-        torch.tanh(logits / native_model.final_logit_softcapping)
-        * native_model.final_logit_softcapping
-    )
+    softcap = getattr(native_model, "final_logit_softcapping", None)
+    if softcap is None:
+        return logits
+    return torch.tanh(logits / softcap) * softcap
 
 
 def _encoder_logits(model, hidden_states: torch.Tensor | None) -> torch.Tensor | None:
