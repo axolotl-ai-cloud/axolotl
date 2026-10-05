@@ -11,7 +11,7 @@ import torch
 from transformers.testing_utils import get_torch_dist_unique_port
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
 def test_native_packed_bnb_full_checkpoint(device, tmp_path):
     pytest.importorskip("bitsandbytes.nn.parametrize")
     if device == "cuda" and torch.cuda.device_count() < 2:

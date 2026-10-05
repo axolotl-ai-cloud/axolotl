@@ -11,7 +11,7 @@ import torch
 from transformers.testing_utils import get_torch_dist_unique_port
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
 def test_packed_experts_preserve_weights_and_ownership(device):
     if device == "cuda" and (
         not torch.cuda.is_available() or torch.cuda.device_count() < 2
