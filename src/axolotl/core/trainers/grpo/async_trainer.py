@@ -459,7 +459,8 @@ class AsyncDataProducer:
             return dataset
 
         # Rank 0 sends _data dict; others receive it
-        obj_list = [dataset._data if self._is_main else None]
+        # Send CPU copies; CUDA tensors would unpickle onto rank 0's GPU on every rank.
+        obj_list = [_to_cpu(dataset._data) if self._is_main else None]
         dist.broadcast_object_list(obj_list, src=0)
 
         data: dict[str, Any] = obj_list[0]  # type: ignore[assignment]
@@ -499,6 +500,10 @@ class AsyncDataProducer:
             future.cancel()
         self._queue.clear()
         self._executor.shutdown(wait=False)
+
+
+def _to_cpu(data: Any) -> dict:
+    return {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in data.items()}
 
 
 class DataProducerCallback:
@@ -1025,7 +1030,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         """
         import torch.distributed as dist
 
-        obj_list = [rollout if self.accelerator.is_main_process else None]
+        obj_list = [_to_cpu(rollout) if self.accelerator.is_main_process else None]
         dist.broadcast_object_list(obj_list, src=0)
         rollout = obj_list[0]
         assert rollout is not None, "broadcast_object_list failed to deliver rollout"
