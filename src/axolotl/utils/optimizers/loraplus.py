@@ -1,5 +1,7 @@
 """LoRA+ parameter-group helpers for optimizer factories."""
 
+__ci_config_keys__ = ("loraplus_lr_ratio",)
+
 from collections.abc import Callable, Iterable
 from typing import Any
 
