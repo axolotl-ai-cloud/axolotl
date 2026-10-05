@@ -14,6 +14,10 @@ Every edge is derived from the tree, so new features need no registration:
 * A module may declare ``__ci_config_keys__ = ("activation_offloading",)`` when the
   graph cannot see what enables it; the selector then picks exactly the tests that set
   those keys. A declared key that is not a config field runs the whole scope.
+* A dependency bump in ``pyproject.toml`` selects through the importers of the
+  distribution's import roots, when ``[tool.axolotl.ci.deps]`` maps the distribution
+  to them. An unmapped distribution, a map entry no module imports, or any other
+  pyproject change runs the whole scope.
 * Changed test files select themselves. Any other change under ``tests/``, a
   deleted module, a build or CI file, or an exception in the selector itself runs
   the whole scope. Nothing here can select fewer tests than the graph supports.
@@ -38,8 +42,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = "src/axolotl"
 UBIQUITY_THRESHOLD = 0.5
 SOURCE_UBIQUITY_THRESHOLD = 0.2
+PYPROJECT = "pyproject.toml"
+DEP_MAP_TABLE = ("tool", "axolotl", "ci", "deps")
+DEP_SECTIONS = ("dependencies", "optional-dependencies")
 RUN_ALL_GLOBS = (
-    "pyproject.toml",
     "setup.py",
     "setup.cfg",
     "requirements*.txt",
@@ -74,6 +80,7 @@ INERT_GLOBS = (
 )
 # Stems and package names too generic to identify a feature from a config string.
 DECLARED_KEYS_NAME = "__ci_config_keys__"
+REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 GENERIC_NAMES = frozenset(
     {
         "__init__",
@@ -404,6 +411,7 @@ class Selector:
         all_fields: set[str] = set()
         src_trees = {}
         src_names: dict[str, set[str]] = {}
+        src_imports: dict[str, set[str]] = {}
         src_declared: dict[str, tuple[str, ...]] = {}
         by_module = {self.module_name(rel): rel for rel in sources}
         importers: dict[str, set[str]] = defaultdict(set)
@@ -419,6 +427,7 @@ class Selector:
             fields, imports, names = self._scan_source(tree, package)
             all_fields |= fields
             src_names[rel] = names
+            src_imports[rel] = imports
             declared = self._declared_keys(tree)
             if declared is not None:
                 src_declared[rel] = declared
@@ -466,6 +475,7 @@ class Selector:
         self.test_imports = test_imports
         self.src_trees = src_trees
         self.src_names = src_names
+        self.src_imports = src_imports
         self.src_declared = src_declared
         self.all_fields = all_fields
         self.universe = universe
@@ -687,6 +697,116 @@ class Selector:
             return None, "no derivable edges through importers"
         return hits, f"via {sorted(explained)[:3]}"
 
+    # -- pyproject dependencies -------------------------------------------
+
+    @staticmethod
+    def _normalize_dist(name: str) -> str:
+        return re.sub(r"[-_.]+", "-", name).lower()
+
+    def _requirements(self, pyproject: dict) -> dict[str, set[str]]:
+        """Requirement strings per normalized distribution, keyed by the table declaring them.
+
+        The same string can sit in several extras; moving it between them changes what
+        each extra installs, so the table name is part of the identity.
+        """
+        project = pyproject.get("project", {})
+        tables: list[tuple[str, list[str]]] = [("", project.get("dependencies", []))]
+        tables.extend(project.get("optional-dependencies", {}).items())
+        by_dist: dict[str, set[str]] = defaultdict(set)
+        for table, reqs in tables:
+            for req in reqs:
+                match = REQUIREMENT_NAME_RE.match(req)
+                if match:
+                    by_dist[self._normalize_dist(match.group(1))].add(
+                        f"{table}:{req.strip()}"
+                    )
+        return by_dist
+
+    @staticmethod
+    def _without_dependencies(pyproject: dict) -> dict:
+        trimmed = dict(pyproject)
+        project = dict(trimmed.get("project", {}))
+        for section in DEP_SECTIONS:
+            project.pop(section, None)
+        trimmed["project"] = project
+        return trimmed
+
+    def _dep_map(self, pyproject: dict) -> dict[str, list[str]]:
+        table: object = pyproject
+        for key in DEP_MAP_TABLE:
+            table = table.get(key, {}) if isinstance(table, dict) else {}
+        if not isinstance(table, dict):
+            return {}
+        return {
+            self._normalize_dist(dist): list(roots) if isinstance(roots, list) else []
+            for dist, roots in table.items()
+        }
+
+    def _root_importers(self, root: str) -> set[str]:
+        return {
+            rel
+            for rel, imports in self.src_imports.items()
+            if any(imp == root or imp.startswith(root + ".") for imp in imports)
+        }
+
+    def _root_tests(self, root: str) -> set[str]:
+        hits = set()
+        for test, imports in self.test_imports.items():
+            if any(imp == root or imp.startswith(root + ".") for imp in imports):
+                hits.add(test)
+        for test, strings in self.test_strings.items():
+            if root in strings:
+                hits.add(test)
+        return hits
+
+    def impact_of_pyproject(self, base_rev: str) -> tuple[set[str] | None, str]:
+        """Tests reached by the distributions whose requirements changed; None runs everything."""
+        try:
+            base = tomllib.loads(_git(self.repo, "show", f"{base_rev}:{PYPROJECT}"))
+            head = tomllib.loads((self.repo / PYPROJECT).read_text(encoding="utf-8"))
+        except (subprocess.CalledProcessError, OSError, tomllib.TOMLDecodeError):
+            return None, f"{PYPROJECT} unreadable at base or head"
+        if self._without_dependencies(base) != self._without_dependencies(head):
+            return None, f"{PYPROJECT} changed outside the dependency tables"
+        base_extras = set(base.get("project", {}).get("optional-dependencies", {}))
+        head_extras = set(head.get("project", {}).get("optional-dependencies", {}))
+        if base_extras != head_extras:
+            return None, f"{PYPROJECT} adds or removes an extra"
+        base_reqs, head_reqs = self._requirements(base), self._requirements(head)
+        changed = sorted(
+            d
+            for d in base_reqs.keys() | head_reqs.keys()
+            if base_reqs[d] != head_reqs[d]
+        )
+        if not changed:
+            return set(), f"{PYPROJECT} dependency tables unchanged"
+        dep_map = self._dep_map(head)
+        unmapped = [d for d in changed if d not in dep_map]
+        if unmapped:
+            return None, f"{PYPROJECT}: no [tool.axolotl.ci.deps] entry for {unmapped}"
+        hits: set[str] = set()
+        explained: list[str] = []
+        for dist in changed:
+            roots = dep_map[dist]
+            if not roots:
+                return None, f"{PYPROJECT}: {dist} maps to no import root"
+            for root in roots:
+                importers = self._root_importers(root)
+                tests = self._root_tests(root)
+                if not importers and not tests:
+                    return None, f"{PYPROJECT}: nothing imports {root} ({dist})"
+                for rel in sorted(importers):
+                    reached, reason = self.impact_of_source(rel)
+                    if reached is None:
+                        return (
+                            None,
+                            f"{PYPROJECT}: {dist} -> {root} via {rel}: {reason}",
+                        )
+                    hits |= reached
+                hits |= tests
+                explained.append(f"{dist} -> {root} ({len(importers)} importer(s))")
+        return hits, "; ".join(explained)
+
     # -- decision ----------------------------------------------------------
 
     @staticmethod
@@ -710,9 +830,20 @@ class Selector:
 
         self.build()
         run_all: list[str] = []
+        selected: dict[str, set[str]] = defaultdict(set)
         for path in changed + deleted:
             if any(fnmatch.fnmatch(path, g) for g in RUN_ALL_GLOBS):
                 run_all.append(f"{path} matches a run-all pattern")
+        if PYPROJECT in deleted:
+            run_all.append(f"deleted {PYPROJECT}")
+        elif PYPROJECT in changed:
+            changed = [p for p in changed if p != PYPROJECT]
+            hits, reason = self.impact_of_pyproject(self._diff_base(base, merge_commit))
+            if hits is None:
+                run_all.append(reason)
+            else:
+                for test in hits:
+                    selected[test].add(f"{PYPROJECT} ({reason})")
         for path in deleted:
             if path.startswith(SRC_ROOT + "/") and path.endswith(".py"):
                 run_all.append(f"deleted module {path}")
@@ -723,7 +854,6 @@ class Selector:
             ):
                 run_all.append(f"deleted unmodeled file {path}")
 
-        selected: dict[str, set[str]] = defaultdict(set)
         in_scope = set(self.tests)
         for path in changed:
             if path in in_scope:

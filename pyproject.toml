@@ -92,7 +92,6 @@ dependencies = [
 fla = ["flash-linear-attention[tilelang]==0.5.2", "tilelang==0.1.14"]
 modal = ["modal==1.3.0.post1"]
 baseten = ["truss==0.18.30"]
-flash-attn = ["flash-attn==2.8.3"]
 ringmaster = [
     "axolotl-ringmaster>=0.2.4",
 ]
@@ -237,6 +236,29 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 docstring-code-format = false
 
+# Distributions whose effect is bounded by the modules importing them, mapped to their
+# import roots. cicd/select_e2e_tests.py narrows a version bump of a listed distribution
+# to the e2e tests reachable from those importers; an unlisted one runs every e2e test.
+# List a distribution only when every behaviour it changes sits behind a static import.
+[tool.axolotl.ci.deps]
+"axolotl-ringmaster" = ["ringmaster"]
+"flash-linear-attention" = ["fla"]
+"fla-core" = ["fla"]
+"tilelang" = ["tilelang"]
+"liger-kernel" = ["liger_kernel"]
+"xformers" = ["xformers"]
+"torch-optimi" = ["optimi"]
+"came_pytorch" = ["came_pytorch"]
+"scao" = ["scao"]
+"q-galore-torch" = ["q_galore_torch"]
+"llmcompressor" = ["llmcompressor"]
+"vllm" = ["vllm"]
+"ray" = ["ray"]
+"mlflow" = ["mlflow"]
+"wandb" = ["wandb"]
+"trackio" = ["trackio"]
+"mistral-common" = ["mistral_common"]
+
 [tool.pytest.ini_options]
 addopts = "-m 'not slow'"
 norecursedirs = [
@@ -273,10 +295,6 @@ conflicts = [
     ],
     [
         { package = "axolotl" },
-        { extra = "flash-attn" },
-    ],
-    [
-        { package = "axolotl" },
         { extra = "mamba-ssm" },
     ],
     [
@@ -296,6 +314,5 @@ conflicts = [
 [tool.uv.extra-build-dependencies]
 mamba-ssm = [{ requirement = "torch", match-runtime = true }]
 causal-conv1d = [{ requirement = "torch", match-runtime = true }]
-flash-attn = [{ requirement = "torch", match-runtime = true }]
 deepspeed = [{ requirement = "torch", match-runtime = true }]
 auto-gptq = [{ requirement = "torch", match-runtime = true }]

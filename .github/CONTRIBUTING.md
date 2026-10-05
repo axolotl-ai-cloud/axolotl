@@ -67,7 +67,7 @@ pytest tests/e2e/test_lora_llama.py          # LoRA smoke test
 pytest tests/e2e/multigpu/                    # needs >= 2 GPUs
 ```
 
-Some tests require flash-attn (`uv pip install flash-attn --no-build-isolation`).
+Flash Attention 2 is fetched from the Hub kernels registry at runtime; nothing extra to install.
 `cicd/cicd.sh`, `cicd/cicd_cuda_kernels.sh`, and `cicd/multigpu.sh` list CI's exact
 run order. Put single-GPU kernel correctness and numerical parity tests under
 `tests/e2e/kernels/` or `tests/integrations/kernels/` so they run in the dedicated
@@ -159,9 +159,17 @@ no registration:
   "registry" entries. A member no test names selects nothing.
 - A module that reads a key most e2e configs set (`base_model`, `sequence_len`,
   `micro_batch_size`, ...) is core and runs the whole scope, as does a module with no
-  derivable edges, a deleted module, a console-script entry point, `pyproject.toml`,
-  anything under `cicd/` or `.github/workflows/`, a `conftest.py`, and any error
-  inside the selector. The selector can over-select, never silently under-select.
+  derivable edges, a deleted module, a console-script entry point, anything under
+  `cicd/` or `.github/workflows/`, a `conftest.py`, and any error inside the
+  selector. The selector can over-select, never silently under-select.
+- A `pyproject.toml` change that only touches requirement strings is resolved per
+  distribution through `[tool.axolotl.ci.deps]`, which maps a distribution to its
+  import roots. The bump then selects whatever the modules importing those roots
+  select, plus tests that import or `importorskip` the root. A distribution without an
+  entry, an entry nothing imports, an added or removed extra, an edit to the map
+  itself, or any other pyproject change runs the whole scope. List a distribution only
+  when every behaviour it changes sits behind a static import; `torch`, `transformers`
+  and `triton` stay unlisted on purpose.
 - Worker scripts and helpers next to a test (`_*_worker.py`, parity probes) count as
   part of the tests that name or import them. A test with no visible config at all
   rides along with every subset.
