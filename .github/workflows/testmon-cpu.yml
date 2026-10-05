@@ -16,6 +16,8 @@ jobs:
   pytest-testmon:
     name: PyTest testmon (py3.12, torch 2.14.0)
     runs-on: ubuntu-latest
+    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
+    continue-on-error: true
     timeout-minutes: 45
 
     steps:

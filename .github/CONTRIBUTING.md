@@ -154,8 +154,9 @@ Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the m
 
 Alongside the full suites, every PR run selects the e2e test files its diff can affect
 and runs just those in two extra arms, `docker-e2e-tests-selected` (single GPU) and
-`multigpu-selected`. They gate nothing today; they exist to be compared against the
-full suites. The `select-e2e` job writes the selection and the reason for every file
+`multigpu-selected`. They gate nothing today and run with `continue-on-error`, as does
+the testmon arm, so a failure there never fails the run; they exist to be compared
+against the full suites in both directions. The `select-e2e` job writes the selection and the reason for every file
 to its job summary and uploads it as the `e2e-selection` artifact.
 
 `cicd/select_e2e_tests.py` derives the selection from the tree, so new features need
