@@ -43,8 +43,10 @@ class OptimizerMixin(Trainer):
         for name, param in opt_model.named_parameters():
             if not param.requires_grad:
                 continue
-            if name.endswith("modules_to_save.default.weight") or any(
-                embed_name in name for embed_name in ["embed_tokens", "lm_head"]
+            if (
+                "lora_embedding_" in name
+                or name.endswith("modules_to_save.default.weight")
+                or any(embed_name in name for embed_name in ["embed_tokens", "lm_head"])
             ):
                 params["embeddings"][name] = param
             elif name in decay_parameters:

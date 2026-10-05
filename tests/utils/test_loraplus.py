@@ -100,6 +100,31 @@ def test_loraplus_groups_leave_non_2d_and_no_ratio_unchanged():
     assert unchanged[0] is not groups[0]
 
 
+def test_loraplus_routes_lora_b_bias_with_b_group():
+    lora_b_weight = torch.nn.Parameter(torch.randn(4, 2))
+    lora_b_bias = torch.nn.Parameter(torch.randn(4))
+    lora_a_vector = torch.nn.Parameter(torch.randn(2))
+    groups = [{"params": [lora_b_weight, lora_b_bias, lora_a_vector], "lr": 1e-3}]
+    named_parameters = [
+        ("layer.lora_B.default.weight", lora_b_weight),
+        ("layer.lora_B.default.bias", lora_b_bias),
+        ("layer.lora_A.default.scale", lora_a_vector),
+    ]
+
+    split = apply_loraplus_lr_groups(
+        groups,
+        named_parameters,
+        default_lr=1e-3,
+        loraplus_lr_ratio=8,
+        eligible=lambda *_: True,
+    )
+
+    by_param = {id(p): g for g in split for p in g["params"]}
+    assert by_param[id(lora_b_weight)]["lr"] == 8e-3
+    assert by_param[id(lora_b_bias)]["lr"] == 8e-3
+    assert by_param[id(lora_a_vector)]["lr"] == 1e-3
+
+
 def test_loraplus_keeps_embedding_and_saved_head_overrides():
     class Model(torch.nn.Module):
         def __init__(self):
@@ -327,3 +352,17 @@ def test_optimizer_mixin_no_embedding_warning_without_embedding_lora(monkeypatch
     ).create_optimizer()
 
     assert warnings == []
+
+
+def test_optimizer_mixin_routes_lora_embedding_factors_to_embedding_lr():
+    module = _optimizer_mixin_module()
+    model = _embedding_lora_model()
+    optimizer = _optimizer_stub(
+        module, model, embedding_lr_scale=4.0
+    ).create_optimizer()
+    named = dict(model.named_parameters())
+    groups = _params_to_groups(optimizer.param_groups)
+
+    assert groups[id(named["embed.lora_embedding_A.default"])]["lr"] == 1e-4
+    assert groups[id(named["embed.lora_embedding_B.default"])]["lr"] == 1e-4
+    assert groups[id(named["layer.lora_B.default.weight"])]["lr"] == 2e-4

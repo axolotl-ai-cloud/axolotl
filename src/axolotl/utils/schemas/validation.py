@@ -249,6 +249,13 @@ class DatasetValidationMixin:
             seed = 42
         return seed
 
+    @model_validator(mode="after")
+    def seed_full_determinism(self):
+        if self.full_determinism and self.seed is None:
+            LOG.info("`full_determinism` set without `seed`; setting seed to 42")
+            self.seed = 42
+        return self
+
     @field_validator("datasets", mode="before")
     @classmethod
     def deprecate_sharegpt_datasets(cls, datasets):

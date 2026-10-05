@@ -27,7 +27,7 @@ def apply_loraplus_lr_groups(
     loraplus_lr_ratio: float | None,
     eligible: LoRAPlusEligibility,
 ) -> list[dict[str, Any]]:
-    """Split eligible 2D LoRA A/B factors while preserving each group's metadata.
+    """Split eligible LoRA A/B factors while preserving each group's metadata.
 
     Factories retain ownership of routing and fallback policy through ``eligible``.
     Use this before optimizer construction; it does not repartition optimizer state.
@@ -50,10 +50,12 @@ def apply_loraplus_lr_groups(
         for param in group["params"]:
             param_name: str | None = names_by_param_id.get(id(param))
             factor = _lora_factor(param_name) if param_name is not None else None
+            is_factor_weight = param.ndim == 2
+            is_b_bias = factor == "B" and param.ndim == 1
             if (
                 param_name is None
                 or factor is None
-                or param.ndim != 2
+                or not (is_factor_weight or is_b_bias)
                 or not eligible(param_name, param, group)
             ):
                 regular_params.append(param)

@@ -136,3 +136,9 @@ def test_full_determinism_is_a_schema_field(min_base_cfg):
     )
 
     assert validated.full_determinism is True
+
+
+def test_full_determinism_without_seed_fixes_the_seed(min_base_cfg):
+    validated = validate_config(min_base_cfg | DictDefault(full_determinism=True))
+
+    assert validated.seed == 42
