@@ -55,8 +55,9 @@ pytest -v --durations=10 -n8 --dist loadfile --maxfail=10 -m gpu \
   --cov=axolotl \
   --cov-append
 
-# Run remaining e2e tests with coverage append and final report
-pytest -v --durations=10 --maxfail=10 \
+# Run remaining e2e tests with coverage append and final report. Small models and
+# per-test temp dirs make these safe to spread over workers; integrations/ stays serial.
+pytest -v --durations=10 --maxfail=10 -n4 --dist loadfile \
   --ignore=tests/e2e/kernels/ \
   --ignore=tests/e2e/solo/ \
   --ignore=tests/e2e/patched/ \
