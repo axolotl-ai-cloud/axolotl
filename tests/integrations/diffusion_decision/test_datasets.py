@@ -26,16 +26,15 @@ from axolotl.integrations.diffusion_decision.slot_sampling import (
 from axolotl.integrations.diffusion_decision.slots import SlotPlan
 from axolotl.model_support import DiffusionLayout
 
+from tests.integrations.diffusion_decision.helpers import (
+    make_record,
+)
+
 
 def _record(source: str, group: str, state: str, identifier: str) -> dict[str, Any]:
-    return {
-        "source": source,
-        "group": group,
-        "state": state,
-        "id": identifier,
-        "questions": {"q": {"type": "noul"}},
-        "labels": {"q": {"kind": "hard", "gold_idx": 0}},
-    }
+    return make_record(
+        identifier, source=source, group=group, state=state, question_type="noul"
+    )
 
 
 def _cfg(*entries: dict[str, Any], test_datasets=()) -> dict[str, Any]:

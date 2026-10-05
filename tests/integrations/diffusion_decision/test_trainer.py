@@ -48,14 +48,16 @@ from axolotl.model_support import (
     DiffusionLayout,
     DiffusionNoise,
     DiffusionSpec,
-    EosHandling,
-    FirstPositionAlignment,
-    GenerationAdapter,
     LogitAlignment,
     MaskTokenPolicy,
-    ObjectiveReduction,
-    ReductionScope,
-    TimeWeighting,
+)
+
+from tests.integrations.diffusion_decision.helpers import (
+    MultistepTrainerHarness,
+    TrainerHarness,
+    make_canvas,
+    tiny_gemma_config,
+    trainer_spec,
 )
 
 
@@ -167,81 +169,13 @@ class _LoopNativeModel(nn.Module):
         )
 
 
-class _TrainerHarness(DiffusionDecisionTrainer):
-    def __init__(
-        self,
-        spec: DiffusionSpec,
-        decision: dict[str, object] | None = None,
-        *,
-        world_size: int = 1,
-        native_values: dict[str, object] | None = None,
-    ) -> None:
-        self._spec = spec
-        self.axolotl_cfg = {"diffusion_decision": decision or {}}
-        self.args = SimpleNamespace(world_size=world_size)
-        self._special_token_ids: set[int] = set()
-        self._native_values = native_values or {}
-
-    @property
-    def _native_spec(self) -> DiffusionSpec:
-        return self._spec
-
-    def _full_sequence_backend(self) -> FullSequenceBackend:
-        return FullSequenceBackend(mask_token_id=10, attention_backend="dense")
-
-    def _native_value(self, name: str, default=None):
-        values: dict[str, object] = {"t_eps": 0.5, "self_conditioning": None}
-        values.update(self._native_values)
-        return values.get(name, default)
-
-    def _native_unroll_settings(self) -> tuple[int, bool]:
-        return 1, False
-
-    @staticmethod
-    def _sample_native_unroll_steps(k_max: int, device: torch.device) -> int:
-        del k_max, device
-        return 1
-
-    def _sample_native_times(
-        self, count: int, device: torch.device, default_eps: float
-    ) -> torch.Tensor:
-        del default_eps
-        return torch.full((count,), 0.5, device=device)
-
-
-class _MultistepTrainerHarness(_TrainerHarness):
-    _sampled_steps_value = 1
-
-    def __init__(
-        self,
-        spec: DiffusionSpec,
-        *,
-        k_max: int,
-        sampled_steps: int,
-        grad_through_steps: bool = False,
-        decision: dict[str, object] | None = None,
-    ) -> None:
-        super().__init__(spec, decision)
-        self._k_max = k_max
-        _MultistepTrainerHarness._sampled_steps_value = sampled_steps
-        self._grad_through_steps = grad_through_steps
-
-    def _native_unroll_settings(self) -> tuple[int, bool]:
-        return self._k_max, self._grad_through_steps
-
-    @staticmethod
-    def _sample_native_unroll_steps(k_max: int, device: torch.device) -> int:
-        del k_max, device
-        return _MultistepTrainerHarness._sampled_steps_value
-
-
-class _NoCommitMultistepTrainerHarness(_MultistepTrainerHarness):
+class _NoCommitMultistepTrainerHarness(MultistepTrainerHarness):
     def _run_native_unroll(self, *args, **kwargs):
         del args, kwargs
         pytest.fail("K>1 decision configuration must not use committing native unroll")
 
 
-class _TrainingStepHarness(_TrainerHarness):
+class _TrainingStepHarness(TrainerHarness):
     def _prepare_context_parallel_inputs(self, model, inputs):
         del model
         return contextlib.nullcontext, inputs
@@ -306,7 +240,7 @@ class _SampledLoopTrainer(_LoopTrainer):
         return DiffusionDecisionTrainer._get_train_sampler(self, train_dataset)
 
 
-class _PredictionHarness(_TrainerHarness):
+class _PredictionHarness(TrainerHarness):
     def __init__(self, spec: DiffusionSpec) -> None:
         super().__init__(spec)
         self.prepared = False
@@ -326,24 +260,6 @@ class _PredictionHarness(_TrainerHarness):
         return model.logit_bias.square().sum()
 
 
-def _spec(layout: DiffusionLayout, alignment: LogitAlignment) -> DiffusionSpec:
-    return DiffusionSpec(
-        noise=DiffusionNoise.ABSORBING,
-        layout=layout,
-        logit_alignment=alignment,
-        first_position_alignment=FirstPositionAlignment.DUPLICATE_FIRST,
-        self_conditioning=layout is DiffusionLayout.ENCODER_CANVAS,
-        max_canvas=16,
-        max_context=32,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=MaskTokenPolicy.MODEL,
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.EXAMPLE_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
-        reduction_scope=ReductionScope.GLOBAL_WINDOW,
-    )
-
-
 def _example(question_count: int, *, weight: float = 1.0) -> DecisionLabelExample:
     return DecisionLabelExample(
         questions=tuple(
@@ -360,7 +276,7 @@ def _example(question_count: int, *, weight: float = 1.0) -> DecisionLabelExampl
 
 @pytest.mark.parametrize("alignment", [LogitAlignment.SHIFTED, LogitAlignment.ALIGNED])
 def test_full_sequence_trainer_uses_raw_input_columns_and_spec_alignment(alignment):
-    trainer = _TrainerHarness(_spec(DiffusionLayout.FULL_SEQUENCE, alignment))
+    trainer = TrainerHarness(trainer_spec(DiffusionLayout.FULL_SEQUENCE, alignment))
     model = _TinyNativeModel()
     inputs = {
         "input_ids": torch.tensor([[1, 4, 5, 2, 6, 7]]),
@@ -429,14 +345,14 @@ def test_selected_logits_match_dense_full_ce_brier_for_multistep_padded_question
     steps,
 ):
     decision = {"labels": {"label_softmax": "full", "brier_weight": 0.1}}
-    dense_trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    dense_trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=2,
         sampled_steps=steps,
         decision=decision,
     )
-    selected_trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    selected_trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=2,
         sampled_steps=steps,
         decision=decision,
@@ -493,8 +409,8 @@ def test_selected_logits_match_dense_full_ce_brier_for_multistep_padded_question
 
 @pytest.mark.parametrize("steps", [2, 3])
 def test_full_sequence_multistep_holds_noisy_labels_and_pinned_slots(steps):
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=steps,
         decision={"latent": {"mode": "pinned", "num_slots": 1}},
@@ -517,8 +433,8 @@ def test_full_sequence_multistep_holds_noisy_labels_and_pinned_slots(steps):
 
 
 def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state():
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=2,
         sampled_steps=2,
     )
@@ -540,7 +456,7 @@ def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state():
 
 def test_full_sequence_multistep_config_sampled_to_one_never_uses_native_commit():
     trainer = _NoCommitMultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=1,
     )
@@ -630,8 +546,8 @@ def test_native_nemotron_peft_learned_slot_rows_receive_final_step_gradients(
             trainable_token_indices=[120],
         ),
     )
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=steps,
         decision={"latent": {"mode": "learned", "num_slots": 1}},
@@ -683,49 +599,6 @@ def test_native_nemotron_peft_learned_slot_rows_receive_final_step_gradients(
     )
 
 
-def _tiny_decision_gemma_config():
-    from transformers import DiffusionGemmaConfig
-
-    return DiffusionGemmaConfig(
-        text_config={
-            "vocab_size": 32,
-            "hidden_size": 16,
-            "intermediate_size": 32,
-            "num_hidden_layers": 1,
-            "num_attention_heads": 2,
-            "num_key_value_heads": 1,
-            "head_dim": 8,
-            "max_position_embeddings": 32,
-            "layer_types": ["full_attention"],
-            "per_layer_config": {"0": {"head_dim": 8}},
-            "sliding_window": 8,
-            "use_bidirectional_attention": "vision",
-            "num_experts": 2,
-            "top_k_experts": 1,
-            "moe_intermediate_size": 16,
-            "pad_token_id": 0,
-            "eos_token_id": 1,
-            "bos_token_id": 2,
-        },
-        vision_config={
-            "model_type": "gemma4_vision",
-            "hidden_size": 16,
-            "intermediate_size": 32,
-            "num_hidden_layers": 1,
-            "num_attention_heads": 2,
-            "num_key_value_heads": 2,
-            "head_dim": 8,
-            "max_position_embeddings": 32,
-            "patch_size": 16,
-            "position_embedding_size": 16,
-        },
-        canvas_length=8,
-        boi_token_id=31,
-        eoi_token_id=30,
-        image_token_id=29,
-    )
-
-
 @pytest.mark.parametrize("steps", [1, 2, 3])
 @pytest.mark.parametrize(
     "device",
@@ -751,9 +624,7 @@ def test_native_gemma_peft_multistep_holds_canvas_and_trains_final_read(
     )
 
     torch.manual_seed(17)
-    base = AxolotlDiffusionGemmaForBlockDiffusion(_tiny_decision_gemma_config()).to(
-        device
-    )
+    base = AxolotlDiffusionGemmaForBlockDiffusion(tiny_gemma_config()).to(device)
     model = get_peft_model(
         base,
         LoraConfig(
@@ -767,8 +638,8 @@ def test_native_gemma_peft_multistep_holds_canvas_and_trains_final_read(
             trainable_token_indices=[25],
         ),
     ).train()
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=steps,
         decision={"latent": {"mode": "learned", "num_slots": 1}},
@@ -786,7 +657,7 @@ def test_native_gemma_peft_multistep_holds_canvas_and_trains_final_read(
         template_length=4,
     )
     inputs = DecisionTrainingCollator(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )([{"canvas": canvas, "source": "native"}])
     inputs["diffusion_batch"] = inputs["diffusion_batch"].to(device)
     for name, value in tuple(inputs.items()):
@@ -872,7 +743,7 @@ def test_native_gemma_peft_free_slots_evolve_without_supervising_slots(
     )
 
     torch.manual_seed(17)
-    base = AxolotlDiffusionGemmaForBlockDiffusion(_tiny_decision_gemma_config())
+    base = AxolotlDiffusionGemmaForBlockDiffusion(tiny_gemma_config())
     base.config.mask_token_id = 2
     model = (
         get_peft_model(
@@ -890,8 +761,8 @@ def test_native_gemma_peft_free_slots_evolve_without_supervising_slots(
         .to(device)
         .train()
     )
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=steps,
         decision={
@@ -955,34 +826,19 @@ def test_native_gemma_peft_free_slots_evolve_without_supervising_slots(
     )
 
 
-def _canvas(prompt, canvas, labels, identifier: str) -> DecisionCanvas:
-    return DecisionCanvas(
-        prompt_ids=tuple(prompt),
-        canvas_ids=tuple(canvas),
-        label_positions=tuple(labels),
-        allowed_ids=tuple((1, 2, 3) for _ in labels),
-        question_ids=tuple(f"{identifier}-{index}" for index in range(len(labels))),
-        targets=tuple({"kind": "hard", "gold_idx": 0} for _ in labels),
-        pinned_mask=(False,) * len(canvas),
-        semantic_mask=(True,) * len(canvas),
-        slot_mask=(False,) * len(canvas),
-        template_length=len(canvas),
-    )
-
-
 def test_encoder_canvas_trainer_remaps_logical_positions_after_packing():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )
     model = _TinyNativeModel()
     collator = DecisionTrainingCollator(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )
     inputs = collator(
         [
-            {"canvas": _canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"},
+            {"canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"},
             {
-                "canvas": _canvas((3, 4, 5), (6, 7, 8, 9), (0, 3), "second"),
+                "canvas": make_canvas((3, 4, 5), (6, 7, 8, 9), (0, 3), "second"),
                 "source": "b",
             },
         ]
@@ -1020,7 +876,7 @@ def _encoder_ar_packed(prompt_ids, prompt_slot_mask):
         prompt_slot_mask=prompt_slot_mask,
     )
     batch = DecisionTrainingCollator(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )([{"canvas": canvas, "source": "encoder-ar"}])
     return EncoderCanvasBackend(vocab_size=11, sliding_window=8).pack(
         batch["diffusion_batch"]
@@ -1034,8 +890,8 @@ def _encoder_ar_packed(prompt_ids, prompt_slot_mask):
 def test_encoder_ar_loss_is_finite_zero_without_supported_prompt_targets(
     global_count, world_size
 ):
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         world_size=world_size,
     )
     packed = _encoder_ar_packed((7,), (True,))
@@ -1051,8 +907,9 @@ def test_encoder_ar_loss_is_finite_zero_without_supported_prompt_targets(
 
 
 def test_encoder_ar_loss_preserves_positive_fractional_global_denominator():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED), world_size=2
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+        world_size=2,
     )
     packed = _encoder_ar_packed((7, 8, 9), (False, False, False))
     logits = torch.randn((*packed.encoder_input_ids.shape, 11), requires_grad=True)
@@ -1081,20 +938,20 @@ def test_encoder_ar_loss_preserves_positive_fractional_global_denominator():
 
 @pytest.mark.parametrize("steps", [2, 3])
 def test_encoder_canvas_multistep_holds_canvas_and_uses_outer_unroll(steps):
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=steps,
         decision={"latent": {"mode": "learned", "num_slots": 1}},
     )
     model = _TinyNativeModel()
     collator = DecisionTrainingCollator(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )
     inputs = collator(
         [
             {
-                "canvas": _canvas((1, 2), (4, 5, 6, 7), (1,), "first"),
+                "canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"),
                 "source": "a",
             }
         ]
@@ -1119,19 +976,19 @@ def test_encoder_canvas_multistep_holds_canvas_and_uses_outer_unroll(steps):
 
 
 def test_encoder_canvas_multistep_config_sampled_to_one_holds_update_mask():
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=1,
     )
     model = _TinyNativeModel()
     collator = DecisionTrainingCollator(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )
     inputs = collator(
         [
             {
-                "canvas": _canvas((1, 2), (4, 5, 6, 7), (1,), "first"),
+                "canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"),
                 "source": "a",
             }
         ]
@@ -1152,8 +1009,8 @@ def test_encoder_canvas_multistep_config_sampled_to_one_holds_update_mask():
 def test_packed_slot_mask_remaps_multiple_canvases_and_excludes_bucket_padding(
     attention_backend,
 ):
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=2,
     )
@@ -1182,7 +1039,7 @@ def test_packed_slot_mask_remaps_multiple_canvases_and_excludes_bucket_padding(
         template_length=3,
     )
     inputs = DecisionTrainingCollator(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )(
         [
             {"canvas": first, "source": "a"},
@@ -1206,8 +1063,8 @@ def test_packed_slot_mask_remaps_multiple_canvases_and_excludes_bucket_padding(
 
 @pytest.mark.parametrize("steps", [2, 3])
 def test_full_sequence_free_slots_use_flattened_collator_mask_for_two_documents(steps):
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=steps,
         decision={
@@ -1286,8 +1143,8 @@ def test_full_sequence_free_slots_use_flattened_collator_mask_for_two_documents(
 
 
 def test_full_sequence_free_slots_use_effective_backend_mask_at_k1():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         {
             "latent": {
                 "mode": "free",
@@ -1322,8 +1179,9 @@ def test_full_sequence_free_slots_use_effective_backend_mask_at_k1():
 
 
 def test_global_example_scaling_matches_ddp_average_for_unequal_windows():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED), world_size=2
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+        world_size=2,
     )
     result = DecisionLossResult(
         loss=torch.tensor(2.0),
@@ -1340,8 +1198,9 @@ def test_global_example_scaling_matches_ddp_average_for_unequal_windows():
 
 
 def test_encoder_gradient_window_counts_examples_and_ar_tokens_globally():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED), world_size=2
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+        world_size=2,
     )
     trainer.accelerator = SimpleNamespace(
         gather=lambda count: torch.stack((count, count + 1))
@@ -1349,9 +1208,9 @@ def test_encoder_gradient_window_counts_examples_and_ar_tokens_globally():
     collator = DecisionTrainingCollator(trainer._native_spec)
     batch = collator(
         [
-            {"canvas": _canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"},
+            {"canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"},
             {
-                "canvas": _canvas((3, 4, 5), (6, 7, 8, 9), (0, 3), "second"),
+                "canvas": make_canvas((3, 4, 5), (6, 7, 8, 9), (0, 3), "second"),
                 "source": "b",
             },
         ]
@@ -1369,7 +1228,7 @@ def test_post_config_prevents_training_step_from_dividing_global_loss_again(
     monkeypatch,
 ):
     trainer = _TrainingStepHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     monkeypatch.setattr(
         AxolotlDiffusionTrainer,
@@ -1413,13 +1272,13 @@ def test_post_config_prevents_training_step_from_dividing_global_loss_again(
 
 
 def test_prepare_inputs_moves_encoder_canvas_dataclass(monkeypatch):
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )
     trainer.args.device = torch.device("cpu")
     collator = DecisionTrainingCollator(trainer._native_spec)
     batch = collator(
-        [{"canvas": _canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"}]
+        [{"canvas": make_canvas((1, 2), (4, 5, 6, 7), (1,), "first"), "source": "a"}]
     )["diffusion_batch"]
     monkeypatch.setattr(
         AxolotlDiffusionTrainer, "_prepare_inputs", lambda _self, inputs: inputs
@@ -1529,8 +1388,8 @@ def test_trainer_uses_draw_batch_sampler_for_non_stratified_sampled_slots():
         def __len__(self):
             return 6
 
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         decision={
             "latent": {"mode": "pinned", "num_slots": 2, "sample_num_slots": True}
         },
@@ -1578,8 +1437,8 @@ def test_trainer_uses_core_multipack_for_typed_packing(monkeypatch):
             return 6
 
     dataset = _Dataset()
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     trainer.train_dataset = dataset
     trainer.args.per_device_train_batch_size = 2
@@ -1601,8 +1460,8 @@ def test_trainer_rejects_packing_that_would_bypass_stratified_quotas():
     class _Dataset:
         manifest = {"per_batch_stratified": True}
 
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     trainer.train_dataset = _Dataset()
     trainer.args.sample_packing = True
@@ -1628,7 +1487,7 @@ def test_decision_dataset_exposes_canvas_lengths_to_multipack():
 def test_core_dataloader_removes_only_a_lengthless_decision_dataset_copy(
     is_training, eval_packing
 ):
-    class _CoreDataLoaderHarness(_TrainerHarness):
+    class _CoreDataLoaderHarness(TrainerHarness):
         def _get_collator_with_removed_columns(self, collator, description):
             del description
             return collator
@@ -1637,7 +1496,7 @@ def test_core_dataloader_removes_only_a_lengthless_decision_dataset_copy(
         [{"length": 5}, {"length": 7}], {"per_batch_stratified": False}
     )
     trainer = _CoreDataLoaderHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     trainer.data_collator = lambda rows: rows
     trainer.eval_data_collator = trainer.data_collator
@@ -1680,8 +1539,8 @@ def test_train_dataloader_accepts_typed_dataset_and_restores_even_batches(
         manifest = {"per_batch_stratified": True}
 
     dataset = _Dataset()
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     trainer.accelerator = SimpleNamespace(even_batches=False)
     trainer.args.sample_packing = True
@@ -1724,8 +1583,8 @@ def test_eval_sample_packing_false_keeps_typed_eval_unpacked(monkeypatch):
             return index
 
     dataset = _Dataset()
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     trainer.eval_dataset = dataset
     trainer.accelerator = SimpleNamespace(even_batches=True)
@@ -1750,7 +1609,7 @@ def test_eval_sample_packing_false_keeps_typed_eval_unpacked(monkeypatch):
 
 def test_prediction_step_uses_typed_loss_without_retaining_full_logits():
     trainer = _PredictionHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     model = _TinyNativeModel()
 
@@ -1767,8 +1626,8 @@ def test_prediction_step_uses_typed_loss_without_retaining_full_logits():
 
 
 def test_interval_metrics_are_source_weighted_and_cleared_after_logging(monkeypatch):
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     decision = trainer._decision_config()
     selected = torch.tensor(
@@ -1872,8 +1731,8 @@ def test_eval_metric_keys_are_prefixed_and_distributed_totals_merge(monkeypatch)
     assert merged["decision/alpha"]["examples"] == 2
     assert merged["decision/beta"]["brier_loss"] == 0.5
 
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     trainer._decision_metrics = {"train": {}, "eval": local}
     captured: dict[str, float] = {}
@@ -1898,8 +1757,8 @@ def test_decision_objective_does_not_report_token_perplexity(monkeypatch):
         lambda _self, logs, start_time=None: forwarded.append(dict(logs)),
     )
 
-    decision = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    decision = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     decision._stored_metrics = {"train": {}, "eval": {}}
     decision.args.include_tkps = False
@@ -1910,8 +1769,8 @@ def test_decision_objective_does_not_report_token_perplexity(monkeypatch):
 
 
 def test_get_batch_samples_counts_logical_examples_and_handles_last_short_window():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
     batches, count = trainer.get_batch_samples(
         iter(
@@ -1970,7 +1829,7 @@ def _loop_rows(count: int):
     rows = []
     for index in range(count):
         example = _typed_loop_example(index)
-        canvas = _canvas(
+        canvas = make_canvas(
             (1, 2 + (index % 3)),
             (4, 5, 6, 7, 8),
             tuple(range(len(example.questions))),
@@ -2085,7 +1944,7 @@ def _sampled_loop_trainer(
     mode: str = "pinned",
     layout: DiffusionLayout = DiffusionLayout.FULL_SEQUENCE,
 ):
-    spec = _spec(layout, LogitAlignment.ALIGNED)
+    spec = trainer_spec(layout, LogitAlignment.ALIGNED)
     args = AxolotlTrainingArguments(
         output_dir=str(tmp_path),
         per_device_train_batch_size=2,
@@ -2297,7 +2156,7 @@ def test_sampled_slot_runtime_rejects_descriptor_mask_mismatch(tmp_path):
 def test_sampled_slot_draws_are_resume_stable_through_dataloader_workers():
     dataset = DecisionDataset(_sampled_slot_rows(12), {})
     collator = DecisionTrainingCollator(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     )
 
     def batches(epoch: int, workers: int):
@@ -2379,7 +2238,7 @@ def _run_actual_decision_loop(
     tmp_path, *, microbatch_size, accumulation_steps, row_count=67, max_steps=2
 ):
     rows = _loop_rows(row_count)
-    spec = _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
+    spec = trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED)
     model = _LoopNativeModel()
     args = AxolotlTrainingArguments(
         output_dir=str(tmp_path),
@@ -2481,8 +2340,8 @@ def test_actual_trainer_final_six_microbatch_window_matches_one_48_example_updat
 
 
 def test_unwired_decision_controls_fail_explicitly():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         {"latent": {"mode": "free", "num_slots": 1}},
     )
 
@@ -2491,8 +2350,8 @@ def test_unwired_decision_controls_fail_explicitly():
 
 
 def test_fractional_read_times_preserve_endpoint_rng_and_select_logical_examples():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         {"read_fraction": 0.4},
     )
     native = torch.full((5,), 0.5)
@@ -2532,8 +2391,8 @@ def test_fractional_read_times_preserve_endpoint_rng_and_select_logical_examples
 
 
 def test_fractional_read_times_preserve_native_sampler_rng_contract():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         native_values={"t_eps": 0.2},
     )
     trainer._sample_native_times = AxolotlDiffusionTrainer._sample_native_times.__get__(
@@ -2577,8 +2436,8 @@ def test_fractional_read_times_preserve_native_sampler_rng_contract():
 
 @pytest.mark.parametrize("mode", ["pad", "pinned", "learned", "prompt", "mask"])
 def test_fixed_decision_slots_are_supported_for_one_step(mode):
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         {"latent": {"mode": mode, "num_slots": 1}},
     )
 
@@ -2588,8 +2447,8 @@ def test_fixed_decision_slots_are_supported_for_one_step(mode):
 
 
 def test_fixed_decision_slots_support_multistep_unroll():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         {"latent": {"mode": "pinned", "num_slots": 1}},
     )
 
@@ -2599,8 +2458,8 @@ def test_fixed_decision_slots_support_multistep_unroll():
 
 
 def test_decision_multistep_rejects_grad_through_steps():
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=2,
         sampled_steps=2,
         grad_through_steps=True,
@@ -2612,18 +2471,18 @@ def test_decision_multistep_rejects_grad_through_steps():
 
 def test_full_sequence_multistep_rejects_unsupported_self_conditioning():
     spec = replace(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         self_conditioning=True,
     )
-    trainer = _MultistepTrainerHarness(spec, k_max=2, sampled_steps=2)
+    trainer = MultistepTrainerHarness(spec, k_max=2, sampled_steps=2)
 
     with pytest.raises(NotImplementedError, match="self-conditioning"):
         trainer.compute_loss(_TinyNativeModel(), _full_sequence_multistep_inputs())
 
 
 def test_mask_decision_slots_require_absorbing_diffusion():
-    trainer = _TrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = TrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         {"latent": {"mode": "mask", "num_slots": 1}},
     )
     uniform_spec = replace(
@@ -2644,8 +2503,8 @@ def test_mask_decision_slots_require_absorbing_diffusion():
 def test_fractional_reads_change_actual_forward_inputs_per_logical_example(
     monkeypatch, layout
 ):
-    trainer = _TrainerHarness(
-        _spec(layout, LogitAlignment.ALIGNED), {"read_fraction": 0.5}
+    trainer = TrainerHarness(
+        trainer_spec(layout, LogitAlignment.ALIGNED), {"read_fraction": 0.5}
     )
     model = _TraceNativeModel()
     calls = 0
@@ -2692,8 +2551,8 @@ def test_fractional_reads_change_actual_forward_inputs_per_logical_example(
     else:
         inputs = DecisionTrainingCollator(trainer._native_spec)(
             [
-                {"canvas": _canvas((1,), (4, 5, 6), (0,), "first"), "source": "a"},
-                {"canvas": _canvas((2,), (7, 8, 9), (0,), "second"), "source": "b"},
+                {"canvas": make_canvas((1,), (4, 5, 6), (0,), "first"), "source": "a"},
+                {"canvas": make_canvas((2,), (7, 8, 9), (0,), "second"), "source": "b"},
             ]
         )
         trainer._encoder_canvas_logits(
@@ -2708,8 +2567,8 @@ def test_fractional_reads_change_actual_forward_inputs_per_logical_example(
 def test_fractional_reads_hold_actual_label_states_across_full_sequence_unroll(
     monkeypatch, steps
 ):
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=steps,
         decision={"read_fraction": 0.5, "latent": {"mode": "pinned", "num_slots": 1}},
@@ -2753,14 +2612,14 @@ def test_fractional_reads_hold_encoder_canvas_labels_and_supervise_only_labels(
 ):
     import axolotl.model_support.diffusion_gemma.modeling as gemma_modeling
 
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         k_max=3,
         sampled_steps=steps,
         decision={"read_fraction": 0.5},
     )
     model = gemma_modeling.AxolotlDiffusionGemmaForBlockDiffusion(
-        _tiny_decision_gemma_config()
+        tiny_gemma_config()
     ).train()
     observed = []
     original_decode = gemma_modeling.decode_packed_canvas
@@ -2794,8 +2653,8 @@ def test_fractional_reads_hold_encoder_canvas_labels_and_supervise_only_labels(
     )
     inputs = DecisionTrainingCollator(trainer._native_spec)(
         [
-            {"canvas": _canvas((1,), (4, 5, 6), (0,), "first"), "source": "a"},
-            {"canvas": _canvas((2,), (7, 8, 9), (0,), "second"), "source": "b"},
+            {"canvas": make_canvas((1,), (4, 5, 6), (0,), "first"), "source": "a"},
+            {"canvas": make_canvas((2,), (7, 8, 9), (0,), "second"), "source": "b"},
         ]
     )
     loss, outputs = trainer.compute_loss(model, inputs, return_outputs=True)
@@ -2855,8 +2714,8 @@ def test_decision_cce_final_read_matches_dense_loss_and_gradients(
     monkeypatch.setattr(cce, "linear_token_loss", reference_loss)
     losses, trainers = [], []
     for enabled, model in ((False, dense_model), (True, cce_model)):
-        trainer = _MultistepTrainerHarness(
-            _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+        trainer = MultistepTrainerHarness(
+            trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
             k_max=steps,
             sampled_steps=steps,
         )

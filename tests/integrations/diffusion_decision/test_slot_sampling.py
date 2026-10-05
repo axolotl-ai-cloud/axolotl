@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import random
-from typing import cast
 
 import pytest
 
-from axolotl.integrations.diffusion_decision.preprocessing import build_decision_canvas
 from axolotl.integrations.diffusion_decision.slot_sampling import (
     UNIFORM_INCLUSIVE_V1,
     DecisionDraw,
@@ -15,102 +13,31 @@ from axolotl.integrations.diffusion_decision.slot_sampling import (
     project_slot_plan,
     sample_slot_count,
 )
-from axolotl.integrations.diffusion_decision.slots import SlotInit, SlotMode, SlotPlan
+from axolotl.integrations.diffusion_decision.slots import SlotPlan
 from axolotl.model_support import (
-    DiffusionLayout,
     DiffusionNoise,
-    DiffusionSpec,
-    EosHandling,
-    FirstPositionAlignment,
-    GenerationAdapter,
-    LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
-    ReductionScope,
-    TimeWeighting,
+)
+
+from tests.integrations.diffusion_decision.helpers import (
+    build_canvas,
+    free_plan_seed,
+    make_slot_plan,
+    slot_token_ids,
 )
 
 
-class CharacterTokenizer:
-    def encode(self, text, add_special_tokens=False):
-        assert not add_special_tokens
-        return [ord(character) for character in text]
-
-
-def _spec(noise: DiffusionNoise) -> DiffusionSpec:
-    return DiffusionSpec(
-        noise=noise,
-        layout=DiffusionLayout.FULL_SEQUENCE,
-        logit_alignment=LogitAlignment.ALIGNED,
-        first_position_alignment=FirstPositionAlignment.DUPLICATE_FIRST,
-        self_conditioning=False,
-        max_canvas=128,
-        max_context=1024,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=(
-            MaskTokenPolicy.NONE
-            if noise is DiffusionNoise.UNIFORM
-            else MaskTokenPolicy.MODEL
-        ),
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
-        reduction_scope=ReductionScope.MICROBATCH,
-    )
-
-
-def _record():
-    return {
-        "id": "record",
-        "source": "test",
-        "group": "test",
-        "state": "state",
-        "questions": {
-            "q": {
-                "type": "choice",
-                "instructions": "Pick.",
-                "options": ["one", "two"],
-            }
-        },
-        "labels": {"q": {"kind": "hard", "gold_idx": 0}},
-    }
-
-
 def _maximum_plan(mode: str, noise: DiffusionNoise) -> SlotPlan:
-    ids = {
-        "pinned": (7,),
-        "learned": (7, 8, 10),
-        "prompt": (7, 8, 10),
-    }.get(mode, ())
-    return SlotInit(
-        cast(SlotMode, mode),
-        token_ids=ids,
-        num_slots=3,
-        vocab_size=256,
-        pad_id=0,
-        spec=_spec(noise),
-        mask_token_id=9,
-    ).build(seed=17 if mode == "free" and noise is DiffusionNoise.UNIFORM else None)
+    return make_slot_plan(
+        mode,
+        count=3,
+        ids=slot_token_ids(mode, 3),
+        noise=noise,
+        seed=free_plan_seed(mode, noise),
+    )
 
 
 def _canvas(plan: SlotPlan, *, noise: DiffusionNoise, width: int = 128):
-    return build_decision_canvas(
-        CharacterTokenizer(),
-        _record(),
-        prompt_ids=(99,),
-        scaffold_ids=(),
-        turn_close_id=106,
-        pad_id=0,
-        vocab_size=256,
-        width=width,
-        seed=23,
-        steps=2,
-        noise_kind="absorbing" if noise is DiffusionNoise.ABSORBING else "uniform",
-        mask_token_id=9 if noise is DiffusionNoise.ABSORBING else None,
-        slot_plan=plan,
-        thought_open_ids=(70, 71),
-        thought_close_ids=(72,),
-    )
+    return build_canvas(plan, noise=noise, width=width, steps=2)
 
 
 @pytest.mark.parametrize(

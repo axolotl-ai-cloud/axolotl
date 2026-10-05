@@ -6,51 +6,22 @@ import pytest
 
 from axolotl.integrations.diffusion_decision.slots import SlotInit
 from axolotl.model_support import (
-    DiffusionLayout,
     DiffusionNoise,
-    DiffusionSpec,
-    EosHandling,
-    FirstPositionAlignment,
-    GenerationAdapter,
-    LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
-    ReductionScope,
-    TimeWeighting,
+)
+
+from tests.integrations.diffusion_decision.helpers import (
+    make_slot_init,
+    make_spec,
 )
 
 
-def _spec(noise: DiffusionNoise) -> DiffusionSpec:
-    return DiffusionSpec(
-        noise=noise,
-        layout=DiffusionLayout.FULL_SEQUENCE,
-        logit_alignment=LogitAlignment.ALIGNED,
-        first_position_alignment=FirstPositionAlignment.DUPLICATE_FIRST,
-        self_conditioning=noise is DiffusionNoise.UNIFORM,
-        max_canvas=128,
-        max_context=1024,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=(
-            MaskTokenPolicy.NONE
-            if noise is DiffusionNoise.UNIFORM
-            else MaskTokenPolicy.MODEL
-        ),
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
-        reduction_scope=ReductionScope.MICROBATCH,
-    )
-
-
 def _init(mode, *, count=3, ids=(), noise=DiffusionNoise.UNIFORM, **kwargs):
-    return SlotInit(
+    return make_slot_init(
         mode,
-        token_ids=ids,
-        num_slots=count,
+        count=count,
+        ids=ids,
         vocab_size=32,
-        pad_id=0,
-        spec=_spec(noise),
-        mask_token_id=9,
+        spec=make_spec(noise=noise, self_conditioning=noise is DiffusionNoise.UNIFORM),
         **kwargs,
     )
 

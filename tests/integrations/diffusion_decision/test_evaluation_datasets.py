@@ -14,92 +14,30 @@ from axolotl.integrations.diffusion_decision import (
     datasets,
     prepared_cache,
 )
-from axolotl.model_support import (
-    DiffusionLayout,
-    DiffusionNoise,
-    DiffusionSpec,
-    EosHandling,
-    FirstPositionAlignment,
-    GenerationAdapter,
-    LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
-    ReductionScope,
-    TimeWeighting,
+
+from tests.integrations.diffusion_decision.helpers import (
+    ChatCharacterTokenizer,
+    make_cfg,
+    make_record,
+    make_spec,
 )
 
 
-class Tokenizer:
-    pad_token_id = 0
-    bos_token_id = 1
-    eos_token_id = 11
-    unk_token_id = 2
-
-    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
-        assert not add_special_tokens
-        return [ord(character) for character in text]
-
-    def apply_chat_template(
-        self,
-        messages,
-        *,
-        tokenize: bool,
-        add_generation_prompt: bool,
-        enable_thinking: bool,
-    ) -> list[int]:
-        assert tokenize and add_generation_prompt and not enable_thinking
-        assert len(messages) == 2
-        return [99]
-
-
-def _spec() -> DiffusionSpec:
-    return DiffusionSpec(
-        noise=DiffusionNoise.UNIFORM,
-        layout=DiffusionLayout.FULL_SEQUENCE,
-        logit_alignment=LogitAlignment.ALIGNED,
-        first_position_alignment=FirstPositionAlignment.DUPLICATE_FIRST,
-        self_conditioning=False,
-        max_canvas=128,
-        max_context=1024,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=MaskTokenPolicy.NONE,
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
-        reduction_scope=ReductionScope.MICROBATCH,
+def _record(source: str, identifier: str) -> dict[str, Any]:
+    return make_record(
+        identifier,
+        source=source,
+        group=f"{source}-{identifier}",
+        state=f"state-{identifier}",
     )
 
 
-def _record(source: str, identifier: str) -> dict[str, Any]:
-    return {
-        "id": identifier,
-        "source": source,
-        "group": f"{source}-{identifier}",
-        "state": f"state-{identifier}",
-        "questions": {
-            "q": {
-                "type": "choice",
-                "instructions": "Pick.",
-                "options": ["one", "two"],
-            }
-        },
-        "labels": {"q": {"kind": "hard", "gold_idx": 0}},
-    }
-
-
 def _cfg(tmp_path) -> dict[str, Any]:
-    return {
-        "seed": 23,
-        "micro_batch_size": 2,
-        "dataset_prepared_path": str(tmp_path / "prepared"),
-        "model_config": {"vocab_size": 256, "mask_token_id": 9},
-        "diffusion_lm": {"canvas_width": 128, "mask_token_id": 9},
-        "diffusion_decision": {
-            "max_questions_per_canvas": 20,
-            "labels": {},
-            "mixture": {"per_batch_stratified": True},
-        },
-        "datasets": [
+    return make_cfg(
+        micro_batch_size=2,
+        dataset_prepared_path=str(tmp_path / "prepared"),
+        diffusion_decision={"labels": {}, "mixture": {"per_batch_stratified": True}},
+        datasets=[
             {"path": "train", "type": "diffusion_decision.jsonl", "split": "train"},
             {
                 "path": "calibration",
@@ -107,12 +45,12 @@ def _cfg(tmp_path) -> dict[str, Any]:
                 "split": "calibration",
             },
         ],
-        "test_datasets": [
+        test_datasets=[
             {"path": "dev", "type": "diffusion_decision.jsonl", "split": "dev"},
             {"path": "test", "type": "diffusion_decision.jsonl", "split": "test"},
             {"path": "ood", "type": "diffusion_decision.jsonl", "split": "ood"},
         ],
-    }
+    )
 
 
 def _patch_sources(monkeypatch, rows_by_path):
@@ -127,7 +65,7 @@ def _patch_sources(monkeypatch, rows_by_path):
     monkeypatch.setattr(
         datasets, "normalize_record", lambda _adapter, row, **_kwargs: dict(row)
     )
-    monkeypatch.setattr(datasets, "require_diffusion_spec", lambda _cfg: _spec())
+    monkeypatch.setattr(datasets, "require_diffusion_spec", lambda _cfg: make_spec())
     return calls
 
 
@@ -144,7 +82,7 @@ def test_evaluation_dev_canvas_matches_existing_explicit_dev_path(
     calls = _patch_sources(monkeypatch, rows)
     cfg = _cfg(tmp_path)
 
-    class CacheTokenizer(Tokenizer):
+    class CacheTokenizer(ChatCharacterTokenizer):
         def __len__(self):
             return 256
 
@@ -200,7 +138,7 @@ def test_evaluation_loader_selects_only_the_requested_heldout_split(
     calls = _patch_sources(monkeypatch, rows)
 
     selected = datasets.load_decision_evaluation_dataset(
-        _cfg(tmp_path), Tokenizer(), split
+        _cfg(tmp_path), ChatCharacterTokenizer(), split
     )
 
     assert calls == [path]
@@ -222,10 +160,12 @@ def test_evaluation_loader_rejects_undeclared_or_train_splits(tmp_path, monkeypa
     _patch_sources(monkeypatch, rows)
 
     with pytest.raises(ValueError, match="split must be one of"):
-        datasets.load_decision_evaluation_dataset(_cfg(tmp_path), Tokenizer(), "train")
+        datasets.load_decision_evaluation_dataset(
+            _cfg(tmp_path), ChatCharacterTokenizer(), "train"
+        )
     with pytest.raises(ValueError, match="no explicitly declared"):
         datasets.load_decision_evaluation_dataset(
-            _cfg(tmp_path), Tokenizer(), "validation"
+            _cfg(tmp_path), ChatCharacterTokenizer(), "validation"
         )
 
 
@@ -253,7 +193,7 @@ def test_explicit_evaluation_reuses_only_selected_split_cache(tmp_path, monkeypa
     root.mkdir()
     (root / "tokenizer.json").write_text("tokenizer")
 
-    class CacheTokenizer(Tokenizer):
+    class CacheTokenizer(ChatCharacterTokenizer):
         def __len__(self):
             return 256
 

@@ -1,60 +1,22 @@
 """Preprocessing uses independent upstream fixtures with actual tokenizer IDs."""
 
-import json
 import random
-from pathlib import Path
 
 import pytest
 
 from axolotl.integrations.diffusion_decision.adapters.jsonl import normalize_jsonl
 from axolotl.integrations.diffusion_decision.preprocessing import build_decision_canvas
 from axolotl.integrations.diffusion_decision.slots import SlotInit
-from axolotl.model_support import (
-    DiffusionLayout,
-    DiffusionNoise,
-    DiffusionSpec,
-    EosHandling,
-    FirstPositionAlignment,
-    GenerationAdapter,
-    LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
-    TimeWeighting,
+
+from tests.integrations.diffusion_decision.helpers import (
+    DJEV_FIXTURE,
+    RecordedTokenizer,
+    make_spec,
 )
-
-FIXTURE = json.loads(
-    (Path(__file__).parent / "fixtures" / "djev_template_e5841cf.json").read_text()
-)
-
-
-def _free_spec() -> DiffusionSpec:
-    return DiffusionSpec(
-        noise=DiffusionNoise.UNIFORM,
-        layout=DiffusionLayout.FULL_SEQUENCE,
-        logit_alignment=LogitAlignment.ALIGNED,
-        first_position_alignment=FirstPositionAlignment.DUPLICATE_FIRST,
-        self_conditioning=False,
-        max_canvas=None,
-        max_context=None,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=MaskTokenPolicy.NONE,
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
-    )
-
-
-class Tokenizer:
-    def __init__(self, encodings):
-        self.encodings = encodings
-
-    def encode(self, text, add_special_tokens=False):
-        assert not add_special_tokens
-        return self.encodings[text]
 
 
 def inputs(family, index):
-    reference = FIXTURE["tokenizers"][family]
+    reference = DJEV_FIXTURE["tokenizers"][family]
     case = reference["cases"][index]
     labels = {}
     for i, q in enumerate(case["parsed"]["questions"]):
@@ -91,10 +53,10 @@ def test_exact_template_positions_noise_and_target_preservation(family, index):
         seed=23,
     )
     first = build_decision_canvas(
-        Tokenizer(reference["encodings"]), record, [1, 2], **kwargs
+        RecordedTokenizer(reference["encodings"]), record, [1, 2], **kwargs
     )
     second = build_decision_canvas(
-        Tokenizer(reference["encodings"]), record, [1, 2], steps=2, **kwargs
+        RecordedTokenizer(reference["encodings"]), record, [1, 2], steps=2, **kwargs
     )
     base, slots = case["template"]
     expected = (
@@ -123,7 +85,7 @@ def test_prevalidated_record_matches_validated_canvas():
         vocab_size=262144,
         seed=23,
     )
-    tokenizer = Tokenizer(reference["encodings"])
+    tokenizer = RecordedTokenizer(reference["encodings"])
     expected = build_decision_canvas(tokenizer, record, [1, 2], **kwargs)
     actual = build_decision_canvas(
         tokenizer,
@@ -146,12 +108,14 @@ def test_absorbing_noise_and_invalid_soft_target():
         mask_token_id=151666,
     )
     result = build_decision_canvas(
-        Tokenizer(reference["encodings"]), record, [1], **kwargs
+        RecordedTokenizer(reference["encodings"]), record, [1], **kwargs
     )
     assert all(result.canvas_ids[pos] == 151666 for pos in result.label_positions)
     record["labels"]["1"]["probs"] = [0.1]
     with pytest.raises(ValueError, match="one probability"):
-        build_decision_canvas(Tokenizer(reference["encodings"]), record, [1], **kwargs)
+        build_decision_canvas(
+            RecordedTokenizer(reference["encodings"]), record, [1], **kwargs
+        )
 
 
 @pytest.mark.parametrize("steps", [2, 3])
@@ -161,10 +125,10 @@ def test_generated_free_slots_remain_updateable_while_kstep_scaffold_is_pinned(s
         "free",
         num_slots=2,
         vocab_size=262144,
-        spec=_free_spec(),
+        spec=make_spec(max_canvas=None, max_context=None),
     ).build(seed=7)
     canvas = build_decision_canvas(
-        Tokenizer(reference["encodings"]),
+        RecordedTokenizer(reference["encodings"]),
         record,
         [1, 2],
         scaffold_ids=case["head"],
@@ -192,7 +156,7 @@ def test_canvas_builds_source_prompt_from_validated_record(family):
     record["state"] = {"observed": "20°"}
     record["instructions"] = case["schema"]["instructions"]
 
-    class ChatTokenizer(Tokenizer):
+    class ChatTokenizer(RecordedTokenizer):
         def apply_chat_template(self, messages, **kwargs):
             assert messages == [
                 {"role": "system", "content": case["system_text"]},

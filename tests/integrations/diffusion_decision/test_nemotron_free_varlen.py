@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 import torch
 from peft import LoraConfig, TaskType, get_peft_model
-from test_trainer import _MultistepTrainerHarness, _spec
 from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
 from axolotl.core.trainers.diffusion_lm.backends.full_sequence import (
@@ -21,6 +20,10 @@ from axolotl.model_support.nemotron_diffusion.compat import (
     resolve_nemotron_model_class,
 )
 
+from tests.integrations.diffusion_decision.helpers import (
+    MultistepTrainerHarness,
+    trainer_spec,
+)
 from tests.native_source_fixtures import native_source_fixture_path
 
 
@@ -132,8 +135,8 @@ def test_native_nemotron_varlen_free_slots_evolve_without_slot_loss(monkeypatch,
 
     monkeypatch.setattr(varlen, "varlen_attn", traced_kernel)
     model, traces, source = _model(device)
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=steps,
         sampled_steps=steps,
         decision={

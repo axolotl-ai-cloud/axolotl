@@ -2,119 +2,39 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 import pytest
 import torch
 
-from axolotl.integrations.diffusion_decision.loss import decision_example_from_canvas
-from axolotl.integrations.diffusion_decision.preprocessing import build_decision_canvas
-from axolotl.integrations.diffusion_decision.slots import SlotInit, SlotMode
 from axolotl.integrations.diffusion_decision.training_collator import (
     DecisionTrainingCollator,
 )
 from axolotl.model_support import (
     DiffusionLayout,
     DiffusionNoise,
-    DiffusionSpec,
-    EosHandling,
-    FirstPositionAlignment,
-    GenerationAdapter,
-    LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
-    ReductionScope,
-    TimeWeighting,
+)
+
+from tests.integrations.diffusion_decision.helpers import (
+    build_canvas,
+    make_record,
+    make_rows,
+    make_slot_plan,
+    make_spec,
+    slot_token_ids,
 )
 
 
-class CharacterTokenizer:
-    def encode(self, text, add_special_tokens=False):
-        assert not add_special_tokens
-        return [ord(character) for character in text]
-
-
-def _spec(layout: DiffusionLayout, noise: DiffusionNoise) -> DiffusionSpec:
-    return DiffusionSpec(
-        noise=noise,
-        layout=layout,
-        logit_alignment=LogitAlignment.ALIGNED,
-        first_position_alignment=FirstPositionAlignment.DUPLICATE_FIRST,
-        self_conditioning=layout is DiffusionLayout.ENCODER_CANVAS,
-        max_canvas=128,
-        max_context=1024,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=(
-            MaskTokenPolicy.NONE
-            if noise is DiffusionNoise.UNIFORM
-            else MaskTokenPolicy.MODEL
-        ),
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
-        reduction_scope=ReductionScope.MICROBATCH,
-    )
-
-
-def _record(identifier: str):
-    return {
-        "id": identifier,
-        "source": "test",
-        "group": "test",
-        "state": f"state-{identifier}",
-        "questions": {
-            "q": {
-                "type": "choice",
-                "instructions": "Pick.",
-                "options": ["one", "two"],
-            }
-        },
-        "labels": {"q": {"kind": "hard", "gold_idx": 0}},
-    }
-
-
-def _plan(mode: SlotMode, noise: DiffusionNoise):
-    return SlotInit(
-        mode,
-        token_ids={"pinned": (7,), "learned": (7, 8), "prompt": (7, 8)}.get(mode, ()),
-        num_slots=2,
-        vocab_size=256,
-        pad_id=0,
-        spec=_spec(DiffusionLayout.FULL_SEQUENCE, noise),
-        mask_token_id=9,
-    ).build()
-
-
 def _canvas(identifier: str, mode: str, noise: DiffusionNoise):
-    return build_decision_canvas(
-        CharacterTokenizer(),
-        _record(identifier),
+    return build_canvas(
+        make_slot_plan(mode, ids=slot_token_ids(mode), noise=noise),
+        record=make_record(identifier, state=f"state-{identifier}"),
         prompt_ids=(90 + int(identifier),),
-        scaffold_ids=(),
-        turn_close_id=106,
-        pad_id=0,
-        vocab_size=256,
-        width=128,
-        seed=23,
-        steps=1,
-        noise_kind=noise.value,
-        mask_token_id=9 if noise is DiffusionNoise.ABSORBING else None,
-        slot_plan=_plan(cast(SlotMode, mode), noise),
-        thought_open_ids=(70, 71),
-        thought_close_ids=(72,),
+        noise=noise,
     )
 
 
 def _rows(mode: str, noise: DiffusionNoise):
     canvases = tuple(_canvas(str(index), mode, noise) for index in range(2))
-    return canvases, [
-        {
-            "canvas": canvas,
-            "source": f"source-{index}",
-            "decision_example": decision_example_from_canvas(canvas),
-        }
-        for index, canvas in enumerate(canvases)
-    ]
+    return canvases, make_rows(canvases)
 
 
 @pytest.mark.parametrize(
@@ -137,7 +57,7 @@ def test_fixed_slot_collation_keeps_slots_pinned_and_out_of_canvas_loss(
     layout: DiffusionLayout,
 ):
     canvases, rows = _rows(mode, noise)
-    batch = DecisionTrainingCollator(_spec(layout, noise))(rows)
+    batch = DecisionTrainingCollator(make_spec(layout=layout, noise=noise))(rows)
 
     for canvas in canvases:
         slot_positions = tuple(

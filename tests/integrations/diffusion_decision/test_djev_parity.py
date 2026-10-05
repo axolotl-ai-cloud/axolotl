@@ -2,24 +2,15 @@
 
 import json
 import re
-from pathlib import Path
 
 import pytest
 
 from axolotl.integrations.diffusion_decision import template
 
-_FIXTURE = json.loads(
-    (Path(__file__).parent / "fixtures" / "djev_template_e5841cf.json").read_text()
+from tests.integrations.diffusion_decision.helpers import (
+    DJEV_FIXTURE,
+    RecordedTokenizer,
 )
-
-
-class RecordedTokenizer:
-    def __init__(self, encodings):
-        self.encodings = encodings
-
-    def encode(self, text, add_special_tokens=False):
-        assert not add_special_tokens
-        return self.encodings[text]
 
 
 def json_value(value):
@@ -29,7 +20,7 @@ def json_value(value):
 @pytest.mark.parametrize("family", ["gemma", "dream"])
 @pytest.mark.parametrize("index", range(22))
 def test_schema_system_answer_and_resolver_match_pinned_djev(family, index):
-    reference = _FIXTURE["tokenizers"][family]
+    reference = DJEV_FIXTURE["tokenizers"][family]
     case = reference["cases"][index]
     schema = template.parse_schema(case["schema"])
     assert json_value(schema) == case["parsed"]
@@ -57,7 +48,7 @@ def test_schema_system_answer_and_resolver_match_pinned_djev(family, index):
         assert json_value(template.resolve_template(**args)) == case["template"]
 
 
-@pytest.mark.parametrize("case", _FIXTURE["invalid_schemas"])
+@pytest.mark.parametrize("case", DJEV_FIXTURE["invalid_schemas"])
 def test_schema_rejection_matches_pinned_djev(case):
     with pytest.raises(
         template.SchemaError, match="^" + re.escape(case["error"]) + "$"
@@ -66,8 +57,8 @@ def test_schema_rejection_matches_pinned_djev(case):
 
 
 def test_fixture_includes_successful_native_tokenization_and_boundary_cases():
-    assert _FIXTURE["source_revision"] == "e5841cf41e9211608e698492658685c36e24e77a"
-    for reference in _FIXTURE["tokenizers"].values():
+    assert DJEV_FIXTURE["source_revision"] == "e5841cf41e9211608e698492658685c36e24e77a"
+    for reference in DJEV_FIXTURE["tokenizers"].values():
         assert sum("template" in case for case in reference["cases"]) >= 20
         assert {case["parsed"]["format"] for case in reference["cases"]} == {
             "lines",

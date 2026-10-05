@@ -26,21 +26,22 @@ from axolotl.integrations.diffusion_decision.evaluation import (
 from axolotl.integrations.diffusion_decision.readers.base import DecisionRead
 from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 
+from tests.integrations.diffusion_decision.helpers import (
+    make_canvas,
+)
+
 
 def _canvas() -> DecisionCanvas:
-    return DecisionCanvas(
-        prompt_ids=(1, 2),
-        canvas_ids=(3, 4, 5, 6),
-        label_positions=(0, 2),
+    return make_canvas(
+        (1, 2),
+        (3, 4, 5, 6),
+        (0, 2),
         allowed_ids=((4, 5), (6, 7, 8)),
         question_ids=("q1", "q2"),
         targets=(
             {"kind": "hard", "gold_idx": 0},
             {"kind": "set", "allowed_set": (1, 2)},
         ),
-        pinned_mask=(False, False, False, False),
-        semantic_mask=(True, True, True, True),
-        slot_mask=(False, False, False, False),
         template_length=3,
     )
 

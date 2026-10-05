@@ -7,7 +7,6 @@ import torch
 from torch.utils.data import DataLoader, SequentialSampler
 
 from axolotl.integrations.diffusion_decision.datasets import DecisionDataset
-from axolotl.integrations.diffusion_decision.loss import decision_example_from_canvas
 from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 from axolotl.integrations.diffusion_decision.slot_sampling import DecisionDraw
 from axolotl.integrations.diffusion_decision.training_collator import (
@@ -15,47 +14,32 @@ from axolotl.integrations.diffusion_decision.training_collator import (
 )
 from axolotl.model_support.diffusion import (
     DiffusionLayout,
-    DiffusionNoise,
-    DiffusionSpec,
-    EosHandling,
     FirstPositionAlignment,
-    GenerationAdapter,
-    LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
-    TimeWeighting,
+)
+
+from tests.integrations.diffusion_decision.helpers import (
+    make_canvas,
+    make_rows,
+    make_spec,
 )
 
 
 def _spec(layout):
-    return DiffusionSpec(
-        noise=DiffusionNoise.UNIFORM,
+    return make_spec(
         layout=layout,
-        logit_alignment=LogitAlignment.ALIGNED,
         first_position_alignment=FirstPositionAlignment.REQUIRES_PREDECESSOR,
-        self_conditioning=layout is DiffusionLayout.ENCODER_CANVAS,
         max_canvas=8 if layout is DiffusionLayout.ENCODER_CANVAS else None,
         max_context=None,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=MaskTokenPolicy.NONE,
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
     )
 
 
 def _canvas(prompt, canvas, positions, name):
-    return DecisionCanvas(
-        prompt_ids=prompt,
-        canvas_ids=canvas,
-        label_positions=positions,
-        allowed_ids=tuple((1, 2) for _ in positions),
+    return make_canvas(
+        prompt,
+        canvas,
+        positions,
+        allowed=(1, 2),
         question_ids=tuple(f"{name}{i}" for i in range(len(positions))),
-        targets=tuple({"kind": "hard", "gold_idx": 0} for _ in positions),
-        pinned_mask=(False,) * len(canvas),
-        semantic_mask=(True,) * len(canvas),
-        slot_mask=(False,) * len(canvas),
-        template_length=len(canvas),
     )
 
 
@@ -64,16 +48,7 @@ def _rows():
         _canvas((4, 5), (6, 7, 8, 9), (1, 3), "a"),
         _canvas((10, 11, 12), (13, 14, 15, 16), (2,), "b"),
     )
-    return [
-        {
-            "canvas": canvas,
-            "source": f"source-{index}",
-            "decision_example": decision_example_from_canvas(
-                canvas, source_weight=index + 1
-            ),
-        }
-        for index, canvas in enumerate(canvases)
-    ]
+    return make_rows(canvases, weights=(1, 2))
 
 
 def test_full_sequence_concat_preserves_document_and_label_coordinates():

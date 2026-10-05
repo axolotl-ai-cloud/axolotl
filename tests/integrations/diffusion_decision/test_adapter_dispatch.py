@@ -4,15 +4,15 @@ import pytest
 
 from axolotl.integrations.diffusion_decision.adapters import normalize_record
 
+from tests.integrations.diffusion_decision.helpers import (
+    make_record,
+)
+
 
 def local_record(source="local"):
-    return {
-        "source": source,
-        "group": "a",
-        "state": "observed",
-        "questions": {"q": {"type": "noul"}},
-        "labels": {"q": {"kind": "hard", "gold_idx": 0}},
-    }
+    return make_record(
+        None, source=source, group="a", state="observed", question_type="noul"
+    )
 
 
 def test_prefixed_and_short_names_are_equivalent():

@@ -7,7 +7,6 @@ from dataclasses import replace
 import pytest
 import torch
 from peft import LoraConfig, get_peft_model
-from test_trainer import _MultistepTrainerHarness, _spec, _tiny_decision_gemma_config
 
 import axolotl.model_support.diffusion_gemma.modeling as gemma_modeling
 from axolotl.integrations.diffusion_decision.records import DecisionCanvas
@@ -17,6 +16,12 @@ from axolotl.integrations.diffusion_decision.training_collator import (
 from axolotl.model_support import DiffusionLayout, LogitAlignment
 from axolotl.model_support.diffusion_gemma.modeling import (
     AxolotlDiffusionGemmaForBlockDiffusion,
+)
+
+from tests.integrations.diffusion_decision.helpers import (
+    MultistepTrainerHarness,
+    tiny_gemma_config,
+    trainer_spec,
 )
 
 
@@ -34,7 +39,7 @@ def _inputs():
         template_length=4,
     )
     return DecisionTrainingCollator(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED)
     )([{"canvas": canvas, "source": "native"}])
 
 
@@ -45,7 +50,7 @@ def test_native_gemma_peft_grad_through_steps_carries_intermediate_graph(
     monkeypatch, steps, grad_through_steps, evaluate
 ):
     torch.manual_seed(17)
-    base = AxolotlDiffusionGemmaForBlockDiffusion(_tiny_decision_gemma_config())
+    base = AxolotlDiffusionGemmaForBlockDiffusion(tiny_gemma_config())
     model = get_peft_model(
         base,
         LoraConfig(
@@ -69,8 +74,8 @@ def test_native_gemma_peft_grad_through_steps_carries_intermediate_graph(
 
     monkeypatch.setattr(gemma_modeling, "decode_packed_canvas", traced)
     inputs = _inputs()
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         k_max=steps,
         sampled_steps=steps,
         grad_through_steps=grad_through_steps,
@@ -108,8 +113,8 @@ def test_native_gemma_peft_grad_through_steps_carries_intermediate_graph(
 
 
 def test_grad_through_steps_rejects_non_self_conditioning_layout():
-    trainer = _MultistepTrainerHarness(
-        _spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
+    trainer = MultistepTrainerHarness(
+        trainer_spec(DiffusionLayout.FULL_SEQUENCE, LogitAlignment.ALIGNED),
         k_max=2,
         sampled_steps=2,
         grad_through_steps=True,
@@ -120,10 +125,10 @@ def test_grad_through_steps_rejects_non_self_conditioning_layout():
 
 def test_grad_through_steps_rejects_encoder_without_self_conditioning():
     spec = replace(
-        _spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
+        trainer_spec(DiffusionLayout.ENCODER_CANVAS, LogitAlignment.ALIGNED),
         self_conditioning=False,
     )
-    trainer = _MultistepTrainerHarness(
+    trainer = MultistepTrainerHarness(
         spec, k_max=2, sampled_steps=2, grad_through_steps=True
     )
     with pytest.raises(NotImplementedError, match="encoder-canvas self-conditioning"):

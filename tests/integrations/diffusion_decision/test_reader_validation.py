@@ -9,20 +9,19 @@ from axolotl.integrations.diffusion_decision.readers.base import (
     restricted_probabilities,
     validate_canvas,
 )
-from axolotl.integrations.diffusion_decision.records import DecisionCanvas
+
+from tests.integrations.diffusion_decision.helpers import (
+    make_canvas,
+)
 
 
 def canvas():
-    return DecisionCanvas(
-        prompt_ids=(1, 2),
-        canvas_ids=(3, 4, 5, 0),
-        label_positions=(1,),
-        allowed_ids=((6, 7),),
+    return make_canvas(
+        (1, 2),
+        (3, 4, 5, 0),
+        (1,),
+        allowed=(6, 7),
         question_ids=("answer",),
-        targets=({"kind": "hard", "gold_idx": 0},),
-        pinned_mask=(False,) * 4,
-        semantic_mask=(True,) * 4,
-        slot_mask=(False,) * 4,
         template_length=2,
     )
 

@@ -3,172 +3,64 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 import torch
-from torch import nn
 
-from axolotl.core.trainers.diffusion_lm.backends.full_sequence import (
-    FullSequenceBackend,
-)
 from axolotl.integrations.diffusion_decision.loss import decision_label_loss
-from axolotl.integrations.diffusion_decision.preprocessing import build_decision_canvas
 from axolotl.integrations.diffusion_decision.readers.hf import HFReader
-from axolotl.integrations.diffusion_decision.slots import SlotInit, SlotMode
 from axolotl.integrations.diffusion_decision.trainer import DiffusionDecisionTrainer
 from axolotl.integrations.diffusion_decision.training_collator import (
     DecisionTrainingCollator,
 )
 from axolotl.model_support import (
-    DiffusionLayout,
     DiffusionNoise,
     DiffusionSpec,
-    EosHandling,
-    FirstPositionAlignment,
-    GenerationAdapter,
     LogitAlignment,
-    MaskTokenPolicy,
     ObjectiveReduction,
     ReductionScope,
-    TimeWeighting,
+)
+
+from tests.integrations.diffusion_decision.helpers import (
+    EchoModel,
+    TrainerHarness,
+    build_canvas,
+    make_record,
+    make_slot_plan,
+    make_spec,
+    slot_token_ids,
 )
 
 
-class _CharacterTokenizer:
-    def encode(self, text, add_special_tokens=False):
-        assert not add_special_tokens
-        return [ord(character) for character in text]
-
-
-class _EchoModel(nn.Module):
-    def __init__(self, vocab_size=256) -> None:
-        super().__init__()
-        self.anchor = nn.Parameter(torch.zeros(()))
-        self.config = SimpleNamespace(vocab_size=vocab_size, mask_token_id=9)
-        self.seen_input_ids: torch.Tensor | None = None
-
-    def forward(self, input_ids, attention_mask, position_ids, use_cache, **kwargs):
-        del attention_mask, position_ids, use_cache, kwargs
-        self.seen_input_ids = input_ids.detach().clone()
-        logits = torch.nn.functional.one_hot(input_ids, num_classes=256).float()
-        return SimpleNamespace(logits=logits + self.anchor)
-
-
-class _TrainerHarness(DiffusionDecisionTrainer):
-    def __init__(self, spec: DiffusionSpec, decision: dict[str, object]) -> None:
-        self._spec = spec
-        self.axolotl_cfg = {"diffusion_decision": decision}
-        self.args = SimpleNamespace(world_size=1)
-        self._special_token_ids: set[int] = set()
-
-    @property
-    def _native_spec(self):
-        return self._spec
-
-    @staticmethod
-    def _full_sequence_backend():
-        return FullSequenceBackend(mask_token_id=9, attention_backend="dense")
-
-    @staticmethod
-    def _native_unroll_settings():
-        return 1, False
-
-    @staticmethod
-    def _sample_native_unroll_steps(k_max, device):
-        del k_max, device
-        return 1
-
-    @staticmethod
-    def _sample_native_times(count, device, default_eps):
-        del default_eps
-        return torch.ones(count, device=device)
-
-
 def _spec(noise: DiffusionNoise) -> DiffusionSpec:
-    return DiffusionSpec(
+    return make_spec(
         noise=noise,
-        layout=DiffusionLayout.FULL_SEQUENCE,
-        logit_alignment=LogitAlignment.ALIGNED,
-        first_position_alignment=FirstPositionAlignment.DUPLICATE_FIRST,
-        self_conditioning=False,
-        max_canvas=128,
-        max_context=1024,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=(
-            MaskTokenPolicy.MODEL
-            if noise is DiffusionNoise.ABSORBING
-            else MaskTokenPolicy.NONE
-        ),
-        default_time_weighting=TimeWeighting.NONE,
         objective_reduction=ObjectiveReduction.EXAMPLE_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
         reduction_scope=ReductionScope.GLOBAL_WINDOW,
     )
 
 
-def _record():
-    return {
-        "id": "fixed-slot",
-        "source": "test",
-        "group": "test",
-        "state": "state",
-        "questions": {
-            "choice": {
-                "type": "choice",
-                "instructions": "Pick.",
-                "options": ["one", "two"],
-            }
-        },
-        "labels": {"choice": {"kind": "hard", "gold_idx": 0}},
-    }
+def _prepared_canvas(mode: str, noise: DiffusionNoise):
+    spec = _spec(noise)
+    plan = make_slot_plan(mode, ids=slot_token_ids(mode), spec=spec)
+    canvas = build_canvas(
+        plan,
+        record=make_record("fixed-slot", question="choice"),
+        prompt_ids=(90,),
+        noise=noise,
+        thought_open_ids=(70,),
+        thought_close_ids=(71,),
+    )
+    return spec, plan, canvas
 
 
 def _slot_config(mode: str) -> dict[str, object]:
     return {
         "mode": mode,
         "num_slots": 2,
-        "token_ids": list(
-            {"pinned": (7,), "learned": (7, 8), "prompt": (7, 8)}.get(mode, ())
-        ),
+        "token_ids": list(slot_token_ids(mode)),
     }
-
-
-def _slot_token_ids(mode: SlotMode) -> tuple[int, ...]:
-    return {"pinned": (7,), "learned": (7, 8), "prompt": (7, 8)}.get(mode, ())
-
-
-def _prepared_canvas(mode: str, noise: DiffusionNoise):
-    spec = _spec(noise)
-    slot_mode = cast(SlotMode, mode)
-    plan = SlotInit(
-        slot_mode,
-        token_ids=_slot_token_ids(slot_mode),
-        num_slots=2,
-        vocab_size=256,
-        pad_id=0,
-        spec=spec,
-        mask_token_id=9,
-    ).build()
-    canvas = build_decision_canvas(
-        _CharacterTokenizer(),
-        _record(),
-        prompt_ids=(90,),
-        scaffold_ids=(),
-        turn_close_id=106,
-        pad_id=0,
-        vocab_size=256,
-        width=128,
-        seed=23,
-        steps=1,
-        noise_kind=noise.value,
-        mask_token_id=9 if noise is DiffusionNoise.ABSORBING else None,
-        slot_plan=plan,
-        thought_open_ids=(70,),
-        thought_close_ids=(71,),
-    )
-    return spec, plan, canvas
 
 
 @pytest.mark.parametrize(
@@ -199,9 +91,11 @@ def test_prepared_fixed_slots_stay_pinned_through_trainer_and_reader(mode, noise
     )
     batch["canvas_corruptible_mask"][0, fixed_positions] = True
     batch["canvas_update_mask"][0, fixed_positions] = True
-    trainer = _TrainerHarness(spec, {"latent": _slot_config(mode)})
+    trainer = TrainerHarness(
+        spec, {"latent": _slot_config(mode)}, mask_token_id=9, native_time=1.0
+    )
     trainer._validate_decision_config(trainer._decision_config(), k_max=1, spec=spec)
-    train_model = _EchoModel()
+    train_model = EchoModel()
     trainer._full_sequence_logits(train_model, batch, spec, trainer._decision_config())
     assert train_model.seen_input_ids is not None
     expected = torch.tensor(
@@ -214,7 +108,7 @@ def test_prepared_fixed_slots_stay_pinned_through_trainer_and_reader(mode, noise
     )
     torch.testing.assert_close(train_model.seen_input_ids[0, fixed_positions], expected)
 
-    read_model = _EchoModel()
+    read_model = EchoModel()
     read = HFReader(vocab_size=256, mask_token_id=9, attention_backend="dense").read(
         read_model, spec, canvas, steps=1, seed=17, diagnostics=True
     )
@@ -245,7 +139,7 @@ def test_reader_rejects_initial_canvas_override_of_prepared_fixed_slot(mode):
 
     with pytest.raises(ValueError, match="cannot alter pinned"):
         HFReader(vocab_size=256, mask_token_id=9, attention_backend="dense").read(
-            _EchoModel(),
+            EchoModel(),
             spec,
             canvas,
             steps=1,
@@ -331,7 +225,7 @@ def test_tiny_native_dream_mask_slots_are_pinned_and_train_through_lora(
     input_hook = base_model.register_forward_pre_hook(capture_input, with_kwargs=True)
     output_hook = base_model.register_forward_hook(capture_output, with_kwargs=True)
 
-    class KStepHarness(_TrainerHarness):
+    class KStepHarness(TrainerHarness):
         @staticmethod
         def _native_unroll_settings():
             return steps, False
@@ -341,7 +235,9 @@ def test_tiny_native_dream_mask_slots_are_pinned_and_train_through_lora(
             del k_max, device
             return steps
 
-    trainer = KStepHarness(spec, {"latent": _slot_config("mask")})
+    trainer = KStepHarness(
+        spec, {"latent": _slot_config("mask")}, mask_token_id=9, native_time=1.0
+    )
     try:
         loss = cast(torch.Tensor, trainer.compute_loss(model, batch))
     finally:

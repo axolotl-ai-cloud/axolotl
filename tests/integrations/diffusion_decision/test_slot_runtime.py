@@ -12,35 +12,25 @@ from axolotl.integrations.diffusion_decision.slot_runtime import (
     resolve_trainable_slot_runtime,
 )
 from axolotl.model_support import (
-    DiffusionLayout,
     DiffusionNoise,
-    DiffusionSpec,
-    EosHandling,
     FirstPositionAlignment,
-    GenerationAdapter,
-    LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
     ReductionScope,
     TimeWeighting,
 )
 from axolotl.utils.dict import DictDefault
 
+from tests.integrations.diffusion_decision.helpers import (
+    make_spec,
+)
+
 
 def _spec():
-    return DiffusionSpec(
+    return make_spec(
         noise=DiffusionNoise.ABSORBING,
-        layout=DiffusionLayout.FULL_SEQUENCE,
-        logit_alignment=LogitAlignment.ALIGNED,
         first_position_alignment=FirstPositionAlignment.REQUIRES_PREDECESSOR,
-        self_conditioning=False,
         max_canvas=None,
         max_context=64,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=MaskTokenPolicy.MODEL,
         default_time_weighting=TimeWeighting.INV_T,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
         reduction_scope=ReductionScope.GLOBAL_WINDOW,
     )
 

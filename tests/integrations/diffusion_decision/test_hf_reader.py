@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 import torch
 from torch import nn
-from transformers import DiffusionGemmaConfig
 
 from axolotl.core.trainers.diffusion_lm.unroll import run_unroll
 from axolotl.integrations.diffusion_decision.readers import HFReader
@@ -16,22 +15,24 @@ from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 from axolotl.model_support.diffusion import (
     DiffusionLayout,
     DiffusionNoise,
-    DiffusionSpec,
-    EosHandling,
     FirstPositionAlignment,
     GenerationAdapter,
     LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
-    TimeWeighting,
 )
 from axolotl.model_support.diffusion_gemma.modeling import (
     AxolotlDiffusionGemmaForBlockDiffusion,
 )
 
+from tests.integrations.diffusion_decision.helpers import (
+    EchoModel,
+    make_canvas,
+    make_spec,
+    tiny_gemma_config,
+)
+
 
 def _spec(*, layout: DiffusionLayout, noise: DiffusionNoise, shifted: bool = False):
-    return DiffusionSpec(
+    return make_spec(
         noise=noise,
         layout=layout,
         logit_alignment=(LogitAlignment.SHIFTED if shifted else LogitAlignment.ALIGNED),
@@ -40,91 +41,42 @@ def _spec(*, layout: DiffusionLayout, noise: DiffusionNoise, shifted: bool = Fal
             if shifted
             else FirstPositionAlignment.REQUIRES_PREDECESSOR
         ),
-        self_conditioning=layout is DiffusionLayout.ENCODER_CANVAS,
         max_canvas=256 if layout is DiffusionLayout.ENCODER_CANVAS else None,
         max_context=None,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=(
-            MaskTokenPolicy.NONE
-            if noise is DiffusionNoise.UNIFORM
-            else MaskTokenPolicy.MODEL
-        ),
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
         generation_adapter=GenerationAdapter.ENCODER_CANVAS,
     )
 
 
 def _canvas() -> DecisionCanvas:
-    return DecisionCanvas(
-        prompt_ids=(3, 4, 5),
-        canvas_ids=(6, 7, 8, 9, 0, 0, 0, 0),
-        label_positions=(1, 3),
+    return make_canvas(
+        (3, 4, 5),
+        (6, 7, 8, 9, 0, 0, 0, 0),
+        (1, 3),
         allowed_ids=((1, 2), (3, 4, 5)),
         question_ids=("q0", "q1"),
         targets=(0, 1),
         pinned_mask=(True, False, True, False, True, True, True, True),
-        semantic_mask=(True, True, True, True, True, True, True, True),
-        slot_mask=(False,) * 8,
         template_length=4,
     )
 
 
-def _tiny_gemma_config() -> DiffusionGemmaConfig:
-    text = {
-        "vocab_size": 32,
-        "hidden_size": 16,
-        "intermediate_size": 32,
-        "num_hidden_layers": 1,
-        "num_attention_heads": 2,
-        "num_key_value_heads": 1,
-        "head_dim": 8,
-        "max_position_embeddings": 32,
-        "layer_types": ["full_attention"],
-        "per_layer_config": {"0": {"head_dim": 8}},
-        "sliding_window": 8,
-        "use_bidirectional_attention": "vision",
-        "num_experts": 2,
-        "top_k_experts": 1,
-        "moe_intermediate_size": 16,
-        "pad_token_id": 0,
-        "eos_token_id": 1,
-        "bos_token_id": 2,
-    }
-    vision = {
-        "model_type": "gemma4_vision",
-        "hidden_size": 16,
-        "intermediate_size": 32,
-        "num_hidden_layers": 1,
-        "num_attention_heads": 2,
-        "num_key_value_heads": 2,
-        "head_dim": 8,
-        "max_position_embeddings": 32,
-        "patch_size": 16,
-        "position_embedding_size": 16,
-    }
-    return DiffusionGemmaConfig(
-        text_config=text,
-        vision_config=vision,
-        canvas_length=8,
-        boi_token_id=31,
-        eoi_token_id=30,
-        image_token_id=29,
+def _free_canvas() -> DecisionCanvas:
+    return make_canvas(
+        (3, 4),
+        (9, 6, 7, 8, 0, 0, 0, 0),
+        (1, 3),
+        allowed_ids=((1, 2), (3, 4)),
+        question_ids=("q0", "q1"),
+        targets=(0, 0),
+        pinned_mask=(False, False, True, False, True, True, True, True),
+        slot_mask=(True, False, False, False, False, False, False, False),
+        template_length=4,
     )
 
 
-class _FullSequenceEcho(nn.Module):
+class _FullSequenceEcho(EchoModel):
     def __init__(self) -> None:
-        super().__init__()
-        self.anchor = nn.Parameter(torch.zeros(()))
-        self.config = SimpleNamespace(vocab_size=16, mask_token_id=2)
-        self.calls = 0
-
-    def forward(self, input_ids, attention_mask, position_ids, use_cache, **kwargs):
-        del attention_mask, position_ids, use_cache, kwargs
-        self.calls += 1
-        logits = torch.nn.functional.one_hot(input_ids, num_classes=16).float() * 20
-        return SimpleNamespace(logits=logits + self.anchor)
+        super().__init__(vocab_size=16, mask_token_id=2, scale=20)
 
 
 class _FullSequenceIncrement(_FullSequenceEcho):
@@ -210,24 +162,9 @@ def test_hf_reader_full_sequence_batch_matches_independent_reads_with_ragged_pee
     assert batched_model.calls == steps
 
 
-def _free_canvas() -> DecisionCanvas:
-    return DecisionCanvas(
-        prompt_ids=(3, 4),
-        canvas_ids=(9, 6, 7, 8, 0, 0, 0, 0),
-        label_positions=(1, 3),
-        allowed_ids=((1, 2), (3, 4)),
-        question_ids=("q0", "q1"),
-        targets=(0, 0),
-        pinned_mask=(False, False, True, False, True, True, True, True),
-        semantic_mask=(True,) * 8,
-        slot_mask=(True, False, False, False, False, False, False, False),
-        template_length=4,
-    )
-
-
 def test_hf_reader_uniform_encoder_canvas_is_seeded_and_pins_template_tokens():
     torch.manual_seed(7)
-    model = AxolotlDiffusionGemmaForBlockDiffusion(_tiny_gemma_config()).eval()
+    model = AxolotlDiffusionGemmaForBlockDiffusion(tiny_gemma_config()).eval()
     reader = HFReader(attention_backend="dense")
     canvas = _canvas()
 
@@ -282,7 +219,7 @@ def test_hf_reader_k1_uses_one_actual_decoder_read(monkeypatch):
     import axolotl.model_support.diffusion_gemma.modeling as modeling
 
     torch.manual_seed(7)
-    model = AxolotlDiffusionGemmaForBlockDiffusion(_tiny_gemma_config()).eval()
+    model = AxolotlDiffusionGemmaForBlockDiffusion(tiny_gemma_config()).eval()
     calls = []
     original = modeling.decode_packed_canvas
 

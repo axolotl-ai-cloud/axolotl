@@ -6,10 +6,9 @@ from axolotl.integrations.diffusion_decision.collator import DecisionCanvasColla
 from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 from axolotl.integrations.diffusion_decision.template import resolve_template
 
-
-class CharacterTokenizer:
-    def encode(self, text, add_special_tokens=False):
-        return [ord(character) for character in text]
+from tests.integrations.diffusion_decision.helpers import (
+    CharacterTokenizer,
+)
 
 
 def test_template_indexed_and_overflow():

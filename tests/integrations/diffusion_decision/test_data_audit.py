@@ -16,21 +16,22 @@ from axolotl.integrations.diffusion_decision.data_audit import (
     preparation_audit_path,
     write_preparation_audit,
 )
-from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 from axolotl.utils.dict import DictDefault
+
+from tests.integrations.diffusion_decision.helpers import (
+    make_canvas,
+)
 
 
 def _canvas(prompt_length, width=4):
-    return DecisionCanvas(
-        prompt_ids=tuple(range(prompt_length)),
-        canvas_ids=tuple(range(width)),
-        label_positions=(1,),
-        allowed_ids=((4, 5),),
+    return make_canvas(
+        range(prompt_length),
+        range(width),
+        (1,),
+        allowed=(4, 5),
         question_ids=("q1",),
         targets=(0,),
         pinned_mask=(True,) * width,
-        semantic_mask=(True,) * width,
-        slot_mask=(False,) * width,
         template_length=1,
     )
 

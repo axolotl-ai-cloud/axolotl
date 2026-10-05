@@ -14,101 +14,38 @@ from axolotl.model_support import (
     DiffusionLayout,
     DiffusionNoise,
     DiffusionSpec,
-    EosHandling,
-    FirstPositionAlignment,
-    GenerationAdapter,
-    LogitAlignment,
-    MaskTokenPolicy,
-    ObjectiveReduction,
-    ReductionScope,
-    TimeWeighting,
+)
+
+from tests.integrations.diffusion_decision.helpers import (
+    ChatCharacterTokenizer,
+    make_cfg,
+    make_record,
+    make_spec,
 )
 
 
-class CharacterTokenizer:
-    pad_token_id = 0
-    bos_token_id = 1
-    eos_token_id = 11
-    unk_token_id = 2
-
-    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
-        assert not add_special_tokens
-        return [ord(character) for character in text]
-
-    def apply_chat_template(
-        self,
-        messages,
-        *,
-        tokenize: bool,
-        add_generation_prompt: bool,
-        enable_thinking: bool,
-    ) -> list[int]:
-        assert tokenize and add_generation_prompt and not enable_thinking
-        assert len(messages) == 2
-        return [99]
-
-
 def _spec(noise: DiffusionNoise = DiffusionNoise.UNIFORM, *, encoder: bool = False):
-    return DiffusionSpec(
+    return make_spec(
         noise=noise,
         layout=(
             DiffusionLayout.ENCODER_CANVAS if encoder else DiffusionLayout.FULL_SEQUENCE
         ),
-        logit_alignment=LogitAlignment.ALIGNED,
-        first_position_alignment=FirstPositionAlignment.DUPLICATE_FIRST,
         self_conditioning=False,
-        max_canvas=128,
-        max_context=1024,
-        eos_handling=EosHandling.INDEPENDENT,
-        mask_token_policy=(
-            MaskTokenPolicy.MODEL
-            if noise is DiffusionNoise.ABSORBING
-            else MaskTokenPolicy.NONE
-        ),
-        default_time_weighting=TimeWeighting.NONE,
-        objective_reduction=ObjectiveReduction.MASKED_TOKEN_MEAN,
-        generation_adapter=GenerationAdapter.FULL_SEQUENCE,
-        reduction_scope=ReductionScope.MICROBATCH,
     )
 
 
-def _record() -> dict:
-    return {
-        "id": "record",
-        "source": "test",
-        "group": "test",
-        "state": "state",
-        "questions": {
-            "q": {
-                "type": "choice",
-                "instructions": "Pick.",
-                "options": ["one", "two"],
-            }
-        },
-        "labels": {"q": {"kind": "hard", "gold_idx": 0}},
-    }
-
-
 def _cfg(mode: str = "none", *, count: int = 0, ids: tuple[int, ...] = ()) -> dict:
-    return {
-        "seed": 23,
-        "model_config": {
-            "vocab_size": 256,
-            "mask_token_id": 9,
-            "thought_open_ids": [70],
-            "thought_close_ids": [71],
+    return make_cfg(
+        model_config={"thought_open_ids": [70], "thought_close_ids": [71]},
+        diffusion_decision={
+            "latent": {"mode": mode, "num_slots": count, "token_ids": ids}
         },
-        "diffusion_lm": {"canvas_width": 128, "mask_token_id": 9},
-        "diffusion_decision": {
-            "max_questions_per_canvas": 20,
-            "latent": {"mode": mode, "num_slots": count, "token_ids": ids},
-        },
-    }
+    )
 
 
 def _prepared(cfg: dict, spec: DiffusionSpec):
     rows, dropped = datasets._canvas_rows(
-        CharacterTokenizer(), [_record()], cfg, {}, spec
+        ChatCharacterTokenizer(), [make_record()], cfg, {}, spec
     )
     assert dropped == 0
     assert len(rows) == 1
@@ -155,10 +92,10 @@ def test_dataset_rows_apply_fixed_slot_plan(
 
 def test_none_mode_uses_the_legacy_canvas_call_and_row_shape():
     cfg = _cfg()
-    record = _record()
+    record = make_record()
     row = _prepared(cfg, _spec())
     expected = build_decision_canvas(
-        CharacterTokenizer(),
+        ChatCharacterTokenizer(),
         datasets.permute_record(deepcopy(record), seed=23),
         scaffold_ids=(),
         turn_close_id=11,
@@ -187,7 +124,7 @@ def test_slot_width_overflow_is_counted_without_truncation():
     cfg["diffusion_lm"]["canvas_width"] = 8
 
     rows, dropped = datasets._canvas_rows(
-        CharacterTokenizer(), [_record()], cfg, {}, _spec()
+        ChatCharacterTokenizer(), [make_record()], cfg, {}, _spec()
     )
 
     assert rows == []
@@ -208,7 +145,7 @@ def test_dynamic_slots_prepare_maximum_canvas_with_sampling_recipe(
         "sample_num_slots": True,
     }
     rows, dropped = datasets._canvas_rows(
-        CharacterTokenizer(), [_record()], cfg, {}, _spec()
+        ChatCharacterTokenizer(), [make_record()], cfg, {}, _spec()
     )
     assert dropped == 0
     assert rows[0]["slot_sampling"]["max_slots"] == 1
@@ -219,7 +156,7 @@ def test_sampled_prompt_draw_projects_leading_prompt_slots_and_preserves_weight(
     cfg = _cfg("prompt", count=3, ids=(7, 8, 10))
     cfg["diffusion_decision"]["latent"]["sample_num_slots"] = True
     rows, dropped = datasets._canvas_rows(
-        CharacterTokenizer(), [_record()], cfg, {}, _spec()
+        ChatCharacterTokenizer(), [make_record()], cfg, {}, _spec()
     )
     assert dropped == 0
     maximum = rows[0]
@@ -248,7 +185,7 @@ def test_encoder_thought_slots_require_explicit_model_contract_delimiters():
 
     with pytest.raises(ValueError, match=r"model_config: \{thought_open_ids"):
         datasets._canvas_rows(
-            CharacterTokenizer(), [_record()], cfg, {}, _spec(encoder=True)
+            ChatCharacterTokenizer(), [make_record()], cfg, {}, _spec(encoder=True)
         )
 
 
@@ -261,7 +198,9 @@ def test_fixed_slot_ids_reject_active_tokenizer_model_and_delimiter_controls(
     cfg = _cfg(mode, count=2 if mode != "pinned" else 2, ids=ids)
 
     with pytest.raises(ValueError, match="active control IDs"):
-        datasets._canvas_rows(CharacterTokenizer(), [_record()], cfg, {}, _spec())
+        datasets._canvas_rows(
+            ChatCharacterTokenizer(), [make_record()], cfg, {}, _spec()
+        )
 
 
 def test_fixed_slots_reject_tokenizer_eos_without_model_config_metadata():
@@ -269,7 +208,9 @@ def test_fixed_slots_reject_tokenizer_eos_without_model_config_metadata():
     cfg["model_config"] = {"vocab_size": 256}
 
     with pytest.raises(ValueError, match="active control IDs"):
-        datasets._canvas_rows(CharacterTokenizer(), [_record()], cfg, {}, _spec())
+        datasets._canvas_rows(
+            ChatCharacterTokenizer(), [make_record()], cfg, {}, _spec()
+        )
 
 
 def test_validated_cfg_model_config_overrides_reach_slot_plan(
@@ -308,10 +249,12 @@ def test_validated_cfg_model_config_overrides_reach_slot_plan(
     assert cfg.model_config is None
     assert model_config_overrides(cfg)["thought_open_ids"] == [70]
     plan, thought_open_ids, thought_close_ids = datasets._resolve_slot_plan(
-        CharacterTokenizer(), cfg, _spec(encoder=True), 256
+        ChatCharacterTokenizer(), cfg, _spec(encoder=True), 256
     )
     assert plan is not None and plan.placement == "thought"
     assert (thought_open_ids, thought_close_ids) == ((70,), (71,))
     cfg.diffusion_decision["latent"]["token_ids"] = [70]
     with pytest.raises(ValueError, match="active control IDs"):
-        datasets._resolve_slot_plan(CharacterTokenizer(), cfg, _spec(encoder=True), 256)
+        datasets._resolve_slot_plan(
+            ChatCharacterTokenizer(), cfg, _spec(encoder=True), 256
+        )
