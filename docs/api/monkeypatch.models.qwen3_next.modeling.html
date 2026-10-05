@@ -996,7 +996,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing">patch_qwen3_next_modeling_packing</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.qwen3_next.modeling.patch_qwen3_next_modeling_packing(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    torch_compile<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply all Qwen3Next model patches.</p>
 
 
