@@ -29,6 +29,55 @@ def _gradient_checkpointing_kwargs(cfg):
     return training_args_kwargs
 
 
+def _save_and_eval_kwargs(cfg, *, eval_dataset=True, initial_kwargs=None):
+    builder = SimpleNamespace(cfg=cfg, eval_dataset=eval_dataset)
+    training_args_kwargs = dict(initial_kwargs or {})
+    TrainerBuilderBase._configure_save_and_eval_strategy(builder, training_args_kwargs)
+    return training_args_kwargs
+
+
+class TestSaveAndEvalStrategy:
+    def test_explicit_no_disables_initial_eval_even_with_eval_steps(self):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy="no",
+                eval_steps=5,
+            ),
+            initial_kwargs={"eval_on_start": True},
+        )
+
+        assert kwargs["eval_strategy"] == "no"
+        assert kwargs["eval_on_start"] is False
+        assert "eval_steps" not in kwargs
+
+    @pytest.mark.parametrize(
+        ("eval_strategy", "eval_steps", "expected_strategy"),
+        [("epoch", None, "epoch"), ("steps", 5, "steps")],
+    )
+    def test_enabled_eval_keeps_initial_eval_behavior(
+        self, eval_strategy, eval_steps, expected_strategy
+    ):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=eval_strategy,
+                eval_steps=eval_steps,
+            )
+        )
+
+        assert kwargs["eval_strategy"] == expected_strategy
+        assert kwargs["eval_on_start"] is True
+        if eval_steps:
+            assert kwargs["eval_steps"] == eval_steps
+
+
 class TestGradientCheckpointingConfig:
     def test_hidden_states_offload_uses_non_reentrant_trainer_path(self):
         training_args_kwargs = _gradient_checkpointing_kwargs(

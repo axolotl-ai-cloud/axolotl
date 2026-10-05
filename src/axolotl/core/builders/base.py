@@ -553,6 +553,9 @@ class TrainerBuilderBase(abc.ABC):
         if not self.eval_dataset and self.cfg.val_set_size == 0:
             # do not eval if no eval_dataset and val_set_size=0
             training_args_kwargs["eval_strategy"] = "no"
+        elif self.cfg.eval_strategy == "no":
+            training_args_kwargs["eval_strategy"] = "no"
+            training_args_kwargs["eval_on_start"] = False
         elif self.cfg.eval_steps:
             training_args_kwargs["eval_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
