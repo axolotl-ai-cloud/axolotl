@@ -113,6 +113,7 @@ class AxolotlTrainer(
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
+    reports_token_perplexity = True
     _axolotl_cfg: DictDefault | None = None
 
     @property
@@ -809,12 +810,12 @@ class AxolotlTrainer(
                 )
             logs[key] = round(fn(values).item(), metric_ndigits)
 
-        if "loss" in logs:
+        if self.reports_token_perplexity and "loss" in logs:
             try:
                 logs["ppl"] = round(math.exp(logs["loss"]), metric_ndigits)
             except OverflowError:
                 logs["ppl"] = float("inf")
-        if "eval_loss" in logs:
+        if self.reports_token_perplexity and "eval_loss" in logs:
             try:
                 logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), metric_ndigits)
             except OverflowError:

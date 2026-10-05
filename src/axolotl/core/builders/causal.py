@@ -22,6 +22,11 @@ from axolotl.core.trainers import (
     AxolotlTrainer,
 )
 from axolotl.integrations.base import PluginManager
+from axolotl.model_support import (
+    get_model_support_for_cfg,
+    is_native_diffusion,
+    resolve_model_support,
+)
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.processing_strategies import get_processing_strategy
@@ -165,6 +170,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     f"Failed to load custom trainer class '{self.cfg.trainer_cls}': {e}"
                 ) from e
 
+        profile = resolve_model_support(get_model_support_for_cfg(self.cfg))
+        if (
+            profile is not None
+            and profile.strategies.trainer_cls is not None
+            and is_native_diffusion(self.cfg)
+        ):
+            return profile.strategies.trainer_cls()
+
         return AxolotlTrainer
 
     def build(self, total_num_steps):
@@ -200,6 +213,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             training_arguments_kwargs["remove_unused_columns"] = (
                 self.cfg.remove_unused_columns
             )
+        if is_native_diffusion(self.cfg):
+            training_arguments_kwargs["remove_unused_columns"] = False
 
         if self.cfg.do_bench_eval:
             training_arguments_kwargs["do_bench_eval"] = self.cfg.do_bench_eval
@@ -450,6 +465,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         # if the trainer has the `axolotl_cfg` property, set it
         if hasattr(trainer, "axolotl_cfg"):
             trainer.axolotl_cfg = self.cfg
+            if is_native_diffusion(self.cfg) and hasattr(
+                trainer, "post_set_axolotl_cfg"
+            ):
+                trainer.post_set_axolotl_cfg()
         for callback in self.get_post_trainer_create_callbacks(trainer):
             trainer.add_callback(callback)
 
@@ -499,6 +518,51 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         collator_cls_and_kwargs = plugin_manager.get_collator_cls_and_kwargs(
             self.cfg, is_eval=is_eval
         )
+
+        profile = resolve_model_support(get_model_support_for_cfg(self.cfg))
+        if (
+            not collator_cls_and_kwargs
+            and profile is not None
+            and is_native_diffusion(self.cfg)
+        ):
+            diffusion_cfg = self.cfg.diffusion_lm
+            spec = profile.diffusion
+            collator_provider = profile.strategies.collator_cls
+            if spec is not None and collator_provider is not None:
+                collator_cls = collator_provider()
+                if collator_cls is not None:
+                    canvas_width = getattr(diffusion_cfg, "canvas_width", None)
+                    if (
+                        canvas_width is not None
+                        and spec.max_canvas is not None
+                        and canvas_width > spec.max_canvas
+                    ):
+                        raise ValueError(
+                            "diffusion_lm.canvas_width exceeds the model's maximum canvas"
+                        )
+                    from axolotl.core.trainers.diffusion_lm.sampling import (
+                        resolve_native_packing_budget,
+                    )
+
+                    packing_budget = resolve_native_packing_budget(
+                        self.cfg, is_eval=is_eval
+                    )
+                    return collator_cls(
+                        pad_token_id=int(self.tokenizer.pad_token_id),
+                        canvas_width=canvas_width or spec.max_canvas,
+                        layout=spec.layout.value,
+                        logical_sequence_length=self.cfg.sequence_len,
+                        physical_pack_budget=(
+                            None
+                            if packing_budget is None
+                            else packing_budget.payload_capacity
+                        ),
+                        eos_tail=getattr(diffusion_cfg, "eos_tail", None),
+                        eos_token_id=getattr(self.tokenizer, "eos_token_id", None),
+                        overflow_policy=getattr(
+                            diffusion_cfg, "overflow_policy", "error"
+                        ),
+                    )
 
         if collator_cls_and_kwargs:
             collator = collator_cls_and_kwargs[0]
