@@ -63,6 +63,8 @@ AutoModelClassProvider = Callable[[], type | None]
 ProcessingStrategyClassProvider = Callable[[], type["ProcessingStrategy"] | None]
 TrainerClassProvider = Callable[["DictDefault"], type | None]
 CollatorFactory = Callable[["DictDefault", "PreTrainedTokenizerBase", bool], Any]
+LoraAttentionClassProvider = Callable[[Any], type]
+
 ConfigMatcher = Callable[["DictDefault"], bool]
 ProcessorMatcher = Callable[["ProcessorMixin"], bool]
 WeightConversionsProvider = Callable[
@@ -102,6 +104,7 @@ class ModelStrategies:
     processing_strategy_cls: ProcessingStrategyClassProvider | None = None
     trainer_cls: TrainerClassProvider | None = None
     collator_factory: CollatorFactory | None = None
+    lora_attention_cls: LoraAttentionClassProvider | None = None
 
     def with_overrides(self, overrides: ModelStrategyOverrides) -> ModelStrategies:
         return ModelStrategies(
@@ -125,6 +128,11 @@ class ModelStrategies:
                 if isinstance(overrides.collator_factory, _InheritStrategy)
                 else overrides.collator_factory
             ),
+            lora_attention_cls=(
+                self.lora_attention_cls
+                if isinstance(overrides.lora_attention_cls, _InheritStrategy)
+                else overrides.lora_attention_cls
+            ),
         )
 
 
@@ -142,6 +150,9 @@ class ModelStrategyOverrides:
     ) = _INHERIT_STRATEGY
     trainer_cls: TrainerClassProvider | None | _InheritStrategy = _INHERIT_STRATEGY
     collator_factory: CollatorFactory | None | _InheritStrategy = _INHERIT_STRATEGY
+    lora_attention_cls: LoraAttentionClassProvider | None | _InheritStrategy = (
+        _INHERIT_STRATEGY
+    )
 
 
 @dataclass(frozen=True)

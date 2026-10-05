@@ -14,6 +14,7 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
@@ -922,6 +923,18 @@ class LoRAValidationMixin:
             or data.get("lora_qkv_kernel")
             or data.get("lora_o_kernel")
         ) and data.get("trust_remote_code"):
+            from axolotl.model_support import (
+                get_model_support_for_cfg,
+                resolve_model_support,
+            )
+
+            support = get_model_support_for_cfg(DictDefault(data))
+            if (
+                support is not None
+                and resolve_model_support(support).strategies.lora_attention_cls
+                is not None
+            ):
+                return data
             raise ValueError(
                 "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
                 "compatible with trust_remote_code. Please disable trust_remote_code "
