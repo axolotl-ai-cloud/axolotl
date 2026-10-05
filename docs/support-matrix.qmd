@@ -51,6 +51,7 @@ Most people start with two, each a single plugin to turn on: [Liger](#fused-trai
 | EBFT | `rl: ebft` | ✔ | QA or raw text | energy/feature-matching rewards; needs `ebft:` block |
 | EAFT | `use_eaft: true` (+ `eaft_alpha`, `eaft_k`) | n/a | prompt to response | SFT loss weighted by top-k entropy |
 | DFT | `use_dft: true` | n/a | prompt to response | SFT loss weighted by detached token probability ([paper](https://arxiv.org/abs/2508.05629)) |
+| Native diffusion LM 🟡 | `diffusion_lm:` | n/a | prompt to response | masked/uniform-noise denoising objective from the model profile; LoRA only; see [diffusion_lm](diffusion_lm.qmd) |
 
 Most runs start with **SFT** (the default). Reach for the preference methods (DPO and its variants) once you have chosen/rejected pairs, and GRPO when you have a verifiable reward. The rest are specialized.
 
@@ -148,6 +149,7 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Flash Attention (torch) 🟡 | `flash_attention_torch` | torch varlen kernels, no `flash_attn` dependency; needs a transformers release that registers it |
 | SDPA | `sdpa` (`sdp_attention: true`) | safe default; works everywhere |
 | SDPA varlen | `sdpa_varlen: true` | packing without a mask tensor, PyTorch >= 2.10 |
+| Diffusion varlen 🟡 | `varlen` | native Nemotron diffusion only, PyTorch >= 2.14 |
 | FlexAttention | `flex_attention` (`flex_attention: true`) | PyTorch >= 2.6; enables `scaling_softmax` |
 | xFormers | (`xformers_attention: true`) | varlen packing |
 | SageAttention | (`sage_attention: true`) | block-quantized |
@@ -181,6 +183,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 | OLMo 2/3, Cohere, Phi, Hunyuan, Jamba, Kimi-Linear, K2-Horizon, Apertus, SEED-OSS | packing / tokenizer / activation patches |
 | Multimodal 🟡 (Qwen-VL, Pixtral, Llama-Vision, LLaVA, InternVL, SmolVLM2, Voxtral, LFM2-VL) | processor + VL attention support (no full feature parity) |
 | BitNet (1.58-bit) ⚪ | full fine-tune only, **LoRA not supported** (see [1_58bit_finetuning](1_58bit_finetuning.qmd)) |
+| Diffusion LMs 🟡 (Nemotron-Labs-Diffusion, Dream v0, DiffusionGemma) | native `diffusion_lm:` training, packing, CCE (Nemotron), unquantized LoRA only (no FSDP/DoRA) (see [diffusion_lm](diffusion_lm.qmd)) |
 
 ## Dataset formats
 
@@ -207,7 +210,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 | Plugin | Purpose |
 |---|---|
 | `kd` | knowledge distillation (offline + online vLLM/SGLang teacher) |
-| `diffusion` | diffusion-LM training |
+| `diffusion` 🔴 | legacy `diffusion:` block; translated to `diffusion_lm.from_causal_lm: true` |
 | `hatchery` | remote training (Tinker/Hatchery backends) |
 | `nemo_gym` | RL environments / verifiable rewards |
 | `llm_compressor` | sparse fine-tuning |
@@ -286,6 +289,7 @@ Works, but flagged unstable:
 - Multimodal / VLM ("limited, no full feature parity")
 - N-D parallelism and Tensor Parallel
 - Expert Parallel (`deep_ep` or `torch` backend)
+- Native diffusion LMs (`diffusion_lm:`)
 
 ### 🚧 WIP / feature-branch only
 Not in a tagged release yet:
@@ -297,6 +301,7 @@ Not in a tagged release yet:
 - Legacy attention booleans: use `attn_implementation`
 - `rl: ipo` direct: use `dpo_loss_type: [ipo]`
 - `noisy_embedding_alpha`, `dpo_beta`, `evaluation_strategy`
+- `diffusion:` block: use `diffusion_lm:` (`from_causal_lm: true` for causal checkpoints, which still needs the `diffusion` plugin for its trainer)
 - Removed entirely: FSDP1 (`fsdp_version: 1` and the bare `fsdp:` list are now rejected; use `fsdp_config:`), `s2_attention`, `flash_attn_rms_norm`
 
 ### 🔵 Not supported yet / planned
