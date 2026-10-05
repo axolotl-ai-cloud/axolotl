@@ -14,7 +14,7 @@ execute:
 
 GRPO (Group Relative Policy Optimization) trains a language model by generating completions, scoring them with reward functions, and updating the policy to favor higher-reward outputs. The generation step is the bottleneck: producing thousands of tokens per training step with the policy model is slow using standard HuggingFace generation.
 
-Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM's native OpenAI-compatible HTTP API. In [colocate mode](#sec-colocate-mode), the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. It requires `vllm>=0.30.0`. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.
+Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM's native OpenAI-compatible HTTP API. In [colocate mode](#sec-colocate-mode), the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. Axolotl requires `vllm>=0.30.0`. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.
 
 ```
 ┌──────────────────────┐       HTTP        ┌──────────────────────┐
@@ -58,10 +58,10 @@ If you prefer to run vLLM yourself, the equivalent raw command is:
 VLLM_SERVER_DEV_MODE=1 VLLM_WORKER_MULTIPROC_METHOD=spawn VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
   vllm serve <model> --weight-transfer-config '{"backend": "nccl"}' \
   --logprobs-mode processed_logprobs --max-logprobs -1 --enable-scale-out \
-  --enable-lora --max-lora-rank <r> --api-server-count 1
+  --enable-lora --max-lora-rank <r> --max-loras 2 --api-server-count 1
 ```
 
-Drop `VLLM_ALLOW_RUNTIME_LORA_UPDATING`, `--enable-lora`, `--max-lora-rank` and `--api-server-count` when not using LoRA sync. `--enable-scale-out` is needed for image prompts.
+`<r>` is `lora_r` rounded up to a rank vLLM supports (8, 16, 32, 64, ...). Drop `VLLM_ALLOW_RUNTIME_LORA_UPDATING` and the flags after `--enable-scale-out` when not using LoRA sync. `--enable-scale-out` is needed for image prompts.
 
 ::: {.callout-tip}
 Use `tmux` or `screen` to manage the vLLM server process. Typical startup time is 30-90 seconds depending on model size and whether CUDA graphs are captured.
@@ -131,7 +131,7 @@ vllm:
   enforce_eager: true           # disable CUDA graphs if vLLM's custom all-reduce errors
 ```
 
-The `vllm:` block configures the colocated engine. `gpu_memory_utilization`, `tensor_parallel_size`, and `max_model_len` map to TRL's `vllm_gpu_memory_utilization`, `vllm_tensor_parallel_size`, and `vllm_max_model_length`; `enforce_eager`, `enable_prefix_caching`, and `dtype` are passed straight to the engine. When `gpu_memory_utilization` is unset, colocate mode uses TRL's default of 0.3 rather than the 0.9 used by `vllm-serve`, since the training process shares the GPU. `tensor_parallel_size` must divide the number of training processes. Set `max_model_len`: when unset, vLLM reserves KV cache for the model's full context, which may not fit next to training.
+The `vllm:` block configures the colocated engine: `gpu_memory_utilization` (default 0.3 here, not 0.9, since training shares the GPU), `tensor_parallel_size` (must divide the number of training processes), `max_model_len`, `enforce_eager`, `enable_prefix_caching`, and `dtype`. Always set `max_model_len`; otherwise vLLM reserves KV cache for the model's full context.
 
 With `vllm_enable_sleep_mode: true`, vLLM offloads its VRAM allocation when not actively generating, freeing memory for training. When the trainer needs new completions, vLLM wakes up and reclaims VRAM.
 
@@ -184,10 +184,10 @@ trl:
   vllm_sync_interval: 5   # Sync every 5 training steps
 ```
 
-Setting `vllm_lora_sync: true` makes `axolotl vllm-serve` start vLLM with `--enable-lora`, `--max-lora-rank` (taken from `lora_r`) and `VLLM_ALLOW_RUNTIME_LORA_UPDATING=True`. You do not need to set `vllm.serve_module`. A failed adapter load raises an error and stops training.
+`axolotl vllm-serve` enables runtime LoRA loading automatically. A failed adapter load raises an error and stops training.
 
 ::: {.callout-important}
-LoRA sync requires that you are training with a LoRA adapter (`adapter: lora` or `adapter: qlora`). It is not applicable to full fine-tuning. The adapter directory must be on a filesystem the vLLM server can read (same host or a shared mount), and `vllm>=0.30.0` is required.
+LoRA sync requires that you are training with a LoRA adapter (`adapter: lora` or `adapter: qlora`). It is not applicable to full fine-tuning. The adapter directory must be on a filesystem the vLLM server can read (same host or a shared mount).
 :::
 
 ## Weight Synchronization {#sec-weight-sync}
@@ -295,8 +295,8 @@ These control the vLLM server process started by `axolotl vllm-serve`, and the c
 | `enable_reasoning` | bool | `None` | Enable reasoning mode for models with thinking tokens |
 | `reasoning_parser` | str | `None` | Parser for reasoning output |
 | `enforce_eager` | bool | `None` | Disable CUDA graph capture (required for some architectures like Qwen3.5 hybrid attention) |
-| `serve_module` | str | `None` | Optional custom module exposing `main(script_args)`. Default is the native vLLM server |
-| `worker_extension_cls` | str | `None` | Forwarded to vLLM as `--worker-extension-cls` |
+| `serve_module` | str | `None` | Optional custom module exposing `main(script_args)`. Default is the native vLLM server; legacy `trl.scripts.vllm_serve` and `axolotl.scripts.vllm_serve_lora` are ignored |
+| `worker_extension_cls` | str | `None` | Forwarded to vLLM as `--worker-extension-cls`; not needed for weight sync. Legacy `trl.scripts.vllm_serve.*` and `axolotl.scripts.*` classes are ignored |
 
 ### Trainer vLLM Options (`trl:` section)
 

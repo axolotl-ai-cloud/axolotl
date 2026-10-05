@@ -385,7 +385,7 @@ from axolotl.integrations.nemo_gym import reward_env, reward_nemo_gym_verify
     --enable-lora --max-lora-rank 64 \
     --enable-auto-tool-choice --tool-call-parser hermes
   ```
-- **`VLLM_ALLOW_RUNTIME_LORA_UPDATING=True`** (set automatically by `axolotl vllm-serve` when LoRA is enabled): Required for `vllm_lora_sync: true`. Without it, vLLM won't expose the `/v1/load_lora_adapter` endpoint and weight sync will fail silently. The plugin warns if this endpoint is missing.
+- **`VLLM_ALLOW_RUNTIME_LORA_UPDATING=True`** (set automatically by `axolotl vllm-serve` when LoRA is enabled): Required for `vllm_lora_sync: true`. Without it, vLLM won't expose the `/v1/load_lora_adapter` endpoint; the plugin warns at startup and the first sync raises.
 - **`--enable-lora`**: Enables LoRA adapter support in vLLM
 - **`--enable-auto-tool-choice --tool-call-parser hermes`**: Required for Qwen3 tool calling
 - **`max_model_len` must be > `max_completion_length`**: Leave room for prompt tokens (~200). If equal, the NeMo Gym model proxy gets a 400 error and returns empty completions.

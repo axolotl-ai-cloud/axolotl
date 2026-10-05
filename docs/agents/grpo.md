@@ -20,7 +20,7 @@ Terminal 1 (GPU 0)                    Terminal 2 (GPU 1)
 
 1. A YAML config with `rl: grpo`
 2. A reward module (Python file with reward functions)
-3. A vLLM backend: a running server (`axolotl vllm-serve config.yaml`, `vllm_mode: server`), or `vllm_mode: colocate` to host the engine on the training GPU (single-GPU; engine options come from the `vllm:` block)
+3. A vLLM backend: a running server (`axolotl vllm-serve config.yaml`, `vllm_mode: server`), or `vllm_mode: colocate` to host the engine on the training GPU (single-GPU; configure via the `vllm:` block and set `vllm.max_model_len`)
 
 ## Reward Function Signature
 
@@ -32,6 +32,8 @@ def my_reward(completions, **kwargs) -> list[float]:
 ```
 
 Multiple rewards: `reward_funcs: [r1, r2]` with `reward_weights: [1.0, 0.5]`.
+
+Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also work; rewards receive the loaded images under the same column name. See [rlhf.qmd](../rlhf.qmd#multimodal).
 
 ## Key Async Features
 

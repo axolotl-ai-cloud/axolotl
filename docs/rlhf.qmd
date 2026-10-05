@@ -745,7 +745,7 @@ Because the background thread generates completions with slightly stale model we
 
 ##### vLLM LoRA Sync
 
-By default, weight sync to vLLM merges the LoRA adapter into the base model and broadcasts all parameters via vLLM's native NCCL weight-transfer engine. LoRA sync is a faster alternative that saves only the adapter weights to the filesystem and has vLLM load them natively using Punica kernels. The trainer POSTs the adapter path to `/v1/load_lora_adapter`, so the adapter directory must be readable by the vLLM server (same host or shared mount).
+By default, weight sync to vLLM merges the LoRA adapter into the base model and broadcasts all parameters via vLLM's native NCCL weight-transfer engine. LoRA sync is a faster alternative that saves only the adapter weights to the filesystem and has vLLM load them natively using Punica kernels. The adapter directory must be readable by the vLLM server; see [LoRA Sync](vllm_serving.qmd#sec-lora-sync).
 
 ```yaml
 adapter: lora
@@ -1343,7 +1343,7 @@ CFLAGS="" uv pip install pycosat --python .venv/bin/python --no-build-isolation
 
 ### Multimodal (vision) datasets {#multimodal}
 
-DPO, IPO, KTO, GRPO and GDPO can train vision-language models on image datasets. Load the model as for multimodal SFT (see [Multimodal usage](multimodal.qmd#usage)): `processor_type: AutoProcessor`, and optionally `image_size` / `image_resize_algorithm`. Sample packing is not supported.
+DPO, IPO, KTO, GRPO and GDPO can train vision-language models on image datasets. Load the model as for multimodal SFT (see [Multimodal usage](multimodal.qmd#usage)): `processor_type: AutoProcessor`, and optionally `image_size` / `image_resize_algorithm`.
 
 A dataset is treated as multimodal when it has an `images` (list) or `image` column. Images are loaded and resized at collate time, so any reference from [Multimodal image keys](multimodal.qmd#image) works: a PIL image, `path`, `url`, or `base64`.
 
@@ -1379,6 +1379,7 @@ Limitations:
 - Image and text-only datasets cannot be mixed in one run, and exact deduplication is skipped for image datasets.
 - Not supported: ORPO, SimPO, EBFT, `tokenizer_use_mistral_common`, and GRPO with `context_parallel_size` > 1. `pad_to_multiple_of` is ignored for DPO/KTO.
 - The async GRPO trainer (`use_data_producer` / `async_prefetch`) does not yet support tile-based models (InternVL) or multiple images per sample with LLaVA-style processors.
+- GRPO with `vllm_mode: server` needs one contiguous run of image tokens per image, so models that split images into tiles with separator tokens (SmolVLM, Idefics3) fail there; use `vllm_mode: colocate` or no vLLM.
 
 ### Using local dataset files
 

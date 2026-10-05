@@ -305,7 +305,7 @@ Each worker runs in its own subprocess with its own main thread, so `signal.alar
 
 ## vLLM Setup
 
-GRPO requires a running vLLM server for generation. For a complete guide on server modes, LoRA sync, weight synchronization, and restart procedures, see [vLLM Serving](vllm_serving.qmd).
+GRPO generates with vLLM, either as a separate server (below) or, on one GPU, in [colocate mode](vllm_serving.qmd#sec-colocate-mode). For a complete guide on server modes, LoRA sync, weight synchronization, and restart procedures, see [vLLM Serving](vllm_serving.qmd).
 
 The minimal setup:
 
