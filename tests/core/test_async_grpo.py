@@ -894,8 +894,8 @@ class TestMultimodalTileFieldPropagation(unittest.TestCase):
             "completion_ids": torch.zeros(4, 4, dtype=torch.long),
             "prompt_mask": torch.ones(4, 3, dtype=torch.long),
             "completion_mask": torch.ones(4, 4, dtype=torch.long),
-            "spatial_shapes": torch.zeros(4, 2),
-            "image_position_ids": torch.zeros(4, 5),
+            "pixel_values": torch.zeros(14, 3),
+            "spatial_shapes": torch.zeros(14, 2),
             "num_tiles": [2, 3, 4, 5],
         }
 
@@ -913,8 +913,9 @@ class TestMultimodalTileFieldPropagation(unittest.TestCase):
 
         # num_tiles is a per-sample list (like num_images) — sliced to the chunk
         self.assertEqual(captured["num_tiles"], [2, 3])
-        self.assertIn("spatial_shapes", captured)
-        self.assertIn("image_position_ids", captured)
+        # tile-indexed tensors are sliced to the chunk's 2 + 3 tiles
+        self.assertEqual(captured["spatial_shapes"].shape[0], 5)
+        self.assertEqual(captured["pixel_values"].shape[0], 5)
 
     def test_compute_loss_forwards_tile_fields(self):
         trainer = self._make_async_trainer()
