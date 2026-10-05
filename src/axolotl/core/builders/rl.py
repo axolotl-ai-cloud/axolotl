@@ -364,6 +364,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 self.processor, "chat_template", None
             ):
                 self.processor.chat_template = self.tokenizer.chat_template
+            if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
+                # TRL left-pads prompt ids but takes token type ids from the processor.
+                self.processor.tokenizer.padding_side = "left"
             processing_class = self.processor
 
         sig = inspect.signature(trainer_cls)

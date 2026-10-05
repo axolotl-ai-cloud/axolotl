@@ -217,6 +217,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
             trainer = builder.build(100)
 
             assert trainer.processing_class is processor
+            assert processor.tokenizer.padding_side == "left"
             assert isinstance(trainer.data_collator, MultimodalRLExampleNormalizer)
         finally:
             if str(rewards_dir) in sys.path:
