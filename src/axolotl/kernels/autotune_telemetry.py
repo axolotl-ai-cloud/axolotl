@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
 """Telemetry for the fused RMSNorm+RoPE Triton autotune selections.
 
 Mirrors the scattermoe-lora autotune telemetry
@@ -65,6 +69,7 @@ def collect_fused_rope_autotune_configs() -> list[dict]:
         cache = getattr(kernel_fn, "cache", None)
         if not cache:
             continue
+        key_names = list(getattr(kernel_fn, "keys", None) or key_names)
         for key_tuple, config in cache.items():
             config_dict = dict(config.kwargs)
             config_dict["num_warps"] = config.num_warps
