@@ -83,8 +83,11 @@ jobs:
       max-parallel: 2
       fail-fast: false
       matrix:
-        python_version: ["3.12", "3.14"]
-        pytorch_version: ["2.13.0", "2.14.0"]
+        include: # just run the diagonal to keep it lightweight
+          - python_version: "3.12"
+            pytorch_version: "2.13.0"
+          - python_version: "3.14"
+            pytorch_version: "2.14.0"
     timeout-minutes: 45
     env:
       AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
@@ -205,7 +208,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Install uv
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -281,7 +284,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       # Preview only: the selected-e2e GPU arms run this subset alongside the full suites.
       # Anything the selector cannot reason about resolves to "all", and those arms then skip.
