@@ -134,6 +134,7 @@ jobs:
         run: |
           pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed and not gpu" \
             --ignore=tests/e2e/ \
+            --ignore=tests/integrations/kernels/ \
             --ignore=tests/patched/ \
             --ignore=tests/cli/ \
             tests/

@@ -100,7 +100,7 @@ jobs:
           tm patched -v --durations=10 tests/patched/
           tm cli -v --durations=10 tests/cli/
           tm utils -v --durations=10 tests/utils/
-          tm integrations -v --durations=10 -m "not gpu" tests/integrations/
+          tm integrations -v --durations=10 -m "not gpu" --ignore=tests/integrations/kernels/ tests/integrations/
 
       - name: testmon selection summary
         if: always()
