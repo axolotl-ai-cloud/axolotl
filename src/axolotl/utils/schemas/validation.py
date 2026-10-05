@@ -407,7 +407,14 @@ class AttentionValidationMixin:
 
     @model_validator(mode="after")
     def check_sample_packing_without_attention(self):
-        if self.sample_packing and not self.attn_decontaminates_packing:
+        native_diffusion_default = (
+            self.diffusion_lm is not None and not self.diffusion_lm.from_causal_lm
+        )
+        if (
+            self.sample_packing
+            and not native_diffusion_default
+            and not self.attn_decontaminates_packing
+        ):
             if self.attn_implementation:
                 LOG.warning(
                     "`sample_packing` with `attn_implementation=%r` does not handle "
@@ -1332,7 +1339,9 @@ class OptimizationValidationMixin:
             return self
 
         batch_flattening_auto = self.batch_flattening == "auto"
-        has_varlen_attn = self.attn_supports_packing
+        has_varlen_attn = self.attn_supports_packing or (
+            self.attn_implementation == "varlen"
+        )
 
         if not has_varlen_attn and not batch_flattening_auto:
             raise ValueError(
