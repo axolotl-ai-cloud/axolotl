@@ -14,7 +14,7 @@ execute:
 
 GRPO (Group Relative Policy Optimization) trains a language model by generating completions, scoring them with reward functions, and updating the policy to favor higher-reward outputs. The generation step is the bottleneck: producing thousands of tokens per training step with the policy model is slow using standard HuggingFace generation.
 
-Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM's native OpenAI-compatible HTTP API. In [colocate mode](#sec-colocate-mode), the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. It requires `vllm>=0.20.0`. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.
+Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM's native OpenAI-compatible HTTP API. In [colocate mode](#sec-colocate-mode), the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. It requires `vllm>=0.30.0`. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.
 
 ```
 ┌──────────────────────┐       HTTP        ┌──────────────────────┐
@@ -186,7 +186,7 @@ trl:
 Setting `vllm_lora_sync: true` makes `axolotl vllm-serve` start vLLM with `--enable-lora`, `--max-lora-rank` (taken from `lora_r`) and `VLLM_ALLOW_RUNTIME_LORA_UPDATING=True`. You do not need to set `vllm.serve_module`. A failed adapter load raises an error and stops training.
 
 ::: {.callout-important}
-LoRA sync requires that you are training with a LoRA adapter (`adapter: lora` or `adapter: qlora`). It is not applicable to full fine-tuning. The adapter directory must be on a filesystem the vLLM server can read (same host or a shared mount), and `vllm>=0.20.0` is required.
+LoRA sync requires that you are training with a LoRA adapter (`adapter: lora` or `adapter: qlora`). It is not applicable to full fine-tuning. The adapter directory must be on a filesystem the vLLM server can read (same host or a shared mount), and `vllm>=0.30.0` is required.
 :::
 
 ## Weight Synchronization {#sec-weight-sync}
