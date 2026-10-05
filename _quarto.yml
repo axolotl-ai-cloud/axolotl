@@ -372,6 +372,7 @@ quartodoc:
         - utils.collators.batching
         - utils.collators.dpo
         - utils.collators.mm_chat
+        - utils.collators.mm_rl
         - utils.samplers.multipack
         - utils.samplers.utils
     - title: Callbacks

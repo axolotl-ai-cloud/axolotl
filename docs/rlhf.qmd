@@ -1347,7 +1347,7 @@ DPO, IPO, KTO, GRPO and GDPO can train vision-language models on image datasets.
 
 A dataset is treated as multimodal when it has an `images` (list) or `image` column. Images are loaded and resized at collate time, so any reference from [Multimodal image keys](multimodal.qmd#image) works: a PIL image, `path`, `url`, or `base64`.
 
-Prompts must be conversational (lists of `role`/`content` messages). Each `{"type": "image"}` placeholder in a message is filled, in order, with the next image from the column; images left over are placed at the start of the first user turn. An image block can also carry its own `path`/`url`/`base64` reference instead of using the column.
+Prompts must be conversational (lists of `role`/`content` messages). If the column has more images than there are `{"type": "image"}` placeholders, the missing placeholders are added at the start of the first user turn; placeholders are then filled with the column's images in document order. An image block can also carry its own `path`/`url`/`base64` reference, but the dataset still needs an `images` or `image` column to be detected as multimodal.
 
 | Method | Columns | Notes |
 |---|---|---|
@@ -1374,10 +1374,11 @@ sequence_len: 2048
 
 Limitations:
 
-- `sequence_len` includes image tokens. Rows are not filtered by length beforehand; TRL truncates at collate time, which errors if it would cut image tokens.
+- Rows are not filtered by length beforehand. For DPO/KTO, `sequence_len` (including image tokens) is the collate-time truncation limit, and a cut through image tokens fails in the model forward. GRPO prompts are not truncated.
 - All samples are rendered with one chat template (the processor's, or the top-level `chat_template`); per-dataset `chat_template` is ignored.
 - Image and text-only datasets cannot be mixed in one run, and exact deduplication is skipped for image datasets.
 - Not supported: ORPO, SimPO, EBFT, `tokenizer_use_mistral_common`, and GRPO with `context_parallel_size` > 1. `pad_to_multiple_of` is ignored for DPO/KTO.
+- The async GRPO trainer (`use_data_producer` / `async_prefetch`) does not yet support tile-based models (InternVL) or multiple images per sample with LLaVA-style processors.
 
 ### Using local dataset files
 
