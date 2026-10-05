@@ -971,6 +971,41 @@ class TestSliceMultimodalKwargs(unittest.TestCase):
         torch.testing.assert_close(out["token_type_ids"], data["token_type_ids"][1:3])
 
 
+class TestDataProducerGridPixelValues(unittest.TestCase):
+    """Grid VLMs (Qwen-VL) store pixel_values flat per patch; the sync rollout
+    shuffle must keep each sample's patches with it."""
+
+    def test_sync_produce_keeps_patches_aligned(self):
+        from axolotl.core.trainers.grpo.async_trainer import GRPODataProducer
+
+        rows = [1, 2, 3, 1, 2, 3]
+        output = {
+            "prompt_ids": torch.arange(6).unsqueeze(1),
+            "num_images": [1] * 6,
+            "image_grid_thw": torch.tensor([[1, 1, r] for r in rows]),
+            "pixel_values": torch.cat(
+                [torch.full((r, 2), float(i)) for i, r in enumerate(rows)]
+            ),
+            "num_items_in_batch": torch.tensor(6),
+        }
+        producer = GRPODataProducer.__new__(GRPODataProducer)
+        producer._prompt_dl = object()
+        producer._prompt_iter = iter([[{"prompt": "p"}]])
+        producer._trainer = MagicMock()
+        producer._trainer._generate_and_score_completions.return_value = output
+
+        torch.manual_seed(0)
+        data = producer.produce(model=None, global_step=0)._data
+
+        lengths = data["image_grid_thw"].prod(-1).tolist()
+        for sample_id, patches in zip(
+            data["prompt_ids"].squeeze(1).tolist(),
+            torch.split(data["pixel_values"], lengths),
+            strict=True,
+        ):
+            assert (patches == sample_id).all()
+
+
 class TestFastAsyncReplayRecomputeImageOffset(unittest.TestCase):
     """Regression test for the replay-recompute call site: a replayed group
     with r_start > 0 must receive the images belonging to *its* samples,

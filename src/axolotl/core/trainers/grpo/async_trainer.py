@@ -519,8 +519,19 @@ class RolloutDataset(Dataset):
     Per-sample tensors are sliced by index; shared metadata is passed through.
     """
 
+    # Image tensors are indexed per image/patch, not per sample.
     _ALWAYS_SHARED = frozenset(
-        {"num_items_in_batch", "_pending_policy_logps", "_rank0_only"}
+        {
+            "num_items_in_batch",
+            "_pending_policy_logps",
+            "_rank0_only",
+            "pixel_values",
+            "image_grid_thw",
+            "pixel_attention_mask",
+            "spatial_shapes",
+            "image_sizes",
+            "image_position_ids",
+        }
     )
 
     def __init__(self, data: dict[str, Any]):
@@ -731,7 +742,9 @@ class GRPODataProducer(BaseDataProducer):
                 elif isinstance(val, torch.Tensor) and val.dim() == 0:
                     metadata[key] = output.pop(key)
 
-            output = shuffle_sequence_dict(output)
+            output = unsplit_pixel_values_by_grid(
+                shuffle_sequence_dict(split_pixel_values_by_grid(output))
+            )
             output.update(metadata)
 
         return RolloutDataset(output)
