@@ -75,16 +75,18 @@ def _split_group(
     chunks: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     used: set[str] = set()
-    for record in records:
+    seen_ids: set[str] = set()
+    for position, record in enumerate(records):
         questions = record.get("questions")
         labels = record.get("labels")
-        record_id = record.get("id")
+        record_id = _record_id(record, position)
         if not isinstance(questions, Mapping) or not isinstance(labels, Mapping):
             raise ValueError("decision record requires questions and labels mappings")
         if not questions:
             raise ValueError("decision record requires at least one question")
-        if not isinstance(record_id, str) or not record_id:
-            raise ValueError("decision record requires a nonempty id")
+        if record_id in seen_ids:
+            raise ValueError(f"decision record id is duplicated: {record_id}")
+        seen_ids.add(record_id)
         if set(questions) != set(labels):
             raise ValueError("decision record question and label ids differ")
         for question_id, question in questions.items():
@@ -112,13 +114,22 @@ def _split_group(
     return chunks
 
 
+def _record_id(record: Mapping[str, Any], position: int) -> str:
+    record_id = record.get("id")
+    if isinstance(record_id, str) and record_id:
+        return record_id
+    if record_id is not None:
+        raise ValueError("decision record id must be a nonempty string")
+    return f"{record.get('group')}#record{position}"
+
+
 def _new_chunk(record: Mapping[str, Any], index: int) -> dict[str, Any]:
     result = {
         key: copy.deepcopy(value)
         for key, value in record.items()
         if key not in {"questions", "labels", "id", "source_metadata"}
     }
-    result["id"] = f"{record['id']}#group{index}"
+    result["id"] = f"{_record_id(record, 0)}#group{index}"
     result["source_metadata"] = copy.deepcopy(record.get("source_metadata", {}))
     result["questions"] = OrderedDict()
     result["labels"] = OrderedDict()

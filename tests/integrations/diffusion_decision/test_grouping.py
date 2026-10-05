@@ -1,3 +1,5 @@
+import pytest
+
 from axolotl.integrations.diffusion_decision.grouping import group_records
 
 
@@ -88,3 +90,23 @@ def test_splits_at_question_bound_without_truncating_targets_or_metadata():
         {"kind": "set", "allowed_set": [0, 1]},
         {"kind": "hard", "gold_idx": 1},
     ]
+
+
+def test_rejects_duplicate_record_ids_within_a_group():
+    records = [_record("one"), _record("one"), _record("two")]
+    with pytest.raises(ValueError, match="duplicated: one"):
+        group_records(records, max_questions=1)
+
+
+def test_records_without_ids_get_positional_ids_and_keep_their_metadata():
+    records = [_record("one"), _record("two")]
+    for record in records:
+        del record["id"]
+    grouped = group_records(records, max_questions=1)
+
+    assert [record["id"] for record in grouped] == [
+        "group#record0#group0",
+        "group#record0#group1",
+    ]
+    assert grouped[1]["grouped_record_ids"] == ("group#record1",)
+    assert grouped[1]["grouped_source_metadata"] == {"group#record1": {"origin": "two"}}

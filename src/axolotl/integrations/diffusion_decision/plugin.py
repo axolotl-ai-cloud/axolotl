@@ -14,6 +14,7 @@ from axolotl.integrations.base import BasePlugin
 from ._util import _value
 from .args import DiffusionDecisionConfig
 from .manifest import (
+    MANIFEST_FILENAME,
     DecisionManifest,
     DecisionManifestCheckpointCallback,
     build_decision_manifest,
@@ -172,7 +173,9 @@ class DiffusionDecisionPlugin(BasePlugin):
         manifest.write_to(_output_dir(cfg))
 
     def post_lora_merge(self, cfg, adapter_path: str, output_path: str) -> None:
-        source = Path(adapter_path) / "diffusion_decision_manifest.json"
+        if self._decision_config(cfg) is None:
+            return
+        source = Path(adapter_path) / MANIFEST_FILENAME
         if not source.exists():
             return
         DecisionManifest.from_path(source)

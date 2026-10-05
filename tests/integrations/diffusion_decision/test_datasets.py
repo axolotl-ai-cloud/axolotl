@@ -325,6 +325,16 @@ def test_family_split_and_protected_split_names():
     assert not datasets._is_eval({"split": "train"})
 
 
+def test_family_split_keeps_training_data_when_one_family_would_take_it_all():
+    rows = [_record("a", "x", f"r{i}", "a") for i in range(4)]
+    train, dev = datasets._family_dev_split(rows, ratio=0.5)
+    assert len(train) == 4 and dev == []
+
+    rows.append(_record("a", "y", "lone", "b"))
+    train, dev = datasets._family_dev_split(rows, ratio=0.2)
+    assert len(train) + len(dev) == 5 and 0 < len(dev) < 5
+
+
 def test_local_jsonl_preserves_heterogeneous_nested_records_and_glob_order(tmp_path):
     (tmp_path / "01.jsonl").write_text(
         '{"state":{"scenario":"one","items":[1]},"options":["a"]}\n'

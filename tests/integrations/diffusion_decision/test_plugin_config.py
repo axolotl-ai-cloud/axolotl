@@ -393,3 +393,17 @@ def test_config_accepts_versioned_sampled_slot_policy():
 def test_config_rejects_invalid_sampled_slot_bounds(latent, message):
     with pytest.raises(ValidationError, match=message):
         DiffusionDecisionConfig.model_validate({"latent": latent})
+
+
+def test_post_lora_merge_ignores_manifests_for_non_decision_runs(tmp_path):
+    from axolotl.integrations.diffusion_decision.manifest import MANIFEST_FILENAME
+    from axolotl.integrations.diffusion_decision.plugin import DiffusionDecisionPlugin
+
+    adapter, merged = tmp_path / "adapter", tmp_path / "merged"
+    adapter.mkdir()
+    merged.mkdir()
+    (adapter / MANIFEST_FILENAME).write_text("{not a manifest")
+
+    DiffusionDecisionPlugin().post_lora_merge({}, str(adapter), str(merged))
+
+    assert not (merged / MANIFEST_FILENAME).exists()

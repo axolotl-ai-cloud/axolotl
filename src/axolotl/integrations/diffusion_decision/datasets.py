@@ -210,8 +210,17 @@ def _family_dev_split(records: Sequence[dict[str, Any]], ratio: float = 0.2):
     ):
         if total >= target:
             break
+        size = len(groups[key])
+        if total + size >= len(records):
+            continue
         selected.add(key)
-        total += len(groups[key])
+        total += size
+    if records:
+        LOG.info(
+            "Automatic decision dev split holds out %s of %s records",
+            total,
+            len(records),
+        )
     return (
         [record for record in records if family_key(record) not in selected],
         [record for record in records if family_key(record) in selected],

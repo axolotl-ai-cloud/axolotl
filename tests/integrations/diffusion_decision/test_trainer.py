@@ -33,7 +33,7 @@ from axolotl.integrations.diffusion_decision.loss import (
     decision_label_loss,
 )
 from axolotl.integrations.diffusion_decision.slot_sampling import DecisionDraw
-from axolotl.integrations.diffusion_decision.slots import SlotPlan
+from axolotl.integrations.diffusion_decision.slots import SlotPlacement, SlotPlan
 from axolotl.integrations.diffusion_decision.trainer import (
     DiffusionDecisionTrainer,
     _DecisionDrawBatchSampler,
@@ -1485,7 +1485,9 @@ def _loop_rows(count: int):
     return rows
 
 
-def _sampled_rows(count: int, placement: str = "thought") -> list[dict[str, object]]:
+def _sampled_rows(
+    count: int, placement: SlotPlacement = "thought"
+) -> list[dict[str, object]]:
     prompt = placement == "prompt"
     plan = SlotPlan(
         ids=(7, 8, 9),
