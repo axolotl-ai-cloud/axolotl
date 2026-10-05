@@ -3,6 +3,7 @@
 import copy
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 import torch.distributed as dist
@@ -16,6 +17,7 @@ from torchao.optim.subclass_8bit import OptimState8bit
 from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
     full_model_state,
     full_optimizer_state,
+    patch_fsdp2_full_checkpoint,
     restore_model_state,
     restore_optimizer_state,
 )
@@ -58,6 +60,62 @@ class Model(nn.Module):
             )
         )
         self.register_buffer("counter", torch.tensor(3))
+
+
+def check_full_parameter_save_route(mesh):
+    from accelerate import Accelerator
+
+    from axolotl.core.trainers.mixins.distributed_parallel import (
+        DistributedParallelMixin,
+    )
+
+    ep_rank = mesh.get_coordinate()[1]
+    model = nn.Module()
+    model.experts = Experts(ep_rank)
+    model.experts.num_experts = 2
+    model.experts.down_proj = nn.Parameter(torch.full((2, 256, 16), ep_rank + 1.0))
+    with torch.no_grad():
+        model.experts.gate_up_proj.fill_(ep_rank + 1.0)
+    for name, parameter in list(model.experts.named_parameters()):
+        setattr(
+            model.experts,
+            name,
+            nn.Parameter(distribute_tensor(parameter, mesh["dp"], (Shard(0),))),
+        )
+    model.frozen = nn.Parameter(torch.tensor([5.0]), requires_grad=False)
+    model.register_buffer("counter", torch.tensor(3))
+    patch_fsdp2_full_checkpoint()
+    accelerator = SimpleNamespace(
+        state=SimpleNamespace(
+            fsdp_plugin=SimpleNamespace(
+                fsdp_version=2, state_dict_type="FULL_STATE_DICT"
+            )
+        )
+    )
+    accelerator.get_state_dict = lambda model, unwrap=True: Accelerator.get_state_dict(
+        accelerator, model, unwrap=unwrap
+    )
+    trainer = object.__new__(DistributedParallelMixin)
+    trainer.model = model
+    trainer.accelerator = accelerator
+    trainer.axolotl_cfg = SimpleNamespace(expert_parallel_size=2, adapter=None)
+    trainer.is_fsdp_enabled = True
+    trainer._save_model_native = lambda *args: accelerator.get_state_dict(model)
+    state = trainer.save_model()
+    if dist.get_rank() == 0:
+        for name, shape in (
+            ("gate_up_proj", (4, 16, 256)),
+            ("down_proj", (4, 256, 16)),
+        ):
+            value = state[f"experts.{name}"]
+            assert tuple(value.shape) == shape
+            torch.testing.assert_close(value[:2], torch.ones_like(value[:2]))
+            torch.testing.assert_close(value[2:], torch.full_like(value[2:], 2))
+        torch.testing.assert_close(state["frozen"], model.frozen)
+        torch.testing.assert_close(state["counter"], model.counter)
+        print("PASS ep-full-parameter-save-route", flush=True)
+    else:
+        assert state == {}
 
 
 def snapshot(value):
@@ -242,6 +300,7 @@ def main():
     root = Path(sys.argv[1])
     root.mkdir(exist_ok=True)
     mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("dp", "ep"))
+    check_full_parameter_save_route(mesh)
     model = Model(mesh, mesh["dp"], (Shard(0),), (Shard(0), Shard(0)))
     optimizer = AdamW8bit(model.parameters(), lr=0.001)
     populate(model, optimizer, mesh.get_coordinate()[1], mesh.get_coordinate()[0])

@@ -37,6 +37,7 @@ def test_full_checkpoint_ownership_and_next_update(tmp_path):
         pytest.fail("Distributed checkpoint test timed out:\n" + stdout + stderr)
     assert process.returncode == 0, stdout + stderr
     for case in (
+        "ep-full-parameter-save-route",
         "ep-dp",
         "ep-permuted-ranks",
         "ep-cp",
