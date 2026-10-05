@@ -712,7 +712,7 @@ class TestNemoGymE2E(unittest.TestCase):
         trainer.accelerator.device = "cpu"
         trainer.max_completion_length = 512
         trainer.temperature = 0.8
-        trainer.pad_token_id = 0
+        trainer._tokenizer.pad_token_id = 0
         trainer._tokenizer.eos_token_id = 2
         trainer.processing_class.batch_decode.return_value = ["crane slide"]
         return trainer
