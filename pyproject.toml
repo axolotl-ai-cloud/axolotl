@@ -28,7 +28,7 @@ dependencies = [
     "optimum==1.16.2",
     "hf_transfer",
     "sentencepiece",
-    "gradio==6.10.0",
+    "gradio==6.29.1",
     "pydantic==2.12.5",
     "addict",
     "fire",
@@ -128,7 +128,7 @@ ray = [
     "ray[train]>=2.52.1",
 ]
 vllm = [
-    "vllm>=0.17.0",
+    "vllm>=0.30.0",
 ]
 llmcompressor = [
     "llmcompressor>=0.10.0",
