@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .vendored.djev_template import MAX_QUESTIONS
+
 
 class DecisionMixtureConfig(BaseModel):
     """Deterministic source-mixture controls."""
@@ -235,7 +237,10 @@ class DiffusionDecisionConfig(BaseModel):
     max_questions_per_canvas: int = Field(
         default=20,
         ge=1,
-        json_schema_extra={"description": "Maximum questions grouped into one canvas."},
+        le=MAX_QUESTIONS,
+        json_schema_extra={
+            "description": "Maximum questions grouped into one canvas; capped by the template."
+        },
     )
     read_fraction: float = Field(
         default=1.0,

@@ -407,3 +407,22 @@ def test_post_lora_merge_ignores_manifests_for_non_decision_runs(tmp_path):
     DiffusionDecisionPlugin().post_lora_merge({}, str(adapter), str(merged))
 
     assert not (merged / MANIFEST_FILENAME).exists()
+
+
+def test_config_caps_questions_per_canvas_at_the_template_limit():
+    from axolotl.integrations.diffusion_decision.args import DiffusionDecisionConfig
+    from axolotl.integrations.diffusion_decision.vendored.djev_template import (
+        MAX_QUESTIONS,
+    )
+
+    DiffusionDecisionConfig.model_validate({"max_questions_per_canvas": MAX_QUESTIONS})
+    with pytest.raises(ValueError, match="max_questions_per_canvas"):
+        DiffusionDecisionConfig.model_validate(
+            {"max_questions_per_canvas": MAX_QUESTIONS + 1}
+        )
+
+
+def test_collator_hook_defers_to_defaults_without_a_decision_block():
+    from axolotl.integrations.diffusion_decision.plugin import DiffusionDecisionPlugin
+
+    assert DiffusionDecisionPlugin().get_collator_cls_and_kwargs({}) is None

@@ -183,7 +183,7 @@ class DiffusionDecisionPlugin(BasePlugin):
 
     def get_collator_cls_and_kwargs(self, cfg, is_eval: bool = False):
         if self._require_runtime(cfg) is None:
-            return None, None
+            return None
         try:
             from .training_collator import decision_collator_for_config
         except ImportError as exc:

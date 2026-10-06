@@ -102,6 +102,8 @@ def validate_canvas(canvas: DecisionCanvas) -> int:
             raise ValueError("each question must have a distinct label position")
         if canvas.slot_mask[position]:
             raise ValueError("latent slots cannot be label positions")
+        if canvas.pinned_mask[position]:
+            raise ValueError("pinned tokens cannot be label positions")
         if not canvas.semantic_mask[position]:
             raise ValueError("label positions must be semantically valid")
         if not candidates:

@@ -73,3 +73,10 @@ def test_candidate_mask_does_not_extract_tensor_scalars(monkeypatch):
 def test_candidate_token_outside_vocabulary_rejected(token):
     with pytest.raises(ValueError, match="outside the model vocabulary"):
         restricted_probabilities(torch.zeros(1, 3), ((token,),))
+
+
+def test_validate_canvas_rejects_pinned_label_positions():
+    pinned = list(canvas().pinned_mask)
+    pinned[1] = True
+    with pytest.raises(ValueError, match="pinned tokens cannot be label positions"):
+        validate_canvas(replace(canvas(), pinned_mask=tuple(pinned)))
