@@ -19,7 +19,7 @@ jobs:
        (github.event.action != 'labeled' || github.event.label.name == 'run-cpu-slow'))
     concurrency:
       group: cpu-slow-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     uses: ./.github/workflows/distributed-cpu.yml
     with:
       slow: true

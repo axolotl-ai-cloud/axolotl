@@ -19,6 +19,6 @@ jobs:
        (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-slow'))
     concurrency:
       group: gpu-slow-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     uses: ./.github/workflows/gpu-slow-jobs.yml
     secrets: inherit
