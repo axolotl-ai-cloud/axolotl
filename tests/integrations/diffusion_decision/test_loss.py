@@ -572,6 +572,52 @@ def test_question_then_example_average_applies_source_weights():
     torch.testing.assert_close(result.loss, torch.tensor(expected))
 
 
+def test_question_weights_scale_each_question_within_the_canvas_average():
+    # Two questions on one canvas: weight 3 on the first, 1 on the second.
+    examples = [
+        _example(
+            DecisionLabelQuestion(0, (0, 1), HardLabel(0), weight=3.0),
+            DecisionLabelQuestion(1, (0, 1, 2, 3), HardLabel(1)),
+        )
+    ]
+    result = _loss(
+        torch.zeros(1, 2, 4),
+        examples,
+        torch.tensor([[True, True]]),
+        label_softmax="restricted",
+        brier_weight=0,
+    )
+    expected = (3.0 * math.log(2) + 1.0 * math.log(4)) / 2
+    torch.testing.assert_close(result.loss, torch.tensor(expected))
+    # Weight 1 everywhere is the plain question mean.
+    plain = _loss(
+        torch.zeros(1, 2, 4),
+        [
+            _example(
+                _question(0, (0, 1), HardLabel(0)),
+                _question(1, (0, 1, 2, 3), HardLabel(1)),
+            )
+        ],
+        torch.tensor([[True, True]]),
+        label_softmax="restricted",
+        brier_weight=0,
+    )
+    torch.testing.assert_close(
+        plain.loss, torch.tensor((math.log(2) + math.log(4)) / 2)
+    )
+
+
+def test_mapping_label_weight_is_read_and_validated():
+    from axolotl.integrations.diffusion_decision.loss import _question_weight
+
+    assert _question_weight({"kind": "hard", "gold_idx": 0}) == 1.0
+    assert _question_weight({"kind": "dist", "probs": [1.0], "weight": 0.25}) == 0.25
+    with pytest.raises(ValueError, match="label weight"):
+        _question_weight({"kind": "hard", "gold_idx": 0, "weight": 0})
+    with pytest.raises(ValueError, match="label weight"):
+        _question_weight({"kind": "hard", "gold_idx": 0, "weight": float("nan")})
+
+
 def test_loss_only_backpropagates_through_supervised_label_positions():
     logits = torch.randn(1, 3, 5, requires_grad=True)
     mask = torch.tensor([[False, True, False]])

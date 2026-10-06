@@ -56,6 +56,7 @@ class DecisionLabelQuestion:
     position: int
     allowed_token_ids: tuple[int, ...]
     target: DecisionLabelTarget
+    weight: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,7 @@ def decision_example_from_canvas(
                 if isinstance(target, (HardLabel, DistributionLabel, SetLabel))
                 else label_target_from_mapping(target)
             ),
+            weight=_question_weight(target),
         )
         for position, allowed_ids, target in zip(
             canvas.label_positions, canvas.allowed_ids, canvas.targets, strict=True
@@ -274,10 +276,11 @@ def decision_label_loss(
             full_vocab_dft_hard_counts.append(dft_hard_count)
             brier_questions.append(brier)
         weight = example.source_weight
-        restricted_examples.append(torch.stack(restricted_questions).mean() * weight)
-        full_vocab_examples.append(torch.stack(full_vocab_questions).mean() * weight)
+        qw = [question.weight for question in example.questions]
+        restricted_examples.append(_weighted_mean(restricted_questions, qw) * weight)
+        full_vocab_examples.append(_weighted_mean(full_vocab_questions, qw) * weight)
         effective_full_vocab_examples.append(
-            torch.stack(effective_full_vocab_questions).mean() * weight
+            _weighted_mean(effective_full_vocab_questions, qw) * weight
         )
         full_vocab_dft_hard_weight_sum_examples.append(
             torch.stack(full_vocab_dft_hard_weight_sums).sum()
@@ -285,7 +288,7 @@ def decision_label_loss(
         full_vocab_dft_hard_count_examples.append(
             torch.stack(full_vocab_dft_hard_counts).sum()
         )
-        brier_examples.append(torch.stack(brier_questions).mean() * weight)
+        brier_examples.append(_weighted_mean(brier_questions, qw) * weight)
     restricted_loss = torch.stack(restricted_examples).mean()
     full_vocab_loss = torch.stack(full_vocab_examples).mean()
     effective_full_vocab_loss = torch.stack(effective_full_vocab_examples).mean()
@@ -368,8 +371,9 @@ def decision_label_loss_from_hidden(
     full_soft_corrections: list[torch.Tensor | None] = []
     selected_hidden: list[torch.Tensor] = []
     full_example_indices: list[int] = []
+    full_question_weights: list[float] = []
     full_dft_hard: list[bool] = []
-    residual_full_losses: list[tuple[int, torch.Tensor]] = []
+    residual_full_losses: list[tuple[int, torch.Tensor, float]] = []
     for batch_index, example in enumerate(examples):
         _validate_source_weight(example.source_weight)
         restricted_questions: list[torch.Tensor] = []
@@ -430,11 +434,13 @@ def decision_label_loss_from_hidden(
                                 full_target,
                                 full_distribution,
                             ),
+                            question.weight,
                         )
                     )
                     continue
                 selected_hidden.append(projection_hidden)
                 full_targets.append(full_target)
+                full_question_weights.append(question.weight)
                 full_soft_corrections.append(
                     None
                     if full_distribution is None
@@ -447,8 +453,9 @@ def decision_label_loss_from_hidden(
                     and isinstance(question.target, HardLabel)
                 )
         weight = example.source_weight
-        restricted_examples.append(torch.stack(restricted_questions).mean() * weight)
-        brier_examples.append(torch.stack(brier_questions).mean() * weight)
+        qw = [question.weight for question in example.questions]
+        restricted_examples.append(_weighted_mean(restricted_questions, qw) * weight)
+        brier_examples.append(_weighted_mean(brier_questions, qw) * weight)
     restricted_loss = torch.stack(restricted_examples).mean()
     brier_loss = torch.stack(brier_examples).mean()
     full_vocab_loss = hidden.new_zeros((), dtype=torch.float32)
@@ -482,12 +489,18 @@ def decision_label_loss_from_hidden(
         else:
             token_losses = hidden.new_empty((0,), dtype=torch.float32)
         per_example: list[list[torch.Tensor]] = [[] for _ in examples]
-        for loss, batch_index in zip(token_losses, full_example_indices, strict=True):
+        per_example_weights: list[list[float]] = [[] for _ in examples]
+        for loss, batch_index, question_weight in zip(
+            token_losses, full_example_indices, full_question_weights, strict=True
+        ):
             per_example[batch_index].append(loss)
-        for batch_index, loss in residual_full_losses:
+            per_example_weights[batch_index].append(question_weight)
+        for batch_index, loss, question_weight in residual_full_losses:
             per_example[batch_index].append(loss)
+            per_example_weights[batch_index].append(question_weight)
         weighted = [
-            torch.stack(losses).mean() * examples[index].source_weight
+            _weighted_mean(losses, per_example_weights[index])
+            * examples[index].source_weight
             for index, losses in enumerate(per_example)
         ]
         full_vocab_loss = torch.stack(weighted).mean()
@@ -518,10 +531,11 @@ def decision_label_loss_from_hidden(
                 dft_hard_count_per_example[batch_index] = (
                     dft_hard_count_per_example[batch_index] + 1
                 )
-        for batch_index, loss in residual_full_losses:
+        for batch_index, loss, _question_weight_unused in residual_full_losses:
             effective_per_example[batch_index].append(loss)
         effective_weighted = [
-            torch.stack(losses).mean() * examples[index].source_weight
+            _weighted_mean(losses, per_example_weights[index])
+            * examples[index].source_weight
             for index, losses in enumerate(effective_per_example)
         ]
         effective_full_vocab_loss = torch.stack(effective_weighted).mean()
@@ -793,6 +807,30 @@ def _allowed_ids(token_ids: tuple[int, ...], vocab_size: int) -> torch.Tensor:
     ):
         raise ValueError("allowed token ID is outside the vocabulary")
     return torch.tensor(token_ids, dtype=torch.long)
+
+
+def _question_weight(target: object) -> float:
+    """Optional per-question ``weight`` on a normalized label mapping (default 1)."""
+    if not isinstance(target, Mapping):
+        return 1.0
+    weight = target.get("weight", 1.0)
+    if (
+        isinstance(weight, bool)
+        or not isinstance(weight, (int, float))
+        or not math.isfinite(weight)
+        or weight <= 0
+    ):
+        raise ValueError("label weight must be a positive finite number")
+    return float(weight)
+
+
+def _weighted_mean(
+    losses: Sequence[torch.Tensor], weights: Sequence[float]
+) -> torch.Tensor:
+    """Question average with per-question weights; weight 1 everywhere is the plain mean."""
+    stacked = torch.stack(list(losses))
+    scale = torch.tensor(list(weights), device=stacked.device, dtype=stacked.dtype)
+    return (stacked * scale).sum() / stacked.shape[0]
 
 
 def _validate_source_weight(weight: float) -> None:
