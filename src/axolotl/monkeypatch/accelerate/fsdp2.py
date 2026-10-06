@@ -49,14 +49,6 @@ def _rebuild_nvfp4_like(
     )
 
 
-def _state_dict_entry(value, name, parameter_requires_grad, buffer_names):
-    if name in parameter_requires_grad:
-        return nn.Parameter(value, requires_grad=parameter_requires_grad[name])
-    if name in buffer_names:
-        return value
-    raise KeyError(f"state dict entry {name!r} is neither a parameter nor a buffer")
-
-
 def _restore_non_persistent_buffers(model, original_buffers, accelerator):
     for fqn in sorted(original_buffers):
         original = original_buffers[fqn]
@@ -222,12 +214,9 @@ def fsdp2_load_full_state_dict(
     def _is_ep_expert_param(name: str) -> bool:
         return bool(_ep_tails) and ".experts." in name and name.endswith(_ep_tails)
 
-    meta_sharded_sd = model.state_dict()
-    parameter_requires_grad = {
-        name: parameter.requires_grad
-        for name, parameter in model.named_parameters(remove_duplicate=False)
-    }
-    buffer_names = {name for name, _ in model.named_buffers(remove_duplicate=False)}
+    # keep_vars: tell params from buffers by type, since named_parameters() keys keep
+    # the `_checkpoint_wrapped_module.` segment that state_dict() strips.
+    meta_sharded_sd = model.state_dict(keep_vars=True)
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():
@@ -417,9 +406,11 @@ def fsdp2_load_full_state_dict(
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
 
-        sharded_sd[param_name] = _state_dict_entry(
-            sharded_param, param_name, parameter_requires_grad, buffer_names
-        )
+        if isinstance(sharded_meta_param, nn.Parameter):
+            sharded_param = nn.Parameter(
+                sharded_param, requires_grad=sharded_meta_param.requires_grad
+            )
+        sharded_sd[param_name] = sharded_param
 
         del full_tensor
         full_sd[param_name] = None
