@@ -757,7 +757,7 @@ trl:
   vllm_lora_sync: true         # Enable native LoRA sync
 ```
 
-When `vllm_lora_sync: true` is set, `axolotl vllm-serve` starts vLLM with LoRA loading enabled (`--enable-lora`, `--max-lora-rank` from `lora_r`). Start vLLM as usual:
+When `vllm_lora_sync: true` is set, `axolotl vllm-serve` starts vLLM with LoRA loading enabled (`--enable-lora`, `--max-lora-rank` from the largest of `lora_r` and `lora_rank_pattern`). Start vLLM as usual:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml

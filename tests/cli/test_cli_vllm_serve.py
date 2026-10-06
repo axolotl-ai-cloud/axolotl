@@ -207,6 +207,15 @@ def test_native_lora_rank_rounded_up(
     assert cmd[cmd.index("--max-lora-rank") + 1] == expected
 
 
+def test_native_lora_rank_covers_rank_pattern(cli_runner, tmp_path, native_serve):
+    calls = native_serve(
+        trl={"vllm_lora_sync": True}, lora_r=16, lora_rank_pattern={"q_proj": 64}
+    )
+    _run(cli_runner, tmp_path)
+    cmd = calls[0][1]
+    assert cmd[cmd.index("--max-lora-rank") + 1] == "64"
+
+
 def test_lora_rank_above_vllm_limit_rejected():
     from axolotl.cli.vllm_serve import round_max_lora_rank
 

@@ -50,7 +50,7 @@ CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve grpo_config.yaml
 CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
 ```
 
-The server reads vLLM settings from the `vllm:` section of your config and launches vLLM's own OpenAI-compatible server in dev mode with the NCCL weight-transfer engine (default: `http://0.0.0.0:8000`). With `trl.vllm_lora_sync: true` it also passes `--enable-lora` and `--max-lora-rank` (from `lora_r`) and enables runtime LoRA loading.
+The server reads vLLM settings from the `vllm:` section of your config and launches vLLM's own OpenAI-compatible server in dev mode with the NCCL weight-transfer engine (default: `http://0.0.0.0:8000`). With `trl.vllm_lora_sync: true` it also passes `--enable-lora` and `--max-lora-rank` (the largest of `lora_r` and `lora_rank_pattern`) and enables runtime LoRA loading.
 
 If you prefer to run vLLM yourself, the equivalent raw command is:
 

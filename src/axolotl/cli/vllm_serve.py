@@ -29,7 +29,7 @@ def round_max_lora_rank(rank: int) -> int:
         if rank <= supported:
             return supported
     raise ValueError(
-        f"lora_r={rank} exceeds the largest rank vLLM supports "
+        f"LoRA rank {rank} exceeds the largest rank vLLM supports "
         f"({SUPPORTED_MAX_LORA_RANKS[-1]}); trl.vllm_lora_sync cannot be used"
     )
 
@@ -230,7 +230,11 @@ def do_vllm_serve(
         cfg_enforce_eager if cli_enforce_eager is None else cli_enforce_eager
     )
     enforce_eager = bool(raw_enforce_eager) if raw_enforce_eager is not None else False
-    lora_r = getattr(cfg, "lora_r", None)
+    lora_ranks = [
+        getattr(cfg, "lora_r", None),
+        *(getattr(cfg, "lora_rank_pattern", None) or {}).values(),
+    ]
+    max_lora_rank = max((r for r in lora_ranks if r), default=None)
     vllm_script_args = VllmServeArguments(
         model=model,
         revision=cfg.revision_of_model,
@@ -248,7 +252,7 @@ def do_vllm_serve(
         enable_reasoning=enable_reasoning,
         enable_lora=bool(getattr(cfg.trl, "vllm_lora_sync", False)),
         worker_extension_cls=worker_extension_cls,
-        **({"max_lora_rank": lora_r} if lora_r else {}),
+        **({"max_lora_rank": max_lora_rank} if max_lora_rank else {}),
     )
 
     if serve_module is None:
