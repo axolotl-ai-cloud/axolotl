@@ -2,19 +2,19 @@
 
 from pathlib import Path
 
+import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
 
-from axolotl.utils.dict import DictDefault
-
+from tests.e2e.multigpu.utils import fsdp2_training_config
 from tests.e2e.utils import (
     check_tensorboard_loss_decreased,
     require_torch_2_7_0,
     requires_flash_attn,
 )
 
-pytestmark = requires_flash_attn
+pytestmark = [pytest.mark.gpu, requires_flash_attn]
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -49,7 +49,7 @@ class TestDistMuon:
 
     @require_torch_2_7_0
     def test_fft_sft(self, temp_dir):
-        cfg = DictDefault(
+        cfg = fsdp2_training_config(
             {
                 "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
@@ -62,8 +62,6 @@ class TestDistMuon:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 80,
-                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
@@ -82,7 +80,6 @@ class TestDistMuon:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
-                "seed": 42,
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "bf16": True,
@@ -110,7 +107,7 @@ class TestDistMuon:
 
     @require_torch_2_7_0
     def test_lora_sft(self, temp_dir):
-        cfg = DictDefault(
+        cfg = fsdp2_training_config(
             {
                 "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
@@ -128,8 +125,6 @@ class TestDistMuon:
                 "lora_dropout": 0.0,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 80,
-                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
@@ -148,7 +143,6 @@ class TestDistMuon:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
-                "seed": 42,
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "bf16": True,

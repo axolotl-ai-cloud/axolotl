@@ -5,7 +5,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
+
+@pytest.mark.distributed_cpu
 def test_ep_cpu_offload_gradient_clipping(tmp_path):
     worker = Path(__file__).with_name("_ep_cpu_offload_grad_clip_worker.py")
     log_path = tmp_path / "worker.log"

@@ -1,8 +1,11 @@
-name: NF4 distributed CPU
+name: Distributed CPU
 
 on:
   workflow_call:
     inputs:
+      slow:
+        type: boolean
+        default: false
       nightly:
         type: boolean
         default: false
@@ -20,10 +23,12 @@ env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
   DS_ACCELERATOR: "cpu"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
 
 jobs:
-  nf4-distributed:
-    name: NF4 CPU / ${{ matrix.stack }} / PyTorch ${{ matrix.pytorch_version }}
+  distributed-cpu:
+    name: ${{ inputs.slow && 'Slow CPU' || 'Distributed CPU' }} / ${{ matrix.stack }} / PyTorch ${{ matrix.pytorch_version }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -53,7 +58,7 @@ jobs:
         run: |
           uv pip install torch==${{ matrix.pytorch_version }} torchvision
           uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
-          uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
+          uv pip install --no-build-isolation -e '.[ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install pytest pytest-cov pytest-xdist
       - name: Override with nightly HF packages
@@ -75,26 +80,47 @@ jobs:
           PY
           python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, torch.__version__"
       - name: Run fast NF4 compatibility checks
+        if: ${{ !inputs.slow }}
         run: |
           pytest -v --durations=10 -n0 -m "not slow and not nf4_distributed" \
             --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py \
             --junitxml=nf4-compat-junit.xml \
-            --cov=axolotl --cov-report=xml:nf4-cpu-coverage.xml
+            --cov=axolotl --cov-report=xml:distributed-cpu-coverage.xml
           python - <<'PY'
           import xml.etree.ElementTree as ET
           report = ET.parse("nf4-compat-junit.xml")
           assert list(report.iter("testcase")), "No NF4 compatibility tests ran"
           assert not list(report.iter("skipped")), "NF4 compatibility tests must not skip"
           PY
-      - name: Run distributed CPU tests
+      - name: Run NF4 distributed CPU tests
+        if: ${{ !inputs.slow }}
         run: |
           pytest -v --durations=10 -n0 -m nf4_distributed \
             --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py \
-            --cov=axolotl --cov-append --cov-report=xml:nf4-cpu-coverage.xml
+            --cov=axolotl --cov-append --cov-report=xml:distributed-cpu-coverage.xml
+      - name: Run other distributed CPU tests
+        if: ${{ !inputs.slow }}
+        run: |
+          pytest -v --durations=10 -n0 -m "distributed_cpu and not slow" \
+            tests/monkeypatch/test_fsdp2_mixed_dtype_groups.py \
+            tests/integrations/expert_parallel/test_ep_cpu_offload_grad_clip.py \
+            tests/integrations/expert_parallel/test_torch_backend.py \
+            tests/integrations/expert_parallel/test_plugin.py \
+            tests/integrations/expert_parallel/test_nvfp4_wrap.py \
+            tests/integrations/test_context_parallel_glm_dsa_cp.py \
+            tests/integrations/context_parallel/test_mesh.py \
+            tests/core/trainers/diffusion_lm/test_full_sequence.py \
+            --cov=axolotl --cov-append --cov-report=xml:distributed-cpu-coverage.xml
+      - name: Run slow CPU integrations
+        if: inputs.slow
+        run: |
+          pytest -v --durations=10 -n0 -m "slow and not gpu" \
+            --ignore=tests/integrations/kernels/ tests/integrations/ \
+            --cov=axolotl --cov-report=xml:distributed-cpu-coverage.xml
       - name: Upload coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./nf4-cpu-coverage.xml
-          flags: nf4-cpu,${{ matrix.stack }},pytorch-${{ matrix.pytorch_version }}
+          files: ./distributed-cpu-coverage.xml
+          flags: ${{ inputs.slow && 'cpu-slow' || 'distributed-cpu' }},${{ matrix.stack }},pytorch-${{ matrix.pytorch_version }}
           fail_ci_if_error: false

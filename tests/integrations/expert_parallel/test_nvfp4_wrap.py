@@ -149,13 +149,17 @@ def _check(results, tol=1e-5):
             assert res[metric] <= tol, f"rank {rank} {metric}: {res}"
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(
     not torch.cuda.is_available() or torch.cuda.device_count() < WORLD,
     reason="needs two CUDA devices",
 )
 def test_pure_ep_wraps_nvfp4_experts_per_rank_cuda():
+    pytest.importorskip("triton")
     _check(_run_spawned(_nvfp4_worker, device="cuda"), tol=1e-3)
 
 
+@pytest.mark.distributed_cpu
 def test_pure_ep_wraps_nvfp4_experts_per_rank():
+    pytest.importorskip("triton")
     _check(_run_spawned(_nvfp4_worker))
