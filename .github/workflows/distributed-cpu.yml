@@ -101,11 +101,22 @@ jobs:
           pytest -v --durations=10 -n0 -m nf4_distributed \
             --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py \
             --cov=axolotl --cov-append --cov-report=xml:distributed-cpu-coverage.xml
+      - name: Run distributed checkpoint and optimizer tests
+        if: ${{ !inputs.slow }}
+        env:
+          CUDA_VISIBLE_DEVICES: ""
+        run: |
+          pytest -v --durations=10 -n0 -m "distributed_cpu and not gpu and not slow" \
+            tests/monkeypatch/test_fsdp2_full_checkpoint.py \
+            tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \
+            tests/monkeypatch/test_fsdp2_mixed_dtype_groups.py \
+            tests/integrations/test_expert_parallel_bnb.py \
+            --cov=axolotl --cov-config=.coveragerc-distributed \
+            --cov-append --cov-report=xml:distributed-cpu-coverage.xml
       - name: Run other distributed CPU tests
         if: ${{ !inputs.slow }}
         run: |
           pytest -v --durations=10 -n0 -m "distributed_cpu and not slow" \
-            tests/monkeypatch/test_fsdp2_mixed_dtype_groups.py \
             tests/integrations/expert_parallel/test_ep_cpu_offload_grad_clip.py \
             tests/integrations/expert_parallel/test_torch_backend.py \
             tests/integrations/expert_parallel/test_plugin.py \

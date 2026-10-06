@@ -10,6 +10,7 @@ import pytest
 from transformers.testing_utils import get_torch_dist_unique_port
 
 
+@pytest.mark.distributed_cpu
 def test_full_checkpoint_ownership_and_next_update(tmp_path):
     pytest.importorskip("torchao.optim")
     worker = Path(__file__).with_name("_fsdp2_full_checkpoint.py")

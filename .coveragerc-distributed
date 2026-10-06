@@ -1,5 +1,6 @@
 [run]
 source = axolotl
+patch = subprocess
 omit =
     */tests/*
     setup.py

@@ -232,10 +232,24 @@ python cicd/select_e2e_tests.py --base origin/main --explain --scope tests/e2e/m
 CPU NF4 tests marked `nf4_distributed` run in a dedicated job with its own timeout,
 across the same PyTorch versions as the main CPU matrix. The source, sdist, nightly,
 and single-GPU general suites exclude this marker while keeping the quick NF4 tests.
-Run the dedicated subset locally with:
+Multi-process checkpoint and optimizer tests marked `distributed_cpu` also run in
+that job, with subprocess coverage enabled only for that subset. The regular CPU
+and testmon lanes keep the quick checkpoint unit tests and exclude this marker.
+Run the NF4 subset locally with:
 
 ```bash
 pytest --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py -m nf4_distributed
+```
+
+Run the checkpoint subset locally with:
+
+```bash
+CUDA_VISIBLE_DEVICES="" pytest -m distributed_cpu \
+  tests/monkeypatch/test_fsdp2_full_checkpoint.py \
+  tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \
+  tests/monkeypatch/test_fsdp2_mixed_dtype_groups.py \
+  tests/integrations/test_expert_parallel_bnb.py \
+  --cov=axolotl --cov-config=.coveragerc-distributed
 ```
 
 The multi-GPU workflow also runs a separate NF4 suite on three H100s. It selects
