@@ -58,6 +58,8 @@ def test_native_packed_bnb_full_checkpoint(device, tmp_path):
         "rejected-missing-owner",
         "rejected-changed-ep-grouping",
         "rejected-malformed-codebook",
+        "rejected-expert-logical-shape",
+        "rejected-dense-logical-shape",
         "rejected-legacy-packed",
         "rejected-dense-int8",
     ):

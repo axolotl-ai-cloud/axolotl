@@ -442,7 +442,10 @@ def restore_packed_model_state(model, state, descriptors):
             else:
                 index = matches[0]
                 record = records[index]
-                if any(record[key] != target[key] for key in ("mode", "dtype")):
+                if any(
+                    record[key] != target[key]
+                    for key in ("mode", "dtype", "logical_shape")
+                ):
                     error = "Packed checkpoint format, logical shape or storage dtype differs"
                 elif record["layout"]["shape"] != target["layout"]["shape"]:
                     error = "Packed checkpoint physical shape differs"

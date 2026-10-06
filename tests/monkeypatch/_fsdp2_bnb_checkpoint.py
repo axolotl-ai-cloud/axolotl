@@ -229,7 +229,6 @@ def check(
                 state = _quant_state(descriptor)
                 corrupt(_encode_state(state))
                 state.dtype = torch.float32
-                state.shape = torch.Size((state.shape[0], *reversed(state.shape[1:])))
             else:
                 descriptor["entry"].row_stats.zero_()
         model.counter.zero_()
@@ -358,6 +357,8 @@ def check_rejections(root, mesh, device):
         ("missing-owner", "missing expert owners"),
         ("changed-ep-grouping", "same EP ownership ranges"),
         ("malformed-codebook", "codebook"),
+        ("expert-logical-shape", "logical shape"),
+        ("dense-logical-shape", "logical shape"),
         ("legacy-packed", "version"),
     ):
         directory = root / label
@@ -388,6 +389,13 @@ def check_rejections(root, mesh, device):
                         )
                         regrouped.append(part)
                 state["quantized"][name] = regrouped
+            elif label in {"expert-logical-shape", "dense-logical-shape"}:
+                if label == "dense-logical-shape":
+                    name = "dense.weight"
+                for record in state["quantized"][name]:
+                    shape = record["logical_shape"]
+                    shape[-2:] = reversed(shape[-2:])
+                    record["metadata"]["shape"] = list(shape)
             elif label == "malformed-codebook":
                 state["quantized"][name][0]["metadata"]["code"] = torch.zeros(8)
             else:
@@ -395,6 +403,9 @@ def check_rejections(root, mesh, device):
             directory.mkdir(exist_ok=True)
             torch.save(state, directory / "pytorch_model_fsdp.bin")
         dist.barrier()
+        with torch.no_grad():
+            model.frozen.zero_()
+            model.counter.zero_()
         before = snapshot(model)
         try:
             fsdp_utils.load_fsdp_model(plugin, accelerator, model, directory)
@@ -403,6 +414,8 @@ def check_rejections(root, mesh, device):
         else:
             raise AssertionError("Malformed or incompatible checkpoint was accepted")
         compare(snapshot(model), before)
+        assert model.frozen.item() == 0
+        assert model.counter.item() == 0
         if dist.get_rank() == 0:
             print(f"PASS rejected-{label}", flush=True)
     model.unsupported = Linear8bitLt(16, 16)
