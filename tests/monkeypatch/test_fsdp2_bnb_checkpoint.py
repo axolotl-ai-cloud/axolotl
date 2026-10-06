@@ -48,6 +48,8 @@ def test_native_packed_bnb_full_checkpoint(device, tmp_path):
         pytest.fail("Distributed packed checkpoint test timed out:\n" + stdout + stderr)
     assert process.returncode == 0, stdout + stderr
     for case in (
+        "generic-packed-rejected-nested-nf4",
+        "generic-packed-rejected-int8",
         "nested-nf4",
         "nested-scale-cut",
         "uncompressed-fp4",

@@ -276,13 +276,69 @@ def _gather_value(value, owner):
     return copy.deepcopy(value) if dist.get_rank() == 0 else None
 
 
+def _adapter_model_state(model):
+    from peft.utils.save_and_load import get_peft_model_state_dict
+
+    values = {}
+    for prefix, module in model.named_modules(remove_duplicate=False):
+        prefix = prefix + "." if prefix else ""
+        for name, value in module._parameters.items():
+            if value is not None:
+                values[prefix + name] = value
+        for name, value in module._buffers.items():
+            if value is not None and name not in module._non_persistent_buffers_set:
+                values[prefix + name] = value
+    values = fsdp2_canonicalize_names(values)
+    # PEFT rewrites export keys; string values retain raw names without gathering DTensors.
+    markers = {name: name for name in values}
+    selected, error = set(), None
+    try:
+        for adapter in model.peft_config:
+            exported = get_peft_model_state_dict(
+                model, state_dict=markers, adapter_name=adapter, unwrap_compiled=True
+            )
+            for value in exported.values():
+                if isinstance(value, str):
+                    selected.add(value)
+                else:
+                    names = {
+                        name for name, parameter in values.items() if parameter is value
+                    }
+                    if not names:
+                        raise ValueError(
+                            "PEFT export state is not a model parameter or buffer"
+                        )
+                    selected.update(names)
+    except Exception as exc:  # pylint: disable=broad-except
+        error = f"Adapter checkpoint selection failed: {exc}"
+    _check_errors(error)
+    signatures = [None] * dist.get_world_size()
+    dist.all_gather_object(signatures, sorted(selected))
+    if any(names != sorted(selected) for names in signatures):
+        raise ValueError("Adapter checkpoint keys differ across ranks")
+    return {name: values[name] for name in sorted(selected)}
+
+
 def full_model_state(model, adapter_only=False):
     # TODO: stream checkpoint assembly layerwise to reduce rank-0 host memory.
     adapter_only = adapter_only and is_peft_model(model)
-    parameters = _parameters(model)
     if adapter_only:
-        values = {name: p for name, p in parameters.items() if p.requires_grad}
+        values = _adapter_model_state(model)
     else:
+        from .fsdp2_bnb_checkpoint import packed_parameters
+
+        error = None
+        try:
+            if any(
+                item["owner"] is not None for item in packed_parameters(model).values()
+            ):
+                error = (
+                    "Generic full state dict cannot represent packed BNB expert ownership; "
+                    "use save_fsdp_model for native full checkpoints or adapter-only export"
+                )
+        except ValueError as exc:
+            error = str(exc)
+        _check_errors(error)
         values = fsdp2_canonicalize_names(dict(model.state_dict()))
     owners = expert_ownership(model)
     state = {
@@ -538,9 +594,8 @@ def _restore_tensor(value, parameter, owner, quantized=False, optimizer=None):
 
 def restore_model_state(model, state, adapter_only=False):
     adapter_only = adapter_only and is_peft_model(model)
-    parameters = _parameters(model)
     targets = (
-        {n: p for n, p in parameters.items() if p.requires_grad}
+        _adapter_model_state(model)
         if adapter_only
         else fsdp2_canonicalize_names(dict(model.state_dict()))
     )

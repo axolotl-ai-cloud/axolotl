@@ -430,6 +430,60 @@ def check_rejections(root, mesh, device):
     dist.barrier()
 
 
+def check_generic_packed_state(mesh, device):
+    from accelerate import Accelerator
+    from peft import LoraConfig, get_peft_model
+
+    accelerator = SimpleNamespace(
+        state=SimpleNamespace(
+            fsdp_plugin=SimpleNamespace(
+                fsdp_version=2, state_dict_type="FULL_STATE_DICT"
+            )
+        )
+    )
+    for eightbit in (False, True):
+        model = make_model(mesh, 128, True, "nf4", device, eightbit=eightbit)
+        model.adapter_target = nn.Linear(16, 16, device=device)
+        model = get_peft_model(
+            model, LoraConfig(target_modules=["adapter_target"], r=2)
+        )
+        owner = mesh.get_coordinate()[1] + 1
+        with torch.no_grad():
+            for descriptor in packed_parameters(model).values():
+                if descriptor["owner"] is None:
+                    continue
+                _local(descriptor["parameter"]).fill_(owner)
+                if descriptor["mode"] == "4bit":
+                    state = _quant_state(descriptor)
+                    state.absmax.fill_(owner)
+                    state.offset.zero_()
+                    state.state2.absmax.fill_(owner)
+                else:
+                    descriptor["entry"].row_stats.fill_(owner)
+        before = snapshot(model)
+        for unwrap in (True, False):
+            try:
+                with patch.object(
+                    model,
+                    "state_dict",
+                    side_effect=AssertionError("Ran packed state hooks"),
+                ):
+                    Accelerator.get_state_dict(accelerator, model, unwrap=unwrap)
+            except ValueError as exc:
+                assert "packed BNB expert" in str(exc), str(exc)
+                assert "save_fsdp_model" in str(exc), str(exc)
+            else:
+                raise AssertionError(
+                    "Generic full state silently accepted packed EP owners"
+                )
+        compare(snapshot(model), before)
+        if dist.get_rank() == 0:
+            print(
+                f"PASS generic-packed-rejected-{'int8' if eightbit else 'nested-nf4'}",
+                flush=True,
+            )
+
+
 def main():
     device_type, root = sys.argv[1], Path(sys.argv[2])
     if device_type == "cuda":
@@ -446,6 +500,7 @@ def main():
         device_type, (dist.get_world_size() // 2, 2), mesh_dim_names=("dp", "ep")
     )
     patch_fsdp2_full_checkpoint()
+    check_generic_packed_state(mesh, device)
     for label, rows, compressed, quant_type, reorder, eightbit, reshard in (
         ("nested-nf4", 128, True, "nf4", False, False, False),
         ("nested-scale-cut", 8, True, "nf4", False, False, False),

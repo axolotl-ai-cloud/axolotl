@@ -16,6 +16,7 @@ from torchao.optim.adam import single_param_adam
 from torchao.optim.subclass_8bit import OptimState8bit
 
 from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+    _check_errors,
     _restore_tensor,
     full_model_state,
     full_optimizer_state,
@@ -182,8 +183,10 @@ def check_peft_trainer_save_route(mesh, root):
     from axolotl.integrations.expert_parallel.shard import shard_expert_lora
     from axolotl.train import save_trained_model
     from axolotl.utils.dict import DictDefault
+    from axolotl.utils.freeze import freeze_layers_except
 
     def make_base():
+        torch.manual_seed(456)
         base = nn.Module()
         base.experts = nn.Module()
         base.experts.num_experts = 4
@@ -223,10 +226,18 @@ def check_peft_trainer_save_route(mesh, root):
                     else parameter
                 )
                 local.fill_(ep_rank + 0.125 if "expert" in name else 0.25)
+    freeze_layers_except(
+        model,
+        [f"^{name}$" for name, _ in model.named_parameters() if "lora_B" in name],
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            if parameter.requires_grad:
+                parameter.to_local().add_(0.125)
     expected = {
         name: snapshot(parameter)
         for name, parameter in model.named_parameters()
-        if parameter.requires_grad
+        if "lora_" in name
     }
     accelerator = SimpleNamespace(
         is_main_process=dist.get_rank() == 0,
@@ -266,6 +277,14 @@ def check_peft_trainer_save_route(mesh, root):
     )
     trainer.save_model(_internal_call=True)
     dist.barrier()
+    error = None
+    if dist.get_rank() == 0:
+        saved = torch.load(
+            Path(trainer.args.output_dir) / "pytorch_model_fsdp.bin", weights_only=True
+        )
+        if set(saved) != set(expected):
+            error = "Trainer checkpoint omitted frozen adapter factors"
+    _check_errors(error)
     if dist.get_rank() == 0:
         directory = Path(trainer.args.output_dir)
         assert (directory / "adapter_model.safetensors").is_file()
@@ -274,8 +293,8 @@ def check_peft_trainer_save_route(mesh, root):
         assert any(value.shape == (64, 256) for value in saved.values())
         assert not (directory / "optimizer.bin").exists()
     with torch.no_grad():
-        for parameter in model.parameters():
-            if parameter.requires_grad:
+        for name, parameter in model.named_parameters():
+            if "lora_" in name:
                 (
                     parameter.to_local()
                     if isinstance(parameter, DTensor)
@@ -286,10 +305,35 @@ def check_peft_trainer_save_route(mesh, root):
     ):
         trainer._load_from_checkpoint(trainer.args.output_dir)
     for name, parameter in model.named_parameters():
-        if parameter.requires_grad:
+        if "lora_" in name:
             compare(parameter, expected[name])
     if dist.get_rank() == 0:
         print("PASS sft-model-only-ep-adapter-resume", flush=True)
+    regular_directory = root / "sft-regular"
+    trainer.args.save_only_model = False
+    trainer.save_model(str(regular_directory), _internal_call=True)
+    from accelerate.utils import fsdp_utils
+
+    fsdp_utils.save_fsdp_model(
+        accelerator.state.fsdp_plugin,
+        accelerator,
+        model,
+        regular_directory,
+        adapter_only=True,
+    )
+    with torch.no_grad():
+        for name, parameter in model.named_parameters():
+            if "lora_" in name:
+                parameter.to_local().zero_()
+    with patch.object(
+        model, "load_adapter", side_effect=AssertionError("Used local PEFT restore")
+    ):
+        trainer._load_from_checkpoint(regular_directory)
+    for name, parameter in model.named_parameters():
+        if "lora_" in name:
+            compare(parameter, expected[name])
+    if dist.get_rank() == 0:
+        print("PASS sft-regular-ep-adapter-resume", flush=True)
     full_adapter = full_model_state(model, adapter_only=True)
     trainer.save_model(str(root / "trainer-final-export"))
     final_directory = root / "final-ep-adapter"
@@ -316,7 +360,202 @@ def check_peft_trainer_save_route(mesh, root):
             assert set(actual_adapter) == set(expected_adapter)
             for name, value in expected_adapter.items():
                 torch.testing.assert_close(actual_adapter[name], value, rtol=0, atol=0)
+            inputs = torch.linspace(-0.5, 0.5, 256).reshape(1, 256)
+            dense = model.base_model.model.dense
+            expected_output = torch.nn.functional.linear(
+                inputs, dense.base_layer.weight
+            )
+            expected_output += (
+                torch.nn.functional.linear(
+                    torch.nn.functional.linear(
+                        inputs,
+                        full_adapter["base_model.model.dense.lora_A.default.weight"],
+                    ),
+                    full_adapter["base_model.model.dense.lora_B.default.weight"],
+                )
+                * dense.scaling["default"]
+            )
+            torch.testing.assert_close(
+                reloaded.base_model.model.dense(inputs), expected_output, rtol=0, atol=0
+            )
         print("PASS final-ep-adapter-base-layout", flush=True)
+    dist.barrier()
+
+
+def check_non_ep_peft_exports(root):
+    from accelerate import Accelerator
+    from accelerate.utils import fsdp_utils
+    from bitsandbytes.nn.parametrize import replace_parameter_4bit
+    from peft import LoraConfig, PeftModel, get_peft_model
+    from peft.utils.save_and_load import get_peft_model_state_dict
+    from safetensors.torch import load_file
+    from transformers import GPT2Config, GPT2LMHeadModel
+
+    from axolotl.core.trainers.base import AxolotlTrainer
+    from axolotl.utils.freeze import freeze_layers_except
+
+    config_path = root / "base-config"
+    config = GPT2Config(vocab_size=32, n_embd=8, n_head=2, n_layer=1)
+    if dist.get_rank() == 0:
+        config.save_pretrained(config_path)
+    dist.barrier()
+
+    def make_base():
+        torch.manual_seed(71)
+        base = GPT2LMHeadModel(copy.deepcopy(config))
+        base.resize_token_embeddings(40)
+        base.config._name_or_path = str(config_path)
+        base.name_or_path = str(config_path)
+        base.experts = nn.Module()
+        base.experts.gate_up_proj = nn.Parameter(
+            torch.randn(4, 8, 32), requires_grad=False
+        )
+        replace_parameter_4bit(base.experts, "gate_up_proj", compress_statistics=True)
+        return base
+
+    model = get_peft_model(
+        make_base(),
+        LoraConfig(target_modules=["c_attn"], modules_to_save=["ln_f"], r=2),
+    )
+    model.add_adapter("inactive", copy.deepcopy(model.peft_config["default"]))
+    model._moe_experts_quantized = True
+    with torch.no_grad():
+        for name, parameter in model.named_parameters():
+            if "lora_" in name:
+                parameter.fill_(0.2 if ".inactive." in name else 0.1)
+            elif "modules_to_save" in name:
+                parameter.fill_(0.125 if name.endswith("bias") else 1.25)
+    freeze_layers_except(
+        model,
+        [
+            f"^{name}$"
+            for name, _ in model.named_parameters()
+            if "lora_B.default" in name
+        ],
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            if parameter.requires_grad:
+                parameter.add_(0.0625)
+    inputs = torch.tensor([[0, 1, 2, 3], [8, 9, 10, 11]])
+    expected, outputs = {}, {}
+    for adapter in ("default", "inactive"):
+        model.set_adapter(adapter)
+        model.eval()
+        expected[adapter] = {
+            name: value.detach().clone()
+            for name, value in get_peft_model_state_dict(
+                model, adapter_name=adapter
+            ).items()
+        }
+        outputs[adapter] = model(inputs).logits.detach()
+    model.set_adapter("default")
+    freeze_layers_except(
+        model,
+        [
+            f"^{name}$"
+            for name, _ in model.named_parameters()
+            if "lora_B.default" in name
+        ],
+    )
+    mesh = init_device_mesh("cpu", (dist.get_world_size(),), mesh_dim_names=("dp",))
+    replacements = {}
+    for prefix, module in model.named_modules():
+        for name, parameter in list(module.named_parameters(recurse=False)):
+            key = prefix + "." + name
+            if (
+                "lora_" in key
+                or "modules_to_save" in key
+                or key.endswith(("transformer.wte.weight", "lm_head.weight"))
+            ):
+                if id(parameter) not in replacements:
+                    replacements[id(parameter)] = nn.Parameter(
+                        distribute_tensor(parameter.detach(), mesh, (Shard(0),)),
+                        requires_grad=parameter.requires_grad,
+                    )
+                setattr(module, name, replacements[id(parameter)])
+    accelerator = SimpleNamespace(
+        is_main_process=dist.get_rank() == 0,
+        num_processes=dist.get_world_size(),
+        wait_for_everyone=dist.barrier,
+        parallelism_config=None,
+        state=SimpleNamespace(
+            fsdp_plugin=SimpleNamespace(
+                fsdp_version=2, state_dict_type="FULL_STATE_DICT"
+            )
+        ),
+    )
+    accelerator.get_state_dict = lambda model, unwrap=True: Accelerator.get_state_dict(
+        accelerator, model, unwrap=unwrap
+    )
+    trainer = object.__new__(AxolotlTrainer)
+    trainer.model, trainer.accelerator = model, accelerator
+    trainer.is_fsdp_enabled, trainer.is_deepspeed_enabled = True, False
+    trainer.processing_class = trainer.data_collator = None
+    model._tp_size = 2
+    with patch.object(
+        model,
+        "state_dict",
+        side_effect=AssertionError("Collected frozen quantized base"),
+    ):
+        full_model_state(model, adapter_only=True)
+    for label, internal_call, model_only in (
+        ("regular", True, False),
+        ("model-only", True, True),
+        ("final", False, False),
+    ):
+        directory = root / f"non-ep-{label}"
+        trainer.args = SimpleNamespace(
+            output_dir=str(directory),
+            should_save=dist.get_rank() == 0,
+            save_only_model=model_only,
+            push_to_hub=False,
+        )
+        trainer.save_model(_internal_call=internal_call)
+        if label == "regular":
+            fsdp_utils.save_fsdp_model(
+                accelerator.state.fsdp_plugin,
+                accelerator,
+                model,
+                directory,
+                adapter_only=True,
+            )
+        error = None
+        if dist.get_rank() == 0:
+            try:
+                reloaded = PeftModel.from_pretrained(make_base(), directory)
+                reloaded.load_adapter(directory / "inactive", adapter_name="inactive")
+                for adapter in ("default", "inactive"):
+                    file = (
+                        directory
+                        / ("inactive" if adapter == "inactive" else "")
+                        / "adapter_model.safetensors"
+                    )
+                    saved = load_file(file)
+                    assert set(saved) == set(expected[adapter])
+                    for name, value in expected[adapter].items():
+                        compare(saved[name], value)
+                    reloaded.set_adapter(adapter)
+                    reloaded.eval()
+                    torch.testing.assert_close(
+                        reloaded(inputs).logits, outputs[adapter], rtol=0, atol=0
+                    )
+                assert any("wte.weight" in name for name in saved)
+                assert any("ln_f" in name for name in saved)
+                assert (directory / "pytorch_model_fsdp.bin").exists() == internal_call
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+        _check_errors(error)
+        if internal_call:
+            with torch.no_grad():
+                for parameter in replacements.values():
+                    parameter.to_local().zero_()
+            with patch.object(
+                model, "load_adapter", side_effect=AssertionError("Used local restore")
+            ):
+                trainer._load_from_checkpoint(directory)
+        if dist.get_rank() == 0:
+            print(f"PASS non-ep-frozen-adapter-{label}", flush=True)
     dist.barrier()
 
 
@@ -600,6 +839,7 @@ def main():
     mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("dp", "ep"))
     check_full_parameter_save_route(mesh, root)
     check_peft_trainer_save_route(mesh, root)
+    check_non_ep_peft_exports(root)
     check_restore_collectives(mesh)
     check_mixtral_full_model_export(mesh, root)
     model = Model(mesh, mesh["dp"], (Shard(0),), (Shard(0), Shard(0)))
