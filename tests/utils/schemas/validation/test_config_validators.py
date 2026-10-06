@@ -9,6 +9,7 @@ Covers:
     num_generations >= 2, and effective_gbs >= num_generations * world_size
   - context_parallel_size > 1 requires kernel-backed attention
   - use_dft / use_eaft are SFT-only and reject each other, RL, reward models, CP and fused CE
+  - vllm_mode: colocate rejects CP > 1, vllm_lora_sync, and async GRPO with an adapter
 """
 
 import pytest
@@ -545,3 +546,29 @@ class TestCustomLossConflictsValidator:
     def test_conflict_raises(self, loss, conflict):
         with pytest.raises(ValueError, match="SFT-only"):
             self._check({loss: True, **conflict})
+
+
+class TestVllmColocateCompat:
+    """vllm_mode: colocate rejects settings that only work with a vLLM server."""
+
+    @pytest.mark.parametrize(
+        "extra,trl,match",
+        [
+            ({"context_parallel_size": 2}, {}, "colocate` is not supported with"),
+            ({}, {"vllm_lora_sync": True}, "requires `vllm_mode: server`"),
+            (
+                {"adapter": "lora"},
+                {"async_prefetch": True},
+                "not supported by the async GRPO",
+            ),
+        ],
+    )
+    def test_incompatible_settings_raise(self, min_base_cfg, extra, trl, match):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            trl={"use_vllm": True, "vllm_mode": "colocate", **trl},
+            vllm={"max_model_len": 1024},
+            **extra,
+        )
+        with pytest.raises(ValueError, match=match):
+            validate_config(cfg)

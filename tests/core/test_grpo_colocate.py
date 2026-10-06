@@ -1,5 +1,6 @@
-"""Unit tests for GRPO colocate-mode vLLM wiring."""
+"""Unit tests for GRPO and EBFT colocate-mode vLLM wiring."""
 
+from axolotl.core.trainers.ebft import EBFTStrategy
 from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.utils.dict import DictDefault
 
@@ -81,3 +82,28 @@ class TestColocateTrainingArgs:
         )
         assert "vllm_server_host" not in kwargs
         assert "vllm_server_port" not in kwargs
+
+
+class TestEBFTColocateTrainingArgs:
+    """Structured EBFT reuses GRPO's colocate mapping and the `vllm:` host/port."""
+
+    def test_colocate_forwards_vllm_block(self):
+        kwargs = EBFTStrategy.set_training_args_kwargs(
+            _cfg(
+                {"vllm_mode": "colocate", "vllm_enable_sleep_mode": True},
+                {"gpu_memory_utilization": 0.4, "max_model_len": 4096},
+            )
+        )
+        assert kwargs["vllm_mode"] == "colocate"
+        assert kwargs["vllm_enable_sleep_mode"] is True
+        assert kwargs["vllm_gpu_memory_utilization"] == 0.4
+        assert kwargs["vllm_max_model_length"] == 4096
+        assert "vllm_tensor_parallel_size" not in kwargs
+
+    def test_server_host_port_fall_back_to_vllm_block(self):
+        kwargs = EBFTStrategy.set_training_args_kwargs(
+            _cfg({"vllm_mode": "server"}, {"host": "10.0.0.5", "port": 9000})
+        )
+        assert kwargs["vllm_server_host"] == "10.0.0.5"
+        assert kwargs["vllm_server_port"] == 9000
+        assert "vllm_gpu_memory_utilization" not in kwargs
