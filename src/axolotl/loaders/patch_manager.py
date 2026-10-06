@@ -590,6 +590,16 @@ class PatchManager:
             self._apply_linear_attention_packing_patches()
             self._apply_ssm_packing_patches()
 
+        from axolotl.monkeypatch.models.vision_patch_embed_linear import (
+            patch_vision_patch_embed_linear,
+            unpatch_vision_patch_embed_linear,
+        )
+
+        if getattr(self.cfg, "vision_patch_embed_linear", None) is not False:
+            patch_vision_patch_embed_linear(self.cfg.model_config_type)
+        else:
+            unpatch_vision_patch_embed_linear(self.cfg.model_config_type)
+
         # Patches requiring CUDA
         if torch.cuda.is_available():
             if (
