@@ -617,6 +617,11 @@ def load_decision_datasets(
         source_paths = _prepared_cache_source_paths([*train_entries, *test_entries])
         if source_paths is not None:
             cache_identity = prepared_cache_identity(cfg, tokenizer, spec, source_paths)
+            if cache_identity is None:
+                LOG.warning(
+                    "Decision prepared-row cache bypassed: could not resolve the tokenizer "
+                    "files or revision (set revision_of_model to a commit hash to pin them)"
+                )
         else:
             LOG.info("Decision prepared-row cache bypassed: nonlocal or opaque source")
     elif isinstance(prepared_path, (str, Path)) and str(prepared_path):

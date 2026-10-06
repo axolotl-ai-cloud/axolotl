@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 
 import tokenizers
 import transformers
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, try_to_load_from_cache
 
 from ._util import (
     _value,
@@ -137,6 +137,31 @@ def _resolved_tokenizer_revision(cfg: Any, tokenizer: Any) -> str | None:
         r"[0-9a-fA-F]{40}", requested_revision
     ):
         return requested_revision.lower()
+    return _cached_snapshot_revision(getattr(tokenizer, "name_or_path", None))
+
+
+def _cached_snapshot_revision(name_or_path: Any) -> str | None:
+    """Recover the commit hash from the local Hub cache when the tokenizer carries none.
+
+    transformers 5 tokenizers no longer expose ``_commit_hash``; the snapshot
+    directory the tokenizer files were loaded from still names the commit.
+    """
+    if not isinstance(name_or_path, str) or not name_or_path:
+        return None
+    for filename in ("tokenizer_config.json", "tokenizer.json"):
+        try:
+            cached = try_to_load_from_cache(
+                name_or_path, filename=filename, repo_type="model"
+            )
+        except (OSError, ValueError):
+            continue
+        if not isinstance(cached, str):
+            continue
+        parts = Path(cached).parts
+        if "snapshots" in parts:
+            revision = parts[parts.index("snapshots") + 1]
+            if re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+                return revision.lower()
     return None
 
 
