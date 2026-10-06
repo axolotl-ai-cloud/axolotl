@@ -9,6 +9,9 @@ on:
       nightly:
         type: boolean
         default: false
+      python_version:
+        type: string
+        default: "3.12"
       pytorch_versions:
         type: string
         default: '["2.13.0", "2.14.0"]'
@@ -47,7 +50,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: ${{ inputs.python_version }}
       - name: Install uv
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:

@@ -148,7 +148,7 @@ The Slow CPU workflow runs integrations marked `slow` without `gpu`, including t
 Ringmaster multi-process probes and MixLoRA model test. Apply `run-cpu-slow` to a
 ready PR to run this lane; later pushes rerun it while the label remains. It also
 runs nightly against the pinned dependencies on the default branch and supports
-manual dispatch. Tests run sequentially on Python 3.12 / PyTorch 2.13 to avoid
+manual dispatch. Tests run sequentially on Python 3.14 / PyTorch 2.14.0 to avoid
 multiplying process counts with pytest workers. This optional lane should not be
 a required branch-protection check.
 
@@ -161,6 +161,20 @@ The GPU workflows keep their path filters in `docker-e2e.yml` and `multi-gpu-e2e
 The label handler uses `pull_request_target` with trusted inline code only and must be present on the default branch; it never checks out PR code.
 
 Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
+
+##### Slow GPU Tests
+
+Apply `run-gpu-slow` to a ready PR to run the additional slow GPU suites. The
+Slow GPU workflow handles that label directly; unrelated labels do not start its
+jobs. Subsequent pushes rerun the suites while labeled. It also supports manual
+dispatch and runs weekly against pinned dependencies on the default branch.
+
+The lanes use Python 3.14 / PyTorch 2.14.0 and run sequential tests on one H100 (slow ScatterMoE kernels and the
+prequantized merge CLI test), two H100s (Ringmaster/FSDP2), or four H100s (FLA
+four-rank parity). NF4, FLA Mamba kernel tests, and GDN parity retain their existing
+GPU lanes and are not duplicated here. `run-gpu-tests` continues to select the
+regular GPU suites independently. The optional Slow GPU checks should not be
+required by branch protection.
 
 ##### Selected e2e arms (experimental)
 

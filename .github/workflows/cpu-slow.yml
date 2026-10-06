@@ -23,4 +23,5 @@ jobs:
     uses: ./.github/workflows/distributed-cpu.yml
     with:
       slow: true
-      pytorch_versions: '["2.13.0"]'
+      python_version: "3.14"
+      pytorch_versions: '["2.14.0"]'
