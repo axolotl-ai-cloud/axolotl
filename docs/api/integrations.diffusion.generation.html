@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -26,41 +26,6 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
 </style>
 
 
@@ -77,7 +42,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +657,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -927,14 +898,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.integrations.diffusion.generation" id="toc-axolotl.integrations.diffusion.generation" class="nav-link active" data-scroll-target="#axolotl.integrations.diffusion.generation">integrations.diffusion.generation</a>
-  <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.integrations.diffusion.generation.generate" id="toc-axolotl.integrations.diffusion.generation.generate" class="nav-link" data-scroll-target="#axolotl.integrations.diffusion.generation.generate">generate</a></li>
-  <li><a href="#axolotl.integrations.diffusion.generation.generate_samples" id="toc-axolotl.integrations.diffusion.generation.generate_samples" class="nav-link" data-scroll-target="#axolotl.integrations.diffusion.generation.generate_samples">generate_samples</a></li>
-  </ul></li>
-  </ul></li>
+  <li><a href="#axolotl.integrations.diffusion.generation" id="toc-axolotl.integrations.diffusion.generation" class="nav-link active" data-scroll-target="#axolotl.integrations.diffusion.generation">integrations.diffusion.generation</a></li>
   </ul>
 </nav>
     </div>
@@ -947,159 +911,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.diffusion.generation" class="level1">
 <h1>integrations.diffusion.generation</h1>
 <p><code>integrations.diffusion.generation</code></p>
-<p>Sample generation utilities for diffusion training.</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.diffusion.generation.generate">generate</a></td>
-<td>Generate a single sample using reverse diffusion.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.integrations.diffusion.generation.generate_samples">generate_samples</a></td>
-<td>Generate text samples using the diffusion model by randomly masking sequences from</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.diffusion.generation.generate" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.diffusion.generation.generate">generate</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.generation.generate(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    original_sequence,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    num_diffusion_steps,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    temperature,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    mask_token_id,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    mode<span class="op">=</span><span class="st">'random'</span>,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    completion_tokens<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    target_mask_ratio<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    labels<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Generate a single sample using reverse diffusion.</p>
-</section>
-<section id="axolotl.integrations.diffusion.generation.generate_samples" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.diffusion.generation.generate_samples">generate_samples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.generation.generate_samples(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    dataloader<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    num_generation_samples<span class="op">=</span><span class="dv">3</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    max_length<span class="op">=</span><span class="dv">100</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    num_diffusion_steps<span class="op">=</span><span class="dv">128</span>,</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    temperature<span class="op">=</span><span class="fl">0.0</span>,</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    mask_token_id<span class="op">=</span><span class="dv">32000</span>,</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    mode<span class="op">=</span><span class="st">'random'</span>,</span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    completion_tokens<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    target_mask_ratio<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Generate text samples using the diffusion model by randomly masking sequences from
-the given dataset and running the reverse diffusion process.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 23%">
-<col style="width: 16%">
-<col style="width: 47%">
-<col style="width: 11%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>model</td>
-<td>torch.nn.Module</td>
-<td>The wrapped or unwrapped model</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>tokenizer</td>
-<td>Any</td>
-<td>Tokenizer for encoding/decoding</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>dataloader</td>
-<td>Optional[Any]</td>
-<td>Validation dataloader (for sampling sequences)</td>
-<td><code>None</code></td>
-</tr>
-<tr class="even">
-<td>num_generation_samples</td>
-<td>int</td>
-<td>Number of samples to generate</td>
-<td><code>3</code></td>
-</tr>
-<tr class="odd">
-<td>max_length</td>
-<td>int</td>
-<td>Maximum length of sequences to use</td>
-<td><code>100</code></td>
-</tr>
-<tr class="even">
-<td>num_diffusion_steps</td>
-<td>int</td>
-<td>Number of diffusion steps for generation</td>
-<td><code>128</code></td>
-</tr>
-<tr class="odd">
-<td>temperature</td>
-<td>float</td>
-<td>Temperature for sampling (0.0 = deterministic)</td>
-<td><code>0.0</code></td>
-</tr>
-<tr class="even">
-<td>mask_token_id</td>
-<td>int</td>
-<td>Token ID used for masking</td>
-<td><code>32000</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 14%">
-<col style="width: 77%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>List[dict]</td>
-<td>List of dictionaries with original text, masked text, and generated text</td>
-</tr>
-</tbody>
-</table>
+<p>Compatibility exports for diffusion sample generation.</p>
 
 
-</section>
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -77,7 +77,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +692,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -932,7 +938,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
   <li><a href="#axolotl.integrations.diffusion.args.DiffusionArgs" id="toc-axolotl.integrations.diffusion.args.DiffusionArgs" class="nav-link" data-scroll-target="#axolotl.integrations.diffusion.args.DiffusionArgs">DiffusionArgs</a></li>
-  <li><a href="#axolotl.integrations.diffusion.args.DiffusionConfig" id="toc-axolotl.integrations.diffusion.args.DiffusionConfig" class="nav-link" data-scroll-target="#axolotl.integrations.diffusion.args.DiffusionConfig">DiffusionConfig</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -947,7 +952,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.diffusion.args" class="level1">
 <h1>integrations.diffusion.args</h1>
 <p><code>integrations.diffusion.args</code></p>
-<p>Config args for diffusion LM training (nested under <code>diffusion:</code>).</p>
+<p>Deprecated plugin arguments for diffusion LM training.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -960,23 +965,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.integrations.diffusion.args.DiffusionArgs">DiffusionArgs</a></td>
-<td>Plugin entry that exposes the nested <code>diffusion</code> block to the core config.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.integrations.diffusion.args.DiffusionConfig">DiffusionConfig</a></td>
-<td>Nested diffusion configuration available under the <code>diffusion</code> key.</td>
+<td>Plugin entry that preserves the legacy <code>diffusion</code> block.</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.integrations.diffusion.args.DiffusionArgs" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.diffusion.args.DiffusionArgs">DiffusionArgs</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.args.DiffusionArgs()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Plugin entry that exposes the nested <code>diffusion</code> block to the core config.</p>
-</section>
-<section id="axolotl.integrations.diffusion.args.DiffusionConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.diffusion.args.DiffusionConfig">DiffusionConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.args.DiffusionConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Nested diffusion configuration available under the <code>diffusion</code> key.</p>
+<p>Plugin entry that preserves the legacy <code>diffusion</code> block.</p>
 
 
 </section>

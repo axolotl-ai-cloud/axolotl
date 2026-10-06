@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -77,7 +77,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +692,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -936,6 +942,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.train.handle_untrained_tokens_fix" id="toc-axolotl.train.handle_untrained_tokens_fix" class="nav-link" data-scroll-target="#axolotl.train.handle_untrained_tokens_fix">handle_untrained_tokens_fix</a></li>
   <li><a href="#axolotl.train.save_initial_configs" id="toc-axolotl.train.save_initial_configs" class="nav-link" data-scroll-target="#axolotl.train.save_initial_configs">save_initial_configs</a></li>
   <li><a href="#axolotl.train.save_trained_model" id="toc-axolotl.train.save_trained_model" class="nav-link" data-scroll-target="#axolotl.train.save_trained_model">save_trained_model</a></li>
+  <li><a href="#axolotl.train.seed_model_initialization" id="toc-axolotl.train.seed_model_initialization" class="nav-link" data-scroll-target="#axolotl.train.seed_model_initialization">seed_model_initialization</a></li>
   <li><a href="#axolotl.train.setup_model_and_tokenizer" id="toc-axolotl.train.setup_model_and_tokenizer" class="nav-link" data-scroll-target="#axolotl.train.setup_model_and_tokenizer">setup_model_and_tokenizer</a></li>
   <li><a href="#axolotl.train.setup_model_and_trainer" id="toc-axolotl.train.setup_model_and_trainer" class="nav-link" data-scroll-target="#axolotl.train.setup_model_and_trainer">setup_model_and_trainer</a></li>
   <li><a href="#axolotl.train.setup_model_card" id="toc-axolotl.train.setup_model_card" class="nav-link" data-scroll-target="#axolotl.train.setup_model_card">setup_model_card</a></li>
@@ -988,26 +995,30 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Save the trained model according to configuration and training setup.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.train.seed_model_initialization">seed_model_initialization</a></td>
+<td>Seed all model and adapter initialization before the model loader runs.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.train.setup_model_and_tokenizer">setup_model_and_tokenizer</a></td>
 <td>Load the tokenizer, processor (for multimodal models), and model based on</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.train.setup_model_and_trainer">setup_model_and_trainer</a></td>
 <td>Load model, tokenizer, trainer, etc. Helper function to encapsulate the full</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.train.setup_model_card">setup_model_card</a></td>
 <td>Set up the Axolotl badge and add the Axolotl config to the model card if available.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.train.setup_reference_model">setup_reference_model</a></td>
 <td>Set up the reference model for RL training if needed.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.train.setup_signal_handler">setup_signal_handler</a></td>
 <td>Set up signal handler for graceful termination.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.train.train">train</a></td>
 <td>Train a model on the given dataset.</td>
 </tr>
@@ -1239,9 +1250,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 </section>
 </section>
+<section id="axolotl.train.seed_model_initialization" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.train.seed_model_initialization">seed_model_initialization</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>train.seed_model_initialization(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Seed all model and adapter initialization before the model loader runs.</p>
+</section>
 <section id="axolotl.train.setup_model_and_tokenizer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.setup_model_and_tokenizer">setup_model_and_tokenizer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>train.setup_model_and_tokenizer(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>train.setup_model_and_tokenizer(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Load the tokenizer, processor (for multimodal models), and model based on
 configuration.</p>
 <section id="parameters-5" class="level4 doc-section doc-section-parameters">
@@ -1298,7 +1314,7 @@ configuration.</p>
 </section>
 <section id="axolotl.train.setup_model_and_trainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.setup_model_and_trainer">setup_model_and_trainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>train.setup_model_and_trainer(cfg, dataset_meta)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>train.setup_model_and_trainer(cfg, dataset_meta)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Load model, tokenizer, trainer, etc. Helper function to encapsulate the full
 trainer setup.</p>
 <section id="parameters-6" class="level4 doc-section doc-section-parameters">
@@ -1361,7 +1377,7 @@ trainer setup.</p>
 </section>
 <section id="axolotl.train.setup_model_card" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.setup_model_card">setup_model_card</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>train.setup_model_card(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>train.setup_model_card(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Set up the Axolotl badge and add the Axolotl config to the model card if available.</p>
 <section id="parameters-7" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-7">Parameters</h4>
@@ -1393,7 +1409,7 @@ trainer setup.</p>
 </section>
 <section id="axolotl.train.setup_reference_model" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.setup_reference_model">setup_reference_model</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>train.setup_reference_model(cfg, tokenizer, processor<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>train.setup_reference_model(cfg, tokenizer, processor<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Set up the reference model for RL training if needed.</p>
 <section id="parameters-8" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-8">Parameters</h4>
@@ -1461,7 +1477,7 @@ trainer setup.</p>
 </section>
 <section id="axolotl.train.setup_signal_handler" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.setup_signal_handler">setup_signal_handler</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>train.setup_signal_handler(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>train.setup_signal_handler(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Set up signal handler for graceful termination.</p>
 <section id="parameters-9" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-9">Parameters</h4>
@@ -1499,7 +1515,7 @@ trainer setup.</p>
 </section>
 <section id="axolotl.train.train" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.train.train">train</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>train.train(cfg, dataset_meta)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>train.train(cfg, dataset_meta)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Train a model on the given dataset.</p>
 <section id="parameters-10" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-10">Parameters</h4>

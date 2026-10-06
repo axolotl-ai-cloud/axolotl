@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -43,7 +43,7 @@ ul.task-list li input[type="checkbox"] {
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -658,6 +658,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -1130,6 +1136,20 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>prompt to response</td>
 <td>SFT loss weighted by detached token probability (<a href="https://arxiv.org/abs/2508.05629">paper</a>)</td>
 </tr>
+<tr class="odd">
+<td>Native diffusion LM 🟡</td>
+<td><code>diffusion_lm:</code></td>
+<td>n/a</td>
+<td>prompt to response</td>
+<td>masked/uniform-noise denoising objective from the model profile; LoRA only; see <a href="../docs/diffusion_lm.html">diffusion_lm</a></td>
+</tr>
+<tr class="even">
+<td>Typed decisions 🟡</td>
+<td>plugin <code>diffusion_decision</code> + <code>diffusion_decision:</code></td>
+<td>n/a</td>
+<td>typed decision JSONL</td>
+<td>choice/score/yes-no labels on a diffusion canvas</td>
+</tr>
 </tbody>
 </table>
 <p>Most runs start with <strong>SFT</strong> (the default). Reach for the preference methods (DPO and its variants) once you have chosen/rejected pairs, and GRPO when you have a verifiable reward. The rest are specialized.</p>
@@ -1464,26 +1484,31 @@ Warning
 <td>packing without a mask tensor, PyTorch &gt;= 2.10</td>
 </tr>
 <tr class="even">
+<td>Diffusion varlen 🟡</td>
+<td><code>varlen</code></td>
+<td>native Nemotron diffusion only, PyTorch &gt;= 2.14</td>
+</tr>
+<tr class="odd">
 <td>FlexAttention</td>
 <td><code>flex_attention</code> (<code>flex_attention: true</code>)</td>
 <td>PyTorch &gt;= 2.6; enables <code>scaling_softmax</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>xFormers</td>
 <td>(<code>xformers_attention: true</code>)</td>
 <td>varlen packing</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>SageAttention</td>
 <td>(<code>sage_attention: true</code>)</td>
 <td>block-quantized</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>FP8 attention 🟡</td>
 <td><code>attn_implementation: fp8</code></td>
 <td>SM90+, PyTorch &gt;= 2.11</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Large head-dim (&gt;256)</td>
 <td><code>large_head_attention: auto\|sdpa\|triton_flash</code></td>
 <td>Triton kernel up to 512</td>
@@ -1591,6 +1616,10 @@ Warning
 <td>BitNet (1.58-bit) ⚪</td>
 <td>full fine-tune only, <strong>LoRA not supported</strong> (see <a href="../docs/1_58bit_finetuning.html">1_58bit_finetuning</a>)</td>
 </tr>
+<tr class="even">
+<td>Diffusion LMs 🟡 (Nemotron-Labs-Diffusion, Dream v0, DiffusionGemma)</td>
+<td>native <code>diffusion_lm:</code> training, packing, CCE (Nemotron); LoRA only (no DoRA); Nemotron adds QLoRA, FSDP2 and fused LoRA kernels (see <a href="../docs/diffusion_lm.html">diffusion_lm</a>)</td>
+</tr>
 </tbody>
 </table>
 </section>
@@ -1645,6 +1674,11 @@ Warning
 <td><code>chat_template</code> + image/audio</td>
 <td>resizing, role boundaries</td>
 </tr>
+<tr class="even">
+<td>Typed decisions 🟡</td>
+<td><code>diffusion_decision.jsonl</code>, <code>.typed_decisions</code>, <code>.procedural</code></td>
+<td><code>diffusion_decision</code> plugin only</td>
+</tr>
 </tbody>
 </table>
 </section>
@@ -1657,6 +1691,10 @@ Warning
 <section id="method-plug-ins-extensions" class="level2">
 <h2 class="anchored" data-anchor-id="method-plug-ins-extensions">Method plug-ins &amp; extensions</h2>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>Plugin</th>
@@ -1669,26 +1707,30 @@ Warning
 <td>knowledge distillation (offline + online vLLM/SGLang teacher)</td>
 </tr>
 <tr class="even">
-<td><code>diffusion</code></td>
-<td>diffusion-LM training</td>
+<td><code>diffusion</code> 🔴</td>
+<td>legacy <code>diffusion:</code> block; translated to <code>diffusion_lm.from_causal_lm: true</code></td>
 </tr>
 <tr class="odd">
+<td><code>diffusion_decision</code> 🟡</td>
+<td>typed-decision training for native diffusion models</td>
+</tr>
+<tr class="even">
 <td><code>hatchery</code></td>
 <td>remote training (Tinker/Hatchery backends)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>nemo_gym</code></td>
 <td>RL environments / verifiable rewards</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>llm_compressor</code></td>
 <td>sparse fine-tuning</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>grokfast</code></td>
 <td>grokking-accelerated optimizer</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>lm_eval</code></td>
 <td>post-train eval harness</td>
 </tr>
@@ -1930,6 +1972,7 @@ Warning
 <li>Multimodal / VLM (“limited, no full feature parity”)</li>
 <li>N-D parallelism and Tensor Parallel</li>
 <li>Expert Parallel (<code>deep_ep</code> or <code>torch</code> backend)</li>
+<li>Native diffusion LMs (<code>diffusion_lm:</code>) and typed-decision training</li>
 </ul>
 </section>
 <section id="wip-feature-branch-only" class="level3">
@@ -1945,6 +1988,7 @@ Warning
 <li>Legacy attention booleans: use <code>attn_implementation</code></li>
 <li><code>rl: ipo</code> direct: use <code>dpo_loss_type: [ipo]</code></li>
 <li><code>noisy_embedding_alpha</code>, <code>dpo_beta</code>, <code>evaluation_strategy</code></li>
+<li><code>diffusion:</code> block: use <code>diffusion_lm:</code> (<code>from_causal_lm: true</code> for causal checkpoints, which still needs the <code>diffusion</code> plugin for its trainer)</li>
 <li>Removed entirely: FSDP1 (<code>fsdp_version: 1</code> and the bare <code>fsdp:</code> list are now rejected; use <code>fsdp_config:</code>), <code>s2_attention</code>, <code>flash_attn_rms_norm</code></li>
 </ul>
 </section>

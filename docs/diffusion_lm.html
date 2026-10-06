@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="A guide to the performance and memory optimizations available in Axolotl.">
 
-<title>Optimizations Guide – Axolotl</title>
+<title>Native diffusion language-model training – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -148,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/optimizations.html">Optimizations Guide</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/diffusion_lm.html">Native diffusion language-model training</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -693,7 +692,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+  <a href="../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Native diffusion language-model training</span></a>
   </div>
 </li>
@@ -777,7 +776,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link active">
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Optimizations Guide</span></a>
   </div>
 </li>
@@ -934,57 +933,35 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#speed-optimizations" id="toc-speed-optimizations" class="nav-link active" data-scroll-target="#speed-optimizations">Speed Optimizations</a>
+  <li><a href="#installation" id="toc-installation" class="nav-link active" data-scroll-target="#installation">Installation</a></li>
+  <li><a href="#start-with-nemotron-3b" id="toc-start-with-nemotron-3b" class="nav-link" data-scroll-target="#start-with-nemotron-3b">Start with Nemotron 3B</a></li>
+  <li><a href="#attention-backends" id="toc-attention-backends" class="nav-link" data-scroll-target="#attention-backends">Attention backends</a></li>
+  <li><a href="#packed-training" id="toc-packed-training" class="nav-link" data-scroll-target="#packed-training">Packed training</a></li>
+  <li><a href="#diffusiongemma-attention-boundaries" id="toc-diffusiongemma-attention-boundaries" class="nav-link" data-scroll-target="#diffusiongemma-attention-boundaries">DiffusionGemma attention boundaries</a></li>
+  <li><a href="#objective-and-recurrence-options" id="toc-objective-and-recurrence-options" class="nav-link" data-scroll-target="#objective-and-recurrence-options">Objective and recurrence options</a></li>
+  <li><a href="#adapters-merging-and-inference" id="toc-adapters-merging-and-inference" class="nav-link" data-scroll-target="#adapters-merging-and-inference">Adapters, merging and inference</a></li>
+  <li><a href="#typed-decision-training" id="toc-typed-decision-training" class="nav-link" data-scroll-target="#typed-decision-training">Typed-decision training</a>
   <ul class="collapse">
-  <li><a href="#sample-packing" id="toc-sample-packing" class="nav-link" data-scroll-target="#sample-packing">Sample Packing</a></li>
-  <li><a href="#attention-implementations" id="toc-attention-implementations" class="nav-link" data-scroll-target="#attention-implementations">Attention Implementations</a></li>
-  <li><a href="#lora-optimizations" id="toc-lora-optimizations" class="nav-link" data-scroll-target="#lora-optimizations">LoRA Optimizations</a></li>
+  <li><a href="#dataset-format" id="toc-dataset-format" class="nav-link" data-scroll-target="#dataset-format">Dataset format</a></li>
+  <li><a href="#labels" id="toc-labels" class="nav-link" data-scroll-target="#labels">Labels</a></li>
+  <li><a href="#splits-and-provenance" id="toc-splits-and-provenance" class="nav-link" data-scroll-target="#splits-and-provenance">Splits and provenance</a></li>
+  <li><a href="#mixture-and-weighting" id="toc-mixture-and-weighting" class="nav-link" data-scroll-target="#mixture-and-weighting">Mixture and weighting</a></li>
+  <li><a href="#batching" id="toc-batching" class="nav-link" data-scroll-target="#batching">Batching</a></li>
+  <li><a href="#outputs" id="toc-outputs" class="nav-link" data-scroll-target="#outputs">Outputs</a></li>
+  <li><a href="#public-procedural-decision-mix" id="toc-public-procedural-decision-mix" class="nav-link" data-scroll-target="#public-procedural-decision-mix">Public procedural decision mix</a></li>
   </ul></li>
-  <li><a href="#memory-optimizations" id="toc-memory-optimizations" class="nav-link" data-scroll-target="#memory-optimizations">Memory Optimizations</a>
-  <ul class="collapse">
-  <li><a href="#parameter-efficient-finetuning-lora-qlora" id="toc-parameter-efficient-finetuning-lora-qlora" class="nav-link" data-scroll-target="#parameter-efficient-finetuning-lora-qlora">Parameter Efficient Finetuning (LoRA &amp; QLoRA)</a></li>
-  <li><a href="#gradient-checkpointing-activation-offloading" id="toc-gradient-checkpointing-activation-offloading" class="nav-link" data-scroll-target="#gradient-checkpointing-activation-offloading">Gradient Checkpointing &amp; Activation Offloading</a></li>
-  <li><a href="#layer-offloading" id="toc-layer-offloading" class="nav-link" data-scroll-target="#layer-offloading">Layer Offloading</a></li>
-  <li><a href="#cut-cross-entropy-cce" id="toc-cut-cross-entropy-cce" class="nav-link" data-scroll-target="#cut-cross-entropy-cce">Cut Cross Entropy (CCE)</a></li>
-  <li><a href="#liger-kernels" id="toc-liger-kernels" class="nav-link" data-scroll-target="#liger-kernels">Liger Kernels</a></li>
-  <li><a href="#fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe" id="toc-fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe" class="nav-link" data-scroll-target="#fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe">Fused RMSNorm + RoPE (Qwen3 / Qwen3-MoE / Qwen3.5 / Qwen3.5-MoE / Qwen3.6 dense / Qwen3.6-MoE)</a></li>
-  <li><a href="#expert-kernels" id="toc-expert-kernels" class="nav-link" data-scroll-target="#expert-kernels">Expert Kernels</a></li>
-  </ul></li>
-  <li><a href="#long-context-models" id="toc-long-context-models" class="nav-link" data-scroll-target="#long-context-models">Long Context Models</a>
-  <ul class="collapse">
-  <li><a href="#rope-scaling" id="toc-rope-scaling" class="nav-link" data-scroll-target="#rope-scaling">RoPE Scaling</a></li>
-  <li><a href="#context-parallelism" id="toc-context-parallelism" class="nav-link" data-scroll-target="#context-parallelism">Context Parallelism</a></li>
-  <li><a href="#artic-long-sequence-training-alst" id="toc-artic-long-sequence-training-alst" class="nav-link" data-scroll-target="#artic-long-sequence-training-alst">Artic Long Sequence Training (ALST)</a></li>
-  </ul></li>
-  <li><a href="#large-models-distributed-training" id="toc-large-models-distributed-training" class="nav-link" data-scroll-target="#large-models-distributed-training">Large Models (Distributed Training)</a>
-  <ul class="collapse">
-  <li><a href="#n-d-parallelism-beta" id="toc-n-d-parallelism-beta" class="nav-link" data-scroll-target="#n-d-parallelism-beta">N-D Parallelism (Beta)</a></li>
-  </ul></li>
-  <li><a href="#quantization" id="toc-quantization" class="nav-link" data-scroll-target="#quantization">Quantization</a>
-  <ul class="collapse">
-  <li><a href="#bit-training-qlora" id="toc-bit-training-qlora" class="nav-link" data-scroll-target="#bit-training-qlora">4-bit Training (QLoRA)</a></li>
-  <li><a href="#fp8-training" id="toc-fp8-training" class="nav-link" data-scroll-target="#fp8-training">FP8 Training</a></li>
-  <li><a href="#nvfp4-w4a4-lora" id="toc-nvfp4-w4a4-lora" class="nav-link" data-scroll-target="#nvfp4-w4a4-lora">NVFP4 (W4A4) LoRA</a></li>
-  <li><a href="#quantization-aware-training-qat" id="toc-quantization-aware-training-qat" class="nav-link" data-scroll-target="#quantization-aware-training-qat">Quantization Aware Training (QAT)</a></li>
-  <li><a href="#gptq" id="toc-gptq" class="nav-link" data-scroll-target="#gptq">GPTQ</a></li>
-  <li><a href="#moe-expert-quantization" id="toc-moe-expert-quantization" class="nav-link" data-scroll-target="#moe-expert-quantization">MoE Expert Quantization</a></li>
-  </ul></li>
+  <li><a href="#converting-a-causal-lm" id="toc-converting-a-causal-lm" class="nav-link" data-scroll-target="#converting-a-causal-lm">Converting a causal LM</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/optimizations.html">Optimizations Guide</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/diffusion_lm.html">Native diffusion language-model training</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Optimizations Guide</h1>
+<h1 class="title">Native diffusion language-model training</h1>
 </div>
 
-<div>
-  <div class="description">
-    A guide to the performance and memory optimizations available in Axolotl.
-  </div>
-</div>
 
 
 <div class="quarto-title-meta">
@@ -999,195 +976,381 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </header>
 
 
-<p>Axolotl includes numerous optimizations to speed up training, reduce memory usage, and handle large models.</p>
-<p>This guide provides a high-level overview and directs you to the detailed documentation for each feature.</p>
-<section id="speed-optimizations" class="level2">
-<h2 class="anchored" data-anchor-id="speed-optimizations">Speed Optimizations</h2>
-<p>These optimizations focus on increasing training throughput and reducing total training time.</p>
-<section id="sample-packing" class="level3">
-<h3 class="anchored" data-anchor-id="sample-packing">Sample Packing</h3>
-<p>Improves GPU utilization by combining multiple short sequences into a single packed sequence for training. This requires enabling one of the <a href="#attention-implementations">attention</a> implementations below.</p>
-<ul>
-<li><strong>Config:</strong> <code>sample_packing: true</code></li>
-<li><strong>Learn more:</strong> <a href="../docs/multipack.html">Sample Packing</a></li>
-</ul>
+<p>Train supported diffusion checkpoints with <code>diffusion_lm:</code> and the usual
+Axolotl chat datasets. No plugin is required. The model profile selects its
+noise process, attention layout, logit alignment and reference loss.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Model</th>
+<th>Noise and layout</th>
+<th>Default native objective</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Nemotron-Labs-Diffusion (3B, 8B)</td>
+<td>Absorbing mask, full sequence, aligned logits</td>
+<td>Inverse-time weighted CE at masked positions</td>
+</tr>
+<tr class="even">
+<td>Dream v0</td>
+<td>Absorbing mask, full sequence, shifted logits</td>
+<td>Source-compatible masked CE with inverse-time weighting</td>
+</tr>
+<tr class="odd">
+<td>DiffusionGemma</td>
+<td>Uniform token noise, causal encoder and bidirectional canvas</td>
+<td>Canvas CE, encoder AR CE and two-pass self-conditioning</td>
+</tr>
+</tbody>
+</table>
+<p>Other models can still train with the legacy masked-diffusion objective by
+setting <code>diffusion_lm.from_causal_lm: true</code> with the legacy <code>diffusion</code> plugin;
+any other <code>diffusion_lm:</code> config on a model without a native profile is
+rejected rather than trained as causal SFT. See
+<a href="#converting-a-causal-lm">Converting a causal LM</a>.</p>
+<section id="installation" class="level2">
+<h2 class="anchored" data-anchor-id="installation">Installation</h2>
+<p>Native diffusion training runs on Axolotl’s supported Torch range, using the
+dependency versions pinned in <code>pyproject.toml</code>. <code>attn_implementation: varlen</code>
+additionally requires Torch 2.14, so install the <code>torch==2.14.0</code> wheel for your
+accelerator from <a href="https://pytorch.org/get-started/locally/">PyTorch’s installation guide</a>
+before installing Axolotl:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> venv .venv-diffusion</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv-diffusion/bin/activate</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> pip install <span class="at">--upgrade</span> pip</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> pip install torch==2.14.0  <span class="co"># or the accelerator-specific wheel</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> pip install <span class="at">-e</span> .</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Put this environment’s <code>bin</code> directory first on <code>PATH</code> so <code>axolotl train</code>
+launches the matching Accelerate installation.</p>
 </section>
-<section id="attention-implementations" class="level3">
-<h3 class="anchored" data-anchor-id="attention-implementations">Attention Implementations</h3>
-<p>Using an optimized attention implementation is critical for training speed.</p>
-<ul>
-<li><strong><a href="https://github.com/Dao-AILab/flash-attention">Flash Attention 2</a></strong>: <code>attn_implementation: flash_attention_2</code>. <strong>(Recommended)</strong> The industry standard for fast attention on modern GPUs. Requires Ampere or higher. For AMD, check <a href="https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#amd-rocm-support">AMD Support</a>.</li>
-<li><strong><a href="https://pytorch.org/blog/flexattention/">Flex Attention</a></strong>: <code>attn_implementation: flex_attention</code>.</li>
-<li><strong><a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html">SDP Attention</a></strong>: <code>attn_implementation: sdpa</code>. PyTorch’s native implementation.</li>
-<li><strong><a href="https://github.com/facebookresearch/xformers">Xformers</a></strong>: <code>attn_implementation: xformers</code>. Works with FP16.</li>
-</ul>
-<p>See <a href="../docs/attention.html">Attention</a> for the full list of backends and the canonical values.</p>
+<section id="start-with-nemotron-3b" class="level2">
+<h2 class="anchored" data-anchor-id="start-with-nemotron-3b">Start with Nemotron 3B</h2>
+<p>The small iteration target is <code>nvidia/Nemotron-Labs-Diffusion-3B</code>. From the
+repository root:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess examples/nemotron-diffusion/lora-smoke.yaml</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/nemotron-diffusion/lora-smoke.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This recipe trains two optimizer steps on 32 synthetic chat records. It checks
+preprocessing, packed training, gradient accumulation and adapter saving; it is
+not a quality benchmark. It pins the model and remote-code revision with
+<code>revision_of_model</code> and uses the published bidirectional diffusion mode,
+aligned logits and the existing mask token 100. Padding reuses the tokenizer EOS
+token without resizing the vocabulary. When you change models, remove or
+replace <code>revision_of_model</code>.</p>
 </section>
-<section id="lora-optimizations" class="level3">
-<h3 class="anchored" data-anchor-id="lora-optimizations">LoRA Optimizations</h3>
-<p>Leverages optimized kernels to accelerate LoRA training and reduce memory usage.</p>
-<ul>
-<li><strong>Learn more:</strong> <a href="../docs/lora_optims.html">LoRA Optimizations Documentation</a></li>
-</ul>
+<section id="attention-backends" class="level2">
+<h2 class="anchored" data-anchor-id="attention-backends">Attention backends</h2>
+<p>Native diffusion defaults to <code>flex_attention</code> when <code>attn_implementation</code> is
+omitted. <code>eager</code> and <code>sdpa</code> remain explicit fallbacks; the examples use <code>sdpa</code>
+as a dense reference. FlexAttention requires a compatible GPU, and its first
+execution includes kernel compilation.</p>
+<p>Nemotron also supports PyTorch’s public variable-length attention:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> varlen</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This path gathers valid Q/K/V tokens into THD format and passes cumulative
+document offsets to <code>torch.nn.attention.varlen.varlen_attn</code>, without building a
+dense document mask. PyTorch selects the underlying kernel. <code>varlen</code> requires
+Torch 2.14 or newer, a native full-sequence diffusion model (Nemotron),
+uncached bidirectional attention, and zero attention dropout. Dream and
+DiffusionGemma keep their existing backends: Gemma’s per-layer
+encoder-prefix/canvas visibility cannot be expressed as one full-sequence
+varlen call.</p>
+<p>DiffusionGemma’s large attention heads can exceed a GPU’s per-kernel shared
+memory limit with the default Flex tile sizes. Smaller tiles can be configured
+without changing attention visibility:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> flex_attention</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attn_compile_kwargs</span><span class="kw">:</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fwd_BLOCK_M</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fwd_BLOCK_N</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fwd_num_stages</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bwd_BLOCK_M1</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bwd_BLOCK_N1</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bwd_BLOCK_M2</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bwd_BLOCK_N2</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bwd_num_stages</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="packed-training" class="level2">
+<h2 class="anchored" data-anchor-id="packed-training">Packed training</h2>
+<p>Enable <code>sample_packing: true</code>. Logical documents remain isolated even when they
+share a physical row, and position IDs restart at document boundaries.
+DiffusionGemma also keeps each canvas associated with its own encoder history.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">diffusion_lm</span><span class="kw">:</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">overflow_policy</span><span class="kw">:</span><span class="at"> error</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">generate_samples</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>sequence_len</code> limits each example’s logical layout. For packed and
+<code>batch_flattening</code> rows, Axolotl derives the total allocation as
+<code>sequence_len * micro_batch_size</code>. Ordinary padded batches have no aggregate
+row budget. Evaluation uses <code>eval_batch_size</code> when it is set.</p>
+<p>FlexAttention rounds capacity down to 128-token buckets. Encoder/canvas packing
+reserves another 128 tokens because the two streams pad independently. Use a
+derived allocation of at least 128 for full-sequence models and 256 for
+DiffusionGemma; increase <code>sequence_len</code> if individual examples do not fit.
+SDPA and eager use the full derived capacity.</p>
+<p>The default <code>overflow_policy: error</code> raises on an oversized example.
+<code>overflow_policy: drop</code> filters and counts oversized examples during
+preprocessing; it never truncates them.</p>
+<p>Dream can use <code>eos_tail: visible_supervised</code> to extend each logical example to
+<code>sequence_len</code> with supervised EOS tokens. These are semantic tokens and
+consume packing capacity. Physical padding is excluded from attention and loss.</p>
+<p>Packing mainly saves memory; throughput depends on your lengths and attention
+backend, so benchmark both settings for your workload.</p>
+</section>
+<section id="diffusiongemma-attention-boundaries" class="level2">
+<h2 class="anchored" data-anchor-id="diffusiongemma-attention-boundaries">DiffusionGemma attention boundaries</h2>
+<p>Prompt prefill is causal. During denoising, each token in the current output
+canvas attends to the clean prefix and every valid token in that same noisy
+canvas. Bidirectional visibility applies to the output canvas, not the combined
+prompt and output sequence.</p>
+<p>Training uses the same boundary. The encoder can process the complete clean
+sequence for its auxiliary autoregressive loss, but the decoder mask exposes
+only keys before the selected output block. Clean copies of that block and
+later output tokens stay hidden, and causal encoder attention prevents those
+future tokens from entering the visible prefix states.</p>
+<p>Full-attention decoder layers see the entire eligible prefix. Sliding-attention
+layers see the retained prefix window and the entire current canvas; they do
+not apply a query-relative sliding window inside the canvas. Both layer types
+exclude other packed examples. Dream and Nemotron use their full-sequence
+layouts.</p>
+</section>
+<section id="objective-and-recurrence-options" class="level2">
+<h2 class="anchored" data-anchor-id="objective-and-recurrence-options">Objective and recurrence options</h2>
+<p>Unset options inherit the model’s reference behavior. Dream’s CART variant uses
+<code>time_weighting: cart</code> and <code>cart_p</code>; its optional focal reweighting uses
+<code>token_reweighting: true</code>, <code>alpha</code> and <code>gamma</code>.</p>
+<p>DiffusionGemma’s default self-conditioning probability
+(<code>self_conditioning.p</code>) is 0.5. Its optional Rhine objectives use
+<code>time_weighting: loo</code> or <code>inv_one_minus_t</code> with
+<code>objective_reduction: example_mean</code>; <code>rhine_weight_clip</code> caps the
+<code>1 / (1 - t)</code> weights. <code>encoder_ar_weight</code> scales the separate encoder loss.
+<code>self_conditioning.train_module: true</code> includes the self-conditioning module in
+the saved adapter.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">diffusion_lm</span><span class="kw">:</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unroll</span><span class="kw">:</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">k_max</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">grad_through_steps</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>With <code>unroll.k_max</code> above 1, each step draws a read count uniformly from 1 to
+<code>k_max</code>. Earlier reads run without retained gradients and the final read
+supplies the loss. <code>grad_through_steps: true</code> is available only for models with
+self-conditioning.</p>
+</section>
+<section id="adapters-merging-and-inference" class="level2">
+<h2 class="anchored" data-anchor-id="adapters-merging-and-inference">Adapters, merging and inference</h2>
+<p>Native training requires LoRA with explicit text attention or dense-MLP
+projection targets. DoRA, layer replication, <code>lora_target_linear</code> and
+<code>lora_target_parameters</code> are rejected, and native vocabulary resizing is
+disabled. Nemotron additionally supports <code>adapter: qlora</code> (4-bit; 8-bit is
+rejected), FSDP2 via <code>fsdp_config</code>, and the fused LoRA kernels
+(<code>lora_qkv_kernel</code>, <code>lora_o_kernel</code>, <code>lora_mlp_kernel</code>) together with
+<code>lora_fp32_gradients</code>; Dream and DiffusionGemma remain unquantized LoRA
+without FSDP.</p>
+<p>DiffusionGemma’s encoder and decoder text weights are tied, so their LoRA
+factors are shared. Its targets must be a single expression naming both the
+encoder language model and the decoder, for example:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> </span><span class="st">'^model\.(encoder\.language_model|decoder)\.layers\.\d+\.self_attn\.(q|k|v|o)_proj$'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Vision, router and expert parameters stay frozen.</p>
+<p>Nemotron supports opt-in Cut Cross Entropy for its aligned diffusion objective
+and for typed-decision training. With Axolotl’s CCE fork installed, add:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">cut_cross_entropy</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Keep any other plugins the recipe requires in that list. The final training
+read computes full-vocabulary CE from hidden states without materializing
+vocabulary logits; decision training still computes its restricted-label and
+Brier terms over the allowed answers. Targets stay aligned, with no causal
+shift. This path requires a plain linear output head and does not support a
+LoRA output head or the <code>loo</code> objective.</p>
+<p><code>axolotl merge-lora config.yaml</code> exports a merged checkpoint. When
+<code>merge_method</code> is omitted, DiffusionGemma selects <code>legacy</code> so its tied factors
+merge once; setting <code>merge_method: memory_efficient</code> for DiffusionGemma raises.</p>
+<p>For interactive generation, use <code>axolotl inference config.yaml --chat</code>. Each
+reply is a completion block appended to the conversation and denoised in one
+piece; see <a href="../docs/inference.html#sec-chat-diffusion">Inference</a>. Native models
+generate completions only.</p>
+</section>
+<section id="typed-decision-training" class="level2">
+<h2 class="anchored" data-anchor-id="typed-decision-training">Typed-decision training</h2>
+<p>The <code>diffusion_decision</code> plugin trains a native diffusion model to answer
+typed multiple-choice, score and yes/no questions. Each record renders a fixed
+decision system prompt from its question schema, sends its <code>state</code> as the user
+message, and places one answer label per question in the output canvas using
+the canvas template of the public <code>mmastrac/djev</code> project.</p>
+<p><code>examples/nemotron-diffusion/decision-lora-8b.yaml</code> is the starting recipe for
+<code>nvidia/Nemotron-Labs-Diffusion-8B</code>. It uses BF16, <code>attn_implementation: varlen</code>,
+and rank-64/alpha-128 LoRA over all seven attention and MLP projections with
+<code>loraplus_lr_ratio: 8</code>. It trains one epoch with AdamW at <code>6.5e-6</code>, microbatch
+16 and eight accumulation steps (effective batch 128). The decision loss
+combines candidate-restricted CE, full-vocabulary CE and a <code>0.1</code> Brier term,
+with <code>unroll.k_max: 2</code>, no latent slots and non-reentrant gradient
+checkpointing. The YAML leaves the model revision unpinned; add
+<code>revision_of_model</code> to a local copy for an exact reproduction.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess examples/nemotron-diffusion/decision-lora-8b.yaml</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/nemotron-diffusion/decision-lora-8b.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Set the <code>data_files</code> of the <code>datasets</code> and <code>test_datasets</code> entries to separate
+normalized train and development JSONL files. The recipe evaluates every 50
+steps and keeps the adapter with the best <code>eval_loss</code>. Keep held-out test data
+out of both entries.</p>
+<section id="dataset-format" class="level3">
+<h3 class="anchored" data-anchor-id="dataset-format">Dataset format</h3>
+<p><code>type: diffusion_decision.jsonl</code> reads already-normalized JSONL, one record per
+line. <code>diffusion_decision.typed_decisions</code> and <code>diffusion_decision.procedural</code>
+normalize rows from the <code>typed_decisions</code> and procedural typed-decision source
+schemas into the same form.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"source"</span><span class="fu">:</span><span class="st">"support_demo"</span><span class="fu">,</span><span class="dt">"family"</span><span class="fu">:</span><span class="st">"returns"</span><span class="fu">,</span><span class="dt">"id"</span><span class="fu">:</span><span class="st">"case-0042"</span><span class="fu">,</span><span class="dt">"group"</span><span class="fu">:</span><span class="st">"case-0042"</span><span class="fu">,</span><span class="dt">"instructions"</span><span class="fu">:</span><span class="st">"Decide from the supplied case only."</span><span class="fu">,</span><span class="dt">"state"</span><span class="fu">:{</span><span class="dt">"customer"</span><span class="fu">:</span><span class="st">"A customer says their unopened order arrived yesterday and asks for a refund."</span><span class="fu">,</span><span class="dt">"policy"</span><span class="fu">:</span><span class="st">"Unopened items delivered within 30 days may be refunded."</span><span class="fu">},</span><span class="dt">"questions"</span><span class="fu">:{</span><span class="dt">"refund"</span><span class="fu">:{</span><span class="dt">"type"</span><span class="fu">:</span><span class="st">"choice"</span><span class="fu">,</span><span class="dt">"instructions"</span><span class="fu">:</span><span class="st">"Choose the next action."</span><span class="fu">,</span><span class="dt">"options"</span><span class="fu">:</span><span class="ot">[</span><span class="fu">{</span><span class="dt">"name"</span><span class="fu">:</span><span class="st">"approve"</span><span class="fu">,</span><span class="dt">"description"</span><span class="fu">:</span><span class="st">"Approve a refund under the stated policy."</span><span class="fu">}</span><span class="ot">,</span><span class="fu">{</span><span class="dt">"name"</span><span class="fu">:</span><span class="st">"deny"</span><span class="fu">,</span><span class="dt">"description"</span><span class="fu">:</span><span class="st">"Deny the request because the policy does not apply."</span><span class="fu">}</span><span class="ot">,</span><span class="fu">{</span><span class="dt">"name"</span><span class="fu">:</span><span class="st">"escalate"</span><span class="fu">,</span><span class="dt">"description"</span><span class="fu">:</span><span class="st">"Send the case to a human reviewer."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">},</span><span class="dt">"urgency"</span><span class="fu">:{</span><span class="dt">"type"</span><span class="fu">:</span><span class="st">"score"</span><span class="fu">,</span><span class="dt">"instructions"</span><span class="fu">:</span><span class="st">"Rate how urgently this needs review."</span><span class="fu">,</span><span class="dt">"levels"</span><span class="fu">:</span><span class="ot">[</span><span class="st">"routine"</span><span class="ot">,</span><span class="st">"soon"</span><span class="ot">,</span><span class="st">"urgent"</span><span class="ot">]</span><span class="fu">},</span><span class="dt">"eligible"</span><span class="fu">:{</span><span class="dt">"type"</span><span class="fu">:</span><span class="st">"noul"</span><span class="fu">,</span><span class="dt">"instructions"</span><span class="fu">:</span><span class="st">"Is the customer eligible for a refund?"</span><span class="fu">,</span><span class="dt">"criteria"</span><span class="fu">:{</span><span class="dt">"true"</span><span class="fu">:</span><span class="st">"The stated policy permits a refund."</span><span class="fu">,</span><span class="dt">"false"</span><span class="fu">:</span><span class="st">"The stated policy does not permit a refund."</span><span class="fu">}}},</span><span class="dt">"labels"</span><span class="fu">:{</span><span class="dt">"refund"</span><span class="fu">:{</span><span class="dt">"kind"</span><span class="fu">:</span><span class="st">"dist"</span><span class="fu">,</span><span class="dt">"probs"</span><span class="fu">:</span><span class="ot">[</span><span class="fl">0.78</span><span class="ot">,</span><span class="fl">0.02</span><span class="ot">,</span><span class="fl">0.20</span><span class="ot">]</span><span class="fu">},</span><span class="dt">"urgency"</span><span class="fu">:{</span><span class="dt">"kind"</span><span class="fu">:</span><span class="st">"hard"</span><span class="fu">,</span><span class="dt">"gold_idx"</span><span class="fu">:</span><span class="dv">0</span><span class="fu">},</span><span class="dt">"eligible"</span><span class="fu">:{</span><span class="dt">"kind"</span><span class="fu">:</span><span class="st">"set"</span><span class="fu">,</span><span class="dt">"allowed_set"</span><span class="fu">:</span><span class="ot">[</span><span class="dv">0</span><span class="ot">]</span><span class="fu">}},</span><span class="dt">"source_metadata"</span><span class="fu">:{</span><span class="dt">"provenance"</span><span class="fu">:{</span><span class="dt">"dataset"</span><span class="fu">:</span><span class="st">"my-org/support-decisions"</span><span class="fu">,</span><span class="dt">"revision"</span><span class="fu">:</span><span class="st">"immutable-revision"</span><span class="fu">,</span><span class="dt">"split"</span><span class="fu">:</span><span class="st">"train"</span><span class="fu">,</span><span class="dt">"source_id"</span><span class="fu">:</span><span class="st">"case-0042"</span><span class="fu">}}}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>source</code>, <code>id</code> and <code>group</code> identify the row; <code>family</code> is optional and is used
+for split isolation. Records with the same source, family, state and top-level
+<code>instructions</code> that share a <code>group</code> are rendered on one canvas, up to
+<code>max_questions_per_canvas</code> questions. There is no per-row <code>system</code> field: put
+shared context in <code>state</code>, global instructions in <code>instructions</code>, and
+per-question instructions on each question. Keep question IDs stable and
+nonempty.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Type</th>
+<th>Required schema field</th>
+<th>Canonical alternative order</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>choice</code></td>
+<td><code>options</code></td>
+<td>List order. An option is a string or an object with <code>name</code> and <code>description</code>; descriptions are rendered.</td>
+</tr>
+<tr class="even">
+<td><code>score</code></td>
+<td><code>levels</code></td>
+<td>List order, lowest to highest as defined by the source. Do not sort levels lexically.</td>
+</tr>
+<tr class="odd">
+<td><code>noul</code></td>
+<td>none</td>
+<td><code>yes</code>, then <code>no</code>. Optional <code>criteria</code> documents the true/false conditions and is rendered.</td>
+</tr>
+</tbody>
+</table>
+<p>Label indexes always refer to this canonical order, never to option names or
+token IDs. Answer tokens come from <code>labels.codebook</code>: <code>vendored26</code> uses the
+djev letters <code>A</code>-<code>Z</code> (up to 26 alternatives); <code>expanded52</code> allows up to 52.</p>
+</section>
+<section id="labels" class="level3">
+<h3 class="anchored" data-anchor-id="labels">Labels</h3>
+<p>Every question has exactly one label:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"kind"</span><span class="fu">:</span><span class="st">"hard"</span><span class="fu">,</span><span class="dt">"gold_idx"</span><span class="fu">:</span><span class="dv">1</span><span class="fu">}</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"kind"</span><span class="fu">:</span><span class="st">"dist"</span><span class="fu">,</span><span class="dt">"probs"</span><span class="fu">:</span><span class="ot">[</span><span class="fl">0.10</span><span class="ot">,</span><span class="fl">0.70</span><span class="ot">,</span><span class="fl">0.20</span><span class="ot">]</span><span class="fu">}</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"kind"</span><span class="fu">:</span><span class="st">"set"</span><span class="fu">,</span><span class="dt">"allowed_set"</span><span class="fu">:</span><span class="ot">[</span><span class="dv">0</span><span class="ot">,</span><span class="dv">2</span><span class="ot">]</span><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>hard</code> names one zero-based alternative. <code>set</code> is a nonempty set of unique
+valid indexes. <code>dist</code> has one finite, nonnegative probability per alternative
+that sums to one within <code>1e-4</code>; zero entries are valid and must not be omitted.
+Partial distributions, ranking targets, per-row candidate token IDs and
+hard/soft blending are not accepted.</p>
+<p><code>labels.label_softmax</code> selects candidate-restricted CE (<code>restricted</code>),
+full-vocabulary CE over the allowed label tokens (<code>full</code>), or both (the
+default). The full-vocabulary term still penalizes probability outside the
+valid answers. <code>full_ce_weighting: dft</code> applies DFT weighting to hard-label
+full CE. <code>hard_label_smoothing</code> spreads that fraction of a one-hot CE target
+uniformly across the question’s valid answer tokens; Brier targets are
+unchanged.</p>
+</section>
+<section id="splits-and-provenance" class="level3">
+<h3 class="anchored" data-anchor-id="splits-and-provenance">Splits and provenance</h3>
+<p>Keep train, development and test data in separate files or dataset entries,
+and use <code>split: train</code> only for training entries. Preserve
+<code>source_metadata.provenance</code> with an immutable source location and revision,
+the split, and the source row ID. <code>typed_decisions</code> rows train only from a
+declared <code>train</code> split and reject a row <code>split</code> that disagrees with it. After
+normalization, the loader rejects states or grouped contexts shared between
+splits.</p>
+</section>
+<section id="mixture-and-weighting" class="level3">
+<h3 class="anchored" data-anchor-id="mixture-and-weighting">Mixture and weighting</h3>
+<p><code>mixture.weights</code> sets per-source sampling weights by <code>source</code>. Without
+weights, each source is sampled in proportion to its row count raised to
+<code>mixture.temperature</code> (default 0.5). <code>max_examples_per_source</code> caps rows per
+source. <code>loss_weight</code> multiplies each source’s loss. Loss is averaged over the
+questions on a canvas and then over canvases, so a canvas with many questions
+does not outweigh a single-question canvas.</p>
+<p>To train on a prebuilt draw sequence, set <code>mixture.premixed: true</code> and
+<code>per_batch_stratified: false</code>. Each training row then needs a unique draw ID
+and an origin matching its own identity; copies of one origin must be identical
+apart from this metadata:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="st">"source_metadata"</span><span class="er">:</span> <span class="fu">{</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"premix"</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"draw_id"</span><span class="fu">:</span> <span class="st">"run-000001"</span><span class="fu">,</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"origin"</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">"source"</span><span class="fu">:</span> <span class="st">"support_demo"</span><span class="fu">,</span> <span class="dt">"id"</span><span class="fu">:</span> <span class="st">"case-0042"</span><span class="fu">,</span> <span class="dt">"group"</span><span class="fu">:</span> <span class="st">"case-0042"</span><span class="fu">}</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="batching" class="level3">
+<h3 class="anchored" data-anchor-id="batching">Batching</h3>
+<p><code>batch_flattening: true</code> concatenates the logical microbatch and keeps
+decisions isolated through the varlen attention path. For variable-length
+decisions, set <code>batch_flattening: false</code>, <code>sample_packing: true</code> and
+<code>eval_sample_packing: false</code> instead. Packing uses <code>sequence_len</code> as the
+per-decision limit and <code>sequence_len * micro_batch_size</code> as the physical token
+budget. It requires <code>mixture.per_batch_stratified: false</code> and does not support
+sampled latent-slot counts. Reduce <code>micro_batch_size</code> and raise
+<code>gradient_accumulation_steps</code> if the effective batch does not fit.</p>
+</section>
+<section id="outputs" class="level3">
+<h3 class="anchored" data-anchor-id="outputs">Outputs</h3>
+<p>Each saved adapter includes <code>diffusion_decision_manifest.json</code>, which records
+the base model and revision, diffusion spec, canvas width, label codebook,
+latent slots, read protocol and tokenizer special IDs that an external
+inference integration must reproduce. Axolotl does not ship a decision-serving
+endpoint. Use a separate config for a frozen test split, and do not use test
+data for checkpoint selection.</p>
+</section>
+<section id="public-procedural-decision-mix" class="level3">
+<h3 class="anchored" data-anchor-id="public-procedural-decision-mix">Public procedural decision mix</h3>
+<p><code>scripts/diffusion_lm/build_public_decision_mix.py</code> materializes a reproducible
+train/dev mix from
+<a href="https://huggingface.co/datasets/tasksource/procedural-typed-decisions"><code>tasksource/procedural-typed-decisions</code></a>
+at revision <code>916e6cce365a65c37d58db70c9e369795817651e</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/diffusion_lm/build_public_decision_mix.py ./data/public-procedural</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/nemotron-diffusion/decision-lora-8b-public-procedural.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The output contains only rows from that dataset plus a <code>contract.json</code>
+recording the pinned revision and licenses. The dataset card declares
+Apache-2.0; the separate generator repository publishes its code under
+CC-BY-4.0. Keep <code>contract.json</code> with any materialized output you share. The
+model is covered by its own model-card license.</p>
+<p><code>--protected-normalized PATH</code> (repeatable) excludes any public row whose
+canonical state matches a row in your normalized evaluation JSONL; that file is
+never copied to the output. This is canonical-state decontamination only, not
+cross-source group or family disjointness. The train and dev outputs are
+checked against each other for state, family and group overlap.</p>
+<p><code>decision-lora-8b-public-procedural.yaml</code> pins the model revision and sets
+<code>mixture.temperature: 1.0</code>, which schedules each usable row once. At the pinned
+revisions, preprocessing keeps 30,080 train rows at the 2,048-token budget,
+which is 235 effective batches of 128, hence <code>max_steps: 235</code>. This mix is a
+reproducible starting point for the format, not a quality result.</p>
 </section>
 </section>
-<section id="memory-optimizations" class="level2">
-<h2 class="anchored" data-anchor-id="memory-optimizations">Memory Optimizations</h2>
-<p>These techniques help you fit larger models or use bigger batch sizes on your existing hardware.</p>
-<section id="parameter-efficient-finetuning-lora-qlora" class="level3">
-<h3 class="anchored" data-anchor-id="parameter-efficient-finetuning-lora-qlora">Parameter Efficient Finetuning (LoRA &amp; QLoRA)</h3>
-<p>Drastically reduces memory by training a small set of “adapter” parameters instead of the full model. This is the most common and effective memory-saving technique.</p>
-<ul>
-<li>Examples: Find configs with <code>lora</code> or <code>qlora</code> in the <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/llama-3">examples directory</a>.</li>
-<li>Config Reference: See <code>adapter</code>, <code>load_in_4bit</code>, and <code>load_in_8bit</code> in the <a href="../docs/config-reference.html">Configuration Reference</a>.</li>
-</ul>
-</section>
-<section id="gradient-checkpointing-activation-offloading" class="level3">
-<h3 class="anchored" data-anchor-id="gradient-checkpointing-activation-offloading">Gradient Checkpointing &amp; Activation Offloading</h3>
-<p>These techniques save VRAM by changing how activations are handled.</p>
-<ul>
-<li>Gradient Checkpointing: re-computes activations during the backward pass, trading compute time for VRAM.</li>
-<li>Activation Offloading: moves activations to CPU RAM or disk, trading I/O overhead for VRAM.</li>
-<li>Learn more: <a href="../docs/gradient_checkpointing.html">Gradient Checkpointing and Offloading Docs</a></li>
-</ul>
-</section>
-<section id="layer-offloading" class="level3">
-<h3 class="anchored" data-anchor-id="layer-offloading">Layer Offloading</h3>
-<p>Offloads frozen (non-trainable) decoder layer parameters to CPU and streams them back to GPU one layer at a time during forward/backward passes using CUDA stream prefetching. Especially effective for LoRA/QLoRA where most parameters are frozen.</p>
-<ul>
-<li><strong>Config:</strong> <code>layer_offloading: true</code></li>
-<li><strong>Learn more:</strong> <a href="../docs/gradient_checkpointing.html#enabling-layer-offloading">Layer Offloading Docs</a></li>
-</ul>
-</section>
-<section id="cut-cross-entropy-cce" class="level3">
-<h3 class="anchored" data-anchor-id="cut-cross-entropy-cce">Cut Cross Entropy (CCE)</h3>
-<p>Reduces VRAM usage by using an optimized cross-entropy loss calculation.</p>
-<ul>
-<li><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#cut-cross-entropy">Custom Integrations - CCE</a></li>
-</ul>
-</section>
-<section id="liger-kernels" class="level3">
-<h3 class="anchored" data-anchor-id="liger-kernels">Liger Kernels</h3>
-<p>Provides efficient Triton kernels to improve training speed and reduce memory usage.</p>
-<ul>
-<li><strong>Config:</strong> <code>liger_kernel_impl: cutile | cutedsl</code> optionally selects an alternative kernel backend (liger-kernel &gt;= 0.8.1, off by default): <code>cutile</code> (<code>pip install cuda-tile</code>) covers cross_entropy/geglu/layer_norm/rope and more; <code>cutedsl</code> (<code>pip install nvidia-cutlass-dsl</code>) covers cross_entropy/rms_norm, tuned for Blackwell. <code>fused_linear_cross_entropy</code> stays on Triton with either backend.</li>
-<li><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#liger-kernels">Custom Integrations - Liger Kernels</a></li>
-</ul>
-</section>
-<section id="fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe" class="level3">
-<h3 class="anchored" data-anchor-id="fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe">Fused RMSNorm + RoPE (Qwen3 / Qwen3-MoE / Qwen3.5 / Qwen3.5-MoE / Qwen3.6 dense / Qwen3.6-MoE)</h3>
-<p>Replaces the per-layer <code>q_norm + apply_rotary_pos_emb</code> (and matching K path) with a single Triton kernel launch on the full-attention layers. Opt-in. The kernel computes in fp32 and rounds once, so it matches an fp32 reference to within bf16 rounding — i.e.&nbsp;it is <em>more</em> accurate than the eager bf16 path, which rounds at several intermediate steps. Gemma 4 always uses the fused path (no flag needed). Qwen3.6 checkpoints are loaded by transformers under the <code>qwen3_5</code> / <code>qwen3_5_moe</code> model_types, so the same flag covers both generations.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fused_attn_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<ul>
-<li><strong>Compile-safe:</strong> the kernel is wrapped as a <code>torch.library.triton_op</code> and traces under <code>torch.compile(fullgraph=True)</code>.</li>
-<li><strong>Baseline perf:</strong> stacking <code>torch_compile: true</code> is a steady-state win that scales with arch — ~−14% to −16.5% on sm_86 (vanilla RTX 3090 / 3090 Ti), ~−19% on sm_120 (Blackwell/RTX 5090), measured on Qwen3-8B + LoRA r=16 + torch 2.11. Also trims peak memory ~2%.</li>
-<li><strong>Compile cold-start:</strong> adds 5–15 min on the first step.</li>
-<li><strong>Tuning (<code>torch_compile_options</code>):</strong> optionally sets allowlisted <code>torch._inductor.config</code> flags (disallowed keys are rejected at validation; see the config reference for the list). Payoff is arch-specific: the only measured win is <code>max_autotune_gemm: true</code> on sm_120 with ≥32 GB (~−2.6% over plain compile) — the same flag <em>regresses</em> ~+13% on sm_86, and every other flag tested was within noise. <code>triton.cudagraphs</code> needs static shapes and is incompatible with <code>sample_packing</code>.</li>
-</ul>
-</section>
-<section id="expert-kernels" class="level3">
-<h3 class="anchored" data-anchor-id="expert-kernels">Expert Kernels</h3>
-<p>Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.</p>
-<ul>
-<li><p><strong>ScatterMoE</strong>: Triton, any CUDA GPU.</p></li>
-<li><p><strong>SonicMoE</strong>: CUTLASS / cute-DSL, Hopper (H100/H200) or Blackwell (B200/GB200).</p></li>
-<li><p><strong>Config:</strong> <code>use_scattermoe: true</code> or <code>use_sonicmoe: true</code></p></li>
-<li><p><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#kernels-integration">Custom Integrations - Kernels Integration</a>, <a href="../docs/nvfp4_lora.html">NVFP4 MoE LoRA</a> for 4-bit checkpoints</p></li>
-</ul>
-</section>
-</section>
-<section id="long-context-models" class="level2">
-<h2 class="anchored" data-anchor-id="long-context-models">Long Context Models</h2>
-<p>Techniques to train models on sequences longer than their original context window.</p>
-<section id="rope-scaling" class="level3">
-<h3 class="anchored" data-anchor-id="rope-scaling">RoPE Scaling</h3>
-<p>Extends a model’s context window by interpolating its Rotary Position Embeddings.</p>
-<ul>
-<li><strong>Config:</strong> Pass the <code>rope_scaling</code> config under the <code>overrides_of_model_config:</code>. To learn how to set RoPE, check the respective model config.</li>
-</ul>
-</section>
-<section id="context-parallelism" class="level3">
-<h3 class="anchored" data-anchor-id="context-parallelism">Context Parallelism</h3>
-<p>Splits long sequences across multiple GPUs, enabling training with sequence lengths that would not fit on a single device. (Older docs call this sequence parallelism.)</p>
-<ul>
-<li><strong>Learn more:</strong> <a href="../docs/sequence_parallelism.html">Context Parallelism Documentation</a></li>
-</ul>
-</section>
-<section id="artic-long-sequence-training-alst" class="level3">
-<h3 class="anchored" data-anchor-id="artic-long-sequence-training-alst">Artic Long Sequence Training (ALST)</h3>
-<p>ALST is a recipe that combines several techniques to train long-context models efficiently. It typically involves:</p>
-<ul>
-<li><p>TiledMLP to reduce memory usage in MLP layers.</p></li>
-<li><p>Tiled Loss functions (like <a href="#cut-cross-entropy-(cce)%20or%20%5BLiger%5D(#liger-kernels)">CCE</a>.</p></li>
-<li><p>Activation Offloading to CPU.</p></li>
-<li><p>Example: <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/alst">ALST Example Configuration</a></p></li>
-</ul>
-</section>
-</section>
-<section id="large-models-distributed-training" class="level2">
-<h2 class="anchored" data-anchor-id="large-models-distributed-training">Large Models (Distributed Training)</h2>
-<p>To train models that don’t fit on a single GPU, you’ll need to use a distributed training strategy like FSDP or DeepSpeed. These frameworks shard the model weights, gradients, and optimizer states across multiple GPUs and nodes.</p>
-<ul>
-<li><strong>Learn more:</strong> <a href="../docs/multi-gpu.html">Multi-GPU Guide</a></li>
-<li><strong>Learn more:</strong> <a href="../docs/multi-node.html">Multi-Node Guide</a></li>
-</ul>
-<section id="n-d-parallelism-beta" class="level3">
-<h3 class="anchored" data-anchor-id="n-d-parallelism-beta">N-D Parallelism (Beta)</h3>
-<p>For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Context, Expert Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.</p>
-<ul>
-<li><strong>Learn more:</strong> <a href="../docs/nd_parallelism.html">N-D Parallelism Guide</a></li>
-</ul>
-</section>
-</section>
-<section id="quantization" class="level2">
-<h2 class="anchored" data-anchor-id="quantization">Quantization</h2>
-<p>Techniques to reduce the precision of model weights for memory savings.</p>
-<section id="bit-training-qlora" class="level3">
-<h3 class="anchored" data-anchor-id="bit-training-qlora">4-bit Training (QLoRA)</h3>
-<p>The recommended approach for quantization-based training. It loads the base model in 4-bit using <code>bitsandbytes</code> and then trains QLoRA adapters. See <a href="#adapter-finetuning-lora-qlora">Adapter Finetuning</a> for details.</p>
-</section>
-<section id="fp8-training" class="level3">
-<h3 class="anchored" data-anchor-id="fp8-training">FP8 Training</h3>
-<p>Enables training with 8-bit floating point precision on supported hardware (e.g., NVIDIA Hopper series GPUs) for significant speed and memory gains.</p>
-<ul>
-<li><strong>Example:</strong> <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/3b-fp8-fsdp2.yaml">Llama 3 FP8 FSDP Example</a></li>
-</ul>
-</section>
-<section id="nvfp4-w4a4-lora" class="level3">
-<h3 class="anchored" data-anchor-id="nvfp4-w4a4-lora">NVFP4 (W4A4) LoRA</h3>
-<p>Train LoRA adapters on a ModelOpt NVFP4 MoE checkpoint (the experts stay 4-bit-packed; LoRA <code>A</code> / <code>B</code> train in bf16).
-Two kernels support it: <strong>SonicMoE</strong> (<code>use_sonicmoe: true</code>, W4A4 native on Blackwell SM100+ or W4A16 elsewhere) and <strong>ScatterMoE</strong> (<code>use_scattermoe: true</code>, W4A16 on any CUDA GPU).
-With SonicMoE, <code>nvfp4_merge_aware: true</code> trains against the merge quantizer so the adapter bakes back into a plain NVFP4 checkpoint losslessly.</p>
-<ul>
-<li><strong>Config:</strong> <code>use_sonicmoe: true</code> or <code>use_scattermoe: true</code> with a ModelOpt NVFP4 <code>base_model</code> (e.g.&nbsp;<code>nvidia/Qwen3-30B-A3B-NVFP4</code>)</li>
-<li><strong>Examples:</strong> <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-lora.yaml">Qwen3-30B-A3B (SonicMoE)</a>, <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/glm_moe_dsa/glm-5.2-nvfp4-lora.yaml">GLM-5.2 (ScatterMoE)</a></li>
-<li><strong>Learn more:</strong> <a href="../docs/nvfp4_lora.html">NVFP4 MoE LoRA</a></li>
-</ul>
-</section>
-<section id="quantization-aware-training-qat" class="level3">
-<h3 class="anchored" data-anchor-id="quantization-aware-training-qat">Quantization Aware Training (QAT)</h3>
-<p>Simulates quantization effects during training, helping the model adapt and potentially improving the final accuracy of the quantized model.</p>
-<ul>
-<li><strong>Learn more:</strong> <a href="../docs/qat.html">QAT Documentation</a></li>
-</ul>
-</section>
-<section id="gptq" class="level3">
-<h3 class="anchored" data-anchor-id="gptq">GPTQ</h3>
-<p>Allows you to finetune LoRA adapters on top of a model that has already been quantized using the GPTQ method.</p>
-<ul>
-<li><strong>Example:</strong> <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-2/gptq-lora.yml">GPTQ LoRA Example</a></li>
-</ul>
-</section>
-<section id="moe-expert-quantization" class="level3">
-<h3 class="anchored" data-anchor-id="moe-expert-quantization">MoE Expert Quantization</h3>
-<p>Quantizes MoE expert weights on load to reduce VRAM when training MoE models with adapters. Required for Transformers v5+ MoE models where experts use fused <code>nn.Parameter</code> tensors.</p>
-<ul>
-<li><strong>Config:</strong> <code>quantize_moe_experts: true</code></li>
-<li><strong>Learn more:</strong> <a href="../docs/expert_quantization.html">MoE Expert Quantization</a></li>
-</ul>
+<section id="converting-a-causal-lm" class="level2">
+<h2 class="anchored" data-anchor-id="converting-a-causal-lm">Converting a causal LM</h2>
+<p><code>diffusion_lm.from_causal_lm: true</code> trains an ordinary causal checkpoint with
+the legacy masked-diffusion objective, controlled by <code>noise_schedule</code>,
+<code>min_mask_ratio</code>, <code>max_mask_ratio</code>, <code>importance_weighting</code> and the mask-token
+options. It requires <code>plugins: [axolotl.integrations.diffusion.DiffusionPlugin]</code>,
+which supplies the diffusion trainer; without it the config is rejected. Existing
+configurations with a deprecated <code>diffusion:</code> block still load through the same
+plugin, which translates them to this form.</p>
 
 
-</section>
 </section>
 
 </main> <!-- /main -->

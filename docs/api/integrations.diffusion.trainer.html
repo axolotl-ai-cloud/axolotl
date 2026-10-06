@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -26,41 +26,6 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
 </style>
 
 
@@ -77,7 +42,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +657,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -927,13 +898,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.integrations.diffusion.trainer" id="toc-axolotl.integrations.diffusion.trainer" class="nav-link active" data-scroll-target="#axolotl.integrations.diffusion.trainer">integrations.diffusion.trainer</a>
-  <ul class="collapse">
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.integrations.diffusion.trainer.DiffusionTrainer" id="toc-axolotl.integrations.diffusion.trainer.DiffusionTrainer" class="nav-link" data-scroll-target="#axolotl.integrations.diffusion.trainer.DiffusionTrainer">DiffusionTrainer</a></li>
-  </ul></li>
-  </ul></li>
+  <li><a href="#axolotl.integrations.diffusion.trainer" id="toc-axolotl.integrations.diffusion.trainer" class="nav-link active" data-scroll-target="#axolotl.integrations.diffusion.trainer">integrations.diffusion.trainer</a></li>
   </ul>
 </nav>
     </div>
@@ -946,67 +911,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.diffusion.trainer" class="level1">
 <h1>integrations.diffusion.trainer</h1>
 <p><code>integrations.diffusion.trainer</code></p>
-<p>Custom trainer for diffusion LM training.</p>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.diffusion.trainer.DiffusionTrainer">DiffusionTrainer</a></td>
-<td>Custom trainer for diffusion LM training that overrides loss computation.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.diffusion.trainer.DiffusionTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.diffusion.trainer.DiffusionTrainer">DiffusionTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.trainer.DiffusionTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Custom trainer for diffusion LM training that overrides loss computation.</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.diffusion.trainer.DiffusionTrainer.compute_loss">compute_loss</a></td>
-<td>Override compute_loss to use diffusion loss.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.integrations.diffusion.trainer.DiffusionTrainer.post_set_axolotl_cfg">post_set_axolotl_cfg</a></td>
-<td>Set config for diffusion training.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.diffusion.trainer.DiffusionTrainer.compute_loss" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.integrations.diffusion.trainer.DiffusionTrainer.compute_loss">compute_loss</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.trainer.DiffusionTrainer.compute_loss(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    inputs,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    return_outputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    num_items_in_batch<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Override compute_loss to use diffusion loss.</p>
-</section>
-<section id="axolotl.integrations.diffusion.trainer.DiffusionTrainer.post_set_axolotl_cfg" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.integrations.diffusion.trainer.DiffusionTrainer.post_set_axolotl_cfg">post_set_axolotl_cfg</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.trainer.DiffusionTrainer.post_set_axolotl_cfg()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Set config for diffusion training.</p>
+<p>Compatibility imports for the diffusion trainer.</p>
 
 
-</section>
-</section>
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->

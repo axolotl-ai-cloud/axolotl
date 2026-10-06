@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -77,7 +77,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +692,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -1120,12 +1126,15 @@ directly into training data.</p>
 </section>
 <section id="sec-chat-diffusion" class="level4" data-number="1.2.2">
 <h4 data-number="1.2.2" class="anchored" data-anchor-id="sec-chat-diffusion"><span class="header-section-number">1.2.2</span> Diffusion Models</h4>
-<p>With the diffusion plugin enabled, chat mode generates each reply by appending
-a masked block to the conversation and denoising it. Replies arrive in one
-piece (no token streaming), and the parameter set changes accordingly:
-<code>/tokens N</code> sets the completion block size, <code>/steps N</code> the number of denoising
-steps, and <code>/temperature</code> the denoising temperature. Defaults come from the
-<code>diffusion:</code> section of your config.</p>
+<p>When the config has a <code>diffusion_lm:</code> block (or the legacy <code>diffusion:</code>
+plugin block), chat mode generates each reply by appending a masked block to the
+conversation and denoising it. Replies arrive in one piece (no token
+streaming), and the parameter set changes accordingly: <code>/tokens N</code> sets the
+completion block size, <code>/steps N</code> the number of denoising steps, and
+<code>/temperature</code> the denoising temperature. Defaults come from
+<code>diffusion_lm.num_diffusion_steps</code> and <code>diffusion_lm.generation_temperature</code>.
+Native diffusion models (<a href="../docs/diffusion_lm.html">diffusion_lm</a>) use this chat mode;
+they generate completions only.</p>
 <p>Chat mode is not supported with <code>--prompter</code>; use the default inference mode
 for legacy prompters.</p>
 </section>

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -77,7 +77,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +692,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -992,8 +998,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Log <code>logs</code> on the various objects watching training, including stored metrics.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.core.trainers.base.AxolotlTrainer.post_set_axolotl_cfg">post_set_axolotl_cfg</a></td>
+<td>Finish configuration that depends on <code>axolotl_cfg</code>.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.core.trainers.base.AxolotlTrainer.push_to_hub">push_to_hub</a></td>
 <td>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.core.trainers.base.AxolotlTrainer.requires_all_columns">requires_all_columns</a></td>
+<td>Whether the collator needs dataset columns the model forward does not take.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.core.trainers.base.AxolotlTrainer.store_metrics">store_metrics</a></td>
@@ -1039,19 +1053,29 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 </section>
 </section>
+<section id="axolotl.core.trainers.base.AxolotlTrainer.post_set_axolotl_cfg" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.post_set_axolotl_cfg">post_set_axolotl_cfg</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.post_set_axolotl_cfg()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Finish configuration that depends on <code>axolotl_cfg</code>.</p>
+</section>
 <section id="axolotl.core.trainers.base.AxolotlTrainer.push_to_hub" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.push_to_hub">push_to_hub</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.push_to_hub(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.push_to_hub(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Overwrite the <code>push_to_hub</code> method in order to force-add the tags when pushing the
 model on the Hub. Please refer to <code>~transformers.Trainer.push_to_hub</code> for more details.</p>
 </section>
+<section id="axolotl.core.trainers.base.AxolotlTrainer.requires_all_columns" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.requires_all_columns">requires_all_columns</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.requires_all_columns(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Whether the collator needs dataset columns the model forward does not take.</p>
+</section>
 <section id="axolotl.core.trainers.base.AxolotlTrainer.store_metrics" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.core.trainers.base.AxolotlTrainer.store_metrics">store_metrics</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.store_metrics(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    metrics,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    train_eval<span class="op">=</span><span class="st">'train'</span>,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    reduction<span class="op">=</span><span class="st">'mean'</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.AxolotlTrainer.store_metrics(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    metrics,</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    train_eval<span class="op">=</span><span class="st">'train'</span>,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    reduction<span class="op">=</span><span class="st">'mean'</span>,</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Store metrics with specified reduction type.</p>
 <section id="parameters-1" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>
@@ -1108,7 +1132,7 @@ model on the Hub. Please refer to <code>~transformers.Trainer.push_to_hub</code>
 </table>
 <section id="axolotl.core.trainers.base.model_loss_accepts_num_items_in_batch" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.base.model_loss_accepts_num_items_in_batch">model_loss_accepts_num_items_in_batch</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.model_loss_accepts_num_items_in_batch(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>core.trainers.base.model_loss_accepts_num_items_in_batch(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Whether <code>model</code>’s loss function consumes <code>num_items_in_batch</code>.</p>
 <p>The kwarg is a parameter of <code>loss_function</code>, not of <code>forward()</code>, which only
 receives it through <code>**kwargs</code>, so inspecting <code>forward()</code> never finds it.

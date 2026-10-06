@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -77,7 +77,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +692,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -946,7 +952,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.diffusion.plugin" class="level1">
 <h1>integrations.diffusion.plugin</h1>
 <p><code>integrations.diffusion.plugin</code></p>
-<p>Diffusion LM training plugin for Axolotl.</p>
+<p>Deprecated diffusion LM plugin compatibility shim.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -992,8 +998,8 @@ random masking and bidirectional attention to train language models.</p>
 <td>Perform actions after model is loaded.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.integrations.diffusion.plugin.DiffusionPlugin.post_trainer_create">post_trainer_create</a></td>
-<td>Configure trainer after creation.</td>
+<td><a href="#axolotl.integrations.diffusion.plugin.DiffusionPlugin.register">register</a></td>
+<td>Translate the legacy block into the canonical core configuration.</td>
 </tr>
 </tbody>
 </table>
@@ -1012,10 +1018,10 @@ random masking and bidirectional attention to train language models.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.plugin.DiffusionPlugin.post_model_load(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Perform actions after model is loaded.</p>
 </section>
-<section id="axolotl.integrations.diffusion.plugin.DiffusionPlugin.post_trainer_create" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.integrations.diffusion.plugin.DiffusionPlugin.post_trainer_create">post_trainer_create</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.plugin.DiffusionPlugin.post_trainer_create(cfg, trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Configure trainer after creation.</p>
+<section id="axolotl.integrations.diffusion.plugin.DiffusionPlugin.register" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.diffusion.plugin.DiffusionPlugin.register">register</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.plugin.DiffusionPlugin.register(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Translate the legacy block into the canonical core configuration.</p>
 
 
 </section>

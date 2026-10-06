@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -77,7 +77,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +692,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -931,6 +937,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.cli.utils.lora_merge.adapter_has_trainable_token_deltas" id="toc-axolotl.cli.utils.lora_merge.adapter_has_trainable_token_deltas" class="nav-link" data-scroll-target="#axolotl.cli.utils.lora_merge.adapter_has_trainable_token_deltas">adapter_has_trainable_token_deltas</a></li>
   <li><a href="#axolotl.cli.utils.lora_merge.copy_non_model_files" id="toc-axolotl.cli.utils.lora_merge.copy_non_model_files" class="nav-link" data-scroll-target="#axolotl.cli.utils.lora_merge.copy_non_model_files">copy_non_model_files</a></li>
   <li><a href="#axolotl.cli.utils.lora_merge.find_lora_weights" id="toc-axolotl.cli.utils.lora_merge.find_lora_weights" class="nav-link" data-scroll-target="#axolotl.cli.utils.lora_merge.find_lora_weights">find_lora_weights</a></li>
   <li><a href="#axolotl.cli.utils.lora_merge.get_model_shards" id="toc-axolotl.cli.utils.lora_merge.get_model_shards" class="nav-link" data-scroll-target="#axolotl.cli.utils.lora_merge.get_model_shards">get_model_shards</a></li>
@@ -960,26 +967,35 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.cli.utils.lora_merge.adapter_has_trainable_token_deltas">adapter_has_trainable_token_deltas</a></td>
+<td>Return whether a PEFT adapter carries selectively trainable token rows.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.cli.utils.lora_merge.copy_non_model_files">copy_non_model_files</a></td>
 <td>Copy all non-model files to the output directory.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.cli.utils.lora_merge.find_lora_weights">find_lora_weights</a></td>
 <td>Find corresponding LoRA A and B weights for a given key.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.cli.utils.lora_merge.get_model_shards">get_model_shards</a></td>
 <td>Find all model shards in the given path.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.cli.utils.lora_merge.merge_lora_sharded_efficient">merge_lora_sharded_efficient</a></td>
 <td>Memory-efficient LoRA merging that processes shards individually</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.cli.utils.lora_merge.adapter_has_trainable_token_deltas" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.utils.lora_merge.adapter_has_trainable_token_deltas">adapter_has_trainable_token_deltas</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.adapter_has_trainable_token_deltas(lora_adapter_path)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Return whether a PEFT adapter carries selectively trainable token rows.</p>
+</section>
 <section id="axolotl.cli.utils.lora_merge.copy_non_model_files" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.utils.lora_merge.copy_non_model_files">copy_non_model_files</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.copy_non_model_files(input_path, output_path, model_shards)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.copy_non_model_files(input_path, output_path, model_shards)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Copy all non-model files to the output directory.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
@@ -1023,7 +1039,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.cli.utils.lora_merge.find_lora_weights" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.utils.lora_merge.find_lora_weights">find_lora_weights</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.find_lora_weights(lora_state, key, weight_renamings<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.find_lora_weights(lora_state, key, weight_renamings<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Find corresponding LoRA A and B weights for a given key.</p>
 <p>Also tries keys after applying weight renamings (from transformers v5
 conversion mappings) in case the checkpoint key names differ from the
@@ -1031,30 +1047,30 @@ runtime model key names used by the LoRA adapter.</p>
 </section>
 <section id="axolotl.cli.utils.lora_merge.get_model_shards" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.utils.lora_merge.get_model_shards">get_model_shards</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.get_model_shards(model_path)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.get_model_shards(model_path)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Find all model shards in the given path.</p>
 </section>
 <section id="axolotl.cli.utils.lora_merge.merge_lora_sharded_efficient" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.utils.lora_merge.merge_lora_sharded_efficient">merge_lora_sharded_efficient</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.merge_lora_sharded_efficient(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    base_model_path,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    lora_adapter_path,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    output_path,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    device<span class="op">=</span><span class="st">'cpu'</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    safe_tensors<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    simulate_nf4<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    simulate_nf4_experts<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    nf4_blocksize<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    nf4_double_quant<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    nf4_backend<span class="op">=</span><span class="st">'bitsandbytes'</span>,</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    nf4_skips<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    nf4_dtype<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    staged_nf4<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    trust_remote_code<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    dequant<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>    override_quantizer<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>    revision<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.utils.lora_merge.merge_lora_sharded_efficient(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    base_model_path,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    lora_adapter_path,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    output_path,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    device<span class="op">=</span><span class="st">'cpu'</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    safe_tensors<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    simulate_nf4<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    simulate_nf4_experts<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    nf4_blocksize<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    nf4_double_quant<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    nf4_backend<span class="op">=</span><span class="st">'bitsandbytes'</span>,</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    nf4_skips<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    nf4_dtype<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    staged_nf4<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    trust_remote_code<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    dequant<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    override_quantizer<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    revision<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Memory-efficient LoRA merging that processes shards individually
 without loading the full model into memory.</p>
 <section id="if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips" class="level4 doc-section doc-section-if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips">

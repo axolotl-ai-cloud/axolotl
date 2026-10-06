@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -78,7 +78,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -693,6 +693,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -982,10 +988,6 @@ backends, axolotl-registered backends, or a hub-kernel path.</p>
 <section id="backends" class="level2">
 <h2 class="anchored" data-anchor-id="backends">Backends</h2>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
-</colgroup>
 <thead>
 <tr class="header">
 <th><code>attn_implementation</code></th>
@@ -1022,30 +1024,34 @@ backends, axolotl-registered backends, or a hub-kernel path.</p>
 <td>Torch Flex Attention (requires torch ≥ 2.6).</td>
 </tr>
 <tr class="even">
+<td><code>varlen</code></td>
+<td>Torch public varlen attention for native full-sequence diffusion models (Nemotron diffusion) only; requires torch ≥ 2.14. See <a href="../docs/diffusion_lm.html#attention-backends">diffusion_lm</a>.</td>
+</tr>
+<tr class="odd">
 <td><code>xformers</code></td>
 <td>xFormers memory-efficient attention.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>sage</code></td>
 <td>SageAttention (QK int8 / PV fp16).</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>s2</code></td>
 <td>Shifted-Sparse Attention (LLaMA only, FA2 under the hood).</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>fp8</code></td>
 <td>torchao FP8 low-precision attention (requires SM90+, torch ≥ 2.11). Loaded as SDPA and patched post-load.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>kernels-community/flash-attn3</code></td>
 <td>HF hub FA3 kernel.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>kernels-community/sage-attention</code></td>
 <td>HF hub SageAttention kernel.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Other <code>&lt;org&gt;/&lt;name&gt;</code> path</td>
 <td>Any hub-kernel path supported by <code>transformers</code>.</td>
 </tr>

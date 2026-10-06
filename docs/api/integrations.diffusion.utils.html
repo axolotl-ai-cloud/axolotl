@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.18">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -26,41 +26,6 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
 </style>
 
 
@@ -77,7 +42,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -692,6 +657,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/diffusion_lm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Native diffusion language-model training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/grpo.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">GRPO Training</span></a>
   </div>
@@ -927,15 +898,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.integrations.diffusion.utils" id="toc-axolotl.integrations.diffusion.utils" class="nav-link active" data-scroll-target="#axolotl.integrations.diffusion.utils">integrations.diffusion.utils</a>
-  <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.integrations.diffusion.utils.create_bidirectional_attention_mask" id="toc-axolotl.integrations.diffusion.utils.create_bidirectional_attention_mask" class="nav-link" data-scroll-target="#axolotl.integrations.diffusion.utils.create_bidirectional_attention_mask">create_bidirectional_attention_mask</a></li>
-  <li><a href="#axolotl.integrations.diffusion.utils.resolve_mask_token_id" id="toc-axolotl.integrations.diffusion.utils.resolve_mask_token_id" class="nav-link" data-scroll-target="#axolotl.integrations.diffusion.utils.resolve_mask_token_id">resolve_mask_token_id</a></li>
-  <li><a href="#axolotl.integrations.diffusion.utils.shift_logits_to_input_positions" id="toc-axolotl.integrations.diffusion.utils.shift_logits_to_input_positions" class="nav-link" data-scroll-target="#axolotl.integrations.diffusion.utils.shift_logits_to_input_positions">shift_logits_to_input_positions</a></li>
-  </ul></li>
-  </ul></li>
+  <li><a href="#axolotl.integrations.diffusion.utils" id="toc-axolotl.integrations.diffusion.utils" class="nav-link active" data-scroll-target="#axolotl.integrations.diffusion.utils">integrations.diffusion.utils</a></li>
   </ul>
 </nav>
     </div>
@@ -948,128 +911,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.diffusion.utils" class="level1">
 <h1>integrations.diffusion.utils</h1>
 <p><code>integrations.diffusion.utils</code></p>
-<p>Shared utilities for diffusion integration.</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.diffusion.utils.create_bidirectional_attention_mask">create_bidirectional_attention_mask</a></td>
-<td>Create bidirectional attention mask to override default causal masking.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.integrations.diffusion.utils.resolve_mask_token_id">resolve_mask_token_id</a></td>
-<td>Resolve mask token id. Training may add a new special token; inference won’t.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.integrations.diffusion.utils.shift_logits_to_input_positions">shift_logits_to_input_positions</a></td>
-<td>Align next-token logits with their input token positions for diffusion.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.diffusion.utils.create_bidirectional_attention_mask" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.diffusion.utils.create_bidirectional_attention_mask">create_bidirectional_attention_mask</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.utils.create_bidirectional_attention_mask(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    input_ids,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    sample_packing<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Create bidirectional attention mask to override default causal masking.</p>
-<p>When an <code>attention_mask</code> is provided it is always honored, whether it is a
-binary padding mask (non-packed batches) or per-sample segment ids (packed
-batches): a query may attend to a key only if they share the same non-zero
-value. Passing the 4D mask to the model replaces its own padding handling,
-so padding must be excluded here or real tokens would attend to padding.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 14%">
-<col style="width: 23%">
-<col style="width: 51%">
-<col style="width: 10%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>input_ids</td>
-<td>torch.Tensor</td>
-<td>Input token ids [batch_size, seq_len]</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>attention_mask</td>
-<td>Optional[torch.Tensor]</td>
-<td>Attention mask [batch_size, seq_len]</td>
-<td><code>None</code></td>
-</tr>
-<tr class="odd">
-<td>sample_packing</td>
-<td>bool</td>
-<td>Unused; segment-vs-padding masks are handled uniformly.</td>
-<td><code>False</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 22%">
-<col style="width: 16%">
-<col style="width: 60%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>bidirectional_mask</td>
-<td>torch.Tensor</td>
-<td>4D attention mask [batch_size, 1, seq_len, seq_len]</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.integrations.diffusion.utils.resolve_mask_token_id" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.diffusion.utils.resolve_mask_token_id">resolve_mask_token_id</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.utils.resolve_mask_token_id(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    allow_add,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    model<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    default_token<span class="op">=</span><span class="st">'&lt;|diffusion_mask|&gt;'</span>,</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Resolve mask token id. Training may add a new special token; inference won’t.</p>
-</section>
-<section id="axolotl.integrations.diffusion.utils.shift_logits_to_input_positions" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.diffusion.utils.shift_logits_to_input_positions">shift_logits_to_input_positions</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.diffusion.utils.shift_logits_to_input_positions(logits)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Align next-token logits with their input token positions for diffusion.</p>
+<p>Compatibility imports for diffusion utilities.</p>
 
 
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->
