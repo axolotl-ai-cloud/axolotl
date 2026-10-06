@@ -6,6 +6,8 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.distributed_cpu
+
 
 @pytest.mark.slow
 def test_usp_mesh_preserves_data_parallel_groups():

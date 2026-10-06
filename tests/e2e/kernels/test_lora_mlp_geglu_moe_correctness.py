@@ -13,6 +13,8 @@ import torch.nn.functional as F
 
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
+pytest.importorskip("triton")
+
 from axolotl.kernels.lora import LoRA_MLP  # noqa: E402
 
 try:

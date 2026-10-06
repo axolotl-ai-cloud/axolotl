@@ -1,0 +1,24 @@
+name: Slow GPU
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  workflow_dispatch:
+  schedule:
+    - cron: "30 2 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  gpu-slow:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (!github.event.pull_request.draft &&
+       contains(github.event.pull_request.labels.*.name, 'run-gpu-slow') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'run-gpu-slow'))
+    concurrency:
+      group: gpu-slow-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/gpu-slow-jobs.yml
+    secrets: inherit

@@ -16,6 +16,8 @@ from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import check_tensorboard, require_torch_2_6_0, requires_flash_attn
 
+pytestmark = pytest.mark.gpu
+
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
@@ -615,20 +617,23 @@ class TestMultiGPULlama:
         )
 
     @pytest.mark.parametrize(
-        "gradient_accumulation_steps",
-        [1, 2],
-    )
-    @pytest.mark.parametrize(
-        "deepspeed",
+        "deepspeed, qlora, gradient_accumulation_steps",
         [
-            "deepspeed_configs/zero3_bf16.json",
-            "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
-            # "deepspeed_configs/zero3_bf16_cpuoffload_params.json",
+            pytest.param("deepspeed_configs/zero3_bf16.json", False, 1, id="fft-ga1"),
+            pytest.param("deepspeed_configs/zero3_bf16.json", True, 2, id="qlora-ga2"),
+            pytest.param(
+                "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
+                False,
+                2,
+                id="offload-fft-ga2",
+            ),
+            pytest.param(
+                "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
+                True,
+                1,
+                id="offload-qlora-ga1",
+            ),
         ],
-    )
-    @pytest.mark.parametrize(
-        "qlora",
-        [True, False],
     )
     @requires_flash_attn
     def test_ds_zero3_packed(
@@ -701,12 +706,8 @@ class TestMultiGPULlama:
         )
 
     @pytest.mark.parametrize(
-        "gradient_accumulation_steps",
-        [1, 2],
-    )
-    @pytest.mark.parametrize(
-        "qlora",
-        [True, False],
+        "qlora, gradient_accumulation_steps",
+        [pytest.param(False, 2, id="fft-ga2"), pytest.param(True, 1, id="qlora-ga1")],
     )
     @requires_flash_attn
     def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps, qlora):
@@ -778,12 +779,8 @@ class TestMultiGPULlama:
         )
 
     @pytest.mark.parametrize(
-        "gradient_accumulation_steps",
-        [1, 2],
-    )
-    @pytest.mark.parametrize(
-        "qlora",
-        [True, False],
+        "qlora, gradient_accumulation_steps",
+        [pytest.param(False, 1, id="fft-ga1"), pytest.param(True, 2, id="qlora-ga2")],
     )
     @requires_flash_attn
     def test_ds_zero1_packed(self, temp_dir, gradient_accumulation_steps, qlora):

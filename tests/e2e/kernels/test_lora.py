@@ -5,6 +5,8 @@ import torch
 from bitsandbytes.functional import QuantState
 from torch import nn
 
+pytest.importorskip("triton")
+
 from axolotl.kernels.geglu import geglu_backward, geglu_forward
 from axolotl.kernels.lora import (
     LoRA_MLP,

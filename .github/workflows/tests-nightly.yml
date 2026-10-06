@@ -46,9 +46,9 @@ jobs:
         run: |
           curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
-  nf4-distributed:
-    name: NF4 distributed CPU (nightly)
-    uses: ./.github/workflows/nf4-cpu.yml
+  distributed-cpu:
+    name: Distributed CPU (nightly)
+    uses: ./.github/workflows/distributed-cpu.yml
     with:
       nightly: true
       pytorch_versions: '["2.13.0"]'
@@ -132,7 +132,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed and not gpu" \
+          pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed and not distributed_cpu and not gpu" \
             --ignore=tests/e2e/ \
             --ignore=tests/integrations/kernels/ \
             --ignore=tests/patched/ \

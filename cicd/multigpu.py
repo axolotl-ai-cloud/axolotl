@@ -151,6 +151,9 @@ def cicd_pytest():
         "nf4": "bash ./cicd/nf4.sh",
         "nvfp4": "bash ./cicd/nvfp4.sh",
         "multigpu_selected": "bash ./cicd/multigpu_selected.sh",
+        "gpu_slow_kernels": "bash ./cicd/gpu_slow.sh",
+        "gpu_slow_distributed": "bash ./cicd/gpu_slow.sh",
+        "gpu_slow_four_rank": "bash ./cicd/gpu_slow.sh",
     }
     run_cmd(scripts[suite], "/workspace/axolotl")
 
