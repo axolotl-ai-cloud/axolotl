@@ -686,6 +686,102 @@ class TestEfficientMerge:
         q_key = "model.layers.0.self_attn.q_proj.weight"
         assert not torch.equal(merged[q_key], base_weights[q_key])
 
+    def test_qlora_merge_matches_bitsandbytes_training_weights(self, tmp_path):
+        """Each merged tensor equals what the bnb-quantized training model held."""
+        pytest.importorskip("transformers.models.gemma4")
+        import bitsandbytes as bnb
+        from peft import LoraConfig, get_peft_model
+        from transformers import (
+            AutoModelForCausalLM,
+            BitsAndBytesConfig,
+            Gemma4Config,
+            Gemma4ForConditionalGeneration,
+        )
+
+        from axolotl.cli.merge_lora import _do_merge_lora_efficient
+
+        # embeddings and 3-D experts stay bf16 in training; the vision projection is
+        # quantized only because from_pretrained quantizes before tying lm_head
+        config = Gemma4Config(
+            text_config=dict(
+                vocab_size=128,
+                hidden_size=64,
+                intermediate_size=128,
+                num_hidden_layers=2,
+                num_attention_heads=2,
+                num_key_value_heads=1,
+                head_dim=32,
+                global_head_dim=32,
+                vocab_size_per_layer_input=128,
+                hidden_size_per_layer_input=16,
+                layer_types=["sliding_attention", "full_attention"],
+                enable_moe_block=True,
+                num_experts=4,
+                top_k_experts=2,
+                moe_intermediate_size=64,
+            ),
+            vision_config=dict(
+                hidden_size=64,
+                intermediate_size=128,
+                num_hidden_layers=1,
+                num_attention_heads=2,
+                num_key_value_heads=2,
+                head_dim=32,
+                position_embedding_size=64,
+            ),
+            audio_config=None,
+        )
+        base_dir = tmp_path / "base"
+        base = Gemma4ForConditionalGeneration(config).to(torch.bfloat16)
+        base.save_pretrained(base_dir)
+        base_weights = safetensors.torch.load_file(base_dir / "model.safetensors")
+
+        adapter_dir = tmp_path / "adapter"
+        get_peft_model(
+            base,
+            LoraConfig(
+                r=4, target_modules=r".*language_model\.layers\.0\.self_attn\.q_proj"
+            ),
+        ).save_pretrained(adapter_dir)
+
+        _do_merge_lora_efficient(
+            cfg=DictDefault(
+                base_model=str(base_dir),
+                lora_model_dir=str(adapter_dir),
+                output_dir=str(tmp_path),
+                model_config_type="gemma4",
+                torch_dtype=torch.bfloat16,
+                nf4_backend="bitsandbytes",
+                _original_load_in_4bit=True,
+                _original_adapter="qlora",
+            )
+        )
+        merged = safetensors.torch.load_file(tmp_path / "merged" / "model.safetensors")
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        trained = AutoModelForCausalLM.from_pretrained(
+            base_dir,
+            dtype=torch.bfloat16,
+            device_map={"": device},
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_quant_storage=torch.bfloat16,
+            ),
+        )
+        expected = dict(base_weights)
+        for name, module in trained.named_modules():
+            if isinstance(module, bnb.nn.Linear4bit):
+                expected[f"{name}.weight"] = bnb.functional.dequantize_4bit(
+                    module.weight.data, module.weight.quant_state
+                ).cpu()
+
+        assert merged.keys() == expected.keys()
+        mismatched = [k for k in expected if not torch.equal(merged[k], expected[k])]
+        assert not mismatched
+
     def test_resolve_alpha_for_key_returns_none_without_pattern(self):
         assert (
             _resolve_lora_alpha_for_key("model.layers.0.self_attn.q_proj.weight", {})

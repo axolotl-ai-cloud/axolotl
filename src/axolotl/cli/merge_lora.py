@@ -143,9 +143,10 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
 
     bnb_config_kwargs = getattr(cfg, "bnb_config_kwargs", None) or {}
     nf4_blocksize = bnb_config_kwargs.get("blocksize", None)
-    nf4_double_quant = bnb_config_kwargs.get(
-        "bnb_4bit_use_double_quant",
-        getattr(cfg, "bnb_4bit_use_double_quant", True),
+    nf4_double_quant = bnb_config_kwargs.get("bnb_4bit_use_double_quant", True)
+    bnb_skip_modules = bnb_config_kwargs.get(
+        "llm_int8_skip_modules",
+        ["out_proj"] if cfg.model_config_type == "falcon_h1" else None,
     )
 
     # Detect MoE expert quantization
@@ -160,8 +161,8 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     nf4_backend = (
         getattr(cfg, "_original_nf4_backend", None) or cfg.nf4_backend or "bitsandbytes"
     )
-    # only staged training quantized by this exclusion policy; a plain bitsandbytes
-    # QLoRA merge keeps the roundtrip it always had
+    # only staged/torchao training quantized by this exclusion policy; plain
+    # bitsandbytes training used transformers' selection (bnb_skip_modules)
     nf4_skips = (
         nf4_skip_modules(cfg.model_config_type, bnb_config_kwargs)
         if staged_nf4 or nf4_backend == "torchao"
@@ -180,6 +181,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         nf4_skips=nf4_skips,
         nf4_dtype=cfg.torch_dtype if nf4_skips is not None else None,
         nf4_double_quant=nf4_double_quant,
+        bnb_skip_modules=bnb_skip_modules,
         staged_nf4=staged_nf4,
         nf4_backend=nf4_backend,
         trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),

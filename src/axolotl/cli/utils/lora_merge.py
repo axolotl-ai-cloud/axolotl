@@ -321,11 +321,15 @@ def _resolve_lora_alpha_for_key(
     return None
 
 
-def _build_meta_model(base_model_path: Path, trust_remote_code: bool = False):
+def _build_meta_model(
+    base_model_path: Path, trust_remote_code: bool = False, untied: bool = False
+):
     """Instantiate the model architecture on the meta device (zero memory)."""
+    import contextlib
     import json as _json
 
     from transformers import AutoConfig
+    from transformers.initialization import no_tie_weights
 
     config_path = base_model_path / "config.json"
     if not config_path.exists():
@@ -365,7 +369,10 @@ def _build_meta_model(base_model_path: Path, trust_remote_code: bool = False):
 
     for auto_cls in auto_classes:
         try:
-            with torch.device("meta"):
+            with (
+                torch.device("meta"),
+                no_tie_weights() if untied else contextlib.nullcontext(),
+            ):
                 return auto_cls.from_config(config, trust_remote_code=trust_remote_code)
         except Exception:  # noqa: BLE001
             LOG.debug(
@@ -410,6 +417,33 @@ def _build_layer_type_map(
         f"({sum(1 for v in layer_types.values() if 'Conv' in v)} conv layers)"
     )
     return layer_types
+
+
+def _bnb_quantized_modules(
+    meta_model, skip_modules: Optional[list[str]] = None
+) -> set[str]:
+    """Module names transformers' bitsandbytes 4-bit loader replaces with Linear4bit.
+
+    ``meta_model`` must be built untied: from_pretrained quantizes before tying weights,
+    which decides the default last-module skip.
+    """
+    import torch.nn as nn
+    from transformers.pytorch_utils import Conv1D
+    from transformers.quantizers.base import HfQuantizer
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    not_convert = HfQuantizer.get_modules_to_not_convert(
+        meta_model, skip_modules, meta_model._keep_in_fp32_modules
+    )
+    names = {
+        name
+        for name, module in meta_model.named_modules()
+        if (isinstance(module, Conv1D) or type(module) is nn.Linear)
+        and should_convert_module(name, not_convert)
+    }
+    # prefixless checkpoints (gpt2, bloom) load into the base model's namespace
+    prefix = f"{meta_model.base_model_prefix}."
+    return names | {name.removeprefix(prefix) for name in names}
 
 
 def _simulate_nf4_roundtrip(
@@ -1950,6 +1984,7 @@ def _merge_tensor_with_lora(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    nf4_modules: Optional[set[str]] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -2005,6 +2040,11 @@ def _merge_tensor_with_lora(
             ),
             skips=nf4_skips if nf4_skips is not None else {"lm_head", "embed_out"},
         )
+    elif nf4_modules is not None:
+        runtime_key = _runtime_key(key, weight_renamings, layer_type_map)
+        do_nf4 = (
+            simulate_nf4 and runtime_key.removesuffix(".weight") in nf4_modules
+        ) or (simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower())
 
     if lora_a is not None and lora_b is not None:
         LOG.debug(f"Merging LoRA for {key}: {lora_a.shape}, {lora_b.shape}")
@@ -2296,6 +2336,7 @@ def _fuse_and_unfuse_with_merge(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    nf4_modules: Optional[set[str]] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -2501,6 +2542,7 @@ def _fuse_and_unfuse_with_merge(
                 nf4_backend=nf4_backend,
                 nf4_skips=nf4_skips,
                 nf4_dtype=nf4_dtype,
+                nf4_modules=nf4_modules,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
@@ -2538,6 +2580,7 @@ def merge_lora_sharded_efficient(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    bnb_skip_modules: Optional[list[str]] = None,
     staged_nf4: bool = False,
     trust_remote_code: bool = False,
     dequant: bool = False,
@@ -2559,9 +2602,11 @@ def merge_lora_sharded_efficient(
         nf4_backend: NF4 implementation used for the training base.
         nf4_skips: Resolved module exclusions from ``nf4_skip_modules``. When provided,
             weights are selected the way the staged loader selected them (Linear
-            weights and fused experts outside the exclusions); when None, the
-            pre-existing ``_should_nf4_roundtrip`` heuristic is kept unchanged.
+            weights and fused experts outside the exclusions); when None on
+            bitsandbytes, transformers' own Linear4bit selection is reproduced.
         nf4_dtype: Training weight dtype used before quantization.
+        bnb_skip_modules: ``llm_int8_skip_modules`` the bitsandbytes training load used;
+            None means transformers' default skips.
         staged_nf4: Training used CPU-staged NF4, which has no legacy merge fallback.
         simulate_nf4: Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)
         simulate_nf4_experts: Apply NF4 roundtrip only to MoE expert tensors
@@ -2644,6 +2689,19 @@ def merge_lora_sharded_efficient(
         raise ValueError(
             "torchao NF4 merge requires model introspection to identify quantized Linear weights"
         )
+    nf4_modules = None
+    if simulate_nf4 and nf4_backend == "bitsandbytes" and nf4_skips is None:
+        untied_meta_model = _build_meta_model(
+            base_model_path, trust_remote_code=trust_remote_code, untied=True
+        )
+        if untied_meta_model is not None:
+            nf4_modules = _bnb_quantized_modules(untied_meta_model, bnb_skip_modules)
+            del untied_meta_model
+        else:
+            LOG.warning(
+                "Could not introspect the model; NF4 simulation falls back to "
+                "round-tripping every >=2-D tensor, including ones bitsandbytes never quantized"
+            )
     unsupported_methods = []
 
     # Check for AdaLoRA (Adaptive LoRA)
@@ -2934,6 +2992,7 @@ def merge_lora_sharded_efficient(
                 nf4_backend=nf4_backend,
                 nf4_skips=nf4_skips,
                 nf4_dtype=nf4_dtype,
+                nf4_modules=nf4_modules,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
@@ -2996,6 +3055,7 @@ def merge_lora_sharded_efficient(
                 nf4_backend=nf4_backend,
                 nf4_skips=nf4_skips,
                 nf4_dtype=nf4_dtype,
+                nf4_modules=nf4_modules,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
