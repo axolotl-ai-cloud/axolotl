@@ -12,6 +12,7 @@ from transformers import PreTrainedTokenizerBase
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.tokenization import get_fast_encoder
 from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 
 LOG = get_logger(__name__)
@@ -24,7 +25,8 @@ def encode_streaming(
     text_column: str = "text",
     concatenate: bool = True,
 ) -> Dict[str, List]:
-    res = tokenizer(
+    encoder = get_fast_encoder(tokenizer) or tokenizer
+    res = encoder(
         examples[text_column],
         truncation=True,
         max_length=max_tokens - 2,
