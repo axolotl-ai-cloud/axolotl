@@ -200,8 +200,8 @@ lora_target_modules: '^model\.(encoder\.language_model|decoder)\.layers\.\d+\.se
 
 Vision, router and expert parameters stay frozen.
 
-Nemotron supports opt-in Cut Cross Entropy for its aligned diffusion objective.
-With Axolotl's CCE fork installed, add:
+Nemotron supports opt-in Cut Cross Entropy for its aligned diffusion objective
+and for typed-decision training. With Axolotl's CCE fork installed, add:
 
 ```yaml
 plugins:
@@ -211,9 +211,10 @@ cut_cross_entropy: true
 
 Keep any other plugins the recipe requires in that list. The final training
 read computes full-vocabulary CE from hidden states without materializing
-vocabulary logits. Targets stay aligned, with no causal shift. This path
-requires a plain linear output head and does not support a LoRA output head or
-the `loo` objective.
+vocabulary logits; decision training still computes its restricted-label and
+Brier terms over the allowed answers. Targets stay aligned, with no causal
+shift. This path requires a plain linear output head and does not support a
+LoRA output head or the `loo` objective.
 
 `axolotl merge-lora config.yaml` exports a merged checkpoint. When
 `merge_method` is omitted, DiffusionGemma selects `legacy` so its tied factors
@@ -223,6 +224,170 @@ For interactive generation, use `axolotl inference config.yaml --chat`. Each
 reply is a completion block appended to the conversation and denoised in one
 piece; see [Inference](inference.qmd#sec-chat-diffusion). Native models
 generate completions only.
+
+## Typed-decision training
+
+The `diffusion_decision` plugin trains a native diffusion model to answer
+typed multiple-choice, score and yes/no questions. Each record renders a fixed
+decision system prompt from its question schema, sends its `state` as the user
+message, and places one answer label per question in the output canvas using
+the canvas template of the public `mmastrac/djev` project.
+
+`examples/nemotron-diffusion/decision-lora-8b.yaml` is the starting recipe for
+`nvidia/Nemotron-Labs-Diffusion-8B`. It uses BF16, `attn_implementation: varlen`,
+and rank-64/alpha-128 LoRA over all seven attention and MLP projections with
+`loraplus_lr_ratio: 8`. It trains one epoch with AdamW at `6.5e-6`, microbatch
+16 and eight accumulation steps (effective batch 128). The decision loss
+combines candidate-restricted CE, full-vocabulary CE and a `0.1` Brier term,
+with `unroll.k_max: 2`, no latent slots and non-reentrant gradient
+checkpointing. The YAML leaves the model revision unpinned; add
+`revision_of_model` to a local copy for an exact reproduction.
+
+```bash
+axolotl preprocess examples/nemotron-diffusion/decision-lora-8b.yaml
+axolotl train examples/nemotron-diffusion/decision-lora-8b.yaml
+```
+
+Set the `data_files` of the `datasets` and `test_datasets` entries to separate
+normalized train and development JSONL files. The recipe evaluates every 50
+steps and keeps the adapter with the best `eval_loss`. Keep held-out test data
+out of both entries.
+
+### Dataset format
+
+`type: diffusion_decision.jsonl` reads already-normalized JSONL, one record per
+line. `diffusion_decision.typed_decisions` and `diffusion_decision.procedural`
+normalize rows from the `typed_decisions` and procedural typed-decision source
+schemas into the same form.
+
+```json
+{"source":"support_demo","family":"returns","id":"case-0042","group":"case-0042","instructions":"Decide from the supplied case only.","state":{"customer":"A customer says their unopened order arrived yesterday and asks for a refund.","policy":"Unopened items delivered within 30 days may be refunded."},"questions":{"refund":{"type":"choice","instructions":"Choose the next action.","options":[{"name":"approve","description":"Approve a refund under the stated policy."},{"name":"deny","description":"Deny the request because the policy does not apply."},{"name":"escalate","description":"Send the case to a human reviewer."}]},"urgency":{"type":"score","instructions":"Rate how urgently this needs review.","levels":["routine","soon","urgent"]},"eligible":{"type":"noul","instructions":"Is the customer eligible for a refund?","criteria":{"true":"The stated policy permits a refund.","false":"The stated policy does not permit a refund."}}},"labels":{"refund":{"kind":"dist","probs":[0.78,0.02,0.20]},"urgency":{"kind":"hard","gold_idx":0},"eligible":{"kind":"set","allowed_set":[0]}},"source_metadata":{"provenance":{"dataset":"my-org/support-decisions","revision":"immutable-revision","split":"train","source_id":"case-0042"}}}
+```
+
+`source`, `id` and `group` identify the row; `family` is optional and is used
+for split isolation. Records with the same source, family, state and top-level
+`instructions` that share a `group` are rendered on one canvas, up to
+`max_questions_per_canvas` questions. There is no per-row `system` field: put
+shared context in `state`, global instructions in `instructions`, and
+per-question instructions on each question. Keep question IDs stable and
+nonempty.
+
+| Type | Required schema field | Canonical alternative order |
+|---|---|---|
+| `choice` | `options` | List order. An option is a string or an object with `name` and `description`; descriptions are rendered. |
+| `score` | `levels` | List order, lowest to highest as defined by the source. Do not sort levels lexically. |
+| `noul` | none | `yes`, then `no`. Optional `criteria` documents the true/false conditions and is rendered. |
+
+Label indexes always refer to this canonical order, never to option names or
+token IDs. Answer tokens come from `labels.codebook`: `vendored26` uses the
+djev letters `A`-`Z` (up to 26 alternatives); `expanded52` allows up to 52.
+
+### Labels
+
+Every question has exactly one label:
+
+```json
+{"kind":"hard","gold_idx":1}
+{"kind":"dist","probs":[0.10,0.70,0.20]}
+{"kind":"set","allowed_set":[0,2]}
+```
+
+`hard` names one zero-based alternative. `set` is a nonempty set of unique
+valid indexes. `dist` has one finite, nonnegative probability per alternative
+that sums to one within `1e-4`; zero entries are valid and must not be omitted.
+Partial distributions, ranking targets, per-row candidate token IDs and
+hard/soft blending are not accepted.
+
+`labels.label_softmax` selects candidate-restricted CE (`restricted`),
+full-vocabulary CE over the allowed label tokens (`full`), or both (the
+default). The full-vocabulary term still penalizes probability outside the
+valid answers. `full_ce_weighting: dft` applies DFT weighting to hard-label
+full CE. `hard_label_smoothing` spreads that fraction of a one-hot CE target
+uniformly across the question's valid answer tokens; Brier targets are
+unchanged.
+
+### Splits and provenance
+
+Keep train, development and test data in separate files or dataset entries,
+and use `split: train` only for training entries. Preserve
+`source_metadata.provenance` with an immutable source location and revision,
+the split, and the source row ID. `typed_decisions` rows train only from a
+declared `train` split and reject a row `split` that disagrees with it. After
+normalization, the loader rejects states or grouped contexts shared between
+splits.
+
+### Mixture and weighting
+
+`mixture.weights` sets per-source sampling weights by `source`. Without
+weights, each source is sampled in proportion to its row count raised to
+`mixture.temperature` (default 0.5). `max_examples_per_source` caps rows per
+source. `loss_weight` multiplies each source's loss. Loss is averaged over the
+questions on a canvas and then over canvases, so a canvas with many questions
+does not outweigh a single-question canvas.
+
+To train on a prebuilt draw sequence, set `mixture.premixed: true` and
+`per_batch_stratified: false`. Each training row then needs a unique draw ID
+and an origin matching its own identity; copies of one origin must be identical
+apart from this metadata:
+
+```json
+"source_metadata": {
+  "premix": {
+    "draw_id": "run-000001",
+    "origin": {"source": "support_demo", "id": "case-0042", "group": "case-0042"}
+  }
+}
+```
+
+### Batching
+
+`batch_flattening: true` concatenates the logical microbatch and keeps
+decisions isolated through the varlen attention path. For variable-length
+decisions, set `batch_flattening: false`, `sample_packing: true` and
+`eval_sample_packing: false` instead. Packing uses `sequence_len` as the
+per-decision limit and `sequence_len * micro_batch_size` as the physical token
+budget. It requires `mixture.per_batch_stratified: false` and does not support
+sampled latent-slot counts. Reduce `micro_batch_size` and raise
+`gradient_accumulation_steps` if the effective batch does not fit.
+
+### Outputs
+
+Each saved adapter includes `diffusion_decision_manifest.json`, which records
+the base model and revision, diffusion spec, canvas width, label codebook,
+latent slots, read protocol and tokenizer special IDs that an external
+inference integration must reproduce. Axolotl does not ship a decision-serving
+endpoint. Use a separate config for a frozen test split, and do not use test
+data for checkpoint selection.
+
+### Public procedural decision mix
+
+`scripts/diffusion_lm/build_public_decision_mix.py` materializes a reproducible
+train/dev mix from
+[`tasksource/procedural-typed-decisions`](https://huggingface.co/datasets/tasksource/procedural-typed-decisions)
+at revision `916e6cce365a65c37d58db70c9e369795817651e`:
+
+```bash
+python scripts/diffusion_lm/build_public_decision_mix.py ./data/public-procedural
+axolotl train examples/nemotron-diffusion/decision-lora-8b-public-procedural.yaml
+```
+
+The output contains only rows from that dataset plus a `contract.json`
+recording the pinned revision and licenses. The dataset card declares
+Apache-2.0; the separate generator repository publishes its code under
+CC-BY-4.0. Keep `contract.json` with any materialized output you share. The
+model is covered by its own model-card license.
+
+`--protected-normalized PATH` (repeatable) excludes any public row whose
+canonical state matches a row in your normalized evaluation JSONL; that file is
+never copied to the output. This is canonical-state decontamination only, not
+cross-source group or family disjointness. The train and dev outputs are
+checked against each other for state, family and group overlap.
+
+`decision-lora-8b-public-procedural.yaml` pins the model revision and sets
+`mixture.temperature: 1.0`, which schedules each usable row once. At the pinned
+revisions, preprocessing keeps 30,080 train rows at the 2,048-token budget,
+which is 235 effective batches of 128, hence `max_steps: 235`. This mix is a
+reproducible starting point for the format, not a quality result.
 
 ## Converting a causal LM
 
