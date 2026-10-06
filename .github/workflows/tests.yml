@@ -87,7 +87,7 @@ jobs:
           - python_version: "3.12"
             pytorch_version: "2.13.0"
           - python_version: "3.14"
-            pytorch_version: "2.14.0"
+            pytorch_version: "2.14.1"
     timeout-minutes: 45
     env:
       AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
@@ -142,7 +142,7 @@ jobs:
           axolotl --help
 
       - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.14' && matrix.pytorch_version == '2.14.0' }}
+        if: ${{ matrix.python_version == '3.14' && matrix.pytorch_version == '2.14.1' }}
         run: |
           axolotl generate-cli-config-options --check
 
@@ -186,7 +186,7 @@ jobs:
     needs: [prime-cdn-s3-cache, pre-commit]
     timeout-minutes: 45
     env:
-      PYTORCH_VERSION: "2.14.0"
+      PYTORCH_VERSION: "2.14.1"
 
     steps:
       - name: cleanup node

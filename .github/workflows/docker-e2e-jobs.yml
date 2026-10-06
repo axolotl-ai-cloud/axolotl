@@ -61,7 +61,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.14"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -169,7 +169,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.14"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -224,7 +224,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -276,7 +276,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.14"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             axolotl_extras:
             num_gpus: 1
     steps:
@@ -345,7 +345,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             num_gpus: 1
             axolotl_extras:
     steps:
