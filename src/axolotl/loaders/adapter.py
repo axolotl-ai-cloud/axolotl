@@ -21,6 +21,7 @@ from peft import (
     get_peft_model,
 )
 from transformers import PreTrainedModel
+from transformers.trainer_utils import set_seed
 
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.mixlora.constants import (
@@ -33,7 +34,6 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_quantized_meta_for_peft(model: torch.nn.Module):
@@ -139,6 +139,12 @@ def _get_peft_task_type(model: PreTrainedModel) -> TaskType:
         return TaskType.SEQ_CLS
     if "TokenClassification" in model_cls:
         return TaskType.TOKEN_CLS
+    if getattr(getattr(model, "config", None), "model_type", None) in {
+        "diffusion_gemma",
+        "Dream",
+        "nemotron_labs_diffusion",
+    }:
+        return None
     return TaskType.CAUSAL_LM
 
 
@@ -187,7 +193,7 @@ def _build_peft_lora_config(
         lora_target_modules = list(set(lora_target_modules_as_list + linear_names))
 
     lora_config_kwargs = _build_lora_config_kwargs(cfg)
-    lora_config_kwargs.update(PLUGIN_MANAGER.get_lora_config_kwargs(cfg))
+    lora_config_kwargs.update(PluginManager.get_instance().get_lora_config_kwargs(cfg))
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
@@ -465,6 +471,8 @@ def load_lora(
             if adapter_dir != cfg.lora_model_dir:
                 shutil.rmtree(adapter_dir, ignore_errors=True)
     else:
+        if cfg.seed is not None:
+            set_seed(cfg.seed)
         model = get_peft_model(model, lora_config, **model_kwargs)
 
     # FP8 models: LoRA A/B inherit FP8 dtype from base weights, but training
@@ -559,7 +567,7 @@ def load_adapter(
         peft_model, lora_config = load_llama_adapter(model, cfg)
         return peft_model, lora_config
 
-    plugin_loaded = PLUGIN_MANAGER.load_adapter(
+    plugin_loaded = PluginManager.get_instance().load_adapter(
         model,
         cfg,
         inference=inference,
@@ -568,14 +576,14 @@ def load_adapter(
     if plugin_loaded is not None:
         return plugin_loaded
 
-    adapter_capability = PLUGIN_MANAGER.get_adapter_capability(adapter)
+    adapter_capability = PluginManager.get_instance().get_adapter_capability(adapter)
     if adapter_capability and adapter_capability.lora_like:
         peft_model, lora_config = load_lora(
             model, cfg, inference=inference, config_only=config_only
         )
         return peft_model, lora_config
 
-    registered = sorted(PLUGIN_MANAGER.adapter_capabilities())
+    registered = sorted(PluginManager.get_instance().adapter_capabilities())
     registered_msg = ", ".join(registered) if registered else "none"
     raise NotImplementedError(
         f"Adapter '{adapter}' is not built in and was not registered by a plugin "

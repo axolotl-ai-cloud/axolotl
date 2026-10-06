@@ -116,6 +116,7 @@ CANONICAL_ATTN_IMPLS = frozenset(
         "flash_attention_4",
         "flash_attention_torch",
         "flex_attention",
+        "varlen",
         "xformers",
         "sage",
         "fp8",

@@ -74,6 +74,16 @@ run order. Put single-GPU kernel correctness and numerical parity tests under
 kernel lane. LoRA kernel patching runs in its own process there; the slow FLA
 Mamba CUDA tests are selected explicitly. Model training smoke tests stay in the
 general lane, including the lightweight FLA/TileLang installation smoke test.
+
+Unit tests for a plugin live in `tests/integrations/<plugin>/` (`context_parallel/`
+also holds the Ringmaster probes, since Ringmaster is the CP library extracted from
+Axolotl). A test that exercises two plugins together stays in `tests/integrations/`.
+CPU jobs run `tests/integrations/` with `-m "not gpu"` and GPU jobs with `-m gpu`;
+there are no per-file exclusion lists. `tests/integrations/kernels/` belongs to the kernel
+lane and is excluded from the CPU jobs as a directory. Mark a test that needs CUDA with
+`@pytest.mark.gpu` (or `pytestmark = pytest.mark.gpu` for a whole module). A CUDA
+`skipif` without the marker is flagged by `tests/conftest.py`, and
+`AXOLOTL_CI_ENFORCE_GPU_MARKER=1` turns that into a failure.
 Both single-GPU lanes resume interrupted cache downloads with a shared 15-minute
 download budget, then extract the completed archive without clearing the shared
 Hub cache.
@@ -145,8 +155,9 @@ Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the m
 
 Alongside the full suites, every PR run selects the e2e test files its diff can affect
 and runs just those in two extra arms, `docker-e2e-tests-selected` (single GPU) and
-`multigpu-selected`. They gate nothing today; they exist to be compared against the
-full suites. The `select-e2e` job writes the selection and the reason for every file
+`multigpu-selected`. They gate nothing today and run with `continue-on-error`, as does
+the testmon arm, so a failure there never fails the run; they exist to be compared
+against the full suites in both directions. The `select-e2e` job writes the selection and the reason for every file
 to its job summary and uploads it as the `e2e-selection` artifact.
 
 `cicd/select_e2e_tests.py` derives the selection from the tree, so new features need

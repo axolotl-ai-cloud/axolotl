@@ -95,12 +95,15 @@ directly into training data.
 
 #### Diffusion Models {#sec-chat-diffusion}
 
-With the diffusion plugin enabled, chat mode generates each reply by appending
-a masked block to the conversation and denoising it. Replies arrive in one
-piece (no token streaming), and the parameter set changes accordingly:
-`/tokens N` sets the completion block size, `/steps N` the number of denoising
-steps, and `/temperature` the denoising temperature. Defaults come from the
-`diffusion:` section of your config.
+When the config has a `diffusion_lm:` block (or the legacy `diffusion:`
+plugin block), chat mode generates each reply by appending a masked block to the
+conversation and denoising it. Replies arrive in one piece (no token
+streaming), and the parameter set changes accordingly: `/tokens N` sets the
+completion block size, `/steps N` the number of denoising steps, and
+`/temperature` the denoising temperature. Defaults come from
+`diffusion_lm.num_diffusion_steps` and `diffusion_lm.generation_temperature`.
+Native diffusion models ([diffusion_lm](diffusion_lm.qmd)) use this chat mode;
+they generate completions only.
 
 Chat mode is not supported with `--prompter`; use the default inference mode
 for legacy prompters.

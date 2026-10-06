@@ -7,7 +7,7 @@ import types
 from typing import Generator, Tuple, Type
 
 import torch
-from peft import PeftModelForCausalLM
+from peft import PeftModel, PeftModelForCausalLM
 from torch import nn
 from transformers import AutoConfig
 
@@ -171,8 +171,25 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
     if "base_model" not in cfg:
         raise ValueError("base_model must be specified in config")
 
+    from axolotl.model_support import get_model_support, resolve_model_support
+
+    support = get_model_support(cfg.get("model_config_type"))
+    provider = (
+        resolve_model_support(support).strategies.lora_attention_cls
+        if support is not None
+        else None
+    )
+    if provider is not None:
+        attention_cls = provider(cfg)
+        if attention_cls is not None:
+            return attention_cls
+
     # Get model config without loading the model
-    model_config = AutoConfig.from_pretrained(cfg["base_model"])
+    model_config = AutoConfig.from_pretrained(
+        cfg["base_model"],
+        trust_remote_code=bool(cfg.get("trust_remote_code")),
+        revision=cfg.get("revision_of_model"),
+    )
     model_type = model_config.model_type
 
     # Special case for model_type = "qwen2"
@@ -322,23 +339,14 @@ def patch_self_attn_lora(cfg: DictDefault):
         1,
     )
 
-    # Load necessary imports
-    module_name = attention_cls.__module__
-    module = importlib.import_module(module_name)
-
-    items_to_import = []
-    for item in dir(module):
-        if item in self_attn_forward:
-            items_to_import.append(item)
-
-    exec(
-        f"from {module_name} import ({', '.join(items_to_import)})",
-        globals(),
-    )
-    exec(self_attn_forward, globals())
+    # Evaluate the rewritten forward in a copy of the defining module's namespace so
+    # its globals resolve as before, including for remote-code module paths.
+    module = importlib.import_module(attention_cls.__module__)
+    namespace = dict(vars(module))
+    exec(self_attn_forward, namespace)  # nosec B102
 
     LOG.info(f"Patched attention class with LoRA optims: {attention_cls.__name__}")
-    attention_cls.forward = axolotl_attn_forward
+    attention_cls.forward = namespace["axolotl_attn_forward"]
 
 
 def find_self_attn_in_layer(
@@ -452,6 +460,9 @@ def get_layers(model: PeftModelForCausalLM) -> list[nn.Module]:
         if hasattr(pretrained_model.model, "language_model"):
             return pretrained_model.model.language_model.layers
         return pretrained_model.model.layers
+    encoder = getattr(pretrained_model, "encoder", None)
+    if hasattr(encoder, "layers"):
+        return encoder.layers
 
     raise NotImplementedError(
         f"Model type {model.config.model_type} is not supported yet. Please create an Issue."
@@ -484,8 +495,8 @@ def apply_lora_kernel_patches(
         The optimizations require LoRA adapters with no dropout and no bias terms. The
             function will skip patching if these conditions aren't met.
     """
-    if not isinstance(model, PeftModelForCausalLM):
-        raise TypeError("Model must be a PeftModelForCausalLM")
+    if not isinstance(model, PeftModel):
+        raise TypeError("Model must be a PeftModel")
 
     # Get active LoRA adapter config
     if hasattr(model, "active_adapters"):

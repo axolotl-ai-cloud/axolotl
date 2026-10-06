@@ -9,13 +9,15 @@ permissions:
 env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
-  PYTHON_VERSION: "3.12"
+  PYTHON_VERSION: "3.14"
   PYTORCH_VERSION: "2.14.0"
 
 jobs:
   pytest-testmon:
-    name: PyTest testmon (py3.12, torch 2.14.0)
+    name: PyTest testmon (py3.14, torch 2.14.0)
     runs-on: ubuntu-latest
+    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
+    continue-on-error: true
     timeout-minutes: 45
 
     steps:
@@ -98,15 +100,7 @@ jobs:
           tm patched -v --durations=10 tests/patched/
           tm cli -v --durations=10 tests/cli/
           tm utils -v --durations=10 tests/utils/
-          tm integrations -v --durations=10 \
-            --ignore=tests/integrations/kernels/ \
-            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-            --ignore=tests/integrations/test_gemma4_moe.py \
-            --ignore=tests/integrations/test_scattermoe_lora.py \
-            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
-            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
-            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
-            tests/integrations/
+          tm integrations -v --durations=10 -m "not gpu" --ignore=tests/integrations/kernels/ tests/integrations/
 
       - name: testmon selection summary
         if: always()

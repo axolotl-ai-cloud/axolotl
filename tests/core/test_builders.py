@@ -12,6 +12,8 @@ from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.core.trainers import AxolotlTrainer
+from axolotl.model_support import ModelStrategies
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
@@ -27,6 +29,55 @@ def _gradient_checkpointing_kwargs(cfg):
         SimpleNamespace(cfg=cfg), training_args_kwargs
     )
     return training_args_kwargs
+
+
+def _save_and_eval_kwargs(cfg, *, eval_dataset=True, initial_kwargs=None):
+    builder = SimpleNamespace(cfg=cfg, eval_dataset=eval_dataset)
+    training_args_kwargs = dict(initial_kwargs or {})
+    TrainerBuilderBase._configure_save_and_eval_strategy(builder, training_args_kwargs)
+    return training_args_kwargs
+
+
+class TestSaveAndEvalStrategy:
+    def test_explicit_no_disables_initial_eval_even_with_eval_steps(self):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy="no",
+                eval_steps=5,
+            ),
+            initial_kwargs={"eval_on_start": True},
+        )
+
+        assert kwargs["eval_strategy"] == "no"
+        assert kwargs["eval_on_start"] is False
+        assert "eval_steps" not in kwargs
+
+    @pytest.mark.parametrize(
+        ("eval_strategy", "eval_steps", "expected_strategy"),
+        [("epoch", None, "epoch"), ("steps", 5, "steps")],
+    )
+    def test_enabled_eval_keeps_initial_eval_behavior(
+        self, eval_strategy, eval_steps, expected_strategy
+    ):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=eval_strategy,
+                eval_steps=eval_steps,
+            )
+        )
+
+        assert kwargs["eval_strategy"] == expected_strategy
+        assert kwargs["eval_on_start"] is True
+        if eval_steps:
+            assert kwargs["eval_steps"] == eval_steps
 
 
 class TestGradientCheckpointingConfig:
@@ -525,3 +576,122 @@ def test_collator_flash_attention_metadata_requires_supported_packed_compile(
 
     assert type(collator) is collator_cls
     assert collator.emit_fa_varlen_kwargs is False
+
+
+class _ProfileTrainer(AxolotlTrainer):
+    post_set_calls = 0
+
+    @classmethod
+    def requires_all_columns(cls, cfg):
+        return True
+
+    def post_set_axolotl_cfg(self):
+        type(self).post_set_calls += 1
+
+
+def _patch_profile(strategies):
+    return patch(
+        "axolotl.core.builders.causal.resolve_model_support",
+        return_value=SimpleNamespace(strategies=strategies),
+    )
+
+
+def _patch_plugins(trainer_cls=None, collator=None):
+    plugin_manager = MagicMock()
+    plugin_manager.get_trainer_cls.return_value = trainer_cls
+    plugin_manager.get_collator_cls_and_kwargs.return_value = collator
+    return patch(
+        "axolotl.core.builders.causal.PluginManager.get_instance",
+        return_value=plugin_manager,
+    )
+
+
+class TestProfileStrategyFactories:
+    def _builder(self, cfg=None):
+        return HFCausalTrainerBuilder(
+            cfg or DictDefault(model_config_type="llama"),
+            model=None,
+            tokenizer=MagicMock(),
+        )
+
+    def test_profile_trainer_factory_receives_cfg(self):
+        builder = self._builder()
+        factory = MagicMock(return_value=_ProfileTrainer)
+        with _patch_profile(ModelStrategies(trainer_cls=factory)):
+            assert builder._get_trainer_cls() is _ProfileTrainer
+        factory.assert_called_once_with(builder.cfg)
+
+    def test_profile_trainer_factory_none_falls_back(self):
+        builder = self._builder()
+        with _patch_profile(ModelStrategies(trainer_cls=lambda cfg: None)):
+            assert builder._get_trainer_cls() is AxolotlTrainer
+
+    def test_plugin_trainer_wins_over_profile(self):
+        class PluginTrainer(AxolotlTrainer):
+            pass
+
+        builder = self._builder()
+        factory = MagicMock(return_value=_ProfileTrainer)
+        with (
+            _patch_plugins(trainer_cls=PluginTrainer),
+            _patch_profile(ModelStrategies(trainer_cls=factory)),
+        ):
+            assert builder._get_trainer_cls() is PluginTrainer
+        factory.assert_not_called()
+
+    @pytest.mark.parametrize("is_eval", [False, True])
+    def test_profile_collator_factory_is_used(self, is_eval):
+        builder = self._builder()
+        sentinel = object()
+        factory = MagicMock(return_value=sentinel)
+        training_args = SimpleNamespace(
+            pretraining=False, sample_packing=False, eval_sample_packing=False
+        )
+        with _patch_profile(ModelStrategies(collator_factory=factory)):
+            collator = builder.build_collator(training_args, is_eval=is_eval)
+        assert collator is sentinel
+        factory.assert_called_once_with(builder.cfg, builder.tokenizer, is_eval)
+
+    def test_profile_collator_factory_none_falls_back(self):
+        builder = self._builder()
+        training_args = SimpleNamespace(
+            pretraining=False, sample_packing=False, eval_sample_packing=False
+        )
+        with _patch_profile(
+            ModelStrategies(collator_factory=lambda cfg, tokenizer, is_eval: None)
+        ):
+            collator = builder.build_collator(training_args)
+        assert type(collator) is DataCollatorForSeq2Seq
+
+    def test_plugin_collator_wins_over_profile(self):
+        class PluginCollator:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        builder = self._builder()
+        factory = MagicMock(return_value=object())
+        training_args = SimpleNamespace(
+            pretraining=False, sample_packing=False, eval_sample_packing=False
+        )
+        with (
+            _patch_plugins(collator=(PluginCollator, {})),
+            _patch_profile(ModelStrategies(collator_factory=factory)),
+        ):
+            collator = builder.build_collator(training_args)
+        assert isinstance(collator, PluginCollator)
+        factory.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("user_value", "expected"), [(None, False), (True, True), (False, False)]
+    )
+    def test_trainer_requires_all_columns(
+        self, sft_cfg, model, tokenizer, user_value, expected
+    ):
+        cfg = sft_cfg.copy()
+        cfg.remove_unused_columns = user_value
+        _ProfileTrainer.post_set_calls = 0
+        with _patch_profile(ModelStrategies(trainer_cls=lambda cfg: _ProfileTrainer)):
+            trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        assert type(trainer) is _ProfileTrainer
+        assert trainer.args.remove_unused_columns is expected
+        assert _ProfileTrainer.post_set_calls == 1

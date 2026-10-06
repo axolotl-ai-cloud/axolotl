@@ -182,10 +182,12 @@ class TestMultiGPULlama:
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
+                "dataset_num_proc": 4,
                 "chat_template": "chatml",
                 "datasets": [
                     {
                         "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
+                        "split": "train[:50]",
                         "type": "chat_template.default",
                         "field_messages": "conversation",
                         "field_chosen": "chosen",
@@ -262,10 +264,12 @@ class TestMultiGPULlama:
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
+                "dataset_num_proc": 4,
                 "chat_template": "chatml",
                 "datasets": [
                     {
                         "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
+                        "split": "train[:50]",
                         "type": "chat_template.default",
                         "field_messages": "conversation",
                         "field_chosen": "chosen",

@@ -15,11 +15,6 @@ pytest -v --durations=10 --maxfail=10 \
   /workspace/axolotl/tests/e2e/kernels/ \
   /workspace/axolotl/tests/integrations/kernels/ \
   /workspace/axolotl/tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-  /workspace/axolotl/tests/integrations/test_gemma4_moe.py \
-  /workspace/axolotl/tests/integrations/test_scattermoe_lora.py \
-  /workspace/axolotl/tests/integrations/test_scattermoe_lora_kernels.py \
-  /workspace/axolotl/tests/integrations/test_scattermoe_multi_lora.py \
-  /workspace/axolotl/tests/integrations/test_sonicmoe_multi_lora.py \
   --cov=axolotl \
   --cov-append
 

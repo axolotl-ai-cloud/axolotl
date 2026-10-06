@@ -43,7 +43,7 @@ pytest -v --durations=10 -n1 --maxfail=10 -m "not nvfp4 and not slow" \
   --cov-append
 
 pytest -v --durations=10 -n1 --maxfail=10 \
-  /workspace/axolotl/tests/integrations/test_expert_parallel_nvfp4_wrap.py \
+  /workspace/axolotl/tests/integrations/expert_parallel/test_nvfp4_wrap.py \
   --cov=axolotl \
   --cov-append
 

@@ -14,6 +14,7 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
@@ -249,6 +250,13 @@ class DatasetValidationMixin:
             seed = 42
         return seed
 
+    @model_validator(mode="after")
+    def seed_full_determinism(self):
+        if self.full_determinism and self.seed is None:
+            LOG.info("`full_determinism` set without `seed`; setting seed to 42")
+            self.seed = 42
+        return self
+
     @field_validator("datasets", mode="before")
     @classmethod
     def deprecate_sharegpt_datasets(cls, datasets):
@@ -400,7 +408,14 @@ class AttentionValidationMixin:
 
     @model_validator(mode="after")
     def check_sample_packing_without_attention(self):
-        if self.sample_packing and not self.attn_decontaminates_packing:
+        native_diffusion_default = (
+            self.diffusion_lm is not None and not self.diffusion_lm.from_causal_lm
+        )
+        if (
+            self.sample_packing
+            and not native_diffusion_default
+            and not self.attn_decontaminates_packing
+        ):
             if self.attn_implementation:
                 LOG.warning(
                     "`sample_packing` with `attn_implementation=%r` does not handle "
@@ -908,6 +923,18 @@ class LoRAValidationMixin:
             or data.get("lora_qkv_kernel")
             or data.get("lora_o_kernel")
         ) and data.get("trust_remote_code"):
+            from axolotl.model_support import (
+                get_model_support_for_cfg,
+                resolve_model_support,
+            )
+
+            support = get_model_support_for_cfg(DictDefault(data))
+            if (
+                support is not None
+                and resolve_model_support(support).strategies.lora_attention_cls
+                is not None
+            ):
+                return data
             raise ValueError(
                 "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
                 "compatible with trust_remote_code. Please disable trust_remote_code "
@@ -1331,7 +1358,9 @@ class OptimizationValidationMixin:
             return self
 
         batch_flattening_auto = self.batch_flattening == "auto"
-        has_varlen_attn = self.attn_supports_packing
+        has_varlen_attn = self.attn_supports_packing or (
+            self.attn_implementation == "varlen"
+        )
 
         if not has_varlen_attn and not batch_flattening_auto:
             raise ValueError(

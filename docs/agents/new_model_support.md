@@ -90,6 +90,8 @@ Capabilities merge by key, strategies, registrations, and matchers override fiel
 
 `ModelStrategyOverrides` distinguishes omission from removal: an omitted field inherits its family provider, while explicit `None` removes that provider and restores the downstream generic fallback. `ModelMatchers` fields differ: `None` always means inherit — matchers have no removal form. Profile hooks append by default; include a phase in `ModelHooks.replace_phases` to replace its inherited family hooks, using an empty tuple to suppress them entirely. Legacy method hooks remain additive after the declarative result.
 
+`auto_model_cls` and `processing_strategy_cls` are zero-argument providers. `trainer_cls(cfg)` returns a trainer class for the run, and `collator_factory(cfg, tokenizer, is_eval)` returns a built collator; either returns `None` to fall through to the generic trainer or collator. The SFT builder consults them after plugin `get_trainer_cls` / `get_collator_cls_and_kwargs` and `cfg.trainer_cls`, so plugins always win. A trainer class can set `requires_all_columns(cfg)` to keep extra dataset columns for its collator when `remove_unused_columns` is unset, and `post_set_axolotl_cfg()` runs after the builder assigns `axolotl_cfg`.
+
 Use `ModelFamilyTemplate` when several architectures share more than the built-in vanilla paths. Keep the template limited to genuinely shared behavior; model folders should add only their own matcher, strategy, capability differences, and localized patches.
 
 ### Migrating a legacy descriptor

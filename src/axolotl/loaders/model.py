@@ -77,7 +77,6 @@ if TYPE_CHECKING:
     from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def check_tensor_parallel_adapter_support(native_nvfp4_prepared) -> None:
@@ -238,6 +237,10 @@ class ModelLoader:
     parallelism_config: ParallelismConfig | None = None
     device_mesh: DeviceMesh | None = None
 
+    @property
+    def plugin_manager(self) -> PluginManager:
+        return PluginManager.get_instance()
+
     def __init__(
         self,
         cfg: DictDefault,
@@ -318,7 +321,7 @@ class ModelLoader:
         self._apply_pre_model_load_setup()
 
         # Build the model
-        PLUGIN_MANAGER.pre_model_load(self.cfg)
+        self.plugin_manager.pre_model_load(self.cfg)
         self.patch_manager.apply_post_plugin_pre_model_load_patches()
 
         skip_move_to_device = self._build_model()
@@ -330,16 +333,16 @@ class ModelLoader:
         with nf4_phase("NF4 post-load configuration", enabled=staged_nf4):
             self.patch_manager.apply_post_model_build_patches(self.model)
 
-            PLUGIN_MANAGER.post_model_build(self.cfg, self.model)
+            self.plugin_manager.post_model_build(self.cfg, self.model)
 
             # Post-build model configuration
             self._apply_post_model_load_setup()
 
         with nf4_phase("NF4 adapter initialization", enabled=staged_nf4):
             # Load adapters (LoRA, etc.)
-            PLUGIN_MANAGER.pre_lora_load(self.cfg, self.model)
+            self.plugin_manager.pre_lora_load(self.cfg, self.model)
             lora_config = self._load_adapters()
-            PLUGIN_MANAGER.post_lora_load(self.cfg, self.model)
+            self.plugin_manager.post_lora_load(self.cfg, self.model)
             self._materialize_trainable_meta_params()
             # after materialization so every rank (not just rank 0) holds its own draw
             self._reinit_lora_from_seed(lora_config)
@@ -348,7 +351,7 @@ class ModelLoader:
             # Apply remaining patches and finalize
             self._apply_post_lora_load_setup(skip_move_to_device)
             self.patch_manager.apply_post_model_load_patches(self.model)
-            PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+            self.plugin_manager.post_model_load(self.cfg, self.model)
             if (
                 (self.cfg.tensor_parallel_size or 1) > 1
                 and self.device_mesh is not None
@@ -1098,7 +1101,7 @@ class ModelLoader:
 
     def _set_attention_config(self):
         # fp8 replaces sdpa post-load (load as sdpa).
-        _LOAD_TIME_OVERRIDE = {"fp8": "sdpa"}
+        _LOAD_TIME_OVERRIDE = {"fp8": "sdpa", "varlen": "eager"}
         if self.cfg.attn_implementation:
             hf_impl = _LOAD_TIME_OVERRIDE.get(
                 self.cfg.attn_implementation, self.cfg.attn_implementation

@@ -20,7 +20,6 @@ from transformers import (
 )
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
-from axolotl.integrations.base import PluginManager
 from axolotl.model_support import (
     ModelHookContext,
     ModelHookPhase,
@@ -42,7 +41,6 @@ if TYPE_CHECKING:
     from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 class PatchManager:

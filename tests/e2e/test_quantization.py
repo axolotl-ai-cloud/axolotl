@@ -43,6 +43,12 @@ def _get_fake_quant_config_dtype(config):
     return torch.int4
 
 
+def _linears(model) -> list[torch.nn.Linear]:
+    linears = [m for m in model.modules() if isinstance(m, torch.nn.Linear)]
+    assert linears
+    return linears
+
+
 @pytest.fixture()
 def model():
     dummy_model = AutoModelForCausalLM.from_pretrained(
@@ -50,6 +56,8 @@ def model():
         device_map="auto",
         dtype=torch.bfloat16,
     )
+    # fp8 and nvfp4 need 16-aligned dims; this model's 151646-row lm_head is not
+    dummy_model.resize_token_embeddings(pad_to_multiple_of=16)
     with torch.device(dummy_model.device):
         dummy_model.model.embed_tokens = torch.nn.Embedding(
             dummy_model.model.embed_tokens.weight.shape[0],
@@ -197,9 +205,8 @@ class TestQuantization:
                 assert isinstance(
                     model.model.embed_tokens.weight, expected_tensor_class
                 ), "Embedding weight should be quantized"
-            for child in list(model.children()):
-                if isinstance(child, torch.nn.Linear):
-                    assert isinstance(child.weight, expected_tensor_class)
+            for child in _linears(model):
+                assert isinstance(child.weight, expected_tensor_class)
 
     @require_torch_2_8_0
     @requires_sm_ge_100
@@ -218,12 +225,11 @@ class TestQuantization:
             None,
             TorchAOQuantDType.float8_e4m3fn,
         )
-        for child in list(model.children()):
-            if isinstance(child, torch.nn.Linear):
-                assert isinstance(child.weight, Float8Tensor)
-                assert child.weight.act_quant_kwargs is not None and isinstance(
-                    child.weight.act_quant_kwargs, QuantizeTensorToFloat8Kwargs
-                )
+        for child in _linears(model):
+            assert isinstance(child.weight, Float8Tensor)
+            assert child.weight.act_quant_kwargs is not None and isinstance(
+                child.weight.act_quant_kwargs, QuantizeTensorToFloat8Kwargs
+            )
 
     @require_torch_2_8_0
     @requires_sm_ge_100
@@ -237,12 +243,11 @@ class TestQuantization:
         )
 
         quantize_model(model, TorchAOQuantDType.nvfp4, 16, TorchAOQuantDType.nvfp4)
-        for child in list(model.children()):
-            if isinstance(child, torch.nn.Linear):
-                assert isinstance(child.weight, NVFP4Tensor)
-                assert child.weight.act_quant_kwargs is not None and isinstance(
-                    child.weight.act_quant_kwargs, QuantizeTensorToNVFP4Kwargs
-                )
+        for child in _linears(model):
+            assert isinstance(child.weight, NVFP4Tensor)
+            assert child.weight.act_quant_kwargs is not None and isinstance(
+                child.weight.act_quant_kwargs, QuantizeTensorToNVFP4Kwargs
+            )
 
     @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,quantize_embedding",
@@ -280,22 +285,19 @@ class TestQuantization:
             if group_size:
                 assert embed_config.group_size == group_size
 
-        for child in list(model.children()):
-            if isinstance(child, torch.nn.Linear):
-                assert isinstance(child, FakeQuantizedLinear)
-                assert hasattr(child, "weight_fake_quantizer")
-                w_config = child.weight_fake_quantizer.config
-                assert _get_fake_quant_config_dtype(w_config) == weight_dtype.value
-                if group_size:
-                    assert w_config.group_size == group_size
-                if activation_dtype:
-                    assert hasattr(child, "activation_fake_quantizer")
-                    a_config = child.activation_fake_quantizer.config
-                    assert (
-                        _get_fake_quant_config_dtype(a_config) == activation_dtype.value
-                    )
-                else:
-                    assert child.activation_fake_quantizer is None
+        for child in _linears(model):
+            assert isinstance(child, FakeQuantizedLinear)
+            assert hasattr(child, "weight_fake_quantizer")
+            w_config = child.weight_fake_quantizer.config
+            assert _get_fake_quant_config_dtype(w_config) == weight_dtype.value
+            if group_size:
+                assert w_config.group_size == group_size
+            if activation_dtype:
+                assert hasattr(child, "activation_fake_quantizer")
+                a_config = child.activation_fake_quantizer.config
+                assert _get_fake_quant_config_dtype(a_config) == activation_dtype.value
+            else:
+                assert child.activation_fake_quantizer is None
 
     @pytest.mark.parametrize(
         "weight_dtype,activation_dtype,group_size,quantize_embedding",
@@ -322,10 +324,9 @@ class TestQuantization:
             assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
             assert hasattr(model.model.embed_tokens, "weight_fake_quantizer")
 
-        for child in list(model.children()):
-            if isinstance(child, torch.nn.Linear):
-                assert isinstance(child, MXFakeQuantizedLinear)
-                assert hasattr(child, "weight_config")
+        for child in _linears(model):
+            assert isinstance(child, MXFakeQuantizedLinear)
+            assert hasattr(child, "weight_config")
 
     @require_torch_2_8_0
     @requires_cuda_ge_8_9

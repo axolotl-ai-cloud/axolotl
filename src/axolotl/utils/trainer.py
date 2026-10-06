@@ -414,6 +414,20 @@ def process_pretraining_datasets_for_packing(
 
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
+    from axolotl.core.trainers.diffusion_lm.sampling import (
+        native_packing_lengths,
+        resolve_native_packing_budget,
+    )
+
+    native_budget = resolve_native_packing_budget(cfg)
+    native_lengths = (
+        None
+        if native_budget is None
+        else native_packing_lengths(train_dataset, **native_budget.options)
+    )
+    packing_budget = (
+        cfg.sequence_len if native_budget is None else native_budget.payload_capacity
+    )
     if (
         not cfg.total_num_tokens
         and not cfg.skip_prepare_dataset
@@ -457,7 +471,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
 
-        if cfg.sample_packing_eff_est:
+        if cfg.sample_packing_eff_est and native_lengths is None:
             total_num_steps = (
                 # match count to len est in dataloader
                 int(
@@ -476,9 +490,15 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}"
             )
         else:
-            if cfg.attn_supports_packing and not cfg.multipack_real_batches:
+            if native_lengths is not None or (
+                cfg.attn_supports_packing and not cfg.multipack_real_batches
+            ):
                 sampler_batch_size = 1
-                batch_max_len = cfg.micro_batch_size * cfg.sequence_len
+                batch_max_len = (
+                    packing_budget
+                    if native_lengths is not None
+                    else cfg.micro_batch_size * cfg.sequence_len
+                )
             else:
                 sampler_batch_size = cfg.micro_batch_size
                 batch_max_len = cfg.sequence_len
@@ -488,7 +508,11 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sampler = RandomSampler(train_dataset)
             sampler = MultipackBatchSampler(
                 sampler=sampler,
-                lengths=get_dataset_lengths(train_dataset),
+                lengths=(
+                    native_lengths
+                    if native_lengths is not None
+                    else get_dataset_lengths(train_dataset)
+                ),
                 batch_size=sampler_batch_size,
                 batch_max_len=batch_max_len,
                 group_size=cfg.sample_packing_group_size,

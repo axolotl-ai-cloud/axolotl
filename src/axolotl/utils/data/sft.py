@@ -100,6 +100,13 @@ def _prepare_standard_dataset(
     finally:
         loader.cleanup()
 
+    from axolotl.core.trainers.diffusion_lm.sampling import (
+        filter_native_diffusion_dataset,
+    )
+
+    train_dataset = filter_native_diffusion_dataset(cfg, train_dataset, split="train")
+    eval_dataset = filter_native_diffusion_dataset(cfg, eval_dataset, split="eval")
+
     if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
         return train_dataset, eval_dataset, -1, prompters
 
