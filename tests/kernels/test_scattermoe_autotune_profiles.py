@@ -45,7 +45,7 @@ def meta():
         "M_BUCKET": 131072,
         "BLOCK_R": 64,
         **{
-            name: SimpleNamespace(dtype="torch.bfloat16")
+            name: SimpleNamespace(dtype="torch.bfloat16", device="cuda:1")
             for name in ("X_ptr", "W_ptr", "Y_ptr", "LA_ptr", "LB_ptr")
         },
     }
@@ -149,7 +149,7 @@ def lora_ops(monkeypatch):
         "torch",
         SimpleNamespace(
             Tensor=object,
-            cuda=SimpleNamespace(get_device_capability=lambda: (12, 0)),
+            cuda=SimpleNamespace(get_device_capability=lambda device=None: (12, 0)),
         ),
     )
     spec = importlib.util.spec_from_file_location(
@@ -258,3 +258,30 @@ def test_mx_single_config_override_is_preserved(lora_ops, mx_meta, monkeypatch):
     configs = lora_ops._scatter2scatter_lora_dX_mx_configs()
     assert len(configs) == 1
     assert _MODULE.profile_dx_mx_configs(configs, (9, 0), 232448, mx_meta) is configs
+
+
+@pytest.mark.parametrize("capacity", [101376, 232448])
+@pytest.mark.parametrize("use_keywords", [False, True])
+def test_forward_profile_uses_input_device(
+    lora_ops, meta, monkeypatch, capacity, use_keywords
+):
+    queried_devices = []
+
+    def capability(device=None):
+        queried_devices.append(device)
+        return (12, 0) if device == meta["X_ptr"].device else (9, 0)
+
+    monkeypatch.setattr(lora_ops.torch.cuda, "get_device_capability", capability)
+    monkeypatch.setattr(lora_ops, "_get_smem_capacity", lambda: capacity)
+    configs = lora_ops._scatter2scatter_lora_configs()
+    selected = (
+        lora_ops._prune_fwd_configs(configs, {}, **meta)
+        if use_keywords
+        else lora_ops._prune_fwd_configs(configs, meta)
+    )
+    assert queried_devices == ["cuda:1"]
+    assert any(
+        tuple(config.kwargs[name] for name in ("BLOCK_M", "BLOCK_N", "BLOCK_K"))
+        == (32, 64, 64)
+        for config in selected
+    )

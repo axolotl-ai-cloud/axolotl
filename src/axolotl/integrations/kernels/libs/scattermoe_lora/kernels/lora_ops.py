@@ -453,7 +453,10 @@ def _prune_fwd_configs(configs, named_args, **kwargs):
     pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
     if pruned:
         return profile_fwd_configs(
-            pruned, torch.cuda.get_device_capability(), smem_cap, meta
+            pruned,
+            torch.cuda.get_device_capability(meta["X_ptr"].device),
+            smem_cap,
+            meta,
         )
     if scored:
         # All surviving configs exceed SMEM — return the one with smallest usage
