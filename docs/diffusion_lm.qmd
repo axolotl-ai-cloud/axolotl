@@ -225,6 +225,22 @@ reply is a completion block appended to the conversation and denoised in one
 piece; see [Inference](inference.qmd#sec-chat-diffusion). Native models
 generate completions only.
 
+## Nemotron Diffusion VLM
+
+`nvidia/Nemotron-Labs-Diffusion-VLM-8B` (`model_type: nemotron_labs_diffusion_vlm`)
+pairs the Nemotron diffusion backbone with a Pixtral vision tower. Axolotl
+resolves it to its own profile: the vision tower and projector are frozen on
+load, plain `lora_target_modules` names such as `q_proj` are anchored to
+`encoder.layers` so they cannot attach to the tower's projections of the same
+name, and 4-bit loading skips the vision stack. The profile also patches two
+transformers-version mismatches in the published remote code. Text-only
+training on this model matches the remote forward exactly in fp32.
+
+Its decoder weights are not the LM's: the VLM checkpoint was trained further,
+and its tokenizer carries one extra added token, so step losses differ from
+`Nemotron-Labs-Diffusion-8B` on the same data. Image inputs through the
+typed-decision plugin are described under [Typed-decision training](#typed-decision-training).
+
 ## Typed-decision training
 
 The `diffusion_decision` plugin trains a native diffusion model to answer

@@ -26,6 +26,7 @@ _BUILTIN_MODULES = (
     "axolotl.model_support.mamba",
     "axolotl.model_support.muse_glimmer",
     "axolotl.model_support.nemotron_diffusion",
+    "axolotl.model_support.nemotron_diffusion_vlm",
     "axolotl.model_support.paddleocr_vl",
     "axolotl.model_support.qwen3_5_moe",
     "axolotl.model_support.qwen4_exp",

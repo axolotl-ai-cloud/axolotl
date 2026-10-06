@@ -31,46 +31,111 @@ def project_selected_logits(
     return head(hidden[rows.clamp_min(0), positions.clamp_min(0)])
 
 
+@dataclass(frozen=True)
+class NemotronVariant:
+    """Remote-code file and class names that differ between the LM and the VLM."""
+
+    name: str
+    modeling_file: str
+    configuration_file: str
+    model_class: str
+    flex_attention_class: str
+
+    @property
+    def required_files(self) -> tuple[str, ...]:
+        return (self.configuration_file, "modeling_ministral.py", self.modeling_file)
+
+
+LM_VARIANT = NemotronVariant(
+    name="Nemotron",
+    modeling_file="modeling_nemotron_labs_diffusion.py",
+    configuration_file="configuration_nemotron_labs_diffusion.py",
+    model_class="NemotronLabsDiffusionModel",
+    flex_attention_class="NemotronLabsDiffusionFlexAttention",
+)
+VLM_VARIANT = NemotronVariant(
+    name="Nemotron VLM",
+    modeling_file="modeling_nemotron_labs_diffusion_vlm.py",
+    configuration_file="configuration_nemotron_labs_diffusion_vlm.py",
+    model_class="NemotronLabsDiffusionVLMModel",
+    flex_attention_class="NemotronLabsDiffusionVLMFlexAttention",
+)
+
+
+def ensure_masking_utils_aliases() -> None:
+    """The VLM remote code imports transformers 4.57's `sdpa_mask_older_torch` name
+    without using it; transformers 5 only ships `sdpa_mask`."""
+    from transformers import masking_utils
+
+    if not hasattr(masking_utils, "sdpa_mask_older_torch"):
+        masking_utils.sdpa_mask_older_torch = masking_utils.sdpa_mask
+
+
+def adapt_mask_function_kwargs(module: Any) -> None:
+    """The VLM remote code still calls transformers 4.57's mask builders with
+    `input_embeds` and `cache_position`; rename or drop them per the installed
+    signature, inside that module's namespace only."""
+    import functools
+    import inspect
+
+    for name in ("create_causal_mask", "create_sliding_window_causal_mask"):
+        function = getattr(module, name, None)
+        if function is None or getattr(function, "_axolotl_mask_kwargs_adapted", False):
+            continue
+        parameters = inspect.signature(function).parameters
+
+        @functools.wraps(function)
+        def adapted(*args, _function=function, _parameters=parameters, **kwargs):
+            if "input_embeds" in kwargs and "input_embeds" not in _parameters:
+                kwargs["inputs_embeds"] = kwargs.pop("input_embeds")
+            if "cache_position" not in _parameters:
+                kwargs.pop("cache_position", None)
+            return _function(*args, **kwargs)
+
+        adapted._axolotl_mask_kwargs_adapted = True  # type: ignore[attr-defined]
+        setattr(module, name, adapted)
+
+
 def resolve_nemotron_model_class(
-    model_source: str | Path, *, revision: str | None = None
+    model_source: str | Path,
+    *,
+    revision: str | None = None,
+    variant: NemotronVariant = LM_VARIANT,
 ) -> type:
     """Resolve native code while preserving the requested Hub revision."""
     source = Path(model_source)
     resolved_revision = None
-    if not (source / "modeling_nemotron_labs_diffusion.py").is_file():
+    if not (source / variant.modeling_file).is_file():
         from huggingface_hub import snapshot_download
 
         source = Path(
             snapshot_download(
                 repo_id=str(model_source),
                 revision=revision,
-                allow_patterns=[
-                    "config.json",
-                    "configuration_nemotron_labs_diffusion.py",
-                    "modeling_ministral.py",
-                    "modeling_nemotron_labs_diffusion.py",
-                ],
+                allow_patterns=["config.json", *variant.required_files],
             )
         )
         if source.parent.name == "snapshots" and re.fullmatch(
             r"[0-9a-f]{40}", source.name
         ):
             resolved_revision = source.name
-    required_files = (
-        "configuration_nemotron_labs_diffusion.py",
-        "modeling_ministral.py",
-        "modeling_nemotron_labs_diffusion.py",
-    )
-    missing = [name for name in required_files if not (source / name).is_file()]
+    missing = [name for name in variant.required_files if not (source / name).is_file()]
     if missing:
-        raise ValueError(f"Nemotron source lacks required native files: {missing}")
+        raise ValueError(
+            f"{variant.name} source lacks required native files: {missing}"
+        )
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
+    ensure_masking_utils_aliases()
     model_class = get_class_from_dynamic_module(
-        "modeling_nemotron_labs_diffusion.NemotronLabsDiffusionModel",
+        f"{variant.modeling_file[:-3]}.{variant.model_class}",
         str(source),
         local_files_only=True,
     )
+    if variant is VLM_VARIANT:
+        for klass in model_class.__mro__:
+            if klass.__module__.endswith("modeling_ministral"):
+                adapt_mask_function_kwargs(importlib.import_module(klass.__module__))
 
     class MaskAwareNemotron(model_class):  # type: ignore[valid-type, misc]
         _supports_flex_attn = True

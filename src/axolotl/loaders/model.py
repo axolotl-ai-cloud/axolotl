@@ -1078,6 +1078,11 @@ class ModelLoader:
             if self.cfg.model_config_type == "falcon_h1":
                 # output projection cannot be quantized for Falcon-H1 models
                 bnb_config["llm_int8_skip_modules"] = ["out_proj"]
+            if self.cfg.model_config_type == "nemotron_labs_diffusion_vlm":
+                bnb_config["llm_int8_skip_modules"] = [
+                    "vision_tower",
+                    "multi_modal_projector",
+                ]
 
             if self.cfg.bnb_config_kwargs:
                 bnb_config.update(self.cfg.bnb_config_kwargs)

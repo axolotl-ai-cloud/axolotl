@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from axolotl.model_support.base import ModelSupport, Supported, Unsupported
 from axolotl.model_support.diffusion import (
@@ -29,9 +30,12 @@ from axolotl.model_support.profile import (
 from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import DIFFUSION_LM
 
+if TYPE_CHECKING:
+    from .compat import NemotronVariant
 
-def _model_class() -> type:
-    from .compat import resolve_nemotron_model_class
+
+def make_auto_model_class(variant: "NemotronVariant") -> type:
+    from . import compat
 
     class AutoNemotronModel:
         def __new__(cls, config, **kwargs):
@@ -39,8 +43,8 @@ def _model_class() -> type:
 
         @classmethod
         def from_pretrained(cls, model_source, **kwargs):
-            model_class = resolve_nemotron_model_class(
-                model_source, revision=kwargs.get("revision")
+            model_class = compat.resolve_nemotron_model_class(
+                model_source, revision=kwargs.get("revision"), variant=variant
             )
             resolved_revision = getattr(model_class, "_axolotl_resolved_revision", None)
             config = kwargs.get("config")
@@ -58,8 +62,8 @@ def _model_class() -> type:
                     "Nemotron from_config requires config._name_or_path for native source resolution."
                 )
             kwargs.pop("trust_remote_code", None)
-            model_class = resolve_nemotron_model_class(
-                source, revision=getattr(config, "_commit_hash", None)
+            model_class = compat.resolve_nemotron_model_class(
+                source, revision=getattr(config, "_commit_hash", None), variant=variant
             )
             resolved_revision = getattr(model_class, "_axolotl_resolved_revision", None)
             if resolved_revision:
@@ -69,23 +73,36 @@ def _model_class() -> type:
     return AutoNemotronModel
 
 
+def _model_class() -> type:
+    from .compat import LM_VARIANT
+
+    return make_auto_model_class(LM_VARIANT)
+
+
 def _matches_cfg(cfg) -> bool:
+    from .compat import LM_VARIANT, VLM_VARIANT
+
     source = getattr(cfg, "base_model", None)
     if not isinstance(source, str):
         return False
-    if "nemotron-labs-diffusion" in source.lower():
-        return True
-    return (Path(source) / "modeling_nemotron_labs_diffusion.py").is_file()
+    lowered = source.lower()
+    if "nemotron-labs-diffusion" in lowered:
+        return "nemotron-labs-diffusion-vlm" not in lowered
+    return (Path(source) / LM_VARIANT.modeling_file).is_file() and not (
+        Path(source) / VLM_VARIANT.modeling_file
+    ).is_file()
 
 
-def _lora_attention_cls(cfg) -> type:
-    from .compat import resolve_nemotron_model_class
+def lora_attention_cls_for(cfg, variant: "NemotronVariant") -> type:
+    from . import compat
 
-    model_class = resolve_nemotron_model_class(
-        cfg.base_model, revision=getattr(cfg, "revision_of_model", None)
+    model_class = compat.resolve_nemotron_model_class(
+        cfg.base_model,
+        revision=getattr(cfg, "revision_of_model", None),
+        variant=variant,
     )
     name = (
-        "NemotronLabsDiffusionFlexAttention"
+        variant.flex_attention_class
         if getattr(cfg, "attn_implementation", None) == "flex_attention"
         else "Ministral3Attention"
     )
@@ -93,7 +110,13 @@ def _lora_attention_cls(cfg) -> type:
         module = sys.modules.get(klass.__module__)
         if hasattr(module, name):
             return getattr(module, name)
-    raise ValueError(f"Nemotron native source does not define {name}.")
+    raise ValueError(f"{variant.name} native source does not define {name}.")
+
+
+def _lora_attention_cls(cfg) -> type:
+    from .compat import LM_VARIANT
+
+    return lora_attention_cls_for(cfg, LM_VARIANT)
 
 
 def _before_model_build(context: ModelHookContext) -> None:
