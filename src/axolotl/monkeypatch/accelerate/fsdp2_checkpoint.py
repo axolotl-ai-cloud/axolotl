@@ -277,6 +277,7 @@ def _gather_value(value, owner):
 
 
 def full_model_state(model, adapter_only=False):
+    # TODO: stream checkpoint assembly layerwise to reduce rank-0 host memory.
     adapter_only = adapter_only and is_peft_model(model)
     parameters = _parameters(model)
     if adapter_only:
@@ -454,33 +455,46 @@ def _restore_tensor(value, parameter, owner, quantized=False, optimizer=None):
         raise ValueError(
             "Quantized optimizer checkpoint requires a torchao 8-bit optimizer"
         )
-    for receiver, target in enumerate(requests):
+
+    def select(target):
         quantize = (
             quantized
             and math.prod(target["local_shape"]) >= 4096
             and math.prod(target["local_shape"]) % block_size == 0
         )
-        selected, error = None, None
-        if rank == 0:
-            try:
-                selected = (
-                    _select_quantized(value, target, block_size, quantize)
-                    if quantized
-                    else _select_tensor(value, target)
+        return (
+            _select_quantized(value, target, block_size, quantize)
+            if quantized
+            else _select_tensor(value, target)
+        )
+
+    metadata, error = [None] * len(requests), None
+    if rank == 0:
+        try:
+            for receiver, target in enumerate(requests):
+                selected = select(target)
+                metadata[receiver] = (
+                    {
+                        "_tensor": True,
+                        "shape": list(selected.shape),
+                        "dtype": str(selected.dtype),
+                    }
+                    if torch.is_tensor(selected)
+                    else _metadata(selected)
                 )
-            except ValueError as exc:
-                error = str(exc)
-        _check_errors(error)
-        info = [_metadata(selected) if rank == 0 else None]
-        if rank == 0 and torch.is_tensor(selected) and selected.ndim == 0:
-            info[0] = {"_tensor": True, "shape": [], "dtype": str(selected.dtype)}
-        if rank == 0 and isinstance(selected, dict):
-            info[0] = {k: _metadata(v) for k, v in selected.items()}
-        dist.broadcast_object_list(info, src=0)
-        if isinstance(info[0], dict) and "codes" in info[0]:
+                del selected
+        except ValueError as exc:
+            error = str(exc)
+    _check_errors(error)
+    dist.broadcast_object_list(metadata, src=0)
+    for receiver, target in enumerate(requests):
+        # Recompute shards to avoid retaining a full copy for every replica.
+        selected = select(target) if rank == 0 else None
+        info = metadata[receiver]
+        if isinstance(info, dict) and "codes" in info:
             components = {}
             for attr in ("codes", "scale", "qmap"):
-                meta = info[0][attr]
+                meta = info[attr]
                 components[attr] = _transfer(
                     selected[attr] if rank == 0 else None,
                     meta["shape"],
@@ -496,11 +510,11 @@ def _restore_tensor(value, parameter, owner, quantized=False, optimizer=None):
                         components[a].to(local.device)
                         for a in ("codes", "scale", "qmap")
                     ),
-                    info[0]["signed"],
-                    dtype=_dtype(info[0]["dtype"]),
+                    info["signed"],
+                    dtype=_dtype(info["dtype"]),
                 )
         else:
-            meta = info[0]
+            meta = info
             tensor = _transfer(
                 selected if rank == 0 else None,
                 meta["shape"],
@@ -787,7 +801,7 @@ def patch_fsdp2_full_checkpoint():
     def get_state_dict(self, model, unwrap=True):
         plugin = getattr(self.state, "fsdp_plugin", None)
         if plugin is not None and _full(plugin) and _model_needs_ownership(model):
-            return full_model_state(model, adapter_only=is_peft_model(model))
+            return full_model_state(model)
         return original_get(self, model, unwrap=unwrap)
 
     accelerate.Accelerator.get_state_dict = get_state_dict

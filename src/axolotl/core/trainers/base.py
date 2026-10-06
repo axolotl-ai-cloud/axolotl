@@ -1060,6 +1060,7 @@ class AxolotlTrainer(
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
+        self._save_fsdp2_model_only_checkpoint(output_dir, state_dict)
 
         # fix for Context Parallel save: CP eval invalidates tensor storage
         # pointers, so clone to CPU to get fresh valid storage for safetensors

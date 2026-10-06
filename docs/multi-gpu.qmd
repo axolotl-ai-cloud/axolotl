@@ -96,13 +96,15 @@ When using `auto_wrap_policy: SIZE_BASED_WRAP`, set `min_num_params` to the mini
 
 ### Full checkpoints and resume
 
-`fsdp_config.state_dict_type: FULL_STATE_DICT` saves a single full model checkpoint and `optimizer.bin`. With expert parallelism, both checkpoints include every EP group's experts. Restore selects each rank's expert ownership before applying its FSDP/HSDP shard, including the different row and column packing of expert LoRA factors.
+`fsdp_config.state_dict_type: FULL_STATE_DICT` saves a single gathered model checkpoint and `optimizer.bin`. With expert parallelism, both checkpoints include every EP group's experts. Restore selects each rank's expert ownership before applying its FSDP/HSDP shard, including the different row and column packing of expert LoRA factors. LoRA/QLoRA Trainer checkpoints save only the adapter tensors; the frozen base model is loaded separately. Model-only intermediate checkpoints also write `pytorch_model_fsdp.bin` so Trainer uses the ownership-aware FSDP restore path.
 
 For `adamw_torch_8bit`, the full optimizer file records quantized codes, block scales, lookup tables, and shard ownership. Resuming with the same layout preserves these exactly. Changing the mesh is supported when the saved blocks remain compatible with the new optimizer shards. A change that regroups blocks with different scales raises a restore-time error; it does not silently requantize optimizer state or disallow the training configuration.
 
-Full checkpoints assemble tensors on rank 0's CPU and use bounded GPU transfer buffers. Adapter-only runs save trainable adapter tensors without materializing frozen base weights. Revisit streamed CPU transfers for large adapters or full fine-tuning to reduce transfer overhead and host memory requirements.
+Full checkpoints assemble tensors on rank 0's CPU and use bounded GPU transfer buffers. Rank 0 therefore needs enough host memory for the complete checkpoint state. Adapter-only runs save trainable adapter tensors without materializing frozen base weights.
 
 Native full bitsandbytes checkpoints preserve each EP owner's packed weights and quantization metadata in a versioned `pytorch_model_fsdp.bin` payload. Resume supports rank rearrangements and compatible data-parallel resharding, but requires the same EP ownership ranges. Changing EP grouping requires an explicit checkpoint conversion. These files are training checkpoints; Hugging Face adapter exports retain their usual format. Ownership-aware full checkpoints support 4-bit dense weights and 4-bit or 8-bit parametrized experts; dense `Int8Params` in this path are rejected.
+
+Final adapter exports use ordinary PEFT keys and gather every expert into the base model's global layout. Models with fused expert parameters retain that adapter layout; this is separate from bitsandbytes quantization packing. Full-model Hugging Face exports use the original checkpoint conversion mapping, which unpacks fused Mixtral experts into separate `w1`, `w2`, and `w3` weights. Final exports do not include the native resume file.
 
 ### FSDP + QLoRA {#sec-fsdp-qlora}
 

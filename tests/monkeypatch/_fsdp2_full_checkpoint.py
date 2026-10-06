@@ -4,6 +4,7 @@ import copy
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 import torch.distributed as dist
@@ -15,6 +16,7 @@ from torchao.optim.adam import single_param_adam
 from torchao.optim.subclass_8bit import OptimState8bit
 
 from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+    _restore_tensor,
     full_model_state,
     full_optimizer_state,
     patch_fsdp2_full_checkpoint,
@@ -148,6 +150,270 @@ def check_full_parameter_save_route(mesh, root):
         )
     if dist.get_rank() == 0:
         print("PASS native-trainer-non-peft-full-checkpoint", flush=True)
+
+
+def slice_cpu_experts(model, mesh):
+    from axolotl.integrations.expert_parallel.shard import _detect_experts_modules
+
+    for _, module in _detect_experts_modules(model):
+        total = module.num_experts
+        local = total // mesh["ep"].size()
+        offset = mesh.get_coordinate()[1] * local
+        for name in ("gate_up_proj", "down_proj"):
+            parameter = getattr(module, name)
+            setattr(
+                module,
+                name,
+                nn.Parameter(parameter[offset : offset + local].detach().clone()),
+            )
+        module.num_experts_global = total
+        module.num_local_experts = local
+        module.local_expert_offset = offset
+        module.num_experts = local
+
+
+def check_peft_trainer_save_route(mesh, root):
+    from accelerate import Accelerator
+    from peft import LoraConfig, PeftModel, get_peft_model
+    from peft.utils.save_and_load import get_peft_model_state_dict
+
+    from axolotl.core.trainers.base import AxolotlTrainer
+    from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+    from axolotl.integrations.expert_parallel.shard import shard_expert_lora
+    from axolotl.train import save_trained_model
+    from axolotl.utils.dict import DictDefault
+
+    def make_base():
+        base = nn.Module()
+        base.experts = nn.Module()
+        base.experts.num_experts = 4
+        base.experts.gate_up_proj = nn.Parameter(torch.ones(4, 16, 256))
+        base.experts.down_proj = nn.Parameter(torch.ones(4, 256, 16))
+        base.dense = nn.Linear(256, 32, bias=False)
+        base.register_buffer("counter", torch.tensor(3))
+        return base
+
+    base = make_base()
+    slice_cpu_experts(base, mesh)
+    model = get_peft_model(
+        base,
+        LoraConfig(
+            target_modules=["dense"],
+            target_parameters=["experts.gate_up_proj", "experts.down_proj"],
+            r=16,
+        ),
+    )
+    assert shard_expert_lora(model, 2) == 4
+    for module in model.modules():
+        for name, parameter in list(module.named_parameters(recurse=False)):
+            if parameter.requires_grad:
+                setattr(
+                    module,
+                    name,
+                    nn.Parameter(distribute_tensor(parameter, mesh["dp"], (Shard(0),))),
+                )
+    ep_rank = mesh.get_coordinate()[1]
+    with torch.no_grad():
+        for name, parameter in model.named_parameters():
+            if "lora_" in name:
+                parameter.requires_grad_(True)
+                local = (
+                    parameter.to_local()
+                    if isinstance(parameter, DTensor)
+                    else parameter
+                )
+                local.fill_(ep_rank + 0.125 if "expert" in name else 0.25)
+    expected = {
+        name: snapshot(parameter)
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    }
+    accelerator = SimpleNamespace(
+        is_main_process=dist.get_rank() == 0,
+        num_processes=dist.get_world_size(),
+        wait_for_everyone=dist.barrier,
+        unwrap_model=lambda model, **kwargs: model,
+        parallelism_config=None,
+        state=SimpleNamespace(
+            fsdp_plugin=SimpleNamespace(
+                fsdp_version=2, state_dict_type="FULL_STATE_DICT"
+            )
+        ),
+    )
+    accelerator.get_state_dict = lambda model, unwrap=True: Accelerator.get_state_dict(
+        accelerator, model, unwrap=unwrap
+    )
+    for unwrap in (True, False):
+        full = accelerator.get_state_dict(model, unwrap=unwrap)
+        if dist.get_rank() == 0:
+            assert set(full) == set(model.state_dict())
+            assert "base_model.model.counter" in full
+            assert "base_model.model.dense.base_layer.weight" in full
+    if dist.get_rank() == 0:
+        print("PASS full-peft-state-dict", flush=True)
+    trainer = object.__new__(AxolotlTrainer)
+    trainer.model = model
+    trainer.accelerator = accelerator
+    trainer.is_fsdp_enabled = True
+    trainer.is_deepspeed_enabled = False
+    trainer.processing_class = None
+    trainer.data_collator = None
+    trainer.args = SimpleNamespace(
+        output_dir=str(root / "sft-model-only"),
+        should_save=dist.get_rank() == 0,
+        save_only_model=True,
+        push_to_hub=False,
+    )
+    trainer.save_model(_internal_call=True)
+    dist.barrier()
+    if dist.get_rank() == 0:
+        directory = Path(trainer.args.output_dir)
+        assert (directory / "adapter_model.safetensors").is_file()
+        saved = torch.load(directory / "pytorch_model_fsdp.bin", weights_only=True)
+        assert set(saved) == set(expected)
+        assert any(value.shape == (64, 256) for value in saved.values())
+        assert not (directory / "optimizer.bin").exists()
+    with torch.no_grad():
+        for parameter in model.parameters():
+            if parameter.requires_grad:
+                (
+                    parameter.to_local()
+                    if isinstance(parameter, DTensor)
+                    else parameter
+                ).zero_()
+    with patch.object(
+        model, "load_adapter", side_effect=AssertionError("Used local PEFT restore")
+    ):
+        trainer._load_from_checkpoint(trainer.args.output_dir)
+    for name, parameter in model.named_parameters():
+        if parameter.requires_grad:
+            compare(parameter, expected[name])
+    if dist.get_rank() == 0:
+        print("PASS sft-model-only-ep-adapter-resume", flush=True)
+    full_adapter = full_model_state(model, adapter_only=True)
+    trainer.save_model(str(root / "trainer-final-export"))
+    final_directory = root / "final-ep-adapter"
+    with patch.object(
+        ExpertParallelPlugin, "_resolve_ep_group", return_value=mesh["ep"].get_group()
+    ):
+        save_trained_model(
+            DictDefault(
+                {
+                    "adapter": "lora",
+                    "expert_parallel_size": 2,
+                    "output_dir": str(final_directory),
+                }
+            ),
+            trainer,
+            model,
+        )
+    if dist.get_rank() == 0:
+        for directory in (root / "trainer-final-export", final_directory):
+            assert not (directory / "pytorch_model_fsdp.bin").exists()
+            reloaded = PeftModel.from_pretrained(make_base(), directory)
+            expected_adapter = get_peft_model_state_dict(model, state_dict=full_adapter)
+            actual_adapter = get_peft_model_state_dict(reloaded)
+            assert set(actual_adapter) == set(expected_adapter)
+            for name, value in expected_adapter.items():
+                torch.testing.assert_close(actual_adapter[name], value, rtol=0, atol=0)
+        print("PASS final-ep-adapter-base-layout", flush=True)
+    dist.barrier()
+
+
+def check_restore_collectives(mesh):
+    parameter = distribute_tensor(torch.arange(16.0), mesh, (Shard(0), Shard(0)))
+    state = torch.arange(16.0) if dist.get_rank() == 0 else None
+    with (
+        patch.object(
+            dist, "all_gather_object", wraps=dist.all_gather_object
+        ) as gathers,
+        patch.object(
+            dist, "broadcast_object_list", wraps=dist.broadcast_object_list
+        ) as broadcasts,
+    ):
+        restored = _restore_tensor(state, parameter, None)
+    torch.testing.assert_close(
+        restored.to_local(), parameter.to_local(), rtol=0, atol=0
+    )
+    assert gathers.call_count == 3
+    assert broadcasts.call_count == 1
+    if dist.get_rank() == 0:
+        print("PASS restore-collectives-batched", flush=True)
+
+
+def check_mixtral_full_model_export(mesh, root):
+    from accelerate import Accelerator
+    from safetensors.torch import load_file
+    from transformers import MixtralConfig, MixtralForCausalLM
+
+    from axolotl.core.trainers.base import AxolotlTrainer
+
+    torch.manual_seed(13)
+    model = MixtralForCausalLM(
+        MixtralConfig(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=2,
+            num_local_experts=4,
+            num_experts_per_tok=2,
+            attn_implementation="eager",
+            experts_implementation="eager",
+        )
+    )
+    expected = {name: value.clone() for name, value in model.state_dict().items()}
+    slice_cpu_experts(model, mesh)
+    trainer = object.__new__(AxolotlTrainer)
+    trainer.model = model
+    trainer.is_fsdp_enabled = True
+    trainer.is_deepspeed_enabled = False
+    trainer.processing_class = None
+    trainer.data_collator = None
+    trainer.accelerator = SimpleNamespace(
+        is_main_process=dist.get_rank() == 0,
+        wait_for_everyone=dist.barrier,
+        parallelism_config=None,
+        state=SimpleNamespace(
+            fsdp_plugin=SimpleNamespace(
+                fsdp_version=2, state_dict_type="FULL_STATE_DICT"
+            )
+        ),
+    )
+    trainer.accelerator.get_state_dict = lambda model: Accelerator.get_state_dict(
+        trainer.accelerator, model
+    )
+    trainer.args = SimpleNamespace(
+        output_dir=str(root / "mixtral-model-only"),
+        should_save=dist.get_rank() == 0,
+        save_only_model=True,
+        push_to_hub=False,
+    )
+    trainer.save_model(_internal_call=True)
+    if dist.get_rank() == 0:
+        saved = torch.load(
+            Path(trainer.args.output_dir) / "pytorch_model_fsdp.bin", weights_only=True
+        )
+        assert set(saved) == set(expected)
+        for name, value in expected.items():
+            torch.testing.assert_close(saved[name], value, rtol=0, atol=0)
+    directory = root / "mixtral-final-export"
+    trainer.save_model(str(directory))
+    if dist.get_rank() == 0:
+        assert not (directory / "pytorch_model_fsdp.bin").exists()
+        exported = load_file(directory / "model.safetensors")
+        assert not any(
+            "gate_up_proj" in name or "down_proj" in name for name in exported
+        )
+        assert sum(".experts." in name for name in exported) == 12
+        reloaded = MixtralForCausalLM.from_pretrained(
+            directory, attn_implementation="eager", experts_implementation="eager"
+        )
+        for name, value in reloaded.state_dict().items():
+            torch.testing.assert_close(value, expected[name], rtol=0, atol=0)
+        print("PASS mixtral-final-original-layout", flush=True)
+    dist.barrier()
 
 
 def snapshot(value):
@@ -333,6 +599,9 @@ def main():
     root.mkdir(exist_ok=True)
     mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("dp", "ep"))
     check_full_parameter_save_route(mesh, root)
+    check_peft_trainer_save_route(mesh, root)
+    check_restore_collectives(mesh)
+    check_mixtral_full_model_export(mesh, root)
     model = Model(mesh, mesh["dp"], (Shard(0),), (Shard(0), Shard(0)))
     optimizer = AdamW8bit(model.parameters(), lr=0.001)
     populate(model, optimizer, mesh.get_coordinate()[1], mesh.get_coordinate()[0])
