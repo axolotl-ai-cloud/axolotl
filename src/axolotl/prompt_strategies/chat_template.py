@@ -15,6 +15,7 @@ from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import remove_none_values
+from axolotl.utils.images import load_and_resize_image
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
 
@@ -57,6 +58,8 @@ class ChatTemplatePrompter(Prompter):
         template_thinking_key: str | None = "reasoning_content",
         chat_template_kwargs: dict[str, Any] | None = None,
         drop_system_message: bool = False,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm=None,
     ):
         # check if message_property_mappings is None or empty dict
         if message_property_mappings is None or (not message_property_mappings):
@@ -91,6 +94,8 @@ class ChatTemplatePrompter(Prompter):
         self.field_thinking = field_thinking
         self.tokenizer = tokenizer
         self.processor: ProcessorMixin | None = processor
+        self.image_size = image_size
+        self.image_resize_algorithm = image_resize_algorithm
         self.chat_template = chat_template
         self.chat_template_kwargs = chat_template_kwargs or {}
         self.template_thinking_key: str = template_thinking_key or "reasoning_content"
@@ -133,6 +138,14 @@ class ChatTemplatePrompter(Prompter):
         if self.processor:
             if not callable(self.processor):
                 raise TypeError("Processor must be callable")
+
+            if images and self.image_size is not None:
+                images = [
+                    load_and_resize_image(
+                        image, self.image_size, self.image_resize_algorithm
+                    )
+                    for image in images
+                ]
 
             text = self.processor.apply_chat_template(
                 conversation,
@@ -1404,6 +1417,8 @@ class StrategyLoader:
             # we need to add one for detecting sequences with exceeding the `sequence_len` limit.
             "max_length": cfg.sequence_len + 1,
             "processor": processor,
+            "image_size": cfg.image_size,
+            "image_resize_algorithm": cfg.image_resize_algorithm,
         }
 
         strategy_params = self._get_strategy_params(cfg, dataset_config)
