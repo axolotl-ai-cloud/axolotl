@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
 import importlib
 import os
 
@@ -249,12 +253,6 @@ class KernelsPlugin(BasePlugin):
 
     def add_callbacks_pre_trainer(self, cfg, model):
         callbacks = []
-        if cfg.use_scattermoe:
-            from axolotl.integrations.kernels.autotune_callback import (
-                AutotuneReportCallback,
-            )
-
-            callbacks.append(AutotuneReportCallback())
         if cfg.use_sonicmoe and cfg.nvfp4_merge_aware:
             from axolotl.integrations.kernels.merge_aware_callback import (
                 MergeAwareScheduleCallback,

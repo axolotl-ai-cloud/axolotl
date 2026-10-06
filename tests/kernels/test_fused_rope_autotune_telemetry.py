@@ -137,17 +137,6 @@ class TestCallback:
             cb.on_step_end(args=MagicMock(), state=state, control=MagicMock())
             assert tm.send_event.call_count == 1
 
-    def test_retries_until_step_5_then_gives_up(self):
-        from axolotl.kernels.autotune_telemetry import FusedRopeAutotuneReportCallback
-
-        cb = FusedRopeAutotuneReportCallback()
-        with self._patch_collect(return_value=[]):
-            for step in range(1, 7):
-                state = MagicMock()
-                state.global_step = step
-                cb.on_step_end(args=MagicMock(), state=state, control=MagicMock())
-        assert cb._reported is True
-
     def test_includes_gpu_info(self):
         from axolotl.kernels.autotune_telemetry import FusedRopeAutotuneReportCallback
 

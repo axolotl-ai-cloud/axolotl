@@ -1,4 +1,8 @@
-"""Collect Triton autotune results from scattermoe-lora kernels.
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
+"""Collect Triton autotune results from supported loaded kernel modules.
 
 This module reads the ``.cache`` attribute from Triton ``@triton.autotune``
 decorated kernel objects and returns structured dicts describing the selected
@@ -10,6 +14,7 @@ import sys
 from types import ModuleType
 from typing import Any
 
+from axolotl.kernels.autotune_reporting import autotuner_metadata
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -69,7 +74,8 @@ def _find_lora_ops_module() -> ModuleType | None:
 # sparse-MLA) kernels.
 _KERNEL_MODULE_HINTS: tuple[str, ...] = (
     "lora_ops",
-    "scattermoe_lora.kernels",
+    "scattermoe_lora",
+    "axolotl.monkeypatch.attention.flash_attn_d512",
     "libs.dsv4.attention",
     "libs.dsv4.attention_csa",
     "libs.dsv4.attention_gather",
@@ -116,8 +122,8 @@ def _label_key(autotuner: Any, key_tuple: tuple) -> dict[str, Any]:
     return result
 
 
-def collect_autotune_configs() -> list[dict[str, Any]]:
-    """Read autotune caches from ALL dsv4 + scattermoe ``@triton.autotune`` kernels.
+def collect_autotune_configs(coverage: list | None = None) -> list[dict[str, Any]]:
+    """Read autotune caches from supported ``@triton.autotune`` kernels.
 
     Returns a (possibly empty) list of dicts, each containing:
 
@@ -145,10 +151,20 @@ def collect_autotune_configs() -> list[dict[str, Any]]:
             if not _is_autotuner(obj):
                 continue
             cache = obj.cache  # type: ignore[union-attr]
-            if not cache:
-                continue
             base = getattr(obj, "base_fn", None) or getattr(obj, "fn", None)
             kname = getattr(base, "__name__", attr)
+            if coverage is not None:
+                coverage.append(
+                    {
+                        "kernel": kname,
+                        "module_fqn": modname,
+                        "cache_entries": len(cache),
+                        "status": "cache_populated" if cache else "cache_empty",
+                    }
+                )
+            if not cache:
+                continue
+            metadata = autotuner_metadata(obj, module)
             for key_tuple, config in cache.items():
                 dedup = (modname, kname, tuple(key_tuple))
                 if dedup in seen:
@@ -164,6 +180,7 @@ def collect_autotune_configs() -> list[dict[str, Any]]:
                         "module_fqn": modname,
                         "key": _label_key(obj, key_tuple),
                         "config": _config_to_dict(config),
+                        **metadata,
                     }
                 )
 

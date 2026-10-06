@@ -12,19 +12,11 @@ across architectures can be aggregated.
 """
 
 import torch
-from transformers import (
-    TrainerCallback,
-    TrainerControl,
-    TrainerState,
-    TrainingArguments,
+
+from axolotl.kernels.autotune_reporting import (
+    AutotuneTelemetryCallback,
+    autotuner_metadata,
 )
-
-from axolotl.utils.logging import get_logger
-
-LOG = get_logger(__name__)
-
-# Give up looking for autotune data after this many training steps.
-_MAX_POLL_STEP = 5
 
 # (human-readable name, attribute on gemma4_fused_rope, autotune key arg names)
 _KERNEL_REGISTRY: list[tuple[str, str, list[str]]] = [
@@ -70,6 +62,7 @@ def collect_fused_rope_autotune_configs() -> list[dict]:
         if not cache:
             continue
         key_names = list(getattr(kernel_fn, "keys", None) or key_names)
+        metadata = autotuner_metadata(kernel_fn, mod)
         for key_tuple, config in cache.items():
             config_dict = dict(config.kwargs)
             config_dict["num_warps"] = config.num_warps
@@ -84,58 +77,19 @@ def collect_fused_rope_autotune_configs() -> list[dict]:
             if len(key_tuple) > len(key_names):
                 key["_extra"] = [str(v) for v in key_tuple[len(key_names) :]]
 
-            results.append({"kernel": friendly_name, "key": key, "config": config_dict})
+            results.append(
+                {"kernel": friendly_name, "key": key, "config": config_dict, **metadata}
+            )
     return results
 
 
-class FusedRopeAutotuneReportCallback(TrainerCallback):
-    """Reports fused RMSNorm+RoPE autotune selections via telemetry.
+class FusedRopeAutotuneReportCallback(AutotuneTelemetryCallback):
+    """Report fused RMSNorm+RoPE selections, including later cache entries."""
 
-    Fires once after the autotune cache is populated (the first step whose
-    backward has run), retrying up to ``_MAX_POLL_STEP`` then giving up. Every
-    later ``on_step_end`` short-circuits on ``_reported`` — zero hot-path cost.
-    """
+    event_type = "fused-rope-autotune"
 
-    def __init__(self):
-        self._reported = False
+    def _collect_configs(self):
+        return collect_fused_rope_autotune_configs()
 
-    # pylint: disable=unused-argument
-    def on_step_end(
-        self,
-        args: TrainingArguments,
-        state: TrainerState,
-        control: TrainerControl,
-        **kwargs,
-    ):
-        if self._reported:
-            return
-
-        configs = collect_fused_rope_autotune_configs()
-        if not configs:
-            if state.global_step >= _MAX_POLL_STEP:
-                LOG.debug(
-                    "No fused-rope autotune data after %d steps; giving up.",
-                    state.global_step,
-                )
-                self._reported = True
-            return
-
-        self._reported = True
-
-        from axolotl.telemetry.manager import TelemetryManager
-
-        telemetry_manager = TelemetryManager.get_instance()
-        if not telemetry_manager.enabled:
-            return
-
-        properties = {"kernel_count": len(configs), "kernels": configs}
-        properties.update(_get_gpu_info())
-
-        telemetry_manager.send_event(
-            event_type="fused-rope-autotune",
-            properties=properties,
-        )
-        LOG.info(
-            "Reported %d fused-rope kernel autotune config(s) to telemetry.",
-            len(configs),
-        )
+    def _hardware_info(self):
+        return _get_gpu_info()
