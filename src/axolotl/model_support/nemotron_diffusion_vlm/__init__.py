@@ -103,9 +103,16 @@ def _validate(context: ModelHookContext) -> None:
 
 
 def _freeze_vision(context: ModelHookContext) -> None:
-    for name, parameter in context.model.named_parameters():
+    model = context.model
+    assert model is not None
+    for name, parameter in model.named_parameters():
         if _is_vision_parameter(name):
             parameter.requires_grad_(False)
+    # The remote code doubles image features for its own complementary masking
+    # in training mode; the trainer supplies the noised canvas itself.
+    config = getattr(model, "config", None)
+    if config is not None:
+        config.complementary_mask = False
 
 
 def _reject_vision_adapters(context: ModelHookContext) -> None:
@@ -146,8 +153,8 @@ class NemotronDiffusionVLMSupport(ModelSupport):
             "vision_inputs": Supported(
                 "Image features are scattered into the prompt's image-pad tokens."
             ),
-            "diffusion_varlen": Unsupported(
-                "Varlen parity is not yet measured on the VLM."
+            "diffusion_varlen": Supported(
+                "Native full-sequence varlen attention is supported."
             ),
             "cut_cross_entropy": Unsupported(
                 "The selected-logit CCE patch is not yet verified on the VLM."
@@ -155,12 +162,12 @@ class NemotronDiffusionVLMSupport(ModelSupport):
             "fused_attn_kernel": Unsupported(
                 "Native attention parity is not verified."
             ),
-            "fsdp": Unsupported("FSDP2 parity is not yet measured on the VLM."),
-            "quantized_lora": Unsupported(
-                "4-bit LoRA with the vision stack skipped is not yet measured."
+            "fsdp": Supported("FSDP2 LoRA and QLoRA match DDP step losses."),
+            "quantized_lora": Supported(
+                "4-bit LoRA with the vision stack left unquantized; 8-bit is rejected."
             ),
-            "lora_kernels": Unsupported(
-                "Fused LoRA kernel parity is not yet measured on the VLM."
+            "lora_kernels": Supported(
+                "Fused QKV/O/MLP kernels patch the native attention class."
             ),
         },
         strategies=ModelStrategyOverrides(

@@ -6,9 +6,11 @@ import hashlib
 import json
 import unicodedata
 from collections.abc import Iterable, Mapping
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
-from ._util import canonical_json
+from ._util import canonical_json, sha256_file
 
 
 def state_fingerprint(state: Any) -> str:
@@ -25,6 +27,30 @@ def state_fingerprint(state: Any) -> str:
     else:
         text = canonical_json(state, allow_nan=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@lru_cache(maxsize=65536)
+def _file_digest(path: str, mtime_ns: int, size: int) -> str:
+    return sha256_file(Path(path))
+
+
+def _image_digest(ref: str) -> str:
+    """sha256 of a local image file's bytes, else the reference itself."""
+    path = Path(ref)
+    if not path.is_file():
+        return ref
+    stat = path.stat()
+    return _file_digest(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def record_fingerprint(record: Mapping[str, Any]) -> str:
+    """State fingerprint, extended with image content hashes for image records."""
+    state = state_fingerprint(record["state"])
+    images = record.get("images")
+    if not images:
+        return state
+    digests = [_image_digest(str(ref)) for ref in images]
+    return hashlib.sha256("\0".join([state, *digests]).encode("utf-8")).hexdigest()
 
 
 def family_key(record: Mapping[str, Any]) -> tuple[str, str]:
@@ -47,14 +73,14 @@ def decontaminate(
     eval_states: set[str] = set()
     eval_families: set[tuple[str, str]] = set()
     for record in evaluation:
-        eval_states.add(state_fingerprint(record["state"]))
+        eval_states.add(record_fingerprint(record))
         eval_families.add(family_key(record))
     kept = []
     counts = {"input": 0, "state_overlap": 0, "family_overlap": 0, "kept": 0}
     for record in training:
         counts["input"] += 1
         key = family_key(record)
-        if state_fingerprint(record["state"]) in eval_states:
+        if record_fingerprint(record) in eval_states:
             counts["state_overlap"] += 1
         elif exclude_families and key in eval_families:
             counts["family_overlap"] += 1
@@ -72,7 +98,7 @@ def assert_split_isolation(
     families: dict[tuple[str, str], str] = {}
     for split, records in splits.items():
         for record in records:
-            fingerprint = state_fingerprint(record["state"])
+            fingerprint = record_fingerprint(record)
             key = family_key(record)
             if fingerprint in states and states[fingerprint] != split:
                 raise ValueError(

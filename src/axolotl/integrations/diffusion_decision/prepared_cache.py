@@ -14,6 +14,8 @@ import tokenizers
 import transformers
 from huggingface_hub import hf_hub_download, try_to_load_from_cache
 
+from axolotl import processing_strategies
+
 from ._util import (
     _value,
     atomic_write_text,
@@ -223,6 +225,7 @@ def identity(
     *,
     selected_entries: Sequence[tuple[str, int, Any]] | None = None,
     scope: Mapping[str, Any] | None = None,
+    image_paths: Sequence[Path] = (),
 ) -> tuple[str, dict[str, Any]] | None:
     backend = getattr(getattr(tokenizer, "backend_tokenizer", None), "to_str", None)
     vocabulary = getattr(tokenizer, "get_vocab", None)
@@ -258,6 +261,12 @@ def identity(
             (str(path.relative_to(Path(__file__).parent)), sha256_file(path))
             for path in sorted(Path(__file__).parent.rglob("*.py"))
             if "__pycache__" not in path.parts
+        ]
+        + [
+            (
+                "axolotl/processing_strategies.py",
+                sha256_file(Path(processing_strategies.__file__)),
+            )
         ],
         "config": semantic_config,
         "entries": _entry_identity(cfg, selected_entries),
@@ -297,6 +306,7 @@ def identity(
             "transformers_version": transformers.__version__,
         },
         "sources": [(str(path.resolve()), sha256_file(path)) for path in source_paths],
+        "images": [(str(path.resolve()), sha256_file(path)) for path in image_paths],
     }
     if hub_identity is not None:
         payload["tokenizer"]["hub"] = hub_identity
@@ -332,6 +342,10 @@ def _canvas_from_json(data: Mapping[str, Any]) -> DecisionCanvas:
         template_length=int(data["template_length"]),
         prompt_slot_mask=tuple(data.get("prompt_slot_mask", ())),
         ordinal_metadata=ordinal,
+        image_refs=tuple(data.get("image_refs", ())),
+        image_sizes=tuple(
+            (int(height), int(width)) for height, width in data.get("image_sizes", ())
+        ),
     )
 
 

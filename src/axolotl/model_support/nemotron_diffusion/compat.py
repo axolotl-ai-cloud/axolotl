@@ -155,6 +155,9 @@ def resolve_nemotron_model_class(
 
         def forward(self, *args, **kwargs):
             selected = kwargs.pop("axolotl_selected_logits", None)
+            # PEFT forwards inputs_embeds=None; the native image path passes its own.
+            if "inputs_embeds" in kwargs and kwargs["inputs_embeds"] is None:
+                del kwargs["inputs_embeds"]
             metadata = kwargs.get("diffusion_varlen")
             if metadata is not None:
                 from axolotl.core.trainers.diffusion_lm.varlen import VarlenMetadata

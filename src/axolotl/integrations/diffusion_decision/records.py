@@ -52,3 +52,5 @@ class DecisionCanvas:
     template_length: int
     prompt_slot_mask: Sequence[bool] = ()
     ordinal_metadata: Sequence[OrdinalMetadata | None] = ()
+    image_refs: Sequence[str] = ()
+    image_sizes: Sequence[tuple[int, int]] = ()

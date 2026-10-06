@@ -78,6 +78,13 @@ if TYPE_CHECKING:
 
 LOG = get_logger(__name__)
 
+# transformers anchors skip keys at the module-name start, so keep the full prefix.
+NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES = (
+    "encoder.vision_tower",
+    "encoder.multi_modal_projector",
+    "diffusion_head",
+)
+
 
 def check_tensor_parallel_adapter_support(native_nvfp4_prepared) -> None:
     """Adapters under TP exist only for native NVFP4 bases (``torchao_tp_lora``); on a bf16
@@ -1079,10 +1086,10 @@ class ModelLoader:
                 # output projection cannot be quantized for Falcon-H1 models
                 bnb_config["llm_int8_skip_modules"] = ["out_proj"]
             if self.cfg.model_config_type == "nemotron_labs_diffusion_vlm":
-                bnb_config["llm_int8_skip_modules"] = [
-                    "vision_tower",
-                    "multi_modal_projector",
-                ]
+                # An explicit skip list replaces the default output-head skip.
+                bnb_config["llm_int8_skip_modules"] = list(
+                    NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES
+                )
 
             if self.cfg.bnb_config_kwargs:
                 bnb_config.update(self.cfg.bnb_config_kwargs)

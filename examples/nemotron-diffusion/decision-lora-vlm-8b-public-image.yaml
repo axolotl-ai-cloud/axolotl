@@ -1,0 +1,83 @@
+# Data: see "Public image decision mix" in docs/diffusion_lm.qmd.
+base_model: nvidia/Nemotron-Labs-Diffusion-VLM-8B
+revision_of_model: adca93d16471c1e07d594ae444d23e1876f6b365
+trust_remote_code: true
+plugins:
+  - axolotl.integrations.diffusion_decision.DiffusionDecisionPlugin
+
+adapter: lora
+lora_r: 64
+lora_alpha: 128
+lora_dropout: 0.0
+lora_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+loraplus_lr_ratio: 8
+# varlen is the only diffusion attention backend that supports batch_flattening: it runs
+# bidirectional attention over the concatenated microbatch from document offsets, with no
+# dense mask. flex_attention and sdpa isolate documents only via sample_packing's dense mask.
+attn_implementation: varlen
+bf16: true
+sequence_len: 2048
+batch_flattening: true
+sample_packing: false
+micro_batch_size: 16
+gradient_accumulation_steps: 8
+num_epochs: 1
+max_steps: 64
+learning_rate: 6.5e-6
+optimizer: adamw_torch
+lr_scheduler: constant
+warmup_steps: 0
+max_grad_norm: 1.0
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+dataloader_num_workers: 0
+dataset_num_proc: 4
+remove_unused_columns: false
+val_set_size: 0
+chat_template: tokenizer_default
+
+datasets:
+  - path: json
+    data_files: ./data/public-image-decisions/train.jsonl
+    split: train
+    type: diffusion_decision.jsonl
+test_datasets:
+  - path: json
+    data_files: ./data/public-image-decisions/dev.jsonl
+    split: dev
+    type: diffusion_decision.jsonl
+
+dataset_prepared_path: ./last_run_prepared/public-image-decisions
+output_dir: ./outputs/public-image-decisions
+logging_steps: 1
+eval_strategy: steps
+eval_steps: 50
+save_strategy: steps
+save_steps: 50
+save_total_limit: 2
+eval_on_start: true
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+diffusion_lm:
+  from_causal_lm: false
+  generate_samples: false
+  canvas_width: 128
+  mask_token_id: 100
+  eos_tail: none
+  unroll:
+    k_max: 2
+    grad_through_steps: false
+diffusion_decision:
+  max_image_size: 784
+  mixture:
+    temperature: 1.0
+  read_fraction: 1.0
+  latent:
+    mode: none
+  labels:
+    label_softmax: both
+    brier_weight: 0.1
+    codebook: vendored26
+seed: 42

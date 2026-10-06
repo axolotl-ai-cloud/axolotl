@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
@@ -21,6 +22,11 @@ from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 from axolotl.model_support import (
     DiffusionLayout,
     DiffusionSpec,
+)
+from axolotl.processing_strategies import (
+    NEMOTRON_VLM_IMAGE_PAD_ID,
+    NemotronDiffusionVLMProcessingStrategy,
+    pad_image_batch,
 )
 
 
@@ -58,6 +64,8 @@ class DecisionTrainingCollator:
         label_pad_token_id: int = -100,
         return_tensors: str = "pt",
         physical_payload_capacity: int | None = None,
+        max_image_size: int = 1400,
+        image_cache_size: int = 64,
     ) -> None:
         if isinstance(tokenizer, DiffusionSpec):
             if spec is not None:
@@ -82,6 +90,11 @@ class DecisionTrainingCollator:
         self.pad_to_multiple_of = pad_to_multiple_of
         self.physical_payload_capacity = physical_payload_capacity
         self._encoder_canvas = DecisionCanvasCollator(pad_token_id=self.pad_token_id)
+        self._media = NemotronDiffusionVLMProcessingStrategy(
+            max_image_size=max_image_size
+        )
+        self._image_cache: OrderedDict[str, torch.Tensor] = OrderedDict()
+        self._image_cache_size = max(int(image_cache_size), 0)
 
     def __call__(self, rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         rows = self._flatten_packed_rows(rows)
@@ -109,6 +122,7 @@ class DecisionTrainingCollator:
             dtype=torch.long,
         )
         metadata["decision_draws"] = tuple(row.get("decision_draw") for row in rows)
+        metadata.update(self._image_inputs(canvases))
         if self.spec.layout is DiffusionLayout.FULL_SEQUENCE:
             return self._full_sequence(canvases, examples, metadata)
         if self.spec.layout is DiffusionLayout.ENCODER_CANVAS:
@@ -149,6 +163,50 @@ class DecisionTrainingCollator:
                 "decision dataset rows require a DecisionCanvas under 'canvas'"
             )
         return canvas
+
+    def _image_tensor(self, ref: str) -> torch.Tensor:
+        cached = self._image_cache.get(ref)
+        if cached is not None:
+            self._image_cache.move_to_end(ref)
+            return cached
+        pixels = self._media.transform_image(self._media.load_image(ref))
+        if self._image_cache_size:
+            self._image_cache[ref] = pixels
+            while len(self._image_cache) > self._image_cache_size:
+                self._image_cache.popitem(last=False)
+        return pixels
+
+    def _image_inputs(self, canvases: Sequence[DecisionCanvas]) -> dict[str, Any]:
+        """Pixel inputs in canvas order; the model scatters them into pad tokens in sequence order."""
+        pixels: list[torch.Tensor] = []
+        sizes: list[tuple[int, int]] = []
+        for canvas in canvases:
+            if len(canvas.image_refs) != len(canvas.image_sizes):
+                raise ValueError("image_refs and image_sizes must align")
+            for ref, size in zip(canvas.image_refs, canvas.image_sizes, strict=True):
+                tensor = self._image_tensor(ref)
+                if tuple(tensor.shape[-2:]) != tuple(int(v) for v in size):
+                    raise ValueError(
+                        f"image {ref} resizes to {tuple(tensor.shape[-2:])}, "
+                        f"canvas recorded {tuple(size)}"
+                    )
+                pixels.append(tensor)
+                sizes.append((int(size[0]), int(size[1])))
+        if not pixels:
+            return {}
+        pad_tokens = sum(
+            (*canvas.prompt_ids, *canvas.canvas_ids).count(NEMOTRON_VLM_IMAGE_PAD_ID)
+            for canvas in canvases
+        )
+        patches = sum(self._media.merged_patch_count(size) for size in sizes)
+        if pad_tokens != patches:
+            raise ValueError(
+                f"batch has {pad_tokens} image pad tokens for {patches} image patches"
+            )
+        return {
+            "pixel_values": pad_image_batch(pixels),
+            "image_sizes": torch.tensor(sizes, dtype=torch.long),
+        }
 
     @staticmethod
     def _source(row: Mapping[str, Any]) -> str:
@@ -308,4 +366,7 @@ def decision_collator_for_config(cfg: Any, is_eval: bool = False):
         "physical_payload_capacity": None
         if budget is None
         else budget.payload_capacity,
+        "max_image_size": int(
+            _value(_value(cfg, "diffusion_decision"), "max_image_size", 1400)
+        ),
     }

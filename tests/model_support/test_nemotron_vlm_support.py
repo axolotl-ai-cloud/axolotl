@@ -39,6 +39,14 @@ def test_local_source_matches_by_modeling_file(tmp_path):
     assert type(support).__name__ == "NemotronDiffusionVLMSupport"
 
 
+def test_local_vlm_source_named_like_the_lm_matches_the_vlm(tmp_path):
+    source = tmp_path / "nemotron-labs-diffusion-out"
+    source.mkdir()
+    (source / VLM_VARIANT.modeling_file).write_text("")
+    support = get_model_support_for_cfg(DictDefault(base_model=str(source)))
+    assert type(support).__name__ == "NemotronDiffusionVLMSupport"
+
+
 def test_resolver_requires_the_variant_files(tmp_path):
     (tmp_path / VLM_VARIANT.modeling_file).write_text("")
     with pytest.raises(ValueError, match="Nemotron VLM source lacks") as info:
@@ -195,3 +203,59 @@ def test_mask_builder_kwargs_are_adapted_inside_the_remote_module():
     assert result == "mask"
     assert seen == [("cfg", "emb", "am", "pos")]
     assert create_causal_mask(config=1, inputs_embeds=2, attention_mask=3) == "mask"
+
+
+def test_freeze_vision_disables_complementary_mask():
+    model = _vlm_like(vision_lora=False)
+    model.config = SimpleNamespace(complementary_mask=True)
+    _freeze_vision(ModelHookContext(cfg=DictDefault(), model=model))
+    assert model.config.complementary_mask is False
+
+
+def test_forward_drops_the_none_inputs_embeds_peft_passes(tmp_path, monkeypatch):
+    for name in VLM_VARIANT.required_files:
+        (tmp_path / name).write_text("")
+    seen = []
+
+    class Remote(nn.Module):
+        def __init__(self, config):
+            super().__init__()
+            self.encoder = SimpleNamespace(rotary_emb=None)
+
+        def forward(self, input_ids, **kwargs):
+            seen.append(kwargs)
+            return "out"
+
+    monkeypatch.setattr(
+        "transformers.dynamic_module_utils.get_class_from_dynamic_module",
+        lambda *args, **kwargs: Remote,
+    )
+    monkeypatch.setattr(
+        compat, "enable_nemotron_explicit_attention_mask", lambda m: None
+    )
+    monkeypatch.setattr(compat, "keep_rotary_fp32", lambda r: None)
+    model_class = compat.resolve_nemotron_model_class(tmp_path, variant=VLM_VARIANT)
+    model = model_class(SimpleNamespace(dlm_paradigm="bidirectional"))
+    embeds = object()
+
+    assert model(input_ids=1, inputs_embeds=None, pixel_values=2) == "out"
+    assert model(input_ids=1, inputs_embeds=embeds) == "out"
+    assert seen == [{"pixel_values": 2}, {"inputs_embeds": embeds}]
+
+
+@pytest.mark.parametrize(
+    "module_name,converted",
+    [
+        ("encoder.vision_tower.transformer.layers.0.attention.q_proj", False),
+        ("encoder.multi_modal_projector.linear_1", False),
+        ("diffusion_head", False),
+        ("encoder.layers.0.self_attn.q_proj", True),
+    ],
+)
+def test_4bit_skip_list_matches_the_real_module_names(module_name, converted):
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    from axolotl.loaders.model import NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES
+
+    patterns = list(NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES)
+    assert should_convert_module(module_name, patterns) is converted

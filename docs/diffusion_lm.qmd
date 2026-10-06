@@ -234,12 +234,26 @@ load, plain `lora_target_modules` names such as `q_proj` are anchored to
 `encoder.layers` so they cannot attach to the tower's projections of the same
 name, and 4-bit loading skips the vision stack. The profile also patches two
 transformers-version mismatches in the published remote code. Text-only
-training on this model matches the remote forward exactly in fp32.
+training on this model matches the remote forward exactly in fp32. The profile
+sets `complementary_mask: false` on the loaded config so the remote forward does
+not duplicate the batch, and saved or merged `config.json` files keep that
+value; restore the published `true` before reusing the remote training code.
 
 Its decoder weights are not the LM's: the VLM checkpoint was trained further,
 and its tokenizer carries one extra added token, so step losses differ from
-`Nemotron-Labs-Diffusion-8B` on the same data. Image inputs through the
-typed-decision plugin are described under [Typed-decision training](#typed-decision-training).
+`Nemotron-Labs-Diffusion-8B` on the same data.
+
+The model ships no HF processor; `NemotronDiffusionVLMProcessingStrategy` in
+`axolotl.processing_strategies` ports the remote image math. An image is
+resized so its longest edge is at most `max_image_size` and each 28x28 block
+(patch 14, spatial merge 2) becomes one `<|image_pad|>` token: a `W x H` grid
+costs `W * H` pad tokens plus `H - 1` row breaks and the start/end markers
+(`1400` -> 50x50 = 2551 prompt tokens; `784` -> 28x28 = 813). Pixel inputs
+reach the forward as `pixel_values` `(N, 3, H, W)` padded to the largest image
+in the batch and `image_sizes` `(N, 2)`, in prompt order; the model scatters
+them into the pad tokens in sequence order. Image inputs through the
+typed-decision plugin are described under [Typed-decision training](#typed-decision-training);
+`examples/nemotron-diffusion/decision-lora-vlm-8b.yaml` is the recipe.
 
 ## Typed-decision training
 
@@ -299,6 +313,21 @@ token IDs. Answer tokens come from `labels.codebook`: `vendored26` uses the
 djev letters `A`-`Z` (up to 26 alternatives); `expanded52` allows up to 52 (`A`-`Z`, `a`-`z`);
 `expanded128` adds selected Greek and Cyrillic letters for up to 128. Every label must be one
 token in the model's tokenizer, which the canvas template check enforces at preprocessing.
+
+On `nvidia/Nemotron-Labs-Diffusion-VLM-8B`, a record may carry a top-level
+`images` list of http(s) URLs, absolute paths, or paths relative to the
+directory of the local data file (relative paths are rejected for Hub
+sources). Images are opened as stored, without EXIF rotation. The images are
+placed before `state` in the user turn and expanded to their token grids in the
+prompt, so they count against `sequence_len`
+(`diffusion_decision.max_image_size`, default 1400, caps the longest edge; see
+[Nemotron Diffusion VLM](#nemotron-diffusion-vlm) for the token accounting).
+Records with different `images` are never grouped onto one canvas, and
+decontamination fingerprints an image record by its state plus the sha256 of
+each image file. The prepared-row cache stores resolved references and sizes
+only and hashes each image's bytes, so an edited image or a changed `max_image_size`
+invalidates it. Only the `jsonl` adapter reads `images`; URL-referenced images
+bypass the cache.
 
 ### Labels
 
@@ -406,6 +435,70 @@ checked against each other for state, family and group overlap.
 revisions, preprocessing keeps 30,080 train rows at the 2,048-token budget,
 which is 235 effective batches of 128, hence `max_steps: 235`. This mix is a
 reproducible starting point for the format, not a quality result.
+
+### Public image decision mix
+
+`scripts/diffusion_lm/build_public_image_decision_mix.py` materializes a
+reproducible image typed-decision train/dev/test mix for
+`nvidia/Nemotron-Labs-Diffusion-VLM-8B`:
+
+```bash
+python scripts/diffusion_lm/build_public_image_decision_mix.py ./data/public-image-decisions
+axolotl train examples/nemotron-diffusion/decision-lora-vlm-8b-public-image.yaml
+```
+
+Train and dev rows come from
+[`HuggingFaceM4/A-OKVQA`](https://huggingface.co/datasets/HuggingFaceM4/A-OKVQA)
+at revision `d1b0efa3a436e9101dfbde3752db7607da696c35` (train and validation
+splits) and the image-bearing rows of
+[`derek-thomas/ScienceQA`](https://huggingface.co/datasets/derek-thomas/ScienceQA)
+at revision `f18b0a70359ebfb41f658fd564208d0355b013f4` (train and validation
+splits). The test file is
+[`nyu-visionx/CV-Bench`](https://huggingface.co/datasets/nyu-visionx/CV-Bench)
+at revision `bc284db50d036958861cb60cdd7b77612052ce0d` (default config, test
+split), a held-out benchmark that is never used for training or checkpoint
+selection.
+
+Each row is one `choice` question named `answer` with the source's answer
+options in their original order and a `hard` label. `state.question` holds the
+question text; ScienceQA rows also carry `state.context` from the source `hint`.
+`family` is the A-OKVQA `question_id`, the ScienceQA row id (its `subject` and
+`topic` stay in `source_metadata.attributes`), or the CV-Bench `task`. Every row has `images: ["images/<sha256>.<png|jpg>"]`, a path
+relative to the JSONL file. Image bytes are written once per content hash;
+PNG and JPEG sources keep their original encoding and anything else is
+re-encoded as PNG. Rows without an image, with duplicate or empty options, or
+with an answer outside the option list are dropped.
+
+`--train-per-source` (default 4096), `--dev-per-source` (default 256) and
+`--test-cap` (default 0, which keeps every CV-Bench row) cap each source.
+Selection sorts rows by `sha256(seed\0source\0split\0id)`, so the same caps
+always yield the same rows. CV-Bench states and images are excluded from train
+and dev, train states and images are excluded from dev (images by sha256 of
+their bytes), and source/group pairs, families and image digests are disjoint
+across splits, so the plugin's family decontamination keeps every train row. `contract.json` records the pinned revisions, license evidence, per-split
+counts and drop reasons, the sha256 of each JSONL file, and the image count and
+total bytes.
+
+Licenses: CV-Bench declares Apache-2.0, but its images are repurposed from
+COCO, ADE20K and Omni3D and keep those sources' terms. The ScienceQA card
+metadata says `cc-by-sa-4.0` while its Licensing Information section links
+CC BY-NC-SA 4.0; treat the NonCommercial reading as binding until the card is
+resolved. Its images were collected with the questions from K-12 science
+curricula, and the card states no image-specific licence. The A-OKVQA card
+declares no license; the A-OKVQA project repository is Apache-2.0. Its images
+are COCO 2017 Flickr photos under the Flickr Terms of Use with per-image
+licences; COCO's CC BY 4.0 covers the annotations, not the images. These flags
+are repeated in `contract.json["license_flags"]`. Keep `contract.json` and the `images/`
+directory with any materialized output you share.
+
+`decision-lora-vlm-8b-public-image.yaml` sets `diffusion_decision.max_image_size:
+784`, so each image costs at most 813 prompt tokens (28 x 28 = 784 pads, 27 row
+breaks, start and end) inside the 2,048-token budget, and `mixture.temperature: 1.0`, which schedules each usable
+row once: the 8,192 train rows all survive decontamination, which is 64
+effective batches of 128, hence `max_steps: 64`. Lower `max_steps` if
+preprocessing drops rows at the budget.
+This mix is a reproducible starting point for the image record format, not a
+quality result.
 
 ## Converting a causal LM
 

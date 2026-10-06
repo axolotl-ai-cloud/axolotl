@@ -702,6 +702,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             )
         k_max, grad_through_steps = self._native_unroll_settings()
         final_kwargs = {}
+        media_kwargs = _media_model_kwargs(inputs)
         selected_rows, selected_positions, _ = self._question_coordinates(
             inputs,
             rows=packed["input_ids"].shape[0],
@@ -726,10 +727,11 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
                         model_kwargs={
+                            **media_kwargs,
                             "axolotl_selected_logits": (
                                 selected_rows,
                                 selected_positions,
-                            )
+                            ),
                         },
                     )
                 ),
@@ -745,7 +747,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs={"cce_return_hidden_states": True},
+                        model_kwargs={**media_kwargs, "cce_return_hidden_states": True},
                     )
                 ),
                 "final_logits_from_outputs": lambda output: output.last_hidden_state,
@@ -765,6 +767,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
+                        model_kwargs=media_kwargs or None,
                     )
                 ),
                 logits_from_outputs=lambda current_outputs: backend.canvas_logits(
@@ -806,6 +809,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
+                        model_kwargs=media_kwargs or None,
                     )
                 ),
                 logits_from_outputs=lambda current_outputs: backend.canvas_logits(
@@ -837,6 +841,8 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             ),
             "encoder-canvas decision batch",
         )
+        if _media_model_kwargs(inputs):
+            raise ValueError("decision image inputs require the full-sequence layout")
         batch = inputs["diffusion_batch"]
         model_config = getattr(model, "config", None)
         if model_config is None:
@@ -1144,6 +1150,15 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         if self.args.world_size > 1:
             denominator = denominator / self.args.world_size
         return result.loss * local_examples / denominator
+
+
+def _media_model_kwargs(inputs: Mapping[str, Any]) -> dict[str, Any]:
+    """Batch image inputs the remote forward consumes alongside ``input_ids``."""
+    return {
+        name: inputs[name]
+        for name in ("pixel_values", "image_sizes")
+        if inputs.get(name) is not None
+    }
 
 
 def _require_fields(

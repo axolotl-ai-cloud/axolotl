@@ -85,12 +85,12 @@ def _matches_cfg(cfg) -> bool:
     source = getattr(cfg, "base_model", None)
     if not isinstance(source, str):
         return False
+    if (Path(source) / VLM_VARIANT.modeling_file).is_file():
+        return False
     lowered = source.lower()
     if "nemotron-labs-diffusion" in lowered:
         return "nemotron-labs-diffusion-vlm" not in lowered
-    return (Path(source) / LM_VARIANT.modeling_file).is_file() and not (
-        Path(source) / VLM_VARIANT.modeling_file
-    ).is_file()
+    return (Path(source) / LM_VARIANT.modeling_file).is_file()
 
 
 def lora_attention_cls_for(cfg, variant: "NemotronVariant") -> type:

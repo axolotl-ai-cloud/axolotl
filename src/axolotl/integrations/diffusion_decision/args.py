@@ -249,6 +249,13 @@ class DiffusionDecisionConfig(BaseModel):
             "description": "Fraction of canvases trained at the fully masked read time; the rest use sampled diffusion times."
         },
     )
+    max_image_size: int = Field(
+        default=1400,
+        ge=28,
+        json_schema_extra={
+            "description": "Longest image edge in pixels before token expansion; a multiple of 28, each 28x28 block is one prompt token."
+        },
+    )
     mixture: DecisionMixtureConfig = Field(
         default_factory=DecisionMixtureConfig,
         json_schema_extra={"description": "Source sampling and loss weighting."},
@@ -276,6 +283,8 @@ class DiffusionDecisionConfig(BaseModel):
             raise ValueError("read_fraction must be finite")
         if not 0.0 <= self.read_fraction <= 1.0:
             raise ValueError("read_fraction must be in [0, 1]")
+        if self.max_image_size % 28:
+            raise ValueError("max_image_size must be a multiple of 28")
         return self
 
 
