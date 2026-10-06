@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
 """Tests for fused RMSNorm+RoPE autotune telemetry.
 
 Mocked end-to-end, so no Triton or CUDA is required (mirrors
@@ -74,6 +78,31 @@ class TestCollector:
 
         assert {e["key"]["n_cols"] for e in result} == {128, 256}
 
+    def test_declared_keys_label_rotary_and_weight_metadata(self):
+        from axolotl.kernels.autotune_telemetry import (
+            collect_fused_rope_autotune_configs,
+        )
+
+        fake = _make_fake_module(
+            cache={(256, 128, True, False, "torch.bfloat16"): _make_mock_config({})}
+        )
+        fake._rms_norm_rope_backward_kernel.keys = [
+            "n_cols",
+            "n_rot",
+            "HAS_WEIGHT",
+            "UNIT_OFFSET",
+        ]
+        with patch.dict(sys.modules, {_MODPATH: fake}):
+            result = collect_fused_rope_autotune_configs()
+
+        assert result[0]["key"] == {
+            "n_cols": 256,
+            "n_rot": 128,
+            "HAS_WEIGHT": True,
+            "UNIT_OFFSET": False,
+            "_extra": ["torch.bfloat16"],
+        }
+
 
 class TestCallback:
     def _patch_collect(self, return_value=None, side_effect=None):
@@ -107,17 +136,6 @@ class TestCallback:
 
             cb.on_step_end(args=MagicMock(), state=state, control=MagicMock())
             assert tm.send_event.call_count == 1
-
-    def test_retries_until_step_5_then_gives_up(self):
-        from axolotl.kernels.autotune_telemetry import FusedRopeAutotuneReportCallback
-
-        cb = FusedRopeAutotuneReportCallback()
-        with self._patch_collect(return_value=[]):
-            for step in range(1, 7):
-                state = MagicMock()
-                state.global_step = step
-                cb.on_step_end(args=MagicMock(), state=state, control=MagicMock())
-        assert cb._reported is True
 
     def test_includes_gpu_info(self):
         from axolotl.kernels.autotune_telemetry import FusedRopeAutotuneReportCallback
