@@ -136,10 +136,11 @@ class DecisionLabelsConfig(BaseModel):
             "description": "Fraction of a one-hot CE target spread uniformly over the valid answer tokens."
         },
     )
-    codebook: Literal["vendored26", "expanded52"] = Field(
+    codebook: Literal["vendored26", "expanded52", "expanded128"] = Field(
         default="vendored26",
         json_schema_extra={
-            "description": "Answer-label codebook: djev letters A-Z (26 options) or A-Z plus a-z (52)."
+            "description": "Answer-label codebook: djev letters A-Z (26 options), A-Z plus a-z (52), or those plus "
+            "digits, Greek and Cyrillic letters (128); every label is one token in the model's tokenizer."
         },
     )
 
