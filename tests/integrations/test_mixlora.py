@@ -302,9 +302,7 @@ class TestMixLora:
 
         router_before = mixlora_blocks[0].router.gate.weight.detach().clone()
 
-        trainable_params = [
-            p for p in patched_model.parameters() if p.requires_grad
-        ]
+        trainable_params = [p for p in patched_model.parameters() if p.requires_grad]
         assert len(trainable_params) > 0
         optimizer = torch.optim.AdamW(trainable_params, lr=1e-2)
 

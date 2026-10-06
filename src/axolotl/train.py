@@ -216,7 +216,7 @@ def execute_training(
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)
 
-        PLUGIN_MANAGER.pre_train(
+        PluginManager.get_instance().pre_train(
             cfg, trainer, resume_from_checkpoint=resume_from_checkpoint
         )
 
@@ -418,7 +418,7 @@ def save_trained_model(
             else:
                 clear_native_metadata(cfg.output_dir)
 
-        PLUGIN_MANAGER.post_model_save(cfg, model, cfg.output_dir)
+        PluginManager.get_instance().post_model_save(cfg, model, cfg.output_dir)
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
