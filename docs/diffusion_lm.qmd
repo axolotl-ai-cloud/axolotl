@@ -1,0 +1,235 @@
+---
+title: Native diffusion language-model training
+toc: true
+toc-depth: 3
+---
+
+Train supported diffusion checkpoints with `diffusion_lm:` and the usual
+Axolotl chat datasets. No plugin is required. The model profile selects its
+noise process, attention layout, logit alignment and reference loss.
+
+| Model | Noise and layout | Default native objective |
+|---|---|---|
+| Nemotron-Labs-Diffusion (3B, 8B) | Absorbing mask, full sequence, aligned logits | Inverse-time weighted CE at masked positions |
+| Dream v0 | Absorbing mask, full sequence, shifted logits | Source-compatible masked CE with inverse-time weighting |
+| DiffusionGemma | Uniform token noise, causal encoder and bidirectional canvas | Canvas CE, encoder AR CE and two-pass self-conditioning |
+
+Other models can still train with the legacy masked-diffusion objective by
+setting `diffusion_lm.from_causal_lm: true` with the legacy `diffusion` plugin;
+any other `diffusion_lm:` config on a model without a native profile is
+rejected rather than trained as causal SFT. See
+[Converting a causal LM](#converting-a-causal-lm).
+
+## Installation
+
+Native diffusion training runs on Axolotl's supported Torch range, using the
+dependency versions pinned in `pyproject.toml`. `attn_implementation: varlen`
+additionally requires Torch 2.14, so install the `torch==2.14.0` wheel for your
+accelerator from [PyTorch's installation guide](https://pytorch.org/get-started/locally/)
+before installing Axolotl:
+
+```bash
+python -m venv .venv-diffusion
+source .venv-diffusion/bin/activate
+python -m pip install --upgrade pip
+python -m pip install torch==2.14.0  # or the accelerator-specific wheel
+python -m pip install -e .
+```
+
+Put this environment's `bin` directory first on `PATH` so `axolotl train`
+launches the matching Accelerate installation.
+
+## Start with Nemotron 3B
+
+The small iteration target is `nvidia/Nemotron-Labs-Diffusion-3B`. From the
+repository root:
+
+```bash
+axolotl preprocess examples/nemotron-diffusion/lora-smoke.yaml
+axolotl train examples/nemotron-diffusion/lora-smoke.yaml
+```
+
+This recipe trains two optimizer steps on 32 synthetic chat records. It checks
+preprocessing, packed training, gradient accumulation and adapter saving; it is
+not a quality benchmark. It pins the model and remote-code revision with
+`revision_of_model` and uses the published bidirectional diffusion mode,
+aligned logits and the existing mask token 100. Padding reuses the tokenizer EOS
+token without resizing the vocabulary. When you change models, remove or
+replace `revision_of_model`.
+
+## Attention backends
+
+Native diffusion defaults to `flex_attention` when `attn_implementation` is
+omitted. `eager` and `sdpa` remain explicit fallbacks; the examples use `sdpa`
+as a dense reference. FlexAttention requires a compatible GPU, and its first
+execution includes kernel compilation.
+
+Nemotron also supports PyTorch's public variable-length attention:
+
+```yaml
+attn_implementation: varlen
+sample_packing: true
+```
+
+This path gathers valid Q/K/V tokens into THD format and passes cumulative
+document offsets to `torch.nn.attention.varlen.varlen_attn`, without building a
+dense document mask. PyTorch selects the underlying kernel. `varlen` requires
+Torch 2.14 or newer, a native full-sequence diffusion model (Nemotron),
+uncached bidirectional attention, and zero attention dropout. Dream and
+DiffusionGemma keep their existing backends: Gemma's per-layer
+encoder-prefix/canvas visibility cannot be expressed as one full-sequence
+varlen call.
+
+DiffusionGemma's large attention heads can exceed a GPU's per-kernel shared
+memory limit with the default Flex tile sizes. Smaller tiles can be configured
+without changing attention visibility:
+
+```yaml
+attn_implementation: flex_attention
+flex_attn_compile_kwargs:
+  fwd_BLOCK_M: 16
+  fwd_BLOCK_N: 16
+  fwd_num_stages: 1
+  bwd_BLOCK_M1: 16
+  bwd_BLOCK_N1: 16
+  bwd_BLOCK_M2: 16
+  bwd_BLOCK_N2: 16
+  bwd_num_stages: 1
+```
+
+## Packed training
+
+Enable `sample_packing: true`. Logical documents remain isolated even when they
+share a physical row, and position IDs restart at document boundaries.
+DiffusionGemma also keeps each canvas associated with its own encoder history.
+
+```yaml
+sample_packing: true
+sequence_len: 256
+micro_batch_size: 2
+diffusion_lm:
+  overflow_policy: error
+  generate_samples: false
+```
+
+`sequence_len` limits each example's logical layout. For packed and
+`batch_flattening` rows, Axolotl derives the total allocation as
+`sequence_len * micro_batch_size`. Ordinary padded batches have no aggregate
+row budget. Evaluation uses `eval_batch_size` when it is set.
+
+FlexAttention rounds capacity down to 128-token buckets. Encoder/canvas packing
+reserves another 128 tokens because the two streams pad independently. Use a
+derived allocation of at least 128 for full-sequence models and 256 for
+DiffusionGemma; increase `sequence_len` if individual examples do not fit.
+SDPA and eager use the full derived capacity.
+
+The default `overflow_policy: error` raises on an oversized example.
+`overflow_policy: drop` filters and counts oversized examples during
+preprocessing; it never truncates them.
+
+Dream can use `eos_tail: visible_supervised` to extend each logical example to
+`sequence_len` with supervised EOS tokens. These are semantic tokens and
+consume packing capacity. Physical padding is excluded from attention and loss.
+
+Packing mainly saves memory; throughput depends on your lengths and attention
+backend, so benchmark both settings for your workload.
+
+## DiffusionGemma attention boundaries
+
+Prompt prefill is causal. During denoising, each token in the current output
+canvas attends to the clean prefix and every valid token in that same noisy
+canvas. Bidirectional visibility applies to the output canvas, not the combined
+prompt and output sequence.
+
+Training uses the same boundary. The encoder can process the complete clean
+sequence for its auxiliary autoregressive loss, but the decoder mask exposes
+only keys before the selected output block. Clean copies of that block and
+later output tokens stay hidden, and causal encoder attention prevents those
+future tokens from entering the visible prefix states.
+
+Full-attention decoder layers see the entire eligible prefix. Sliding-attention
+layers see the retained prefix window and the entire current canvas; they do
+not apply a query-relative sliding window inside the canvas. Both layer types
+exclude other packed examples. Dream and Nemotron use their full-sequence
+layouts.
+
+## Objective and recurrence options
+
+Unset options inherit the model's reference behavior. Dream's CART variant uses
+`time_weighting: cart` and `cart_p`; its optional focal reweighting uses
+`token_reweighting: true`, `alpha` and `gamma`.
+
+DiffusionGemma's default self-conditioning probability
+(`self_conditioning.p`) is 0.5. Its optional Rhine objectives use
+`time_weighting: loo` or `inv_one_minus_t` with
+`objective_reduction: example_mean`; `rhine_weight_clip` caps the
+`1 / (1 - t)` weights. `encoder_ar_weight` scales the separate encoder loss.
+`self_conditioning.train_module: true` includes the self-conditioning module in
+the saved adapter.
+
+```yaml
+diffusion_lm:
+  unroll:
+    k_max: 2
+    grad_through_steps: false
+```
+
+With `unroll.k_max` above 1, each step draws a read count uniformly from 1 to
+`k_max`. Earlier reads run without retained gradients and the final read
+supplies the loss. `grad_through_steps: true` is available only for models with
+self-conditioning.
+
+## Adapters, merging and inference
+
+Native training requires LoRA with explicit text attention or dense-MLP
+projection targets. DoRA, layer replication, `lora_target_linear` and
+`lora_target_parameters` are rejected, and native vocabulary resizing is
+disabled. Nemotron additionally supports `adapter: qlora` (4-bit; 8-bit is
+rejected), FSDP2 via `fsdp_config`, and the fused LoRA kernels
+(`lora_qkv_kernel`, `lora_o_kernel`, `lora_mlp_kernel`) together with
+`lora_fp32_gradients`; Dream and DiffusionGemma remain unquantized LoRA
+without FSDP.
+
+DiffusionGemma's encoder and decoder text weights are tied, so their LoRA
+factors are shared. Its targets must be a single expression naming both the
+encoder language model and the decoder, for example:
+
+```yaml
+lora_target_modules: '^model\.(encoder\.language_model|decoder)\.layers\.\d+\.self_attn\.(q|k|v|o)_proj$'
+```
+
+Vision, router and expert parameters stay frozen.
+
+Nemotron supports opt-in Cut Cross Entropy for its aligned diffusion objective.
+With Axolotl's CCE fork installed, add:
+
+```yaml
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
+```
+
+Keep any other plugins the recipe requires in that list. The final training
+read computes full-vocabulary CE from hidden states without materializing
+vocabulary logits. Targets stay aligned, with no causal shift. This path
+requires a plain linear output head and does not support a LoRA output head or
+the `loo` objective.
+
+`axolotl merge-lora config.yaml` exports a merged checkpoint. When
+`merge_method` is omitted, DiffusionGemma selects `legacy` so its tied factors
+merge once; setting `merge_method: memory_efficient` for DiffusionGemma raises.
+
+For interactive generation, use `axolotl inference config.yaml --chat`. Each
+reply is a completion block appended to the conversation and denoised in one
+piece; see [Inference](inference.qmd#sec-chat-diffusion). Native models
+generate completions only.
+
+## Converting a causal LM
+
+`diffusion_lm.from_causal_lm: true` trains an ordinary causal checkpoint with
+the legacy masked-diffusion objective, controlled by `noise_schedule`,
+`min_mask_ratio`, `max_mask_ratio`, `importance_weighting` and the mask-token
+options. It requires `plugins: [axolotl.integrations.diffusion.DiffusionPlugin]`,
+which supplies the diffusion trainer; without it the config is rejected. Existing
+configurations with a deprecated `diffusion:` block still load through the same
+plugin, which translates them to this form.

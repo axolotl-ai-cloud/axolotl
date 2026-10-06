@@ -521,6 +521,7 @@ website:
           contents:
             - docs/multimodal.qmd
             - docs/rlhf.qmd
+            - docs/diffusion_lm.qmd
             - docs/grpo.qmd
             - docs/ebft.qmd
             - docs/vllm_serving.qmd

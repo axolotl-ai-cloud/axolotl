@@ -21,6 +21,7 @@ from peft import (
     get_peft_model,
 )
 from transformers import PreTrainedModel
+from transformers.trainer_utils import set_seed
 
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers
@@ -134,6 +135,12 @@ def _get_peft_task_type(model: PreTrainedModel) -> TaskType:
         return TaskType.SEQ_CLS
     if "TokenClassification" in model_cls:
         return TaskType.TOKEN_CLS
+    if getattr(getattr(model, "config", None), "model_type", None) in {
+        "diffusion_gemma",
+        "Dream",
+        "nemotron_labs_diffusion",
+    }:
+        return None
     return TaskType.CAUSAL_LM
 
 
@@ -460,6 +467,8 @@ def load_lora(
             if adapter_dir != cfg.lora_model_dir:
                 shutil.rmtree(adapter_dir, ignore_errors=True)
     else:
+        if cfg.seed is not None:
+            set_seed(cfg.seed)
         model = get_peft_model(model, lora_config, **model_kwargs)
 
     # FP8 models: LoRA A/B inherit FP8 dtype from base weights, but training

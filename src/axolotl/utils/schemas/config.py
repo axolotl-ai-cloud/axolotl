@@ -28,6 +28,7 @@ from axolotl.utils.schemas.datasets import (
     SyntheticDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
+from axolotl.utils.schemas.diffusion import DiffusionLMConfig
 from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
 from axolotl.utils.schemas.enums import (
     ATTN_IMPLS_SUPPORTING_PACKING,
@@ -216,6 +217,13 @@ class AxolotlInputConfig(
     """Wrapper of all config options."""
 
     model_config = {"populate_by_name": True}
+
+    diffusion_lm: DiffusionLMConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Canonical configuration for diffusion language-model training"
+        },
+    )
 
     strict: bool | None = Field(
         default=False,
@@ -864,7 +872,8 @@ class AxolotlInputConfig(
             "description": (
                 "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
                 "flash_attention_3, flash_attention_4, flash_attention_torch, "
-                "flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. "
+                "flex_attention, varlen, xformers, sage, fp8. `varlen` is native "
+                "full-sequence diffusion only. Hub-kernel paths (e.g. "
                 "kernels-community/flash-attn3) are also accepted and passed through to "
                 "transformers."
             )

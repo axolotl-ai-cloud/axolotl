@@ -6,6 +6,7 @@ import os
 from typing import Optional
 
 import torch
+from packaging.version import Version
 from pydantic import ValidationError
 from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
@@ -17,10 +18,13 @@ from axolotl.integrations.config import merge_input_args
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.utils import load_model_config
 from axolotl.model_support import (
+    DiffusionLayout,
     ModelHookContext,
     ModelHookPhase,
+    Supported,
     Unsupported,
     get_model_support,
+    is_native_diffusion,
     resolve_model_support,
     run_model_support_hooks,
 )
@@ -194,6 +198,36 @@ def resolve_dtype(cfg):
         cfg.torch_dtype = torch.float32
 
 
+_LEGACY_DIFFUSION_PLUGINS = frozenset(
+    {
+        "axolotl.integrations.diffusion.DiffusionPlugin",
+        "axolotl.integrations.diffusion.plugin.DiffusionPlugin",
+    }
+)
+
+
+def _validate_diffusion_lm_target(cfg, resolved_support) -> None:
+    from axolotl.integrations.base import normalize_plugin_name
+
+    if is_native_diffusion(cfg):
+        if resolved_support is None or resolved_support.diffusion is None:
+            raise ValueError(
+                f"`diffusion_lm` is set but model type {cfg.model_config_type!r} "
+                "has no native diffusion profile, so training would silently fall "
+                "back to causal SFT. Use a native diffusion checkpoint, or convert "
+                "a causal checkpoint with `diffusion_lm.from_causal_lm: true` and "
+                "`plugins: [axolotl.integrations.diffusion.DiffusionPlugin]`."
+            )
+        return
+    plugins = {normalize_plugin_name(name) for name in cfg.plugins or []}
+    if not plugins & _LEGACY_DIFFUSION_PLUGINS:
+        raise ValueError(
+            "`diffusion_lm.from_causal_lm: true` requires "
+            "`plugins: [axolotl.integrations.diffusion.DiffusionPlugin]`; without "
+            "it training would silently fall back to causal SFT."
+        )
+
+
 def normalize_config(cfg):
     # setup some derived config / hyperparams
     if not cfg.use_ray:
@@ -279,17 +313,62 @@ def normalize_config(cfg):
     cfg.model_config_type = model_config.model_type
     validate_recurrent_model_config(cfg)
 
-    cfg.is_multimodal = (
-        (resolved_support is not None and resolved_support.is_multimodal)
-        or hasattr(model_config, "model_type")
-        and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
-        or any(
-            multimodal_name in cfg.base_model.lower()
-            for multimodal_name in [
-                "pixtral",
-            ]
+    native_text_diffusion = (
+        resolved_support is not None
+        and resolved_support.family == "diffusion_lm"
+        and not resolved_support.is_multimodal
+    )
+    native_diffusion = native_text_diffusion and is_native_diffusion(cfg)
+    if native_diffusion and cfg.attn_implementation is None:
+        cfg.attn_implementation = "flex_attention"
+    if cfg.attn_implementation == "varlen":
+        varlen_supported = (
+            native_diffusion
+            and resolved_support is not None
+            and resolved_support.diffusion is not None
+            and resolved_support.diffusion.layout is DiffusionLayout.FULL_SEQUENCE
+            and isinstance(
+                resolved_support.capabilities.get("diffusion_varlen"), Supported
+            )
         )
-        or cfg.is_multimodal
+        if not varlen_supported:
+            raise ValueError(
+                "attn_implementation: varlen is supported only for native "
+                "full-sequence diffusion models that declare diffusion_varlen."
+            )
+        env_capabilities = getattr(cfg, "env_capabilities", None)
+        configured_torch_version = (
+            env_capabilities.get("torch_version")
+            if isinstance(env_capabilities, dict)
+            else getattr(env_capabilities, "torch_version", None)
+        )
+        torch_version = configured_torch_version or torch.__version__
+        if Version(str(torch_version).split("+", maxsplit=1)[0]) < Version("2.14.0"):
+            raise ValueError(
+                "attn_implementation: varlen requires torch >= 2.14 for its "
+                "public GQA API."
+            )
+    if cfg.diffusion_lm is not None:
+        _validate_diffusion_lm_target(cfg, resolved_support)
+    if native_text_diffusion and cfg.is_multimodal:
+        raise ValueError(
+            "Native text-only diffusion models do not support multimodal processing"
+        )
+    cfg.is_multimodal = (
+        False
+        if native_text_diffusion
+        else (
+            (resolved_support is not None and resolved_support.is_multimodal)
+            or hasattr(model_config, "model_type")
+            and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
+            or any(
+                multimodal_name in cfg.base_model.lower()
+                for multimodal_name in [
+                    "pixtral",
+                ]
+            )
+            or cfg.is_multimodal
+        )
     )
     if cfg.is_multimodal:
         cfg.processor_config = (

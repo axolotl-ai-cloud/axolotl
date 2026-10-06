@@ -72,7 +72,7 @@ def test_callback_uses_correct_dataloader(monkeypatch, use_eval):
         ]
 
     monkeypatch.setattr(
-        "axolotl.integrations.diffusion.callbacks.generate_samples",
+        "axolotl.core.trainers.diffusion_lm.callbacks.generate_samples",
         fake_generate_samples,
     )
 

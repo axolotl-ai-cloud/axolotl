@@ -113,6 +113,7 @@ class AxolotlTrainer(
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
+    reports_token_perplexity = True
     _axolotl_cfg: DictDefault | None = None
 
     @property
@@ -122,6 +123,14 @@ class AxolotlTrainer(
     @axolotl_cfg.setter
     def axolotl_cfg(self, cfg):
         self._axolotl_cfg = cfg
+
+    @classmethod
+    def requires_all_columns(cls, cfg: DictDefault) -> bool:
+        """Whether the collator needs dataset columns the model forward does not take."""
+        return False
+
+    def post_set_axolotl_cfg(self):
+        """Finish configuration that depends on ``axolotl_cfg``."""
 
     def __init__(
         self,
@@ -809,12 +818,12 @@ class AxolotlTrainer(
                 )
             logs[key] = round(fn(values).item(), metric_ndigits)
 
-        if "loss" in logs:
+        if self.reports_token_perplexity and "loss" in logs:
             try:
                 logs["ppl"] = round(math.exp(logs["loss"]), metric_ndigits)
             except OverflowError:
                 logs["ppl"] = float("inf")
-        if "eval_loss" in logs:
+        if self.reports_token_perplexity and "eval_loss" in logs:
             try:
                 logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), metric_ndigits)
             except OverflowError:
