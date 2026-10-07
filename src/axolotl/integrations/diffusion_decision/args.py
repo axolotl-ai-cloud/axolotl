@@ -140,7 +140,7 @@ class DecisionLabelsConfig(BaseModel):
         default="vendored26",
         json_schema_extra={
             "description": "Answer-label codebook: djev letters A-Z (26 options), A-Z plus a-z (52), or those plus "
-            "digits, Greek and Cyrillic letters (128); every label is one token in the model's tokenizer."
+            "selected Greek and Cyrillic letters (128); every label is one token in the model's tokenizer."
         },
     )
 
