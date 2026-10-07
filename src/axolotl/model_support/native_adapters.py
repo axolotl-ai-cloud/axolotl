@@ -32,7 +32,7 @@ def validate_native_diffusion_lora(
         return
     attn_implementation = getattr(cfg, "attn_implementation", None)
     supported_attn_implementations = _NATIVE_DIFFUSION_ATTN_IMPLS | (
-        {"varlen"} if model_name == "Nemotron" else set()
+        {"varlen"} if model_name.startswith("Nemotron") else set()
     )
     if (
         is_native_diffusion(cfg)

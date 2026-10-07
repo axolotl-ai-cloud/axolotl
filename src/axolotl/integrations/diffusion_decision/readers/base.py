@@ -8,7 +8,25 @@ from typing import Sequence
 
 import torch
 
+from axolotl.processing_strategies import (
+    NEMOTRON_VLM_IMAGE_BREAK_ID,
+    NEMOTRON_VLM_IMAGE_END_ID,
+    NEMOTRON_VLM_IMAGE_PAD_ID,
+    NEMOTRON_VLM_IMAGE_START_ID,
+    NEMOTRON_VLM_TOKEN_SIDE,
+    NemotronDiffusionVLMProcessingStrategy,
+)
+
 from ..records import DecisionCanvas, OrdinalMetadata
+
+_IMAGE_MARKER_IDS = frozenset(
+    (
+        NEMOTRON_VLM_IMAGE_START_ID,
+        NEMOTRON_VLM_IMAGE_PAD_ID,
+        NEMOTRON_VLM_IMAGE_BREAK_ID,
+        NEMOTRON_VLM_IMAGE_END_ID,
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -38,8 +56,14 @@ class DecisionRead:
     diagnostics: ReadDiagnostics | None = None
 
 
-def validate_canvas(canvas: DecisionCanvas) -> int:
-    """Validate the model-agnostic canvas invariants before any model execution."""
+def validate_canvas(
+    canvas: DecisionCanvas, *, image_markers_reserved: bool = False
+) -> int:
+    """Validate the model-agnostic canvas invariants before any model execution.
+
+    ``image_markers_reserved`` marks ids 18-21 as image markers (they are ordinary
+    vocabulary for other tokenizers), so text-only canvases must not contain them.
+    """
 
     width = len(canvas.canvas_ids)
     if not canvas.prompt_ids or width < 2:
@@ -75,6 +99,7 @@ def validate_canvas(canvas: DecisionCanvas) -> int:
             )
         if any(not isinstance(value, bool) for value in canvas.prompt_slot_mask):
             raise TypeError("prompt_slot_mask values must be bool")
+    _validate_canvas_images(canvas, image_markers_reserved)
     question_count = len(canvas.label_positions)
     if question_count == 0:
         raise ValueError("a decision canvas must contain at least one label position")
@@ -117,6 +142,40 @@ def validate_canvas(canvas: DecisionCanvas) -> int:
             metadata.check_candidates(len(candidates))
         seen_positions.add(position)
     return width
+
+
+def _validate_canvas_images(
+    canvas: DecisionCanvas, image_markers_reserved: bool
+) -> None:
+    if len(canvas.image_refs) != len(canvas.image_sizes):
+        raise ValueError("image_refs and image_sizes must align")
+    if not canvas.image_refs:
+        if image_markers_reserved and _IMAGE_MARKER_IDS.intersection(
+            (*canvas.prompt_ids, *canvas.canvas_ids)
+        ):
+            raise ValueError("image marker tokens require image_refs")
+        return
+    if _IMAGE_MARKER_IDS.intersection(canvas.canvas_ids):
+        raise ValueError("image marker tokens cannot occupy the decision canvas")
+    if any(not isinstance(ref, str) or not ref for ref in canvas.image_refs):
+        raise ValueError("image_refs must be nonempty strings")
+    expected = sum(
+        NemotronDiffusionVLMProcessingStrategy.merged_patch_count(size)
+        for size in canvas.image_sizes
+    )
+    prompt = list(canvas.prompt_ids)
+    if prompt.count(NEMOTRON_VLM_IMAGE_PAD_ID) != expected:
+        raise ValueError("prompt image pad tokens must match image_sizes")
+    images = len(canvas.image_sizes)
+    breaks = sum(
+        int(height) // NEMOTRON_VLM_TOKEN_SIDE - 1 for height, _ in canvas.image_sizes
+    )
+    if (
+        prompt.count(NEMOTRON_VLM_IMAGE_START_ID) != images
+        or prompt.count(NEMOTRON_VLM_IMAGE_END_ID) != images
+        or prompt.count(NEMOTRON_VLM_IMAGE_BREAK_ID) != breaks
+    ):
+        raise ValueError("prompt image start/end/break tokens must match image_sizes")
 
 
 def restricted_probabilities(

@@ -36,7 +36,7 @@ def test_factory_forwards_hub_revision_untouched(monkeypatch, source, revision):
     resolved: list[tuple[object, object]] = []
     _MockNemotron.calls.clear()
 
-    def resolve(model_source, *, revision=None):
+    def resolve(model_source, *, revision=None, variant=None):
         resolved.append((model_source, revision))
         return _MockNemotron
 
@@ -52,7 +52,7 @@ def test_factory_preserves_config_commit_hash(monkeypatch):
     resolved: list[tuple[object, object]] = []
     _MockNemotron.calls.clear()
 
-    def resolve(model_source, *, revision=None):
+    def resolve(model_source, *, revision=None, variant=None):
         resolved.append((model_source, revision))
         return _MockNemotron
 

@@ -203,6 +203,15 @@ class NoiseReadProtocol(BaseModel):
         return self
 
 
+class ImageInputs(BaseModel):
+    """Prompt image settings a serving integration must reproduce."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_image_size: StrictInt = Field(ge=28)
+    placement: Literal["images_before_state"] = "images_before_state"
+
+
 class DecisionManifest(BaseModel):
     """Validated, portable decision-adapter provenance."""
 
@@ -217,6 +226,7 @@ class DecisionManifest(BaseModel):
     configured_slots: ConfiguredSlots | SampledConfiguredSlots
     noise_read_protocol: NoiseReadProtocol
     tokenizer_special_ids: TokenizerSpecialIds
+    image_inputs: ImageInputs | None = None
     initial_common_adapter_sha256: str | None = None
     initial_common_adapter_fingerprint_reason: str | None = None
     initial_common_adapter_devices: list[str] = Field(default_factory=list)
@@ -251,6 +261,7 @@ def build_decision_manifest(
     *,
     tokenizer: Any = None,
     model: Any = None,
+    has_images: bool = False,
 ) -> DecisionManifest:
     """Build a validated manifest without changing model or tokenizer state."""
     decision = _decision_config(cfg)
@@ -323,6 +334,9 @@ def build_decision_manifest(
             all_special_ids=list(
                 parse_token_ids(_value(tokenizer, "all_special_ids"), "all_special_ids")
             ),
+        ),
+        image_inputs=(
+            ImageInputs(max_image_size=decision.max_image_size) if has_images else None
         ),
     )
 

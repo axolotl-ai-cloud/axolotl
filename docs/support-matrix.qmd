@@ -185,6 +185,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 | Multimodal 🟡 (Qwen-VL, Pixtral, Llama-Vision, LLaVA, InternVL, SmolVLM2, Voxtral, LFM2-VL) | processor + VL attention support (no full feature parity) |
 | BitNet (1.58-bit) ⚪ | full fine-tune only, **LoRA not supported** (see [1_58bit_finetuning](1_58bit_finetuning.qmd)) |
 | Diffusion LMs 🟡 (Nemotron-Labs-Diffusion, Dream v0, DiffusionGemma) | native `diffusion_lm:` training, packing, CCE (Nemotron); LoRA only (no DoRA); Nemotron adds QLoRA, FSDP2 and fused LoRA kernels (see [diffusion_lm](diffusion_lm.qmd)) |
+| Nemotron-Labs-Diffusion-VLM 🟡 | LoRA/QLoRA with a frozen vision tower, varlen, FSDP2 and fused LoRA kernels (text-only batches measured); images only via the `diffusion_decision` plugin; no CCE (see [diffusion_lm](diffusion_lm.qmd#nemotron-diffusion-vlm)) |
 
 ## Dataset formats
 

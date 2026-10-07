@@ -1,12 +1,17 @@
 """Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
 
 import bisect
+import time
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
+from io import BytesIO
 from typing import Optional
 
+import numpy as np
+import requests
 import torch
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
@@ -1465,6 +1470,260 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
         labels = input_ids.clone()
         labels[~keep] = -100
         return labels
+
+
+NEMOTRON_VLM_IMAGE_START_ID = 18
+NEMOTRON_VLM_IMAGE_PAD_ID = 19
+NEMOTRON_VLM_IMAGE_BREAK_ID = 20
+NEMOTRON_VLM_IMAGE_END_ID = 21
+NEMOTRON_VLM_IMAGE_START_MARKER = "<|image_start|>"
+NEMOTRON_VLM_IMAGE_PAD_MARKER = "<|image_pad|>"
+NEMOTRON_VLM_IMAGE_BREAK_MARKER = "<|image_break|>"
+NEMOTRON_VLM_IMAGE_END_MARKER = "<|image_end|>"
+NEMOTRON_VLM_PATCH_SIZE = 14
+NEMOTRON_VLM_SPATIAL_MERGE_SIZE = 2
+NEMOTRON_VLM_TOKEN_SIDE = NEMOTRON_VLM_PATCH_SIZE * NEMOTRON_VLM_SPATIAL_MERGE_SIZE
+NEMOTRON_VLM_MAX_IMAGE_SIZE = 1400
+_NEMOTRON_VLM_IMAGE_MEAN = (0.48145466, 0.4578275, 0.40821073)
+_NEMOTRON_VLM_IMAGE_STD = (0.26862954, 0.26130258, 0.27577711)
+NEMOTRON_VLM_IMAGE_FORMATS = ("PNG", "JPEG", "WEBP", "GIF", "BMP")
+NEMOTRON_VLM_MAX_IMAGE_BYTES = 32 * 1024 * 1024
+NEMOTRON_VLM_IMAGE_FETCH_DEADLINE = 60.0
+# JPEGs over 4x the grid decode at >=2x it to bound memory; not pixel-exact vs remote.
+_NEMOTRON_VLM_DRAFT_FACTOR = 4
+
+
+class NemotronDiffusionVLMProcessingStrategy:
+    """Media adapter for Nemotron Labs Diffusion VLM, which ships no HF processor.
+
+    Resize, token-grid and normalization math are ported from the checkpoint's
+    remote ``image_processing.py`` (itself a port of mistral_common's ImageEncoder).
+    It is not a :class:`ProcessingStrategy`: that contract tokenizes through a
+    ``ProcessorMixin`` ``apply_chat_template(return_dict=True)`` call, whereas
+    this model expands ``<|image_start|>`` placeholders in the rendered prompt
+    text and tokenizes the result itself. ``image_sizes`` are ``(height, width)``.
+    """
+
+    image_token_id = NEMOTRON_VLM_IMAGE_PAD_ID
+
+    def __init__(
+        self,
+        tokenizer=None,
+        *,
+        max_image_size: int = NEMOTRON_VLM_MAX_IMAGE_SIZE,
+    ):
+        if (
+            isinstance(max_image_size, bool)
+            or not isinstance(max_image_size, int)
+            or max_image_size < NEMOTRON_VLM_TOKEN_SIDE
+            or max_image_size % NEMOTRON_VLM_TOKEN_SIDE
+        ):
+            raise ValueError(
+                f"max_image_size must be a positive multiple of {NEMOTRON_VLM_TOKEN_SIDE}"
+            )
+        self.tokenizer = tokenizer
+        self.max_image_size = max_image_size
+
+    def image_token_grid(self, height: int, width: int) -> tuple[int, int]:
+        """``(rows, columns)`` of merged patches for a source image of this size."""
+        if height <= 0 or width <= 0:
+            raise ValueError("image dimensions must be positive")
+        ratio = max(height / self.max_image_size, width / self.max_image_size)
+        if ratio > 1:
+            height = round(height / ratio)
+            width = round(width / ratio)
+        side = NEMOTRON_VLM_TOKEN_SIDE
+        return (height - 1) // side + 1, (width - 1) // side + 1
+
+    def image_size(self, height: int, width: int) -> tuple[int, int]:
+        """Resized ``(height, width)``, each a multiple of the merged patch side."""
+        rows, columns = self.image_token_grid(height, width)
+        return rows * NEMOTRON_VLM_TOKEN_SIDE, columns * NEMOTRON_VLM_TOKEN_SIDE
+
+    def image_token_count(self, height: int, width: int) -> int:
+        """Prompt tokens one image occupies: pads, row breaks, start and end."""
+        rows, columns = self.image_token_grid(height, width)
+        return rows * columns + (rows - 1) + 2
+
+    @staticmethod
+    def merged_patch_count(size: tuple[int, int] | Sequence[int]) -> int:
+        """Image-pad tokens (model features) for a resized ``(height, width)``."""
+        height, width = (int(value) for value in size)
+        if (
+            height <= 0
+            or width <= 0
+            or height % NEMOTRON_VLM_TOKEN_SIDE
+            or width % NEMOTRON_VLM_TOKEN_SIDE
+        ):
+            raise ValueError(
+                f"image_sizes must be positive multiples of {NEMOTRON_VLM_TOKEN_SIDE}"
+            )
+        return (height // NEMOTRON_VLM_TOKEN_SIDE) * (width // NEMOTRON_VLM_TOKEN_SIDE)
+
+    @staticmethod
+    def image_token_string(size: tuple[int, int] | Sequence[int]) -> str:
+        height, width = (int(value) for value in size)
+        rows = height // NEMOTRON_VLM_TOKEN_SIDE
+        columns = width // NEMOTRON_VLM_TOKEN_SIDE
+        if rows < 1 or columns < 1:
+            raise ValueError("image token grid must be at least 1x1")
+        row = NEMOTRON_VLM_IMAGE_PAD_MARKER * columns
+        return (
+            NEMOTRON_VLM_IMAGE_START_MARKER
+            + NEMOTRON_VLM_IMAGE_BREAK_MARKER.join([row] * rows)
+            + NEMOTRON_VLM_IMAGE_END_MARKER
+        )
+
+    def expand_image_placeholders(
+        self, prompt: str, sizes: Sequence[tuple[int, int] | Sequence[int]]
+    ) -> str:
+        """Replace each ``<|image_start|>`` placeholder, in order, with its token grid."""
+        placeholders = prompt.count(NEMOTRON_VLM_IMAGE_START_MARKER)
+        if placeholders != len(sizes):
+            raise ValueError(
+                f"prompt has {placeholders} image placeholders for {len(sizes)} images"
+            )
+        pieces = prompt.split(NEMOTRON_VLM_IMAGE_START_MARKER)
+        expanded = [pieces[0]]
+        for size, piece in zip(sizes, pieces[1:], strict=True):
+            expanded.append(self.image_token_string(size))
+            expanded.append(piece)
+        return "".join(expanded)
+
+    @staticmethod
+    def _open_image(fp, source: str) -> Image.Image:
+        try:
+            return Image.open(fp, formats=NEMOTRON_VLM_IMAGE_FORMATS)
+        except UnidentifiedImageError as error:
+            raise ValueError(
+                f"image {source} is not one of {', '.join(NEMOTRON_VLM_IMAGE_FORMATS)}"
+            ) from error
+
+    @staticmethod
+    def _fetch_image_bytes(url: str) -> bytes:
+        deadline = time.monotonic() + NEMOTRON_VLM_IMAGE_FETCH_DEADLINE
+        with requests.get(
+            url, stream=True, timeout=30, allow_redirects=False
+        ) as response:
+            if response.is_redirect or response.is_permanent_redirect:
+                raise ValueError(f"image URL {url} redirects; use the final URL")
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "")
+            if not content_type.lower().startswith("image/"):
+                raise ValueError(
+                    f"image URL {url} returned Content-Type {content_type!r}"
+                )
+            data = bytearray()
+            for chunk in response.iter_content(chunk_size=1 << 16):
+                data.extend(chunk)
+                if len(data) > NEMOTRON_VLM_MAX_IMAGE_BYTES:
+                    raise ValueError(
+                        f"image URL {url} exceeds {NEMOTRON_VLM_MAX_IMAGE_BYTES} bytes"
+                    )
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        f"image URL {url} took over "
+                        f"{NEMOTRON_VLM_IMAGE_FETCH_DEADLINE:.0f}s to download"
+                    )
+        return bytes(data)
+
+    @classmethod
+    def load_image(cls, source) -> Image.Image:
+        """Open like the remote loader: no EXIF transpose, no mode conversion."""
+        if isinstance(source, Image.Image):
+            return source
+        source = str(source)
+        if source.startswith(("http://", "https://")):
+            return cls._open_image(BytesIO(cls._fetch_image_bytes(source)), source)
+        return cls._open_image(source, source)
+
+    @staticmethod
+    def _to_rgb(image: Image.Image) -> Image.Image:
+        if image.mode == "RGB":
+            return image
+        if image.mode != "RGBA":
+            image = image.convert("RGBA")
+        background = Image.new("RGBA", image.size, "WHITE")
+        background.paste(image, (0, 0), image)
+        return background.convert("RGB")
+
+    def transform_image(self, image: Image.Image) -> Tensor:
+        """Resize to the token grid and normalize; returns float32 ``(3, H, W)``."""
+        width, height = image.size
+        new_height, new_width = self.image_size(height, width)
+        if max(width / new_width, height / new_height) > _NEMOTRON_VLM_DRAFT_FACTOR:
+            image.draft(None, (2 * new_width, 2 * new_height))
+        pixels = torch.from_numpy(
+            np.asarray(self._to_rgb(image), dtype=np.float32).copy()
+        ).permute(2, 0, 1)
+        if (new_height, new_width) != tuple(pixels.shape[-2:]):
+            pixels = torch.nn.functional.interpolate(
+                pixels[None],
+                size=(new_height, new_width),
+                mode="bicubic",
+                align_corners=False,
+            )[0]
+        mean = torch.tensor(_NEMOTRON_VLM_IMAGE_MEAN, dtype=torch.float32)[
+            :, None, None
+        ]
+        std = torch.tensor(_NEMOTRON_VLM_IMAGE_STD, dtype=torch.float32)[:, None, None]
+        return (pixels / 255.0 - mean) / std
+
+    @staticmethod
+    def image_sources(messages: Sequence[dict]) -> list:
+        sources = []
+        for message in messages:
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                kind = block.get("type")
+                if kind == "image_url":
+                    url = block.get("image_url")
+                    sources.append(url.get("url") if isinstance(url, dict) else url)
+                elif kind == "image":
+                    for key in ("image", "url", "path"):
+                        if key in block:
+                            sources.append(block[key])
+                            break
+        return sources
+
+    def encode(self, messages: Sequence[dict], **template_kwargs) -> dict:
+        """Render, expand placeholders from the real image sizes, and tokenize.
+
+        Returns ``input_ids`` (list), and when images are present ``pixel_values``
+        ``(N, 3, H, W)`` padded to the largest image plus ``image_sizes`` ``(N, 2)``.
+        """
+        if self.tokenizer is None:
+            raise ValueError("encode requires a tokenizer")
+        prompt = self.tokenizer.apply_chat_template(
+            list(messages), tokenize=False, **template_kwargs
+        )
+        pixels = [
+            self.transform_image(self.load_image(source))
+            for source in self.image_sources(messages)
+        ]
+        sizes = [tuple(tensor.shape[-2:]) for tensor in pixels]
+        prompt = self.expand_image_placeholders(prompt, sizes)
+        result: dict = {
+            "input_ids": list(self.tokenizer.encode(prompt, add_special_tokens=False))
+        }
+        if pixels:
+            result["pixel_values"] = pad_image_batch(pixels)
+            result["image_sizes"] = torch.tensor(sizes, dtype=torch.long)
+        return result
+
+
+def pad_image_batch(images: Sequence[Tensor]) -> Tensor:
+    """Stack ``(C, H, W)`` images into ``(N, C, Hmax, Wmax)``, zero-padding bottom/right."""
+    if not images:
+        raise ValueError("pad_image_batch requires at least one image")
+    height = max(int(image.shape[-2]) for image in images)
+    width = max(int(image.shape[-1]) for image in images)
+    batch = images[0].new_zeros((len(images), images[0].shape[0], height, width))
+    for index, image in enumerate(images):
+        batch[index, :, : image.shape[-2], : image.shape[-1]] = image
+    return batch
 
 
 def get_processing_strategy(

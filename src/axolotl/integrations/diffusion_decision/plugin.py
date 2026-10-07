@@ -21,6 +21,15 @@ from .manifest import (
 )
 
 
+def _carries_images(*datasets: Any) -> bool:
+    for dataset in datasets:
+        for row in getattr(dataset, "_rows", ()):
+            for item in (row,) if isinstance(row, Mapping) else row:
+                if getattr(item.get("canvas"), "image_refs", ()):
+                    return True
+    return False
+
+
 def _output_dir(cfg: Any) -> str | Path:
     output_dir: str | Path | None = (
         cfg.get("output_dir") if isinstance(cfg, Mapping) else cfg.output_dir
@@ -151,6 +160,10 @@ class DiffusionDecisionPlugin(BasePlugin):
             cfg,
             tokenizer=tokenizer,
             model=getattr(trainer, "model", None),
+            has_images=_carries_images(
+                getattr(trainer, "train_dataset", None),
+                getattr(trainer, "eval_dataset", None),
+            ),
         )
         from axolotl.utils.distributed import is_main_process
 

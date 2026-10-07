@@ -362,6 +362,31 @@ def checkpoint_nf4_linear(module: nn.Linear) -> None:
     module.forward = MethodType(_checkpointed_linear_forward, module)
 
 
+# transformers anchors skip keys at the module-name start, so keep the full prefix.
+NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES = (
+    "encoder.vision_tower",
+    "encoder.multi_modal_projector",
+    "diffusion_head",
+)
+
+
+def architecture_skip_modules(model_type: str | None) -> tuple[str, ...]:
+    """Modules an architecture keeps unquantized at both 4-bit load and merge."""
+    if model_type == "nemotron_labs_diffusion_vlm":
+        return NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES
+    return ()
+
+
+def bnb_4bit_skip_modules(model_type: str | None) -> list[str] | None:
+    """Default ``llm_int8_skip_modules`` for a bitsandbytes 4-bit load; None keeps transformers'."""
+    architecture_skips = architecture_skip_modules(model_type)
+    if architecture_skips:
+        return list(architecture_skips)
+    if model_type == "falcon_h1":
+        return ["out_proj"]
+    return None
+
+
 def nf4_skip_modules(model_type: str | None, quantization: dict) -> set[str]:
     """Resolve user and architecture exclusions shared by loading and merging.
 
@@ -371,6 +396,7 @@ def nf4_skip_modules(model_type: str | None, quantization: dict) -> set[str]:
     """
     skips = {"lm_head", "embed_out"}
     skips.update(quantization.get("llm_int8_skip_modules") or [])
+    skips.update(architecture_skip_modules(model_type))
     if model_type == "falcon_h1":
         skips.add("out_proj")
     for key in skips:

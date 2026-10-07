@@ -1075,9 +1075,12 @@ class ModelLoader:
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32
-            if self.cfg.model_config_type == "falcon_h1":
-                # output projection cannot be quantized for Falcon-H1 models
-                bnb_config["llm_int8_skip_modules"] = ["out_proj"]
+            from axolotl.utils.nf4 import bnb_4bit_skip_modules
+
+            # An explicit skip list replaces the default output-head skip.
+            skip_modules = bnb_4bit_skip_modules(self.cfg.model_config_type)
+            if skip_modules is not None:
+                bnb_config["llm_int8_skip_modules"] = skip_modules
 
             if self.cfg.bnb_config_kwargs:
                 bnb_config.update(self.cfg.bnb_config_kwargs)

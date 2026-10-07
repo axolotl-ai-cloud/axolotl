@@ -20,6 +20,12 @@ from axolotl.core.trainers.diffusion_lm.batch import DiffusionBatch
 from axolotl.core.trainers.diffusion_lm.trainer import AxolotlDiffusionTrainer
 from axolotl.core.trainers.diffusion_lm.unroll import run_unroll
 from axolotl.model_support import DiffusionLayout, DiffusionNoise, LogitAlignment
+from axolotl.processing_strategies import (
+    NEMOTRON_VLM_IMAGE_BREAK_ID,
+    NEMOTRON_VLM_IMAGE_END_ID,
+    NEMOTRON_VLM_IMAGE_PAD_ID,
+    NEMOTRON_VLM_IMAGE_START_ID,
+)
 
 from ._util import _value
 from .args import DiffusionDecisionConfig
@@ -702,6 +708,10 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             )
         k_max, grad_through_steps = self._native_unroll_settings()
         final_kwargs = {}
+        media_kwargs = _media_model_kwargs(inputs)
+        update_state = (
+            _without_image_markers(backend.update) if media_kwargs else backend.update
+        )
         selected_rows, selected_positions, _ = self._question_coordinates(
             inputs,
             rows=packed["input_ids"].shape[0],
@@ -726,10 +736,11 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
                         model_kwargs={
+                            **media_kwargs,
                             "axolotl_selected_logits": (
                                 selected_rows,
                                 selected_positions,
-                            )
+                            ),
                         },
                     )
                 ),
@@ -745,7 +756,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs={"cce_return_hidden_states": True},
+                        model_kwargs={**media_kwargs, "cce_return_hidden_states": True},
                     )
                 ),
                 "final_logits_from_outputs": lambda output: output.last_hidden_state,
@@ -765,6 +776,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
+                        model_kwargs=media_kwargs or None,
                     )
                 ),
                 logits_from_outputs=lambda current_outputs: backend.canvas_logits(
@@ -772,7 +784,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     packed,
                     aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
                 ),
-                update_state=backend.update,
+                update_state=update_state,
                 **final_kwargs,
             )
         else:
@@ -806,6 +818,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
+                        model_kwargs=media_kwargs or None,
                     )
                 ),
                 logits_from_outputs=lambda current_outputs: backend.canvas_logits(
@@ -813,7 +826,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     packed,
                     aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
                 ),
-                update_state=backend.update,
+                update_state=update_state,
                 pilot_for_single_step=False,
                 **final_kwargs,
             )
@@ -837,6 +850,8 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             ),
             "encoder-canvas decision batch",
         )
+        if _media_model_kwargs(inputs):
+            raise ValueError("decision image inputs require the full-sequence layout")
         batch = inputs["diffusion_batch"]
         model_config = getattr(model, "config", None)
         if model_config is None:
@@ -1144,6 +1159,35 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         if self.args.world_size > 1:
             denominator = denominator / self.args.world_size
         return result.loss * local_examples / denominator
+
+
+_IMAGE_MARKER_IDS = (
+    NEMOTRON_VLM_IMAGE_START_ID,
+    NEMOTRON_VLM_IMAGE_PAD_ID,
+    NEMOTRON_VLM_IMAGE_BREAK_ID,
+    NEMOTRON_VLM_IMAGE_END_ID,
+)
+
+
+def _without_image_markers(update):
+    """A committed image-pad id would break the remote pad-count/feature assert."""
+
+    def wrapped(state, logits, update_mask):
+        ids = torch.tensor(_IMAGE_MARKER_IDS, device=logits.device)
+        return update(
+            state, logits.detach().index_fill(-1, ids, float("-inf")), update_mask
+        )
+
+    return wrapped
+
+
+def _media_model_kwargs(inputs: Mapping[str, Any]) -> dict[str, Any]:
+    """Batch image inputs the remote forward consumes alongside ``input_ids``."""
+    return {
+        name: inputs[name]
+        for name in ("pixel_values", "image_sizes")
+        if inputs.get(name) is not None
+    }
 
 
 def _require_fields(
