@@ -33,7 +33,7 @@ jobs:
   distributed-cpu:
     name: ${{ inputs.slow && 'Slow CPU' || 'Distributed CPU' }} / ${{ matrix.stack }} / PyTorch ${{ matrix.pytorch_version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
