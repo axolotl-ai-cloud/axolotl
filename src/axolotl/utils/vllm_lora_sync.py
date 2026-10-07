@@ -25,6 +25,13 @@ def _load_adapter(base_url: str, name: str, path: str, timeout: float) -> None:
         )
 
 
+def _unload_adapter(base_url: str, name: str, timeout: float) -> None:
+    # Best effort: the adapter may already be gone.
+    requests.post(
+        f"{base_url}/v1/unload_lora_adapter", json={"lora_name": name}, timeout=timeout
+    )
+
+
 def publish_lora_adapter(
     vllm_client,
     sync_dir: str,
@@ -45,28 +52,26 @@ def publish_lora_adapter(
     the base model instead of failing.
     """
     base_url = vllm_client.base_url
+    # vllm_client.model is re-pointed at each adapter below, so keep the base name.
     base_model = getattr(vllm_client, "_lora_sync_base_model", None)
     if base_model is None:
         base_model = vllm_client.model
         vllm_client._lora_sync_base_model = base_model
 
-    paused = (
-        requests.post(
-            f"{base_url}/pause", params={"mode": "wait"}, timeout=timeout
-        ).status_code
-        == 200
-    )
+    def adapter_name(v: int) -> str:
+        return f"{base_model}-v{v}"
+
+    def adapter_path(v: int) -> str:
+        return os.path.join(sync_dir, f"v{v}")
+
+    pause = requests.post(f"{base_url}/pause", params={"mode": "wait"}, timeout=timeout)
+    paused = pause.status_code == 200
     try:
-        lora_name = f"{base_model}-v{version}"
-        lora_path = os.path.join(sync_dir, f"v{version}")
-        _load_adapter(base_url, lora_name, lora_path, timeout)
+        lora_name = adapter_name(version)
+        _load_adapter(base_url, lora_name, adapter_path(version), timeout)
         if alias:
-            requests.post(
-                f"{base_url}/v1/unload_lora_adapter",
-                json={"lora_name": alias},
-                timeout=timeout,
-            )
-            _load_adapter(base_url, alias, lora_path, timeout)
+            _unload_adapter(base_url, alias, timeout)
+            _load_adapter(base_url, alias, adapter_path(version), timeout)
         vllm_client.model = lora_name
     finally:
         if paused:
@@ -74,10 +79,6 @@ def publish_lora_adapter(
 
     stale = version - 2
     if stale > 0:
-        requests.post(
-            f"{base_url}/v1/unload_lora_adapter",
-            json={"lora_name": f"{base_model}-v{stale}"},
-            timeout=timeout,
-        )
-        shutil.rmtree(os.path.join(sync_dir, f"v{stale}"), ignore_errors=True)
+        _unload_adapter(base_url, adapter_name(stale), timeout)
+        shutil.rmtree(adapter_path(stale), ignore_errors=True)
     return lora_name

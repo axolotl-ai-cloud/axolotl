@@ -18,7 +18,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-# Pre-native-server values; their modules/classes no longer exist.
+# Superseded by vLLM's native server; ignored with a warning.
 LEGACY_SERVE_MODULES = ("axolotl.scripts.vllm_serve_lora", "trl.scripts.vllm_serve")
 LEGACY_WORKER_EXTENSION_PREFIXES = ("axolotl.scripts.", "trl.scripts.vllm_serve.")
 SUPPORTED_MAX_LORA_RANKS = (1, 8, 16, 32, 64, 128, 256, 320, 512)
@@ -122,11 +122,16 @@ def build_command(script_args: VllmServeArguments) -> list[str]:
             str(round_max_lora_rank(script_args.max_lora_rank)),
             "--max-loras",
             str(script_args.max_loras),
+            # With data parallelism vLLM starts one API server per rank, and a
+            # runtime-loaded adapter only registers on the server that loaded it.
             "--api-server-count",
             "1",
         ]
     if script_args.worker_extension_cls:
         command += ["--worker-extension-cls", script_args.worker_extension_cls]
+    # Same fixed flags as TRL's `trl vllm-serve`: scale-out adds the render and
+    # generate routes used for multimodal prompts, the NCCL transfer engine
+    # receives merged weights, and processed logprobs feed importance sampling.
     if _vllm_at_least("0.30.0"):
         command += ["--enable-scale-out"]
     command += [
@@ -157,6 +162,31 @@ def serve(script_args: VllmServeArguments):
     os.execve(sys.executable, command, env)  # nosec B606
 
 
+def _drop_legacy_serve_options(
+    serve_module: str | None, worker_extension_cls: str | None
+) -> tuple[str | None, str | None]:
+    if serve_module in LEGACY_SERVE_MODULES:
+        LOG.warning(
+            f"vllm.serve_module '{serve_module}' is deprecated and ignored; "
+            "using vLLM's native server"
+        )
+        serve_module = None
+    if worker_extension_cls and worker_extension_cls.startswith(
+        LEGACY_WORKER_EXTENSION_PREFIXES
+    ):
+        LOG.warning(
+            f"vllm.worker_extension_cls '{worker_extension_cls}' is deprecated and "
+            "ignored; vLLM's native weight transfer replaces it"
+        )
+        worker_extension_cls = None
+    return serve_module, worker_extension_cls
+
+
+def _max_lora_rank(cfg) -> int | None:
+    ranks = [cfg.lora_r, *(cfg.lora_rank_pattern or {}).values()]
+    return max((r for r in ranks if r), default=None)
+
+
 def do_vllm_serve(
     config: Union[Path, str],
     cli_args: dict,
@@ -172,87 +202,37 @@ def do_vllm_serve(
         None; the process is replaced by the native vLLM server
     """
     cfg = load_cfg(config)
-    model = cfg.base_model
+    vllm_cfg = cfg.vllm
 
-    serve_module = cli_args.get("serve_module") or getattr(
-        cfg.vllm, "serve_module", None
-    )
-    if serve_module in LEGACY_SERVE_MODULES:
-        LOG.warning(
-            f"vllm.serve_module '{serve_module}' is deprecated and ignored; "
-            "using vLLM's native server"
-        )
-        serve_module = None
-    worker_extension_cls = getattr(cfg.vllm, "worker_extension_cls", None)
-    if worker_extension_cls and worker_extension_cls.startswith(
-        LEGACY_WORKER_EXTENSION_PREFIXES
-    ):
-        LOG.warning(
-            f"vllm.worker_extension_cls '{worker_extension_cls}' is deprecated and "
-            "ignored; vLLM's native weight transfer replaces it"
-        )
-        worker_extension_cls = None
-    tensor_parallel_size = 1
-    data_parallel_size = 1
+    def cli_or_cfg(key: str, default=None):
+        return cli_args.get(key) or vllm_cfg[key] or default
 
-    if cli_args.get("tensor_parallel_size") or cfg.vllm.tensor_parallel_size:
-        tensor_parallel_size = (
-            cli_args.get("tensor_parallel_size") or cfg.vllm.tensor_parallel_size
-        )
-    if cli_args.get("data_parallel_size") or cfg.vllm.data_parallel_size:
-        data_parallel_size = (
-            cli_args.get("data_parallel_size") or cfg.vllm.data_parallel_size
-        )
-    host = cli_args.get("host") or cfg.vllm.host
-    port = cli_args.get("port") or cfg.vllm.port
-    gpu_memory_utilization = (
-        cli_args.get("gpu_memory_utilization") or cfg.vllm.gpu_memory_utilization or 0.9
-    )
-    dtype = cli_args.get("dtype") or cfg.vllm.dtype
-    max_model_len = cli_args.get("max_model_len") or cfg.vllm.max_model_len
-    # Booleans check for None so an explicit CLI False can disable a config-
-    # enabled option (`cli or cfg` would let a falsy CLI value fall through).
-    cli_prefix = cli_args.get("enable_prefix_caching")
-    enable_prefix_caching = (
-        cfg.vllm.enable_prefix_caching if cli_prefix is None else cli_prefix
-    )
-    reasoning_parser = (
-        cli_args.get("reasoning_parser") or cfg.vllm.reasoning_parser or ""
-    )
-    cli_reasoning = cli_args.get("enable_reasoning")
-    enable_reasoning = (
-        cfg.vllm.enable_reasoning if cli_reasoning is None else cli_reasoning
-    )
+    def cli_or_cfg_flag(key: str):
+        # Checks None so an explicit CLI False can disable a config-enabled option.
+        value = cli_args.get(key)
+        return vllm_cfg[key] if value is None else value
 
-    cli_enforce_eager = cli_args.get("enforce_eager")
-    cfg_enforce_eager = getattr(cfg.vllm, "enforce_eager", None)
-    raw_enforce_eager = (
-        cfg_enforce_eager if cli_enforce_eager is None else cli_enforce_eager
+    serve_module, worker_extension_cls = _drop_legacy_serve_options(
+        cli_or_cfg("serve_module"), vllm_cfg.worker_extension_cls
     )
-    enforce_eager = bool(raw_enforce_eager) if raw_enforce_eager is not None else False
-    lora_ranks = [
-        getattr(cfg, "lora_r", None),
-        *(getattr(cfg, "lora_rank_pattern", None) or {}).values(),
-    ]
-    max_lora_rank = max((r for r in lora_ranks if r), default=None)
     vllm_script_args = VllmServeArguments(
-        model=model,
+        model=cfg.base_model,
         revision=cfg.revision_of_model,
         trust_remote_code=bool(cfg.trust_remote_code),
-        tensor_parallel_size=tensor_parallel_size,
-        data_parallel_size=data_parallel_size,
-        host=host,
-        port=port,
-        gpu_memory_utilization=gpu_memory_utilization,
-        dtype=dtype,
-        max_model_len=max_model_len,
-        enable_prefix_caching=enable_prefix_caching,
-        enforce_eager=enforce_eager,
-        reasoning_parser=reasoning_parser,
-        enable_reasoning=enable_reasoning,
+        tensor_parallel_size=cli_or_cfg("tensor_parallel_size", 1),
+        data_parallel_size=cli_or_cfg("data_parallel_size", 1),
+        host=cli_or_cfg("host"),
+        port=cli_or_cfg("port"),
+        gpu_memory_utilization=cli_or_cfg("gpu_memory_utilization", 0.9),
+        dtype=cli_or_cfg("dtype"),
+        max_model_len=cli_or_cfg("max_model_len"),
+        enable_prefix_caching=cli_or_cfg_flag("enable_prefix_caching"),
+        enforce_eager=bool(vllm_cfg.enforce_eager),
+        reasoning_parser=cli_or_cfg("reasoning_parser", ""),
+        enable_reasoning=cli_or_cfg_flag("enable_reasoning"),
         enable_lora=bool(getattr(cfg.trl, "vllm_lora_sync", False)),
+        max_lora_rank=_max_lora_rank(cfg) or VllmServeArguments.max_lora_rank,
         worker_extension_cls=worker_extension_cls,
-        **({"max_lora_rank": max_lora_rank} if max_lora_rank else {}),
     )
 
     if serve_module is None:

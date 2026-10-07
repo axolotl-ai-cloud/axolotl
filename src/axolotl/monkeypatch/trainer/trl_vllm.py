@@ -1,7 +1,7 @@
 """Monkeypatches for TRL's vLLM integration and trainer utils.
 
 Adds:
-- VLLMClient.batch_update_named_params: chunked weight sync over vLLM's native NCCL
+- VLLMClient.batch_update_named_params: weight sync over vLLM's native NCCL
   weight-transfer engine, inside a single weight update, with lazy communicator init
 - extract_logprobs: NaN→0.0 fix (prevents downstream NaN propagation)
 - split_tensor_dict / shuffle_sequence_dict: scalar type handling (int/float/bool passthrough)
@@ -19,9 +19,7 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-def _batch_update_named_params(
-    self, params: list[tuple[str, torch.Tensor]], chunk_size: int | None = None
-):
+def _batch_update_named_params(self, params: list[tuple[str, torch.Tensor]]):
     """Stream params over vLLM's NCCL weight-transfer engine in one weight update.
 
     The communicator is initialised on first use when trainer init skipped it.
@@ -31,39 +29,17 @@ def _batch_update_named_params(
     if not params:
         return
 
-    if getattr(self, "communicator", None) is None:
+    if self.communicator is None:
         self.init_communicator(device=params[0][1].device)
 
-    if chunk_size is None:
-        chunks = [params]
-    else:
-        chunks = []
-        current_chunk: list[tuple[str, torch.Tensor]] = []
-        current_elements = 0
-        for name, weights in params:
-            n_elem = weights.numel()
-            if current_chunk and current_elements + n_elem > chunk_size:
-                chunks.append(current_chunk)
-                current_chunk = []
-                current_elements = 0
-            current_chunk.append((name, weights))
-            current_elements += n_elem
-        if current_chunk:
-            chunks.append(current_chunk)
-
+    metadata = [
+        (name, str(weights.dtype).removeprefix("torch."), list(weights.shape))
+        for name, weights in params
+    ]
     self._post(f"{self.base_url}/pause", params={"mode": "keep"})
     try:
         with self.weight_update():
-            for chunk in chunks:
-                metadata = [
-                    (
-                        name,
-                        str(weights.dtype).removeprefix("torch."),
-                        list(weights.shape),
-                    )
-                    for name, weights in chunk
-                ]
-                self.update_named_params(metadata, iter(chunk))
+            self.update_named_params(metadata, iter(params))
     finally:
         self._post(f"{self.base_url}/resume")
 
@@ -151,16 +127,13 @@ def patch_trl_vllm():
 
     VLLMClient = trl.generation.vllm_client.VLLMClient
 
-    # 1. Add batch_update_named_params to VLLMClient
     if not hasattr(VLLMClient, "batch_update_named_params"):
         VLLMClient.batch_update_named_params = _batch_update_named_params
         LOG.info("Patched VLLMClient with batch_update_named_params")
 
-    # 2. Patch extract_logprobs (NaN→0.0)
     trl.generation.vllm_generation.extract_logprobs = _patched_extract_logprobs
     LOG.info("Patched extract_logprobs with NaN→0.0 fix")
 
-    # 3. Patch split_tensor_dict and shuffle_sequence_dict
     trl.trainer.utils.split_tensor_dict = _patched_split_tensor_dict
     trl.trainer.utils.shuffle_sequence_dict = _patched_shuffle_sequence_dict
     LOG.info("Patched split_tensor_dict and shuffle_sequence_dict for scalar types")
@@ -193,6 +166,7 @@ def patch_vllm_colocate_engine_kwargs(engine_kwargs: dict[str, Any]) -> None:
     base_llm = getattr(vllm_generation, "LLM", None)
     if base_llm is None:
         return
+    # Unwrap a previous patch so re-patching replaces it instead of stacking.
     base_llm = getattr(base_llm, "__wrapped__", base_llm)
 
     @wraps(base_llm, updated=())

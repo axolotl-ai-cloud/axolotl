@@ -1258,7 +1258,8 @@ class PatchManager:
             patch_apertus_xielu_activation()
 
     def _apply_trl_vllm_patches(self):
-        """Apply TRL vLLM patches for batched weight sync, NaN logprobs fix, and scalar handling."""
+        """Apply TRL vLLM patches: batched weight sync, NaN logprobs fix, scalar
+        handling, and colocate engine kwargs."""
         if (
             self.cfg.rl
             and getattr(self.cfg, "trl", None)

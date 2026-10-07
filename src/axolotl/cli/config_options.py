@@ -1758,7 +1758,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.serve-module",),
         "vllm__serve_module",
         "str",
-        "Custom Python module exposing main(script_args) to run instead of vLLM's native server. Leave None to launch the native server; the legacy value 'axolotl.scripts.vllm_serve_lora' is deprecated and ignored.",
+        "Custom Python module exposing main(script_args) to run instead of vLLM's native server. Leave None to launch the native server; the legacy values 'axolotl.scripts.vllm_serve_lora' and 'trl.scripts.vllm_serve' are ignored.",
     ),
     (
         ("--vllm.worker-extension-cls",),

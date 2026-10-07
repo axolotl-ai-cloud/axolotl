@@ -2568,7 +2568,7 @@ class GRPOVllmValidationMixin:
         trl = self.trl
         if not (trl and trl.use_vllm and trl.vllm_mode == "colocate"):
             return self
-        if (getattr(self, "context_parallel_size", None) or 1) > 1:
+        if (self.context_parallel_size or 1) > 1:
             raise ValueError(
                 "`vllm_mode: colocate` is not supported with `context_parallel_size > 1`. "
                 "Use `vllm_mode: server` with a dedicated vLLM GPU."
@@ -2579,9 +2579,7 @@ class GRPOVllmValidationMixin:
                 "over HTTP to the vLLM server). In colocate mode, remove `vllm_lora_sync`; "
                 "weights are merged and loaded into the colocated engine directly."
             )
-        if (trl.async_prefetch or trl.use_data_producer) and getattr(
-            self, "adapter", None
-        ):
+        if (trl.async_prefetch or trl.use_data_producer) and self.adapter:
             raise ValueError(
                 "`vllm_mode: colocate` with an adapter is not supported by the async GRPO "
                 "trainer (`async_prefetch` / `use_data_producer`): its LoRA weight sync only "

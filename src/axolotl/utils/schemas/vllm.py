@@ -71,8 +71,8 @@ class VllmConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Custom Python module exposing main(script_args) to run instead of vLLM's native "
-            "server. Leave None to launch the native server; the legacy value "
-            "'axolotl.scripts.vllm_serve_lora' is deprecated and ignored."
+            "server. Leave None to launch the native server; the legacy values "
+            "'axolotl.scripts.vllm_serve_lora' and 'trl.scripts.vllm_serve' are ignored."
         },
     )
     worker_extension_cls: str | None = Field(

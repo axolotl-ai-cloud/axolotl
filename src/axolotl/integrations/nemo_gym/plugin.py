@@ -48,16 +48,6 @@ class VLLMWeightSyncCapabilities:
     probe_error: str | None = None
     routes: list[str] = field(default_factory=list)
 
-    @property
-    def any_full_param_sync(self) -> bool:
-        """True if at least one transport can push full-model weights."""
-        return self.nccl
-
-    @property
-    def any_lora_sync(self) -> bool:
-        """True if at least one transport can push LoRA adapters."""
-        return self.lora_filesystem or self.nccl
-
 
 def probe_vllm_weight_sync(
     base_url: str, timeout: float = 5.0
@@ -102,8 +92,9 @@ def select_weight_sync_transport(
 ) -> str:
     """Pick the right transport for a (server caps, model type) combo.
 
-    Returns one of: ``"lora_filesystem"``, ``"nccl"``, or ``"none"``. The caller decides what to do with ``"none"`` (typically:
-    raise an error explaining the misconfiguration).
+    Returns one of: ``"lora_filesystem"``, ``"nccl"``, or ``"none"``. The caller
+    decides what to do with ``"none"`` (typically: raise an error explaining the
+    misconfiguration).
 
     Selection table:
         LoRA model + lora endpoint + lora-sync pref    → lora_filesystem
@@ -112,18 +103,9 @@ def select_weight_sync_transport(
         Full model + nccl endpoint                     → nccl
         anything else                                  → none
     """
-    if has_lora:
-        if caps.lora_filesystem and (vllm_lora_sync_pref or not caps.nccl):
-            return "lora_filesystem"
-        if caps.nccl:
-            return "nccl"
-        if caps.lora_filesystem:
-            return "lora_filesystem"
-        return "none"
-    # Full-parameter model
-    if caps.nccl:
-        return "nccl"
-    return "none"
+    if has_lora and caps.lora_filesystem and (vllm_lora_sync_pref or not caps.nccl):
+        return "lora_filesystem"
+    return "nccl" if caps.nccl else "none"
 
 
 class NemoGymPlugin(BasePlugin):
@@ -176,7 +158,7 @@ class NemoGymPlugin(BasePlugin):
 
         if self._vllm_caps.probed:
             LOG.info(
-                "NeMo Gym: vLLM weight-sync probe @ %s — nccl=%s lora_native=%s",
+                "NeMo Gym: vLLM weight-sync probe @ %s: nccl=%s lora_filesystem=%s",
                 base_url,
                 self._vllm_caps.nccl,
                 self._vllm_caps.lora_filesystem,

@@ -251,7 +251,7 @@ class TestPatchApplication(unittest.TestCase):
         self.assertTrue(hasattr(VLLMClient, "batch_update_named_params"))
 
 
-class TestBatchUpdateChunking(unittest.TestCase):
+class TestBatchUpdateNamedParams(unittest.TestCase):
     """Tests for batch_update_named_params on the native client."""
 
     @staticmethod
@@ -260,7 +260,7 @@ class TestBatchUpdateChunking(unittest.TestCase):
         client.communicator = communicator
         return client
 
-    def test_no_chunk_single_call(self):
+    def test_single_update_call(self):
         from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
 
         client = self._client()
@@ -268,7 +268,7 @@ class TestBatchUpdateChunking(unittest.TestCase):
             ("layer.0.weight", torch.randn(10, 10)),
             ("layer.1.weight", torch.randn(10, 10)),
         ]
-        _batch_update_named_params(client, params, chunk_size=None)
+        _batch_update_named_params(client, params)
 
         self.assertEqual(client.update_named_params.call_count, 1)
         client.weight_update.assert_called_once()
@@ -295,34 +295,6 @@ class TestBatchUpdateChunking(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             _batch_update_named_params(client, [("a", torch.randn(4))])
         self.assertTrue(client._post.call_args[0][0].endswith("/resume"))
-
-    def test_chunk_splits_params(self):
-        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
-
-        client = self._client()
-        params = [(n, torch.randn(100)) for n in "abc"]
-        _batch_update_named_params(client, params, chunk_size=150)
-
-        self.assertEqual(client.update_named_params.call_count, 3)
-        client.weight_update.assert_called_once()
-        names = [
-            [m[0] for m in call[0][0]]
-            for call in client.update_named_params.call_args_list
-        ]
-        self.assertEqual(names, [["a"], ["b"], ["c"]])
-
-    def test_chunk_groups_small_params(self):
-        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
-
-        client = self._client()
-        params = [(n, torch.randn(50)) for n in "abc"]
-        _batch_update_named_params(client, params, chunk_size=100)
-
-        names = [
-            [m[0] for m in call[0][0]]
-            for call in client.update_named_params.call_args_list
-        ]
-        self.assertEqual(names, [["a", "b"], ["c"]])
 
     def test_lazy_init_when_no_communicator(self):
         from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
@@ -355,7 +327,7 @@ class TestBatchUpdateChunking(unittest.TestCase):
         metadata = client.update_named_params.call_args[0][0]
         self.assertEqual(metadata, [("a", "bfloat16", [2, 3]), ("b", "float32", [5])])
 
-    def test_streamed_iterator_yields_chunk_tensors(self):
+    def test_streamed_iterator_yields_params(self):
         from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
 
         client = self._client()
