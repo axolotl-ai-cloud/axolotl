@@ -33,7 +33,7 @@ def my_reward(completions, **kwargs) -> list[float]:
 
 Multiple rewards: `reward_funcs: [r1, r2]` with `reward_weights: [1.0, 0.5]`.
 
-Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also work; rewards receive the loaded images under the same column name. See [rlhf.qmd](../rlhf.qmd#multimodal).
+Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also work; rewards receive the loaded images as the `images` kwarg (one list per sample, for either column). See [rlhf.qmd](../rlhf.qmd#multimodal).
 
 ## Key Async Features
 

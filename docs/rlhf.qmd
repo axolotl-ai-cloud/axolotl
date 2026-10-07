@@ -1343,19 +1343,61 @@ CFLAGS="" uv pip install pycosat --python .venv/bin/python --no-build-isolation
 
 ### Multimodal (vision) datasets {#multimodal}
 
-DPO, IPO, KTO, GRPO and GDPO can train vision-language models on image datasets. Load the model as for multimodal SFT (see [Multimodal usage](multimodal.qmd#usage)): `processor_type: AutoProcessor`, and optionally `image_size` / `image_resize_algorithm`.
+DPO, IPO, KTO, GRPO and GDPO can train vision-language models (VLMs) on image datasets.
 
-A dataset is treated as multimodal when it has an `images` (list) or `image` column. Images are loaded and resized at collate time, so any reference from [Multimodal image keys](multimodal.qmd#image) works: a PIL image, `path`, `url`, or `base64`.
+#### Model setup
 
-Prompts must be conversational (lists of `role`/`content` messages). If the column has more images than there are `{"type": "image"}` placeholders, the missing placeholders are added at the start of the first user turn; placeholders are then filled with the column's images in document order. An image block can also carry its own `path`/`url`/`base64` reference, but the dataset still needs an `images` or `image` column to be detected as multimodal.
+Load the model the same way as for [multimodal SFT](multimodal.qmd#usage):
 
-| Method | Columns | Notes |
-|---|---|---|
-| DPO / IPO | `prompt`, `chosen`, `rejected`, `images` | no `type` needed if already in this shape, or `type: chat_template` with `messages` + `chosen`/`rejected` messages |
-| KTO | `prompt`, `completion`, `label`, `images` | needs `micro_batch_size` > 1 |
-| GRPO / GDPO | `prompt`, `images` or `image` | reward functions receive the loaded images as the `images` kwarg; works with vLLM generation |
+```yaml
+base_model: Qwen/Qwen2.5-VL-3B-Instruct
+processor_type: AutoProcessor
+image_size: 448  # optional: resize images (int or [width, height])
+```
 
-Example DPO config using [HuggingFaceH4/rlaif-v_formatted](https://huggingface.co/datasets/HuggingFaceH4/rlaif-v_formatted):
+#### Dataset format
+
+A dataset counts as multimodal when it has an `images` column (a list per row) or an `image` column (one per row). Each image can be a Hugging Face `Image` feature, a local path, a URL, or a base64 string (see [image keys](multimodal.qmd#image)). Images are loaded as each batch is built, so nothing is decoded ahead of time.
+
+Prompts must be lists of `role`/`content` messages. You don't need image placeholders: each image goes at the start of the first user turn. To place images yourself, add `{"type": "image"}` blocks to the message content; they are filled with the row's images in order.
+
+DPO / IPO row:
+
+```json
+{
+  "prompt": [{"role": "user", "content": "What is in this picture?"}],
+  "chosen": [{"role": "assistant", "content": "A cat on a red sofa."}],
+  "rejected": [{"role": "assistant", "content": "A dog in a park."}],
+  "images": ["images/cat.jpg"]
+}
+```
+
+KTO row (`label` marks the completion as desirable or not; KTO needs `micro_batch_size` of at least 2):
+
+```json
+{
+  "prompt": [{"role": "user", "content": "What is in this picture?"}],
+  "completion": [{"role": "assistant", "content": "A cat on a red sofa."}],
+  "label": true,
+  "images": ["images/cat.jpg"]
+}
+```
+
+GRPO / GDPO row (extra columns such as `answer` are passed to your reward functions):
+
+```json
+{
+  "prompt": [{"role": "user", "content": "What color is the cube?"}],
+  "image": "images/cube.jpg",
+  "answer": "red"
+}
+```
+
+Datasets already in these shapes need no `type`. DPO/IPO also accept `type: chat_template` with a `messages` conversation plus `chosen`/`rejected` messages. For GRPO, a dataset transform can build `prompt` and leave the image column in place, as in the example below.
+
+#### DPO example
+
+Using [HuggingFaceH4/rlaif-v_formatted](https://huggingface.co/datasets/HuggingFaceH4/rlaif-v_formatted), which is already in the DPO shape:
 
 ```yaml
 base_model: Qwen/Qwen2.5-VL-3B-Instruct
@@ -1368,18 +1410,106 @@ datasets:
     split: train
 
 adapter: lora
+lora_r: 16
+lora_alpha: 32
+# Adapt only the language model; the vision encoder stays frozen.
 lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
 sequence_len: 2048
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+learning_rate: 5.0e-6
+num_epochs: 1
+bf16: true
+gradient_checkpointing: true
+output_dir: ./outputs/qwen2.5-vl-dpo
 ```
 
-Limitations:
+#### GRPO example
 
-- Rows are not filtered by length beforehand. For DPO/KTO, `sequence_len` (including image tokens) is the collate-time truncation limit, and a cut through image tokens fails in the model forward. GRPO prompts are not truncated.
-- All samples are rendered with one chat template (the processor's, or the top-level `chat_template`); per-dataset `chat_template` is ignored.
-- Image and text-only datasets cannot be mixed in one run, and exact deduplication is skipped for image datasets.
-- Not supported: ORPO, SimPO, EBFT, `tokenizer_use_mistral_common`, and GRPO with `context_parallel_size` > 1. `pad_to_multiple_of` is ignored for DPO/KTO.
-- The async GRPO trainer (`use_data_producer` / `async_prefetch`) does not yet support tile-based models (InternVL) or multiple images per sample with LLaVA-style processors.
-- GRPO with `vllm_mode: server` needs one contiguous run of image tokens per image, so models that split images into tiles with separator tokens (SmolVLM, Idefics3) fail there; use `vllm_mode: colocate` or no vLLM.
+Reward functions receive the loaded images as `images`: one list of PIL images per sample, whether the dataset column is `image` or `images`. This example uses [lmms-lab/multimodal-open-r1-8k-verified](https://huggingface.co/datasets/lmms-lab/multimodal-open-r1-8k-verified), which has `image`, `problem` and `solution` columns:
+
+```python
+# mm_rewards.py
+import re
+
+SYSTEM = (
+    "Answer the question about the image. Think inside <think></think>, "
+    "then give the final answer inside <answer></answer>."
+)
+
+
+def transform(cfg, *args, **kwargs):
+    def transform_fn(example, tokenizer=None):
+        return {
+            "prompt": [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": example["problem"]},
+            ],
+            "answer": example["solution"],
+        }
+
+    # The `image` column is kept, so the prompt gets its image automatically.
+    return transform_fn, {"remove_columns": ["problem", "solution"]}
+
+
+def _final_answer(text):
+    match = re.search(r"<answer>(.*?)</answer>", text, re.S)
+    return (match.group(1) if match else text).strip().lower()
+
+
+def answer_reward(completions, answer, images, **kwargs) -> list[float]:
+    # images[i] holds sample i's PIL images, for rewards that look at the image.
+    return [
+        float(_final_answer(c[0]["content"]) == _final_answer(a))
+        for c, a in zip(completions, answer)
+    ]
+```
+
+```yaml
+base_model: Qwen/Qwen2.5-VL-3B-Instruct
+processor_type: AutoProcessor
+image_size: 448
+
+rl: grpo
+trl:
+  num_generations: 4
+  max_completion_length: 256
+  reward_funcs: ["mm_rewards.answer_reward"]
+  use_vllm: true
+  vllm_mode: colocate  # vLLM shares the training GPU
+vllm:
+  max_model_len: 4096
+datasets:
+  - path: lmms-lab/multimodal-open-r1-8k-verified
+    type: mm_rewards.transform
+    split: train
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+sequence_len: 2048
+micro_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 5.0e-6
+num_epochs: 1
+bf16: true
+gradient_checkpointing: true
+output_dir: ./outputs/qwen2.5-vl-grpo
+```
+
+Run `axolotl train` from the directory containing `mm_rewards.py`. To generate on a separate GPU instead, set `vllm_mode: server` and start the server with `axolotl vllm-serve` as in the [GRPO](#grpo) section.
+
+#### Limitations
+
+- **Sequence length**: rows are not filtered by length ahead of time. For DPO/KTO, `sequence_len` (image tokens included) truncates each batch, and a cut through image tokens fails in the model forward, so leave headroom. GRPO prompts are not truncated.
+- **Chat template**: every row is rendered with one template (the processor's, or the top-level `chat_template`); per-dataset `chat_template` is ignored.
+- **One kind of data per run**: image and text-only datasets cannot be mixed. Exact deduplication is skipped for image datasets.
+- **Tiled-image models (SmolVLM, Idefics3)**: GRPO with `vllm_mode: server` fails because these split each image into tiles; use `vllm_mode: colocate` or no vLLM.
+- **Async GRPO** (`use_data_producer` / `async_prefetch`): InternVL (tile-based) and multiple images per row with LLaVA-style processors are not supported yet.
+- **Not supported**: ORPO, SimPO, EBFT, `tokenizer_use_mistral_common`, and GRPO with `context_parallel_size` > 1. `pad_to_multiple_of` is ignored for DPO/KTO.
 
 ### Using local dataset files
 
