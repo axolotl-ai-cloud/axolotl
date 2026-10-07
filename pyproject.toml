@@ -29,7 +29,7 @@ dependencies = [
     "hf_transfer",
     "sentencepiece",
     "gradio==6.29.1",
-    "pydantic==2.12.5",
+    "pydantic==2.13.5",
     "addict",
     "fire",
     "PyYAML==6.0.3",
@@ -125,7 +125,7 @@ optimizers = [
     "q-galore-torch==1.0",
 ]
 ray = [
-    "ray[train]>=2.52.1",
+    "ray[train]>=2.59.0",
 ]
 vllm = [
     "vllm>=0.30.0",
@@ -191,6 +191,7 @@ axolotl = [
     "core/trainers/prm/LICENSE",
     "core/trainers/prm/NOTICE",
     "integrations/kernels/libs/scattermoe_lora/metadata.json",
+    "integrations/diffusion_decision/vendored/DJEV_LICENSE",
 ]
 
 "axolotl.integrations.baseten" = ["template/*.sh", "template/*.py"]

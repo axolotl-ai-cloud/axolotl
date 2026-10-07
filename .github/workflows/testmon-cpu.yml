@@ -43,7 +43,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
           prune-cache: true
@@ -95,12 +95,12 @@ jobs:
             local name=$1; shift
             TESTMON_DATAFILE=".testmon/${name}.testmondata" pytest --testmon-forceselect "$@" | tee -a testmon-run.log
           }
-          tm core -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
-          tm monkeypatch -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/
+          tm core -v --durations=10 -n4 --dist loadfile -m "not slow and not distributed_cpu" --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
+          tm monkeypatch -v --durations=10 -m "not slow and not nf4_distributed and not distributed_cpu" tests/monkeypatch/
           tm patched -v --durations=10 tests/patched/
           tm cli -v --durations=10 tests/cli/
           tm utils -v --durations=10 tests/utils/
-          tm integrations -v --durations=10 -m "not gpu" --ignore=tests/integrations/kernels/ tests/integrations/
+          tm integrations -v --durations=10 -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/
 
       - name: testmon selection summary
         if: always()

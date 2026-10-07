@@ -272,6 +272,7 @@ def _ddp_global_normalization_worker(rank, init_path, kind):
         dist.destroy_process_group()
 
 
+@pytest.mark.distributed_cpu
 @pytest.mark.parametrize("kind", ["full_sequence", "gemma", "gemma_rhine"])
 def test_ddp_global_normalization_matches_single_rank_reference(tmp_path, kind):
     init_path = tmp_path / f"{kind}-gloo"

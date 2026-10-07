@@ -14,6 +14,8 @@ from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaAttention
 from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeAttention
 
+pytest.importorskip("triton")
+
 from axolotl.cli.config import load_cfg
 from axolotl.kernels.lora import (
     apply_lora_gdn_in_proj,

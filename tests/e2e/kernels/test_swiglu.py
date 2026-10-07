@@ -1,7 +1,10 @@
 """Tests for SwiGLU activation function Triton kernels."""
 
+import pytest
 import torch
 import torch.nn.functional as F
+
+pytest.importorskip("triton")
 
 from axolotl.kernels.swiglu import swiglu_backward, swiglu_forward
 

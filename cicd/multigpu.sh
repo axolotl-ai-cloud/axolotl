@@ -42,7 +42,7 @@ pytest -v --durations=10 -n1 --maxfail=10 -m "not nvfp4 and not slow" \
   --cov=axolotl \
   --cov-append
 
-pytest -v --durations=10 -n1 --maxfail=10 \
+pytest -v --durations=10 -n1 --maxfail=10 -m gpu \
   /workspace/axolotl/tests/integrations/expert_parallel/test_nvfp4_wrap.py \
   --cov=axolotl \
   --cov-append

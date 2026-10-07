@@ -819,6 +819,56 @@ def test_trainable_token_adapter_routes_to_efficient_merge(monkeypatch, tmp_path
         adapter_has_trainable_token_deltas(missing_delta)
 
 
+def test_merged_export_preserves_valid_decision_manifest(tmp_path, monkeypatch):
+    from collections import OrderedDict
+    from types import SimpleNamespace
+
+    from axolotl.integrations.base import PluginManager
+    from axolotl.integrations.diffusion_decision.manifest import build_decision_manifest
+    from axolotl.integrations.diffusion_decision.plugin import DiffusionDecisionPlugin
+
+    adapter = tmp_path / "adapter"
+    adapter.mkdir()
+    cfg = DictDefault(
+        {
+            "base_model": "nvidia/Nemotron-Labs-Diffusion-3B",
+            "revision_of_model": "0d51902da1f8869f83413ce642fab402fa5641e0",
+            "model_config_type": "nemotron_labs_diffusion",
+            "output_dir": str(tmp_path),
+            "diffusion_lm": {"canvas_width": 128, "mask_token_id": 100},
+            "diffusion_decision": {
+                "layout": "prompt_slots",
+                "latent": {"mode": "none", "num_slots": 0},
+            },
+        }
+    )
+    tokenizer = SimpleNamespace(
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+        unk_token_id=3,
+        mask_token_id=100,
+        all_special_ids=[0, 1, 2, 3, 100],
+    )
+    model = SimpleNamespace(
+        config=SimpleNamespace(
+            mask_token_id=100,
+            _commit_hash="0d51902da1f8869f83413ce642fab402fa5641e0",
+        )
+    )
+    manifest = build_decision_manifest(cfg, tokenizer=tokenizer, model=model)
+    source = manifest.write_to(adapter)
+    merged = tmp_path / "merged"
+    merged.mkdir()
+    monkeypatch.setattr(
+        PluginManager.get_instance(),
+        "plugins",
+        OrderedDict({"diffusion_decision": DiffusionDecisionPlugin()}),
+    )
+    PluginManager.get_instance().post_lora_merge(cfg, str(adapter), str(merged))
+    assert (merged / source.name).read_bytes() == source.read_bytes()
+
+
 def test_native_generation_dispatches_and_preserves_legacy_seam():
     from types import SimpleNamespace
 

@@ -9,6 +9,8 @@ import httpx
 import pytest
 import torch
 
+pytestmark = pytest.mark.gpu
+
 
 @pytest.mark.slow
 @pytest.mark.parametrize("packed", [False, True], ids=["dense", "packed"])
