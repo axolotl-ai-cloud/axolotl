@@ -23,8 +23,8 @@ Terminal 1 (GPU 0)                    Terminal 2 (GPU 1)
 │  vLLM Server         │              │  Trainer                         │
 │                      │   HTTP       │                                  │
 │  Serves base model   │◄────────────►│  Background thread:              │
-│  + LoRA adapter      │  /generate   │    Send prompts to vLLM          │
-│                      │  /set_lora   │    Pad & collate completions     │
+│  + LoRA adapter      │  /v1/*       │    Send prompts to vLLM          │
+│                      │  LoRA load   │    Pad & collate completions     │
 │  Punica kernels for  │              │                                  │
 │  LoRA inference      │              │  Main thread:                    │
 │                      │              │    Score completions (rewards)   │
@@ -305,7 +305,7 @@ Each worker runs in its own subprocess with its own main thread, so `signal.alar
 
 ## vLLM Setup
 
-GRPO requires a running vLLM server for generation. For a complete guide on server modes, LoRA sync, weight synchronization, and restart procedures, see [vLLM Serving](vllm_serving.qmd).
+GRPO generates with vLLM, either as a separate server (below) or, on one GPU, in [colocate mode](vllm_serving.qmd#sec-colocate-mode). For a complete guide on server modes, LoRA sync, weight synchronization, and restart procedures, see [vLLM Serving](vllm_serving.qmd).
 
 The minimal setup:
 
@@ -522,7 +522,7 @@ All GRPO-specific options live under the `trl:` key in your config. Standard tra
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `use_vllm` | bool | `false` | Enable vLLM for generation |
-| `vllm_mode` | `"server"` or `"colocate"` | `null` | vLLM deployment mode |
+| `vllm_mode` | `"server"` or `"colocate"` | `null` | vLLM deployment mode. `colocate` hosts the engine on the training GPU (single-GPU); engine options come from the `vllm:` block, see [Colocate Mode](vllm_serving.qmd#sec-colocate-mode) |
 | `vllm_server_host` | str | `"0.0.0.0"` | vLLM server hostname |
 | `vllm_server_port` | int | `8000` | vLLM server port |
 | `vllm_server_timeout` | int | `null` | Timeout (seconds) for vLLM responses |

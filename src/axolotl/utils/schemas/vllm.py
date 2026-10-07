@@ -23,8 +23,11 @@ class VllmConfig(BaseModel):
         json_schema_extra={"description": "Data parallel size for VLLM"},
     )
     gpu_memory_utilization: float | None = Field(
-        default=0.9,
-        json_schema_extra={"description": "GPU memory utilization for VLLM"},
+        default=None,
+        json_schema_extra={
+            "description": "GPU memory utilization for VLLM. Defaults to 0.9 for `vllm-serve` "
+            "and to TRL's 0.3 in colocate mode, leaving the rest of the GPU for training."
+        },
     )
     dtype: str | None = Field(
         default="auto",
@@ -67,14 +70,15 @@ class VllmConfig(BaseModel):
     serve_module: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Python module for vLLM serve script. Set to 'axolotl.scripts.vllm_serve_lora' "
-            "for native LoRA support, or leave None for default TRL serve."
+            "description": "Custom Python module exposing main(script_args) to run instead of vLLM's native "
+            "server. Leave None to launch the native server; the legacy values "
+            "'axolotl.scripts.vllm_serve_lora' and 'trl.scripts.vllm_serve' are ignored."
         },
     )
     worker_extension_cls: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "vLLM worker extension class for weight synchronization. "
-            "Defaults to 'trl.scripts.vllm_serve.WeightSyncWorkerExtension'."
+            "description": "Optional vLLM worker extension class passed to the native server "
+            "via --worker-extension-cls. Not needed for TRL weight sync."
         },
     )

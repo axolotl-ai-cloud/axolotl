@@ -100,7 +100,9 @@ class NemoGymArgs(BaseModel):
         default=None,
         json_schema_extra={
             "description": (
-                "Model name to report in verify requests. "
+                "Model name the agent servers use to address vLLM, also reported "
+                "in verify requests. With LoRA sync in multi-turn mode the "
+                "synced adapter is served under this name. "
                 "Defaults to the base_model from the main config."
             )
         },

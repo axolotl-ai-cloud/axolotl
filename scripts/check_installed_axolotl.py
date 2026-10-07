@@ -14,11 +14,7 @@ ENTRY_POINT_GROUPS = (
     "axolotl.cli_commands",
 )
 REQUIRED_ENTRY_POINTS = {"axolotl.plugins": 2, "axolotl.cloud_providers": 3}
-# trl removed its vLLM weight-sync server; these are being replaced by the native vLLM path
-KNOWN_BROKEN_MODULES = {
-    "axolotl.scripts.vllm_serve_lora",
-    "axolotl.scripts.vllm_worker_ext",
-}
+KNOWN_BROKEN_MODULES: set[str] = set()
 
 
 def import_walk() -> bool:

@@ -4,8 +4,8 @@ Tests:
 - split_tensor_dict: scalar type preservation (int/float/bool)
 - shuffle_sequence_dict: scalar type preservation
 - extract_logprobs: NaN → 0.0 replacement
-- VLLMClient.batch_update_named_params: method exists after patch
-- VLLMGeneration: weight_sync_chunk_size attribute after patch
+- VLLMClient.batch_update_named_params: method exists after patch, native NCCL streaming
+- Removed patches (update_model_params, VLLMGeneration init/sync_weights) stay absent
 - Patch idempotency: applying patch twice doesn't break anything
 """
 
@@ -223,6 +223,24 @@ class TestPatchApplication(unittest.TestCase):
             trl.trainer.utils.shuffle_sequence_dict, _patched_shuffle_sequence_dict
         )
 
+    def test_native_sync_paths_left_alone(self):
+        from axolotl.monkeypatch.trainer import trl_vllm
+        from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
+
+        patch_trl_vllm()
+        from trl.generation.vllm_client import VLLMClient
+        from trl.generation.vllm_generation import VLLMGeneration
+
+        self.assertFalse(hasattr(trl_vllm, "_make_batched_sync_weights"))
+        self.assertFalse(hasattr(trl_vllm, "_patch_sync_weights_batched"))
+        self.assertFalse(hasattr(trl_vllm, "_update_model_params"))
+        self.assertEqual(
+            VLLMGeneration.sync_weights.__module__, VLLMGeneration.__module__
+        )
+        self.assertEqual(
+            VLLMClient.update_model_params.__module__, VLLMClient.__module__
+        )
+
     def test_patch_idempotent(self):
         from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
 
@@ -233,53 +251,100 @@ class TestPatchApplication(unittest.TestCase):
         self.assertTrue(hasattr(VLLMClient, "batch_update_named_params"))
 
 
-class TestBatchUpdateChunking(unittest.TestCase):
-    """Tests for batch_update_named_params chunking logic."""
+class TestBatchUpdateNamedParams(unittest.TestCase):
+    """Tests for batch_update_named_params on the native client."""
 
-    def test_no_chunk_single_batch(self):
+    @staticmethod
+    def _client(communicator="present"):
+        client = MagicMock()
+        client.communicator = communicator
+        return client
+
+    def test_single_update_call(self):
         from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
 
-        # Test that with chunk_size=None, all params go in one chunk
-        client = MagicMock()
-        client.base_url = "http://localhost:8000"
-        client.session.post.return_value = MagicMock(status_code=200)
-        client.communicator = MagicMock()
-        client.communicator.group = MagicMock()
-        client.rank = 0
-
+        client = self._client()
         params = [
             ("layer.0.weight", torch.randn(10, 10)),
             ("layer.1.weight", torch.randn(10, 10)),
         ]
-        _batch_update_named_params(client, params, chunk_size=None)
+        _batch_update_named_params(client, params)
 
-        # Should make exactly 1 HTTP call
-        self.assertEqual(client.session.post.call_count, 1)
+        self.assertEqual(client.update_named_params.call_count, 1)
+        client.weight_update.assert_called_once()
+        metadata = client.update_named_params.call_args[0][0]
+        self.assertEqual([m[0] for m in metadata], ["layer.0.weight", "layer.1.weight"])
 
-    def test_chunk_splits_params(self):
+    def test_generation_paused_around_update(self):
         from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
 
-        client = MagicMock()
-        client.base_url = "http://localhost:8000"
-        client.session.post.return_value = MagicMock(status_code=200)
-        client.communicator = MagicMock()
-        client.communicator.group = MagicMock()
-        client.rank = 0
+        client = self._client()
+        client.base_url = "http://h:1"
+        _batch_update_named_params(client, [("a", torch.randn(4))])
 
+        urls = [c[0][0] for c in client._post.call_args_list]
+        self.assertEqual(urls, ["http://h:1/pause", "http://h:1/resume"])
+        self.assertEqual(client._post.call_args_list[0][1]["params"], {"mode": "keep"})
+
+    def test_resumes_when_update_fails(self):
+        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
+
+        client = self._client()
+        client.base_url = "http://h:1"
+        client.update_named_params.side_effect = RuntimeError("boom")
+        with self.assertRaises(RuntimeError):
+            _batch_update_named_params(client, [("a", torch.randn(4))])
+        self.assertTrue(client._post.call_args[0][0].endswith("/resume"))
+
+    def test_lazy_init_when_no_communicator(self):
+        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
+
+        client = self._client(communicator=None)
+        w = torch.randn(4)
+        _batch_update_named_params(client, [("a", w)])
+
+        client.init_communicator.assert_called_once_with(device=w.device)
+        self.assertEqual(client.update_named_params.call_count, 1)
+
+    def test_no_init_when_communicator_present(self):
+        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
+
+        client = self._client()
+        _batch_update_named_params(client, [("a", torch.randn(4))])
+
+        client.init_communicator.assert_not_called()
+
+    def test_metadata_dtype_has_no_torch_prefix(self):
+        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
+
+        client = self._client()
         params = [
-            ("a", torch.randn(100)),  # 100 elements
-            ("b", torch.randn(100)),  # 100 elements
-            ("c", torch.randn(100)),  # 100 elements
+            ("a", torch.zeros(2, 3, dtype=torch.bfloat16)),
+            ("b", torch.zeros(5, dtype=torch.float32)),
         ]
-        _batch_update_named_params(client, params, chunk_size=150)
+        _batch_update_named_params(client, params)
 
-        # Should make 2 HTTP calls: [a,b] then [c] (100+100 > 150 triggers split)
-        # Actually: a=100 < 150, a+b=200 > 150 → chunk [a], then b=100 < 150,
-        # b+c=200 > 150 → chunk [b], then [c]. So 3 calls.
-        # Wait: first a added (100 < 150), then b: 100+100=200 > 150, so chunk=[a],
-        # new chunk starts with b (100 < 150), then c: 100+100=200 > 150, so chunk=[b],
-        # final chunk=[c]. 3 HTTP calls.
-        self.assertEqual(client.session.post.call_count, 3)
+        metadata = client.update_named_params.call_args[0][0]
+        self.assertEqual(metadata, [("a", "bfloat16", [2, 3]), ("b", "float32", [5])])
+
+    def test_streamed_iterator_yields_params(self):
+        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
+
+        client = self._client()
+        params = [("a", torch.randn(3)), ("b", torch.randn(3))]
+        _batch_update_named_params(client, params)
+
+        streamed = list(client.update_named_params.call_args[0][1])
+        self.assertEqual([n for n, _ in streamed], ["a", "b"])
+
+    def test_empty_params_is_noop(self):
+        from axolotl.monkeypatch.trainer.trl_vllm import _batch_update_named_params
+
+        client = self._client(communicator=None)
+        _batch_update_named_params(client, [])
+
+        client.init_communicator.assert_not_called()
+        client.update_named_params.assert_not_called()
 
 
 if __name__ == "__main__":

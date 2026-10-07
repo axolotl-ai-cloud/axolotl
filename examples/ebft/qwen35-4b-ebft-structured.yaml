@@ -5,8 +5,7 @@
 #
 # Prerequisites:
 #   1. Start vLLM on GPU 0:
-#      CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model Qwen/Qwen3.5-4B \
-#          --gpu-memory-utilization 0.5 --max-model-len 2048 --enforce-eager
+#      CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve examples/ebft/qwen35-4b-ebft-structured.yaml
 #
 #   2. Run training on GPU 1:
 #      CUDA_VISIBLE_DEVICES=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
@@ -38,6 +37,11 @@ trl:
     stop_token_ids: [248044, 248046]  # <|endoftext|>, <|im_end|>
   chat_template_kwargs:
     enable_thinking: false  # disable Qwen3.5 thinking mode for shorter completions
+
+vllm:
+  gpu_memory_utilization: 0.5
+  max_model_len: 2048
+  enforce_eager: true
 
 datasets:
   - path: nvidia/OpenCodeInstruct

@@ -1680,7 +1680,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.vllm-lora-sync/--no-trl.vllm-lora-sync",),
         "trl__vllm_lora_sync",
         None,
-        "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. Auto-selects vllm_serve_lora serve module. Syncs only LoRA adapter weights vs full merged model.",
+        "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. Enables LoRA on the native vLLM server and registers each synced adapter under a versioned name via /v1/load_lora_adapter. Syncs only LoRA adapter weights vs full merged model.",
     ),
     (
         ("--vllm.device",),
@@ -1704,7 +1704,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.gpu-memory-utilization",),
         "vllm__gpu_memory_utilization",
         "float",
-        "GPU memory utilization for VLLM",
+        "GPU memory utilization for VLLM. Defaults to 0.9 for `vllm-serve` and to TRL's 0.3 in colocate mode, leaving the rest of the GPU for training.",
     ),
     (
         ("--vllm.dtype",),
@@ -1758,13 +1758,13 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.serve-module",),
         "vllm__serve_module",
         "str",
-        "Python module for vLLM serve script. Set to 'axolotl.scripts.vllm_serve_lora' for native LoRA support, or leave None for default TRL serve.",
+        "Custom Python module exposing main(script_args) to run instead of vLLM's native server. Leave None to launch the native server; the legacy values 'axolotl.scripts.vllm_serve_lora' and 'trl.scripts.vllm_serve' are ignored.",
     ),
     (
         ("--vllm.worker-extension-cls",),
         "vllm__worker_extension_cls",
         "str",
-        "vLLM worker extension class for weight synchronization. Defaults to 'trl.scripts.vllm_serve.WeightSyncWorkerExtension'.",
+        "Optional vLLM worker extension class passed to the native server via --worker-extension-cls. Not needed for TRL weight sync.",
     ),
     (
         ("--ebft.feature-layers",),

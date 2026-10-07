@@ -197,6 +197,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 | Stepwise supervised | `stepwise_supervised` | PRM data |
 | Preference | `dpo_datasets:` / `kto_datasets:` | chosen/rejected or completion+label |
 | Multimodal 🟡 | `chat_template` + image/audio | resizing, role boundaries |
+| Multimodal preference / RL 🟡 | `images` / `image` column | DPO/IPO, KTO, GRPO/GDPO only; see [RLHF multimodal](rlhf.qmd#multimodal) |
 | Typed decisions 🟡 | `diffusion_decision.jsonl`, `.typed_decisions`, `.procedural` | `diffusion_decision` plugin only |
 
 ## Optimizers & schedulers

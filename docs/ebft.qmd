@@ -531,14 +531,14 @@ The arrows indicate the desired direction: alignment and reward should trend upw
 | `grad_norm` consistently 0.0 | All micro-batches have zero advantage | Increase `num_generations` or check data quality |
 | `CheckpointError` in strided mode | Incompatible gradient checkpointing settings | Set `use_reentrant: true` in `gradient_checkpointing_kwargs` |
 | OOM during training | Logits tensor too large | Reduce `sequence_len` or `micro_batch_size`; strided mode uses chunked lm_head to mitigate this |
-| vLLM 500 errors | `truncate_prompt_tokens` not supported | Ensure you are using `axolotl vllm-serve` (not `trl vllm-serve`) |
+| vLLM 500 errors | Server missing required flags | Start it with `axolotl vllm-serve` (or the raw command in [vLLM Serving](vllm_serving.qmd#sec-server-mode)) |
 
 ### Feature Network Memory
 
 In PEFT (LoRA) mode, the feature network shares base weights with the actor model by using the `disable_adapter()` context manager. This saves an entire model copy in VRAM (approximately 1--16 GB depending on model size). For non-PEFT training, a separate frozen deepcopy is created.
 
 ::: {.callout-note}
-The `disable_adapter()` approach relies on an invariant: `merge_adapter()` is never called on the base weights. All weight sync paths (LoRA sync, HTTP, NCCL) compute merged weights as new tensors or save the adapter to the filesystem, leaving base weights unmodified.
+The `disable_adapter()` approach relies on an invariant: `merge_adapter()` is never called on the base weights. All weight sync paths (LoRA sync, NCCL) compute merged weights as new tensors or save the adapter to the filesystem, leaving base weights unmodified.
 :::
 
 ## Examples

@@ -173,7 +173,7 @@ GRPO requires additional GPU(s) for the vLLM generation server. Plan for at leas
 | 30-72B | 2-4x 80 GB (FSDP/DeepSpeed) | 2-4x 80 GB (tensor parallel) | 4-8x 80 GB |
 
 ::: {.callout-tip}
-For single-GPU GRPO, use `vllm_mode: colocate` with `vllm_enable_sleep_mode: true`. The vLLM engine shares the GPU and offloads VRAM when not generating. This works for smaller models (up to ~3B on a 24 GB GPU) but is slower than the two-GPU server mode.
+For single-GPU GRPO, use `vllm_mode: colocate` with `vllm_enable_sleep_mode: true`. The vLLM engine shares the GPU and offloads VRAM when not generating. This works for smaller models (up to ~3B on a 24 GB GPU) but is slower than the two-GPU server mode. Set `vllm.max_model_len`; see [Colocate Mode](vllm_serving.qmd#sec-colocate-mode).
 :::
 
 ### Multi-GPU Threshold
