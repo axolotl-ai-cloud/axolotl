@@ -344,3 +344,56 @@ def test_nvfp4_merge_aware_accepts_multilora_plugin():
         {"adapter": "multilora", "use_sonicmoe": True, "nvfp4_merge_aware": True}
     )
     assert args.nvfp4_merge_aware
+
+
+@pytest.mark.parametrize("mix", [None, 0, 0.0, 0.5, "0.5", 0.99])
+def test_nvfp4_merge_aware_latent_mix_accepted(mix):
+    args = KernelsArgs.model_validate(
+        {
+            "use_sonicmoe": True,
+            "adapter": "lora",
+            "nvfp4_merge_aware": True,
+            "nvfp4_merge_aware_latent_mix": mix,
+        }
+    )
+    assert args.nvfp4_merge_aware_latent_mix == (None if mix is None else float(mix))
+
+
+@pytest.mark.parametrize("mix", [-0.1, 1, 1.0, 2.5, True, "half", float("nan")])
+def test_nvfp4_merge_aware_latent_mix_out_of_range(mix):
+    with pytest.raises(pydantic.ValidationError, match="latent_mix"):
+        KernelsArgs.model_validate(
+            {
+                "use_sonicmoe": True,
+                "adapter": "lora",
+                "nvfp4_merge_aware": True,
+                "nvfp4_merge_aware_latent_mix": mix,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"nvfp4_merge_aware": False}, {"adapter": None}, {"adapter": "qlora"}],
+)
+def test_nvfp4_merge_aware_latent_mix_ignored_without_merge_aware(overrides):
+    from unittest.mock import patch
+
+    data = {
+        "use_sonicmoe": True,
+        "adapter": "lora",
+        "nvfp4_merge_aware_latent_mix": 0.5,
+        **overrides,
+    }
+    with patch("axolotl.utils.schemas.peft.LOG.warning") as warning:
+        args = KernelsArgs.model_validate(data)
+    assert args.nvfp4_merge_aware_latent_mix is None
+    assert "nvfp4_merge_aware_latent_mix" in warning.call_args.args[0]
+
+
+def test_nvfp4_merge_aware_latent_mix_allows_automatic_default():
+    args = KernelsArgs.model_validate(
+        {"use_sonicmoe": True, "adapter": "lora", "nvfp4_merge_aware_latent_mix": 0.5}
+    )
+    assert args.nvfp4_merge_aware is None
+    assert args.nvfp4_merge_aware_latent_mix == 0.5

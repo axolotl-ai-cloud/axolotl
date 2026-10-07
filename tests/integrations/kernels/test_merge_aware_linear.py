@@ -376,3 +376,79 @@ def test_factor_bias_warns_without_installing_incomplete_forward():
     assert lora.forward == forward
     assert lora._axolotl_merge_aware_unsupported
     assert "NVFP4 MERGE WARNING" in warning.call_args.args[0]
+
+
+def _loss_and_grads(model, x):
+    model.zero_grad(set_to_none=True)
+    loss = model(x).float().square().mean()
+    loss.backward()
+    grads = {n: p.grad.clone() for n, p in model.named_parameters() if p.requires_grad}
+    return loss.detach(), grads
+
+
+def _bitwise_equal(a, b):
+    return torch.equal(a[0], b[0]) and all(torch.equal(a[1][k], b[1][k]) for k in a[1])
+
+
+@pytest.mark.parametrize("p", [0.0, 0.999])
+def test_latent_mix_toggles_merge_aware_flag_per_micro_batch(p):
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
+        merge_aware_enabled,
+    )
+    from axolotl.integrations.kernels.merge_aware_latent_mix import (
+        SONICMOE,
+        NVFP4LatentMix,
+    )
+
+    torch.manual_seed(0)
+    model, _ = _wrapped_model()
+    torch.manual_seed(0)
+    plain, _ = _wrapped_model()
+    install_merge_aware_lora_linears(model)
+    set_merge_aware_enabled(True)
+    x = torch.randn(4, IN, dtype=torch.bfloat16)
+    merge_aware = _loss_and_grads(model, x)
+    unmerged = _loss_and_grads(plain, x)
+    assert not _bitwise_equal(merge_aware, unmerged)
+
+    mix = NVFP4LatentMix(p, frozenset({SONICMOE}))
+    with mix.micro_batch() as latent:
+        assert latent is (p > 0)
+        assert merge_aware_enabled() is not latent
+        result = _loss_and_grads(model, x)
+    assert merge_aware_enabled()
+    assert _bitwise_equal(result, unmerged if latent else merge_aware)
+
+
+def test_latent_mix_restores_merge_aware_flag_after_exception():
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
+        merge_aware_enabled,
+    )
+    from axolotl.integrations.kernels.merge_aware_latent_mix import (
+        SONICMOE,
+        NVFP4LatentMix,
+    )
+
+    set_merge_aware_enabled(True)
+    mix = NVFP4LatentMix(0.999, frozenset({SONICMOE}))
+    with pytest.raises(RuntimeError), mix.micro_batch():
+        assert not merge_aware_enabled()
+        raise RuntimeError
+    assert merge_aware_enabled()
+
+
+def test_latent_mix_leaves_flag_off_before_start_step():
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
+        merge_aware_enabled,
+    )
+    from axolotl.integrations.kernels.merge_aware_latent_mix import (
+        SONICMOE,
+        NVFP4LatentMix,
+    )
+
+    set_merge_aware_enabled(False)
+    mix = NVFP4LatentMix(0.999, frozenset({SONICMOE}))
+    for _ in range(5):
+        with mix.micro_batch():
+            assert not merge_aware_enabled()
+    assert not merge_aware_enabled()

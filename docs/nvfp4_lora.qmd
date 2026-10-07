@@ -128,6 +128,31 @@ With `nvfp4_merge_aware`, the **merged checkpoint is the trained model**; the ra
 
 :::
 
+#### Keeping the unmerged adapter usable (`nvfp4_merge_aware_latent_mix`)
+
+The raw adapter is still a standard PEFT directory, so it can end up served unmerged anyway, e.g. by runtime-LoRA
+serving (`vllm --enable-lora`), which ignores the `nvfp4_merge_aware` stamp. How far the un-snapped weights drift
+depends on the run: with small effective batches the unmerged adapter often stays close to the merged model, but
+larger effective batches (more gradient accumulation or data-parallel ranks) or lower learning rates can leave an
+unmerged adapter that scores below the base model while the merged checkpoint is fine.
+
+If you need both artifacts to work, set `nvfp4_merge_aware_latent_mix: p`. Each training micro-batch then runs, with
+probability `p`, PEFT's ordinary unmerged LoRA forward (`dequant(base) + scaling * (B @ A)`, what runtime-LoRA serving
+computes) instead of the merge-aware forward, so the optimizer trains both. `0.5` is a reasonable starting point. Expect
+the merged model to lose a little accuracy in exchange. Latent micro-batches skip the fake quantization, so training
+gets faster. The draw is made once per micro-batch from a private RNG seeded by `seed` and the process rank, and it
+is held through backward, so gradient-checkpoint recomputation replays the same forward. Data order is unchanged.
+The default (unset or `0`) leaves merge-aware training exactly as above.
+
+```yaml
+nvfp4_merge_aware: true
+nvfp4_merge_aware_latent_mix: 0.5
+```
+
+This applies to the SonicMoE path (attention and experts) and to unsharded native TorchAO dense LoRA. Elsewhere,
+including FSDP2 and DeepSpeed native paths, Axolotl warns and ignores it. It does not make the adapter robust to other
+re-quantizations of the merged weights: still merge with `axolotl merge-lora`.
+
 Constraints:
 
 - The ModelOpt merge-aware path uses `use_sonicmoe: true` and either `adapter: lora` or `adapter: multilora`. An unsupported backend or an explicit `nvfp4_merge_aware: false` produces a prominent `NVFP4 MERGE WARNING` and continues with ordinary LoRA. That fallback can lose learned updates when merged into NVFP4.
@@ -143,7 +168,8 @@ On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint
 For adapters trained without the flag, the format-preserving merge reuses the base scale grid and re-rounds codes, which preserves only the part of the delta that crosses code boundaries. Alternatives:
 
 - `axolotl merge-lora config.yaml --dequant`: dequantize the base to bf16 and merge losslessly. The output is a bf16 model (~4x larger).
-- Serve `base + adapter` unmerged (only valid for adapters trained *without* `nvfp4_merge_aware`).
+- Serve `base + adapter` unmerged (only valid for adapters trained *without* `nvfp4_merge_aware`, or with
+  [`nvfp4_merge_aware_latent_mix`](#keeping-the-unmerged-adapter-usable-nvfp4_merge_aware_latent_mix)).
 
 ## See also
 

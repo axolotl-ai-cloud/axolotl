@@ -1,6 +1,7 @@
 from pydantic import BaseModel, model_validator
 
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.peft import validate_nvfp4_merge_aware_latent_mix
 
 LOG = get_logger(__name__)
 
@@ -98,11 +99,16 @@ class KernelsArgs(BaseModel):
     # of max steps. Default 0 (on from the first step). A short warm-up avoids STE oscillation
     # while the adapter is near its zero init (standard QAT practice).
     nvfp4_merge_aware_start_step: int | float | None = None
+    # Probability in [0, 1) that a training micro-batch runs the ordinary unmerged LoRA forward
+    # instead of the merge-aware one, so the raw adapter is also usable for runtime-LoRA serving.
+    # None/0 = off. Also declared on the core LoRA schema for native TorchAO bases.
+    nvfp4_merge_aware_latent_mix: float | None = None
 
     @model_validator(mode="before")
     @classmethod
     def check_nvfp4_merge_aware(cls, data):
         data = cls._canonicalize_expert_backend(data)
+        data = validate_nvfp4_merge_aware_latent_mix(data)
         start = data.get("nvfp4_merge_aware_start_step")
         if data.get("nvfp4_merge_aware") is False and start is not None:
             LOG.warning(

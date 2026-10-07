@@ -17,6 +17,22 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+_LATENT_FORWARD = False
+
+
+def set_native_latent_forward(enabled: bool) -> None:
+    """Route installed merge-aware projections through PEFT's ordinary LoRA forward.
+
+    Held for one training micro-batch (forward and backward) by the latent-mix
+    sampler, so gradient-checkpoint recomputation sees the same forward.
+    """
+    global _LATENT_FORWARD  # noqa: PLW0603
+    _LATENT_FORWARD = bool(enabled)
+
+
+def native_latent_forward_enabled() -> bool:
+    return _LATENT_FORWARD
+
 
 def _tensor_snapshot(value: torch.Tensor | None) -> dict[str, Any] | None:
     if value is None:
@@ -252,6 +268,8 @@ def _native_nvfp4_lora_forward(self, x, *args, **kwargs):
         return self._axolotl_native_nvfp4_orig_forward(x, *args, **kwargs)
     if reason := _native_merge_aware_reason(self, adapters):
         _unsupported_native_merge_aware(self, reason)
+        return self._axolotl_native_nvfp4_orig_forward(x, *args, **kwargs)
+    if _LATENT_FORWARD:
         return self._axolotl_native_nvfp4_orig_forward(x, *args, **kwargs)
     adapter = adapters[0]
     base = self.get_base_layer()

@@ -105,6 +105,12 @@ def configure_native_merge_aware(cfg, model, *, sharded_backend=None):
 
     installed = install_native_nvfp4_merge_aware_lora_linears(model)
     if installed:
+        from axolotl.integrations.kernels.merge_aware_latent_mix import (
+            NATIVE,
+            mark_latent_mix_path,
+        )
+
+        mark_latent_mix_path(model, NATIVE)
         if not cfg.get("use_sonicmoe"):
             from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
                 capture_static_native_metadata,

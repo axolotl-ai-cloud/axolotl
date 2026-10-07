@@ -757,6 +757,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Train supported NVFP4 LoRA targets against their merged quantized weights. Defaults to enabled for supported backends; false opts out with a warning.",
     ),
     (
+        ("--nvfp4-merge-aware-latent-mix",),
+        None,
+        None,
+        "Probability in [0, 1) that a training micro-batch uses the ordinary unmerged LoRA forward instead of the merge-aware one, so the raw adapter is also trained for runtime-LoRA serving. Unset or 0 keeps merge-aware training unchanged.",
+    ),
+    (
         ("--lora-r",),
         None,
         None,

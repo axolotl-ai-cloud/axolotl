@@ -5,8 +5,48 @@ from typing import Any, ClassVar, Literal
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
 
 from axolotl.integrations.mixlora.constants import MIXLORA_DEFAULTS
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 VALUE_INDEPENDENT_LORA_INIT = (None, True, False, "gaussian")
+
+
+def validate_nvfp4_merge_aware_latent_mix(data: dict) -> dict:
+    """Range-check ``nvfp4_merge_aware_latent_mix`` and drop it where merge-aware is off.
+
+    Shared by the core LoRA schema and the kernels plugin args; idempotent.
+    """
+    mix = data.get("nvfp4_merge_aware_latent_mix")
+    if mix is None:
+        return data
+    error = ValueError(
+        f"nvfp4_merge_aware_latent_mix must be a float in [0, 1), got {mix!r}"
+    )
+    if isinstance(mix, bool):
+        raise error
+    try:
+        mix = float(mix)
+    except (TypeError, ValueError):
+        raise error from None
+    if not 0 <= mix < 1:
+        raise error
+    data["nvfp4_merge_aware_latent_mix"] = mix
+    if mix and (
+        data.get("nvfp4_merge_aware") is False
+        or data.get("adapter") not in ("lora", "multilora")
+    ):
+        LOG.warning(
+            "ignoring nvfp4_merge_aware_latent_mix: it only applies to merge-aware "
+            "NVFP4 LoRA training (nvfp4_merge_aware with adapter: lora or multilora)."
+        )
+        data["nvfp4_merge_aware_latent_mix"] = None
+    elif mix and data.get("rl"):
+        LOG.warning(
+            "ignoring nvfp4_merge_aware_latent_mix: it is not supported with `rl` trainers."
+        )
+        data["nvfp4_merge_aware_latent_mix"] = None
+    return data
 
 
 class LoftQConfig(BaseModel):
@@ -64,6 +104,15 @@ class LoraConfig(BaseModel):
         description=(
             "Train supported NVFP4 LoRA targets against their merged quantized weights. "
             "Defaults to enabled for supported backends; false opts out with a warning."
+        ),
+    )
+    nvfp4_merge_aware_latent_mix: float | None = Field(
+        default=None,
+        description=(
+            "Probability in [0, 1) that a training micro-batch uses the ordinary "
+            "unmerged LoRA forward instead of the merge-aware one, so the raw adapter "
+            "is also trained for runtime-LoRA serving. Unset or 0 keeps merge-aware "
+            "training unchanged."
         ),
     )
     lora_r: int | None = None
@@ -219,6 +268,11 @@ class LoraConfig(BaseModel):
                     "a plugin. Add the plugin that provides this adapter to `plugins:`."
                 )
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_nvfp4_merge_aware_latent_mix(cls, data):
+        return validate_nvfp4_merge_aware_latent_mix(data)
 
     @model_validator(mode="after")
     def validate_qlora(self):

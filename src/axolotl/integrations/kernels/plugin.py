@@ -240,10 +240,15 @@ class KernelsPlugin(BasePlugin):
     def post_lora_load(self, cfg, model):
         if not (cfg.use_sonicmoe and cfg.nvfp4_merge_aware):
             return
+        from axolotl.integrations.kernels.merge_aware_latent_mix import (
+            SONICMOE,
+            mark_latent_mix_path,
+        )
         from axolotl.integrations.kernels.merge_aware_linear import (
             install_merge_aware_lora_linears,
         )
 
+        mark_latent_mix_path(model, SONICMOE)
         wrapped = install_merge_aware_lora_linears(model)
         if wrapped:
             LOG.info(
