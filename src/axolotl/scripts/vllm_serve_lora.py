@@ -21,10 +21,16 @@ from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
 from typing import Any
 
-from trl.scripts.vllm_serve import (
-    ScriptArguments,
-    chunk_list,
-)
+from trl.scripts.vllm_serve import ScriptArguments
+
+try:
+    from trl.scripts.vllm_serve import chunk_list
+except ImportError:  # removed in trl 1.14
+
+    def chunk_list(lst: list, n: int) -> list[list]:
+        k, r = divmod(len(lst), n)
+        return [lst[i * k + min(i, r) : (i + 1) * k + min(i + 1, r)] for i in range(n)]
+
 
 try:
     from trl.generation.vllm_generation import extract_logprobs
@@ -47,6 +53,7 @@ from axolotl.scripts.process_cleanup import (
     safe_recv,
 )
 from axolotl.utils.logging import get_logger
+from axolotl.utils.routed_experts import encode_routed_experts
 
 logger = get_logger(__name__)
 
@@ -75,6 +82,19 @@ class LoRAScriptArguments(ScriptArguments):
         default="trl.scripts.vllm_serve.WeightSyncWorkerExtension",
         metadata={"help": "vLLM worker extension class for weight synchronization."},
     )
+    enable_return_routed_experts: bool = field(
+        default=False,
+        metadata={"help": "Return per-token MoE expert ids (Rollout Routing Replay)."},
+    )
+
+
+def _routed_experts(all_outputs) -> list[str] | None:
+    routed = [
+        getattr(out, "routed_experts", None) for o in all_outputs for out in o.outputs
+    ]
+    if not routed or any(r is None for r in routed):
+        return None
+    return [encode_routed_experts(r) for r in routed]
 
 
 def llm_worker(
@@ -114,6 +134,12 @@ def llm_worker(
         trust_remote_code=script_args.trust_remote_code,
         model_impl=script_args.vllm_model_impl,
         logprobs_mode="processed_logprobs",
+        # Older vLLM rejects the kwarg, so only pass it when enabled.
+        **(
+            {"enable_return_routed_experts": True}
+            if script_args.enable_return_routed_experts
+            else {}
+        ),
         # LoRA
         enable_lora=script_args.enable_lora,
         max_lora_rank=script_args.max_lora_rank,
@@ -211,6 +237,7 @@ def main(script_args: ScriptArguments):
         completion_ids: list[list[int]]
         logprobs: list[list[list[float]]]
         logprob_token_ids: list[list[list[int]]]
+        routed_experts: list[str] | None = None
 
     class ChatRequest(BaseModel):
         messages: list[list[dict]]
@@ -232,6 +259,7 @@ def main(script_args: ScriptArguments):
         completion_ids: list[list[int]]
         logprobs: list[list[list[float]]]
         logprob_token_ids: list[list[list[int]]]
+        routed_experts: list[str] | None = None
 
     class InitCommunicatorRequest(BaseModel):
         host: str
@@ -490,6 +518,7 @@ def main(script_args: ScriptArguments):
             ],
             "logprobs": extract_logprobs(all_outputs)[0],
             "logprob_token_ids": extract_logprobs(all_outputs)[1],
+            "routed_experts": _routed_experts(all_outputs),
         }
 
     @app.post("/chat/", response_model=ChatResponse)
@@ -534,6 +563,7 @@ def main(script_args: ScriptArguments):
             ],
             "logprobs": extract_logprobs(all_outputs)[0],
             "logprob_token_ids": extract_logprobs(all_outputs)[1],
+            "routed_experts": _routed_experts(all_outputs),
         }
 
     # --- OpenAI-compatible endpoints (for NeMo Gym agent integration) ---

@@ -214,6 +214,8 @@ class GRPOStrategy:
             grpo_args_kwargs["vllm_importance_sampling_cap"] = (
                 trl.vllm_importance_sampling_cap
             )
+        if getattr(trl, "routing_replay", None) is not None:
+            grpo_args_kwargs["routing_replay"] = trl.routing_replay
         if getattr(trl, "off_policy_mask_threshold", None) is not None:
             grpo_args_kwargs["off_policy_mask_threshold"] = (
                 trl.off_policy_mask_threshold

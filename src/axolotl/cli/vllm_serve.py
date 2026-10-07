@@ -113,6 +113,8 @@ def do_vllm_serve(
             lora_kwargs["enable_lora"] = False
         if getattr(cfg.vllm, "worker_extension_cls", None):
             lora_kwargs["worker_extension_cls"] = cfg.vllm.worker_extension_cls
+        if getattr(cfg.trl, "routing_replay", False):
+            lora_kwargs["enable_return_routed_experts"] = True
         vllm_script_args = LoRAScriptArguments(**base_kwargs, **lora_kwargs)
     else:
         vllm_script_args = AxolotlScriptArguments(

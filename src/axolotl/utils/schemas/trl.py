@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TRLConfig(BaseModel):
@@ -327,6 +327,14 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "Cap C for IS ratio clipping/masking."},
     )
+    routing_replay: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Rollout Routing Replay (R3) for MoE: replay vLLM's per-token expert "
+            "choices in the training forward. Requires use_vllm with the axolotl vllm-serve "
+            "server and async_prefetch."
+        },
+    )
     off_policy_mask_threshold: float | None = Field(
         default=None,
         json_schema_extra={
@@ -392,3 +400,16 @@ class TRLConfig(BaseModel):
             "Auto-selects vllm_serve_lora serve module. Syncs only LoRA adapter weights vs full merged model."
         },
     )
+
+    @model_validator(mode="after")
+    def check_routing_replay(self):
+        if self.routing_replay and (
+            not self.use_vllm
+            or self.vllm_mode == "colocate"
+            or not (self.async_prefetch or self.use_data_producer)
+        ):
+            raise ValueError(
+                "trl.routing_replay requires use_vllm in server mode with "
+                "async_prefetch or use_data_producer"
+            )
+        return self
