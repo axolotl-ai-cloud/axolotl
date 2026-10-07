@@ -940,6 +940,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#diffusiongemma-attention-boundaries" id="toc-diffusiongemma-attention-boundaries" class="nav-link" data-scroll-target="#diffusiongemma-attention-boundaries">DiffusionGemma attention boundaries</a></li>
   <li><a href="#objective-and-recurrence-options" id="toc-objective-and-recurrence-options" class="nav-link" data-scroll-target="#objective-and-recurrence-options">Objective and recurrence options</a></li>
   <li><a href="#adapters-merging-and-inference" id="toc-adapters-merging-and-inference" class="nav-link" data-scroll-target="#adapters-merging-and-inference">Adapters, merging and inference</a></li>
+  <li><a href="#nemotron-diffusion-vlm" id="toc-nemotron-diffusion-vlm" class="nav-link" data-scroll-target="#nemotron-diffusion-vlm">Nemotron Diffusion VLM</a></li>
   <li><a href="#typed-decision-training" id="toc-typed-decision-training" class="nav-link" data-scroll-target="#typed-decision-training">Typed-decision training</a>
   <ul class="collapse">
   <li><a href="#dataset-format" id="toc-dataset-format" class="nav-link" data-scroll-target="#dataset-format">Dataset format</a></li>
@@ -949,6 +950,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#batching" id="toc-batching" class="nav-link" data-scroll-target="#batching">Batching</a></li>
   <li><a href="#outputs" id="toc-outputs" class="nav-link" data-scroll-target="#outputs">Outputs</a></li>
   <li><a href="#public-procedural-decision-mix" id="toc-public-procedural-decision-mix" class="nav-link" data-scroll-target="#public-procedural-decision-mix">Public procedural decision mix</a></li>
+  <li><a href="#public-image-decision-mix" id="toc-public-image-decision-mix" class="nav-link" data-scroll-target="#public-image-decision-mix">Public image decision mix</a></li>
   </ul></li>
   <li><a href="#converting-a-causal-lm" id="toc-converting-a-causal-lm" class="nav-link" data-scroll-target="#converting-a-causal-lm">Converting a causal LM</a></li>
   </ul>
@@ -1176,6 +1178,53 @@ reply is a completion block appended to the conversation and denoised in one
 piece; see <a href="../docs/inference.html#sec-chat-diffusion">Inference</a>. Native models
 generate completions only.</p>
 </section>
+<section id="nemotron-diffusion-vlm" class="level2">
+<h2 class="anchored" data-anchor-id="nemotron-diffusion-vlm">Nemotron Diffusion VLM</h2>
+<p><code>nvidia/Nemotron-Labs-Diffusion-VLM-8B</code> (<code>model_type: nemotron_labs_diffusion_vlm</code>)
+pairs the Nemotron diffusion backbone with a Pixtral vision tower. Axolotl
+resolves it to its own profile: the vision tower and projector are frozen on
+load, and 4-bit loading and the QLoRA merge leave the vision stack and
+<code>diffusion_head</code> unquantized.
+In a <code>lora_target_modules</code> list, the names the Pixtral tower shares with the
+decoder (<code>q_proj</code>, <code>k_proj</code>, <code>v_proj</code>, <code>o_proj</code>, <code>gate_proj</code>, <code>up_proj</code>,
+<code>down_proj</code>) are anchored to <code>encoder.layers.N.self_attn</code>/<code>mlp</code>, so they cannot
+attach to the tower’s projections of the same name. Other entries (for example
+<code>diffusion_head</code>) keep PEFT’s suffix matching, <code>peft_layers_to_transform</code> is
+folded into the anchored pattern, and projector-only names (<code>linear_1</code>,
+<code>linear_2</code>, <code>merging_layer</code>, <code>patch_conv</code>) are rejected. A string (regex)
+target is used as written; LoRA that lands on a vision module still fails
+after the adapter loads. The profile also patches two
+transformers-version mismatches in the published remote code. FSDP2, QLoRA,
+varlen attention and the fused LoRA kernels (<code>lora_qkv_kernel</code>, <code>lora_o_kernel</code>,
+<code>lora_mlp_kernel</code>) are supported and were measured on text-only batches; image
+batches are unmeasured. Under FSDP2 with
+<code>auto_wrap_policy: TRANSFORMER_BASED_WRAP</code>, <code>fsdp_config.transformer_layer_cls_to_wrap</code>
+defaults to <code>Ministral3DecoderLayer</code> and may name only that class: a
+microbatch without images skips the frozen tower, so a vision, projector or
+<code>Ministral3RMSNorm</code> unit would all-gather on some ranks only and hang. Text-only
+training on this model matches the remote forward exactly in fp32. The profile
+sets <code>complementary_mask: false</code> on the loaded config so the remote forward does
+not duplicate the batch, and saved or merged <code>config.json</code> files keep that
+value; restore the published <code>true</code> before reusing the remote training code.</p>
+<p>Its decoder weights are not the LM’s: the VLM checkpoint was trained further,
+and its tokenizer carries one extra added token, so step losses differ from
+<code>Nemotron-Labs-Diffusion-8B</code> on the same data.</p>
+<p>Image inputs are supported only through the typed-decision plugin
+(<code>diffusion_decision</code>); plain <code>diffusion_lm</code> SFT on this model is text-only and
+rejects multimodal datasets. The model ships no HF processor; the plugin uses
+<code>NemotronDiffusionVLMProcessingStrategy</code> from <code>axolotl.processing_strategies</code>,
+which ports the remote image math (PNG, JPEG, WEBP, GIF and BMP only; URL
+fetches refuse redirects and non-<code>image/*</code> responses and stop at 32 MB or 60 s). An image is
+resized so its longest edge is at most <code>max_image_size</code> and each 28x28 block
+(patch 14, spatial merge 2) becomes one <code>&lt;|image_pad|&gt;</code> token: a <code>W x H</code> grid
+costs <code>W * H</code> pad tokens plus <code>H - 1</code> row breaks and the start/end markers
+(<code>1400</code> -&gt; 50x50 = 2551 prompt tokens; <code>784</code> -&gt; 28x28 = 813). Pixel inputs
+reach the forward as <code>pixel_values</code> <code>(N, 3, H, W)</code> padded to the largest image
+in the batch and <code>image_sizes</code> <code>(N, 2)</code>, in prompt order; the model scatters
+them into the pad tokens in sequence order. Image inputs through the
+typed-decision plugin are described under <a href="#typed-decision-training">Typed-decision training</a>;
+<code>examples/nemotron-diffusion/decision-lora-vlm-8b.yaml</code> is the recipe.</p>
+</section>
 <section id="typed-decision-training" class="level2">
 <h2 class="anchored" data-anchor-id="typed-decision-training">Typed-decision training</h2>
 <p>The <code>diffusion_decision</code> plugin trains a native diffusion model to answer
@@ -1245,7 +1294,25 @@ nonempty.</p>
 </table>
 <p>Label indexes always refer to this canonical order, never to option names or
 token IDs. Answer tokens come from <code>labels.codebook</code>: <code>vendored26</code> uses the
-djev letters <code>A</code>-<code>Z</code> (up to 26 alternatives); <code>expanded52</code> allows up to 52.</p>
+djev letters <code>A</code>-<code>Z</code> (up to 26 alternatives); <code>expanded52</code> allows up to 52 (<code>A</code>-<code>Z</code>, <code>a</code>-<code>z</code>);
+<code>expanded128</code> adds selected Greek and Cyrillic letters for up to 128. Every label must be one
+token in the model’s tokenizer, which the canvas template check enforces at preprocessing.</p>
+<p>On <code>nvidia/Nemotron-Labs-Diffusion-VLM-8B</code>, a record may carry a top-level
+<code>images</code> list of http(s) URLs, absolute paths, or paths relative to the
+directory of the local data file (relative paths are rejected for Hub
+sources). Images are opened as stored, without EXIF rotation. The images are
+placed before <code>state</code> in the user turn and expanded to their token grids in the
+prompt, so they count against <code>sequence_len</code>
+(<code>diffusion_decision.max_image_size</code>, default 1400, caps the longest edge; see
+<a href="#nemotron-diffusion-vlm">Nemotron Diffusion VLM</a> for the token accounting).
+Records with different <code>images</code> are never grouped onto one canvas, and
+decontamination fingerprints an image record by its state plus the sha256 of
+each image file. The prepared-row cache stores resolved references and sizes
+only and hashes each image’s bytes, so an edited image or a changed <code>max_image_size</code>
+invalidates it. Only the <code>jsonl</code> adapter reads <code>images</code>; URL-referenced images
+bypass the cache. Each collator, and each dataloader worker’s copy of it, keeps
+up to <code>diffusion_decision.image_cache_size</code> (default 64; 0 disables) normalized
+float32 image tensors, up to about 23.5 MB each at 1400 px.</p>
 </section>
 <section id="labels" class="level3">
 <h3 class="anchored" data-anchor-id="labels">Labels</h3>
@@ -1311,7 +1378,11 @@ sampled latent-slot counts. Reduce <code>micro_batch_size</code> and raise
 <p>Each saved adapter includes <code>diffusion_decision_manifest.json</code>, which records
 the base model and revision, diffusion spec, canvas width, label codebook,
 latent slots, read protocol and tokenizer special IDs that an external
-inference integration must reproduce. Axolotl does not ship a decision-serving
+inference integration must reproduce. When any training or eval canvas carries
+images it also records <code>image_inputs</code>: <code>max_image_size</code> and the placement
+(<code>images_before_state</code>). Serving must resize with the same limit; the remote
+<code>image_processing.py</code> defaults to <code>DEFAULT_MAX_IMAGE_SIZE = 1400</code>, so set it to
+the recorded value. Axolotl does not ship a decision-serving
 endpoint. Use a separate config for a frozen test split, and do not use test
 data for checkpoint selection.</p>
 </section>
@@ -1338,6 +1409,70 @@ checked against each other for state, family and group overlap.</p>
 revisions, preprocessing keeps 30,080 train rows at the 2,048-token budget,
 which is 235 effective batches of 128, hence <code>max_steps: 235</code>. This mix is a
 reproducible starting point for the format, not a quality result.</p>
+</section>
+<section id="public-image-decision-mix" class="level3">
+<h3 class="anchored" data-anchor-id="public-image-decision-mix">Public image decision mix</h3>
+<p><code>scripts/diffusion_lm/build_public_image_decision_mix.py</code> materializes a
+reproducible image typed-decision train/dev/test mix for
+<code>nvidia/Nemotron-Labs-Diffusion-VLM-8B</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/diffusion_lm/build_public_image_decision_mix.py ./data/public-image-decisions</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/nemotron-diffusion/decision-lora-vlm-8b-public-image.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Train and dev rows come from
+<a href="https://huggingface.co/datasets/HuggingFaceM4/A-OKVQA"><code>HuggingFaceM4/A-OKVQA</code></a>
+at revision <code>d1b0efa3a436e9101dfbde3752db7607da696c35</code> (train and validation
+splits) and the image-bearing rows of
+<a href="https://huggingface.co/datasets/derek-thomas/ScienceQA"><code>derek-thomas/ScienceQA</code></a>
+at revision <code>f18b0a70359ebfb41f658fd564208d0355b013f4</code> (train and validation
+splits). The test file is
+<a href="https://huggingface.co/datasets/nyu-visionx/CV-Bench"><code>nyu-visionx/CV-Bench</code></a>
+at revision <code>bc284db50d036958861cb60cdd7b77612052ce0d</code> (default config, test
+split), a held-out benchmark that is never used for training or checkpoint
+selection.</p>
+<p>Each row is one <code>choice</code> question named <code>answer</code> with the source’s answer
+options in their original order and a <code>hard</code> label. <code>state.question</code> holds the
+question text; ScienceQA rows also carry <code>state.context</code> from the source <code>hint</code>.
+<code>family</code> is the A-OKVQA <code>question_id</code>, the ScienceQA row id (its <code>subject</code> and
+<code>topic</code> stay in <code>source_metadata.attributes</code>), or the CV-Bench <code>task</code>. Every row has <code>images: ["images/&lt;sha256&gt;.&lt;png|jpg&gt;"]</code>, a path
+relative to the JSONL file. Image bytes are written once per content hash;
+PNG and JPEG sources keep their original encoding and anything else is
+re-encoded as PNG. Rows without an image, with duplicate or empty options, or
+with an answer outside the option list are dropped.</p>
+<p><code>--train-per-source</code> (default 4096), <code>--dev-per-source</code> (default 256) and
+<code>--test-cap</code> (default 0) set the rows taken from each source. Each nonzero
+value is an exact per-source count, and the build fails when a source has fewer
+usable rows; 0 keeps every usable row for all three flags; negative values are
+rejected.
+Selection sorts rows by <code>sha256(seed\0source\0split\0id)</code>, so the same caps
+always yield the same rows. CV-Bench states and images are excluded from train
+and dev, train states and images are excluded from dev (images by sha256 of
+their bytes; a state is its fingerprint plus its image digests, as in the
+plugin’s decontamination, so a templated question over a different image is
+kept), and source/group pairs, families and image digests are disjoint
+across splits, so the plugin’s family decontamination keeps every train row. <code>contract.json</code> records the pinned revisions, license evidence, per-split
+counts and drop reasons (<code>no_image</code> and invalid-option drops count the whole
+split; <code>state_overlap</code> and <code>image_overlap</code> count only the rank-ordered rows read
+until the count filled, as recorded under <code>scanned</code>), the sha256 of each JSONL file, and the image count and
+total bytes.</p>
+<p>Licenses: CV-Bench declares Apache-2.0, but its images are repurposed from
+COCO, ADE20K and Omni3D and keep those sources’ terms. The ScienceQA card
+metadata says <code>cc-by-sa-4.0</code> while its Licensing Information section links
+CC BY-NC-SA 4.0; treat the NonCommercial reading as binding until the card is
+resolved. Its images were collected with the questions from K-12 science
+curricula, and the card states no image-specific licence. The A-OKVQA card
+declares no license; the A-OKVQA project repository is Apache-2.0. Its images
+are COCO 2017 Flickr photos under the Flickr Terms of Use with per-image
+licences; COCO’s CC BY 4.0 covers the annotations, not the images. These flags
+are repeated in <code>contract.json["license_flags"]</code>. Keep <code>contract.json</code> and the <code>images/</code>
+directory with any materialized output you share.</p>
+<p><code>decision-lora-vlm-8b-public-image.yaml</code> sets <code>diffusion_decision.max_image_size: 784</code>, so each image costs at most 813 prompt tokens (28 x 28 = 784 pads, 27 row
+breaks, start and end) inside the 2,048-token budget, and <code>mixture.temperature: 1.0</code>, which schedules each usable
+row once: the 8,192 train rows all survive decontamination, which is 64
+effective batches of 128, hence <code>max_steps: 64</code>. Lower <code>max_steps</code> if
+preprocessing drops rows at the budget. It evaluates and saves every 32 steps;
+keep <code>eval_steps</code> and <code>save_steps</code> dividing <code>max_steps</code> so
+<code>load_best_model_at_end</code> also scores the final step.
+This mix is a reproducible starting point for the image record format, not a
+quality result.</p>
 </section>
 </section>
 <section id="converting-a-causal-lm" class="level2">

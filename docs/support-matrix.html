@@ -1620,6 +1620,10 @@ Warning
 <td>Diffusion LMs 🟡 (Nemotron-Labs-Diffusion, Dream v0, DiffusionGemma)</td>
 <td>native <code>diffusion_lm:</code> training, packing, CCE (Nemotron); LoRA only (no DoRA); Nemotron adds QLoRA, FSDP2 and fused LoRA kernels (see <a href="../docs/diffusion_lm.html">diffusion_lm</a>)</td>
 </tr>
+<tr class="odd">
+<td>Nemotron-Labs-Diffusion-VLM 🟡</td>
+<td>LoRA/QLoRA with a frozen vision tower, varlen, FSDP2 and fused LoRA kernels (text-only batches measured); images only via the <code>diffusion_decision</code> plugin; no CCE (see <a href="../docs/diffusion_lm.html#nemotron-diffusion-vlm">diffusion_lm</a>)</td>
+</tr>
 </tbody>
 </table>
 </section>
