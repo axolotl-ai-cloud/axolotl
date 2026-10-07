@@ -14,10 +14,9 @@ from transformers.image_utils import load_image
 from trl.trainer.dpo_trainer import DataCollatorForVisionPreference
 from trl.trainer.kto_trainer import DataCollatorForVisionUnpairedPreference
 
-from axolotl.processing_strategies import resize_image
+from axolotl.processing_strategies import IMAGE_REF_KEYS, resize_image
 from axolotl.utils.dict import remove_none_values
 
-IMAGE_REF_KEYS = ("image", "url", "path", "base64")
 MESSAGE_FIELDS = ("prompt", "chosen", "rejected", "completion")
 
 
@@ -31,7 +30,7 @@ class MultimodalRLExampleNormalizer:
     def __call__(self, examples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [self.normalize(example) for example in examples]
 
-    def _load(self, ref: Any):
+    def _load_image(self, ref: Any):
         image = load_image(ref)
         if self.image_size is not None:
             image = resize_image(image, self.image_size, self.image_resize_algorithm)
@@ -41,8 +40,8 @@ class MultimodalRLExampleNormalizer:
         example = dict(example)
         images = example.pop("images", None)
         # Merging an ``image`` dataset with an ``images`` one leaves the other key None.
-        single = example.pop("image", None)
-        column_images = [img for img in (images or [single]) if img is not None]
+        single_image = example.pop("image", None)
+        column_images = [img for img in (images or [single_image]) if img is not None]
 
         for key in MESSAGE_FIELDS:
             if isinstance(example.get(key), list):
@@ -51,15 +50,16 @@ class MultimodalRLExampleNormalizer:
 
         prompt = example.get("prompt")
         if isinstance(prompt, list):
-            example["images"] = self._fill_prompt_images(prompt, column_images)
+            example["images"] = self._hoist_prompt_images(prompt, column_images)
         else:
-            example["images"] = [self._load(ref) for ref in column_images]
+            example["images"] = [self._load_image(ref) for ref in column_images]
         return example
 
-    def _fill_prompt_images(
+    def _hoist_prompt_images(
         self, prompt: list[dict[str, Any]], column_images: list[Any]
     ) -> list[Any]:
-        """Return prompt images in document order, leaving bare placeholders for TRL.
+        """Return prompt images in document order, rewriting ``prompt`` in place to
+        leave bare placeholders for TRL.
 
         Column images fill bare placeholders; leftovers are prepended to the first user
         turn, matching TRL's handling of string content."""
@@ -80,9 +80,7 @@ class MultimodalRLExampleNormalizer:
             ):
                 message["content"] = [{"type": "text", "text": message["content"]}]
 
-        num_bare = sum(
-            1 for part in image_parts if not any(k in part for k in IMAGE_REF_KEYS)
-        )
+        num_bare = sum(_inline_image_ref(part) is None for part in image_parts)
         num_leftover = len(column_images) - num_bare
         if num_leftover > 0:
             first_user = next((m for m in prompt if m.get("role") == "user"), None)
@@ -104,15 +102,19 @@ class MultimodalRLExampleNormalizer:
             for i, part in enumerate(content):
                 if part.get("type") != "image":
                     continue
-                ref = next((part[k] for k in IMAGE_REF_KEYS if k in part), None)
+                ref = _inline_image_ref(part)
                 if ref is None:
                     ref = next(column_iter, None)
                 if ref is None:
                     # More placeholders than images: TRL raises a count-mismatch error.
                     continue
-                images.append(self._load(ref))
+                images.append(self._load_image(ref))
                 content[i] = {"type": "image"}
         return images
+
+
+def _inline_image_ref(part: dict[str, Any]) -> Any:
+    return next((part[k] for k in IMAGE_REF_KEYS if k in part), None)
 
 
 @dataclass

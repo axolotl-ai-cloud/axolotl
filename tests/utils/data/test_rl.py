@@ -3,12 +3,18 @@ Unit tests for RL data utility functions (excess_length_strategy support).
 """
 
 import unittest
+from unittest.mock import patch
+
+import pytest
+from datasets import Dataset
 
 from axolotl.utils.data.rl import (
     _drop_long_sequences,
+    _load_split,
     _raise_on_long_sequences,
     _truncate_long_sequences_rl,
 )
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
 
@@ -293,14 +299,6 @@ class TestTruncateLongSequencesRL(unittest.TestCase):
 
 
 def test_load_split_rejects_mixed_image_and_text_datasets():
-    from unittest.mock import patch
-
-    import pytest
-    from datasets import Dataset
-
-    from axolotl.utils.data.rl import _load_split
-    from axolotl.utils.dict import DictDefault
-
     row = {"prompt": "q", "chosen": "a", "rejected": "b"}
     cfg = DictDefault(
         rl=RLType.DPO,

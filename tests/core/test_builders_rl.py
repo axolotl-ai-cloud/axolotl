@@ -254,7 +254,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
         )
 
         with pytest.raises(ValueError, match="needs conversational prompts"):
-            builder._is_vision_rl()
+            builder._validate_vision_rl()
 
     def test_ipo_training_arguments(self, ipo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(ipo_cfg, model, tokenizer)

@@ -29,6 +29,9 @@ _ROLE_MASK_WARNED: set[str] = set()
 _VALID_TRAIN_ON_EOS = ("turn", "all", "none", "last")
 
 
+IMAGE_REF_KEYS = ("image", "url", "path", "base64")
+
+
 def resize_image(
     image: Image.Image,
     image_size: int | tuple[int, int],
@@ -317,7 +320,7 @@ class ProcessingStrategy:
                     ):
                         # Column-image datasets often leave a bare {type: "image"} placeholder.
                         if content["type"] == "image" and all(
-                            k not in content for k in ["image", "url", "path", "base64"]
+                            k not in content for k in IMAGE_REF_KEYS
                         ):
                             msg_ind_to_add = msg_idx
                             ind_to_add = i

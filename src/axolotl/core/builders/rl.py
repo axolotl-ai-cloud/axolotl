@@ -21,7 +21,8 @@ from axolotl.utils.schemas.enums import RLType
 
 LOG = get_logger(__name__)
 
-VISION_RL_TYPES = {RLType.DPO, RLType.IPO, RLType.KTO, RLType.GRPO, RLType.GDPO}
+GRPO_RL_TYPES = frozenset({RLType.GRPO, RLType.GDPO})
+VISION_RL_TYPES = frozenset({RLType.DPO, RLType.IPO, RLType.KTO}) | GRPO_RL_TYPES
 
 
 class HFRLTrainerBuilder(TrainerBuilderBase):
@@ -230,18 +231,21 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         return training_args, trainer_kwargs
 
     def _is_vision_rl(self) -> bool:
-        if self.processor is None or self.train_dataset is None:
-            return False
-        if not is_vision_dataset(self.train_dataset.column_names):
-            return False
+        return (
+            self.processor is not None
+            and self.train_dataset is not None
+            and is_vision_dataset(self.train_dataset.column_names)
+        )
+
+    def _validate_vision_rl(self) -> None:
         if self.cfg.rl not in VISION_RL_TYPES:
             raise ValueError(
                 "Multimodal (image) datasets are not supported for "
                 f"rl: {RLType(self.cfg.rl).value}. Supported: "
                 f"{', '.join(sorted(rl.value for rl in VISION_RL_TYPES))}."
             )
-        is_grpo = self.cfg.rl in {RLType.GRPO, RLType.GDPO}
-        if is_grpo and (self.cfg.context_parallel_size or 1) > 1:
+        is_grpo = self.cfg.rl in GRPO_RL_TYPES
+        if is_grpo and self.cfg.context_parallel_size > 1:
             raise ValueError(
                 "Multimodal GRPO does not support context_parallel_size > 1."
             )
@@ -252,10 +256,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         sample = self.train_dataset[0]
         prompt = sample.get("prompt")
-        if isinstance(prompt, str) and (sample.get("images") or sample.get("image")):
+        has_images = bool(sample.get("images") or sample.get("image"))
+        if isinstance(prompt, str) and has_images:
             image_token = getattr(self.processor, "image_token", None)
+            missing_image_token = image_token is not None and image_token not in prompt
             # DPO/KTO accept pre-rendered prompts; GRPO always renders them itself.
-            if is_grpo or (image_token and image_token not in prompt):
+            if is_grpo or missing_image_token:
                 raise ValueError(
                     "Multimodal RL needs conversational prompts "
                     "(e.g. dataset `type: chat_template`)."
@@ -271,7 +277,15 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 "Per-dataset chat_template is ignored for multimodal RL; set the "
                 "top-level chat_template instead."
             )
-        return True
+
+    def _prepare_vision_processor(self):
+        # Like SFT, only an explicit chat_template overrides the processor's own.
+        if self.cfg.chat_template or not self.processor.chat_template:
+            self.processor.chat_template = self.tokenizer.chat_template
+        if self.cfg.rl in GRPO_RL_TYPES:
+            # TRL left-pads prompt ids but takes token type ids from the processor.
+            self.processor.tokenizer.padding_side = "left"
+        return self.processor
 
     def _build_vision_collator(self):
         from axolotl.utils.collators.mm_rl import (
@@ -284,7 +298,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             image_size=self.cfg.image_size,
             image_resize_algorithm=self.cfg.image_resize_algorithm,
         )
-        if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
+        if self.cfg.rl in GRPO_RL_TYPES:
+            # GRPO has no collator; this replaces TRL's identity data_collator.
             return normalizer
 
         if self.cfg.pad_to_multiple_of:
@@ -342,6 +357,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         is_vision = self._is_vision_rl()
         if is_vision:
+            self._validate_vision_rl()
             trainer_kwargs["data_collator"] = self._build_vision_collator()
         elif (data_collator := self.build_collator()) is not None:
             trainer_kwargs["data_collator"] = data_collator
@@ -357,17 +373,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         trainer_cls, trainer_cls_args = self._get_trainer_cls(trainer_kwargs)
 
-        processing_class = self.tokenizer
-        if is_vision:
-            # Like SFT, only an explicit chat_template overrides the processor's own.
-            if self.cfg.chat_template or not getattr(
-                self.processor, "chat_template", None
-            ):
-                self.processor.chat_template = self.tokenizer.chat_template
-            if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
-                # TRL left-pads prompt ids but takes token type ids from the processor.
-                self.processor.tokenizer.padding_side = "left"
-            processing_class = self.processor
+        processing_class = (
+            self._prepare_vision_processor() if is_vision else self.tokenizer
+        )
 
         sig = inspect.signature(trainer_cls)
         if "tokenizer" in sig.parameters:
