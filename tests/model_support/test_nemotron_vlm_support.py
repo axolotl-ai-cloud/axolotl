@@ -195,18 +195,34 @@ def test_required_files_cover_the_vlm_modeling_relative_imports():
     import re
     from pathlib import Path
 
-    snapshot = Path(
-        "/mnt/data/hf_cache/hub/models--nvidia--Nemotron-Labs-Diffusion-VLM-8B/"
-        "snapshots/adca93d16471c1e07d594ae444d23e1876f6b365"
-    )
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
+    def cached(name):
+        try:
+            return Path(
+                hf_hub_download(
+                    "nvidia/Nemotron-Labs-Diffusion-VLM-8B",
+                    name,
+                    revision="adca93d16471c1e07d594ae444d23e1876f6b365",
+                    local_files_only=True,
+                )
+            )
+        except LocalEntryNotFoundError:
+            return None
+
     pending = [VLM_VARIANT.modeling_file]
-    if not (snapshot / pending[0]).is_file():
-        pytest.skip("Nemotron VLM snapshot not cached")
     needed = set()
     while pending:
         name = pending.pop()
         needed.add(name)
-        text = (snapshot / name).read_text(encoding="utf-8")
+        path = cached(name)
+        if path is None:
+            # an uncached file outside required_files still fails the subset check
+            if name in VLM_VARIANT.required_files:
+                pytest.skip(f"Nemotron VLM snapshot file {name} not cached")
+            continue
+        text = path.read_text(encoding="utf-8")
         for module in re.findall(r"^\s*from \.(\w+) import", text, re.MULTILINE):
             if f"{module}.py" not in needed:
                 pending.append(f"{module}.py")

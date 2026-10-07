@@ -52,9 +52,9 @@ dataset_prepared_path: ./last_run_prepared/public-image-decisions
 output_dir: ./outputs/public-image-decisions
 logging_steps: 1
 eval_strategy: steps
-eval_steps: 50
+eval_steps: 32
 save_strategy: steps
-save_steps: 50
+save_steps: 32
 save_total_limit: 2
 eval_on_start: true
 load_best_model_at_end: true

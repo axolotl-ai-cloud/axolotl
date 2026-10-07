@@ -1,6 +1,5 @@
 """Native Nemotron attention routes projections through attached LoRA kernels."""
 
-import glob
 import types
 
 import pytest
@@ -9,27 +8,14 @@ from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
 from axolotl.model_support.nemotron_diffusion.compat import resolve_nemotron_model_class
 
-from tests.native_source_fixtures import (
-    native_source_fixture_path,
-    validate_native_source_fixture,
-)
-
-_CACHED_SNAPSHOT = (
-    "/mnt/data/hf_cache/hub/models--nvidia--Nemotron-Labs-Diffusion-3B/snapshots/"
-    "0d51902da1f8869f83413ce642fab402fa5641e0"
-)
+from tests.native_source_fixtures import native_source_fixture_path
 
 
 def _source():
     source = native_source_fixture_path("nemotron")
-    if source is not None:
-        return source
-    for candidate in glob.glob(_CACHED_SNAPSHOT):
-        try:
-            return validate_native_source_fixture("nemotron", candidate)
-        except (FileNotFoundError, ValueError):
-            continue
-    pytest.skip("native Nemotron source fixture unavailable")
+    if source is None:
+        pytest.skip("native Nemotron source fixture unavailable")
+    return source
 
 
 @pytest.fixture

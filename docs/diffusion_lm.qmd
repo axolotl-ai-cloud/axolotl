@@ -230,8 +230,8 @@ generate completions only.
 `nvidia/Nemotron-Labs-Diffusion-VLM-8B` (`model_type: nemotron_labs_diffusion_vlm`)
 pairs the Nemotron diffusion backbone with a Pixtral vision tower. Axolotl
 resolves it to its own profile: the vision tower and projector are frozen on
-load, and 4-bit loading (and the staged-NF4 or torchao merge) leaves the
-vision stack and `diffusion_head` unquantized.
+load, and 4-bit loading and the QLoRA merge leave the vision stack and
+`diffusion_head` unquantized.
 In a `lora_target_modules` list, the names the Pixtral tower shares with the
 decoder (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`,
 `down_proj`) are anchored to `encoder.layers.N.self_attn`/`mlp`, so they cannot
@@ -241,9 +241,10 @@ folded into the anchored pattern, and projector-only names (`linear_1`,
 `linear_2`, `merging_layer`, `patch_conv`) are rejected. A string (regex)
 target is used as written; LoRA that lands on a vision module still fails
 after the adapter loads. The profile also patches two
-transformers-version mismatches in the published remote code. Fused LoRA kernels
-are not enabled for the VLM. FSDP2, QLoRA and varlen attention were measured
-on text-only batches; image batches are unmeasured. Under FSDP2 with
+transformers-version mismatches in the published remote code. FSDP2, QLoRA,
+varlen attention and the fused LoRA kernels (`lora_qkv_kernel`, `lora_o_kernel`,
+`lora_mlp_kernel`) are supported and were measured on text-only batches; image
+batches are unmeasured. Under FSDP2 with
 `auto_wrap_policy: TRANSFORMER_BASED_WRAP`, `fsdp_config.transformer_layer_cls_to_wrap`
 defaults to `Ministral3DecoderLayer` and may name only that class: a
 microbatch without images skips the frozen tower, so a vision, projector or
@@ -527,7 +528,9 @@ directory with any materialized output you share.
 breaks, start and end) inside the 2,048-token budget, and `mixture.temperature: 1.0`, which schedules each usable
 row once: the 8,192 train rows all survive decontamination, which is 64
 effective batches of 128, hence `max_steps: 64`. Lower `max_steps` if
-preprocessing drops rows at the budget.
+preprocessing drops rows at the budget. It evaluates and saves every 32 steps;
+keep `eval_steps` and `save_steps` dividing `max_steps` so
+`load_best_model_at_end` also scores the final step.
 This mix is a reproducible starting point for the image record format, not a
 quality result.
 
