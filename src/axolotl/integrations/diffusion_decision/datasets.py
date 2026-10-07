@@ -53,6 +53,7 @@ from .prepared_cache import (
     store as store_prepared_cache,
 )
 from .preprocessing import build_decision_canvas
+from .prompts import resolve_image_refs
 from .slot_sampling import (
     DecisionDraw,
     project_max_canvas,
@@ -78,7 +79,11 @@ def _rows(entry: Any) -> list[dict[str, Any]]:
     data_files = _value(entry, "data_files")
     local_jsonl = _local_jsonl_paths(path, data_files, split)
     if local_jsonl is not None:
-        return [record for path in local_jsonl for record in read_jsonl(path)]
+        return [
+            _with_resolved_images(record, path.parent)
+            for path in local_jsonl
+            for record in read_jsonl(path)
+        ]
     if (
         data_files is not None
         and path in {"json", "parquet", "csv", "text"}
@@ -88,7 +93,70 @@ def _rows(entry: Any) -> list[dict[str, Any]]:
     elif data_files is not None:
         kwargs["data_files"] = data_files
     dataset = load_dataset(path, split=split, **kwargs)
-    return [dict(row) for row in dataset]
+    base_dir = _local_data_dir(path, data_files, split)
+    return [_with_resolved_images(dict(row), base_dir) for row in dataset]
+
+
+def _local_data_dir(path: str, data_files: Any, split: str) -> Path | None:
+    """The single directory holding a local source's data files, else None."""
+    if data_files is None:
+        names = [path]
+    else:
+        selected = (
+            data_files.get(split) if isinstance(data_files, Mapping) else data_files
+        )
+        names = [selected] if isinstance(selected, str) else list(selected or ())
+        if Path(path).is_dir():
+            names = [str(Path(path) / str(name)) for name in names]
+    parents: set[Path] = set()
+    for name in names:
+        if not isinstance(name, str) or urlparse(name).scheme:
+            return None
+        matches = [Path(match) for match in glob(name)]
+        if not matches:
+            return None
+        parents.update(
+            (match if match.is_dir() else match.parent).resolve() for match in matches
+        )
+    return parents.pop() if len(parents) == 1 else None
+
+
+def _with_resolved_images(
+    record: dict[str, Any], base_dir: Path | None
+) -> dict[str, Any]:
+    """Relative image paths are relative to the data file's directory, never to cwd."""
+    images = record.get("images")
+    if isinstance(images, list) and images:
+        if base_dir is None and any(
+            isinstance(ref, str)
+            and ref
+            and urlparse(ref).scheme not in {"http", "https"}
+            and not Path(ref).is_absolute()
+            for ref in images
+        ):
+            raise ValueError(
+                "relative decision image paths need a local data file source in a "
+                "single directory; use absolute paths or http(s) URLs"
+            )
+        record = {**record, "images": list(resolve_image_refs(images, base_dir))}
+    return record
+
+
+def _prepared_cache_image_paths(source_paths: Sequence[Path]) -> list[Path] | None:
+    paths: dict[Path, None] = {}
+    for source in source_paths:
+        for record in read_jsonl(source):
+            images = record.get("images")
+            if not isinstance(images, list):
+                continue
+            for ref in resolve_image_refs(images, source.parent):
+                if urlparse(ref).scheme:
+                    return None
+                image = Path(ref)
+                if not image.is_file():
+                    raise ValueError(f"decision image not found: {ref}")
+                paths[image] = None
+    return list(paths)
 
 
 def _local_jsonl_paths(path: str, data_files: Any, split: str) -> list[Path] | None:
@@ -342,6 +410,7 @@ def _canvas_row(
         thought_close_ids=thought_close_ids,
         codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
         prevalidated_record=True,
+        max_image_size=int(_value(decision, "max_image_size", 1400)),
     )
     row = {
         "canvas": canvas,
@@ -615,8 +684,18 @@ def load_decision_datasets(
         and _prepared_cache_eligible(cfg)
     ):
         source_paths = _prepared_cache_source_paths([*train_entries, *test_entries])
-        if source_paths is not None:
-            cache_identity = prepared_cache_identity(cfg, tokenizer, spec, source_paths)
+        image_paths = (
+            None if source_paths is None else _prepared_cache_image_paths(source_paths)
+        )
+        if source_paths is not None and image_paths is not None:
+            cache_identity = prepared_cache_identity(
+                cfg, tokenizer, spec, source_paths, image_paths=image_paths
+            )
+            if cache_identity is None:
+                LOG.warning(
+                    "Decision prepared-row cache bypassed: could not resolve the tokenizer "
+                    "files or revision (set revision_of_model to a commit hash to pin them)"
+                )
         else:
             LOG.info("Decision prepared-row cache bypassed: nonlocal or opaque source")
     elif isinstance(prepared_path, (str, Path)) and str(prepared_path):

@@ -60,3 +60,21 @@ def test_missing_state_or_family_is_not_silently_accepted():
         state_fingerprint(None)
     with pytest.raises(ValueError, match="family"):
         decontaminate([{"source": "x", "state": "y"}], [])
+
+
+def test_image_records_fingerprint_image_bytes(tmp_path):
+    first, second, copy = tmp_path / "a.png", tmp_path / "b.png", tmp_path / "c.png"
+    first.write_bytes(b"image-a")
+    second.write_bytes(b"image-b")
+    copy.write_bytes(b"image-a")
+    evaluation = [{**row("What is shown?", "eval"), "images": [str(first)]}]
+    other_image = {**row("What is shown?", "t1"), "images": [str(second)]}
+    same_bytes = {**row("What is shown?", "t2"), "images": [str(copy)]}
+    kept, counts = decontaminate([other_image, same_bytes], evaluation)
+    assert kept == [other_image]
+    assert counts["state_overlap"] == 1
+    with pytest.raises(ValueError, match="state overlaps"):
+        assert_split_isolation({"train": [same_bytes], "eval": evaluation})
+    assert_split_isolation({"train": [other_image], "eval": evaluation})
+    url = {**row("What is shown?", "t3"), "images": ["https://x/a.png"]}
+    assert decontaminate([url], evaluation)[0] == [url]

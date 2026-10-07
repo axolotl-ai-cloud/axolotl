@@ -12,7 +12,9 @@ from typing import Any, Mapping, Sequence
 
 import tokenizers
 import transformers
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, try_to_load_from_cache
+
+from axolotl import processing_strategies
 
 from ._util import (
     _value,
@@ -137,6 +139,42 @@ def _resolved_tokenizer_revision(cfg: Any, tokenizer: Any) -> str | None:
         r"[0-9a-fA-F]{40}", requested_revision
     ):
         return requested_revision.lower()
+    return _cached_snapshot_revision(
+        getattr(tokenizer, "name_or_path", None),
+        requested_revision if isinstance(requested_revision, str) else None,
+    )
+
+
+def _cached_snapshot_revision(
+    name_or_path: Any, requested_revision: str | None = None
+) -> str | None:
+    """Recover the commit hash from the local Hub cache when the tokenizer carries none.
+
+    transformers 5 tokenizers no longer expose ``_commit_hash``; the snapshot
+    directory the tokenizer files were loaded from still names the commit. The
+    lookup follows the same ref the tokenizer loader resolved
+    (``revision_of_model``, else ``main``), so a branch or tag pin maps to its
+    own snapshot rather than ``main``'s.
+    """
+    if not isinstance(name_or_path, str) or not name_or_path:
+        return None
+    for filename in ("tokenizer_config.json", "tokenizer.json"):
+        try:
+            cached = try_to_load_from_cache(
+                name_or_path,
+                filename=filename,
+                revision=requested_revision,
+                repo_type="model",
+            )
+        except (OSError, ValueError):
+            continue
+        if not isinstance(cached, str):
+            continue
+        parts = Path(cached).parts
+        if "snapshots" in parts:
+            revision = parts[parts.index("snapshots") + 1]
+            if re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+                return revision.lower()
     return None
 
 
@@ -187,6 +225,7 @@ def identity(
     *,
     selected_entries: Sequence[tuple[str, int, Any]] | None = None,
     scope: Mapping[str, Any] | None = None,
+    image_paths: Sequence[Path] = (),
 ) -> tuple[str, dict[str, Any]] | None:
     backend = getattr(getattr(tokenizer, "backend_tokenizer", None), "to_str", None)
     vocabulary = getattr(tokenizer, "get_vocab", None)
@@ -222,6 +261,12 @@ def identity(
             (str(path.relative_to(Path(__file__).parent)), sha256_file(path))
             for path in sorted(Path(__file__).parent.rglob("*.py"))
             if "__pycache__" not in path.parts
+        ]
+        + [
+            (
+                "axolotl/processing_strategies.py",
+                sha256_file(Path(processing_strategies.__file__)),
+            )
         ],
         "config": semantic_config,
         "entries": _entry_identity(cfg, selected_entries),
@@ -261,6 +306,7 @@ def identity(
             "transformers_version": transformers.__version__,
         },
         "sources": [(str(path.resolve()), sha256_file(path)) for path in source_paths],
+        "images": [(str(path.resolve()), sha256_file(path)) for path in image_paths],
     }
     if hub_identity is not None:
         payload["tokenizer"]["hub"] = hub_identity
@@ -296,6 +342,10 @@ def _canvas_from_json(data: Mapping[str, Any]) -> DecisionCanvas:
         template_length=int(data["template_length"]),
         prompt_slot_mask=tuple(data.get("prompt_slot_mask", ())),
         ordinal_metadata=ordinal,
+        image_refs=tuple(data.get("image_refs", ())),
+        image_sizes=tuple(
+            (int(height), int(width)) for height, width in data.get("image_sizes", ())
+        ),
     )
 
 

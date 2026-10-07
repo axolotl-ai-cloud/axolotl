@@ -1096,15 +1096,25 @@ class RLValidationMixin:
                 "the policy never updates."
             )
 
+        # Without `capabilities` populated yet (mode='before'), fall back to
+        # user-set distributed fields.
+        world_size = int(
+            (data.get("capabilities") or {}).get("n_gpu") or data.get("world_size") or 1
+        )
+
         explicit_gbs = trl_cfg.get("generation_batch_size")
         if explicit_gbs is not None:
             effective_gbs = int(explicit_gbs)
             gbs_source = "trl.generation_batch_size"
         else:
+            # TRL's default is per_device_train_batch_size * num_processes *
+            # steps_per_generation, with steps_per_generation = GA.
             mb = data.get("micro_batch_size") or 1
             ga = data.get("gradient_accumulation_steps") or 1
-            effective_gbs = int(mb) * int(ga)
+            effective_gbs = int(mb) * int(ga) * world_size
             gbs_source = f"micro_batch_size ({mb}) * gradient_accumulation_steps ({ga})"
+            if world_size > 1:
+                gbs_source += f" * world_size ({world_size})"
 
         if effective_gbs % num_gen != 0:
             # Suggest the smallest GA bump that fixes it for the common case
@@ -1113,14 +1123,14 @@ class RLValidationMixin:
             if explicit_gbs is None:
                 from math import gcd
 
-                mb_val = int(data.get("micro_batch_size") or 1)
-                # smallest GA such that mb*GA is a multiple of num_gen
-                lcm = num_gen * mb_val // gcd(num_gen, mb_val)
-                suggested_ga = lcm // mb_val
+                per_step = int(data.get("micro_batch_size") or 1) * world_size
+                # smallest GA such that the generation batch is a multiple of num_gen
+                lcm = num_gen * per_step // gcd(num_gen, per_step)
+                suggested_ga = lcm // per_step
                 hint = (
                     f" Smallest fix: set `gradient_accumulation_steps: "
-                    f"{suggested_ga}` (so micro_batch_size * GA = "
-                    f"{mb_val * suggested_ga} is a multiple of {num_gen})."
+                    f"{suggested_ga}` (so the generation batch size "
+                    f"{per_step * suggested_ga} is a multiple of {num_gen})."
                 )
             raise ValueError(
                 f"GRPO: generation batch size must be divisible by "
@@ -1129,12 +1139,8 @@ class RLValidationMixin:
             )
 
         # Multi-rank check: each rank must receive at least one full group
-        # per step. Without `capabilities` populated yet (mode='before'), we
-        # fall back to user-set distributed fields.
-        world_size = (
-            (data.get("capabilities") or {}).get("n_gpu") or data.get("world_size") or 1
-        )
-        if world_size and world_size > 1 and effective_gbs < num_gen * world_size:
+        # per step.
+        if world_size > 1 and effective_gbs < num_gen * world_size:
             raise ValueError(
                 f"GRPO with world_size={world_size} requires effective_gbs "
                 f">= num_generations * world_size = {num_gen * world_size}, "
@@ -2548,6 +2554,36 @@ class GRPOVllmValidationMixin:
                 "vllm_mode must be set to either `server` or `colocate` when using vllm, using default value `server`"
             )
             self.trl.vllm_mode = "server"
+        return self
+
+    @model_validator(mode="after")
+    def check_vllm_colocate_compat(self):
+        trl = self.trl
+        if not (trl and trl.use_vllm and trl.vllm_mode == "colocate"):
+            return self
+        if (self.context_parallel_size or 1) > 1:
+            raise ValueError(
+                "`vllm_mode: colocate` is not supported with `context_parallel_size > 1`. "
+                "Use `vllm_mode: server` with a dedicated vLLM GPU."
+            )
+        if trl.vllm_lora_sync:
+            raise ValueError(
+                "`vllm_lora_sync: true` requires `vllm_mode: server` (adapters are pushed "
+                "over HTTP to the vLLM server). In colocate mode, remove `vllm_lora_sync`; "
+                "weights are merged and loaded into the colocated engine directly."
+            )
+        if (trl.async_prefetch or trl.use_data_producer) and self.adapter:
+            raise ValueError(
+                "`vllm_mode: colocate` with an adapter is not supported by the async GRPO "
+                "trainer (`async_prefetch` / `use_data_producer`): its LoRA weight sync only "
+                "targets a vLLM server. Remove those options or use `vllm_mode: server`."
+            )
+        if not (self.vllm and self.vllm.max_model_len):
+            LOG.warning(
+                "Set `vllm.max_model_len` (longest prompt + max_completion_length) for "
+                "`vllm_mode: colocate`; otherwise vLLM reserves KV cache for the model's "
+                "full context and may fail to start on the shared GPU."
+            )
         return self
 
 

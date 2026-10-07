@@ -14,7 +14,7 @@ on:
         default: "3.12"
       pytorch_versions:
         type: string
-        default: '["2.13.0", "2.14.0"]'
+        default: '["2.13.0", "2.14.1"]'
     secrets:
       CODECOV_TOKEN:
         required: false

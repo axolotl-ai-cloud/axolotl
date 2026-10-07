@@ -20,6 +20,12 @@ def normalize_jsonl(
             raise ValueError(f"normalized record requires {field}")
     if result.get("state") is None:
         raise ValueError("normalized record requires state")
+    images = result.get("images")
+    if images is not None and (
+        not isinstance(images, list)
+        or any(not isinstance(image, str) or not image for image in images)
+    ):
+        raise ValueError("images must be a list of nonempty path or URL strings")
     questions, labels = result.get("questions"), result.get("labels")
     if not isinstance(questions, dict) or not isinstance(labels, dict):
         raise ValueError("questions and labels must be objects")

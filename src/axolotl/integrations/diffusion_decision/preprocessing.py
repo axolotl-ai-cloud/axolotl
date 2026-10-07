@@ -6,8 +6,13 @@ import random
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from axolotl.processing_strategies import (
+    NEMOTRON_VLM_IMAGE_START_ID,
+    NEMOTRON_VLM_IMAGE_START_MARKER,
+)
+
 from .adapters.jsonl import normalize_jsonl
-from .prompts import decision_prompt_ids
+from .prompts import decision_prompt
 from .readers.base import validate_canvas
 from .records import DecisionCanvas, OrdinalMetadata
 from .slots import SlotPlan
@@ -17,6 +22,14 @@ from .template import (
     resolve_template,
     system_text,
 )
+
+
+def _reserves_image_markers(tokenizer) -> bool:
+    convert = getattr(tokenizer, "convert_tokens_to_ids", None)
+    return (
+        callable(convert)
+        and convert(NEMOTRON_VLM_IMAGE_START_MARKER) == NEMOTRON_VLM_IMAGE_START_ID
+    )
 
 
 def build_decision_canvas(
@@ -39,6 +52,7 @@ def build_decision_canvas(
     include_ordinal_metadata: bool = False,
     codebook: str = "vendored26",
     prevalidated_record: bool = False,
+    max_image_size: int = 1400,
 ) -> DecisionCanvas:
     if steps < 1 or width < 2 or vocab_size < 2:
         raise ValueError("steps, canvas width, and vocabulary must be positive")
@@ -63,10 +77,18 @@ def build_decision_canvas(
         },
         codebook=codebook,
     )
+    image_refs = tuple(normalized.get("images") or ())
+    image_sizes: tuple[tuple[int, int], ...] = ()
     if prompt_ids is None:
-        prompt_ids = decision_prompt_ids(
-            tokenizer, system_text(schema), normalized["state"]
+        prompt_ids, image_sizes = decision_prompt(
+            tokenizer,
+            system_text(schema),
+            normalized["state"],
+            images=image_refs,
+            max_image_size=max_image_size,
         )
+    elif image_refs:
+        raise ValueError("image records cannot use precomputed prompt_ids")
     prompt_ids = tuple(prompt_ids)
     plan = _slot_plan(slot_plan)
     prompt_slot_mask: tuple[bool, ...] = ()
@@ -144,8 +166,10 @@ def build_decision_canvas(
             if include_ordinal_metadata
             else ()
         ),
+        image_refs=image_refs,
+        image_sizes=image_sizes,
     )
-    validate_canvas(result)
+    validate_canvas(result, image_markers_reserved=_reserves_image_markers(tokenizer))
     if any(
         token >= vocab_size
         for tokens in (result.prompt_ids, result.canvas_ids, *result.allowed_ids)

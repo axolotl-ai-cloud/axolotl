@@ -136,10 +136,11 @@ class DecisionLabelsConfig(BaseModel):
             "description": "Fraction of a one-hot CE target spread uniformly over the valid answer tokens."
         },
     )
-    codebook: Literal["vendored26", "expanded52"] = Field(
+    codebook: Literal["vendored26", "expanded52", "expanded128"] = Field(
         default="vendored26",
         json_schema_extra={
-            "description": "Answer-label codebook: djev letters A-Z (26 options) or A-Z plus a-z (52)."
+            "description": "Answer-label codebook: djev letters A-Z (26 options), A-Z plus a-z (52), or those plus "
+            "selected Greek and Cyrillic letters (128); every label is one token in the model's tokenizer."
         },
     )
 
@@ -248,6 +249,20 @@ class DiffusionDecisionConfig(BaseModel):
             "description": "Fraction of canvases trained at the fully masked read time; the rest use sampled diffusion times."
         },
     )
+    max_image_size: int = Field(
+        default=1400,
+        ge=28,
+        json_schema_extra={
+            "description": "Longest image edge in pixels before token expansion; a multiple of 28, each 28x28 block is one prompt token."
+        },
+    )
+    image_cache_size: int = Field(
+        default=64,
+        ge=0,
+        json_schema_extra={
+            "description": "Normalized image tensors each collator (and dataloader worker) keeps in an LRU; 0 disables the cache."
+        },
+    )
     mixture: DecisionMixtureConfig = Field(
         default_factory=DecisionMixtureConfig,
         json_schema_extra={"description": "Source sampling and loss weighting."},
@@ -275,6 +290,8 @@ class DiffusionDecisionConfig(BaseModel):
             raise ValueError("read_fraction must be finite")
         if not 0.0 <= self.read_fraction <= 1.0:
             raise ValueError("read_fraction must be in [0, 1]")
+        if self.max_image_size % 28:
+            raise ValueError("max_image_size must be a multiple of 28")
         return self
 
 

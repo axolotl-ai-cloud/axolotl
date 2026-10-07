@@ -5,7 +5,7 @@ import functools
 import hashlib
 import time
 from enum import Enum
-from typing import Callable
+from typing import Callable, Collection
 
 import huggingface_hub
 import numpy as np
@@ -70,6 +70,12 @@ def retry_on_request_exceptions(
     return decorator
 
 
+def is_vision_dataset(column_names: Collection[str] | None) -> bool:
+    """Mirror TRL: an ``image``/``images`` column routes RL trainers to the vision path."""
+    column_names = column_names or []
+    return "image" in column_names or "images" in column_names
+
+
 def md5(to_hash: str, encoding: str = "utf-8") -> str:
     """Generate MD5 hash of a string."""
     try:
@@ -126,6 +132,13 @@ def deduplicate_and_log_datasets(
     Returns:
         Tuple of (deduplicated_dataset, deduplicated_other_dataset).
     """
+    if is_vision_dataset(dataset.column_names) or (
+        other_dataset is not None and is_vision_dataset(other_dataset.column_names)
+    ):
+        # Rows are hashed via str(), and decoded images stringify to memory addresses.
+        LOG.warning("Skipping exact deduplication for multimodal (image) datasets.")
+        return dataset, other_dataset
+
     # Deduplicate primary dataset
     LOG.info(
         f"Starting deduplication for {dataset_name} dataset. Original size: {len(dataset)}"
