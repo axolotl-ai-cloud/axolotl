@@ -12,10 +12,21 @@ from typing import Any
 def group_records(
     records: Sequence[Mapping[str, Any]], *, max_questions: int
 ) -> list[dict[str, Any]]:
-    """Combine only records with identical serving context and split without loss."""
+    """Combine only records with identical serving context and split without loss.
+
+    Records sharing ``(source, group, family, state, instructions, images)`` are
+    merged in input order and split into canvases of at most ``max_questions``
+    questions. A record that is alone in its group and already fits is returned
+    as a shallow copy (nested ``questions``/``labels``/metadata are shared with
+    the input, so do not mutate them in place); merged or split canvases are
+    built from deep copies.
+    """
     if max_questions <= 0:
         raise ValueError("max_questions must be positive")
-    groups: OrderedDict[_GroupKey, list[Mapping[str, Any]]] = OrderedDict()
+    # Plain dicts keep insertion order; the key holds the original state and
+    # instruction strings by reference, so grouping costs no extra copy of the
+    # state text and dict equality (not the hash alone) decides every merge.
+    groups: dict[_GroupKey, list[Mapping[str, Any]]] = {}
     for record in records:
         groups.setdefault(_key(record), []).append(record)
     result: list[dict[str, Any]] = []
@@ -24,7 +35,7 @@ def group_records(
     return result
 
 
-_GroupKey = tuple[str, str, str, bytes, bytes, bytes]
+_GroupKey = tuple[str, str, str, str, str, str]
 
 
 def _key(record: Mapping[str, Any]) -> _GroupKey:
@@ -41,22 +52,46 @@ def _key(record: Mapping[str, Any]) -> _GroupKey:
         source,
         group,
         family,
-        _bytes(record.get("state")),
-        _bytes(record.get("instructions", "")),
-        _bytes(list(record.get("images") or ())),
+        _text(record.get("state")),
+        _text(record.get("instructions", "")),
+        _text(list(record.get("images") or ())),
     )
 
 
-def _bytes(value: Any) -> bytes:
+def _text(value: Any) -> str:
+    """Return the serving text of a state; equal text means equal UTF-8 bytes."""
     if isinstance(value, str):
-        return value.encode("utf-8")
+        return value
     return json.dumps(
         value,
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=False,
         allow_nan=False,
-    ).encode("utf-8")
+    )
+
+
+_ATOMIC = frozenset({str, int, float, bool, type(None)})
+
+
+def _copy(value: Any) -> Any:
+    """Deep-copy a JSON-shaped tree much faster than ``copy.deepcopy``.
+
+    Plain dicts, lists and scalars are copied directly; anything else falls
+    back to ``copy.deepcopy``. Unlike ``deepcopy`` this does not preserve
+    aliasing between subtrees, which normalized JSON records do not rely on.
+    """
+    kind = type(value)
+    if kind is dict:
+        return {
+            key: item if type(item) in _ATOMIC else _copy(item)
+            for key, item in value.items()
+        }
+    if kind is list:
+        return [item if type(item) in _ATOMIC else _copy(item) for item in value]
+    if kind in _ATOMIC:
+        return value
+    return copy.deepcopy(value)
 
 
 def _split_group(
@@ -73,7 +108,11 @@ def _split_group(
         if set(questions) != set(labels):
             raise ValueError("decision record question and label ids differ")
         if len(questions) <= max_questions:
-            return [copy.deepcopy(dict(record))]
+            # Unchanged records are returned as a new top-level dict that shares
+            # its nested values with the input; deep-copying every record
+            # dominated preprocessing time and doubled label memory, and the
+            # canvas pipeline deep-copies again in ``permute_record``.
+            return [dict(record)]
     chunks: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     used: set[str] = set()
@@ -100,16 +139,17 @@ def _split_group(
                 used = set()
             output_id = _unique_id(question_id, used)
             used.add(output_id)
-            current["questions"][output_id] = copy.deepcopy(question)
-            current["labels"][output_id] = copy.deepcopy(labels[question_id])
+            current["questions"][output_id] = _copy(question)
+            current["labels"][output_id] = _copy(labels[question_id])
             current["grouped_record_ids"].append(record_id)
-            current["grouped_source_metadata"][record_id] = copy.deepcopy(
-                record.get("source_metadata", {})
-            )
+            if record_id not in current["grouped_source_metadata"]:
+                current["grouped_source_metadata"][record_id] = _copy(
+                    record.get("source_metadata", {})
+                )
             current["grouped_question_metadata"][output_id] = {
                 "record_id": record_id,
                 "original_question_id": question_id,
-                "source_metadata": copy.deepcopy(record.get("source_metadata", {})),
+                "source_metadata": _copy(record.get("source_metadata", {})),
             }
     for chunk in chunks:
         chunk["grouped_record_ids"] = tuple(dict.fromkeys(chunk["grouped_record_ids"]))
@@ -127,12 +167,12 @@ def _record_id(record: Mapping[str, Any], position: int) -> str:
 
 def _new_chunk(record: Mapping[str, Any], index: int) -> dict[str, Any]:
     result = {
-        key: copy.deepcopy(value)
+        key: _copy(value)
         for key, value in record.items()
         if key not in {"questions", "labels", "id", "source_metadata"}
     }
     result["id"] = f"{_record_id(record, 0)}#group{index}"
-    result["source_metadata"] = copy.deepcopy(record.get("source_metadata", {}))
+    result["source_metadata"] = _copy(record.get("source_metadata", {}))
     result["questions"] = OrderedDict()
     result["labels"] = OrderedDict()
     result["grouped_record_ids"] = []

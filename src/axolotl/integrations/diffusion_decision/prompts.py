@@ -36,7 +36,9 @@ def _input_ids(output: Any) -> tuple[int, ...]:
             raise ValueError("apply_chat_template returned more than one prompt")
         value = value[0]
     if any(
-        isinstance(token, bool) or not isinstance(token, Integral) for token in value
+        type(token) is not int
+        and (isinstance(token, bool) or not isinstance(token, Integral))
+        for token in value
     ):
         raise TypeError("apply_chat_template must return integer token ids")
     return tuple(int(token) for token in value)

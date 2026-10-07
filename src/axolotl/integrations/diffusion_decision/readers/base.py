@@ -76,7 +76,11 @@ def validate_canvas(
         raise ValueError("template_length must end before the turn-close token")
     for tokens in (canvas.prompt_ids, canvas.canvas_ids, *canvas.allowed_ids):
         if any(
-            isinstance(token, bool) or not isinstance(token, Integral) or token < 0
+            (
+                type(token) is not int
+                and (isinstance(token, bool) or not isinstance(token, Integral))
+            )
+            or token < 0
             for token in tokens
         ):
             raise ValueError("decision token IDs must be nonnegative integers")
