@@ -137,21 +137,32 @@ def _resolved_tokenizer_revision(cfg: Any, tokenizer: Any) -> str | None:
         r"[0-9a-fA-F]{40}", requested_revision
     ):
         return requested_revision.lower()
-    return _cached_snapshot_revision(getattr(tokenizer, "name_or_path", None))
+    return _cached_snapshot_revision(
+        getattr(tokenizer, "name_or_path", None),
+        requested_revision if isinstance(requested_revision, str) else None,
+    )
 
 
-def _cached_snapshot_revision(name_or_path: Any) -> str | None:
+def _cached_snapshot_revision(
+    name_or_path: Any, requested_revision: str | None = None
+) -> str | None:
     """Recover the commit hash from the local Hub cache when the tokenizer carries none.
 
     transformers 5 tokenizers no longer expose ``_commit_hash``; the snapshot
-    directory the tokenizer files were loaded from still names the commit.
+    directory the tokenizer files were loaded from still names the commit. The
+    lookup follows the same ref the tokenizer loader resolved
+    (``revision_of_model``, else ``main``), so a branch or tag pin maps to its
+    own snapshot rather than ``main``'s.
     """
     if not isinstance(name_or_path, str) or not name_or_path:
         return None
     for filename in ("tokenizer_config.json", "tokenizer.json"):
         try:
             cached = try_to_load_from_cache(
-                name_or_path, filename=filename, repo_type="model"
+                name_or_path,
+                filename=filename,
+                revision=requested_revision,
+                repo_type="model",
             )
         except (OSError, ValueError):
             continue
