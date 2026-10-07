@@ -46,9 +46,9 @@ jobs:
         run: |
           curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
-  nf4-distributed:
-    name: NF4 distributed CPU (nightly)
-    uses: ./.github/workflows/nf4-cpu.yml
+  distributed-cpu:
+    name: Distributed CPU (nightly)
+    uses: ./.github/workflows/distributed-cpu.yml
     with:
       nightly: true
       pytorch_versions: '["2.13.0"]'
@@ -87,7 +87,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
           prune-cache: true
@@ -132,7 +132,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed and not gpu" \
+          pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed and not distributed_cpu and not gpu" \
             --ignore=tests/e2e/ \
             --ignore=tests/integrations/kernels/ \
             --ignore=tests/patched/ \

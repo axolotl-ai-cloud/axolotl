@@ -10,6 +10,8 @@ from peft import LoraConfig, get_peft_model
 from torch import nn
 from transformers import AutoConfig, AutoModelForCausalLM
 
+pytest.importorskip("triton")
+
 from axolotl.kernels.lora import (
     _compute_dora_scale,
     apply_lora_mlp_swiglu,

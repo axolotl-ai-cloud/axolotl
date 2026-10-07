@@ -302,6 +302,7 @@ class TestCustomOps:
         assert y.shape[1] == H and y.dtype == torch.float32
         assert tuple(z.shape) == (4, 3) and z.dtype == torch.int64
 
+    @pytest.mark.distributed_cpu
     def test_forward_and_backward_two_ranks(self, ep2_results):
         for rank, res in _section(ep2_results, "custom_op").items():
             for name, ok in res.items():
@@ -571,6 +572,7 @@ def _parity_checks(rank, world_size):
 
 
 class TestTorchEPParity:
+    @pytest.mark.distributed_cpu
     @pytest.mark.parametrize(
         "case",
         [
@@ -681,6 +683,7 @@ def _local_impl_checks(rank, world_size):
 
 
 class TestLocalImplementations:
+    @pytest.mark.distributed_cpu
     @pytest.mark.parametrize(
         "case",
         [
@@ -696,6 +699,7 @@ class TestLocalImplementations:
             for metric, diff in res[case].items():
                 assert diff <= 1e-5, f"rank {rank} {case} {metric}={diff}"
 
+    @pytest.mark.distributed_cpu
     def test_custom_impl_sees_only_normalized_sentinels(self, ep2_results):
         for rank, res in _section(ep2_results, "local_impls").items():
             seen = res["custom_routing"]
@@ -877,6 +881,7 @@ def _sac_checks(rank, world_size):
 
 
 class TestTorchEPSelectiveCheckpointing:
+    @pytest.mark.distributed_cpu
     def test_recompute_reuses_routing_and_dispatch(self, ep2_results):
         for rank, res in _section(ep2_results, "sac").items():
             saved = res["save_dispatch=True"]
@@ -902,6 +907,7 @@ class TestTorchEPSelectiveCheckpointing:
                 unsaved,
             )
 
+    @pytest.mark.distributed_cpu
     def test_topk_save_scoped_to_moe_block(self, ep2_results):
         for rank, res in _section(ep2_results, "sac").items():
             r = res["scoped"]
@@ -1090,6 +1096,7 @@ def _chunked_checks(rank, world_size):
 
 
 class TestTorchEPChunkedDispatch:
+    @pytest.mark.distributed_cpu
     @pytest.mark.parametrize(
         "case",
         [
@@ -1105,14 +1112,17 @@ class TestTorchEPChunkedDispatch:
             for metric, diff in res[case].items():
                 assert diff <= 1e-5, f"rank {rank} {case} {metric}={diff}"
 
+    @pytest.mark.distributed_cpu
     def test_kernel_receives_waited_tensors(self, ep2_results):
         for rank, res in _section(ep2_results, "chunked").items():
             assert res["kernel_input_types"] == {"num": 9, "async": 0}, (rank, res)
 
+    @pytest.mark.distributed_cpu
     def test_one_count_exchange_and_host_copy_per_forward(self, ep2_results):
         for rank, res in _section(ep2_results, "chunked").items():
             assert res["sync_counts"] == {"equal_a2a": 1, "cpu": 1}, (rank, res)
 
+    @pytest.mark.distributed_cpu
     def test_selective_checkpointing_recompute(self, ep2_results):
         for rank, res in _section(ep2_results, "chunked").items():
             saved = res["sac/save_dispatch=True"]
@@ -1203,6 +1213,7 @@ def _gather_state_dict_worker(rank, world_size, port, q):
 
 
 class TestGatherEpExpertsIntoStateDict:
+    @pytest.mark.distributed_cpu
     def test_rank0_gets_full_experts_and_other_ranks_write_nothing(self):
         res = _run_spawned(_gather_state_dict_worker)
         for rank in range(WORLD):
@@ -1349,6 +1360,7 @@ def _ep_dp_shard_zero_row_worker(rank, world_size, port, q):
 
 
 class TestEpDpShardZeroRows:
+    @pytest.mark.distributed_cpu
     def test_idle_expert_peer_still_reduces(self):
         res = _run_spawned(_ep_dp_shard_zero_row_worker, world_size=4, timeout=300)
         for rank in range(4):
@@ -1359,6 +1371,7 @@ class TestEpDpShardZeroRows:
 
 
 class TestComposedExpertShardingGradScale:
+    @pytest.mark.distributed_cpu
     @pytest.mark.parametrize(
         "layout",
         [

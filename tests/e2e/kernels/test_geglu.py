@@ -4,6 +4,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+pytest.importorskip("triton")
+
 from axolotl.kernels.geglu import geglu_backward, geglu_forward
 
 

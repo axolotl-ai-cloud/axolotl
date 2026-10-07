@@ -1447,14 +1447,25 @@ def test_hybrid_nf4_mesh_is_explicitly_rejected(tmp_path):
     )
 
 
+# The CPU matrix covers the full product; CUDA retains each pair of dimensions.
+@pytest.mark.gpu
 @pytest.mark.slow
 @pytest.mark.skipif(torch.cuda.device_count() < 3, reason="requires three CUDA GPUs")
-@pytest.mark.parametrize("architecture", ["dense", "moe"])
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
-@pytest.mark.parametrize("reshard", [True, False], ids=["full_shard", "shard_grad_op"])
 @pytest.mark.parametrize(
-    "wrap_policy",
-    ["TRANSFORMER_BASED_WRAP", "SIZE_BASED_WRAP", pytest.param(None, id="root_wrap")],
+    "architecture, wrap_policy, reshard",
+    [
+        pytest.param(
+            "dense", "TRANSFORMER_BASED_WRAP", True, id="dense-transformer-full-shard"
+        ),
+        pytest.param("dense", "SIZE_BASED_WRAP", False, id="dense-size-shard-grad-op"),
+        pytest.param("dense", None, True, id="dense-root-full-shard"),
+        pytest.param(
+            "moe", "TRANSFORMER_BASED_WRAP", False, id="moe-transformer-shard-grad-op"
+        ),
+        pytest.param("moe", "SIZE_BASED_WRAP", True, id="moe-size-full-shard"),
+        pytest.param("moe", None, False, id="moe-root-shard-grad-op"),
+    ],
 )
 def test_cuda_nf4_fsdp2_shape_matrix(
     architecture, backend, reshard, wrap_policy, tmp_path

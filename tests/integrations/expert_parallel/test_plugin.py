@@ -746,6 +746,8 @@ def _ep_topology_worker_expects_error(
         timeout=timedelta(seconds=120),
     )
     try:
+        # Keep rank zero's store alive until every rank finishes initialization.
+        dist.barrier()
         from types import SimpleNamespace
 
         cfg = SimpleNamespace(
@@ -874,6 +876,7 @@ def _spawn_ep_cp_check(world_size, ep_size, cp_size, dp_shard_size=1):
     return sorted(results, key=lambda r: r[0])
 
 
+@pytest.mark.distributed_cpu
 class TestMeshTopology:
     """The 4-rank EP+FSDP composition rank assignments."""
 
