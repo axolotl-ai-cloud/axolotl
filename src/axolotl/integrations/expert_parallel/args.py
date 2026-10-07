@@ -123,3 +123,12 @@ def validate_expert_parallel_topology(cfg) -> None:
                 f"FULL_STATE_DICT, got {value!r}. {value} checkpoints keep only EP group 0's "
                 "experts; the full state dict gathers every EP group's experts before rank 0 writes."
             )
+
+    optimizer = getattr(cfg, "optimizer", None)
+    if optimizer in ("adamw_torch_4bit", "ao_adamw_4bit", "ao_adamw_fp8"):
+        raise ValueError(
+            f"expert_parallel_size ({ep_size}) > 1 does not support optimizer: {optimizer}. "
+            "EP full checkpoints keep only torchao 8-bit optimizer state quantized; 4-bit and "
+            "FP8 state would resume dequantized at several times the memory. Use "
+            "adamw_torch_8bit or an unquantized optimizer."
+        )

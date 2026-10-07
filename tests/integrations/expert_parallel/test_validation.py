@@ -127,6 +127,19 @@ class TestTopologyHelper:
         )
         validate_expert_parallel_topology(cfg)
 
+    @pytest.mark.parametrize(
+        "optimizer", ["adamw_torch_4bit", "ao_adamw_4bit", "ao_adamw_fp8"]
+    )
+    def test_rejects_low_bit_torchao_optimizer(self, optimizer):
+        cfg = SimpleNamespace(
+            expert_parallel_size=2,
+            fsdp_version=2,
+            fsdp_config=SimpleNamespace(state_dict_type="FULL_STATE_DICT"),
+            optimizer=optimizer,
+        )
+        with pytest.raises(ValueError, match="does not support optimizer"):
+            validate_expert_parallel_topology(cfg)
+
     def test_fsdp_version_from_fsdp_config(self):
         cfg = SimpleNamespace(
             expert_parallel_size=2,
