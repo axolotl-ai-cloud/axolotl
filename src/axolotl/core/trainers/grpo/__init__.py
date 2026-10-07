@@ -65,22 +65,34 @@ class GRPOStrategy:
             return AxolotlAsyncGRPOConfig
         return AxolotlGRPOConfig
 
-    @classmethod
-    def get_colocate_vllm_kwargs(cls, vllm_cfg: VllmConfig | None) -> dict[str, Any]:
-        """Map the `vllm:` block onto TRL's colocate engine args.
+    @staticmethod
+    def get_vllm_kwargs(trl: TRLConfig, vllm_cfg: VllmConfig | None) -> dict[str, Any]:
+        """Map `trl.vllm_*` and the `vllm:` block onto TRL's vLLM training args.
 
-        Unset values are omitted so TRL's colocate defaults apply (notably 0.3 GPU
+        Unset values are omitted so TRL's defaults apply (notably colocate's 0.3 GPU
         memory utilization, which leaves room for training on the shared GPU).
         """
-        kwargs: dict[str, Any] = {}
-        if not vllm_cfg:
-            return kwargs
-        if vllm_cfg.gpu_memory_utilization is not None:
-            kwargs["vllm_gpu_memory_utilization"] = vllm_cfg.gpu_memory_utilization
-        if vllm_cfg.tensor_parallel_size is not None:
-            kwargs["vllm_tensor_parallel_size"] = vllm_cfg.tensor_parallel_size
-        if vllm_cfg.max_model_len is not None:
-            kwargs["vllm_max_model_length"] = vllm_cfg.max_model_len
+        kwargs: dict[str, Any] = {"use_vllm": True}
+        if trl.vllm_mode:
+            kwargs["vllm_mode"] = trl.vllm_mode
+        if trl.vllm_mode == "colocate":
+            if trl.vllm_enable_sleep_mode is not None:
+                kwargs["vllm_enable_sleep_mode"] = trl.vllm_enable_sleep_mode
+            if vllm_cfg:
+                engine_kwargs = {
+                    "vllm_gpu_memory_utilization": vllm_cfg.gpu_memory_utilization,
+                    "vllm_tensor_parallel_size": vllm_cfg.tensor_parallel_size,
+                    "vllm_max_model_length": vllm_cfg.max_model_len,
+                }
+                kwargs.update({k: v for k, v in engine_kwargs.items() if v is not None})
+        server_host = trl.vllm_server_host or (vllm_cfg.host if vllm_cfg else None)
+        if server_host:
+            kwargs["vllm_server_host"] = server_host
+        server_port = trl.vllm_server_port or (vllm_cfg.port if vllm_cfg else None)
+        if server_port:
+            kwargs["vllm_server_port"] = server_port
+        if trl.vllm_server_timeout:
+            kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
         return kwargs
 
     @classmethod
@@ -91,26 +103,9 @@ class GRPOStrategy:
             return grpo_args_kwargs
 
         trl: TRLConfig = cfg.trl  # type: ignore
-        vllm_cfg: VllmConfig = cfg.vllm  # type: ignore
 
         if trl.use_vllm:
-            grpo_args_kwargs["use_vllm"] = trl.use_vllm
-            if trl.vllm_mode:
-                grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
-            if trl.vllm_mode == "colocate":
-                if trl.vllm_enable_sleep_mode is not None:
-                    grpo_args_kwargs["vllm_enable_sleep_mode"] = (
-                        trl.vllm_enable_sleep_mode
-                    )
-                grpo_args_kwargs.update(cls.get_colocate_vllm_kwargs(vllm_cfg))
-            server_host = trl.vllm_server_host or (vllm_cfg.host if vllm_cfg else None)
-            if server_host:
-                grpo_args_kwargs["vllm_server_host"] = server_host
-            server_port = trl.vllm_server_port or (vllm_cfg.port if vllm_cfg else None)
-            if server_port:
-                grpo_args_kwargs["vllm_server_port"] = server_port
-            if trl.vllm_server_timeout:
-                grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
+            grpo_args_kwargs.update(cls.get_vllm_kwargs(trl, cfg.vllm))
             if trl.vllm_guided_decoding_regex:
                 # TRL >=1.7 renamed guided decoding to structured outputs.
                 grpo_args_kwargs["vllm_structured_outputs_regex"] = (

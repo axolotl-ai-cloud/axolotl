@@ -22,6 +22,7 @@ Classes exported:
 
 import atexit
 import concurrent.futures
+import itertools
 import queue
 import threading
 from abc import ABC, abstractmethod
@@ -458,28 +459,14 @@ class AsyncDataProducer:
         if not dist.is_initialized():
             return dataset
 
-        # Rank 0 sends _data dict; others receive it
-        # Send CPU copies; CUDA tensors would unpickle onto rank 0's GPU on every rank.
-        obj_list = [_to_cpu(dataset._data) if self._is_main else None]
-        dist.broadcast_object_list(obj_list, src=0)
-
-        data: dict[str, Any] = obj_list[0]  # type: ignore[assignment]
-
-        # Move tensors to local device (broadcast_object_list deserializes to CPU)
         accelerator = self._inner._trainer.accelerator  # type: ignore[attr-defined]
-        device = accelerator.device
-        for key, val in data.items():
-            if isinstance(val, torch.Tensor) and val.device != device:
-                data[key] = val.to(device)
-
-        if not self._is_main:
-            from axolotl.core.trainers.grpo.async_trainer import RolloutDataset
-
-            dataset = RolloutDataset(data)
-        else:
-            # Rank 0 already has the dataset, but update _data with device-moved tensors
+        data = _broadcast_from_rank0(
+            dataset._data if self._is_main else None, accelerator.device
+        )
+        if self._is_main:
             dataset._data = data
-        return dataset
+            return dataset
+        return RolloutDataset(data)
 
     def _locked_produce(self, model: Any, global_step: int, **kwargs) -> Dataset:
         """Run produce while holding the generate lock."""
@@ -502,8 +489,23 @@ class AsyncDataProducer:
         self._executor.shutdown(wait=False)
 
 
-def _to_cpu(data: Any) -> dict:
-    return {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in data.items()}
+def _broadcast_from_rank0(data: dict[str, Any] | None, device) -> dict[str, Any]:
+    """Return rank 0's ``data`` on every rank, with tensors on ``device``."""
+    import torch.distributed as dist
+
+    # Send CPU copies; CUDA tensors would unpickle onto rank 0's GPU on every rank.
+    obj_list: list[Any] = [
+        None
+        if data is None
+        else {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in data.items()}
+    ]
+    dist.broadcast_object_list(obj_list, src=0)
+    received = obj_list[0]
+    assert received is not None, "broadcast_object_list failed to deliver data"
+    return {
+        k: v.to(device) if isinstance(v, torch.Tensor) else v
+        for k, v in received.items()
+    }
 
 
 class DataProducerCallback:
@@ -525,11 +527,8 @@ class RolloutDataset(Dataset):
     """
 
     # Image tensors are indexed per image/patch, not per sample.
-    _ALWAYS_SHARED = frozenset(
+    _IMAGE_INDEXED_KEYS = frozenset(
         {
-            "num_items_in_batch",
-            "_pending_policy_logps",
-            "_rank0_only",
             "pixel_values",
             "image_grid_thw",
             "pixel_attention_mask",
@@ -537,6 +536,10 @@ class RolloutDataset(Dataset):
             "image_sizes",
             "image_position_ids",
         }
+    )
+    _ALWAYS_SHARED = (
+        frozenset({"num_items_in_batch", "_pending_policy_logps", "_rank0_only"})
+        | _IMAGE_INDEXED_KEYS
     )
 
     def __init__(self, data: dict[str, Any]):
@@ -578,17 +581,17 @@ class RolloutDataset(Dataset):
         return item
 
 
-def _slice_multimodal_kwargs(data: dict, start: int, end: int) -> dict:
-    """Slice full-batch multimodal fields in ``data`` down to sample range
-    ``[start, end)``.
+def _count_range(counts: list[int], start: int, end: int) -> tuple[int, int]:
+    """Row range covering samples ``[start, end)`` given per-sample row counts."""
+    offsets = [0, *itertools.accumulate(counts)]
+    return offsets[start], offsets[end]
 
-    ``pixel_values``/``image_grid_thw``/``pixel_attention_mask``/
-    ``spatial_shapes``/``image_position_ids`` are indexed by image/tile
-    count, not sample count, so a naive ``data[key][start:end]`` pulls the
-    wrong rows whenever ``start > 0`` — mirrors the cumulative-offset
-    branches in ``AsyncGRPOTrainer._get_per_token_logps_and_entropies``,
-    which otherwise treats ``start=0`` as relative to whatever slice it's
-    handed.
+
+def _slice_multimodal_kwargs(data: dict, start: int, end: int) -> dict:
+    """Slice multimodal fields in ``data`` to samples ``[start, end)``.
+
+    Image and tile tensors have one row per image, patch or tile rather than per
+    sample, so they are cut at cumulative per-sample counts.
     """
     kwargs: dict = {}
     num_images = data.get("num_images")
@@ -597,19 +600,13 @@ def _slice_multimodal_kwargs(data: dict, start: int, end: int) -> dict:
 
     if num_images is not None and pixel_values is not None and "image_grid_thw" in data:
         image_grid_thw = data["image_grid_thw"]
-        rows_per_image = image_grid_thw.prod(dim=-1)
-        rows_per_sample = torch.split(rows_per_image, num_images)
-        rows_per_sample = torch.stack([s.sum() for s in rows_per_sample])
-        cum_rows = torch.cat(
-            [
-                torch.tensor([0], device=rows_per_sample.device),
-                rows_per_sample.cumsum(0),
-            ]
-        )
-        row_start, row_end = cum_rows[start].item(), cum_rows[end].item()
+        patches_per_sample = [
+            int(grid.prod(dim=-1).sum())
+            for grid in torch.split(image_grid_thw, num_images)
+        ]
+        row_start, row_end = _count_range(patches_per_sample, start, end)
         kwargs["pixel_values"] = pixel_values[row_start:row_end]
-        cum_imgs = torch.tensor([0] + num_images).cumsum(0)
-        img_start, img_end = cum_imgs[start], cum_imgs[end]
+        img_start, img_end = _count_range(num_images, start, end)
         kwargs["image_grid_thw"] = image_grid_thw[img_start:img_end]
         kwargs["num_images"] = num_images[start:end]
     elif (
@@ -617,16 +614,14 @@ def _slice_multimodal_kwargs(data: dict, start: int, end: int) -> dict:
         and pixel_values is not None
         and "image_position_ids" in data
     ):
-        cum_imgs = torch.tensor([0] + num_images).cumsum(0)
-        img_start, img_end = cum_imgs[start], cum_imgs[end]
+        img_start, img_end = _count_range(num_images, start, end)
         kwargs["pixel_values"] = pixel_values[img_start:img_end]
         kwargs["image_position_ids"] = data["image_position_ids"][img_start:img_end]
         kwargs["num_images"] = num_images[start:end]
     elif (
         num_tiles is not None and pixel_values is not None and "spatial_shapes" in data
     ):
-        cum_tiles = torch.tensor([0] + num_tiles).cumsum(0)
-        tile_start, tile_end = cum_tiles[start], cum_tiles[end]
+        tile_start, tile_end = _count_range(num_tiles, start, end)
         kwargs["pixel_values"] = pixel_values[tile_start:tile_end]
         if "pixel_attention_mask" in data:
             kwargs["pixel_attention_mask"] = data["pixel_attention_mask"][
@@ -835,6 +830,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
     instead of ``GRPOTrainer``.
     """
 
+    # Fixed adapter name re-pointed at each LoRA sync; set by the NeMo Gym plugin.
+    _vllm_lora_alias: str | None = None
+
     def __init__(self, *args, data_collator=None, **kwargs):
         # LoRA sync goes through the filesystem and vLLM's LoRA API, so it needs
         # no NCCL communicator. Merged weight sync initialises it here, before
@@ -1028,20 +1026,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
         have ``None``.  After broadcast, tensors are moved to each rank's
         local device.
         """
-        import torch.distributed as dist
-
-        obj_list = [_to_cpu(rollout) if self.accelerator.is_main_process else None]
-        dist.broadcast_object_list(obj_list, src=0)
-        rollout = obj_list[0]
-        assert rollout is not None, "broadcast_object_list failed to deliver rollout"
-
-        # Move tensors to local device (broadcast deserializes to CPU)
-        device = self.accelerator.device
-        for key, val in rollout.items():
-            if isinstance(val, torch.Tensor) and val.device != device:
-                rollout[key] = val.to(device)
-
-        return rollout
+        return _broadcast_from_rank0(
+            rollout if self.accelerator.is_main_process else None,
+            self.accelerator.device,
+        )
 
     # ------------------------------------------------------------------
     # Weight sync
@@ -1121,7 +1109,6 @@ class AsyncGRPOTrainer(GRPOTrainer):
             vllm_name = fix_name(vllm_name, extra_prefixes=["modules_to_save.default."])
             mod_path = vllm_name[: -len(".weight")]
 
-            # Sync weights that have LoRA adapters OR are modules_to_save
             is_lora = mod_path in lora_info
             is_modules_to_save = raw_mod_path != mod_path  # fix_name stripped a prefix
             is_fused_sibling = (
@@ -1131,14 +1118,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 continue
 
             data = param.data
-            scale_inv = scale_inv_lookup.get(name)
-            is_fp8 = data.dtype == torch.float8_e4m3fn
-
             if not is_lora:
                 # modules_to_save / fused sibling: the stored weight is sent as is
                 params_to_sync.append((vllm_name, data))
                 continue
 
+            scale_inv = scale_inv_lookup.get(name)
+            is_fp8 = data.dtype == torch.float8_e4m3fn
             A, B, s = lora_info[mod_path]
             delta = s * (B.to(compute_dtype) @ A.to(compute_dtype))
             if is_fp8 and scale_inv is not None:
@@ -1151,12 +1137,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
             else:
                 params_to_sync.append((vllm_name, data.to(compute_dtype) + delta))
 
-        # Batch sync only LoRA-modified params via NCCL
         if params_to_sync:
             sync_mb = sum(t.numel() * t.element_size() for _, t in params_to_sync) / 1e6
-            logger.info(
-                f"Syncing {len(params_to_sync)} LoRA-modified params ({sync_mb:.0f} MB)"
-            )
+            logger.info(f"Syncing {len(params_to_sync)} params ({sync_mb:.0f} MB)")
             vllm_client.batch_update_named_params(params_to_sync)
 
         # Reset prefix cache after weight update
@@ -1170,8 +1153,6 @@ class AsyncGRPOTrainer(GRPOTrainer):
         requests address. vLLM loads the adapter natively using Punica kernels,
         avoiding the need to merge weights and NCCL-broadcast the full model.
         Raises RuntimeError if the server rejects it.
-
-        Syncs only the LoRA adapter weights via filesystem instead of the full merged model via NCCL.
 
         FSDP/DeepSpeed: All ranks must participate in the state_dict gather.
         accelerator.get_state_dict() handles this (FSDP uses FullStateDictConfig
@@ -1224,14 +1205,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
             from axolotl.utils.vllm_lora_sync import publish_lora_adapter
 
-            sync_timeout = getattr(self.args, "vllm_server_timeout", 300) or 300
             try:
                 lora_name = publish_lora_adapter(
                     self.vllm_generation.vllm_client,
                     self._lora_sync_dir,
                     self._lora_sync_version,
-                    sync_timeout,
-                    alias=getattr(self, "_vllm_lora_alias", None),
+                    self.args.vllm_server_timeout,
+                    alias=self._vllm_lora_alias,
                 )
             except RuntimeError as exc:
                 sync_error = exc
@@ -1252,6 +1232,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             if dist.is_initialized():
                 dist.barrier()
 
+        # Raised after the barrier so the other ranks are not left waiting in it.
         if sync_error is not None:
             raise sync_error
 
@@ -1266,13 +1247,20 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 device=vllm_generation.accelerator.device
             )
 
+    def _use_no_merge_sync(self) -> bool:
+        from accelerate.utils import is_peft_model
+
+        # The no-merge sync runs on rank 0 alone and cannot gather FSDP shards;
+        # FSDP goes through the stock collective sync instead.
+        return is_peft_model(self.vllm_generation.model) and not self.is_fsdp_enabled
+
     def _maybe_sync_vllm_weights(self):
         """Sync model weights to vLLM if the interval has elapsed.
 
         Dispatches to one of three strategies:
         - vllm_lora_sync: saves adapter to filesystem, vLLM loads natively
-        - PEFT no-merge: computes merged weights as new tensors, NCCL broadcast
-        - Non-PEFT: stock sync_weights via merge_adapter + NCCL
+        - PEFT without FSDP: computes merged weights as new tensors, NCCL broadcast
+        - Otherwise: stock sync_weights via merge_adapter + NCCL
 
         This is the canonical sync trigger and runs in BOTH async and
         synchronous modes from ``_prepare_inputs_with_data_producer`` /
@@ -1298,16 +1286,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 # Native LoRA sync: save adapter to filesystem, vLLM loads it directly
                 self._sync_lora_adapter()
             else:
-                from accelerate.utils import is_peft_model
-
-                # The no-merge sync runs on rank 0 alone and cannot gather FSDP
-                # shards; FSDP goes through the stock collective sync instead.
-                use_no_merge = (
-                    is_peft_model(self.vllm_generation.model)
-                    and not self.is_fsdp_enabled
-                )
-
-                if use_no_merge:
+                if self._use_no_merge_sync():
                     # No-merge sync never modifies trainer weights in-place; the
                     # client pauses vLLM generation around the weight update.
                     self._sync_peft_weights_no_merge()
@@ -1423,19 +1402,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
                         self.vllm_generation.sync_weights = _lora_filesystem_sync
                     self._patched_sync_weights = True
-                else:
-                    from accelerate.utils import is_peft_model
+                elif self._use_no_merge_sync():
 
-                    if (
-                        is_peft_model(self.vllm_generation.model)
-                        and not self.is_fsdp_enabled
-                    ):
+                    def _no_merge_sync():
+                        self._sync_peft_weights_no_merge()
 
-                        def _no_merge_sync():
-                            self._sync_peft_weights_no_merge()
-
-                        self.vllm_generation.sync_weights = _no_merge_sync
-                        self._patched_sync_weights = True
+                    self.vllm_generation.sync_weights = _no_merge_sync
+                    self._patched_sync_weights = True
 
         try:
             return super()._generate_single_turn(prompts, *args, **kwargs)
@@ -1450,7 +1423,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         ``broadcast_object_list`` since the main thread may be running FSDP
         collectives concurrently.
 
-        Returns the same tuple as ``_generate``.
+        Returns ``_generate``'s leading six fields.
         """
         import copy
 
@@ -1521,14 +1494,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
         tool_mask = extra_fields.pop("env_mask", None)
 
         # Compute total completion tokens locally (no gather)
-        total_completion_tokens = sum(len(ids) for ids in completion_ids)
-
         return (
             prompt_ids,
             completion_ids,
             tool_mask,
             completions,
-            total_completion_tokens,
             logprobs,
             extra_fields,
         )
@@ -1574,28 +1544,19 @@ class AsyncGRPOTrainer(GRPOTrainer):
             ]
 
         # --- Generate completions ---
-        if rank0_only:
-            # FSDP mode: call vLLM directly without cross-rank collectives
-            (
-                prompt_ids_list,
-                completion_ids_list,
-                tool_mask_list,
-                completions,
-                num_items_in_batch,
-                sampling_per_token_logps_list,
-                extra_fields,
-            ) = self._generate_rank0_only(prompts)
-        else:
-            (
-                prompt_ids_list,
-                completion_ids_list,
-                tool_mask_list,
-                completions,
-                sampling_per_token_logps_list,
-                extra_fields,
-                *_,
-            ) = self._generate(prompts)
-            num_items_in_batch = sum(len(ids) for ids in completion_ids_list)
+        # rank0_only (FSDP): call vLLM directly without cross-rank collectives
+        generate = self._generate_rank0_only if rank0_only else self._generate
+        (
+            prompt_ids_list,
+            completion_ids_list,
+            tool_mask_list,
+            completions,
+            sampling_per_token_logps_list,
+            extra_fields,
+            *_,
+        ) = generate(prompts)
+        num_items_in_batch = sum(len(ids) for ids in completion_ids_list)
+        if not rank0_only:
             # _generate gathers prompts from all ranks internally. Gather inputs
             # to match the full-batch output size.
             if self.accelerator.num_processes > 1:
@@ -2243,22 +2204,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
         logits_to_keep = chunk_completion_ids.size(1)
 
         forward_kwargs = _slice_multimodal_kwargs(data, s_start, s_end)
-        forward_kwargs.pop("num_images", None)
-        forward_kwargs.pop("num_tiles", None)
-        num_images = data.get("num_images")
-        if (
-            num_images is not None
-            and hasattr(num_images, "__getitem__")
-            and len(num_images) == len(data["prompt_ids"])
-        ):
-            num_images = num_images[s_start:s_end]
-        num_tiles = data.get("num_tiles")
-        if (
-            num_tiles is not None
-            and hasattr(num_tiles, "__getitem__")
-            and len(num_tiles) == len(data["prompt_ids"])
-        ):
-            num_tiles = num_tiles[s_start:s_end]
+        num_images = forward_kwargs.pop("num_images", None)
+        num_tiles = forward_kwargs.pop("num_tiles", None)
 
         # --- Launch rewards in parallel with logprobs ---
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)

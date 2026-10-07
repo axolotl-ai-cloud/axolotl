@@ -571,12 +571,12 @@ class NemoGymPlugin(BasePlugin):
         saves the adapter and POSTs to ``/v1/load_lora_adapter``.
         """
         vllm_gen = trainer.vllm_generation
-        # Agent servers address vLLM by a fixed model name, so that name has to
-        # follow the adapter.
-        trainer._vllm_lora_alias = alias
 
         # Async trainer path: delegate to its _sync_lora_adapter (multi-GPU safe)
         if hasattr(trainer, "_sync_lora_adapter"):
+            # Agent servers address vLLM by a fixed model name, so that name has to
+            # follow the adapter.
+            trainer._vllm_lora_alias = alias
 
             def lora_sync_weights():
                 trainer._sync_lora_adapter()
@@ -595,7 +595,6 @@ class NemoGymPlugin(BasePlugin):
 
         from axolotl.utils.vllm_lora_sync import publish_lora_adapter
 
-        sync_timeout = getattr(trainer.args, "vllm_server_timeout", 300) or 300
         sync_state = {"version": 0, "sync_dir": tempfile.mkdtemp(prefix="lora_sync_")}
 
         def lora_sync_weights():
@@ -621,7 +620,7 @@ class NemoGymPlugin(BasePlugin):
                     vllm_gen.vllm_client,
                     sync_state["sync_dir"],
                     version,
-                    sync_timeout,
+                    trainer.args.vllm_server_timeout,
                     alias=alias,
                 )
                 LOG.info(

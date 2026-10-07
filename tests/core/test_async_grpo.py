@@ -1306,6 +1306,32 @@ class TestSliceMultimodalKwargs(unittest.TestCase):
         torch.testing.assert_close(out["token_type_ids"], data["token_type_ids"][1:3])
 
 
+class TestBroadcastFromRank0(unittest.TestCase):
+    """Rank 0 sends CPU copies; receivers move tensors onto their own device."""
+
+    def test_sender_and_receiver(self):
+        from axolotl.core.trainers.grpo.async_trainer import _broadcast_from_rank0
+
+        data = {"ids": torch.ones(2), "n": 3}
+        sent = {}
+
+        def fake_send(obj_list, src):
+            sent.update(obj_list[0])
+
+        with patch("torch.distributed.broadcast_object_list", side_effect=fake_send):
+            _broadcast_from_rank0(data, torch.device("cpu"))
+        self.assertEqual(sent["n"], 3)
+        self.assertEqual(sent["ids"].device.type, "cpu")
+
+        def fake_receive(obj_list, src):
+            obj_list[0] = dict(sent)
+
+        with patch("torch.distributed.broadcast_object_list", side_effect=fake_receive):
+            out = _broadcast_from_rank0(None, torch.device("meta"))
+        self.assertEqual(out["ids"].device.type, "meta")
+        self.assertEqual(out["n"], 3)
+
+
 class TestDataProducerGridPixelValues(unittest.TestCase):
     """Grid VLMs (Qwen-VL) store pixel_values flat per patch; the sync rollout
     shuffle must keep each sample's patches with it."""
