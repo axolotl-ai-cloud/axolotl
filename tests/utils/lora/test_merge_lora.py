@@ -700,8 +700,6 @@ class TestEfficientMerge:
 
         from axolotl.cli.merge_lora import _do_merge_lora_efficient
 
-        # embeddings and 3-D experts stay bf16 in training; the vision projection is
-        # quantized only because from_pretrained quantizes before tying lm_head
         config = Gemma4Config(
             text_config=dict(
                 vocab_size=128,

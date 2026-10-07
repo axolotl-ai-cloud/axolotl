@@ -321,15 +321,11 @@ def _resolve_lora_alpha_for_key(
     return None
 
 
-def _build_meta_model(
-    base_model_path: Path, trust_remote_code: bool = False, untied: bool = False
-):
+def _build_meta_model(base_model_path: Path, trust_remote_code: bool = False):
     """Instantiate the model architecture on the meta device (zero memory)."""
-    import contextlib
     import json as _json
 
     from transformers import AutoConfig
-    from transformers.initialization import no_tie_weights
 
     config_path = base_model_path / "config.json"
     if not config_path.exists():
@@ -369,10 +365,7 @@ def _build_meta_model(
 
     for auto_cls in auto_classes:
         try:
-            with (
-                torch.device("meta"),
-                no_tie_weights() if untied else contextlib.nullcontext(),
-            ):
+            with torch.device("meta"):
                 return auto_cls.from_config(config, trust_remote_code=trust_remote_code)
         except Exception:  # noqa: BLE001
             LOG.debug(
@@ -420,30 +413,30 @@ def _build_layer_type_map(
 
 
 def _bnb_quantized_modules(
-    meta_model, skip_modules: Optional[list[str]] = None
-) -> set[str]:
-    """Module names transformers' bitsandbytes 4-bit loader replaces with Linear4bit.
-
-    ``meta_model`` must be built untied: from_pretrained quantizes before tying weights,
-    which decides the default last-module skip.
-    """
+    base_model_path: Path,
+    skip_modules: Optional[list[str]],
+    trust_remote_code: bool = False,
+) -> Optional[set[str]]:
+    """Linears transformers' bitsandbytes loader quantizes; None if the model can't be built."""
     import torch.nn as nn
-    from transformers.pytorch_utils import Conv1D
+    from transformers.initialization import no_tie_weights
     from transformers.quantizers.base import HfQuantizer
     from transformers.quantizers.quantizers_utils import should_convert_module
 
+    # from_pretrained quantizes before tying weights, which moves the last-module skip
+    with no_tie_weights():
+        model = _build_meta_model(base_model_path, trust_remote_code=trust_remote_code)
+    if model is None:
+        return None
+
     not_convert = HfQuantizer.get_modules_to_not_convert(
-        meta_model, skip_modules, meta_model._keep_in_fp32_modules
+        model, skip_modules, model._keep_in_fp32_modules
     )
-    names = {
+    return {
         name
-        for name, module in meta_model.named_modules()
-        if (isinstance(module, Conv1D) or type(module) is nn.Linear)
-        and should_convert_module(name, not_convert)
+        for name, module in model.named_modules()
+        if type(module) is nn.Linear and should_convert_module(name, not_convert)
     }
-    # prefixless checkpoints (gpt2, bloom) load into the base model's namespace
-    prefix = f"{meta_model.base_model_prefix}."
-    return names | {name.removeprefix(prefix) for name in names}
 
 
 def _simulate_nf4_roundtrip(
@@ -2042,9 +2035,9 @@ def _merge_tensor_with_lora(
         )
     elif nf4_modules is not None:
         runtime_key = _runtime_key(key, weight_renamings, layer_type_map)
-        do_nf4 = (
-            simulate_nf4 and runtime_key.removesuffix(".weight") in nf4_modules
-        ) or (simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower())
+        do_nf4 = runtime_key.removesuffix(".weight") in nf4_modules or (
+            simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower()
+        )
 
     if lora_a is not None and lora_b is not None:
         LOG.debug(f"Merging LoRA for {key}: {lora_a.shape}, {lora_b.shape}")
@@ -2691,16 +2684,13 @@ def merge_lora_sharded_efficient(
         )
     nf4_modules = None
     if simulate_nf4 and nf4_backend == "bitsandbytes" and nf4_skips is None:
-        untied_meta_model = _build_meta_model(
-            base_model_path, trust_remote_code=trust_remote_code, untied=True
+        nf4_modules = _bnb_quantized_modules(
+            base_model_path, bnb_skip_modules, trust_remote_code
         )
-        if untied_meta_model is not None:
-            nf4_modules = _bnb_quantized_modules(untied_meta_model, bnb_skip_modules)
-            del untied_meta_model
-        else:
+        if nf4_modules is None:
             LOG.warning(
-                "Could not introspect the model; NF4 simulation falls back to "
-                "round-tripping every >=2-D tensor, including ones bitsandbytes never quantized"
+                "Could not build the model to find its bitsandbytes-quantized "
+                "modules; NF4-simulating every >=2-D tensor instead"
             )
     unsupported_methods = []
 

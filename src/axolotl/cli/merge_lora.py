@@ -161,8 +161,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     nf4_backend = (
         getattr(cfg, "_original_nf4_backend", None) or cfg.nf4_backend or "bitsandbytes"
     )
-    # only staged/torchao training quantized by this exclusion policy; plain
-    # bitsandbytes training used transformers' selection (bnb_skip_modules)
+    # only staged/torchao training quantized by this exclusion policy
     nf4_skips = (
         nf4_skip_modules(cfg.model_config_type, bnb_config_kwargs)
         if staged_nf4 or nf4_backend == "torchao"
