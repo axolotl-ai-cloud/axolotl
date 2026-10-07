@@ -412,6 +412,33 @@ def _build_layer_type_map(
     return layer_types
 
 
+def _bnb_quantized_modules(
+    base_model_path: Path,
+    skip_modules: Optional[list[str]],
+    trust_remote_code: bool = False,
+) -> Optional[set[str]]:
+    """Linears transformers' bitsandbytes loader quantizes; None if the model can't be built."""
+    import torch.nn as nn
+    from transformers.initialization import no_tie_weights
+    from transformers.quantizers.base import HfQuantizer
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    # from_pretrained quantizes before tying weights, which moves the last-module skip
+    with no_tie_weights():
+        model = _build_meta_model(base_model_path, trust_remote_code=trust_remote_code)
+    if model is None:
+        return None
+
+    not_convert = HfQuantizer.get_modules_to_not_convert(
+        model, skip_modules, model._keep_in_fp32_modules
+    )
+    return {
+        name
+        for name, module in model.named_modules()
+        if type(module) is nn.Linear and should_convert_module(name, not_convert)
+    }
+
+
 def _simulate_nf4_roundtrip(
     tensor: torch.Tensor,
     blocksize: Optional[int] = None,
@@ -1950,6 +1977,7 @@ def _merge_tensor_with_lora(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    nf4_modules: Optional[set[str]] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -2004,6 +2032,11 @@ def _merge_tensor_with_lora(
                 simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower()
             ),
             skips=nf4_skips if nf4_skips is not None else {"lm_head", "embed_out"},
+        )
+    elif nf4_modules is not None:
+        runtime_key = _runtime_key(key, weight_renamings, layer_type_map)
+        do_nf4 = runtime_key.removesuffix(".weight") in nf4_modules or (
+            simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower()
         )
 
     if lora_a is not None and lora_b is not None:
@@ -2296,6 +2329,7 @@ def _fuse_and_unfuse_with_merge(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    nf4_modules: Optional[set[str]] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -2501,6 +2535,7 @@ def _fuse_and_unfuse_with_merge(
                 nf4_backend=nf4_backend,
                 nf4_skips=nf4_skips,
                 nf4_dtype=nf4_dtype,
+                nf4_modules=nf4_modules,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
@@ -2538,6 +2573,7 @@ def merge_lora_sharded_efficient(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    bnb_skip_modules: Optional[list[str]] = None,
     staged_nf4: bool = False,
     trust_remote_code: bool = False,
     dequant: bool = False,
@@ -2559,9 +2595,11 @@ def merge_lora_sharded_efficient(
         nf4_backend: NF4 implementation used for the training base.
         nf4_skips: Resolved module exclusions from ``nf4_skip_modules``. When provided,
             weights are selected the way the staged loader selected them (Linear
-            weights and fused experts outside the exclusions); when None, the
-            pre-existing ``_should_nf4_roundtrip`` heuristic is kept unchanged.
+            weights and fused experts outside the exclusions); when None on
+            bitsandbytes, transformers' own Linear4bit selection is reproduced.
         nf4_dtype: Training weight dtype used before quantization.
+        bnb_skip_modules: ``llm_int8_skip_modules`` the bitsandbytes training load used;
+            None means transformers' default skips.
         staged_nf4: Training used CPU-staged NF4, which has no legacy merge fallback.
         simulate_nf4: Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)
         simulate_nf4_experts: Apply NF4 roundtrip only to MoE expert tensors
@@ -2644,6 +2682,16 @@ def merge_lora_sharded_efficient(
         raise ValueError(
             "torchao NF4 merge requires model introspection to identify quantized Linear weights"
         )
+    nf4_modules = None
+    if simulate_nf4 and nf4_backend == "bitsandbytes" and nf4_skips is None:
+        nf4_modules = _bnb_quantized_modules(
+            base_model_path, bnb_skip_modules, trust_remote_code
+        )
+        if nf4_modules is None:
+            LOG.warning(
+                "Could not build the model to find its bitsandbytes-quantized "
+                "modules; NF4-simulating every >=2-D tensor instead"
+            )
     unsupported_methods = []
 
     # Check for AdaLoRA (Adaptive LoRA)
@@ -2934,6 +2982,7 @@ def merge_lora_sharded_efficient(
                 nf4_backend=nf4_backend,
                 nf4_skips=nf4_skips,
                 nf4_dtype=nf4_dtype,
+                nf4_modules=nf4_modules,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
@@ -2996,6 +3045,7 @@ def merge_lora_sharded_efficient(
                 nf4_backend=nf4_backend,
                 nf4_skips=nf4_skips,
                 nf4_dtype=nf4_dtype,
+                nf4_modules=nf4_modules,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
