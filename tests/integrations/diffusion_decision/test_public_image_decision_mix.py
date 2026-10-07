@@ -245,6 +245,26 @@ def test_image_store_writes_duplicates_once(tmp_path):
     assert store.total_bytes == len(_png(5)) + len(_png(6))
 
 
+def test_image_store_rewrites_a_truncated_leftover(tmp_path):
+    data = _png(5)
+    digest = hashlib.sha256(data).hexdigest()
+    (tmp_path / "images").mkdir()
+    (tmp_path / "images" / f"{digest}.png").write_bytes(data[:7])
+    relative = MODULE.ImageStore(tmp_path).put_payload(data, "png")
+    assert (tmp_path / relative).read_bytes() == data
+    assert [path.name for path in (tmp_path / "images").iterdir()] == [f"{digest}.png"]
+
+
+@pytest.mark.parametrize(
+    "flag", ["--train-per-source", "--dev-per-source", "--test-cap"]
+)
+def test_cli_rejects_negative_counts(tmp_path, monkeypatch, flag):
+    monkeypatch.setattr(MODULE, "build", lambda *args, **kwargs: None)
+    with pytest.raises(SystemExit):
+        MODULE.main([str(tmp_path), flag, "-1"])
+    MODULE.main([str(tmp_path), flag, "0"])
+
+
 def _build(tmp_path, monkeypatch, name):
     monkeypatch.setattr(MODULE, "load_dataset", _fake_load_dataset)
     return MODULE.build(
@@ -338,12 +358,18 @@ def test_build_reuses_one_file_for_duplicate_images(tmp_path, monkeypatch):
     assert contract["images"]["count"] == 1 + DEV + TRAIN + DEV + 4
 
 
-def test_build_drops_dev_states_seen_in_train(tmp_path, monkeypatch):
+def _selected_train_index() -> int:
     selected = min(
         (f"train-q{index}" for index in range(TRAIN + 1)),
         key=lambda record_id: MODULE._rank("public_image.aokvqa", "train", record_id),
     )
-    question = f"What is train {selected.rsplit('q', 1)[1]} doing?"
+    return int(selected.rsplit("q", 1)[1])
+
+
+def test_build_keeps_dev_rows_sharing_only_a_templated_train_state(
+    tmp_path, monkeypatch
+):
+    question = f"What is train {_selected_train_index()} doing?"
 
     def load(dataset, config, split, revision):
         rows = _fake_load_dataset(dataset, config, split, revision)
@@ -352,10 +378,74 @@ def test_build_drops_dev_states_seen_in_train(tmp_path, monkeypatch):
         return rows
 
     monkeypatch.setattr(MODULE, "load_dataset", load)
-    with pytest.raises(ValueError, match="aokvqa dev has 0 usable rows"):
-        MODULE.build(
-            tmp_path / "out", train_per_source=TRAIN, dev_per_source=DEV, test_cap=TEST
-        )
+    contract = MODULE.build(
+        tmp_path / "out", train_per_source=TRAIN, dev_per_source=DEV, test_cap=TEST
+    )
+    assert contract["counts"]["dev"]["aokvqa"] == DEV
+    assert contract["dropped"]["dev"]["aokvqa"] == {}
+
+
+def test_build_drops_dev_rows_matching_a_train_state_and_image(tmp_path, monkeypatch):
+    selected = _selected_train_index()
+    question = f"What is train {selected} doing?"
+    train_image = _image(selected)
+
+    def load(dataset, config, split, revision):
+        rows = _fake_load_dataset(dataset, config, split, revision)
+        if dataset == MODULE.AOKVQA.dataset and split == "validation":
+            rows = rows.cast_column("image", Image(decode=False)).map(
+                lambda row, index: (
+                    {"image": train_image, "question": question} if index == 0 else row
+                ),
+                with_indices=True,
+            )
+            rows = rows.cast_column("image", Image())
+        return rows
+
+    monkeypatch.setattr(MODULE, "load_dataset", load)
+    contract = MODULE.build(
+        tmp_path / "out", train_per_source=TRAIN, dev_per_source=0, test_cap=TEST
+    )
+    assert contract["dropped"]["dev"]["aokvqa"] == {"state_overlap": 1}
+    assert contract["scanned"]["dev"]["aokvqa"] == {
+        "split_rows": DEV,
+        "ranked_scanned": DEV,
+    }
+
+
+def test_build_excludes_test_images_and_states_from_train(tmp_path, monkeypatch):
+    def load(dataset, config, split, revision):
+        rows = _fake_load_dataset(dataset, config, split, revision)
+        if dataset == MODULE.AOKVQA.dataset and split == "train":
+            rows = rows.cast_column("image", Image(decode=False)).map(
+                lambda row, index: (
+                    {"image": _image(200)}
+                    if index == 0
+                    else {"image": _image(201), "question": "How many 1?"}
+                    if index == 1
+                    else {"question": "How many 2?"}
+                    if index == 2
+                    else row
+                ),
+                with_indices=True,
+            )
+            rows = rows.cast_column("image", Image())
+        return rows
+
+    monkeypatch.setattr(MODULE, "load_dataset", load)
+    contract = MODULE.build(
+        tmp_path / "out", train_per_source=0, dev_per_source=DEV, test_cap=TEST
+    )
+    assert contract["dropped"]["train"]["aokvqa"] == {
+        "image_overlap": 1,
+        "state_overlap": 1,
+    }
+    assert contract["counts"]["train"]["aokvqa"] == TRAIN + 1 - 2
+    out = tmp_path / "out"
+    train = _rows(out / "train.jsonl")
+    test = _rows(out / "test.jsonl")
+    assert not {row["images"][0] for row in train} & {row["images"][0] for row in test}
+    assert any(row["state"] == {"question": "How many 2?"} for row in train)
 
 
 def test_build_rejects_short_sources(tmp_path, monkeypatch):
@@ -369,12 +459,7 @@ def test_emitted_row_round_trips_through_normalize_jsonl(tmp_path, monkeypatch):
 
     _build(tmp_path, monkeypatch, "out")
     row = _rows(tmp_path / "out" / "train.jsonl")[0]
-    try:
-        result = normalize_jsonl(row)
-    except ValueError as error:
-        if "images" in str(error):
-            pytest.skip(f"normalize_jsonl does not accept images yet: {error}")
-        raise
+    result = normalize_jsonl(row)
     assert result["images"] == row["images"]
     assert result["labels"]["answer"]["gold_idx"] == row["labels"]["answer"]["gold_idx"]
 

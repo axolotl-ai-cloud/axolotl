@@ -419,3 +419,108 @@ def test_prepared_cache_identity_tracks_the_media_adapter_module(tmp_path, monke
         lambda path: "edited" if path == adapter_file else real(path),
     )
     assert identity() != before
+
+
+def test_canvas_row_resizes_with_the_configured_max_image_size(tmp_path):
+    big = tmp_path / "big.png"
+    Image.new("RGB", (112, 56), (9, 9, 9)).save(big)
+    tokenizer = VLMCharacterTokenizer()
+    tokenizer.eos_token_id = 11
+    cfg = {
+        "seed": 0,
+        "diffusion_lm": {"canvas_width": 16, "mask_token_id": 100},
+        "diffusion_decision": {"max_image_size": 56},
+    }
+    row = datasets._canvas_row(
+        tokenizer,
+        normalize_jsonl(make_record(images=[str(big)])),
+        cfg,
+        1.0,
+        spec=SimpleNamespace(max_canvas=None, noise=datasets.DiffusionNoise.ABSORBING),
+        vocab_size=200000,
+    )
+    assert row["canvas"].image_sizes == ((28, 56),)
+    assert row["canvas"].prompt_ids.count(19) == 2
+
+
+def test_load_decision_datasets_hashes_image_files_into_the_cache_key(
+    tmp_path, images, monkeypatch
+):
+    wide, _ = images
+    source = tmp_path / "train.jsonl"
+    source.write_text(json.dumps(make_record(images=["images/wide.png"])) + "\n")
+    monkeypatch.setattr(datasets, "require_diffusion_spec", lambda _cfg: _spec())
+    seen = []
+
+    class Stop(Exception):
+        pass
+
+    def identity(cfg, tokenizer, spec, sources, *, image_paths=None):
+        seen.append((list(sources), image_paths))
+        raise Stop
+
+    monkeypatch.setattr(datasets, "prepared_cache_identity", identity)
+    cfg = {
+        "dataset_prepared_path": str(tmp_path / "prepared"),
+        "datasets": [
+            {
+                "path": "json",
+                "data_files": str(source),
+                "split": "train",
+                "type": "diffusion_decision.jsonl",
+            }
+        ],
+        "diffusion_decision": {},
+    }
+    with pytest.raises(Stop):
+        datasets.load_decision_datasets(cfg, tokenizer=object())
+    assert seen == [([source], [wide])]
+
+
+def test_collator_for_config_threads_image_cache_size(monkeypatch):
+    monkeypatch.setattr(
+        "axolotl.integrations.diffusion_decision.training_collator.require_diffusion_spec",
+        lambda _cfg: _spec(),
+    )
+    _, kwargs = decision_collator_for_config(
+        {
+            "tokenizer": SimpleNamespace(pad_token_id=0),
+            "diffusion_decision": {"image_cache_size": 0},
+        }
+    )
+    assert DecisionTrainingCollator(**kwargs)._image_cache_size == 0
+    assert DiffusionDecisionConfig().image_cache_size == 64
+    with pytest.raises(ValueError):
+        DiffusionDecisionConfig(image_cache_size=-1)
+
+
+def test_manifest_records_image_inputs_only_for_image_canvases():
+    from axolotl.integrations.diffusion_decision.datasets import DecisionDataset
+    from axolotl.integrations.diffusion_decision.manifest import (
+        build_decision_manifest,
+    )
+    from axolotl.integrations.diffusion_decision.plugin import _carries_images
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault(
+        {
+            "base_model": "nvidia/Nemotron-Labs-Diffusion-VLM-8B",
+            "model_config_type": "nemotron_labs_diffusion_vlm",
+            "diffusion_lm": {"canvas_width": 128, "mask_token_id": 100},
+            "diffusion_decision": {
+                "layout": "prompt_slots",
+                "max_image_size": 784,
+                "latent": {"mode": "none", "num_slots": 0},
+            },
+        }
+    )
+    assert build_decision_manifest(cfg).image_inputs is None
+    manifest = build_decision_manifest(cfg, has_images=True)
+    assert manifest.model_dump(mode="json")["image_inputs"] == {
+        "max_image_size": 784,
+        "placement": "images_before_state",
+    }
+    text = DecisionDataset([{"canvas": make_canvas()}], {})
+    image = DecisionDataset([[{"canvas": _image_canvas(("a.png",), ((28, 28),))}]], {})
+    assert not _carries_images(text, None)
+    assert _carries_images(text, image)

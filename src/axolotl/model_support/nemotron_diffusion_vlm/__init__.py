@@ -1,6 +1,7 @@
 """Native descriptor for Nemotron Labs Diffusion VLM."""
 
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -41,8 +42,12 @@ from axolotl.model_support.templates import DIFFUSION_LM
 LOG = logging.getLogger(__name__)
 
 VISION_MODULE_PREFIXES = ("encoder.vision_tower.", "encoder.multi_modal_projector.")
-_TEXT_LAYER_PATTERN = r"^encoder\.layers\.\d+\.(?:self_attn|mlp)\.(?:{names})$"
-_PLAIN_TARGET = re.compile(r"^[A-Za-z0-9_]+$")
+# Decoder projection names Pixtral reuses; the second set exists only in vision.
+_SHARED_TEXT_NAMES = frozenset(
+    ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
+)
+_VISION_ONLY_NAMES = frozenset(("linear_1", "linear_2", "merging_layer", "patch_conv"))
+DECODER_LAYER_CLS = "Ministral3DecoderLayer"
 
 
 def _model_class() -> type:
@@ -62,19 +67,69 @@ def _lora_attention_cls(cfg) -> type:
     return lora_attention_cls_for(cfg, VLM_VARIANT)
 
 
-def scope_lora_targets_to_text_layers(targets):
-    """Plain module names also match the Pixtral tower's projections; anchor them."""
+def scope_lora_targets_to_text_layers(targets, layers=None):
+    """Plain names shared with the Pixtral tower are anchored to text layers; the
+    other entries keep PEFT's list (suffix) semantics as regex alternatives."""
     if isinstance(targets, str) or not targets:
         return targets
-    names = [str(target) for target in targets]
-    if not all(_PLAIN_TARGET.fullmatch(name) for name in names):
+    names = sorted({str(target) for target in targets})
+    vision_only = [name for name in names if name in _VISION_ONLY_NAMES]
+    if vision_only:
+        raise ValueError(
+            f"Nemotron VLM LoRA targets {vision_only} exist only in the frozen vision "
+            "projector/tower; restrict lora_target_modules to encoder.layers."
+        )
+    shared = [name for name in names if name in _SHARED_TEXT_NAMES]
+    if not shared:
         return targets
-    return _TEXT_LAYER_PATTERN.format(names="|".join(sorted(set(names))))
+    others = [name for name in names if name not in _SHARED_TEXT_NAMES]
+    if layers:
+        prefix = r"encoder\.layers\.(?:{})\.".format("|".join(str(i) for i in layers))
+    else:
+        prefix = r"encoder\.layers\.\d+\."
+    alternatives = [rf"^{prefix}(?:self_attn|mlp)\.(?:{'|'.join(shared)})$"]
+    if others:
+        escaped = "|".join(re.escape(name) for name in others)
+        tail = rf"{prefix}(?:.*\.)?" if layers else r"(?:.*\.)?"
+        alternatives.append(rf"^{tail}(?:{escaped})$")
+    return "|".join(alternatives)
 
 
 def _is_vision_parameter(name: str) -> bool:
     bare = name.removeprefix("base_model.model.")
     return bare.startswith(VISION_MODULE_PREFIXES)
+
+
+def _validate_fsdp_wrap(cfg) -> None:
+    """Text-only microbatches skip the frozen vision tower, so a vision or projector
+    FSDP unit would all-gather on some ranks only and hang the step."""
+    fsdp_config = getattr(cfg, "fsdp_config", None)
+    if not fsdp_config:
+        return
+    policy = str(fsdp_config.get("auto_wrap_policy") or "").upper()
+    if policy != "TRANSFORMER_BASED_WRAP":
+        return
+    names = fsdp_config.get("transformer_layer_cls_to_wrap")
+    if not names:
+        fsdp_config["transformer_layer_cls_to_wrap"] = DECODER_LAYER_CLS
+        # prepare_optim_env exported the FSDP env vars before this hook runs.
+        os.environ["FSDP_TRANSFORMER_CLS_TO_WRAP"] = DECODER_LAYER_CLS
+        LOG.info(
+            "Nemotron VLM FSDP: wrapping only %s (vision stays in the root unit).",
+            DECODER_LAYER_CLS,
+        )
+        return
+    rejected = [
+        name.strip()
+        for name in str(names).split(",")
+        if name.strip() != DECODER_LAYER_CLS
+    ]
+    if rejected:
+        raise ValueError(
+            "Nemotron VLM FSDP transformer_layer_cls_to_wrap must name only "
+            f"{DECODER_LAYER_CLS}; got {rejected}. Wrapping norm, vision or projector "
+            "classes hangs ranks whose microbatch has no images."
+        )
 
 
 def _validate(context: ModelHookContext) -> None:
@@ -96,10 +151,16 @@ def _validate(context: ModelHookContext) -> None:
     validate_native_diffusion_lora(
         cfg, model_name="Nemotron VLM", allow_4bit=True, allow_fsdp=True
     )
-    scoped = scope_lora_targets_to_text_layers(cfg.lora_target_modules)
+    _validate_fsdp_wrap(cfg)
+    scoped = scope_lora_targets_to_text_layers(
+        cfg.lora_target_modules, getattr(cfg, "peft_layers_to_transform", None)
+    )
     if scoped is not cfg.lora_target_modules:
         LOG.info("Scoping Nemotron VLM LoRA targets to text layers: %s", scoped)
         cfg.lora_target_modules = scoped
+        # PEFT rejects layers_to_transform with a str target; the regex carries them.
+        cfg.peft_layers_to_transform = None
+        cfg.peft_layers_pattern = None
 
 
 def _freeze_vision(context: ModelHookContext) -> None:
@@ -151,10 +212,12 @@ class NemotronDiffusionVLMSupport(ModelSupport):
         ),
         capabilities={
             "vision_inputs": Supported(
-                "Image features are scattered into the prompt's image-pad tokens."
+                "Only through the diffusion_decision plugin; plain diffusion_lm SFT "
+                "on this model is text-only."
             ),
             "diffusion_varlen": Supported(
-                "Native full-sequence varlen attention is supported."
+                "Native full-sequence varlen attention; measured on text-only "
+                "batches, image batches are unmeasured."
             ),
             "cut_cross_entropy": Unsupported(
                 "The selected-logit CCE patch is not yet verified on the VLM."
@@ -162,12 +225,16 @@ class NemotronDiffusionVLMSupport(ModelSupport):
             "fused_attn_kernel": Unsupported(
                 "Native attention parity is not verified."
             ),
-            "fsdp": Supported("FSDP2 LoRA and QLoRA match DDP step losses."),
+            "fsdp": Supported(
+                "FSDP2 LoRA and QLoRA match DDP step losses on text-only batches; "
+                "image batches are unmeasured."
+            ),
             "quantized_lora": Supported(
-                "4-bit LoRA with the vision stack left unquantized; 8-bit is rejected."
+                "4-bit LoRA with the vision stack left unquantized, measured on "
+                "text-only batches (image batches unmeasured); 8-bit is rejected."
             ),
             "lora_kernels": Supported(
-                "Fused QKV/O/MLP kernels patch the native attention class."
+                "Fused QKV/O/MLP kernels patch the native attention class; measured on text-only batches."
             ),
         },
         strategies=ModelStrategyOverrides(

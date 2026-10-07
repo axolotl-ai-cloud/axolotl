@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -319,8 +320,13 @@ class ImageStore:
         relative = f"images/{digest}.{extension}"
         if digest not in self.written:
             path = self.directory / f"{digest}.{extension}"
-            if not path.exists():
-                path.write_bytes(data)
+            if (
+                not path.exists()
+                or hashlib.sha256(path.read_bytes()).hexdigest() != digest
+            ):
+                temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+                temporary.write_bytes(data)
+                os.replace(temporary, path)
             self.written[digest] = len(data)
         return relative
 
@@ -364,6 +370,13 @@ def _select(
     return [(index, record) for _, index, record in ordered]
 
 
+def _state_key(state: Any, digests: Sequence[str]) -> str:
+    """Image-aware identity, matching ``hygiene.record_fingerprint``."""
+    return hashlib.sha256(
+        "\0".join([state_fingerprint(state), *digests]).encode("utf-8")
+    ).hexdigest()
+
+
 def _materialize(
     source: Source,
     split: str,
@@ -371,7 +384,7 @@ def _materialize(
     store: ImageStore,
     excluded_states: set[str],
     excluded_images: set[str],
-) -> tuple[list[dict[str, Any]], Counter[str]]:
+) -> tuple[list[dict[str, Any]], Counter[str], dict[str, int]]:
     dataset = _load(source, split)
     presence = _image_presence(dataset)
     drops: Counter[str] = Counter()
@@ -388,18 +401,21 @@ def _materialize(
         if record["id"] in seen_ids:
             raise ValueError(f"{source.name} {split} has duplicate source ids")
         seen_ids.add(record["id"])
-        if state_fingerprint(record["state"]) in excluded_states:
-            drops["state_overlap"] += 1
-            continue
         candidates.append((_rank(record["source"], split, record["id"]), index, record))
     ordered = _select(candidates, source, split, limit)
     images = dataset.cast_column("image", Image(decode=False))
     records: list[dict[str, Any]] = []
+    scanned = 0
     for index, record in ordered:
         if limit and len(records) == limit:
             break
+        scanned += 1
         data, extension = _image_payload(images[index]["image"])
-        if hashlib.sha256(data).hexdigest() in excluded_images:
+        digest = hashlib.sha256(data).hexdigest()
+        if _state_key(record["state"], (digest,)) in excluded_states:
+            drops["state_overlap"] += 1
+            continue
+        if digest in excluded_images:
             drops["image_overlap"] += 1
             continue
         record["images"] = [store.put_payload(data, extension)]
@@ -409,7 +425,7 @@ def _materialize(
             f"{source.name} {split} has {len(records)} usable rows after image "
             f"exclusion; need {limit}"
         )
-    return records, drops
+    return records, drops, {"split_rows": len(dataset), "ranked_scanned": scanned}
 
 
 def _write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
@@ -445,7 +461,12 @@ def _assert_image_isolation(
 
 
 def _states(records: Iterable[Mapping[str, Any]]) -> set[str]:
-    return {state_fingerprint(record["state"]) for record in records}
+    return {
+        _state_key(
+            record["state"], [image_digest(relative) for relative in record["images"]]
+        )
+        for record in records
+    }
 
 
 def _image_digests(records: Iterable[Mapping[str, Any]]) -> set[str]:
@@ -476,6 +497,7 @@ def build(
     store = ImageStore(output_dir)
     counts: dict[str, dict[str, int]] = {}
     drops: dict[str, dict[str, dict[str, int]]] = {}
+    scanned: dict[str, dict[str, dict[str, int]]] = {}
 
     def run(
         source: Source,
@@ -484,11 +506,12 @@ def build(
         excluded: set[str],
         excluded_images: set[str],
     ) -> list:
-        records, dropped = _materialize(
+        records, dropped, seen = _materialize(
             source, split, limit, store, excluded, excluded_images
         )
         counts.setdefault(split, {})[source.name] = len(records)
         drops.setdefault(split, {})[source.name] = dict(sorted(dropped.items()))
+        scanned.setdefault(split, {})[source.name] = seen
         return records
 
     test: list[dict[str, Any]] = []
@@ -539,13 +562,15 @@ def build(
             "test_cap": test_cap,
         },
         "split_isolation": {
-            "state": "test states excluded from train and dev; train states excluded from dev",
+            "state": "test states excluded from train and dev; train states excluded from dev; a state is the state fingerprint plus its image sha256s (hygiene.record_fingerprint)",
             "source_group": "disjoint across splits",
             "family": "disjoint across splits (ScienceQA uses the row id)",
             "image": "image sha256 digests disjoint across splits; test images excluded from train and dev, train images from dev",
         },
         "counts": counts,
         "dropped": drops,
+        "dropped_scope": "no_image and invalid_choices_or_answer count every split row (scanned.split_rows); state_overlap and image_overlap count only the rank-ordered candidates read until the per-source count filled (scanned.ranked_scanned)",
+        "scanned": scanned,
         "files": files,
         "images": {
             "directory": "images",
@@ -560,15 +585,25 @@ def build(
     return contract
 
 
-def main() -> None:
+def _count(value: str) -> int:
+    count = int(value)
+    if count < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {count}")
+    return count
+
+
+def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("output_dir", type=Path)
-    parser.add_argument("--train-per-source", type=int, default=TRAIN_PER_SOURCE)
-    parser.add_argument("--dev-per-source", type=int, default=DEV_PER_SOURCE)
+    exact = "Exact per-source row count; the build fails when a source is short. 0 keeps every usable row."
     parser.add_argument(
-        "--test-cap", type=int, default=TEST_CAP, help="0 keeps every CV-Bench row."
+        "--train-per-source", type=_count, default=TRAIN_PER_SOURCE, help=exact
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--dev-per-source", type=_count, default=DEV_PER_SOURCE, help=exact
+    )
+    parser.add_argument("--test-cap", type=_count, default=TEST_CAP, help=exact)
+    args = parser.parse_args(argv)
     build(
         args.output_dir,
         train_per_source=args.train_per_source,

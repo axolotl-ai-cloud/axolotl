@@ -20,6 +20,12 @@ from axolotl.core.trainers.diffusion_lm.batch import DiffusionBatch
 from axolotl.core.trainers.diffusion_lm.trainer import AxolotlDiffusionTrainer
 from axolotl.core.trainers.diffusion_lm.unroll import run_unroll
 from axolotl.model_support import DiffusionLayout, DiffusionNoise, LogitAlignment
+from axolotl.processing_strategies import (
+    NEMOTRON_VLM_IMAGE_BREAK_ID,
+    NEMOTRON_VLM_IMAGE_END_ID,
+    NEMOTRON_VLM_IMAGE_PAD_ID,
+    NEMOTRON_VLM_IMAGE_START_ID,
+)
 
 from ._util import _value
 from .args import DiffusionDecisionConfig
@@ -703,6 +709,9 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         k_max, grad_through_steps = self._native_unroll_settings()
         final_kwargs = {}
         media_kwargs = _media_model_kwargs(inputs)
+        update_state = (
+            _without_image_markers(backend.update) if media_kwargs else backend.update
+        )
         selected_rows, selected_positions, _ = self._question_coordinates(
             inputs,
             rows=packed["input_ids"].shape[0],
@@ -775,7 +784,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     packed,
                     aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
                 ),
-                update_state=backend.update,
+                update_state=update_state,
                 **final_kwargs,
             )
         else:
@@ -817,7 +826,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     packed,
                     aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
                 ),
-                update_state=backend.update,
+                update_state=update_state,
                 pilot_for_single_step=False,
                 **final_kwargs,
             )
@@ -1150,6 +1159,26 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         if self.args.world_size > 1:
             denominator = denominator / self.args.world_size
         return result.loss * local_examples / denominator
+
+
+_IMAGE_MARKER_IDS = (
+    NEMOTRON_VLM_IMAGE_START_ID,
+    NEMOTRON_VLM_IMAGE_PAD_ID,
+    NEMOTRON_VLM_IMAGE_BREAK_ID,
+    NEMOTRON_VLM_IMAGE_END_ID,
+)
+
+
+def _without_image_markers(update):
+    """A committed image-pad id would break the remote pad-count/feature assert."""
+
+    def wrapped(state, logits, update_mask):
+        ids = torch.tensor(_IMAGE_MARKER_IDS, device=logits.device)
+        return update(
+            state, logits.detach().index_fill(-1, ids, float("-inf")), update_mask
+        )
+
+    return wrapped
 
 
 def _media_model_kwargs(inputs: Mapping[str, Any]) -> dict[str, Any]:

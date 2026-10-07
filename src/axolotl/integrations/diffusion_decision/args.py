@@ -256,6 +256,13 @@ class DiffusionDecisionConfig(BaseModel):
             "description": "Longest image edge in pixels before token expansion; a multiple of 28, each 28x28 block is one prompt token."
         },
     )
+    image_cache_size: int = Field(
+        default=64,
+        ge=0,
+        json_schema_extra={
+            "description": "Normalized image tensors each collator (and dataloader worker) keeps in an LRU; 0 disables the cache."
+        },
+    )
     mixture: DecisionMixtureConfig = Field(
         default_factory=DecisionMixtureConfig,
         json_schema_extra={"description": "Source sampling and loss weighting."},

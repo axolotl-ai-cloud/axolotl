@@ -81,11 +81,137 @@ def test_auto_model_class_passes_the_vlm_variant(monkeypatch):
         ),
         ("^encoder\\.layers\\..*", "^encoder\\.layers\\..*"),
         (["encoder.layers.0.self_attn.q_proj"], ["encoder.layers.0.self_attn.q_proj"]),
+        (["diffusion_head"], ["diffusion_head"]),
         ([], []),
     ],
 )
 def test_plain_targets_are_scoped_to_text_layers(targets, expected):
     assert scope_lora_targets_to_text_layers(targets) == expected
+
+
+_MODULE_KEYS = (
+    "encoder.layers.0.self_attn.q_proj",
+    "encoder.layers.1.self_attn.q_proj",
+    "encoder.layers.1.mlp.down_proj",
+    "encoder.vision_tower.transformer.layers.0.attention.q_proj",
+    "encoder.vision_tower.transformer.layers.1.feed_forward.down_proj",
+    "diffusion_head",
+    "encoder.layers.1.self_attn.k_proj",
+)
+
+
+def _matched(pattern):
+    import re
+
+    return [key for key in _MODULE_KEYS if re.fullmatch(pattern, key)]
+
+
+def test_scoping_keeps_non_shared_targets_with_suffix_semantics():
+    pattern = scope_lora_targets_to_text_layers(
+        ["q_proj", "down_proj", "diffusion_head", "self_attn.k_proj"]
+    )
+    assert _matched(pattern) == [
+        "encoder.layers.0.self_attn.q_proj",
+        "encoder.layers.1.self_attn.q_proj",
+        "encoder.layers.1.mlp.down_proj",
+        "diffusion_head",
+        "encoder.layers.1.self_attn.k_proj",
+    ]
+
+
+def test_scoping_folds_layers_to_transform_into_the_pattern():
+    pattern = scope_lora_targets_to_text_layers(["q_proj", "k_proj"], [1])
+    assert _matched(pattern) == [
+        "encoder.layers.1.self_attn.q_proj",
+        "encoder.layers.1.self_attn.k_proj",
+    ]
+    cfg = DictDefault(
+        trust_remote_code=True,
+        diffusion_lm={},
+        adapter="lora",
+        lora_target_modules=["q_proj", "v_proj"],
+        peft_layers_to_transform=[0, 1],
+    )
+    _validate(ModelHookContext(cfg=cfg, model_config=None))
+    assert cfg.peft_layers_to_transform is None
+    assert r"encoder\.layers\.(?:0|1)\." in cfg.lora_target_modules
+    from peft import LoraConfig
+
+    LoraConfig(
+        target_modules=cfg.lora_target_modules,
+        layers_to_transform=cfg.peft_layers_to_transform,
+    )
+
+
+def test_scoping_rejects_projector_only_targets():
+    with pytest.raises(ValueError, match="exist only in the frozen vision"):
+        scope_lora_targets_to_text_layers(["q_proj", "linear_1"])
+
+
+def _fsdp_cfg(**fsdp_config):
+    return DictDefault(
+        trust_remote_code=True,
+        diffusion_lm={},
+        adapter="lora",
+        fsdp_version=2,
+        fsdp_config=fsdp_config,
+    )
+
+
+def test_fsdp_transformer_wrap_defaults_to_decoder_layers(monkeypatch):
+    monkeypatch.delenv("FSDP_TRANSFORMER_CLS_TO_WRAP", raising=False)
+    cfg = _fsdp_cfg(auto_wrap_policy="TRANSFORMER_BASED_WRAP")
+    _validate(ModelHookContext(cfg=cfg, model_config=None))
+    assert cfg.fsdp_config["transformer_layer_cls_to_wrap"] == "Ministral3DecoderLayer"
+    import os
+
+    assert os.environ["FSDP_TRANSFORMER_CLS_TO_WRAP"] == "Ministral3DecoderLayer"
+
+
+@pytest.mark.parametrize(
+    "names",
+    ["Ministral3DecoderLayer,Ministral3RMSNorm", "PixtralAttentionLayer"],
+)
+def test_fsdp_transformer_wrap_rejects_non_decoder_units(names):
+    cfg = _fsdp_cfg(
+        auto_wrap_policy="TRANSFORMER_BASED_WRAP", transformer_layer_cls_to_wrap=names
+    )
+    with pytest.raises(ValueError, match="must name only Ministral3DecoderLayer"):
+        _validate(ModelHookContext(cfg=cfg, model_config=None))
+
+
+def test_fsdp_without_transformer_wrap_is_left_alone():
+    cfg = _fsdp_cfg(
+        auto_wrap_policy="TRANSFORMER_BASED_WRAP",
+        transformer_layer_cls_to_wrap="Ministral3DecoderLayer",
+    )
+    _validate(ModelHookContext(cfg=cfg, model_config=None))
+    cfg = _fsdp_cfg(reshard_after_forward=True)
+    _validate(ModelHookContext(cfg=cfg, model_config=None))
+    assert "transformer_layer_cls_to_wrap" not in cfg.fsdp_config
+
+
+def test_required_files_cover_the_vlm_modeling_relative_imports():
+    import re
+    from pathlib import Path
+
+    snapshot = Path(
+        "/mnt/data/hf_cache/hub/models--nvidia--Nemotron-Labs-Diffusion-VLM-8B/"
+        "snapshots/adca93d16471c1e07d594ae444d23e1876f6b365"
+    )
+    pending = [VLM_VARIANT.modeling_file]
+    if not (snapshot / pending[0]).is_file():
+        pytest.skip("Nemotron VLM snapshot not cached")
+    needed = set()
+    while pending:
+        name = pending.pop()
+        needed.add(name)
+        text = (snapshot / name).read_text(encoding="utf-8")
+        for module in re.findall(r"^\s*from \.(\w+) import", text, re.MULTILINE):
+            if f"{module}.py" not in needed:
+                pending.append(f"{module}.py")
+    assert needed <= set(VLM_VARIANT.required_files)
+    assert "chat_utils.py" in VLM_VARIANT.required_files
 
 
 def test_validate_rewrites_plain_targets_and_defaults_attention():
@@ -139,14 +265,42 @@ def test_freeze_vision_leaves_text_trainable():
     assert grads["diffusion_head.weight"]
 
 
-def test_adapter_guard_rejects_vision_lora_and_accepts_text_lora():
+def _peft_wrapped(model):
+    wrapper = nn.Module()
+    wrapper.base_model = nn.Module()
+    wrapper.base_model.model = model
+    return wrapper
+
+
+@pytest.mark.parametrize("wrap", [lambda model: model, _peft_wrapped])
+def test_adapter_guard_rejects_vision_lora_and_accepts_text_lora(wrap):
     _reject_vision_adapters(
-        ModelHookContext(cfg=DictDefault(), model=_vlm_like(vision_lora=False))
+        ModelHookContext(cfg=DictDefault(), model=wrap(_vlm_like(vision_lora=False)))
     )
     with pytest.raises(ValueError, match="vision modules"):
         _reject_vision_adapters(
-            ModelHookContext(cfg=DictDefault(), model=_vlm_like(vision_lora=True))
+            ModelHookContext(cfg=DictDefault(), model=wrap(_vlm_like(vision_lora=True)))
         )
+
+
+def test_freeze_vision_handles_the_peft_prefix():
+    model = _peft_wrapped(_vlm_like(vision_lora=False))
+    _freeze_vision(ModelHookContext(cfg=DictDefault(), model=model))
+    grads = {name: p.requires_grad for name, p in model.named_parameters()}
+    assert not any(v for n, v in grads.items() if "vision_tower" in n)
+    assert all(v for n, v in grads.items() if ".encoder.layers" in n)
+
+
+def test_lora_kernels_are_supported_on_the_vlm():
+    from axolotl.model_support.base import Supported
+    from axolotl.model_support.nemotron_diffusion_vlm import (
+        NemotronDiffusionVLMSupport,
+    )
+
+    capabilities = NemotronDiffusionVLMSupport.profile.capabilities
+    assert isinstance(capabilities["lora_kernels"], Supported)
+    for name in ("fsdp", "quantized_lora", "diffusion_varlen"):
+        assert "image batches" in capabilities[name].note
 
 
 def test_flex_attention_class_name_follows_the_variant(monkeypatch):
@@ -255,7 +409,63 @@ def test_forward_drops_the_none_inputs_embeds_peft_passes(tmp_path, monkeypatch)
 def test_4bit_skip_list_matches_the_real_module_names(module_name, converted):
     from transformers.quantizers.quantizers_utils import should_convert_module
 
-    from axolotl.loaders.model import NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES
+    from axolotl.utils.nf4 import (
+        architecture_skip_modules,
+        nf4_should_quantize,
+        nf4_skip_modules,
+    )
 
-    patterns = list(NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES)
+    patterns = list(architecture_skip_modules("nemotron_labs_diffusion_vlm"))
     assert should_convert_module(module_name, patterns) is converted
+    merge_skips = nf4_skip_modules("nemotron_labs_diffusion_vlm", {})
+    assert (
+        nf4_should_quantize(
+            f"{module_name}.weight", linear=True, expert=False, skips=merge_skips
+        )
+        is converted
+    )
+
+
+def test_4bit_loader_passes_the_vlm_skip_list_to_bitsandbytes():
+    from axolotl.loaders.model import ModelLoader
+
+    loader = SimpleNamespace(
+        cfg=DictDefault(
+            adapter="qlora",
+            load_in_4bit=True,
+            model_config_type="nemotron_labs_diffusion_vlm",
+            torch_dtype=None,
+        ),
+        model_config=SimpleNamespace(),
+        model_kwargs={},
+        is_fsdp_enabled=False,
+    )
+    ModelLoader._set_quantization_config(loader)
+    assert loader.model_kwargs["quantization_config"].llm_int8_skip_modules == [
+        "encoder.vision_tower",
+        "encoder.multi_modal_projector",
+        "diffusion_head",
+    ]
+
+
+def test_bnb_merge_selects_with_the_vlm_skip_list():
+    from unittest.mock import patch
+
+    from axolotl.cli.merge_lora import _do_merge_lora_efficient
+
+    cfg = DictDefault(
+        base_model="base",
+        lora_model_dir="adapter",
+        output_dir="out",
+        model_config_type="nemotron_labs_diffusion_vlm",
+        nf4_backend="bitsandbytes",
+        _original_load_in_4bit=True,
+        _original_adapter="qlora",
+    )
+    with patch("axolotl.cli.merge_lora.merge_lora_sharded_efficient") as merge:
+        _do_merge_lora_efficient(cfg=cfg)
+    assert merge.call_args.kwargs["bnb_skip_modules"] == [
+        "encoder.vision_tower",
+        "encoder.multi_modal_projector",
+        "diffusion_head",
+    ]

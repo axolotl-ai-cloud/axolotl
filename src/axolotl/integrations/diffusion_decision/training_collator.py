@@ -369,4 +369,7 @@ def decision_collator_for_config(cfg: Any, is_eval: bool = False):
         "max_image_size": int(
             _value(_value(cfg, "diffusion_decision"), "max_image_size", 1400)
         ),
+        "image_cache_size": int(
+            _value(_value(cfg, "diffusion_decision"), "image_cache_size", 64)
+        ),
     }

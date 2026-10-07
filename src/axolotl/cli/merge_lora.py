@@ -141,12 +141,13 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         or getattr(cfg, "_original_adapter", None) == "qlora"
     )
 
+    from axolotl.utils.nf4 import bnb_4bit_skip_modules, nf4_skip_modules
+
     bnb_config_kwargs = getattr(cfg, "bnb_config_kwargs", None) or {}
     nf4_blocksize = bnb_config_kwargs.get("blocksize", None)
     nf4_double_quant = bnb_config_kwargs.get("bnb_4bit_use_double_quant", True)
     bnb_skip_modules = bnb_config_kwargs.get(
-        "llm_int8_skip_modules",
-        ["out_proj"] if cfg.model_config_type == "falcon_h1" else None,
+        "llm_int8_skip_modules", bnb_4bit_skip_modules(cfg.model_config_type)
     )
 
     # Detect MoE expert quantization
@@ -154,8 +155,6 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         getattr(cfg, "quantize_moe_experts", False)
         or getattr(cfg, "_original_quantize_moe_experts", False)
     )
-
-    from axolotl.utils.nf4 import nf4_skip_modules
 
     staged_nf4 = bool(getattr(cfg, "_original_staged_nf4", False))
     nf4_backend = (

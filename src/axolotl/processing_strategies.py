@@ -1,6 +1,7 @@
 """Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
 
 import bisect
+import time
 from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -10,7 +11,7 @@ from typing import Optional
 import numpy as np
 import requests
 import torch
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
@@ -1485,6 +1486,11 @@ NEMOTRON_VLM_TOKEN_SIDE = NEMOTRON_VLM_PATCH_SIZE * NEMOTRON_VLM_SPATIAL_MERGE_S
 NEMOTRON_VLM_MAX_IMAGE_SIZE = 1400
 _NEMOTRON_VLM_IMAGE_MEAN = (0.48145466, 0.4578275, 0.40821073)
 _NEMOTRON_VLM_IMAGE_STD = (0.26862954, 0.26130258, 0.27577711)
+NEMOTRON_VLM_IMAGE_FORMATS = ("PNG", "JPEG", "WEBP", "GIF", "BMP")
+NEMOTRON_VLM_MAX_IMAGE_BYTES = 32 * 1024 * 1024
+NEMOTRON_VLM_IMAGE_FETCH_DEADLINE = 60.0
+# JPEGs over 4x the grid decode at >=2x it to bound memory; not pixel-exact vs remote.
+_NEMOTRON_VLM_DRAFT_FACTOR = 4
 
 
 class NemotronDiffusionVLMProcessingStrategy:
@@ -1585,16 +1591,51 @@ class NemotronDiffusionVLMProcessingStrategy:
         return "".join(expanded)
 
     @staticmethod
-    def load_image(source) -> Image.Image:
+    def _open_image(fp, source: str) -> Image.Image:
+        try:
+            return Image.open(fp, formats=NEMOTRON_VLM_IMAGE_FORMATS)
+        except UnidentifiedImageError as error:
+            raise ValueError(
+                f"image {source} is not one of {', '.join(NEMOTRON_VLM_IMAGE_FORMATS)}"
+            ) from error
+
+    @staticmethod
+    def _fetch_image_bytes(url: str) -> bytes:
+        deadline = time.monotonic() + NEMOTRON_VLM_IMAGE_FETCH_DEADLINE
+        with requests.get(
+            url, stream=True, timeout=30, allow_redirects=False
+        ) as response:
+            if response.is_redirect or response.is_permanent_redirect:
+                raise ValueError(f"image URL {url} redirects; use the final URL")
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "")
+            if not content_type.lower().startswith("image/"):
+                raise ValueError(
+                    f"image URL {url} returned Content-Type {content_type!r}"
+                )
+            data = bytearray()
+            for chunk in response.iter_content(chunk_size=1 << 16):
+                data.extend(chunk)
+                if len(data) > NEMOTRON_VLM_MAX_IMAGE_BYTES:
+                    raise ValueError(
+                        f"image URL {url} exceeds {NEMOTRON_VLM_MAX_IMAGE_BYTES} bytes"
+                    )
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        f"image URL {url} took over "
+                        f"{NEMOTRON_VLM_IMAGE_FETCH_DEADLINE:.0f}s to download"
+                    )
+        return bytes(data)
+
+    @classmethod
+    def load_image(cls, source) -> Image.Image:
         """Open like the remote loader: no EXIF transpose, no mode conversion."""
         if isinstance(source, Image.Image):
             return source
         source = str(source)
         if source.startswith(("http://", "https://")):
-            response = requests.get(source, timeout=30)
-            response.raise_for_status()
-            return Image.open(BytesIO(response.content))
-        return Image.open(source)
+            return cls._open_image(BytesIO(cls._fetch_image_bytes(source)), source)
+        return cls._open_image(source, source)
 
     @staticmethod
     def _to_rgb(image: Image.Image) -> Image.Image:
@@ -1610,10 +1651,12 @@ class NemotronDiffusionVLMProcessingStrategy:
         """Resize to the token grid and normalize; returns float32 ``(3, H, W)``."""
         width, height = image.size
         new_height, new_width = self.image_size(height, width)
+        if max(width / new_width, height / new_height) > _NEMOTRON_VLM_DRAFT_FACTOR:
+            image.draft(None, (2 * new_width, 2 * new_height))
         pixels = torch.from_numpy(
             np.asarray(self._to_rgb(image), dtype=np.float32).copy()
         ).permute(2, 0, 1)
-        if (new_height, new_width) != (height, width):
+        if (new_height, new_width) != tuple(pixels.shape[-2:]):
             pixels = torch.nn.functional.interpolate(
                 pixels[None],
                 size=(new_height, new_width),

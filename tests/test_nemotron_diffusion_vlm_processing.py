@@ -192,3 +192,132 @@ def test_exif_orientation_is_not_applied_like_the_remote_loader(tmp_path):
     with Image.open(path) as raw:
         width, height = raw.size
     assert _encode_one(path)["image_sizes"].tolist() == [[height, width]] == [[28, 56]]
+
+
+def _gradient(width, height):
+    import numpy as np
+
+    y, x = np.mgrid[0:height, 0:width]
+    noise = np.random.default_rng(0).integers(-20, 20, (height, width, 3))
+    pixels = np.stack([x * 255 / width, y * 255 / height, (x + y) % 256], -1)
+    return Image.fromarray((pixels + noise).clip(0, 255).astype(np.uint8))
+
+
+@pytest.mark.parametrize("size", [(300, 100), (3000, 1500)])
+def test_resampling_matches_the_remote_cv2_bicubic(size):
+    cv2 = pytest.importorskip("cv2")
+    import numpy as np
+
+    from axolotl.processing_strategies import (
+        _NEMOTRON_VLM_IMAGE_MEAN,
+        _NEMOTRON_VLM_IMAGE_STD,
+    )
+
+    image = _gradient(*size)
+    adapter = NemotronDiffusionVLMProcessingStrategy()
+    ours = adapter.transform_image(image)
+    height, width = ours.shape[-2:]
+    assert (height, width) != (size[1], size[0])
+    remote = cv2.resize(
+        np.asarray(image, dtype=np.float32),
+        (width, height),
+        interpolation=cv2.INTER_CUBIC,
+    )
+    remote = (remote / 255.0 - np.array(_NEMOTRON_VLM_IMAGE_MEAN, np.float32)) / (
+        np.array(_NEMOTRON_VLM_IMAGE_STD, np.float32)
+    )
+    torch.testing.assert_close(
+        ours, torch.from_numpy(remote.transpose(2, 0, 1)), atol=2e-3, rtol=0
+    )
+
+
+def test_huge_jpegs_decode_at_a_bounded_draft_size(tmp_path):
+    path = tmp_path / "huge.jpg"
+    _gradient(6000, 3000).save(path, format="JPEG")
+    adapter = NemotronDiffusionVLMProcessingStrategy(max_image_size=280)
+    image = adapter.load_image(path)
+    pixels = adapter.transform_image(image)
+    assert tuple(pixels.shape) == (3, 140, 280)
+    assert image.size[0] < 6000 and image.size[0] >= 560
+
+
+@pytest.mark.parametrize("fmt", ["TIFF", "PPM"])
+def test_load_image_rejects_formats_outside_the_allowlist(tmp_path, fmt):
+    path = tmp_path / f"x.{fmt.lower()}"
+    Image.new("RGB", (4, 4)).save(path, format=fmt)
+    with pytest.raises(ValueError, match="is not one of PNG, JPEG"):
+        NemotronDiffusionVLMProcessingStrategy.load_image(path)
+
+
+class _Response:
+    def __init__(self, *, status=200, headers=None, chunks=(b"",), redirect=False):
+        self.status_code = status
+        self.headers = headers or {"Content-Type": "image/png"}
+        self.chunks = chunks
+        self.is_redirect = redirect
+        self.is_permanent_redirect = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(self.status_code)
+
+    def iter_content(self, chunk_size):
+        yield from self.chunks
+
+
+def _png_bytes():
+    import io
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "response,match",
+    [
+        (_Response(redirect=True, status=302), "redirects"),
+        (_Response(headers={"Content-Type": "text/html"}), "Content-Type"),
+        (_Response(chunks=(b"x" * (17 << 20),) * 2), "exceeds"),
+    ],
+)
+def test_url_fetch_guards(monkeypatch, response, match):
+    from axolotl import processing_strategies
+
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append(kwargs)
+        return response
+
+    monkeypatch.setattr(processing_strategies.requests, "get", get)
+    with pytest.raises(ValueError, match=match):
+        NemotronDiffusionVLMProcessingStrategy.load_image("https://x/y.png")
+    assert calls == [{"stream": True, "timeout": 30, "allow_redirects": False}]
+
+
+def test_url_fetch_enforces_a_total_deadline_and_loads_images(monkeypatch):
+    from axolotl import processing_strategies
+
+    data = _png_bytes()
+    monkeypatch.setattr(
+        processing_strategies.requests,
+        "get",
+        lambda url, **kwargs: _Response(chunks=(data[:10], data[10:])),
+    )
+    assert NemotronDiffusionVLMProcessingStrategy.load_image(
+        "https://x/y.png"
+    ).size == (
+        4,
+        4,
+    )
+    clock = iter([0.0, 0.0, 1000.0])
+    monkeypatch.setattr(processing_strategies.time, "monotonic", lambda: next(clock))
+    with pytest.raises(TimeoutError, match="to download"):
+        NemotronDiffusionVLMProcessingStrategy.load_image("https://x/y.png")

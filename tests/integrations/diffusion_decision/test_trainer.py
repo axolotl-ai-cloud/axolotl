@@ -2126,3 +2126,82 @@ def test_decision_cce_final_read_matches_dense_loss_and_gradients(
             assert trainers[1]._decision_metrics[phase][source] == pytest.approx(
                 values, rel=1e-6, abs=1e-7
             )
+
+
+def _media_inputs(inputs):
+    return {
+        **inputs,
+        "pixel_values": torch.zeros(1, 3, 28, 28),
+        "image_sizes": torch.tensor([[28, 28]]),
+    }
+
+
+def _media_calls(model):
+    return [("pixel_values" in call, "image_sizes" in call) for call in model.calls]
+
+
+@pytest.mark.parametrize("selected", [False, True])
+@pytest.mark.parametrize("k_max,steps", [(1, 1), (2, 2)])
+def test_full_sequence_forwards_reach_the_model_with_media_kwargs(
+    selected, k_max, steps
+):
+    trainer = _harness() if k_max == 1 else _multistep(steps, k_max=k_max)
+    model = _SelectedTinyNativeModel(32) if selected else _TinyNativeModel(32)
+    inputs = _media_inputs(
+        _full_sequence_inputs() if k_max == 1 else _full_sequence_multistep_inputs()
+    )
+
+    trainer._full_sequence_logits(
+        model, inputs, trainer._native_spec, trainer._decision_config()
+    )
+
+    assert len(model.calls) == steps
+    assert _media_calls(model) == [(True, True)] * steps
+    if selected:
+        assert model.selected_shapes
+
+
+def test_encoder_canvas_rejects_image_inputs():
+    trainer = _harness(layout=_ENCODER)
+    inputs = _media_inputs(
+        {
+            name: None
+            for name in (
+                "diffusion_batch",
+                "decision_logical_rows",
+                "decision_label_positions",
+                "decision_question_mask",
+                "decision_slot_mask",
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="require the full-sequence layout"):
+        trainer._encoder_canvas_logits(
+            _TinyNativeModel(),
+            inputs,
+            trainer._native_spec,
+            trainer._decision_config(),
+        )
+
+
+@pytest.mark.parametrize("with_media,expected", [(False, 19), (True, 25)])
+def test_free_slot_updates_never_commit_image_markers_with_media(with_media, expected):
+    trainer = _multistep(
+        2, k_max=2, decision=_latent("free", free_update_policy="argmax")
+    )
+    inputs = _collate(_free_slot_canvas((1,), (7, 3, 4, 0), "q"), layout=_FULL)
+    if with_media:
+        inputs = _media_inputs(inputs)
+    model = _TinyNativeModel(32, slopes=False)
+    with torch.no_grad():
+        model.logit_bias.zero_()
+        model.logit_bias[19] = 2.0
+        model.logit_bias[25] = 1.0
+    slots = inputs["decision_slot_mask"]
+
+    trainer._full_sequence_logits(
+        model, inputs, trainer._native_spec, trainer._decision_config()
+    )
+
+    assert len(model.forward_states) == 2
+    assert torch.all(model.forward_states[1][slots] == expected)

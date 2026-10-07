@@ -40,10 +40,16 @@ class NemotronVariant:
     configuration_file: str
     model_class: str
     flex_attention_class: str
+    extra_files: tuple[str, ...] = ()
 
     @property
     def required_files(self) -> tuple[str, ...]:
-        return (self.configuration_file, "modeling_ministral.py", self.modeling_file)
+        return (
+            self.configuration_file,
+            "modeling_ministral.py",
+            self.modeling_file,
+            *self.extra_files,
+        )
 
 
 LM_VARIANT = NemotronVariant(
@@ -59,6 +65,7 @@ VLM_VARIANT = NemotronVariant(
     configuration_file="configuration_nemotron_labs_diffusion_vlm.py",
     model_class="NemotronLabsDiffusionVLMModel",
     flex_attention_class="NemotronLabsDiffusionVLMFlexAttention",
+    extra_files=("chat_utils.py",),
 )
 
 
@@ -499,9 +506,16 @@ def enable_nemotron_explicit_attention_mask(model: Any) -> None:
                 ).to(hidden_states.dtype)
             input_shape = hidden_states.shape[:-1]
             hidden_shape = (*input_shape, -1, self.head_dim)
-            query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-            key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-            value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+            apply_qkv = getattr(self, "apply_qkv", None)
+            if apply_qkv is not None:
+                query_states, key_states, value_states = apply_qkv(hidden_states)
+            else:
+                query_states = self.q_proj(hidden_states)
+                key_states = self.k_proj(hidden_states)
+                value_states = self.v_proj(hidden_states)
+            query_states = query_states.view(hidden_shape).transpose(1, 2)
+            key_states = key_states.view(hidden_shape).transpose(1, 2)
+            value_states = value_states.view(hidden_shape).transpose(1, 2)
             cos, sin = position_embeddings
             query_states, key_states = source.apply_rotary_pos_emb(
                 query_states, key_states, cos, sin
@@ -530,7 +544,7 @@ def enable_nemotron_explicit_attention_mask(model: Any) -> None:
                 attn_output = varlen_attention(
                     query_states, key_states, value_states, metadata, scale=self.scaling
                 )
-                return self.o_proj(
+                return self._project_output(
                     attn_output.reshape(*input_shape, -1).contiguous()
                 ), None
             if past_key_values is not None:
@@ -571,9 +585,15 @@ def enable_nemotron_explicit_attention_mask(model: Any) -> None:
                 attention_mask,
                 **interface_kwargs,
             )
-            return self.o_proj(
+            return self._project_output(
                 attn_output.reshape(*input_shape, -1).contiguous()
             ), attn_weights
+
+        def _project_output(self, attn_output):
+            apply_o = getattr(self, "apply_o", None)
+            if apply_o is not None:
+                return apply_o(attn_output)
+            return self.o_proj(attn_output)
 
     for layer in encoder.layers:
         original = layer.self_attn
