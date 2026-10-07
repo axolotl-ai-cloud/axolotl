@@ -397,8 +397,8 @@ def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
     monkeypatch,
 ):
     class InlineExecutor:
-        def __init__(self, **_kwargs):
-            pass
+        def __init__(self, *, initializer, initargs, **_kwargs):
+            initializer(*initargs)
 
         def __enter__(self):
             return self
@@ -407,7 +407,7 @@ def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
             return False
 
         def map(self, fn, values, **_kwargs):
-            return [fn(value) for value in reversed(list(values))]
+            return [fn(value) for value in values]
 
     def canvas_row(_tokenizer, row, _cfg, source_weight, **_kwargs):
         if row["id"] == "overflow":
@@ -422,7 +422,8 @@ def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
         {"id": "last", "source": "beta"},
     ]
     monkeypatch.setattr(datasets, "_canvas_row", canvas_row)
-    monkeypatch.setattr(datasets, "ThreadPoolExecutor", InlineExecutor)
+    monkeypatch.setattr(datasets, "ProcessPoolExecutor", InlineExecutor)
+    monkeypatch.setattr(datasets, "_CANVAS_CHUNK_SIZE", 2)
     monkeypatch.setattr(datasets, "_resolve_slot_plan", lambda *_args: (None, (), ()))
     spec = SimpleNamespace(max_canvas=None)
     serial, serial_drops = datasets._canvas_rows(

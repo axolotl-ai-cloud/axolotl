@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import multiprocessing
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
+from concurrent.futures import ProcessPoolExecutor
 from glob import glob
 from pathlib import Path
 from typing import Any
@@ -436,6 +436,52 @@ def _canvas_row(
     return row
 
 
+_CANVAS_CHUNK_SIZE = 64
+_CANVAS_WORKER_STATE: tuple[Any, ...] | None = None
+
+
+def _canvas_mp_context() -> Any:
+    # Fork (as ``datasets.map(num_proc=...)`` uses on Linux) inherits the loaded
+    # modules and tokenizer; spawned workers would each re-import torch and
+    # axolotl, which takes close to a minute per worker.
+    method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
+    return multiprocessing.get_context(method)
+
+
+def _init_canvas_worker(state: tuple[Any, ...]) -> None:
+    global _CANVAS_WORKER_STATE
+    _CANVAS_WORKER_STATE = state
+
+
+def _build_canvas_chunk(
+    items: Sequence[tuple[int, dict[str, Any], float]],
+) -> list[tuple[dict[str, Any] | None, bool]]:
+    if _CANVAS_WORKER_STATE is None:
+        raise RuntimeError("decision canvas worker was not initialized")
+    (
+        tokenizer,
+        cfg,
+        spec,
+        vocab_size,
+        slot_plan,
+        thought_open_ids,
+        thought_close_ids,
+    ) = _CANVAS_WORKER_STATE
+    return [
+        _build_canvas_worker(
+            item,
+            tokenizer=tokenizer,
+            cfg=cfg,
+            spec=spec,
+            vocab_size=vocab_size,
+            slot_plan=slot_plan,
+            thought_open_ids=thought_open_ids,
+            thought_close_ids=thought_close_ids,
+        )[1:]
+        for item in items
+    ]
+
+
 def _build_canvas_worker(
     item: tuple[int, dict[str, Any], float],
     *,
@@ -561,32 +607,62 @@ def _canvas_rows(
         tokenizer, cfg, spec, int(vocab_size)
     )
     workers = _value(cfg, "dataset_num_proc", 1) or 1
-    workers = int(workers)
+    workers = min(int(workers), max(1, len(records) // _CANVAS_CHUNK_SIZE))
     if workers > 1:
+        # Canvas building is GIL-bound Python (template resolution, validation,
+        # per-canvas tokenizer calls), so threads never scaled; worker
+        # processes each receive the tokenizer and config once, through the
+        # pool initializer, and build ordered chunks of records.
         LOG.info(
-            "Preparing %s decision canvases with %s worker threads",
+            "Preparing %s decision canvases with %s worker processes",
             len(records),
             workers,
         )
-        work = (
-            (index, record, float(weights.get(record["source"], 1.0)))
-            for index, record in enumerate(records)
+        state = (
+            tokenizer,
+            cfg,
+            spec,
+            int(vocab_size),
+            slot_plan,
+            tuple(thought_open_ids),
+            tuple(thought_close_ids),
         )
-        worker = partial(
-            _build_canvas_worker,
-            tokenizer=tokenizer,
-            cfg=cfg,
-            spec=spec,
-            vocab_size=int(vocab_size),
-            slot_plan=slot_plan,
-            thought_open_ids=tuple(thought_open_ids),
-            thought_close_ids=tuple(thought_close_ids),
+        chunks = (
+            [
+                (
+                    index,
+                    records[index],
+                    float(weights.get(records[index]["source"], 1.0)),
+                )
+                for index in range(start, min(start + _CANVAS_CHUNK_SIZE, len(records)))
+            ]
+            for start in range(0, len(records), _CANVAS_CHUNK_SIZE)
         )
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            prepared = list(executor.map(worker, work))
-        prepared.sort(key=lambda item: item[0])
-        rows = [row for _, row, _ in prepared if row is not None]
-        return rows, sum(overflow for _, _, overflow in prepared)
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=_canvas_mp_context(),
+            initializer=_init_canvas_worker,
+            initargs=(state,),
+        ) as executor:
+            index = 0
+            for prepared in executor.map(_build_canvas_chunk, chunks):
+                for row, overflow in prepared:
+                    record = records[index]
+                    index += 1
+                    if row is None:
+                        canvas_too_long += int(overflow)
+                        continue
+                    # Rows come back unpickled; restore the sharing the serial path
+                    # has with the parent's slot plan and (large) state strings.
+                    if slot_plan is not None:
+                        row["slot_plan"] = slot_plan
+                    text = record.get("state")
+                    if isinstance(text, str) and row["record"].get("state") == text:
+                        row["record"]["state"] = text
+                    rows.append(row)
+                if index % (_CANVAS_CHUNK_SIZE * 40) < len(prepared):
+                    LOG.info("Preparing decision canvases: %s/%s", index, len(records))
+        return rows, canvas_too_long
     for index, record in enumerate(records):
         if index % 1000 == 0:
             LOG.info("Preparing decision canvases: %s/%s", index, len(records))
