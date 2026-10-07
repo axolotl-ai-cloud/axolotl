@@ -384,7 +384,7 @@ def check_peft_trainer_save_route(mesh, root):
 
 def check_non_ep_peft_exports(root):
     from accelerate import Accelerator
-    from accelerate.utils import fsdp_utils
+    from accelerate.utils import DistributedType, fsdp_utils
     from bitsandbytes.nn.parametrize import replace_parameter_4bit
     from peft import LoraConfig, PeftModel, get_peft_model
     from peft.utils.save_and_load import get_peft_model_state_dict
@@ -474,11 +474,25 @@ def check_non_ep_peft_exports(root):
                         requires_grad=parameter.requires_grad,
                     )
                 setattr(module, name, replacements[id(parameter)])
+    # A sharded packed weight beside plain quant-state tensors crashed DCP full state dicts.
+    packed = model.base_model.model.experts.parametrizations["gate_up_proj"]
+    packed.original = nn.Parameter(
+        distribute_tensor(packed.original.detach(), mesh, (Shard(0),)),
+        requires_grad=False,
+    )
+    assert isinstance(packed.original, DTensor)
+    snapshots = {
+        key: parameter.to_local().detach().clone()
+        for key, parameter in replacements.items()
+    }
     accelerator = SimpleNamespace(
         is_main_process=dist.get_rank() == 0,
         num_processes=dist.get_world_size(),
         wait_for_everyone=dist.barrier,
         parallelism_config=None,
+        distributed_type=DistributedType.FSDP,
+        is_fsdp2=True,
+        unwrap_model=lambda model, **kwargs: model,
         state=SimpleNamespace(
             fsdp_plugin=SimpleNamespace(
                 fsdp_version=2, state_dict_type="FULL_STATE_DICT"
@@ -554,6 +568,8 @@ def check_non_ep_peft_exports(root):
                 model, "load_adapter", side_effect=AssertionError("Used local restore")
             ):
                 trainer._load_from_checkpoint(directory)
+            for key, parameter in replacements.items():
+                compare(parameter.to_local(), snapshots[key])
         if dist.get_rank() == 0:
             print(f"PASS non-ep-frozen-adapter-{label}", flush=True)
     dist.barrier()
