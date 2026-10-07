@@ -711,7 +711,8 @@ class TestEfficientMerge:
                 head_dim=32,
                 global_head_dim=32,
                 vocab_size_per_layer_input=128,
-                hidden_size_per_layer_input=16,
+                # bnb 0.50's AVX512 CPU dequant misreads rows shorter than a block
+                hidden_size_per_layer_input=64,
                 layer_types=["sliding_attention", "full_attention"],
                 enable_moe_block=True,
                 num_experts=4,
