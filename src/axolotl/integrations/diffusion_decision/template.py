@@ -11,6 +11,18 @@ from .vendored.djev_template import (
 )
 
 EXPANDED52 = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+# 128 one-character labels that are single tokens with distinct ids, in the answer-template context, for the
+# Nemotron-Labs-Diffusion, Qwen3.5 and Gemma 3 tokenizers: ASCII letters, then Greek and Cyrillic letters, skipping
+# capitals that look like Latin ones (A/Α/А, O/Ο/О, ...) and the letters whose tokens merge with the template
+# (digits, ρ Ξ Ψ, ъ ы ь Ъ Ы Ь).
+EXPANDED128 = tuple(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    "αβγδεζηθικλμνξοπστυφχψω"
+    "ΓΔΘΛΠΣΦΩ"
+    "абвгдежзийклмнопрстуфхцчшщэюя"
+    "БГДЖЗИЙЛПФЦЧШЩЭЮ"
+)
+assert len(EXPANDED128) == 128 and len(set(EXPANDED128)) == 128
 
 
 def codebook_alphabet(codebook):
@@ -18,6 +30,8 @@ def codebook_alphabet(codebook):
         return None
     if codebook == "expanded52":
         return EXPANDED52
+    if codebook == "expanded128":
+        return EXPANDED128
     raise ValueError(f"unknown decision label codebook {codebook!r}")
 
 

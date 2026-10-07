@@ -127,3 +127,30 @@ def test_expanded_codebook_is_preserved_during_permutation():
 
     assert len(result["questions"]["choice"]["options"]) == 28
     assert result["labels"]["choice"]["probs"] == [1 / 28] * 28
+
+
+def test_permute_record_expanded128_codebook_allows_one_hundred_options():
+    original = {
+        "source": "fixture",
+        "group": "group",
+        "id": "r100",
+        "state": {"seen": "objects"},
+        "questions": {
+            "choice": {
+                "type": "choice",
+                "options": [
+                    {"name": f"o{i}", "description": f"option {i}"} for i in range(100)
+                ],
+            }
+        },
+        "labels": {"choice": {"kind": "hard", "gold_idx": 73}},
+    }
+
+    result = permute_record(original, seed=3, codebook="expanded128")
+
+    assert len(result["questions"]["choice"]["options"]) == 100
+    gold = original["questions"]["choice"]["options"][73]
+    assert (
+        result["questions"]["choice"]["options"][result["labels"]["choice"]["gold_idx"]]
+        == gold
+    )

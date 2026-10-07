@@ -280,7 +280,9 @@ nonempty.
 
 Label indexes always refer to this canonical order, never to option names or
 token IDs. Answer tokens come from `labels.codebook`: `vendored26` uses the
-djev letters `A`-`Z` (up to 26 alternatives); `expanded52` allows up to 52.
+djev letters `A`-`Z` (up to 26 alternatives); `expanded52` allows up to 52 (`A`-`Z`, `a`-`z`);
+`expanded128` adds selected Greek and Cyrillic letters for up to 128. Every label must be one
+token in the model's tokenizer, which the canvas template check enforces at preprocessing.
 
 ### Labels
 
