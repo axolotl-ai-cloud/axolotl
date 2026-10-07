@@ -7,6 +7,7 @@ from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
+import torch
 from pydantic import BaseModel
 from transformers import ProcessorMixin
 
@@ -35,6 +36,19 @@ def _extract_input_ids(result):
     ``list[int]`` from the tokenizer.
     """
     return result["input_ids"] if isinstance(result, dict) else result
+
+
+def _copy_conversation(conversation: list[dict]) -> list[dict]:
+    copied = []
+    for turn in conversation:
+        turn_copy = dict(turn)
+        if isinstance(turn_copy.get("content"), list):
+            turn_copy["content"] = [
+                dict(part) if isinstance(part, dict) else part
+                for part in turn_copy["content"]
+            ]
+        copied.append(turn_copy)
+    return copied
 
 
 class ChatTemplatePrompter(Prompter):
@@ -135,7 +149,7 @@ class ChatTemplatePrompter(Prompter):
                 raise TypeError("Processor must be callable")
 
             text = self.processor.apply_chat_template(
-                conversation,
+                _copy_conversation(conversation),
                 tokenize=False,
                 **chat_template_kwargs,
             )
@@ -321,9 +335,20 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         train_on_eot: str | None = None,
         eot_tokens: list[str] | None = None,
         split_thinking: bool | None = False,
+        chat_template_type: str | None = None,
+        role_boundaries_override: list[dict] | None = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm=None,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.prompter: ChatTemplatePrompter = prompter
+
+        # chat_template name; selects the token-level ProcessingStrategy for the MM path.
+        self.chat_template_type = chat_template_type
+        self.role_boundaries_override = role_boundaries_override
+        self._mm_processing_strategy = None
+        self.image_size = image_size
+        self.image_resize_algorithm = image_resize_algorithm
 
         self.roles_to_train = []
         if roles_to_train:
@@ -469,6 +494,45 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         return dict(res)
 
+    def _get_mm_processing_strategy(self):
+        """Cache the token-level ProcessingStrategy — the same scanner the eager collator uses."""
+        if getattr(self, "_mm_processing_strategy", None) is None:
+            from axolotl.processing_strategies import get_processing_strategy
+
+            self._mm_processing_strategy = get_processing_strategy(
+                self.prompter.processor,
+                self.prompter.chat_template,
+                getattr(self, "chat_template_type", None),
+                train_on_inputs=bool(self.train_on_inputs),
+                roles_to_train=self.roles_to_train or None,
+                train_on_eos=self.train_on_eos,
+                role_boundaries_override=getattr(
+                    self, "role_boundaries_override", None
+                ),
+            )
+        return self._mm_processing_strategy
+
+    def _tokenize_single_prompt_mm(self, prompt: dict) -> Dict[str, List[int]]:
+        """Mask labels via the token-level scanner: robust to <image> expansion, unlike
+        the re-tokenize/diff path which mis-masks or crashes on image-bearing turns."""
+        turns = self.get_conversation_thread(prompt)
+        tools = self._get_tools(prompt)
+        images = self._get_images(prompt)
+        # images= is still required here so build_prompt expands <image>.
+        result = self.prompter.build_prompt(turns, tools=tools, images=images)  # type: ignore
+        if not isinstance(result, dict):
+            result = {"input_ids": result}
+        input_ids = result["input_ids"]
+
+        # process_labels scans a batched [B, L] tensor; wrap the single row.
+        strategy = self._get_mm_processing_strategy()
+        labels = strategy.process_labels(torch.tensor([input_ids]))[0].tolist()
+
+        result["labels"] = labels
+        result.setdefault("attention_mask", [1] * len(input_ids))
+        result["length"] = len(input_ids)
+        return result
+
     def _tokenize_single_prompt(self, prompt: dict) -> Dict[str, List[int]]:
         # Old simple legacy behavior that works reliably.
         if (
@@ -505,12 +569,20 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 labels = input_ids
 
             tokenized_prompt["labels"] = labels
+            if self.prompter.processor:
+                tokenized_prompt["length"] = len(input_ids)
 
             return tokenized_prompt
 
+        # MM path: token-level scanner masks labels; find_turn re-tokenizes/diffs each
+        # turn, which mis-masks or crashes once <image> tokens are expanded.
+        if self.prompter.processor:
+            return self._tokenize_single_prompt_mm(prompt)
+
         turns = self.get_conversation_thread(prompt)
         tools = self._get_tools(prompt)
-        result = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
+        images = self._get_images(prompt)
+        result = self.prompter.build_prompt(turns, tools=tools, images=images)  # type: ignore
         if not isinstance(result, dict):
             result = {"input_ids": result}
         input_ids = result["input_ids"]
@@ -568,6 +640,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 turns=turns,
                 turn_idx=index,
                 tools=tools,
+                images=images,
                 content_only=use_content_only,
                 locator=locator,
             )
@@ -614,6 +687,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     turns=turns,
                     turn_idx=index,
                     tools=tools,
+                    images=images,
                     reasoning_only=True,
                     locator=locator,
                 )
@@ -677,6 +751,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         # grid info, etc.); just set the fields we computed locally.
         result["labels"] = labels
         result.setdefault("attention_mask", [1] * len(input_ids))
+        if self.prompter.processor:
+            result["length"] = len(input_ids)
         return result
 
     def find_first_eos_token(self, input_ids, start_idx):
@@ -816,6 +892,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turn_idx: int,
         dummy_turn: dict,
         tools: list[dict] | None,
+        images: list | None = None,
     ) -> tuple[int, int] | None:
         """Locate a turn by re-tokenizing the conversation prefix twice.
 
@@ -829,12 +906,16 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             self.prompter.build_prompt(  # type: ignore
                 turns[:turn_idx] + [dummy_turn],
                 tools=tools,
+                images=images,
                 real_last_index=real_last_index,
             )
         )
         full_ids = _extract_input_ids(
             self.prompter.build_prompt(  # type: ignore
-                turns[: turn_idx + 1], tools=tools, real_last_index=real_last_index
+                turns[: turn_idx + 1],
+                tools=tools,
+                images=images,
+                real_last_index=real_last_index,
             )
         )
 
@@ -889,6 +970,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turns: list[dict],
         turn_idx: int,
         tools: list[dict] | None = None,
+        images: list | None = None,
         content_only: bool = False,
         reasoning_only: bool = False,
         locator: tuple[str, list[int], list[int]] | None = None,
@@ -928,7 +1010,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             dummy_turn = self._build_dummy_turn(
                 turns[turn_idx], content_only, reasoning_only, self._SENTINELS[0]
             )
-            span = self._find_turn_from_tokens(turns, turn_idx, dummy_turn, tools)
+            span = self._find_turn_from_tokens(
+                turns, turn_idx, dummy_turn, tools, images=images
+            )
         if span is None:
             return -1, -1
 
@@ -1068,11 +1152,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             # Convert list content/reasoning_content to string + auto-generated
             # training_detail. See _convert_content_parts for whitespace guidance.
-            content_result = self._convert_content_parts(turn.get("content"))
-            if content_result is not None:
-                turn["content"] = content_result[0]
-                if content_result[1] is not None:
-                    turn["training_detail"] = content_result[1]
+            # Never stringify under a processor: multimodal chat templates iterate
+            # content parts, so a plain string renders as an empty turn.
+            if not self.prompter.processor:
+                content_result = self._convert_content_parts(turn.get("content"))
+                if content_result is not None:
+                    turn["content"] = content_result[0]
+                    if content_result[1] is not None:
+                        turn["training_detail"] = content_result[1]
 
             # Also convert reasoning_content (template_thinking_key) if it's a list
             thinking_key = self.prompter.template_thinking_key
@@ -1087,6 +1174,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         if self.prompter.drop_system_message and turns[0]["role"] == "system":
             turns = turns[1:]
+
+        if self.prompter.processor:
+            for turn in turns:
+                if isinstance(turn.get("content"), str):
+                    turn["content"] = [{"type": "text", "text": turn["content"]}]
 
         return turns
 
@@ -1186,7 +1278,22 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return transformed_message
 
     def _get_images(self, prompt):
-        return prompt.get(self.images, None)
+        images = prompt.get(self.images, None)
+        if images is None or self.image_size is None:
+            return images
+        # Honor cfg.image_size like the eager collator path does.
+        from transformers.image_utils import load_image
+
+        from axolotl.processing_strategies import resize_image_for_config
+
+        def _resize(image):
+            return resize_image_for_config(
+                load_image(image), self.image_size, self.image_resize_algorithm
+            )
+
+        if isinstance(images, (list, tuple)):
+            return [_resize(image) for image in images]
+        return _resize(images)
 
     def _get_tools(self, prompt) -> list[dict] | None:
         """Get tools from prompt if available."""
@@ -1272,6 +1379,10 @@ class MistralStrategy(ChatTemplateStrategy):
         train_on_eot: str | None = None,
         eot_tokens: list[str] | None = None,
         split_thinking: bool | None = False,
+        chat_template_type: str | None = None,
+        role_boundaries_override: list[dict] | None = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm=None,
     ):
         # Call the parent's parent __init__ (PromptTokenizingStrategy) to skip ChatTemplateStrategy's validation
 
@@ -1279,6 +1390,12 @@ class MistralStrategy(ChatTemplateStrategy):
             self, prompter, tokenizer, train_on_inputs, sequence_len
         )
         self.prompter: ChatTemplatePrompter = prompter
+
+        self.chat_template_type = chat_template_type
+        self.role_boundaries_override = role_boundaries_override
+        self._mm_processing_strategy = None
+        self.image_size = image_size
+        self.image_resize_algorithm = image_resize_algorithm
 
         self.roles_to_train = []
         if roles_to_train:
@@ -1354,6 +1471,15 @@ class StrategyLoader:
             "train_on_eot": ds_cfg.get("train_on_eot", None),
             "eot_tokens": cfg.get("eot_tokens", None),  # loads from cfg, not ds_cfg
             "split_thinking": ds_cfg.get("split_thinking", False),
+            # Thread the chat_template NAME + role_boundaries so the MM label
+            # path can select the same ProcessingStrategy as the eager collator.
+            "chat_template_type": cfg.get("chat_template"),
+            "role_boundaries_override": (
+                list(cfg.role_boundaries) if cfg.get("role_boundaries") else None
+            ),
+            # Same image resize the eager collator applies (causal.py builder).
+            "image_size": cfg.get("image_size"),
+            "image_resize_algorithm": cfg.get("image_resize_algorithm"),
         }
 
     def __call__(
