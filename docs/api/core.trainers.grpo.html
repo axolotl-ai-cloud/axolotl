@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -991,6 +991,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.core.trainers.grpo.GRPOStrategy.get_rollout_func">get_rollout_func</a></td>
 <td>Returns the rollout function from the given fully qualified name.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.core.trainers.grpo.GRPOStrategy.get_vllm_kwargs">get_vllm_kwargs</a></td>
+<td>Map <code>trl.vllm_*</code> and the <code>vllm:</code> block onto TRL’s vLLM training args.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.core.trainers.grpo.GRPOStrategy.get_reward_func" class="level5">
@@ -1122,9 +1126,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 </tbody>
 </table>
-
-
 </section>
+</section>
+<section id="axolotl.core.trainers.grpo.GRPOStrategy.get_vllm_kwargs" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.GRPOStrategy.get_vllm_kwargs">get_vllm_kwargs</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.GRPOStrategy.get_vllm_kwargs(trl, vllm_cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Map <code>trl.vllm_*</code> and the <code>vllm:</code> block onto TRL’s vLLM training args.</p>
+<p>Unset values are omitted so TRL’s defaults apply (notably colocate’s 0.3 GPU
+memory utilization, which leaves room for training on the shared GPU).</p>
+
+
 </section>
 </section>
 </section>

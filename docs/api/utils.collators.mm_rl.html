@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>scripts.vllm_serve_lora – Axolotl</title>
+<title>utils.collators.mm_rl – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -933,18 +933,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.scripts.vllm_serve_lora" id="toc-axolotl.scripts.vllm_serve_lora" class="nav-link active" data-scroll-target="#axolotl.scripts.vllm_serve_lora">scripts.vllm_serve_lora</a>
+  <li><a href="#axolotl.utils.collators.mm_rl" id="toc-axolotl.utils.collators.mm_rl" class="nav-link active" data-scroll-target="#axolotl.utils.collators.mm_rl">utils.collators.mm_rl</a>
   <ul class="collapse">
-  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
-  <li><a href="#benefits-over-merge-sync" id="toc-benefits-over-merge-sync" class="nav-link" data-scroll-target="#benefits-over-merge-sync">Benefits over merge-sync</a></li>
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.scripts.vllm_serve_lora.LoRAScriptArguments" id="toc-axolotl.scripts.vllm_serve_lora.LoRAScriptArguments" class="nav-link" data-scroll-target="#axolotl.scripts.vllm_serve_lora.LoRAScriptArguments">LoRAScriptArguments</a></li>
-  </ul></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.scripts.vllm_serve_lora.llm_worker" id="toc-axolotl.scripts.vllm_serve_lora.llm_worker" class="nav-link" data-scroll-target="#axolotl.scripts.vllm_serve_lora.llm_worker">llm_worker</a></li>
-  <li><a href="#axolotl.scripts.vllm_serve_lora.main" id="toc-axolotl.scripts.vllm_serve_lora.main" class="nav-link" data-scroll-target="#axolotl.scripts.vllm_serve_lora.main">main</a></li>
+  <li><a href="#axolotl.utils.collators.mm_rl.AxolotlVisionPreferenceCollator" id="toc-axolotl.utils.collators.mm_rl.AxolotlVisionPreferenceCollator" class="nav-link" data-scroll-target="#axolotl.utils.collators.mm_rl.AxolotlVisionPreferenceCollator">AxolotlVisionPreferenceCollator</a></li>
+  <li><a href="#axolotl.utils.collators.mm_rl.AxolotlVisionUnpairedPreferenceCollator" id="toc-axolotl.utils.collators.mm_rl.AxolotlVisionUnpairedPreferenceCollator" class="nav-link" data-scroll-target="#axolotl.utils.collators.mm_rl.AxolotlVisionUnpairedPreferenceCollator">AxolotlVisionUnpairedPreferenceCollator</a></li>
+  <li><a href="#axolotl.utils.collators.mm_rl.MultimodalRLExampleNormalizer" id="toc-axolotl.utils.collators.mm_rl.MultimodalRLExampleNormalizer" class="nav-link" data-scroll-target="#axolotl.utils.collators.mm_rl.MultimodalRLExampleNormalizer">MultimodalRLExampleNormalizer</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -956,25 +951,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.scripts.vllm_serve_lora" class="level1">
-<h1>scripts.vllm_serve_lora</h1>
-<p><code>scripts.vllm_serve_lora</code></p>
-<p>vLLM serve script with native LoRA adapter support.</p>
-<p>Extends TRL’s vllm_serve to enable direct LoRA adapter loading in vLLM,
-instead of merging adapter weights into the base model before syncing.</p>
-<section id="usage" class="level2 doc-section doc-section-usage">
-<h2 class="doc-section doc-section-usage anchored" data-anchor-id="usage">Usage</h2>
-<p>Set <code>vllm.serve_module: axolotl.scripts.vllm_serve_lora</code> in your config,
-or <code>trl.vllm_lora_sync: true</code> to auto-select.</p>
-</section>
-<section id="benefits-over-merge-sync" class="level2 doc-section doc-section-benefits-over-merge-sync">
-<h2 class="doc-section doc-section-benefits-over-merge-sync anchored" data-anchor-id="benefits-over-merge-sync">Benefits over merge-sync</h2>
-<ul>
-<li>Syncs only LoRA adapter weights via filesystem instead of full merged model via NCCL</li>
-<li>vLLM handles LoRA application natively (Punica kernels)</li>
-<li>No NCCL communicator needed for weight sync</li>
-</ul>
-</section>
+<section id="axolotl.utils.collators.mm_rl" class="level1">
+<h1>utils.collators.mm_rl</h1>
+<p><code>utils.collators.mm_rl</code></p>
+<p>On-the-fly image loading for TRL’s vision RL paths (DPO/IPO, KTO, GRPO).</p>
+<p>TRL expects an <code>images</code> list of loaded images plus bare <code>{"type": "image"}</code>
+prompt placeholders; path/URL/base64 references are resolved here at collate time.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -986,57 +968,40 @@ or <code>trl.vllm_lora_sync: true</code> to auto-select.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.scripts.vllm_serve_lora.LoRAScriptArguments">LoRAScriptArguments</a></td>
-<td>Extended script arguments with LoRA support.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.scripts.vllm_serve_lora.LoRAScriptArguments" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.scripts.vllm_serve_lora.LoRAScriptArguments">LoRAScriptArguments</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>scripts.vllm_serve_lora.LoRAScriptArguments(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    enable_lora<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    max_lora_rank<span class="op">=</span><span class="dv">64</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    max_loras<span class="op">=</span><span class="dv">2</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    lora_dtype<span class="op">=</span><span class="st">'bfloat16'</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    worker_extension_cls<span class="op">=</span><span class="st">'trl.scripts.vllm_serve.WeightSyncWorkerExtension'</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Extended script arguments with LoRA support.</p>
-</section>
-</section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.scripts.vllm_serve_lora.llm_worker">llm_worker</a></td>
-<td>Worker process that creates a vLLM LLM with LoRA enabled.</td>
+<td><a href="#axolotl.utils.collators.mm_rl.AxolotlVisionPreferenceCollator">AxolotlVisionPreferenceCollator</a></td>
+<td>TRL’s DPO vision collator with axolotl image loading/resizing.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.scripts.vllm_serve_lora.main">main</a></td>
-<td>Start vLLM workers with LoRA support and the HTTP server.</td>
+<td><a href="#axolotl.utils.collators.mm_rl.AxolotlVisionUnpairedPreferenceCollator">AxolotlVisionUnpairedPreferenceCollator</a></td>
+<td>TRL’s KTO vision collator with axolotl image loading/resizing.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.utils.collators.mm_rl.MultimodalRLExampleNormalizer">MultimodalRLExampleNormalizer</a></td>
+<td>Resolve image refs into loaded, optionally resized, images in TRL’s format.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.scripts.vllm_serve_lora.llm_worker" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.scripts.vllm_serve_lora.llm_worker">llm_worker</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>scripts.vllm_serve_lora.llm_worker(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    script_args,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    data_parallel_rank,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    master_port,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    connection,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Worker process that creates a vLLM LLM with LoRA enabled.</p>
+<section id="axolotl.utils.collators.mm_rl.AxolotlVisionPreferenceCollator" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.collators.mm_rl.AxolotlVisionPreferenceCollator">AxolotlVisionPreferenceCollator</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.collators.mm_rl.AxolotlVisionPreferenceCollator(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    normalizer<span class="op">=</span>MultimodalRLExampleNormalizer(),</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>TRL’s DPO vision collator with axolotl image loading/resizing.</p>
 </section>
-<section id="axolotl.scripts.vllm_serve_lora.main" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.scripts.vllm_serve_lora.main">main</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>scripts.vllm_serve_lora.main(script_args)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Start vLLM workers with LoRA support and the HTTP server.</p>
+<section id="axolotl.utils.collators.mm_rl.AxolotlVisionUnpairedPreferenceCollator" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.collators.mm_rl.AxolotlVisionUnpairedPreferenceCollator">AxolotlVisionUnpairedPreferenceCollator</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.collators.mm_rl.AxolotlVisionUnpairedPreferenceCollator(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    normalizer<span class="op">=</span>MultimodalRLExampleNormalizer(),</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>TRL’s KTO vision collator with axolotl image loading/resizing.</p>
+</section>
+<section id="axolotl.utils.collators.mm_rl.MultimodalRLExampleNormalizer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.collators.mm_rl.MultimodalRLExampleNormalizer">MultimodalRLExampleNormalizer</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.collators.mm_rl.MultimodalRLExampleNormalizer(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    image_size<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    image_resize_algorithm<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Resolve image refs into loaded, optionally resized, images in TRL’s format.</p>
 
 
 </section>

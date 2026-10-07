@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -952,7 +952,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.kernels.autotune_collector" class="level1">
 <h1>integrations.kernels.autotune_collector</h1>
 <p><code>integrations.kernels.autotune_collector</code></p>
-<p>Collect Triton autotune results from scattermoe-lora kernels.</p>
+<p>Collect Triton autotune results from supported loaded kernel modules.</p>
 <p>This module reads the <code>.cache</code> attribute from Triton <code>@triton.autotune</code>
 decorated kernel objects and returns structured dicts describing the selected
 configurations. It has <strong>no</strong> telemetry dependency — callers decide what to
@@ -969,14 +969,14 @@ do with the data.</p>
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.integrations.kernels.autotune_collector.collect_autotune_configs">collect_autotune_configs</a></td>
-<td>Read autotune caches from ALL dsv4 + scattermoe <code>@triton.autotune</code> kernels.</td>
+<td>Read autotune caches from supported <code>@triton.autotune</code> kernels.</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.integrations.kernels.autotune_collector.collect_autotune_configs" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.kernels.autotune_collector.collect_autotune_configs">collect_autotune_configs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.kernels.autotune_collector.collect_autotune_configs()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Read autotune caches from ALL dsv4 + scattermoe <code>@triton.autotune</code> kernels.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.kernels.autotune_collector.collect_autotune_configs(coverage<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Read autotune caches from supported <code>@triton.autotune</code> kernels.</p>
 <p>Returns a (possibly empty) list of dicts, each containing:</p>
 <ul>
 <li><code>kernel</code> – kernel function name</li>

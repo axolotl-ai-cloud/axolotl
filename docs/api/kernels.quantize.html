@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -939,6 +939,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.kernels.quantize.dequantize" id="toc-axolotl.kernels.quantize.dequantize" class="nav-link" data-scroll-target="#axolotl.kernels.quantize.dequantize">dequantize</a></li>
   <li><a href="#axolotl.kernels.quantize.dequantize_fp8" id="toc-axolotl.kernels.quantize.dequantize_fp8" class="nav-link" data-scroll-target="#axolotl.kernels.quantize.dequantize_fp8">dequantize_fp8</a></li>
+  <li><a href="#axolotl.kernels.quantize.quantize_fp8" id="toc-axolotl.kernels.quantize.quantize_fp8" class="nav-link" data-scroll-target="#axolotl.kernels.quantize.quantize_fp8">quantize_fp8</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -972,6 +973,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.kernels.quantize.dequantize_fp8">dequantize_fp8</a></td>
 <td>Dequantize FP8 block-quantized weights: W_dequant = W_fp8 * scale_inv.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.kernels.quantize.quantize_fp8">quantize_fp8</a></td>
+<td>Inverse of <code>dequantize_fp8</code>: fresh scales in the layout of <code>scale_inv_like</code>.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.kernels.quantize.dequantize" class="level3">
@@ -983,6 +988,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.kernels.quantize.dequantize_fp8">dequantize_fp8</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>kernels.quantize.dequantize_fp8(W, scale_inv, dtype<span class="op">=</span>torch.bfloat16)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Dequantize FP8 block-quantized weights: W_dequant = W_fp8 * scale_inv.</p>
+</section>
+<section id="axolotl.kernels.quantize.quantize_fp8" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.kernels.quantize.quantize_fp8">quantize_fp8</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>kernels.quantize.quantize_fp8(W, scale_inv_like)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Inverse of <code>dequantize_fp8</code>: fresh scales in the layout of <code>scale_inv_like</code>.</p>
 
 
 </section>

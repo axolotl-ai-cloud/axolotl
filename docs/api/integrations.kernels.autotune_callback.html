@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -952,7 +952,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.kernels.autotune_callback" class="level1">
 <h1>integrations.kernels.autotune_callback</h1>
 <p><code>integrations.kernels.autotune_callback</code></p>
-<p>Trainer callback for reporting Triton autotune results from scattermoe-lora kernels.</p>
+<p>Trainer callback for reporting selections from loaded Triton kernels.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -965,22 +965,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.integrations.kernels.autotune_callback.AutotuneReportCallback">AutotuneReportCallback</a></td>
-<td>Reports Triton kernel autotune selections via telemetry.</td>
+<td>Report selections from loaded Triton kernels.</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.integrations.kernels.autotune_callback.AutotuneReportCallback" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.kernels.autotune_callback.AutotuneReportCallback">AutotuneReportCallback</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.kernels.autotune_callback.AutotuneReportCallback()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Reports Triton kernel autotune selections via telemetry.</p>
-<p>Fires <strong>once</strong> after the first training step completes (step 1), at
-which point the forward and backward passes have both run and the
-autotuned kernels have populated their caches. If for some reason
-the caches are still empty (e.g.&nbsp;the kernel was never invoked), the
-callback retries on subsequent steps up to <code>_MAX_POLL_STEP</code> and
-then stops polling.</p>
-<p>After reporting (or giving up) every subsequent <code>on_step_end</code>
-call short-circuits on the <code>_reported</code> flag — zero hot-path cost.</p>
+<p>Report selections from loaded Triton kernels.</p>
 
 
 </section>

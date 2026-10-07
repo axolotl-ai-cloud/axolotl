@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1065,12 +1065,13 @@ runtime model key names used by the LoRA adapter.</p>
 <span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>    nf4_backend<span class="op">=</span><span class="st">'bitsandbytes'</span>,</span>
 <span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    nf4_skips<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    nf4_dtype<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    staged_nf4<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    trust_remote_code<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    dequant<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    override_quantizer<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    revision<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>    bnb_skip_modules<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    staged_nf4<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>    trust_remote_code<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    dequant<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    override_quantizer<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>    revision<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Memory-efficient LoRA merging that processes shards individually
 without loading the full model into memory.</p>
 <section id="if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips" class="level4 doc-section doc-section-if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips">
@@ -1108,7 +1109,7 @@ adapter (encoder version drift); see <code>_resolve_nvfp4_scale_mode</code>.</p>
 <tr class="even">
 <td>nf4_skips</td>
 <td>Optional[set[str]]</td>
-<td>Resolved module exclusions from <code>nf4_skip_modules</code>. When provided, weights are selected the way the staged loader selected them (Linear weights and fused experts outside the exclusions); when None, the pre-existing <code>_should_nf4_roundtrip</code> heuristic is kept unchanged.</td>
+<td>Resolved module exclusions from <code>nf4_skip_modules</code>. When provided, weights are selected the way the staged loader selected them (Linear weights and fused experts outside the exclusions); when None on bitsandbytes, transformers’ own Linear4bit selection is reproduced.</td>
 <td><code>None</code></td>
 </tr>
 <tr class="odd">
@@ -1118,24 +1119,30 @@ adapter (encoder version drift); see <code>_resolve_nvfp4_scale_mode</code>.</p>
 <td><code>None</code></td>
 </tr>
 <tr class="even">
+<td>bnb_skip_modules</td>
+<td>Optional[list[str]]</td>
+<td><code>llm_int8_skip_modules</code> the bitsandbytes training load used; None means transformers’ default skips.</td>
+<td><code>None</code></td>
+</tr>
+<tr class="odd">
 <td>staged_nf4</td>
 <td>bool</td>
 <td>Training used CPU-staged NF4, which has no legacy merge fallback.</td>
 <td><code>False</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>simulate_nf4</td>
 <td>bool</td>
 <td>Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)</td>
 <td><code>False</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>simulate_nf4_experts</td>
 <td>bool</td>
 <td>Apply NF4 roundtrip only to MoE expert tensors (for quantize_moe_experts). Expert tensors are identified by having “expert” in the key name and ndim &gt;= 3.</td>
 <td><code>False</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>trust_remote_code</td>
 <td>bool</td>
 <td>Whether to trust remote code when loading model config for layer-type introspection. Defaults to False for safety.</td>

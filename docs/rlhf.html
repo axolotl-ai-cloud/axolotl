@@ -8,7 +8,7 @@
 
 <meta name="description" content="Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback.">
 
-<title>RLHF (Beta) – Axolotl</title>
+<title>RLHF – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -148,7 +148,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/rlhf.html">RLHF (Beta)</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/rlhf.html">RLHF</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -688,7 +688,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1004,6 +1004,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#nemo-gym-configuration-reference" id="toc-nemo-gym-configuration-reference" class="nav-link" data-scroll-target="#nemo-gym-configuration-reference">NeMo Gym Configuration Reference</a></li>
   <li><a href="#reward-functions-2" id="toc-reward-functions-2" class="nav-link" data-scroll-target="#reward-functions-2">Reward Functions</a></li>
   </ul></li>
+  <li><a href="#multimodal" id="toc-multimodal" class="nav-link" data-scroll-target="#multimodal">Multimodal (vision) datasets</a>
+  <ul class="collapse">
+  <li><a href="#model-setup" id="toc-model-setup" class="nav-link" data-scroll-target="#model-setup">Model setup</a></li>
+  <li><a href="#dataset-format" id="toc-dataset-format" class="nav-link" data-scroll-target="#dataset-format">Dataset format</a></li>
+  <li><a href="#dpo-example" id="toc-dpo-example" class="nav-link" data-scroll-target="#dpo-example">DPO example</a></li>
+  <li><a href="#grpo-example" id="toc-grpo-example" class="nav-link" data-scroll-target="#grpo-example">GRPO example</a></li>
+  <li><a href="#limitations" id="toc-limitations" class="nav-link" data-scroll-target="#limitations">Limitations</a></li>
+  </ul></li>
   <li><a href="#using-local-dataset-files" id="toc-using-local-dataset-files" class="nav-link" data-scroll-target="#using-local-dataset-files">Using local dataset files</a></li>
   <li><a href="#trl-auto-unwrapping-for-peft" id="toc-trl-auto-unwrapping-for-peft" class="nav-link" data-scroll-target="#trl-auto-unwrapping-for-peft">TRL auto-unwrapping for PEFT</a></li>
   </ul></li>
@@ -1013,9 +1021,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/rlhf.html">RLHF (Beta)</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/multimodal.html">How To Guides</a></li><li class="breadcrumb-item"><a href="../docs/rlhf.html">RLHF</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">RLHF (Beta)</h1>
+<h1 class="title">RLHF</h1>
 </div>
 
 <div>
@@ -1050,24 +1058,12 @@ feedback. Various methods include, but not limited to:</p>
 <li><a href="#gdpo">Group Reward-Decoupled Policy Optimization (GDPO)</a></li>
 <li><a href="#ebft">Energy-Based Fine-Tuning (EBFT)</a> — see also the <a href="../docs/ebft.html">EBFT guide</a> for detailed mode comparisons and configuration</li>
 <li><a href="#nemo-gym-integration">NeMo Gym Integration</a></li>
+<li><a href="#multimodal">Multimodal (vision) datasets</a> for DPO, KTO and GRPO</li>
 </ul>
 <p>For help choosing between these methods, see <a href="../docs/choosing_method.html">Choosing a Fine-Tuning Method</a>.</p>
 </section>
 <section id="rlhf-using-axolotl" class="level2">
 <h2 class="anchored" data-anchor-id="rlhf-using-axolotl">RLHF using Axolotl</h2>
-<div class="callout callout-style-default callout-important callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Important
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.</p>
-</div>
-</div>
 <p>We rely on the <a href="https://github.com/huggingface/trl">TRL</a> library for implementations of various RL training methods, which we wrap around to expose in axolotl. Each method has their own supported ways of loading datasets and prompt formats.</p>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
@@ -1505,7 +1501,7 @@ Important
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>Make sure you’ve installed the correct version of vLLM by including it as an extra when installing axolotl, e.g.&nbsp;<code>pip install axolotl[vllm]</code>.</p>
+<p>Make sure you’ve installed the correct version of vLLM by including it as an extra when installing axolotl, e.g.&nbsp;<code>pip install axolotl[vllm]</code>. This requires <code>vllm&gt;=0.30.0</code>.</p>
 </div>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb36"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-1.5B-Instruct</span></span>
@@ -1708,7 +1704,7 @@ Note
 </div>
 <section id="vllm-lora-sync" class="level5">
 <h5 class="anchored" data-anchor-id="vllm-lora-sync">vLLM LoRA Sync</h5>
-<p>By default, weight sync to vLLM merges the LoRA adapter into the base model and broadcasts all parameters via NCCL. LoRA sync is a faster alternative that saves only the adapter weights to the filesystem and has vLLM load them natively using Punica kernels.</p>
+<p>By default, weight sync to vLLM merges the LoRA adapter into the base model and broadcasts all parameters via vLLM’s native NCCL weight-transfer engine. LoRA sync is a faster alternative that saves only the adapter weights to the filesystem and has vLLM load them natively using Punica kernels. The adapter directory must be readable by the vLLM server; see <a href="../docs/vllm_serving.html#sec-lora-sync">LoRA Sync</a>.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb45"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
 <span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
 <span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">64</span></span>
@@ -1716,7 +1712,7 @@ Note
 <span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
 <span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">         # Enable native LoRA sync</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>When <code>vllm_lora_sync: true</code> is set, axolotl automatically selects the LoRA-aware vLLM serve module. Start vLLM as usual:</p>
+<p>When <code>vllm_lora_sync: true</code> is set, <code>axolotl vllm-serve</code> starts vLLM with LoRA loading enabled (<code>--enable-lora</code>, <code>--max-lora-rank</code> from the largest of <code>lora_r</code> and <code>lora_rank_pattern</code>). Start vLLM as usual:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb46"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> vllm-serve config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Then start training on a separate GPU:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb47"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>1 <span class="ex">axolotl</span> train config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -2445,20 +2441,165 @@ Important
 </table>
 </section>
 </section>
+<section id="multimodal" class="level3">
+<h3 class="anchored" data-anchor-id="multimodal">Multimodal (vision) datasets</h3>
+<p>DPO, IPO, KTO, GRPO and GDPO can train vision-language models (VLMs) on image datasets.</p>
+<section id="model-setup" class="level4">
+<h4 class="anchored" data-anchor-id="model-setup">Model setup</h4>
+<p>Load the model the same way as for <a href="../docs/multimodal.html#usage">multimodal SFT</a>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb74"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-VL-3B-Instruct</span></span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_type</span><span class="kw">:</span><span class="at"> AutoProcessor</span></span>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">448</span><span class="co">  # optional: resize images (int or [width, height])</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="dataset-format" class="level4">
+<h4 class="anchored" data-anchor-id="dataset-format">Dataset format</h4>
+<p>A dataset counts as multimodal when it has an <code>images</code> column (a list per row) or an <code>image</code> column (one per row). Each image can be a Hugging Face <code>Image</code> feature, a local path, a URL, or a base64 string (see <a href="../docs/multimodal.html#image">image keys</a>). Images are loaded as each batch is built, so nothing is decoded ahead of time.</p>
+<p>Prompts must be lists of <code>role</code>/<code>content</code> messages. You don’t need image placeholders: each image goes at the start of the first user turn. To place images yourself, add <code>{"type": "image"}</code> blocks to the message content; they are filled with the row’s images in order.</p>
+<p>DPO / IPO row:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb75"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb75-2"><a href="#cb75-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"prompt"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"What is in this picture?"</span><span class="fu">}</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb75-3"><a href="#cb75-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"chosen"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"A cat on a red sofa."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb75-4"><a href="#cb75-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"rejected"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"A dog in a park."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb75-5"><a href="#cb75-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"images"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"images/cat.jpg"</span><span class="ot">]</span></span>
+<span id="cb75-6"><a href="#cb75-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>KTO row (<code>label</code> marks the completion as desirable or not; KTO needs <code>micro_batch_size</code> of at least 2):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb76"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb76-2"><a href="#cb76-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"prompt"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"What is in this picture?"</span><span class="fu">}</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb76-3"><a href="#cb76-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"completion"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"A cat on a red sofa."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb76-4"><a href="#cb76-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"label"</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb76-5"><a href="#cb76-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"images"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"images/cat.jpg"</span><span class="ot">]</span></span>
+<span id="cb76-6"><a href="#cb76-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>GRPO / GDPO row (extra columns such as <code>answer</code> are passed to your reward functions):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb77"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb77-1"><a href="#cb77-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb77-2"><a href="#cb77-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"prompt"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"What color is the cube?"</span><span class="fu">}</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb77-3"><a href="#cb77-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"image"</span><span class="fu">:</span> <span class="st">"images/cube.jpg"</span><span class="fu">,</span></span>
+<span id="cb77-4"><a href="#cb77-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"answer"</span><span class="fu">:</span> <span class="st">"red"</span></span>
+<span id="cb77-5"><a href="#cb77-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Datasets already in these shapes need no <code>type</code>. DPO/IPO also accept <code>type: chat_template</code> with a <code>messages</code> conversation plus <code>chosen</code>/<code>rejected</code> messages. For GRPO, a dataset transform can build <code>prompt</code> and leave the image column in place, as in the example below.</p>
+</section>
+<section id="dpo-example" class="level4">
+<h4 class="anchored" data-anchor-id="dpo-example">DPO example</h4>
+<p>Using <a href="https://huggingface.co/datasets/HuggingFaceH4/rlaif-v_formatted">HuggingFaceH4/rlaif-v_formatted</a>, which is already in the DPO shape:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb78"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-VL-3B-Instruct</span></span>
+<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_type</span><span class="kw">:</span><span class="at"> AutoProcessor</span></span>
+<span id="cb78-3"><a href="#cb78-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">448</span></span>
+<span id="cb78-4"><a href="#cb78-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-5"><a href="#cb78-5" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> dpo</span></span>
+<span id="cb78-6"><a href="#cb78-6" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb78-7"><a href="#cb78-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> HuggingFaceH4/rlaif-v_formatted</span></span>
+<span id="cb78-8"><a href="#cb78-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
+<span id="cb78-9"><a href="#cb78-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-10"><a href="#cb78-10" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb78-11"><a href="#cb78-11" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb78-12"><a href="#cb78-12" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
+<span id="cb78-13"><a href="#cb78-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Adapt only the language model; the vision encoder stays frozen.</span></span>
+<span id="cb78-14"><a href="#cb78-14" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> </span><span class="st">'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'</span></span>
+<span id="cb78-15"><a href="#cb78-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-16"><a href="#cb78-16" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span></span>
+<span id="cb78-17"><a href="#cb78-17" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb78-18"><a href="#cb78-18" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb78-19"><a href="#cb78-19" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">5.0e-6</span></span>
+<span id="cb78-20"><a href="#cb78-20" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb78-21"><a href="#cb78-21" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb78-22"><a href="#cb78-22" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb78-23"><a href="#cb78-23" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs/qwen2.5-vl-dpo</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="grpo-example" class="level4">
+<h4 class="anchored" data-anchor-id="grpo-example">GRPO example</h4>
+<p>Reward functions receive the loaded images as <code>images</code>: one list of PIL images per sample, whether the dataset column is <code>image</code> or <code>images</code>. This example uses <a href="https://huggingface.co/datasets/lmms-lab/multimodal-open-r1-8k-verified">lmms-lab/multimodal-open-r1-8k-verified</a>, which has <code>image</code>, <code>problem</code> and <code>solution</code> columns:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb79"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a><span class="co"># mm_rewards.py</span></span>
+<span id="cb79-2"><a href="#cb79-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> re</span>
+<span id="cb79-3"><a href="#cb79-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-4"><a href="#cb79-4" aria-hidden="true" tabindex="-1"></a>SYSTEM <span class="op">=</span> (</span>
+<span id="cb79-5"><a href="#cb79-5" aria-hidden="true" tabindex="-1"></a>    <span class="st">"Answer the question about the image. Think inside &lt;think&gt;&lt;/think&gt;, "</span></span>
+<span id="cb79-6"><a href="#cb79-6" aria-hidden="true" tabindex="-1"></a>    <span class="st">"then give the final answer inside &lt;answer&gt;&lt;/answer&gt;."</span></span>
+<span id="cb79-7"><a href="#cb79-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb79-8"><a href="#cb79-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-9"><a href="#cb79-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-10"><a href="#cb79-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> transform(cfg, <span class="op">*</span>args, <span class="op">**</span>kwargs):</span>
+<span id="cb79-11"><a href="#cb79-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> transform_fn(example, tokenizer<span class="op">=</span><span class="va">None</span>):</span>
+<span id="cb79-12"><a href="#cb79-12" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> {</span>
+<span id="cb79-13"><a href="#cb79-13" aria-hidden="true" tabindex="-1"></a>            <span class="st">"prompt"</span>: [</span>
+<span id="cb79-14"><a href="#cb79-14" aria-hidden="true" tabindex="-1"></a>                {<span class="st">"role"</span>: <span class="st">"system"</span>, <span class="st">"content"</span>: SYSTEM},</span>
+<span id="cb79-15"><a href="#cb79-15" aria-hidden="true" tabindex="-1"></a>                {<span class="st">"role"</span>: <span class="st">"user"</span>, <span class="st">"content"</span>: example[<span class="st">"problem"</span>]},</span>
+<span id="cb79-16"><a href="#cb79-16" aria-hidden="true" tabindex="-1"></a>            ],</span>
+<span id="cb79-17"><a href="#cb79-17" aria-hidden="true" tabindex="-1"></a>            <span class="st">"answer"</span>: example[<span class="st">"solution"</span>],</span>
+<span id="cb79-18"><a href="#cb79-18" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb79-19"><a href="#cb79-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-20"><a href="#cb79-20" aria-hidden="true" tabindex="-1"></a>    <span class="co"># The `image` column is kept, so the prompt gets its image automatically.</span></span>
+<span id="cb79-21"><a href="#cb79-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> transform_fn, {<span class="st">"remove_columns"</span>: [<span class="st">"problem"</span>, <span class="st">"solution"</span>]}</span>
+<span id="cb79-22"><a href="#cb79-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-23"><a href="#cb79-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-24"><a href="#cb79-24" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _final_answer(text):</span>
+<span id="cb79-25"><a href="#cb79-25" aria-hidden="true" tabindex="-1"></a>    match <span class="op">=</span> re.search(<span class="vs">r"&lt;answer&gt;</span><span class="kw">(</span><span class="dv">.</span><span class="op">*?</span><span class="kw">)</span><span class="vs">&lt;/answer&gt;"</span>, text, re.S)</span>
+<span id="cb79-26"><a href="#cb79-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (match.group(<span class="dv">1</span>) <span class="cf">if</span> match <span class="cf">else</span> text).strip().lower()</span>
+<span id="cb79-27"><a href="#cb79-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-28"><a href="#cb79-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb79-29"><a href="#cb79-29" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> answer_reward(completions, answer, images, <span class="op">**</span>kwargs) <span class="op">-&gt;</span> <span class="bu">list</span>[<span class="bu">float</span>]:</span>
+<span id="cb79-30"><a href="#cb79-30" aria-hidden="true" tabindex="-1"></a>    <span class="co"># images[i] holds sample i's PIL images, for rewards that look at the image.</span></span>
+<span id="cb79-31"><a href="#cb79-31" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> [</span>
+<span id="cb79-32"><a href="#cb79-32" aria-hidden="true" tabindex="-1"></a>        <span class="bu">float</span>(_final_answer(c[<span class="dv">0</span>][<span class="st">"content"</span>]) <span class="op">==</span> _final_answer(a))</span>
+<span id="cb79-33"><a href="#cb79-33" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> c, a <span class="kw">in</span> <span class="bu">zip</span>(completions, answer)</span>
+<span id="cb79-34"><a href="#cb79-34" aria-hidden="true" tabindex="-1"></a>    ]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb80"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-VL-3B-Instruct</span></span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a><span class="fu">processor_type</span><span class="kw">:</span><span class="at"> AutoProcessor</span></span>
+<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">448</span></span>
+<span id="cb80-4"><a href="#cb80-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-5"><a href="#cb80-5" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> grpo</span></span>
+<span id="cb80-6"><a href="#cb80-6" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb80-7"><a href="#cb80-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">num_generations</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb80-8"><a href="#cb80-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_completion_length</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span></span>
+<span id="cb80-9"><a href="#cb80-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reward_funcs</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">"mm_rewards.answer_reward"</span><span class="kw">]</span></span>
+<span id="cb80-10"><a href="#cb80-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb80-11"><a href="#cb80-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_mode</span><span class="kw">:</span><span class="at"> colocate</span><span class="co">  # vLLM shares the training GPU</span></span>
+<span id="cb80-12"><a href="#cb80-12" aria-hidden="true" tabindex="-1"></a><span class="fu">vllm</span><span class="kw">:</span></span>
+<span id="cb80-13"><a href="#cb80-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_model_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">4096</span></span>
+<span id="cb80-14"><a href="#cb80-14" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb80-15"><a href="#cb80-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> lmms-lab/multimodal-open-r1-8k-verified</span></span>
+<span id="cb80-16"><a href="#cb80-16" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> mm_rewards.transform</span></span>
+<span id="cb80-17"><a href="#cb80-17" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
+<span id="cb80-18"><a href="#cb80-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-19"><a href="#cb80-19" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb80-20"><a href="#cb80-20" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb80-21"><a href="#cb80-21" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
+<span id="cb80-22"><a href="#cb80-22" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> </span><span class="st">'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'</span></span>
+<span id="cb80-23"><a href="#cb80-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-24"><a href="#cb80-24" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span></span>
+<span id="cb80-25"><a href="#cb80-25" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb80-26"><a href="#cb80-26" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb80-27"><a href="#cb80-27" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">5.0e-6</span></span>
+<span id="cb80-28"><a href="#cb80-28" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb80-29"><a href="#cb80-29" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb80-30"><a href="#cb80-30" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb80-31"><a href="#cb80-31" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs/qwen2.5-vl-grpo</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Run <code>axolotl train</code> from the directory containing <code>mm_rewards.py</code>. To generate on a separate GPU instead, set <code>vllm_mode: server</code> and start the server with <code>axolotl vllm-serve</code> as in the <a href="#grpo">GRPO</a> section.</p>
+</section>
+<section id="limitations" class="level4">
+<h4 class="anchored" data-anchor-id="limitations">Limitations</h4>
+<ul>
+<li><strong>Sequence length</strong>: rows are not filtered by length ahead of time. For DPO/KTO, <code>sequence_len</code> (image tokens included) truncates each batch, and a cut through image tokens fails in the model forward, so leave headroom. GRPO prompts are not truncated.</li>
+<li><strong>Chat template</strong>: every row is rendered with one template (the processor’s, or the top-level <code>chat_template</code>); per-dataset <code>chat_template</code> is ignored.</li>
+<li><strong>One kind of data per run</strong>: image and text-only datasets cannot be mixed. Exact deduplication is skipped for image datasets.</li>
+<li><strong>Tiled-image models (SmolVLM, Idefics3)</strong>: GRPO with <code>vllm_mode: server</code> fails because these split each image into tiles; use <code>vllm_mode: colocate</code> or no vLLM.</li>
+<li><strong>Async GRPO</strong> (<code>use_data_producer</code> / <code>async_prefetch</code>): InternVL (tile-based) and multiple images per row with LLaVA-style processors are not supported yet.</li>
+<li><strong>Not supported</strong>: ORPO, SimPO, EBFT, <code>tokenizer_use_mistral_common</code>, and GRPO with <code>context_parallel_size</code> &gt; 1. <code>pad_to_multiple_of</code> is ignored for DPO/KTO.</li>
+</ul>
+</section>
+</section>
 <section id="using-local-dataset-files" class="level3">
 <h3 class="anchored" data-anchor-id="using-local-dataset-files">Using local dataset files</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb74"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
-<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
-<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> orca_rlhf.jsonl</span></span>
-<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
-<span id="cb74-6"><a href="#cb74-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chatml.intel</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb81"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb81-2"><a href="#cb81-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb81-3"><a href="#cb81-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
+<span id="cb81-4"><a href="#cb81-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> orca_rlhf.jsonl</span></span>
+<span id="cb81-5"><a href="#cb81-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
+<span id="cb81-6"><a href="#cb81-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chatml.intel</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="trl-auto-unwrapping-for-peft" class="level3">
 <h3 class="anchored" data-anchor-id="trl-auto-unwrapping-for-peft">TRL auto-unwrapping for PEFT</h3>
 <p>TRL supports auto-unwrapping PEFT models for RL training paradigms which rely on a reference model. This significantly reduces memory pressure as an additional refreference model does not need to be loaded, and reference model log-probabilities can be obtained by disabling PEFT adapters. This is enabled by default. To turn it off, pass the following config:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb75"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a><span class="co"># load ref model when adapter training.</span></span>
-<span id="cb75-2"><a href="#cb75-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_adapter_ref_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb82"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a><span class="co"># load ref model when adapter training.</span></span>
+<span id="cb82-2"><a href="#cb82-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_adapter_ref_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
 </section>

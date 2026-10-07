@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -943,6 +943,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.utils.data.utils.deduplicate_and_log_datasets" id="toc-axolotl.utils.data.utils.deduplicate_and_log_datasets" class="nav-link" data-scroll-target="#axolotl.utils.data.utils.deduplicate_and_log_datasets">deduplicate_and_log_datasets</a></li>
   <li><a href="#axolotl.utils.data.utils.handle_long_seq_in_dataset" id="toc-axolotl.utils.data.utils.handle_long_seq_in_dataset" class="nav-link" data-scroll-target="#axolotl.utils.data.utils.handle_long_seq_in_dataset">handle_long_seq_in_dataset</a></li>
+  <li><a href="#axolotl.utils.data.utils.is_vision_dataset" id="toc-axolotl.utils.data.utils.is_vision_dataset" class="nav-link" data-scroll-target="#axolotl.utils.data.utils.is_vision_dataset">is_vision_dataset</a></li>
   <li><a href="#axolotl.utils.data.utils.keep_min_len" id="toc-axolotl.utils.data.utils.keep_min_len" class="nav-link" data-scroll-target="#axolotl.utils.data.utils.keep_min_len">keep_min_len</a></li>
   <li><a href="#axolotl.utils.data.utils.md5" id="toc-axolotl.utils.data.utils.md5" class="nav-link" data-scroll-target="#axolotl.utils.data.utils.md5">md5</a></li>
   <li><a href="#axolotl.utils.data.utils.remove_double_bos_token" id="toc-axolotl.utils.data.utils.remove_double_bos_token" class="nav-link" data-scroll-target="#axolotl.utils.data.utils.remove_double_bos_token">remove_double_bos_token</a></li>
@@ -1005,26 +1006,30 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Remove sequences longer than configured maximum from dataset.</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.utils.data.utils.is_vision_dataset">is_vision_dataset</a></td>
+<td>Mirror TRL: an <code>image</code>/<code>images</code> column routes RL trainers to the vision path.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.utils.data.utils.keep_min_len">keep_min_len</a></td>
 <td>Batched filter function that keeps only samples with sequence length &gt;= min_sequence_len.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.data.utils.md5">md5</a></td>
 <td>Generate MD5 hash of a string.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.data.utils.remove_double_bos_token">remove_double_bos_token</a></td>
 <td>Remove double bos tokens that may occur when retokenizing preprocessed data</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.data.utils.retry_on_request_exceptions">retry_on_request_exceptions</a></td>
 <td>Decorator that retries function calls on specific request exceptions.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.data.utils.sha256">sha256</a></td>
 <td>Generate SHA256 hash of a string.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.data.utils.truncate_long_seq">truncate_long_seq</a></td>
 <td>Truncate samples whose sequence length is too long (&gt; sequence_len).</td>
 </tr>
@@ -1177,30 +1182,35 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 </section>
 </section>
+<section id="axolotl.utils.data.utils.is_vision_dataset" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.data.utils.is_vision_dataset">is_vision_dataset</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.is_vision_dataset(column_names)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Mirror TRL: an <code>image</code>/<code>images</code> column routes RL trainers to the vision path.</p>
+</section>
 <section id="axolotl.utils.data.utils.keep_min_len" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.data.utils.keep_min_len">keep_min_len</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.keep_min_len(sample, min_sequence_len<span class="op">=</span><span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.keep_min_len(sample, min_sequence_len<span class="op">=</span><span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Batched filter function that keeps only samples with sequence length &gt;= min_sequence_len.
 Returns a list of booleans indicating which samples to keep.</p>
 </section>
 <section id="axolotl.utils.data.utils.md5" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.data.utils.md5">md5</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.md5(to_hash, encoding<span class="op">=</span><span class="st">'utf-8'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.md5(to_hash, encoding<span class="op">=</span><span class="st">'utf-8'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Generate MD5 hash of a string.</p>
 </section>
 <section id="axolotl.utils.data.utils.remove_double_bos_token" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.data.utils.remove_double_bos_token">remove_double_bos_token</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.remove_double_bos_token(example, bos_token_id)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.remove_double_bos_token(example, bos_token_id)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Remove double bos tokens that may occur when retokenizing preprocessed data
 for tokenizers and chat templates that have a bos_token - eg. DPO + Llama.</p>
 </section>
 <section id="axolotl.utils.data.utils.retry_on_request_exceptions" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.data.utils.retry_on_request_exceptions">retry_on_request_exceptions</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.retry_on_request_exceptions(</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    max_retries<span class="op">=</span><span class="dv">3</span>,</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    delay<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    retry_strategy<span class="op">=</span>RetryStrategy.LINEAR,</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.retry_on_request_exceptions(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    max_retries<span class="op">=</span><span class="dv">3</span>,</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    delay<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    retry_strategy<span class="op">=</span>RetryStrategy.LINEAR,</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Decorator that retries function calls on specific request exceptions.</p>
 <section id="parameters-2" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
@@ -1263,12 +1273,12 @@ for tokenizers and chat templates that have a bos_token - eg. DPO + Llama.</p>
 </section>
 <section id="axolotl.utils.data.utils.sha256" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.data.utils.sha256">sha256</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.sha256(to_hash, encoding<span class="op">=</span><span class="st">'utf-8'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.sha256(to_hash, encoding<span class="op">=</span><span class="st">'utf-8'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Generate SHA256 hash of a string.</p>
 </section>
 <section id="axolotl.utils.data.utils.truncate_long_seq" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.data.utils.truncate_long_seq">truncate_long_seq</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.truncate_long_seq(sample, sequence_len<span class="op">=</span><span class="dv">2048</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.data.utils.truncate_long_seq(sample, sequence_len<span class="op">=</span><span class="dv">2048</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Truncate samples whose sequence length is too long (&gt; sequence_len).
 Modifies the sample in-place and returns the modified sample.</p>
 

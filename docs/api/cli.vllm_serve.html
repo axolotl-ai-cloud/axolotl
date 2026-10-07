@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -937,7 +937,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.cli.vllm_serve.AxolotlScriptArguments" id="toc-axolotl.cli.vllm_serve.AxolotlScriptArguments" class="nav-link" data-scroll-target="#axolotl.cli.vllm_serve.AxolotlScriptArguments">AxolotlScriptArguments</a></li>
+  <li><a href="#axolotl.cli.vllm_serve.VllmServeArguments" id="toc-axolotl.cli.vllm_serve.VllmServeArguments" class="nav-link" data-scroll-target="#axolotl.cli.vllm_serve.VllmServeArguments">VllmServeArguments</a></li>
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
@@ -968,18 +968,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.cli.vllm_serve.AxolotlScriptArguments">AxolotlScriptArguments</a></td>
-<td>Additional arguments for the VLLM server</td>
+<td><a href="#axolotl.cli.vllm_serve.VllmServeArguments">VllmServeArguments</a></td>
+<td>Arguments for vLLM’s native OpenAI server as used by TRL trainers</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.cli.vllm_serve.AxolotlScriptArguments" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.cli.vllm_serve.AxolotlScriptArguments">AxolotlScriptArguments</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.vllm_serve.AxolotlScriptArguments(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    reasoning_parser<span class="op">=</span><span class="st">''</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    enable_reasoning<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Additional arguments for the VLLM server</p>
+<section id="axolotl.cli.vllm_serve.VllmServeArguments" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.vllm_serve.VllmServeArguments">VllmServeArguments</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.vllm_serve.VllmServeArguments(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    revision<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    tensor_parallel_size<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    data_parallel_size<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    host<span class="op">=</span><span class="st">'0.0.0.0'</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    port<span class="op">=</span><span class="dv">8000</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    gpu_memory_utilization<span class="op">=</span><span class="fl">0.9</span>,</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    dtype<span class="op">=</span><span class="st">'auto'</span>,</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    max_model_len<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    enable_prefix_caching<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    enforce_eager<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    kv_cache_dtype<span class="op">=</span><span class="st">'auto'</span>,</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    trust_remote_code<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    log_level<span class="op">=</span><span class="st">'info'</span>,</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    vllm_model_impl<span class="op">=</span><span class="st">'vllm'</span>,</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    reasoning_parser<span class="op">=</span><span class="st">''</span>,</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    enable_reasoning<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    enable_lora<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    max_lora_rank<span class="op">=</span><span class="dv">64</span>,</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    max_loras<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    worker_extension_cls<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Arguments for vLLM’s native OpenAI server as used by TRL trainers</p>
 </section>
 </section>
 <section id="functions" class="level2">
@@ -1008,6 +1027,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="returns" class="level4 doc-section doc-section-returns">
 <h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 10%">
+<col style="width: 10%">
+<col style="width: 78%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
@@ -1017,9 +1041,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td>process_id</td>
 <td></td>
-<td>the process id of the started VLLM server</td>
+<td></td>
+<td>None; the process is replaced by the native vLLM server</td>
 </tr>
 </tbody>
 </table>

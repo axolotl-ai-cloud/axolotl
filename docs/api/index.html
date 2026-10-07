@@ -652,7 +652,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -914,7 +914,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#common" id="toc-common" class="nav-link" data-scroll-target="#common">Common</a></li>
   <li><a href="#data-processing" id="toc-data-processing" class="nav-link" data-scroll-target="#data-processing">Data Processing</a></li>
   <li><a href="#callbacks" id="toc-callbacks" class="nav-link" data-scroll-target="#callbacks">Callbacks</a></li>
-  <li><a href="#scripts" id="toc-scripts" class="nav-link" data-scroll-target="#scripts">Scripts</a></li>
   <li><a href="#telemetry" id="toc-telemetry" class="nav-link" data-scroll-target="#telemetry">Telemetry</a></li>
   </ul></li>
   </ul>
@@ -1838,8 +1837,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Module for wandb utilities</td>
 </tr>
 <tr class="even">
-<td><a href="../../docs/api/utils.weight_serde.html#axolotl.utils.weight_serde">utils.weight_serde</a></td>
-<td>Serialize / deserialize tensors for HTTP and IPC weight sync.</td>
+<td><a href="../../docs/api/utils.vllm_lora_sync.html#axolotl.utils.vllm_lora_sync">utils.vllm_lora_sync</a></td>
+<td>Publish LoRA adapters to a vLLM server through its native adapter routes.</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/utils.schedulers.html#axolotl.utils.schedulers">utils.schedulers</a></td>
@@ -2139,11 +2138,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/integrations.kernels.autotune_callback.html#axolotl.integrations.kernels.autotune_callback">integrations.kernels.autotune_callback</a></td>
-<td>Trainer callback for reporting Triton autotune results from scattermoe-lora kernels.</td>
+<td>Trainer callback for reporting selections from loaded Triton kernels.</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/integrations.kernels.autotune_collector.html#axolotl.integrations.kernels.autotune_collector">integrations.kernels.autotune_collector</a></td>
-<td>Collect Triton autotune results from scattermoe-lora kernels.</td>
+<td>Collect Triton autotune results from supported loaded kernel modules.</td>
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/integrations.kernels.constants.html#axolotl.integrations.kernels.constants">integrations.kernels.constants</a></td>
@@ -2310,10 +2309,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Collators for multi-modal chat messages and packing</td>
 </tr>
 <tr class="odd">
+<td><a href="../../docs/api/utils.collators.mm_rl.html#axolotl.utils.collators.mm_rl">utils.collators.mm_rl</a></td>
+<td>On-the-fly image loading for TRL’s vision RL paths (DPO/IPO, KTO, GRPO).</td>
+</tr>
+<tr class="even">
 <td><a href="../../docs/api/utils.samplers.multipack.html#axolotl.utils.samplers.multipack">utils.samplers.multipack</a></td>
 <td>Multipack Batch Sampler - An efficient batch sampler for packing variable-length sequences</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/utils.samplers.utils.html#axolotl.utils.samplers.utils">utils.samplers.utils</a></td>
 <td>helper util to calculate dataset lengths</td>
 </tr>
@@ -2380,26 +2383,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="even">
 <td><a href="../../docs/api/utils.callbacks.trackio_.html#axolotl.utils.callbacks.trackio_">utils.callbacks.trackio_</a></td>
 <td>Trackio module for trainer callbacks</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="scripts" class="level2">
-<h2 class="anchored" data-anchor-id="scripts">Scripts</h2>
-<p>Standalone helper scripts</p>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><a href="../../docs/api/scripts.process_cleanup.html#axolotl.scripts.process_cleanup">scripts.process_cleanup</a></td>
-<td>Reusable process lifecycle management for vLLM serve scripts.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/scripts.vllm_serve_lora.html#axolotl.scripts.vllm_serve_lora">scripts.vllm_serve_lora</a></td>
-<td>vLLM serve script with native LoRA adapter support.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/scripts.vllm_worker_ext.html#axolotl.scripts.vllm_worker_ext">scripts.vllm_worker_ext</a></td>
-<td>Extended vLLM worker extension with batch weight sync support.</td>
 </tr>
 </tbody>
 </table>

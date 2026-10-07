@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -2573,18 +2573,19 @@ endpoints and returns <code>RolloutDataset</code> with proper IS correction, env
 <h3 class="anchored" data-anchor-id="set-up-nemo-gym">1. Set Up NeMo Gym</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb40"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/NVIDIA-NeMo/Gym.git ~/Gym</span>
 <span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/Gym</span>
-<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv <span class="at">--python</span> 3.12 <span class="kw">&amp;&amp;</span> <span class="bu">source</span> .venv/bin/activate <span class="kw">&amp;&amp;</span> <span class="ex">uv</span> sync</span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv <span class="at">--python</span> 3.13 <span class="kw">&amp;&amp;</span> <span class="bu">source</span> .venv/bin/activate <span class="kw">&amp;&amp;</span> <span class="ex">uv</span> sync</span>
 <span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="va">CFLAGS</span><span class="op">=</span><span class="st">""</span> <span class="ex">uv</span> pip install pycosat <span class="at">--python</span> .venv/bin/python <span class="at">--no-build-isolation</span></span>
 <span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb40-7"><a href="#cb40-7" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> dir <span class="kw">in</span> resources_servers/reasoning_gym resources_servers/example_single_tool_call responses_api_models/vllm_model responses_api_agents/simple_agent<span class="kw">;</span> <span class="cf">do</span></span>
-<span id="cb40-8"><a href="#cb40-8" aria-hidden="true" tabindex="-1"></a>    <span class="ex">uv</span> venv <span class="at">--seed</span> <span class="at">--allow-existing</span> <span class="at">--python</span> 3.12 <span class="va">$dir</span>/.venv</span>
-<span id="cb40-9"><a href="#cb40-9" aria-hidden="true" tabindex="-1"></a>    <span class="va">CFLAGS</span><span class="op">=</span><span class="st">""</span> <span class="ex">uv</span> pip install <span class="at">--python</span> <span class="va">$dir</span>/.venv/bin/python pycosat <span class="at">--no-build-isolation</span> <span class="dv">2</span><span class="op">&gt;</span>/dev/null</span>
-<span id="cb40-10"><a href="#cb40-10" aria-hidden="true" tabindex="-1"></a>    <span class="ex">uv</span> pip install <span class="at">--python</span> <span class="va">$dir</span>/.venv/bin/python <span class="at">-e</span> . <span class="st">"ray[default]==2.52.1"</span></span>
-<span id="cb40-11"><a href="#cb40-11" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span>
-<span id="cb40-12"><a href="#cb40-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb40-13"><a href="#cb40-13" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--python</span> resources_servers/reasoning_gym/.venv/bin/python <span class="dt">\</span></span>
-<span id="cb40-14"><a href="#cb40-14" aria-hidden="true" tabindex="-1"></a>    reasoning-gym matplotlib pillow cycler contourpy kiwisolver</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb40-8"><a href="#cb40-8" aria-hidden="true" tabindex="-1"></a>    <span class="ex">uv</span> venv <span class="at">--seed</span> <span class="at">--allow-existing</span> <span class="at">--python</span> 3.13 <span class="va">$dir</span>/.venv</span>
+<span id="cb40-9"><a href="#cb40-9" aria-hidden="true" tabindex="-1"></a>    <span class="ex">uv</span> pip install <span class="at">--python</span> <span class="va">$dir</span>/.venv/bin/python setuptools wheel  <span class="co"># pycosat build deps</span></span>
+<span id="cb40-10"><a href="#cb40-10" aria-hidden="true" tabindex="-1"></a>    <span class="va">CFLAGS</span><span class="op">=</span><span class="st">""</span> <span class="ex">uv</span> pip install <span class="at">--python</span> <span class="va">$dir</span>/.venv/bin/python pycosat <span class="at">--no-build-isolation</span> <span class="dv">2</span><span class="op">&gt;</span>/dev/null</span>
+<span id="cb40-11"><a href="#cb40-11" aria-hidden="true" tabindex="-1"></a>    <span class="ex">uv</span> pip install <span class="at">--python</span> <span class="va">$dir</span>/.venv/bin/python <span class="at">-e</span> . <span class="st">"ray[default]==2.58.0"</span></span>
+<span id="cb40-12"><a href="#cb40-12" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span>
+<span id="cb40-13"><a href="#cb40-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-14"><a href="#cb40-14" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--python</span> resources_servers/reasoning_gym/.venv/bin/python <span class="dt">\</span></span>
+<span id="cb40-15"><a href="#cb40-15" aria-hidden="true" tabindex="-1"></a>    reasoning-gym matplotlib pillow cycler contourpy kiwisolver</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="multi-turn-with-async-grpo-recommended-fastest-path" class="level3">
 <h3 class="anchored" data-anchor-id="multi-turn-with-async-grpo-recommended-fastest-path">2. Multi-Turn with Async GRPO (Recommended — Fastest Path)</h3>
@@ -2605,7 +2606,7 @@ multi-turn tool execution while axolotl’s async GRPO prefetches data in backgr
 <span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">entrypoint</span><span class="kw">:</span><span class="at"> app.py</span></span>
 <span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">base_url</span><span class="kw">:</span><span class="at"> http://localhost:8000/v1</span></span>
 <span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">api_key</span><span class="kw">:</span><span class="at"> dummy_key</span></span>
-<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> Qwen/Qwen3-0.6B</span><span class="co">   # Must match your training model</span></span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">model</span><span class="kw">:</span><span class="at"> Qwen/Qwen3-0.6B</span><span class="co">   # Must match nemo_gym_model_name (default: base_model)</span></span>
 <span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">return_token_id_information</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">uses_reasoning_parser</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
 <span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a></span>
@@ -2620,9 +2621,9 @@ multi-turn tool execution while axolotl’s async GRPO prefetches data in backgr
 <span id="cb41-26"><a href="#cb41-26" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">type</span><span class="kw">:</span><span class="at"> responses_api_models</span></span>
 <span id="cb41-27"><a href="#cb41-27" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">name</span><span class="kw">:</span><span class="at"> policy_model</span></span>
 <span id="cb41-28"><a href="#cb41-28" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb41-29"><a href="#cb41-29" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> weather</span></span>
+<span id="cb41-29"><a href="#cb41-29" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> example</span></span>
 <span id="cb41-30"><a href="#cb41-30" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">type</span><span class="kw">:</span><span class="at"> example</span></span>
-<span id="cb41-31"><a href="#cb41-31" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">jsonl_fpath</span><span class="kw">:</span><span class="at"> resources_servers/example_single_tool_call/data/weather_tool_calling.jsonl</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb41-31"><a href="#cb41-31" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">jsonl_fpath</span><span class="kw">:</span><span class="at"> resources_servers/example_single_tool_call/data/example.jsonl</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong>Step 2: Start three services</strong></p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb42"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">python</span> <span class="at">-m</span> vllm.entrypoints.openai.api_server <span class="dt">\</span></span>
 <span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">--model</span> Qwen/Qwen3-0.6B <span class="at">--max-model-len</span> 2048 <span class="at">--gpu-memory-utilization</span> 0.85</span>
@@ -2668,11 +2669,11 @@ multi-turn tool execution while axolotl’s async GRPO prefetches data in backgr
 <span id="cb43-33"><a href="#cb43-33" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_multi_turn</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb43-34"><a href="#cb43-34" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_verify_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">120</span></span>
 <span id="cb43-35"><a href="#cb43-35" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_datasets</span><span class="kw">:</span></span>
-<span id="cb43-36"><a href="#cb43-36" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ~/Gym/resources_servers/example_single_tool_call/data/weather_tool_calling.jsonl</span></span>
+<span id="cb43-36"><a href="#cb43-36" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ~/Gym/resources_servers/example_single_tool_call/data/example.jsonl</span></span>
 <span id="cb43-37"><a href="#cb43-37" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">server_name</span><span class="kw">:</span><span class="at"> example_single_tool_call</span></span>
 <span id="cb43-38"><a href="#cb43-38" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb43-39"><a href="#cb43-39" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb43-40"><a href="#cb43-40" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ~/Gym/resources_servers/example_single_tool_call/data/weather_tool_calling.jsonl</span></span>
+<span id="cb43-40"><a href="#cb43-40" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ~/Gym/resources_servers/example_single_tool_call/data/example.jsonl</span></span>
 <span id="cb43-41"><a href="#cb43-41" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
 <span id="cb43-42"><a href="#cb43-42" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> responses_create_params.input</span></span>
 <span id="cb43-43"><a href="#cb43-43" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> content</span></span>
@@ -2802,7 +2803,8 @@ sync with filesystem + HTTP:</p>
 <ol type="1">
 <li><code>accelerator.get_state_dict()</code> gathers LoRA weights from all ranks</li>
 <li>Rank 0 saves adapter to <code>/tmp/lora_sync_*/vN/</code></li>
-<li>Rank 0 POSTs to <code>/set_lora_adapter/</code> on vLLM server</li>
+<li>Rank 0 POSTs to vLLM’s native <code>/v1/load_lora_adapter</code>, registering the adapter as <code>&lt;base model&gt;-v&lt;N&gt;</code> and addressing subsequent trainer requests to that name; a non-200 response raises</li>
+<li>In multi-turn mode the same adapter is also re-registered under <code>nemo_gym_model_name</code> (default: <code>base_model</code>), because agent servers address vLLM by the fixed <code>model</code> in their config. Keep that <code>model</code> equal to <code>nemo_gym_model_name</code>, and to the name vLLM serves the base model under</li>
 <li>vLLM loads adapter natively via Punica kernels</li>
 <li>Only ~40MB transferred (vs multiple GBs for full model weights)</li>
 </ol>
@@ -2935,7 +2937,7 @@ sync with filesystem + HTTP:</p>
 <h3 class="anchored" data-anchor-id="nemo-gym-server-setup">NeMo Gym Server Setup</h3>
 <ul>
 <li><strong>pycosat build failure</strong>: <code>CFLAGS="" uv pip install pycosat --no-build-isolation</code></li>
-<li><strong>Ray version mismatch</strong>: Pin <code>ray[default]==2.52.1</code> in all server venvs</li>
+<li><strong>Ray version mismatch</strong>: Pin all server venvs to the <code>ray[default]</code> version in Gym’s <code>pyproject.toml</code> (2.58.0 as of Oct 2026)</li>
 <li><strong>Pre-build venvs</strong>: <code>ng_run</code> creates per-server venvs via Ray. Pre-build them and use <code>+skip_venv_if_present=true</code></li>
 <li><strong>Tool <code>strict</code> field required</strong>: Agent server validates tool definitions require <code>strict: true</code></li>
 </ul>
@@ -2951,12 +2953,12 @@ sync with filesystem + HTTP:</p>
 <span id="cb54-5"><a href="#cb54-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--gpu-memory-utilization</span> 0.7 <span class="dt">\</span></span>
 <span id="cb54-6"><a href="#cb54-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--enable-lora</span> <span class="at">--max-lora-rank</span> 64 <span class="dt">\</span></span>
 <span id="cb54-7"><a href="#cb54-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--enable-auto-tool-choice</span> <span class="at">--tool-call-parser</span> hermes</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
-<li><p><strong><code>VLLM_ALLOW_RUNTIME_LORA_UPDATING=1</code></strong>: Required for <code>vllm_lora_sync: true</code>. Without it, vLLM won’t expose the <code>/v1/load_lora_adapter</code> endpoint and weight sync will fail silently. The plugin warns if this endpoint is missing.</p></li>
+<li><p><strong><code>VLLM_ALLOW_RUNTIME_LORA_UPDATING=True</code></strong> (set automatically by <code>axolotl vllm-serve</code> when LoRA is enabled): Required for <code>vllm_lora_sync: true</code>. Without it, vLLM won’t expose the <code>/v1/load_lora_adapter</code> endpoint; the plugin warns at startup and the first sync raises.</p></li>
 <li><p><strong><code>--enable-lora</code></strong>: Enables LoRA adapter support in vLLM</p></li>
 <li><p><strong><code>--enable-auto-tool-choice --tool-call-parser hermes</code></strong>: Required for Qwen3 tool calling</p></li>
 <li><p><strong><code>max_model_len</code> must be &gt; <code>max_completion_length</code></strong>: Leave room for prompt tokens (~200). If equal, the NeMo Gym model proxy gets a 400 error and returns empty completions.</p></li>
 <li><p><strong><code>CUDA_HOME</code> required</strong>: DeepSpeed import needs it for the nvcc shim</p></li>
-<li><p><strong>NCCL weight sync broken with vLLM 0.17</strong>: Use <code>vllm_lora_sync: true</code> (filesystem + HTTP via <code>/v1/load_lora_adapter</code>)</p></li>
+<li><p><strong>Full-parameter weight sync needs the native NCCL routes</strong>: start the server with <code>axolotl vllm-serve</code> (sets <code>VLLM_SERVER_DEV_MODE=1</code> and the weight-transfer config), or run <code>vllm serve</code> with <code>VLLM_SERVER_DEV_MODE=1 --weight-transfer-config '{"backend":"nccl"}'</code>. For LoRA, use <code>vllm_lora_sync: true</code> (filesystem + <code>/v1/load_lora_adapter</code>)</p></li>
 </ul>
 </section>
 <section id="multi-turn" class="level3">

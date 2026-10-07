@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -974,17 +974,14 @@ across architectures can be aggregated.</p>
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.kernels.autotune_telemetry.FusedRopeAutotuneReportCallback">FusedRopeAutotuneReportCallback</a></td>
-<td>Reports fused RMSNorm+RoPE autotune selections via telemetry.</td>
+<td>Report fused RMSNorm+RoPE selections, including later cache entries.</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.kernels.autotune_telemetry.FusedRopeAutotuneReportCallback" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.autotune_telemetry.FusedRopeAutotuneReportCallback">FusedRopeAutotuneReportCallback</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>kernels.autotune_telemetry.FusedRopeAutotuneReportCallback()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Reports fused RMSNorm+RoPE autotune selections via telemetry.</p>
-<p>Fires once after the autotune cache is populated (the first step whose
-backward has run), retrying up to <code>_MAX_POLL_STEP</code> then giving up. Every
-later <code>on_step_end</code> short-circuits on <code>_reported</code> — zero hot-path cost.</p>
+<p>Report fused RMSNorm+RoPE selections, including later cache entries.</p>
 </section>
 </section>
 <section id="functions" class="level2">

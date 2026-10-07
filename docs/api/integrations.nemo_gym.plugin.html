@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1050,9 +1050,10 @@ multi-step interactions with tool execution via resource servers</li>
 <p>Replaces the previous unconditional <code>init_communicator</code> monkey-patch
 with a probe of the configured vLLM server’s <code>/openapi.json</code>. We only
 bypass NCCL init when the server we’re talking to actually lacks the
-<code>/init_communicator/</code> route (i.e.&nbsp;stock <code>vllm serve</code>); against
-TRL/axolotl serve modules that DO expose NCCL routes, we leave the
-standard TRL flow alone so full-finetune training can sync weights.</p>
+<code>/init_weight_transfer_engine</code> route (i.e.&nbsp;stock <code>vllm serve</code> without
+dev mode); against servers that DO expose it (<code>axolotl vllm-serve</code>),
+we leave the standard TRL flow alone so full-finetune training can
+sync weights.</p>
 </section>
 </section>
 </section>
@@ -1061,36 +1062,13 @@ standard TRL flow alone so full-finetune training can sync weights.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.VLLMWeightSyncCapabilities(</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    nccl<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    lora_filesystem<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    lora_axolotl<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    http_full<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    probed<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    probe_error<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    routes<span class="op">=</span><span class="bu">list</span>(),</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    probed<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    probe_error<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    routes<span class="op">=</span><span class="bu">list</span>(),</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>What weight-sync routes a vLLM server actually exposes.</p>
 <p>Discovered once at <code>pre_model_load</code> time by fetching the server’s
 <code>/openapi.json</code>. Drives the transport-selection table below.</p>
-<section id="attributes" class="level4">
-<h4 class="anchored" data-anchor-id="attributes">Attributes</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.nemo_gym.plugin.VLLMWeightSyncCapabilities.any_full_param_sync">any_full_param_sync</a></td>
-<td>True if at least one transport can push full-model weights.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.integrations.nemo_gym.plugin.VLLMWeightSyncCapabilities.any_lora_sync">any_lora_sync</a></td>
-<td>True if at least one transport can push LoRA adapters.</td>
-</tr>
-</tbody>
-</table>
-</section>
 </section>
 </section>
 <section id="functions" class="level2">
@@ -1131,16 +1109,15 @@ a clear error rather than silently no-op).</p>
 <span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync_pref,</span>
 <span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Pick the right transport for a (server caps, model type) combo.</p>
-<p>Returns one of: <code>"lora_filesystem"</code>, <code>"nccl"</code>, <code>"http_full"</code>, or
-<code>"none"</code>. The caller decides what to do with <code>"none"</code> (typically:
-raise an error explaining the misconfiguration).</p>
+<p>Returns one of: <code>"lora_filesystem"</code>, <code>"nccl"</code>, or <code>"none"</code>. The caller
+decides what to do with <code>"none"</code> (typically: raise an error explaining the
+misconfiguration).</p>
 <section id="selection-table" class="level4 doc-section doc-section-selection-table">
 <h4 class="doc-section doc-section-selection-table anchored" data-anchor-id="selection-table">Selection table</h4>
 <p>LoRA model + lora endpoint + lora-sync pref → lora_filesystem
-LoRA model + lora endpoint → lora_filesystem
-LoRA model + nccl endpoint → nccl (broadcast merged adapter)
+LoRA model + nccl endpoint, no lora-sync pref → nccl (broadcast merged adapter)
+LoRA model + lora endpoint only → lora_filesystem
 Full model + nccl endpoint → nccl
-Full model + http endpoint → http_full
 anything else → none</p>
 
 

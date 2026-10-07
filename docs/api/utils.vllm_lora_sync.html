@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>utils.weight_serde – Axolotl</title>
+<title>utils.vllm_lora_sync – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -933,14 +933,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.utils.weight_serde" id="toc-axolotl.utils.weight_serde" class="nav-link active" data-scroll-target="#axolotl.utils.weight_serde">utils.weight_serde</a>
+  <li><a href="#axolotl.utils.vllm_lora_sync" id="toc-axolotl.utils.vllm_lora_sync" class="nav-link active" data-scroll-target="#axolotl.utils.vllm_lora_sync">utils.vllm_lora_sync</a>
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.utils.weight_serde.decode_from_http" id="toc-axolotl.utils.weight_serde.decode_from_http" class="nav-link" data-scroll-target="#axolotl.utils.weight_serde.decode_from_http">decode_from_http</a></li>
-  <li><a href="#axolotl.utils.weight_serde.decode_from_ipc" id="toc-axolotl.utils.weight_serde.decode_from_ipc" class="nav-link" data-scroll-target="#axolotl.utils.weight_serde.decode_from_ipc">decode_from_ipc</a></li>
-  <li><a href="#axolotl.utils.weight_serde.encode_for_http" id="toc-axolotl.utils.weight_serde.encode_for_http" class="nav-link" data-scroll-target="#axolotl.utils.weight_serde.encode_for_http">encode_for_http</a></li>
-  <li><a href="#axolotl.utils.weight_serde.encode_for_ipc" id="toc-axolotl.utils.weight_serde.encode_for_ipc" class="nav-link" data-scroll-target="#axolotl.utils.weight_serde.encode_for_ipc">encode_for_ipc</a></li>
+  <li><a href="#axolotl.utils.vllm_lora_sync.publish_lora_adapter" id="toc-axolotl.utils.vllm_lora_sync.publish_lora_adapter" class="nav-link" data-scroll-target="#axolotl.utils.vllm_lora_sync.publish_lora_adapter">publish_lora_adapter</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -952,14 +949,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.utils.weight_serde" class="level1">
-<h1>utils.weight_serde</h1>
-<p><code>utils.weight_serde</code></p>
-<p>Serialize / deserialize tensors for HTTP and IPC weight sync.</p>
-<p>NumPy doesn’t support bfloat16, so bf16 tensors are cast to fp16 on the wire
-and reconstructed at the destination. All encode/decode helpers live here so
-the logic isn’t duplicated across trl_vllm.py, vllm_serve_lora.py, and
-vllm_worker_ext.py.</p>
+<section id="axolotl.utils.vllm_lora_sync" class="level1">
+<h1>utils.vllm_lora_sync</h1>
+<p><code>utils.vllm_lora_sync</code></p>
+<p>Publish LoRA adapters to a vLLM server through its native adapter routes.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -971,51 +964,29 @@ vllm_worker_ext.py.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.weight_serde.decode_from_http">decode_from_http</a></td>
-<td>Decode an HTTP-encoded weight entry back to a named tensor.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.weight_serde.decode_from_ipc">decode_from_ipc</a></td>
-<td>Decode an IPC-encoded weight entry back to a named tensor.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.weight_serde.encode_for_http">encode_for_http</a></td>
-<td>Encode a named parameter for JSON transport over HTTP.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.utils.weight_serde.encode_for_ipc">encode_for_ipc</a></td>
-<td>Encode a tensor for vLLM’s multiproc IPC (raw bytes, no base64).</td>
+<td><a href="#axolotl.utils.vllm_lora_sync.publish_lora_adapter">publish_lora_adapter</a></td>
+<td>Register <code>&lt;sync_dir&gt;/v&lt;version&gt;</code> under a fresh versioned adapter name.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.utils.weight_serde.decode_from_http" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.weight_serde.decode_from_http">decode_from_http</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.weight_serde.decode_from_http(entry)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Decode an HTTP-encoded weight entry back to a named tensor.</p>
-<p>Infers wire dtype from byte count (bf16 arrives as fp16) and casts to the
-original dtype stored in <code>entry["dtype"]</code>.</p>
-</section>
-<section id="axolotl.utils.weight_serde.decode_from_ipc" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.weight_serde.decode_from_ipc">decode_from_ipc</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.weight_serde.decode_from_ipc(entry)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Decode an IPC-encoded weight entry back to a named tensor.</p>
-<p>Handles optional <code>target_dtype</code> for backward compatibility with older
-serve code that may not include it.</p>
-</section>
-<section id="axolotl.utils.weight_serde.encode_for_http" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.weight_serde.encode_for_http">encode_for_http</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.weight_serde.encode_for_http(name, weight)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Encode a named parameter for JSON transport over HTTP.</p>
-<p>Returns a dict with keys: name, dtype (original), shape, data (base64).
-bf16 tensors are sent as fp16 bytes; the original dtype is preserved in
-the <code>dtype</code> field so the receiver can cast back.</p>
-</section>
-<section id="axolotl.utils.weight_serde.encode_for_ipc" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.weight_serde.encode_for_ipc">encode_for_ipc</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.weight_serde.encode_for_ipc(name, weight)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Encode a tensor for vLLM’s multiproc IPC (raw bytes, no base64).</p>
-<p>Returns a dict with keys: name, data (bytes), dtype (wire), target_dtype
-(original), shape. bf16 tensors are serialized as fp16.</p>
+<section id="axolotl.utils.vllm_lora_sync.publish_lora_adapter" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.vllm_lora_sync.publish_lora_adapter">publish_lora_adapter</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.vllm_lora_sync.publish_lora_adapter(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    vllm_client,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    sync_dir,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    version,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    timeout,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    alias<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Register <code>&lt;sync_dir&gt;/v&lt;version&gt;</code> under a fresh versioned adapter name.</p>
+<p>Each version gets its own name because vLLM re-reads an adapter reloaded in
+place from disk on every request and keys its prefix cache on the name alone.
+In-flight requests are drained first so at most the previous version can
+still be referenced once generation resumes.</p>
+<p><code>alias</code> is a fixed name that is re-pointed at every version, for clients
+that cannot follow the versioned name. It should be the served base model
+name: requests arriving between the unload and the reload then fall back to
+the base model instead of failing.</p>
 
 
 </section>

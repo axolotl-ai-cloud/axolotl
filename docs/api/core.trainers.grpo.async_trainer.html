@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1111,7 +1111,11 @@ does not define them, the defaults below ensure everything works.</p>
 </section>
 <section id="axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer">AsyncGRPOTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.AsyncGRPOTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.AsyncGRPOTrainer(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>args,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    data_collator<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>GRPOTrainer with async prefetch, streaming scoring, and IS correction.</p>
 <p>Drop-in replacement: pass <code>AsyncGRPOConfig</code> as <code>args</code> and use this trainer
 instead of <code>GRPOTrainer</code>.</p>

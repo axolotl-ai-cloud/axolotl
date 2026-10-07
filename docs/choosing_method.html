@@ -688,7 +688,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1384,7 +1384,7 @@ Tip
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>For single-GPU GRPO, use <code>vllm_mode: colocate</code> with <code>vllm_enable_sleep_mode: true</code>. The vLLM engine shares the GPU and offloads VRAM when not generating. This works for smaller models (up to ~3B on a 24 GB GPU) but is slower than the two-GPU server mode.</p>
+<p>For single-GPU GRPO, use <code>vllm_mode: colocate</code> with <code>vllm_enable_sleep_mode: true</code>. The vLLM engine shares the GPU and offloads VRAM when not generating. This works for smaller models (up to ~3B on a 24 GB GPU) but is slower than the two-GPU server mode. Set <code>vllm.max_model_len</code>; see <a href="../docs/vllm_serving.html#sec-colocate-mode">Colocate Mode</a>.</p>
 </div>
 </div>
 </section>

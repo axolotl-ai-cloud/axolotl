@@ -688,7 +688,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1871,11 +1871,6 @@ Warning
 <section id="troubleshooting" class="level3">
 <h3 class="anchored" data-anchor-id="troubleshooting">Troubleshooting</h3>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 48%">
-<col style="width: 18%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Symptom</th>
@@ -1916,8 +1911,8 @@ Warning
 </tr>
 <tr class="odd">
 <td>vLLM 500 errors</td>
-<td><code>truncate_prompt_tokens</code> not supported</td>
-<td>Ensure you are using <code>axolotl vllm-serve</code> (not <code>trl vllm-serve</code>)</td>
+<td>Server missing required flags</td>
+<td>Start it with <code>axolotl vllm-serve</code> (or the raw command in <a href="../docs/vllm_serving.html#sec-server-mode">vLLM Serving</a>)</td>
 </tr>
 </tbody>
 </table>
@@ -1935,7 +1930,7 @@ Note
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>The <code>disable_adapter()</code> approach relies on an invariant: <code>merge_adapter()</code> is never called on the base weights. All weight sync paths (LoRA sync, HTTP, NCCL) compute merged weights as new tensors or save the adapter to the filesystem, leaving base weights unmodified.</p>
+<p>The <code>disable_adapter()</code> approach relies on an invariant: <code>merge_adapter()</code> is never called on the base weights. All weight sync paths (LoRA sync, NCCL) compute merged weights as new tensors or save the adapter to the filesystem, leaving base weights unmodified.</p>
 </div>
 </div>
 </section>

@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -937,7 +937,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.trainer.trl_vllm.colocate_vllm_engine_kwargs" id="toc-axolotl.monkeypatch.trainer.trl_vllm.colocate_vllm_engine_kwargs" class="nav-link" data-scroll-target="#axolotl.monkeypatch.trainer.trl_vllm.colocate_vllm_engine_kwargs">colocate_vllm_engine_kwargs</a></li>
   <li><a href="#axolotl.monkeypatch.trainer.trl_vllm.patch_trl_vllm" id="toc-axolotl.monkeypatch.trainer.trl_vllm.patch_trl_vllm" class="nav-link" data-scroll-target="#axolotl.monkeypatch.trainer.trl_vllm.patch_trl_vllm">patch_trl_vllm</a></li>
+  <li><a href="#axolotl.monkeypatch.trainer.trl_vllm.patch_vllm_colocate_engine_kwargs" id="toc-axolotl.monkeypatch.trainer.trl_vllm.patch_vllm_colocate_engine_kwargs" class="nav-link" data-scroll-target="#axolotl.monkeypatch.trainer.trl_vllm.patch_vllm_colocate_engine_kwargs">patch_vllm_colocate_engine_kwargs</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -954,10 +956,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p><code>monkeypatch.trainer.trl_vllm</code></p>
 <p>Monkeypatches for TRL’s vLLM integration and trainer utils.</p>
 <p>Adds:
-- VLLMClient.batch_update_named_params: batched weight sync (fewer HTTP round-trips)
+- VLLMClient.batch_update_named_params: weight sync over vLLM’s native NCCL
+weight-transfer engine, inside a single weight update, with lazy communicator init
 - extract_logprobs: NaN→0.0 fix (prevents downstream NaN propagation)
-- VLLMGeneration: weight_sync_chunk_size + batched sync path for non-FSDP/non-ZeRO
-- split_tensor_dict / shuffle_sequence_dict: scalar type handling (int/float/bool passthrough)</p>
+- split_tensor_dict / shuffle_sequence_dict: scalar type handling (int/float/bool passthrough)
+- LLM (colocate): forward <code>vllm:</code> engine args TRL has no config field for (enforce_eager, …)</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -969,15 +972,35 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.monkeypatch.trainer.trl_vllm.colocate_vllm_engine_kwargs">colocate_vllm_engine_kwargs</a></td>
+<td><code>vllm:</code> options that only reach a colocated engine via the LLM() call itself.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.trainer.trl_vllm.patch_trl_vllm">patch_trl_vllm</a></td>
 <td>Apply all TRL vLLM monkeypatches.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.trainer.trl_vllm.patch_vllm_colocate_engine_kwargs">patch_vllm_colocate_engine_kwargs</a></td>
+<td>Merge extra engine kwargs into the LLM() call VLLMGeneration makes in colocate mode.</td>
+</tr>
 </tbody>
 </table>
+<section id="axolotl.monkeypatch.trainer.trl_vllm.colocate_vllm_engine_kwargs" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.trainer.trl_vllm.colocate_vllm_engine_kwargs">colocate_vllm_engine_kwargs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.trainer.trl_vllm.colocate_vllm_engine_kwargs(vllm_cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>vllm:</code> options that only reach a colocated engine via the LLM() call itself.</p>
+</section>
 <section id="axolotl.monkeypatch.trainer.trl_vllm.patch_trl_vllm" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.trainer.trl_vllm.patch_trl_vllm">patch_trl_vllm</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.trainer.trl_vllm.patch_trl_vllm()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.trainer.trl_vllm.patch_trl_vllm()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Apply all TRL vLLM monkeypatches.</p>
+</section>
+<section id="axolotl.monkeypatch.trainer.trl_vllm.patch_vllm_colocate_engine_kwargs" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.trainer.trl_vllm.patch_vllm_colocate_engine_kwargs">patch_vllm_colocate_engine_kwargs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.trainer.trl_vllm.patch_vllm_colocate_engine_kwargs(engine_kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Merge extra engine kwargs into the LLM() call VLLMGeneration makes in colocate mode.</p>
+<p>TRL hardcodes that call, so this is the only way for e.g.&nbsp;<code>enforce_eager</code> (needed
+to avoid vLLM’s custom all-reduce CUDA errors on some setups) to reach the engine.</p>
 
 
 </section>

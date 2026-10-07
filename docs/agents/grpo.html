@@ -687,7 +687,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -960,8 +960,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 ┌──────────────────────┐              ┌──────────────────────────────────┐
 │  vLLM Server         │   HTTP       │  Trainer                         │
 │  Serves base model   │◄────────────►│  1. Send prompts to vLLM         │
-│  + LoRA adapter      │  /generate   │  2. Score completions (rewards)  │
-│                      │  /set_lora   │  3. Compute advantages           │
+│  + LoRA adapter      │  /v1/*       │  2. Score completions (rewards)  │
+│                      │  LoRA load   │  3. Compute advantages           │
 │  Punica kernels for  │              │  4. PPO-clip gradient update     │
 │  LoRA inference      │              │  5. Sync LoRA weights to vLLM    │
 └──────────────────────┘              └──────────────────────────────────┘</code></pre>
@@ -971,7 +971,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ol type="1">
 <li>A YAML config with <code>rl: grpo</code></li>
 <li>A reward module (Python file with reward functions)</li>
-<li>A running vLLM server (<code>axolotl vllm-serve config.yaml</code>)</li>
+<li>A vLLM backend: a running server (<code>axolotl vllm-serve config.yaml</code>, <code>vllm_mode: server</code>), or <code>vllm_mode: colocate</code> to host the engine on the training GPU (single-GPU; configure via the <code>vllm:</code> block and set <code>vllm.max_model_len</code>)</li>
 </ol>
 </section>
 <section id="reward-function-signature" class="level2">
@@ -981,6 +981,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="co"># **kwargs contains dataset columns not removed by transform</span></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> [score_for_each_completion]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Multiple rewards: <code>reward_funcs: [r1, r2]</code> with <code>reward_weights: [1.0, 0.5]</code>.</p>
+<p>Image datasets (<code>images</code>/<code>image</code> column, <code>processor_type: AutoProcessor</code>) also work; rewards receive the loaded images as the <code>images</code> kwarg (one list per sample, for either column). See <a href="../../docs/rlhf.html#multimodal">rlhf.qmd</a>.</p>
 </section>
 <section id="key-async-features" class="level2">
 <h2 class="anchored" data-anchor-id="key-async-features">Key Async Features</h2>
@@ -1045,12 +1046,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h2 class="anchored" data-anchor-id="file-map">File Map</h2>
 <pre><code>src/axolotl/
   cli/train.py                     # Entry point
-  cli/vllm_serve.py                # Entry point for vLLM server
+  cli/vllm_serve.py                # Launches vLLM's native OpenAI server (dev mode, NCCL weight transfer, optional LoRA)
   core/trainers/grpo/
     trainer.py                     # AxolotlGRPOTrainer
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
-  scripts/vllm_serve_lora.py       # vLLM serve script with LoRA sync support
   utils/schemas/trl.py             # TRL config schema (all trl: options)
 
 docs/grpo.qmd                     # Full user docs: async, rewards, scaling, config reference

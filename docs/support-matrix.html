@@ -653,7 +653,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">RLHF (Beta)</span></a>
+ <span class="menu-text">RLHF</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1626,11 +1626,6 @@ Warning
 <section id="dataset-formats" class="level2">
 <h2 class="anchored" data-anchor-id="dataset-formats">Dataset formats</h2>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Format</th>
@@ -1675,6 +1670,11 @@ Warning
 <td>resizing, role boundaries</td>
 </tr>
 <tr class="even">
+<td>Multimodal preference / RL 🟡</td>
+<td><code>images</code> / <code>image</code> column</td>
+<td>DPO/IPO, KTO, GRPO/GDPO only; see <a href="../docs/rlhf.html#multimodal">RLHF multimodal</a></td>
+</tr>
+<tr class="odd">
 <td>Typed decisions 🟡</td>
 <td><code>diffusion_decision.jsonl</code>, <code>.typed_decisions</code>, <code>.procedural</code></td>
 <td><code>diffusion_decision</code> plugin only</td>
