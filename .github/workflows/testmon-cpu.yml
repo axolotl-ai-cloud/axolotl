@@ -10,11 +10,11 @@ env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
   PYTHON_VERSION: "3.14"
-  PYTORCH_VERSION: "2.14.0"
+  PYTORCH_VERSION: "2.14.1"
 
 jobs:
   pytest-testmon:
-    name: PyTest testmon (py3.14, torch 2.14.0)
+    name: PyTest testmon (py3.14, torch 2.14.1)
     runs-on: ubuntu-latest
     # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
     continue-on-error: true
