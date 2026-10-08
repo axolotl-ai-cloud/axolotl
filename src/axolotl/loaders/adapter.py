@@ -345,7 +345,13 @@ def reinit_lora_from_seed(model: torch.nn.Module, seed: int | None) -> int:
                 r = module.r[adapter_name]
                 full = torch.empty(e_global * r, weight.shape[1], dtype=torch.float32)
                 torch.nn.init.kaiming_uniform_(full, a=math.sqrt(5), generator=gen)
-                local = full[offset * r : (offset + module.num_experts) * r]
+                selected_experts = getattr(module, "selected_experts", None)
+                if selected_experts is not None:
+                    local = full.reshape(e_global, r, -1)[
+                        list(selected_experts)
+                    ].flatten(0, 1)
+                else:
+                    local = full[offset * r : (offset + module.num_experts) * r]
             else:
                 local = torch.empty(weight.shape, dtype=torch.float32)
                 torch.nn.init.kaiming_uniform_(local, a=math.sqrt(5), generator=gen)
