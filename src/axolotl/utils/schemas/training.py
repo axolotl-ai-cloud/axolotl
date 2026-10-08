@@ -322,7 +322,7 @@ class HyperparametersConfig(BaseModel):
         default=100,
         ge=10,
         json_schema_extra={
-            "description": "Accepted steps in the outlier history; the outlier triggers act only once the window is full."
+            "description": "Accepted steps in the outlier history; the outlier triggers act only once the window is full. The history is saved in `trainer_state.json` and restored on resume."
         },
     )
     step_outlier_action: Literal["scale", "skip"] = Field(
@@ -335,7 +335,7 @@ class HyperparametersConfig(BaseModel):
         default=None,
         gt=0,
         json_schema_extra={
-            "description": "Per-tensor adaptive gradient clipping (OLMo's max_grad_norm_ratio): each trainable tensor's gradient norm is clipped to this ratio times the exponential average of its previous clipped norms. Applied after `max_grad_norm`; set `max_grad_norm: 0` to match OLMo, where it replaces the global clip. The averages are kept in memory and restart when training resumes."
+            "description": "Per-tensor adaptive gradient clipping (OLMo's max_grad_norm_ratio): each trainable tensor's gradient norm is clipped to this ratio times the exponential average of its previous clipped norms. Applied after `max_grad_norm`; set `max_grad_norm: 0` to match OLMo, where it replaces the global clip. Norms are of whole tensors under DDP, FSDP2 and tensor parallelism; under expert parallelism an expert tensor's norm and average cover the experts on that EP rank. The averages live in the optimizer state (`grad_norm_exp_avg`) and are restored with it on resume. Not supported with DeepSpeed."
         },
     )
     grad_clip_norm_ratio_beta: float | None = Field(

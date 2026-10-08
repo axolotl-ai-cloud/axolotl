@@ -1246,15 +1246,9 @@ class OptimizationValidationMixin:
             raise ValueError(
                 "step_outlier_* is not supported with DeepSpeed, which manages gradients inside its engine"
             )
-        if data.get("grad_clip_norm_ratio") and (
-            data.get("deepspeed")
-            or data.get("fsdp")
-            or data.get("fsdp_config")
-            or (data.get("tensor_parallel_size") or 1) > 1
-            or (data.get("expert_parallel_size") or 1) > 1
-        ):
+        if data.get("grad_clip_norm_ratio") and data.get("deepspeed"):
             raise ValueError(
-                "grad_clip_norm_ratio needs whole (unsharded) gradients; it is not supported with DeepSpeed, FSDP, tensor or expert parallelism"
+                "grad_clip_norm_ratio is not supported with DeepSpeed, which shards gradients inside its engine; it supports DDP, FSDP2, tensor and expert parallelism"
             )
         return data
 

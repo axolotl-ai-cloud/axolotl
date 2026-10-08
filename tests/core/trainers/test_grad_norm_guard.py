@@ -23,6 +23,9 @@ class _Base:
     def log(self, logs, start_time=None):
         self.logged = dict(logs)
 
+    def _load_callback_state(self):
+        pass
+
 
 class _Trainer(GradNormGuardMixin, _Base):
     def __init__(self, zscore=10.0, window=20, action="scale"):
@@ -234,7 +237,10 @@ def test_ratio_clips_only_the_spiking_tensor_and_tracks_clipped_norm():
     )
     # the average moves toward the clipped norm 2.0, not the raw 10.0
     torch.testing.assert_close(
-        trainer._grad_clip_ema[1], torch.tensor(1.1), rtol=1e-4, atol=1e-4
+        trainer._grad_clip_averages([model.b])[0],
+        torch.tensor(1.1),
+        rtol=1e-4,
+        atol=1e-4,
     )
     trainer.log({"loss": 1.0})
     assert trainer.logged["grad_clip_ratio/clipped_tensors"] == 1
@@ -258,19 +264,32 @@ def test_ratio_does_not_run_on_a_skipped_step():
     _set_grads(model, 1.0, 1.0)
     trainer._get_grad_norm(model, torch.tensor(float("inf")))
     assert model.a.grad is None and model.b.grad is None
-    assert getattr(trainer, "_grad_clip_ema", None) is None
+    assert torch.isnan(trainer._grad_clip_averages([model.a, model.b])).all()
 
 
-def test_ratio_config_rejects_sharded_gradients(min_base_cfg):
+def test_ratio_config_allows_fsdp2_tp_ep_and_rejects_deepspeed(min_base_cfg):
     cfg = validate_config(min_base_cfg | DictDefault(grad_clip_norm_ratio=2.0))
     assert cfg.grad_clip_norm_ratio == 2.0
-    with pytest.raises(ValueError, match="unsharded"):
+    cfg = validate_config(
+        min_base_cfg
+        | DictDefault(
+            grad_clip_norm_ratio=2.0,
+            fsdp_version=2,
+            fsdp_config={"reshard_after_forward": True},
+        )
+    )
+    assert cfg.grad_clip_norm_ratio == 2.0
+    from axolotl.utils.schemas.validation import OptimizationValidationMixin
+
+    for parallel in ({"tensor_parallel_size": 2}, {"expert_parallel_size": 2}):
+        data = {"grad_clip_norm_ratio": 2.0} | parallel
+        assert OptimizationValidationMixin.check_grad_norm_guard_compat(data) is data
+    with pytest.raises(ValueError, match="DeepSpeed"):
         validate_config(
             min_base_cfg
             | DictDefault(
                 grad_clip_norm_ratio=2.0,
-                fsdp_version=2,
-                fsdp_config={"reshard_after_forward": True},
+                deepspeed="deepspeed_configs/zero2.json",
             )
         )
 
@@ -352,3 +371,141 @@ def test_loss_not_recorded_when_loss_trigger_disabled():
     model = _model()
     trainer.training_step(model, 1.0)
     assert getattr(trainer, "_step_loss_sum", None) is None
+
+
+class _ResumableTrainer(_Trainer):
+    """Adds the trainer pieces the resume path touches."""
+
+    def __init__(self, **kwargs):
+        from transformers.trainer_callback import CallbackHandler
+
+        super().__init__(**kwargs)
+        self.callback_handler = CallbackHandler([], None, None, None, None)
+        self.state = SimpleNamespace(global_step=0, stateful_callbacks={})
+
+
+def test_outlier_history_round_trips_through_trainer_state(tmp_path):
+    from transformers import TrainerState
+
+    from axolotl.core.trainers.mixins.grad_norm_guard import StepOutlierState
+
+    trainer = _ResumableTrainer(window=20)
+    model = _model()
+    _feed(trainer, model, _history() + [1000.0])
+    callback = trainer._step_outlier
+    assert callback in trainer.callback_handler.callbacks
+    saved = TrainerState(stateful_callbacks=[callback])
+    callback.on_step_end(None, saved, None)
+    saved.save_to_json(str(tmp_path / "trainer_state.json"))
+    loaded = TrainerState.load_from_json(str(tmp_path / "trainer_state.json"))
+
+    resumed = _ResumableTrainer(window=20)
+    resumed.state.stateful_callbacks = loaded.stateful_callbacks
+    resumed._load_callback_state()
+    assert resumed._step_outlier_history == trainer._step_outlier_history
+    assert resumed._step_outlier_count == 1
+    restored = [
+        cb
+        for cb in resumed.callback_handler.callbacks
+        if isinstance(cb, StepOutlierState)
+    ]
+    assert restored == [resumed._step_outlier]
+
+    # identical decisions afterwards
+    for value in (1000.0, 61.0, 2000.0):
+        grads = []
+        for t in (trainer, resumed):
+            for param in model.parameters():
+                param.grad = torch.ones_like(param)
+            t._get_grad_norm(model, torch.tensor(value))
+            grads.append([p.grad.clone() for p in model.parameters()])
+        for a, b in zip(*grads, strict=True):
+            torch.testing.assert_close(a, b)
+    assert resumed._step_outlier_history == trainer._step_outlier_history
+    assert resumed._step_outlier_count == trainer._step_outlier_count == 3
+
+
+def test_restore_trims_history_to_a_smaller_window():
+    trainer = _ResumableTrainer(window=20)
+    model = _model()
+    _feed(trainer, model, _history(20))
+    data = {"StepOutlierState": trainer._step_outlier.state()}
+    resumed = _ResumableTrainer(window=10)
+    resumed._restore_step_outlier_state(data)
+    assert resumed._step_outlier_history["grad_norm"] == _history(20)[-10:]
+
+
+def _ratio_step(trainer, model, optimizer, step):
+    generator = torch.Generator().manual_seed(step)
+    dtype = model.a.dtype
+    model.a.grad = torch.randn(4, generator=generator).to(dtype)
+    model.b.grad = (
+        torch.randn(4, generator=generator) * (30.0 if step == 4 else 1.0)
+    ).to(dtype)
+    trainer._get_grad_norm(model, torch.tensor(1.0))
+    grads = (model.a.grad.clone(), model.b.grad.clone())
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    return grads
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("save_after", [1, 3])
+def test_ratio_averages_resume_from_the_optimizer_state(tmp_path, dtype, save_after):
+    from axolotl.core.trainers.mixins.grad_norm_guard import GRAD_NORM_EMA_KEY
+
+    model = _two_tensor_model().to(dtype)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2)
+    trainer = _RatioTrainer(ratio=1.5, beta=0.8)
+    trainer.optimizer = optimizer
+    for step in range(save_after):
+        _ratio_step(trainer, model, optimizer, step)
+    # the first step's averages wait outside the empty optimizer state
+    torch.save(optimizer.state_dict(), tmp_path / "optimizer.pt")
+    for param in (model.a, model.b):
+        value = optimizer.state[param][GRAD_NORM_EMA_KEY]
+        assert value.dtype == torch.float32 and value.dim() == 0
+
+    resumed_model = _two_tensor_model().to(dtype)
+    resumed_model.load_state_dict(model.state_dict())
+    resumed_optimizer = torch.optim.AdamW(resumed_model.parameters(), lr=1e-2)
+    resumed = _RatioTrainer(ratio=1.5, beta=0.8)
+    resumed.optimizer = resumed_optimizer
+    # the trainer attaches its hooks before loading a checkpoint
+    resumed._grad_clip_store().attach(resumed_optimizer)
+    resumed_optimizer.load_state_dict(torch.load(tmp_path / "optimizer.pt"))
+    # load_state_dict casts state to the parameter dtype; the averages stay float32
+    stored = resumed_optimizer.state[resumed_model.a][GRAD_NORM_EMA_KEY]
+    assert stored.dtype == torch.float32
+    torch.testing.assert_close(
+        resumed._grad_clip_averages([resumed_model.a, resumed_model.b]),
+        trainer._grad_clip_averages([model.a, model.b]),
+        rtol=0,
+        atol=0,
+    )
+    for step in range(save_after, 6):
+        expected = _ratio_step(trainer, model, optimizer, step)
+        actual = _ratio_step(resumed, resumed_model, resumed_optimizer, step)
+        for a, b in zip(actual, expected, strict=True):
+            torch.testing.assert_close(a, b, rtol=0, atol=0)
+        assert int(resumed._grad_clip_last_clipped) == int(
+            trainer._grad_clip_last_clipped
+        )
+
+
+def test_ratio_averages_live_in_the_accelerated_optimizer_state():
+    from accelerate import Accelerator
+
+    from axolotl.core.trainers.mixins.grad_norm_guard import GRAD_NORM_EMA_KEY
+
+    model = _two_tensor_model()
+    optimizer = Accelerator(cpu=True).prepare_optimizer(
+        torch.optim.AdamW(model.parameters(), lr=1e-2)
+    )
+    trainer = _RatioTrainer(ratio=1.5, beta=0.8)
+    trainer.optimizer = optimizer
+    _ratio_step(trainer, model, optimizer, 0)
+    assert GRAD_NORM_EMA_KEY not in optimizer.state[model.a]
+    _ratio_step(trainer, model, optimizer, 1)
+    assert GRAD_NORM_EMA_KEY in optimizer.optimizer.state[model.a]
+    assert GRAD_NORM_EMA_KEY in optimizer.state_dict()["state"][0]
