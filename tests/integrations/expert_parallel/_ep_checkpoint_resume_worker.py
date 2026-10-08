@@ -1,10 +1,13 @@
 """Gloo worker: an FSDP2 FULL_STATE_DICT checkpoint round-trips every EP rank's experts.
 
 Builds a tiny Mixtral, EP-shards its experts and FSDP2-wraps it the way the plugin does
-(experts on their non-ep mesh, dense layers on the whole world), takes two AdamW steps,
-saves the model and optimizer through ``transformers.trainer``'s ``save_fsdp_*`` names
-(the functions the Trainer calls), reloads them into a freshly built model and optimizer
-through the ``load_fsdp_*`` names, and compares every rank's parameters and optimizer
+(experts on their non-ep mesh, dense layers on the whole world), optionally with a
+``target_parameters`` expert LoRA (``--lora``), takes two AdamW steps, and checkpoints it
+the way the Trainer does: the gathered adapter export for LoRA runs, then
+``save_fsdp_model(adapter_only=True)`` and ``save_fsdp_optimizer`` through
+``transformers.trainer``'s names. It reloads into a freshly built model and optimizer
+through the ``load_fsdp_*`` names (the Trainer resumes from ``pytorch_model_fsdp.bin``
+when it exists, adapter runs included) and compares every rank's parameters and optimizer
 state with the values before the save.
 
 ``--mode fixed`` runs inside ``ep_fsdp_checkpoint_functions`` (the trainer's EP path);
@@ -26,13 +29,14 @@ from torch.distributed.fsdp import fully_shard
 from torch.distributed.tensor import DTensor
 
 NUM_EXPERTS = 8
+LORA_RANK = 2
 
 
 def _local(tensor):
     return tensor.to_local() if isinstance(tensor, DTensor) else tensor
 
 
-def _build(ep, dp_shard, seed, checkpoint_layers):
+def _build(ep, dp_shard, seed, checkpoint_layers, lora):
     from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
         checkpoint_wrapper,
     )
@@ -45,7 +49,7 @@ def _build(ep, dp_shard, seed, checkpoint_layers):
         per_rank_expert_mesh,
     )
 
-    torch.manual_seed(seed)
+    torch.manual_seed(0 if lora else seed)  # a resumed LoRA run keeps its base
     config = MixtralConfig(
         vocab_size=64,
         hidden_size=16,
@@ -85,26 +89,43 @@ def _build(ep, dp_shard, seed, checkpoint_layers):
     finally:
         shard._scatter_expert_from_rank0 = original
 
+    decoder = model.model
+    if lora:
+        from peft import LoraConfig, get_peft_model
+
+        torch.manual_seed(100 + seed)  # LoRA A init; B starts at zero
+        model = get_peft_model(
+            model,
+            LoraConfig(
+                r=LORA_RANK,
+                lora_alpha=4,
+                target_modules=["q_proj"],
+                target_parameters=["mlp.experts.gate_up_proj", "mlp.experts.down_proj"],
+            ),
+        )
+        assert shard.shard_expert_lora(model, ep) > 0
     if checkpoint_layers:
-        for i, layer in enumerate(model.model.layers):
-            model.model.layers[i] = checkpoint_wrapper(layer)
+        for i, layer in enumerate(decoder.layers):
+            decoder.layers[i] = checkpoint_wrapper(layer)
     expert_mesh = (
         expert_fsdp_mesh(mesh)
         if mesh is not None
         else per_rank_expert_mesh(None, "cpu")
     )
     ExpertParallelPlugin.fully_shard_experts(model, expert_mesh, {})
-    for layer in model.model.layers:
+    for layer in decoder.layers:
         fully_shard(layer, mesh=dense_mesh)
     fully_shard(model, mesh=dense_mesh)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2, weight_decay=0.0)
+    optimizer = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad], lr=1e-2, weight_decay=0.0
+    )
     return model, optimizer, ep_group
 
 
 def _train(model, optimizer, steps):
     generator = torch.Generator().manual_seed(1000 + dist.get_rank())
     for _ in range(steps):
-        for param in model.parameters():
+        for param in (p for p in model.parameters() if p.requires_grad):
             local = torch.randn(_local(param).shape, generator=generator)
             param.grad = (
                 DTensor.from_local(
@@ -124,29 +145,40 @@ def _train(model, optimizer, steps):
 def _snapshot(model, optimizer):
     params = {n: _local(p).detach().clone() for n, p in model.named_parameters()}
     states = {
-        n: {k: _local(v).detach().clone() for k, v in optimizer.state[p].items()}
+        n: {
+            k: _local(v).detach().clone() for k, v in optimizer.state.get(p, {}).items()
+        }
         for n, p in model.named_parameters()
     }
     return params, states
 
 
-def _full_experts(model, optimizer, ep_group):
-    """The true full expert tensors (all ranks take part; meaningful everywhere)."""
-    from axolotl.integrations.expert_parallel.checkpoint import (
-        all_gather_ep_experts,
-        ep_sharded_expert_params,
-    )
+def _full_tensors(model, optimizer, ep_group):
+    """The true full tensors of every EP-sharded parameter (experts and expert LoRA) and
+    of their Adam moments, keyed ``(fqn, "weight" | state)``: gathered over the non-ep
+    mesh, then along ep the way the final model / adapter export assembles them."""
+    from torch.distributed.checkpoint.state_dict import _get_fqns
 
-    weights, moments = {}, {}
-    for expert in ep_sharded_expert_params(model):
-        weights[expert.fqn] = all_gather_ep_experts(
-            expert.param.full_tensor(), ep_group
-        )
+    from axolotl.integrations.expert_parallel.shard import gather_expert_lora_full
+
+    def gather(name, tensor):
+        whole = tensor.full_tensor().contiguous()
+        if "lora_B" in name:
+            return gather_expert_lora_full(whole, "B", NUM_EXPERTS, ep_group)
+        chunks = [torch.empty_like(whole) for _ in range(dist.get_world_size(ep_group))]
+        dist.all_gather(chunks, whole, group=ep_group)
+        return torch.cat(chunks)
+
+    full = {}
+    for name, param in model.named_parameters():
+        if ".experts." not in name:
+            continue
+        (fqn,) = _get_fqns(model, name)
+        full[(fqn, "weight")] = (param.requires_grad, gather(name, param))
         for key in ("exp_avg", "exp_avg_sq"):
-            moments[(expert.fqn, key)] = all_gather_ep_experts(
-                optimizer.state[expert.param][key].full_tensor(), ep_group
-            )
-    return weights, moments
+            if key in optimizer.state.get(param, {}):
+                full[(fqn, key)] = (True, gather(name, optimizer.state[param][key]))
+    return full
 
 
 def _io(mode, ep_group):
@@ -174,6 +206,7 @@ def main():
     parser.add_argument("--dp-shard", type=int, default=1)
     parser.add_argument("--mode", choices=("fixed", "accelerate", "legacy"))
     parser.add_argument("--out", required=True)
+    parser.add_argument("--lora", action="store_true")
     args = parser.parse_args()
 
     from accelerate import PartialState
@@ -196,13 +229,19 @@ def main():
     )
     checkpoint = os.path.join(args.out, "checkpoint-2")
 
-    model, optimizer, ep_group = _build(args.ep, args.dp_shard, 0, checkpoint_layers)
+    model, optimizer, ep_group = _build(
+        args.ep, args.dp_shard, 0, checkpoint_layers, args.lora
+    )
     ep_rank = dist.get_rank(ep_group)
     _train(model, optimizer, 2)
     before_params, before_states = _snapshot(model, optimizer)
-    full_weights, full_moments = _full_experts(model, optimizer, ep_group)
+    full = _full_tensors(model, optimizer, ep_group)
 
     save_io = _io("fixed" if args.mode == "fixed" else "accelerate", ep_group)
+    if args.lora:  # the trainer's _save_gathered_lora_adapter
+        from axolotl.integrations.expert_parallel.shard import save_ep_lora_adapter
+
+        assert save_ep_lora_adapter(model, checkpoint, ep_group)
     with save_io() as io:
         io.save_fsdp_model(
             fsdp_plugin, accelerator, model, checkpoint, adapter_only=True
@@ -218,18 +257,30 @@ def main():
         optim_file = torch.load(
             os.path.join(checkpoint, "optimizer.bin"), weights_only=True
         )
-        for fqn, full in full_weights.items():
-            saved = model_file[fqn]
-            report["file"].append([fqn, "weight", list(saved.shape)])
-            if saved.shape != full.shape or not torch.equal(saved, full):
-                report["mismatch"].append(["file", fqn, "weight"])
-        for (fqn, key), full in full_moments.items():
-            saved = optim_file["state"][fqn][key]
+        for (fqn, key), (saved_here, value) in full.items():
+            if not saved_here:
+                continue  # the frozen base of a LoRA run is not checkpointed
+            source = model_file if key == "weight" else optim_file["state"][fqn]
+            saved = source.get(fqn if key == "weight" else key)
+            if saved is None:
+                report["mismatch"].append(["file", fqn, key + " missing"])
+                continue
             report["file"].append([fqn, key, list(saved.shape)])
-            if saved.shape != full.shape or not torch.equal(saved, full):
+            if saved.shape != value.shape or not torch.equal(saved, value):
                 report["mismatch"].append(["file", fqn, key])
+        if args.lora:
+            from safetensors.torch import load_file
 
-    fresh, fresh_optimizer, _ = _build(args.ep, args.dp_shard, 1, checkpoint_layers)
+            adapter = load_file(os.path.join(checkpoint, "adapter_model.safetensors"))
+            report["adapter"] = [
+                [k, list(v.shape)]
+                for k, v in adapter.items()
+                if ".experts." in k and "lora_" in k
+            ]
+
+    fresh, fresh_optimizer, _ = _build(
+        args.ep, args.dp_shard, 1, checkpoint_layers, args.lora
+    )
     load_io = _io(
         "fixed" if args.mode in ("fixed", "legacy") else "accelerate", ep_group
     )

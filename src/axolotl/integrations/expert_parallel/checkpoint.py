@@ -15,16 +15,22 @@ mesh only and rank 0 writes them, so ``pytorch_model_fsdp.bin`` and ``optimizer.
 hold EP group 0's experts alone; on load rank 0 broadcasts its file and every EP group
 would take group 0's expert weights and optimizer moments.
 
+The same holds for a ``target_parameters`` expert LoRA (``lora_A`` / ``lora_B`` on the
+experts' PEFT ParamWrappers), which shard_expert_lora cuts to each rank's experts: the
+adapter-only checkpoint (``pytorch_model_fsdp.bin``, which the Trainer resumes from in
+preference to ``adapter_model.safetensors``) and its optimizer state held EP group 0's
+expert LoRA alone.
+
 The functions here are drop-in replacements for accelerate's four FSDP checkpoint
-functions (same signatures). Saving gathers each expert tensor across ``ep`` (one tensor at
-a time) so the files hold the true full ``[E_global, ...]`` model and optimizer state, the
-same shapes as the final ``model.safetensors`` export. Loading hands torch's distributed
-``set_*_state_dict`` an ``E_local`` slice of each expert tensor (so dense params, step
-counts and param groups load exactly as before) and then copies each rank's own expert
-block in, one tensor at a time. Because the files are full and each rank slices by its own
-expert offset, they don't depend on the ep / dp_shard layout they were saved with.
-Anything other than a full-parameter FSDP2 ``FULL_STATE_DICT`` checkpoint is delegated to
-accelerate unchanged.
+functions (same signatures). Saving gathers each EP-sharded tensor across ``ep`` (one
+tensor at a time) so the files hold the true full model / adapter and optimizer state, in
+the same layout as the final export (``[E_global, ...]`` experts; PEFT's ``[E*r, in]``
+``lora_A`` and ``[out, r*E]`` ``lora_B``). Loading hands torch's distributed
+``set_*_state_dict`` this rank's block of each such tensor (so dense params, step counts
+and param groups load exactly as before) and then copies each rank's own block in, one
+tensor at a time. Because the files are full and each rank slices by its own expert
+offset, they don't depend on the ep / dp_shard layout they were saved with. Anything other
+than an FSDP2 ``FULL_STATE_DICT`` checkpoint is delegated to accelerate unchanged.
 """
 
 from __future__ import annotations
@@ -49,40 +55,108 @@ EXPERT_PARAM_NAMES = (
 
 
 @dataclass(frozen=True)
-class EPExpertParam:
-    """One EP-sharded expert parameter: this rank holds experts ``[offset:offset+e_local]``."""
+class EPShardedParam:
+    """One EP-sharded parameter: this rank holds experts ``[offset:offset+e_local]``.
+
+    ``dim`` is the axis packing the experts and ``rank`` the number of entries per expert
+    on it: the routed expert weights are ``[E, ...]`` (dim 0, rank 1); a
+    ``target_parameters`` expert LoRA is PEFT's expert-major ``lora_A`` ``[E*r, in]``
+    (dim 0, rank r) or rank-major ``lora_B`` ``[out, r*E]`` (dim 1, rank r)."""
 
     fqn: str
     param: torch.nn.Parameter
     offset: int
     e_local: int
     e_global: int
+    dim: int = 0
+    rank: int = 1
+
+    @property
+    def local_size(self) -> int:
+        return self.e_local * self.rank
+
+    @property
+    def full_size(self) -> int:
+        return self.e_global * self.rank
+
+    def gather(self, whole: torch.Tensor, ep_group) -> torch.Tensor:
+        """Assemble every EP rank's block (``whole`` across the non-ep mesh) into the
+        full tensor, in the same layout as the final model / adapter export."""
+        if self.dim == 0:
+            return all_gather_ep_experts(whole, ep_group)
+        from .shard import gather_expert_lora_full
+
+        return gather_expert_lora_full(whole, "B", self.e_global, ep_group)
+
+    def block(self, full: torch.Tensor) -> torch.Tensor:
+        """This rank's block of the full tensor (the inverse of :meth:`gather`)."""
+        if self.dim == 0:
+            return full[
+                self.offset * self.rank : (self.offset + self.e_local) * self.rank
+            ]
+        out_dim = full.shape[0]
+        return full.reshape(out_dim, self.rank, self.e_global)[
+            :, :, self.offset : self.offset + self.e_local
+        ].reshape(out_dim, self.local_size)
+
+    def holds_experts(self, value) -> bool:
+        """Whether ``value`` (a parameter / optimizer-state tensor) is laid out like this
+        parameter along the experts axis, local or full."""
+        return (
+            isinstance(value, torch.Tensor)
+            and value.dim() > self.dim
+            and value.shape[self.dim] in (self.local_size, self.full_size)
+        )
 
 
-def ep_sharded_expert_params(model) -> list[EPExpertParam]:
-    """The EP-sharded expert parameters of ``model``, keyed by their canonical state-dict FQN.
+def _ep_sharded_by_id(model) -> dict:
+    from .shard import _detect_experts_modules, _is_param_wrapper, _real_experts_base
 
-    Ordered by ``model.named_parameters()``, so every rank walks them in the same order."""
-    from torch.distributed.checkpoint.state_dict import _get_fqns
-
-    from .shard import _detect_experts_modules
-
-    sharded = {}
-    for _name, module in _detect_experts_modules(model):
+    def layout(module):
         e_global = getattr(module, "num_experts_global", None)
         e_local = getattr(module, "num_local_experts", None)
         if e_global is None or e_local is None or e_local >= e_global:
-            continue
+            return None
         offset = getattr(module, "local_expert_offset", None)
         if offset is None:
             raise RuntimeError(
                 "expert_parallel: EP-sharded experts module without local_expert_offset"
             )
+        return offset, e_local, e_global
+
+    sharded: dict = {}
+    for _name, module in _detect_experts_modules(model):
+        if (found := layout(module)) is None:
+            continue
         for attr in EXPERT_PARAM_NAMES:
             param = getattr(module, attr, None)
             if isinstance(param, torch.nn.Parameter):
-                sharded[id(param)] = (param, offset, e_local, e_global)
+                sharded[id(param)] = (*found, 0, 1)
+    # expert LoRA (``target_parameters``): shard_expert_lora flags the wrappers whose
+    # adapters it cut to this rank's experts
+    for _name, wrapper in model.named_modules():
+        if not (
+            _is_param_wrapper(wrapper) and getattr(wrapper, "_ep_lora_sharded", False)
+        ):
+            continue
+        base = _real_experts_base(wrapper)
+        if base is None or (found := layout(base)) is None:
+            continue
+        ranks = getattr(wrapper, "r", {})
+        for attr, dim in (("lora_A", 0), ("lora_B", 1)):
+            for adapter, linear in getattr(wrapper, attr, {}).items():
+                weight = getattr(linear, "weight", None)
+                if isinstance(weight, torch.nn.Parameter) and adapter in ranks:
+                    sharded[id(weight)] = (*found, dim, int(ranks[adapter]))
+    return sharded
 
+
+def ep_sharded_params(model) -> list[EPShardedParam]:
+    """The EP-sharded expert weights and expert LoRA of ``model``, keyed by their canonical
+    state-dict FQN, in ``model.named_parameters()`` order (the same on every rank)."""
+    from torch.distributed.checkpoint.state_dict import _get_fqns
+
+    sharded = _ep_sharded_by_id(model)
     params = []
     for name, param in model.named_parameters():
         if id(param) not in sharded:
@@ -90,8 +164,12 @@ def ep_sharded_expert_params(model) -> list[EPExpertParam]:
         fqns = _get_fqns(model, name)
         if len(fqns) != 1:
             raise RuntimeError(f"expert_parallel: expected one FQN for {name}: {fqns}")
-        _param, offset, e_local, e_global = sharded.pop(id(param))
-        params.append(EPExpertParam(next(iter(fqns)), param, offset, e_local, e_global))
+        offset, e_local, e_global, dim, rank = sharded.pop(id(param))
+        params.append(
+            EPShardedParam(
+                next(iter(fqns)), param, offset, e_local, e_global, dim, rank
+            )
+        )
     return params
 
 
@@ -105,37 +183,31 @@ def all_gather_ep_experts(local: torch.Tensor, ep_group) -> torch.Tensor:
     return torch.cat(chunks, dim=0)
 
 
-def _gather_full(tensor: torch.Tensor, ep_group) -> torch.Tensor:
+def _gather_full(sharded: EPShardedParam, tensor: torch.Tensor, ep_group):
     from .shard import _gather_adapter_tensor
 
-    return all_gather_ep_experts(_gather_adapter_tensor(tensor), ep_group)
+    return sharded.gather(_gather_adapter_tensor(tensor).contiguous(), ep_group)
 
 
-def _optimizer_expert_states(optimizer, expert: EPExpertParam) -> list[str]:
-    """Names of the per-parameter optimizer states laid out along the experts dim
+def _optimizer_expert_states(optimizer, sharded: EPShardedParam) -> list[str]:
+    """Names of the per-parameter optimizer states laid out along the experts axis
     (``exp_avg``, ``exp_avg_sq``, ...), in a rank-independent order. Scalars such as
     ``step`` are the same on every rank and load as usual."""
-    state = optimizer.state.get(expert.param, {})
-    return sorted(
-        key
-        for key, value in state.items()
-        if torch.is_tensor(value)
-        and value.dim() > 0
-        and value.shape[0] == expert.e_local
-    )
+    state = optimizer.state.get(sharded.param, {})
+    return sorted(key for key, value in state.items() if sharded.holds_experts(value))
 
 
-def _copy_ep_block(target: torch.Tensor, full: torch.Tensor, expert: EPExpertParam):
-    """Copy this rank's experts of the full ``[E_global, ...]`` tensor into ``target``
-    (a parameter or optimizer state, possibly a DTensor sharded on the non-ep mesh)."""
+def _copy_ep_block(target: torch.Tensor, full: torch.Tensor, sharded: EPShardedParam):
+    """Copy this rank's block of the full tensor into ``target`` (a parameter or
+    optimizer state, possibly a DTensor sharded on the non-ep mesh)."""
     from torch.distributed.tensor import DTensor
     from torch.distributed.tensor._utils import compute_local_shape_and_global_offset
 
-    block = full[expert.offset : expert.offset + expert.e_local]
+    block = sharded.block(full)
     if tuple(block.shape) != tuple(target.shape):
         raise RuntimeError(
             f"expert_parallel: checkpoint block {tuple(block.shape)} does not match "
-            f"{expert.fqn} {tuple(target.shape)}"
+            f"{sharded.fqn} {tuple(target.shape)}"
         )
     with torch.no_grad():
         if isinstance(target, DTensor):
@@ -150,27 +222,27 @@ def _copy_ep_block(target: torch.Tensor, full: torch.Tensor, expert: EPExpertPar
 
 
 def _take_full_experts(
-    entries: dict, keys, expert: EPExpertParam, stash: dict, ident
+    entries: dict, keys, sharded: EPShardedParam, stash: dict, ident
 ) -> None:
-    """Swap ``entries[key]``'s full ``[E_global, ...]`` tensor for this rank's
-    ``[E_local, ...]`` block (the shape torch's loader expects) and stash the full one."""
+    """Swap ``entries[key]``'s full tensor for this rank's block (the shape torch's loader
+    expects) and stash the full one."""
     for key in keys:
         value = entries.get(key)
-        if not isinstance(value, torch.Tensor) or value.dim() == 0:
-            continue
-        if value.shape[0] not in (expert.e_global, expert.e_local):
-            continue  # not laid out along the experts dim; loads as usual
-        if value.shape[0] == expert.e_local:
+        if not isinstance(value, torch.Tensor) or not sharded.holds_experts(value):
+            continue  # not laid out along the experts axis; loads as usual
+        if value.shape[sharded.dim] == sharded.local_size:
             raise RuntimeError(
-                f"expert_parallel: checkpoint tensor {expert.fqn} {key} holds "
-                f"{expert.e_local} of {expert.e_global} experts. It was written before EP "
-                "checkpoints gathered every EP group's experts and holds EP group 0's "
+                f"expert_parallel: checkpoint tensor {sharded.fqn} {key} holds "
+                f"{sharded.e_local} of {sharded.e_global} experts. It was written before "
+                "EP checkpoints gathered every EP group's experts and holds EP group 0's "
                 "experts only, so resuming from it would give every EP group group 0's "
                 "experts. Resume from a checkpoint saved with this fix, or start a new "
-                "run from the final model export."
+                "run from the final model export (for LoRA, the checkpoint's own "
+                "adapter_model.safetensors holds every expert and loads with "
+                "lora_model_dir, without the optimizer state)."
             )
         stash[ident(key)] = value
-        entries[key] = value[expert.offset : expert.offset + expert.e_local]
+        entries[key] = sharded.block(value)
 
 
 def _raise_on_every_rank(split) -> None:
@@ -219,15 +291,24 @@ def _scatter_from_rank0(stash: dict, targets: dict) -> None:
         del full
 
 
-def _is_full_param_fsdp2_full_state_dict(fsdp_plugin, model, adapter_only) -> bool:
-    from accelerate.utils.modeling import is_peft_model
+def _is_fsdp2_full_state_dict(fsdp_plugin) -> bool:
     from torch.distributed.fsdp.fully_sharded_data_parallel import StateDictType
 
     return (
         getattr(fsdp_plugin, "fsdp_version", 1) == 2
         and fsdp_plugin.state_dict_type == StateDictType.FULL_STATE_DICT
-        and not (adapter_only and is_peft_model(model))
     )
+
+
+def _saved_params(model, adapter_only) -> list[EPShardedParam]:
+    """The EP-sharded params a model checkpoint holds: all of them, or only the trainable
+    ones for accelerate's adapter-only (PEFT) save, which skips the frozen base."""
+    from accelerate.utils.modeling import is_peft_model
+
+    params = ep_sharded_params(model)
+    if adapter_only and is_peft_model(model):
+        params = [p for p in params if p.param.requires_grad]
+    return params
 
 
 def _set_full_state_dict_flags(fsdp_plugin, accelerator) -> None:
@@ -257,12 +338,9 @@ def save_fsdp_model(
     """accelerate's ``save_fsdp_model`` with every EP group's experts in the file."""
     from accelerate.utils import fsdp_utils
     from accelerate.utils.constants import FSDP_MODEL_NAME
-    from torch.distributed.checkpoint.state_dict import get_model_state_dict
 
-    experts = ep_sharded_expert_params(model)
-    if not experts or not _is_full_param_fsdp2_full_state_dict(
-        fsdp_plugin, model, adapter_only
-    ):
+    experts = _saved_params(model, adapter_only)
+    if not experts or not _is_fsdp2_full_state_dict(fsdp_plugin):
         return fsdp_utils.save_fsdp_model(
             fsdp_plugin,
             accelerator,
@@ -276,9 +354,9 @@ def save_fsdp_model(
     os.makedirs(output_dir, exist_ok=True)
     _set_full_state_dict_flags(fsdp_plugin, accelerator)
     sd_options = fsdp_utils._prepare_sd_options(fsdp_plugin)
-    state_dict = get_model_state_dict(model, options=sd_options)
+    state_dict = fsdp_utils._get_model_state_dict(model, adapter_only, sd_options)
     for expert in experts:
-        full = _gather_full(expert.param, ep_group)  # collective: every rank
+        full = _gather_full(expert, expert.param, ep_group)  # collective: every rank
         if expert.fqn in state_dict:
             state_dict[expert.fqn] = full.to(state_dict[expert.fqn].device)
         del full
@@ -300,12 +378,9 @@ def load_fsdp_model(
     """accelerate's ``load_fsdp_model`` restoring each EP rank's own experts."""
     from accelerate.utils import fsdp_utils
     from accelerate.utils.constants import FSDP_MODEL_NAME
-    from torch.distributed.checkpoint.state_dict import set_model_state_dict
 
-    experts = ep_sharded_expert_params(model)
-    if not experts or not _is_full_param_fsdp2_full_state_dict(
-        fsdp_plugin, model, adapter_only
-    ):
+    experts = _saved_params(model, adapter_only)
+    if not experts or not _is_fsdp2_full_state_dict(fsdp_plugin):
         return fsdp_utils.load_fsdp_model(
             fsdp_plugin,
             accelerator,
@@ -335,7 +410,9 @@ def load_fsdp_model(
             )
 
     _raise_on_every_rank(split)
-    load_result = set_model_state_dict(model, state_dict, options=sd_options)
+    load_result = fsdp_utils._set_model_state_dict(
+        model, state_dict, adapter_only, sd_options
+    )
     if from_rank0:
         # rank 0's block went to every rank above; overwrite with each rank's own
         _scatter_from_rank0(stash, {e.fqn: (e, e.param) for e in experts})
@@ -359,10 +436,8 @@ def save_fsdp_optimizer(
     from accelerate.utils.constants import OPTIMIZER_NAME
     from torch.distributed.checkpoint.state_dict import get_optimizer_state_dict
 
-    experts = ep_sharded_expert_params(model)
-    if not experts or not _is_full_param_fsdp2_full_state_dict(
-        fsdp_plugin, model, False
-    ):
+    experts = [p for p in ep_sharded_params(model) if p.param.requires_grad]
+    if not experts or not _is_fsdp2_full_state_dict(fsdp_plugin):
         return fsdp_utils.save_fsdp_optimizer(
             fsdp_plugin,
             accelerator,
@@ -380,7 +455,7 @@ def save_fsdp_optimizer(
     for expert in experts:
         entry = saved_states.get(expert.fqn)
         for key in _optimizer_expert_states(optimizer, expert):
-            full = _gather_full(optimizer.state[expert.param][key], ep_group)
+            full = _gather_full(expert, optimizer.state[expert.param][key], ep_group)
             if entry is not None and key in entry:
                 entry[key] = full.to(entry[key].device)
             del full
@@ -407,10 +482,8 @@ def load_fsdp_optimizer(
     from accelerate.utils.constants import OPTIMIZER_NAME
     from torch.distributed.checkpoint.state_dict import set_optimizer_state_dict
 
-    experts = ep_sharded_expert_params(model)
-    if not experts or not _is_full_param_fsdp2_full_state_dict(
-        fsdp_plugin, model, adapter_only
-    ):
+    experts = [p for p in ep_sharded_params(model) if p.param.requires_grad]
+    if not experts or not _is_fsdp2_full_state_dict(fsdp_plugin):
         return fsdp_utils.load_fsdp_optimizer(
             fsdp_plugin,
             accelerator,

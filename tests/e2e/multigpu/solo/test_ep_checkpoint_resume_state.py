@@ -4,8 +4,10 @@ Under EP each rank holds a different block of experts under the same parameter n
 FSDP2 FULL_STATE_DICT checkpoint (``pytorch_model_fsdp.bin`` and ``optimizer.bin``) is
 gathered over the experts' own (non-``ep``) mesh only and written by rank 0, so it holds
 EP group 0's experts alone, and on resume every EP rank loads group 0's experts and Adam
-moments. The final ``model.safetensors`` export gathers the experts across ``ep`` and is
-not affected.
+moments. The same held for a LoRA on the experts (``lora_target_parameters``): the
+adapter-only ``pytorch_model_fsdp.bin`` the Trainer resumes from, and ``optimizer.bin``,
+kept EP group 0's expert LoRA. The final ``model.safetensors`` / ``adapter_model.safetensors``
+exports gather across ``ep`` and were not affected.
 """
 
 import subprocess
@@ -20,9 +22,12 @@ from transformers.testing_utils import get_torch_dist_unique_port
 pytestmark = pytest.mark.gpu
 
 NUM_EXPERTS = 8  # axolotl-ai-co/tiny-mixtral-30m
+LORA_R = 8
 
 
-def _config(out_dir: Path, max_steps: int, resume: str | None) -> Path:
+def _config(
+    out_dir: Path, max_steps: int, resume: str | None, adapter: str | None
+) -> Path:
     cfg = {
         "base_model": "axolotl-ai-co/tiny-mixtral-30m",
         "experts_implementation": "grouped_mm",
@@ -60,6 +65,23 @@ def _config(out_dir: Path, max_steps: int, resume: str | None) -> Path:
         "expert_parallel_backend": "torch",
         "dp_shard_size": 1,
     }
+    if adapter:
+        cfg.update(
+            {
+                "adapter": adapter,
+                "lora_r": LORA_R,
+                "lora_alpha": 16,
+                "lora_dropout": 0.0,
+                "lora_target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                "lora_target_parameters": [
+                    "mlp.experts.gate_up_proj",
+                    "mlp.experts.down_proj",
+                ],
+                "lora_mlp_kernel": False,
+                "lora_qkv_kernel": False,
+                "lora_o_kernel": False,
+            }
+        )
     if resume:
         cfg["resume_from_checkpoint"] = resume
     path = out_dir.with_suffix(".yaml")
@@ -88,33 +110,52 @@ def _experts(state_dict):
     return {k: v for k, v in state_dict.items() if "experts" in k}
 
 
+def _experts_held(name, shape):
+    """Experts along a tensor's experts axis (PEFT's expert LoRA packs ``r`` per expert:
+    ``lora_A`` ``[E*r, in]``, ``lora_B`` ``[out, r*E]``)."""
+    if "lora_B" in name:
+        return shape[1] // LORA_R
+    if "lora_A" in name:
+        return shape[0] // LORA_R
+    return shape[0]
+
+
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA GPUs")
-def test_ep_checkpoint_keeps_every_ep_ranks_experts_and_optimizer_state(tmp_path):
+@pytest.mark.parametrize("adapter", [None, "lora"], ids=["full", "lora"])
+def test_ep_checkpoint_keeps_every_ep_ranks_experts_and_optimizer_state(
+    tmp_path, adapter
+):
     from safetensors.torch import load_file
 
     failures = []
     straight = tmp_path / "straight"
-    _train(_config(straight, 3, None))
+    _train(_config(straight, 3, None, adapter))
     checkpoint = straight / "checkpoint-2"
 
     # the checkpoint's model and optimizer state must hold all experts, not one EP group's
     model_state = torch.load(checkpoint / "pytorch_model_fsdp.bin", weights_only=False)
+    if not _experts(model_state):
+        failures.append("pytorch_model_fsdp.bin holds no expert tensors")
     for name, value in _experts(model_state).items():
-        if value.shape[0] != NUM_EXPERTS:
+        if _experts_held(name, value.shape) != NUM_EXPERTS:
             failures.append(f"pytorch_model_fsdp.bin {name}: {tuple(value.shape)}")
     optimizer_state = torch.load(checkpoint / "optimizer.bin", weights_only=False)
     for key, state in optimizer_state["state"].items():
         for moment in ("exp_avg", "exp_avg_sq"):
-            if "experts" in str(key) and state[moment].shape[0] != NUM_EXPERTS:
+            if (
+                "experts" in str(key)
+                and _experts_held(str(key), state[moment].shape) != NUM_EXPERTS
+            ):
                 failures.append(
                     f"optimizer.bin {key} {moment}: {tuple(state[moment].shape)}"
                 )
 
     # resuming at step 2 and training to step 3 must match the uninterrupted run
     resumed_dir = tmp_path / "resumed"
-    _train(_config(resumed_dir, 3, str(checkpoint)))
-    expected = load_file(straight / "model.safetensors")
-    resumed = load_file(resumed_dir / "model.safetensors")
+    _train(_config(resumed_dir, 3, str(checkpoint), adapter))
+    final = "adapter_model.safetensors" if adapter else "model.safetensors"
+    expected = load_file(straight / final)
+    resumed = load_file(resumed_dir / final)
     for name, value in expected.items():
         diff = (value.float() - resumed[name].float()).abs().max().item()
         if diff > 0.02:  # bf16 noise is ~2e-3; a lost EP group differs by ~0.2

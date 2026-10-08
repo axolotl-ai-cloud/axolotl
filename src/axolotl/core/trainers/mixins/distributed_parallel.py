@@ -290,16 +290,27 @@ class DistributedParallelMixin(Trainer):
                 os.makedirs(target, exist_ok=True)
                 torch.save(state_dict, os.path.join(target, "pytorch_model_fsdp.bin"))
 
+    def _ep_sharded_checkpoint(self) -> bool:
+        """FSDP with EP-sharded experts or expert LoRA (full-parameter or adapter runs)."""
+        cfg = getattr(self, "axolotl_cfg", None)
+        if not cfg or (getattr(cfg, "expert_parallel_size", 1) or 1) <= 1:
+            return False
+        if not self.is_fsdp_enabled:
+            return False
+        from axolotl.integrations.expert_parallel.checkpoint import ep_sharded_params
+
+        return bool(ep_sharded_params(self.model))
+
     @contextlib.contextmanager
     def _ep_checkpoint_functions(self):
         """Route the Trainer's FSDP checkpoint save/load through the EP-aware functions.
 
-        accelerate's FULL_STATE_DICT checkpoint gathers each expert only over its own
-        (non-ep) FSDP mesh and rank 0 writes it, so the file would hold EP group 0's
-        experts and, on resume, every EP group would load group 0's experts and optimizer
-        moments. The EP-aware functions gather the experts across ep on save and give each
+        accelerate's FULL_STATE_DICT checkpoint gathers each expert (and expert LoRA) only
+        over its own (non-ep) FSDP mesh and rank 0 writes it, so the file would hold EP
+        group 0's experts and, on resume, every EP group would load group 0's experts and
+        optimizer moments. The EP-aware functions gather the experts across ep on save and give each
         rank its own block back on load."""
-        if not self._ep_full_param_experts():
+        if not self._ep_sharded_checkpoint():
             yield
             return
         from axolotl.integrations.expert_parallel.checkpoint import (

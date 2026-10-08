@@ -1,11 +1,12 @@
 """EP x FSDP2 FULL_STATE_DICT checkpoints must round-trip every EP rank's experts (CPU, gloo).
 
-Each EP rank holds a different block of experts under the same parameter name.
-accelerate's FSDP2 checkpoint functions gather the experts over their own (non-``ep``)
-mesh only and rank 0 writes the file, so it holds EP group 0's experts and on load every
-EP rank gets group 0's expert weights and Adam moments. The trainer routes its checkpoint
-save/load through ``ep_fsdp_checkpoint_functions``, which gathers across ``ep`` on save and
-hands each rank its own experts back on load.
+Each EP rank holds a different block of experts (and of a ``target_parameters`` expert
+LoRA) under the same parameter name. accelerate's FSDP2 checkpoint functions gather them
+over their own (non-``ep``) mesh only and rank 0 writes the file, so it holds EP group 0's
+experts and on load every EP rank gets group 0's expert weights / expert LoRA and Adam
+moments. The trainer routes its checkpoint save/load through
+``ep_fsdp_checkpoint_functions``, which gathers across ``ep`` on save and hands each rank
+its own experts back on load.
 """
 
 import json
@@ -17,11 +18,13 @@ from pathlib import Path
 import pytest
 
 NUM_EXPERTS = 8
+LORA_RANK = 2  # the worker's
 WORKER = Path(__file__).with_name("_ep_checkpoint_resume_worker.py")
 LAYOUTS = [pytest.param(2, 1, id="ep2"), pytest.param(2, 2, id="ep2xdp_shard2")]
+TRAINING = [pytest.param(False, id="full"), pytest.param(True, id="lora")]
 
 
-def _run(tmp_path, ep, dp_shard, mode):
+def _run(tmp_path, ep, dp_shard, mode, lora):
     env = os.environ | {"OMP_NUM_THREADS": "1", "CUDA_VISIBLE_DEVICES": ""}
     out = tmp_path / mode
     out.mkdir()
@@ -37,6 +40,7 @@ def _run(tmp_path, ep, dp_shard, mode):
             f"--dp-shard={dp_shard}",
             f"--mode={mode}",
             f"--out={out}",
+            *(["--lora"] if lora else []),
         ],
         env=env,
         text=True,
@@ -55,29 +59,46 @@ def _run(tmp_path, ep, dp_shard, mode):
     return reports
 
 
+def _experts_held(name, shape):
+    """How many experts a saved tensor holds along its experts axis (PEFT's expert LoRA
+    packs ``r`` entries per expert: ``lora_A`` ``[E*r, in]``, ``lora_B`` ``[out, r*E]``)."""
+    if "lora_B" in name:
+        return shape[1] // LORA_RANK
+    if "lora_A" in name:
+        return shape[0] // LORA_RANK
+    return shape[0]
+
+
 def _expert_counts(reports):
-    return {entry[2][0] for entry in reports[0]["file"]}
+    return {_experts_held(name, shape) for name, _key, shape in reports[0]["file"]}
 
 
 @pytest.mark.distributed_cpu
+@pytest.mark.parametrize("lora", TRAINING)
 @pytest.mark.parametrize("ep,dp_shard", LAYOUTS)
-def test_ep_checkpoint_round_trips_every_ep_ranks_experts(tmp_path, ep, dp_shard):
-    reports = _run(tmp_path, ep, dp_shard, "fixed")
+def test_ep_checkpoint_round_trips_every_ep_ranks_experts(tmp_path, ep, dp_shard, lora):
+    reports = _run(tmp_path, ep, dp_shard, "fixed", lora)
 
-    # 2 layers x (gate_up_proj, down_proj) x (weight, exp_avg, exp_avg_sq)
-    assert len(reports[0]["file"]) == 12
+    # 2 layers x (gate_up_proj, down_proj) [x (lora_A, lora_B)] x (weight, 2 moments)
+    assert len(reports[0]["file"]) == (24 if lora else 12)
     assert _expert_counts(reports) == {NUM_EXPERTS}
+    if lora:  # the gathered adapter export the checkpoint also carries
+        assert len(reports[0]["adapter"]) == 8
+        assert {_experts_held(k, shape) for k, shape in reports[0]["adapter"]} == {
+            NUM_EXPERTS
+        }
     for report in reports:
         assert "load_error" not in report, report
         assert report["mismatch"] == [], report
 
 
 @pytest.mark.distributed_cpu
+@pytest.mark.parametrize("lora", TRAINING)
 @pytest.mark.parametrize("ep,dp_shard", LAYOUTS)
-def test_accelerate_checkpoint_keeps_only_ep_group_zero(tmp_path, ep, dp_shard):
+def test_accelerate_checkpoint_keeps_only_ep_group_zero(tmp_path, ep, dp_shard, lora):
     """The unpatched accelerate path loses the experts the fix restores (guards the
     round-trip test's ability to see the bug)."""
-    reports = _run(tmp_path, ep, dp_shard, "accelerate")
+    reports = _run(tmp_path, ep, dp_shard, "accelerate", lora)
 
     assert _expert_counts(reports) == {NUM_EXPERTS // ep}
     for report in reports:
@@ -93,11 +114,12 @@ def test_accelerate_checkpoint_keeps_only_ep_group_zero(tmp_path, ep, dp_shard):
 
 
 @pytest.mark.distributed_cpu
+@pytest.mark.parametrize("lora", TRAINING)
 @pytest.mark.parametrize("ep,dp_shard", LAYOUTS[:1])
 def test_ep_checkpoint_refuses_a_checkpoint_holding_one_ep_group(
-    tmp_path, ep, dp_shard
+    tmp_path, ep, dp_shard, lora
 ):
-    reports = _run(tmp_path, ep, dp_shard, "legacy")
+    reports = _run(tmp_path, ep, dp_shard, "legacy", lora)
 
     for report in reports:
         assert "EP group 0's experts only" in report.get("load_error", ""), report
@@ -130,7 +152,7 @@ def test_trainer_routes_fsdp_checkpoints_through_ep_functions(monkeypatch):
 
     for ep_active in (False, True):
         trainer = SimpleNamespace(
-            axolotl_cfg=SimpleNamespace(), _ep_full_param_experts=lambda a=ep_active: a
+            axolotl_cfg=SimpleNamespace(), _ep_sharded_checkpoint=lambda a=ep_active: a
         )
         with DistributedParallelMixin._ep_checkpoint_functions(trainer):
             seen = {name: getattr(hf_trainer, name) for name in names}
