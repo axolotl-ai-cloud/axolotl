@@ -47,6 +47,7 @@ from .canvas import (  # noqa: F401  (canvas building lives in .canvas; re-expor
     _resolve_slot_plan,
     _scaffold_ids,
     _thought_delimiters,
+    canvas_prefix_ids,
 )
 from .grouping import group_records
 from .hygiene import assert_split_isolation, decontaminate, family_key

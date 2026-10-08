@@ -339,6 +339,16 @@ class DiffusionDecisionConfig(BaseModel):
             )
         },
     )
+    canvas_prefix_ids: list[int] = Field(
+        default_factory=list,
+        json_schema_extra={
+            "description": (
+                "Clean token IDs pinned at the start of every decision canvas, before the "
+                "answer template, at train and read time alike (for example DiffusionGemma's "
+                "empty `<|channel>thought\\n<channel|>` block, its native output regime)."
+            )
+        },
+    )
     mixture: DecisionMixtureConfig = Field(
         default_factory=DecisionMixtureConfig,
         json_schema_extra={"description": "Source sampling and loss weighting."},
@@ -368,6 +378,8 @@ class DiffusionDecisionConfig(BaseModel):
             raise ValueError("read_fraction must be in [0, 1]")
         if self.max_image_size % 28:
             raise ValueError("max_image_size must be a multiple of 28")
+        if any(token_id < 0 for token_id in self.canvas_prefix_ids):
+            raise ValueError("canvas_prefix_ids must be nonnegative")
         return self
 
 

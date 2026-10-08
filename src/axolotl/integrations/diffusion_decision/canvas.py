@@ -100,6 +100,11 @@ def _resolve_slot_plan(
         spec=spec,
         mask_token_id=mask_token_id,
     ).build(seed=int(_value(cfg, "seed", 0)))
+    if plan.placement == "thought" and canvas_prefix_ids(cfg):
+        raise ValueError(
+            "diffusion_decision.canvas_prefix_ids cannot be combined with thought-placed "
+            "latent slots; the slot thought block already opens the canvas"
+        )
     if (
         plan.placement == "thought"
         and _value(spec, "layout") is DiffusionLayout.ENCODER_CANVAS
@@ -124,7 +129,8 @@ def _read_overflow_width(
             "diffusion_decision.read_overflow_canvas_width requires a full_sequence "
             "layout; encoder-canvas batches need one shared canvas width"
         )
-    if slot_plan is not None or scaffold_ids:
+    # canvas_prefix_ids heads ``scaffold_ids`` too; only latent slots are refused here.
+    if slot_plan is not None or _value(_value(decision, "latent"), "token_ids"):
         raise ValueError(
             "diffusion_decision.read_overflow_canvas_width cannot be combined with "
             "latent slots"
@@ -143,10 +149,28 @@ def _canvas_width(cfg: Any, spec) -> int:
     return width
 
 
-def _scaffold_ids(latent: Any, slot_plan: SlotPlan | None) -> tuple[int, ...]:
+def canvas_prefix_ids(cfg: Any) -> tuple[int, ...]:
+    """Clean tokens pinned at the head of every train and read canvas."""
+    return _canvas_prefix_ids(_value(cfg, "diffusion_decision"))
+
+
+def _canvas_prefix_ids(decision: Any) -> tuple[int, ...]:
+    return parse_token_ids(
+        _value(decision, "canvas_prefix_ids", ()) or (),
+        "diffusion_decision.canvas_prefix_ids",
+    )
+
+
+def _scaffold_ids(decision: Any, slot_plan: SlotPlan | None) -> tuple[int, ...]:
+    """The canvas head before the answer template: ``canvas_prefix_ids``, then the
+    latent token IDs when they are not placed through a slot plan."""
+    prefix = _canvas_prefix_ids(decision)
     if slot_plan is not None:
-        return ()
-    return tuple(int(token) for token in (_value(latent, "token_ids", ()) or ()))
+        return prefix
+    latent = _value(decision, "latent")
+    return prefix + tuple(
+        int(token) for token in (_value(latent, "token_ids", ()) or ())
+    )
 
 
 def _grouping_fits(tokenizer: Any, cfg: Any, spec) -> Any:
@@ -166,7 +190,7 @@ def _grouping_fits(tokenizer: Any, cfg: Any, spec) -> Any:
         tokenizer, cfg, spec, int(vocab_size)
     )
     head, pad_slots = canvas_head(
-        _scaffold_ids(_value(decision, "latent"), slot_plan),
+        _scaffold_ids(decision, slot_plan),
         slot_plan,
         thought_open_ids,
         thought_close_ids,
@@ -329,7 +353,7 @@ def _canvas_settings(
         "shuffle_prob": float(_value(labels, "label_shuffle_prob", 0.0) or 0.0),
         "answer_format": str(_value(decision, "answer_format", "auto") or "auto"),
         "width": _canvas_width(cfg, spec),
-        "scaffold_ids": _scaffold_ids(_value(decision, "latent"), slot_plan),
+        "scaffold_ids": _scaffold_ids(decision, slot_plan),
         "turn_close_id": required_token_id(
             _value(
                 model_config, "turn_close_token_id", _value(tokenizer, "eos_token_id")
