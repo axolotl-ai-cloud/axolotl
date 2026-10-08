@@ -13,7 +13,6 @@ import axolotl.monkeypatch.accelerate.fsdp2 as fsdp2
 from axolotl.monkeypatch.accelerate.fsdp2 import (
     _rebuild_nvfp4_like,
     _restore_non_persistent_buffers,
-    _state_dict_entry,
 )
 
 NVFP4Tensor = pytest.importorskip(
@@ -55,47 +54,6 @@ def test_rebuild_nvfp4_like_preserves_complete_native_recipe():
     assert rebuilt.act_quant_kwargs == recipe.act_quant_kwargs
 
 
-def test_state_dict_broadcast_entries_preserve_parameter_and_buffer_roles():
-    class Source(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.trainable = torch.nn.Parameter(torch.tensor([3.0]))
-            self.trainable_alias = self.trainable
-            self.frozen = torch.nn.Parameter(torch.tensor([5.0]), requires_grad=False)
-            self.register_buffer("count", torch.tensor([7], dtype=torch.int64))
-            self.register_buffer("count_alias", self.count)
-            self.register_buffer("enabled", torch.tensor([True], dtype=torch.bool))
-
-    source = Source()
-    parameter_requires_grad = {
-        name: parameter.requires_grad
-        for name, parameter in source.named_parameters(remove_duplicate=False)
-    }
-    buffer_names = {name for name, _ in source.named_buffers(remove_duplicate=False)}
-    entries = {
-        name: _state_dict_entry(
-            value.clone(), name, parameter_requires_grad, buffer_names
-        )
-        for name, value in source.state_dict().items()
-    }
-    target = Source().to("meta")
-    target.load_state_dict(entries, assign=True)
-
-    assert isinstance(entries["trainable"], torch.nn.Parameter)
-    assert entries["trainable"].requires_grad
-    assert isinstance(entries["trainable_alias"], torch.nn.Parameter)
-    assert entries["trainable_alias"].requires_grad
-    assert isinstance(entries["frozen"], torch.nn.Parameter)
-    assert not entries["frozen"].requires_grad
-    assert not isinstance(entries["count"], torch.nn.Parameter)
-    assert not isinstance(entries["count_alias"], torch.nn.Parameter)
-    assert entries["count"].dtype is torch.int64
-    assert not isinstance(entries["enabled"], torch.nn.Parameter)
-    assert entries["enabled"].dtype is torch.bool
-    assert target.count.dtype is torch.int64
-    assert target.enabled.dtype is torch.bool
-
-
 def test_full_state_broadcast_preserves_buffer_and_parameter_roles(monkeypatch):
     class State(torch.nn.Module):
         def __init__(self):
@@ -132,6 +90,43 @@ def test_full_state_broadcast_preserves_buffer_and_parameter_roles(monkeypatch):
     torch.testing.assert_close(target.frozen, source.frozen)
     torch.testing.assert_close(target.count, source.count)
     torch.testing.assert_close(target.enabled, source.enabled)
+
+
+def test_full_state_broadcast_into_activation_checkpointed_model(monkeypatch):
+    from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+        apply_activation_checkpointing,
+    )
+
+    def build():
+        model = torch.nn.Sequential(torch.nn.Linear(2, 2))
+        model[0].weight.requires_grad_(False)
+        model.register_buffer("count", torch.tensor([7], dtype=torch.int64))
+        return model
+
+    source = build()
+    target = build().to("meta")
+    apply_activation_checkpointing(
+        target, check_fn=lambda m: isinstance(m, torch.nn.Linear)
+    )
+    real_device = torch.device
+    monkeypatch.setattr(
+        fsdp2.torch,
+        "device",
+        lambda name: real_device("cpu") if name == "cuda" else real_device(name),
+    )
+    monkeypatch.setattr(fsdp2.dist, "broadcast", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(fsdp2, "log_gpu_memory_usage", lambda *_args, **_kwargs: None)
+
+    fsdp2.fsdp2_load_full_state_dict(
+        SimpleNamespace(is_main_process=True), target, source.state_dict()
+    )
+
+    wrapped = target[0]._checkpoint_wrapped_module
+    assert not wrapped.weight.requires_grad
+    assert wrapped.bias.requires_grad
+    assert not isinstance(target.count, torch.nn.Parameter)
+    torch.testing.assert_close(wrapped.weight, source[0].weight)
+    torch.testing.assert_close(target.count, source.count)
 
 
 def test_nonpersistent_buffer_restoration_broadcasts_source_values_to_meta_rank(
