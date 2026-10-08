@@ -232,7 +232,8 @@ def _share_tied_expert_lora(
             continue
         parameter_name = layer.parameter_name
         param = getattr(_innermost_base(layer), parameter_name)
-        wrapped[(param.data_ptr(), parameter_name)].append((name, layer))
+        # HF ties encoder/decoder experts by sharing one Parameter object.
+        wrapped[(id(param), parameter_name)].append((name, layer))
     # Every experts module that holds one of these tensors must be wrapped.
     base_model = model.get_base_model() if hasattr(model, "get_base_model") else model
     holders: dict[tuple[int, str], set[str]] = defaultdict(set)
@@ -244,7 +245,7 @@ def _share_tied_expert_lora(
         for parameter_name in ("gate_up_proj", "down_proj"):
             param = module._parameters.get(parameter_name)
             if param is not None and param.dim() == 3:
-                holders[(param.data_ptr(), parameter_name)].add(name)
+                holders[(id(param), parameter_name)].add(name)
     for key, tied_layers in wrapped.items():
         if len(tied_layers) != len(holders.get(key, ())):
             raise ValueError(
