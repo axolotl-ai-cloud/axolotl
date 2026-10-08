@@ -1,14 +1,4 @@
-"""Expert-parallel checkpoints must keep every EP rank's experts and their optimizer state.
-
-Under EP each rank holds a different block of experts under the same parameter name. The
-FSDP2 FULL_STATE_DICT checkpoint (``pytorch_model_fsdp.bin`` and ``optimizer.bin``) is
-gathered over the experts' own (non-``ep``) mesh only and written by rank 0, so it holds
-EP group 0's experts alone, and on resume every EP rank loads group 0's experts and Adam
-moments. The same held for a LoRA on the experts (``lora_target_parameters``): the
-adapter-only ``pytorch_model_fsdp.bin`` the Trainer resumes from, and ``optimizer.bin``,
-kept EP group 0's expert LoRA. The final ``model.safetensors`` / ``adapter_model.safetensors``
-exports gather across ``ep`` and were not affected.
-"""
+"""Compare resumed EP training with uninterrupted full-parameter and LoRA runs."""
 
 import subprocess
 import sys
@@ -133,13 +123,13 @@ def test_ep_checkpoint_keeps_every_ep_ranks_experts_and_optimizer_state(
     checkpoint = straight / "checkpoint-2"
 
     # the checkpoint's model and optimizer state must hold all experts, not one EP group's
-    model_state = torch.load(checkpoint / "pytorch_model_fsdp.bin", weights_only=False)
+    model_state = torch.load(checkpoint / "pytorch_model_fsdp.bin", weights_only=True)
     if not _experts(model_state):
         failures.append("pytorch_model_fsdp.bin holds no expert tensors")
     for name, value in _experts(model_state).items():
         if _experts_held(name, value.shape) != NUM_EXPERTS:
             failures.append(f"pytorch_model_fsdp.bin {name}: {tuple(value.shape)}")
-    optimizer_state = torch.load(checkpoint / "optimizer.bin", weights_only=False)
+    optimizer_state = torch.load(checkpoint / "optimizer.bin", weights_only=True)
     for key, state in optimizer_state["state"].items():
         for moment in ("exp_avg", "exp_avg_sq"):
             if (

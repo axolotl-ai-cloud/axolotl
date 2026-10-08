@@ -604,6 +604,34 @@ def restore_model_state(model, state, adapter_only=False):
     dist.broadcast_object_list(metadata, src=0)
     missing = set(targets) - set(metadata[0])
     _check_errors(f"Missing model parameters: {sorted(missing)}" if missing else None)
+    error = None
+    try:
+        for name, parameter in targets.items():
+            expected = _layout(parameter, owners.get(name))["shape"]
+            saved = metadata[0][name]
+            saved_shape = (
+                list(saved.shape)
+                if torch.is_tensor(saved)
+                else saved.get("shape")
+                if isinstance(saved, dict)
+                else None
+            )
+            if saved_shape != expected:
+                guidance = ""
+                if name in owners:
+                    guidance = (
+                        " A legacy EP checkpoint may contain only EP group 0's experts. "
+                        "Start a new run from a complete final model export, or load a "
+                        "complete adapter_model.safetensors with lora_model_dir "
+                        "without restoring optimizer or scheduler state."
+                    )
+                raise ValueError(
+                    f"Checkpoint parameter {name}: saved shape {saved_shape} differs "
+                    f"from global target shape {expected}.{guidance}"
+                )
+    except ValueError as exc:
+        error = str(exc)
+    _check_errors(error)
     with torch.no_grad():
         for name, parameter in targets.items():
             restored = _restore_tensor(

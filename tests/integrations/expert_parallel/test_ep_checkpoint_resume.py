@@ -1,13 +1,4 @@
-"""EP x FSDP2 FULL_STATE_DICT checkpoints must round-trip every EP rank's experts (CPU, gloo).
-
-Each EP rank holds a different block of experts (and of a ``target_parameters`` expert
-LoRA) under the same parameter name. accelerate's FSDP2 checkpoint functions gather them
-over their own (non-``ep``) mesh only and rank 0 writes the file, so it holds EP group 0's
-experts and on load every EP rank gets group 0's expert weights / expert LoRA and Adam
-moments. The trainer routes its checkpoint save/load through
-``ep_fsdp_checkpoint_functions``, which gathers across ``ep`` on save and hands each rank
-its own experts back on load.
-"""
+"""Distributed regressions for complete EP model and ordinary AdamW checkpoints."""
 
 import json
 import os
@@ -90,6 +81,7 @@ def test_ep_checkpoint_round_trips_every_ep_ranks_experts(tmp_path, ep, dp_shard
     for report in reports:
         assert "load_error" not in report, report
         assert report["mismatch"] == [], report
+        assert report["best_model_matches"], report
 
 
 @pytest.mark.distributed_cpu
@@ -122,46 +114,62 @@ def test_ep_checkpoint_refuses_a_checkpoint_holding_one_ep_group(
     reports = _run(tmp_path, ep, dp_shard, "legacy", lora)
 
     for report in reports:
-        assert "EP group 0's experts only" in report.get("load_error", ""), report
+        assert "EP group 0's experts" in report.get("load_error", ""), report
+        assert "lora_model_dir" in report["load_error"], report
+        assert report["unchanged"], report
 
 
-def test_trainer_routes_fsdp_checkpoints_through_ep_functions(monkeypatch):
-    """The trainer's checkpoint save/load see the EP-aware functions under the trainer's
-    ``transformers.trainer`` names, and only while EP full-parameter experts are active."""
-    from types import SimpleNamespace
+@pytest.mark.parametrize("invalid", ["shape", "missing"])
+def test_model_preflight_rejects_before_copying(monkeypatch, invalid):
+    import torch
+    from torch import nn
 
-    import transformers.trainer as hf_trainer
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint as checkpoint
 
-    from axolotl.core.trainers.mixins.distributed_parallel import (
-        DistributedParallelMixin,
-    )
-    from axolotl.integrations.expert_parallel import checkpoint
-    from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
-
-    group = object()
+    model = nn.Sequential(nn.Linear(2, 2), nn.Linear(2, 2))
+    before = {name: value.clone() for name, value in model.state_dict().items()}
+    saved = {name: value + 10 for name, value in before.items()}
+    if invalid == "shape":
+        saved["1.bias"] = torch.ones(3)
+    else:
+        del saved["1.bias"]
+    monkeypatch.setattr(checkpoint.dist, "get_rank", lambda: 0)
+    monkeypatch.setattr(checkpoint.dist, "get_world_size", lambda: 1)
     monkeypatch.setattr(
-        ExpertParallelPlugin, "_resolve_ep_group", staticmethod(lambda cfg: group)
+        checkpoint.dist,
+        "all_gather_object",
+        lambda output, value: output.__setitem__(0, value),
     )
-    names = (
-        "save_fsdp_model",
-        "save_fsdp_optimizer",
-        "load_fsdp_model",
-        "load_fsdp_optimizer",
-    )
-    originals = {name: getattr(hf_trainer, name) for name in names}
+    monkeypatch.setattr(checkpoint.dist, "broadcast_object_list", lambda *a, **kw: None)
 
-    for ep_active in (False, True):
-        trainer = SimpleNamespace(
-            axolotl_cfg=SimpleNamespace(), _ep_sharded_checkpoint=lambda a=ep_active: a
-        )
-        with DistributedParallelMixin._ep_checkpoint_functions(trainer):
-            seen = {name: getattr(hf_trainer, name) for name in names}
-        assert {name: getattr(hf_trainer, name) for name in names} == originals
-        if not ep_active:
-            assert seen == originals
-            continue
-        assert seen["load_fsdp_model"] is checkpoint.load_fsdp_model
-        assert seen["load_fsdp_optimizer"] is checkpoint.load_fsdp_optimizer
-        assert seen["save_fsdp_model"].func is checkpoint.save_fsdp_model
-        assert seen["save_fsdp_optimizer"].func is checkpoint.save_fsdp_optimizer
-        assert seen["save_fsdp_model"].keywords == {"ep_group": group}
+    def unexpected_restore(*args, **kwargs):
+        raise AssertionError("Restore started before validating the complete model")
+
+    monkeypatch.setattr(checkpoint, "_restore_tensor", unexpected_restore)
+    with pytest.raises(ValueError, match="1.bias"):
+        checkpoint.restore_model_state(model, saved)
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(value, before[name], rtol=0, atol=0)
+
+
+def test_model_preflight_accepts_scalar_buffers(monkeypatch):
+    import torch
+    from torch import nn
+
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint as checkpoint
+
+    model = nn.Linear(2, 2)
+    model.register_buffer("counter", torch.tensor(0))
+    saved = {name: value.clone() + 1 for name, value in model.state_dict().items()}
+    monkeypatch.setattr(checkpoint.dist, "get_rank", lambda: 0)
+    monkeypatch.setattr(checkpoint.dist, "get_world_size", lambda: 1)
+    monkeypatch.setattr(
+        checkpoint.dist,
+        "all_gather_object",
+        lambda output, value: output.__setitem__(0, value),
+    )
+    monkeypatch.setattr(checkpoint.dist, "broadcast_object_list", lambda *a, **kw: None)
+    monkeypatch.setattr(checkpoint, "_restore_tensor", lambda value, *args: value)
+    checkpoint.restore_model_state(model, saved)
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(value, saved[name], rtol=0, atol=0)

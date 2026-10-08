@@ -220,45 +220,43 @@ EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `e
 
 ## Training checkpoints and resume
 
-Mid-training checkpoints (`save_steps`, `resume_from_checkpoint`, `load_best_model_at_end`) hold every expert of every EP group, for full-parameter training and for LoRA on the experts alike. The trainer routes its FSDP2 `FULL_STATE_DICT` checkpoint save and load through `axolotl.integrations.expert_parallel.checkpoint` whenever FSDP runs with EP-sharded experts or EP-sharded expert LoRA. All other runs use accelerate's functions unchanged.
+FSDP2 `FULL_STATE_DICT` checkpoints preserve every EP group's expert weights,
+expert LoRA, and optimizer state. The shared ownership-aware checkpoint path serves
+both Trainer and Accelerate. See [Full checkpoints and resume](https://docs.axolotl.ai/docs/multi-gpu.html#full-checkpoints-and-resume)
+for quantization, memory, and mesh compatibility limits.
 
-Each EP rank stores a different block of experts under the same parameter name: experts `[offset, offset + num_experts / ep_size)`. accelerate's FSDP checkpoint functions gather each tensor only over the non-`ep` FSDP mesh, and rank 0 writes the file. On their own they therefore save EP group 0's experts only, and on resume every EP group loads group 0's experts. axolotl versions before this fix behaved that way (see [Checkpoints from earlier versions](#checkpoints-from-earlier-versions)).
+### Checkpoint files
 
-### What a checkpoint holds
+- `pytorch_model_fsdp.bin` is the native model checkpoint used by
+  `resume_from_checkpoint` and best-model loading. Trainer LoRA/QLoRA checkpoints
+  include PEFT export state, including frozen adapter factors, saved modules, and
+  required embeddings; the frozen base model is loaded separately.
+- `optimizer.bin` preserves every expert owner's optimizer state. It is absent
+  when `save_only_model: true`.
+- `adapter_model.safetensors` is the ordinary PEFT adapter export used by
+  `lora_model_dir`. Model-only intermediate checkpoints also include the native
+  resume file; final exports do not.
 
-| File | Full-parameter run | LoRA run |
-|---|---|---|
-| `pytorch_model_fsdp.bin` | the full model, every expert | the adapter only (trainable parameters), with every expert's LoRA. **This is the file `resume_from_checkpoint` loads.** |
-| `optimizer.bin` | optimizer state for every parameter; expert states (`exp_avg`, `exp_avg_sq`, ...) cover every expert | the same, for the adapter's parameters |
-| `adapter_model.safetensors` | – | the complete adapter in PEFT format (written by the EP adapter export); used by `lora_model_dir`, not by resume |
-
-All files use the same tensor layout as the final export, independent of `ep_size`:
-
-| Tensor | Full shape | Experts packed along |
-|---|---|---|
-| routed expert weights `gate_up_proj`, `down_proj` (and their biases) | `[E, ...]` | dim 0, one entry per expert |
-| expert LoRA `lora_A` (`target_parameters`, PEFT ParamWrapper) | `[E * r, in]`, expert-major | dim 0, `r` rows per expert |
-| expert LoRA `lora_B` | `[out, r * E]`, rank-major | dim 1, read as `[out, r, E]` |
-
-Each optimizer state tensor with the same expert-axis shape as its parameter is laid out the same way. Scalars (`step`) and dense parameters and their state are saved and loaded exactly as accelerate does it.
-
-### Save and load
-
-- **Save:** after torch builds the full state dict over the non-`ep` mesh, each EP-sharded tensor is all-gathered across `ep` one tensor at a time, and rank 0 writes the result. Peak extra memory is about one full expert tensor per rank. The files are the same size as a checkpoint of the same model trained without EP.
-- **Load:** rank 0 reads the file. torch's `set_model_state_dict` / `set_optimizer_state_dict` receive this rank's block of each expert tensor, so dense parameters, step counts and param groups load as usual. Then each full expert tensor is broadcast from rank 0, one at a time, and every rank copies its own block (`lora_B`: columns `[:, :, offset:offset + E_local]` of the `[out, r, E]` view) into its local shard.
-- **Layout:** every rank slices its block by its own expert offset, so a checkpoint doesn't depend on the `ep` / `dp_shard` layout it was saved with. Resuming with a different `expert_parallel_size` should therefore work, but **it is untested**.
+Native checkpoints and final exports need not have the same layout. For example,
+Mixtral full-model exports unpack fused expert weights, while native checkpoints
+retain fused tensors. Packed bitsandbytes checkpoints also carry owner-specific
+quantization metadata and require unchanged EP ownership ranges.
 
 ### Checkpoints from earlier versions
 
-A checkpoint written before this fix holds only `num_experts / ep_size` experts (for LoRA, only that many experts' `lora_A` / `lora_B`). Resuming from one raises an error on every rank instead of silently giving every EP group group 0's experts. To continue:
+Older EP checkpoints may contain only EP group 0's expert weights, expert LoRA,
+and optimizer moments. The full-checkpoint loader rejects incompatible shapes on
+every rank. Model tensor shapes are checked before any model parameters are copied,
+so a truncated model checkpoint does not partially overwrite the model.
 
-- **Full-parameter:** start a new run from the final model export, which always gathered every expert.
-- **LoRA:** load the old checkpoint's `adapter_model.safetensors` with `lora_model_dir`; it was already complete. The optimizer state and the scheduler position are not recovered.
+To recover from an incomplete legacy checkpoint:
 
-### Limits
+- **Full-parameter training:** start a new run from a complete final model export.
+- **LoRA:** if the legacy checkpoint has a complete `adapter_model.safetensors`,
+  load it with `lora_model_dir` in a new run.
 
-- Only FSDP2 with `fsdp_config.state_dict_type: FULL_STATE_DICT` is supported. EP rejects `SHARDED_STATE_DICT`, DDP and DeepSpeed at config validation (see [Limitations](#limitations)).
-- Expert LoRA means PEFT `target_parameters` on the fused expert tensors (the ParamWrappers EP shards). LoRA on attention and dense MLP layers is not EP-sharded and is saved as usual.
+These recovery paths do not recover optimizer state or scheduler progress. Missing
+experts cannot be reconstructed from the truncated native checkpoint.
 
 ## Limitations
 

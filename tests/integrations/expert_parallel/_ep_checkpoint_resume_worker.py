@@ -1,20 +1,4 @@
-"""Gloo worker: an FSDP2 FULL_STATE_DICT checkpoint round-trips every EP rank's experts.
-
-Builds a tiny Mixtral, EP-shards its experts and FSDP2-wraps it the way the plugin does
-(experts on their non-ep mesh, dense layers on the whole world), optionally with a
-``target_parameters`` expert LoRA (``--lora``), takes two AdamW steps, and checkpoints it
-the way the Trainer does: the gathered adapter export for LoRA runs, then
-``save_fsdp_model(adapter_only=True)`` and ``save_fsdp_optimizer`` through
-``transformers.trainer``'s names. It reloads into a freshly built model and optimizer
-through the ``load_fsdp_*`` names (the Trainer resumes from ``pytorch_model_fsdp.bin``
-when it exists, adapter runs included) and compares every rank's parameters and optimizer
-state with the values before the save.
-
-``--mode fixed`` runs inside ``ep_fsdp_checkpoint_functions`` (the trainer's EP path);
-``--mode accelerate`` runs accelerate's functions as they are, to show the lost experts;
-``--mode legacy`` saves with accelerate and loads with the fixed functions, which must
-refuse the checkpoint on every rank.
-"""
+"""Exercise real FSDP2 expert checkpoints with ordinary AdamW on CPU."""
 
 import argparse
 import contextlib
@@ -181,23 +165,20 @@ def _full_tensors(model, optimizer, ep_group):
     return full
 
 
-def _io(mode, ep_group):
+def _io(mode):
     import transformers.trainer as hf_trainer
 
-    from axolotl.integrations.expert_parallel.checkpoint import (
-        ep_fsdp_checkpoint_functions,
+    from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+        patch_fsdp2_full_checkpoint,
     )
 
     @contextlib.contextmanager
-    def fixed():
-        with ep_fsdp_checkpoint_functions(ep_group):
-            yield hf_trainer
-
-    @contextlib.contextmanager
-    def unpatched():
+    def checkpoint_io():
+        if mode == "fixed":
+            patch_fsdp2_full_checkpoint()
         yield hf_trainer
 
-    return fixed if mode == "fixed" else unpatched
+    return checkpoint_io
 
 
 def main():
@@ -237,7 +218,7 @@ def main():
     before_params, before_states = _snapshot(model, optimizer)
     full = _full_tensors(model, optimizer, ep_group)
 
-    save_io = _io("fixed" if args.mode == "fixed" else "accelerate", ep_group)
+    save_io = _io("fixed" if args.mode == "fixed" else "accelerate")
     if args.lora:  # the trainer's _save_gathered_lora_adapter
         from axolotl.integrations.expert_parallel.shard import save_ep_lora_adapter
 
@@ -281,9 +262,8 @@ def main():
     fresh, fresh_optimizer, _ = _build(
         args.ep, args.dp_shard, 1, checkpoint_layers, args.lora
     )
-    load_io = _io(
-        "fixed" if args.mode in ("fixed", "legacy") else "accelerate", ep_group
-    )
+    load_io = _io("fixed" if args.mode in ("fixed", "legacy") else "accelerate")
+    fresh_before, _ = _snapshot(fresh, fresh_optimizer)
     with load_io() as io:
         try:
             io.load_fsdp_model(
@@ -292,8 +272,15 @@ def main():
             io.load_fsdp_optimizer(
                 fsdp_plugin, accelerator, fresh_optimizer, fresh, checkpoint
             )
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             report["load_error"] = str(exc)
+
+    if "load_error" in report:
+        after_params, _ = _snapshot(fresh, fresh_optimizer)
+        report["unchanged"] = all(
+            torch.equal(after_params[name], value)
+            for name, value in fresh_before.items()
+        )
 
     if "load_error" not in report:
         after_params, after_states = _snapshot(fresh, fresh_optimizer)
@@ -303,6 +290,29 @@ def main():
             for key, state in before_states[name].items():
                 if not torch.equal(after_states[name][key], state):
                     report["mismatch"].append(["param", name, key])
+
+    if args.mode == "fixed":
+        from transformers import Trainer
+
+        with torch.no_grad():
+            for parameter in fresh.parameters():
+                if parameter.requires_grad:
+                    _local(parameter).zero_()
+        trainer = object.__new__(Trainer)
+        trainer.model = fresh
+        trainer.is_fsdp_enabled = True
+        trainer.is_deepspeed_enabled = False
+        trainer.accelerator = accelerator
+        accelerator.state = SimpleNamespace(fsdp_plugin=fsdp_plugin)
+        trainer.state = SimpleNamespace(
+            best_model_checkpoint=checkpoint, best_metric=0.0
+        )
+        trainer._load_best_model()
+        best_params, _ = _snapshot(fresh, fresh_optimizer)
+        report["best_model_matches"] = all(
+            torch.equal(best_params[name], value)
+            for name, value in before_params.items()
+        )
 
     reports = [None] * world
     dist.all_gather_object(reports, report)
