@@ -186,3 +186,15 @@ def test_varlen_attention_moves_cpu_metadata_to_attention_device(monkeypatch):
     torch.testing.assert_close(output, reference)
     for actual, tensor in zip(actual_grads, (query, key, value), strict=True):
         torch.testing.assert_close(actual, tensor.grad)
+
+
+@pytest.mark.parametrize("batch_size", [1, 2])
+def test_unpadded_layout_reuses_storage(batch_size):
+    docs = torch.zeros(batch_size, 4, dtype=torch.long)
+    metadata = varlen.build_varlen_metadata(docs, docs >= 0)
+    bshd = torch.randn(batch_size, 4, 3, 8, requires_grad=True)
+    gathered = varlen.gather_thd(bshd.transpose(1, 2), metadata)
+    restored = varlen.scatter_thd(gathered, metadata)
+    assert gathered.data_ptr() == bshd.data_ptr() == restored.data_ptr()
+    restored.sum().backward()
+    torch.testing.assert_close(bshd.grad, torch.ones_like(bshd))

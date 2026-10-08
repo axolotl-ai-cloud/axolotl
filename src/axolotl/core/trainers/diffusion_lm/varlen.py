@@ -119,6 +119,35 @@ def build_varlen_metadata(
     )
 
 
+def pack_tokens(value: torch.Tensor, metadata: VarlenMetadata) -> torch.Tensor:
+    """Compact [B, S, ...] into [T, ...] using ordered semantic token indices."""
+    if value.shape[:2] != (metadata.batch_size, metadata.sequence_length):
+        raise ValueError("token shape does not match varlen metadata")
+    if value.device != metadata.flat_indices.device:
+        raise ValueError("tokens and varlen metadata must share a device")
+    if metadata.total_tokens == metadata.batch_size * metadata.sequence_length:
+        return value.reshape(-1, *value.shape[2:])
+    rows = metadata.flat_indices // metadata.sequence_length
+    positions = metadata.flat_indices % metadata.sequence_length
+    return value[rows, positions]
+
+
+def unpack_tokens(value: torch.Tensor, metadata: VarlenMetadata) -> torch.Tensor:
+    """Restore [T, ...] to zero-padded [B, S, ...]."""
+    if value.shape[0] != metadata.total_tokens:
+        raise ValueError("varlen output token count does not match metadata")
+    if value.device != metadata.flat_indices.device:
+        raise ValueError("varlen output and metadata must share a device")
+    shape = (metadata.batch_size, metadata.sequence_length, *value.shape[1:])
+    if metadata.total_tokens == metadata.batch_size * metadata.sequence_length:
+        return value.reshape(shape)
+    flat = value.new_zeros(
+        (metadata.batch_size * metadata.sequence_length, *value.shape[1:])
+    )
+    flat.index_copy_(0, metadata.flat_indices, value)
+    return flat.reshape(shape)
+
+
 def gather_thd(value: torch.Tensor, metadata: VarlenMetadata) -> torch.Tensor:
     """Gather a [B, H, S, D] tensor to public varlen [T, H, D] layout."""
     if value.ndim != 4:
@@ -131,26 +160,14 @@ def gather_thd(value: torch.Tensor, metadata: VarlenMetadata) -> torch.Tensor:
         raise ValueError("attention input shape does not match varlen metadata")
     if value.device != metadata.flat_indices.device:
         raise ValueError("attention input and varlen metadata must share a device")
-    flattened = value.transpose(1, 2).reshape(
-        batch_size * sequence_length, *value.shape[1::2]
-    )
-    return flattened.index_select(0, metadata.flat_indices)
+    return pack_tokens(value.transpose(1, 2), metadata)
 
 
 def scatter_thd(value: torch.Tensor, metadata: VarlenMetadata) -> torch.Tensor:
     """Scatter public varlen [T, H, D] output to zero-padded [B, S, H, D]."""
     if value.ndim != 3:
         raise ValueError("varlen output must be [tokens, heads, head_dim]")
-    if value.shape[0] != metadata.total_tokens:
-        raise ValueError("varlen output token count does not match metadata")
-    if value.device != metadata.flat_indices.device:
-        raise ValueError("varlen output and metadata must share a device")
-    flat = torch.zeros(
-        (metadata.batch_size * metadata.sequence_length, *value.shape[1:]),
-        dtype=value.dtype,
-        device=value.device,
-    ).index_copy(0, metadata.flat_indices, value)
-    return flat.reshape(metadata.batch_size, metadata.sequence_length, *value.shape[1:])
+    return unpack_tokens(value, metadata)
 
 
 def varlen_attention(

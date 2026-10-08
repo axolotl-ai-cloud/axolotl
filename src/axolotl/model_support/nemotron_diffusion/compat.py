@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import re
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -114,8 +115,6 @@ def resolve_nemotron_model_class(
                     raise ValueError(
                         "Nemotron varlen requires document-local position_ids"
                     )
-                if kwargs.get("cache_position") is None:
-                    kwargs["cache_position"] = position_ids[0]
                 kwargs["use_cache"] = False
                 kwargs["use_causal_mask"] = False
             attention_mask = kwargs.get("attention_mask")
@@ -375,6 +374,91 @@ def keep_rotary_fp32(rotary: torch.nn.Module) -> None:
     rotary.forward = forward
 
 
+def _pack_varlen_encoder(encoder: torch.nn.Module) -> None:
+    original_forward = encoder.forward
+
+    @wraps(original_forward)
+    def forward(
+        input_ids=None,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        inputs_embeds=None,
+        use_cache=None,
+        cache_position=None,
+        **kwargs,
+    ):
+        metadata = kwargs.pop("diffusion_varlen", None)
+        if metadata is None:
+            return original_forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                **kwargs,
+            )
+        from axolotl.core.trainers.diffusion_lm.varlen import (
+            VarlenMetadata,
+            pack_tokens,
+            unpack_tokens,
+        )
+
+        if (
+            not isinstance(metadata, VarlenMetadata)
+            or attention_mask is not None
+            or past_key_values is not None
+            or use_cache
+            or kwargs.get("use_causal_mask", False)
+        ):
+            raise ValueError(
+                "Nemotron varlen requires maskless uncached bidirectional inputs"
+            )
+        if (input_ids is None) == (inputs_embeds is None):
+            raise ValueError("Specify exactly one of input_ids or inputs_embeds")
+        tokens = input_ids if input_ids is not None else inputs_embeds
+        metadata = metadata.to(tokens.device)
+        if position_ids is None:
+            raise ValueError("Nemotron varlen requires document-local position_ids")
+        packed_positions = pack_tokens(position_ids.to(tokens.device), metadata)[None]
+        if cache_position is None:
+            cache_position = packed_positions[0]
+        else:
+            cache_position = cache_position.to(tokens.device)
+            if cache_position.ndim == 1:
+                cache_position = cache_position[None].expand(metadata.batch_size, -1)
+            cache_position = pack_tokens(cache_position, metadata)
+        packed_tokens = pack_tokens(tokens, metadata)[None]
+        packed_metadata = VarlenMetadata(
+            flat_indices=torch.arange(metadata.total_tokens, device=tokens.device),
+            cu_seqlens=metadata.cu_seqlens,
+            max_seqlen=metadata.max_seqlen,
+            batch_size=1,
+            sequence_length=metadata.total_tokens,
+        )
+        output = original_forward(
+            input_ids=packed_tokens if input_ids is not None else None,
+            inputs_embeds=packed_tokens if inputs_embeds is not None else None,
+            attention_mask=None,
+            position_ids=packed_positions,
+            past_key_values=None,
+            use_cache=False,
+            cache_position=cache_position,
+            diffusion_varlen=packed_metadata,
+            **kwargs,
+        )
+        output.last_hidden_state = unpack_tokens(output.last_hidden_state[0], metadata)
+        if output.hidden_states is not None:
+            output.hidden_states = tuple(
+                unpack_tokens(hidden[0], metadata) for hidden in output.hidden_states
+            )
+        return output
+
+    encoder.forward = forward
+
+
 def enable_nemotron_explicit_attention_mask(model: Any) -> None:
     """Make the native bidirectional implementation honor an explicit 4D mask.
 
@@ -512,4 +596,5 @@ def enable_nemotron_explicit_attention_mask(model: Any) -> None:
         replacement = MaskAwareAttention(original.config, original.layer_idx)
         replacement.load_state_dict(original.state_dict())
         layer.self_attn = replacement
+    _pack_varlen_encoder(encoder)
     encoder._axolotl_explicit_mask_enabled = True

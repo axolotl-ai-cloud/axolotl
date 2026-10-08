@@ -141,3 +141,120 @@ def test_selected_logits_match_dense_projection_and_preserve_default_path(model)
     model.zero_grad(set_to_none=True)
     dense[rows.clamp_min(0), positions.clamp_min(0)][..., :4].sum().backward()
     torch.testing.assert_close(selected_grad, model.diffusion_head.weight.grad)
+
+
+@pytest.mark.parametrize("checkpointing", [False, True])
+def test_encoder_stays_packed_across_layers(model, monkeypatch, checkpointing):
+    ids = torch.tensor([[0, 7, 100, 9, 0, 10, 11], [12, 13, 14, 15, 16, 0, 0]])
+    docs = torch.tensor([[-1, 0, 0, 0, -1, 1, 1], [0, 0, 1, 1, 1, -1, -1]])
+    valid = docs >= 0
+    dense = FullSequenceBackend(mask_token_id=100, attention_backend="dense")
+    packed = FullSequenceBackend(mask_token_id=100, attention_backend="varlen")
+    references = []
+    for row in range(2):
+        row_ids, row_docs = ids[row : row + 1], docs[row : row + 1]
+        row_pack = dense.pack(row_ids, row_docs, row_docs >= 0)
+        references.append(dense.forward(model, row_pack, row_ids).logits)
+    reference = torch.cat(references)
+    reference[valid].square().mean().backward()
+    expected_grads = {name: p.grad.clone() for name, p in model.named_parameters()}
+    model.zero_grad(set_to_none=True)
+
+    def cpu_varlen(q, k, v, cu_q, cu_k, max_q, max_k, **kwargs):
+        assert q.shape == (10, 4, 16)
+        assert k.shape == v.shape == (10, 2, 16)
+        assert kwargs["enable_gqa"]
+        assert cu_q.tolist() == cu_k.tolist() == [0, 3, 5, 7, 10]
+        outputs = []
+        offsets = cu_q.tolist()
+        for start, end in zip(offsets[:-1], offsets[1:], strict=True):
+            outputs.append(
+                torch.nn.functional.scaled_dot_product_attention(
+                    q[start:end].transpose(0, 1),
+                    k[start:end].transpose(0, 1),
+                    v[start:end].transpose(0, 1),
+                    scale=kwargs["scale"],
+                    enable_gqa=True,
+                ).transpose(0, 1)
+            )
+        return torch.cat(outputs)
+
+    monkeypatch.setattr(varlen, "varlen_attn", cpu_varlen)
+    shapes = []
+
+    def record(module, args):
+        shapes.append(args[0].shape)
+
+    hooks = [
+        module.register_forward_pre_hook(record)
+        for layer in model.encoder.layers
+        for module in (layer.self_attn.q_proj, layer.mlp)
+    ]
+    if checkpointing:
+        model.train()
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+    packed_batch = packed.pack(ids, docs, valid)
+    output = packed.forward(model, packed_batch, ids).logits
+    torch.testing.assert_close(output[valid], reference[valid], atol=1e-6, rtol=1e-5)
+    output[valid].square().mean().backward()
+    assert len(shapes) >= 2 * model.config.num_hidden_layers
+    assert all(shape == (1, 10, model.config.hidden_size) for shape in shapes)
+    for hook in hooks:
+        hook.remove()
+    for name, parameter in model.named_parameters():
+        torch.testing.assert_close(
+            parameter.grad, expected_grads[name], atol=1e-6, rtol=1e-4
+        )
+
+    hidden = packed.forward(
+        model, packed_batch, ids, model_kwargs={"output_last_hidden_states_only": True}
+    )
+    assert hidden.last_hidden_state.shape == (2, 7, model.config.hidden_size)
+    assert torch.count_nonzero(hidden.last_hidden_state[~valid]) == 0
+    encoder_output = model.encoder(
+        inputs_embeds=model.get_input_embeddings()(ids),
+        position_ids=packed_batch["position_ids"],
+        diffusion_varlen=packed_batch["diffusion_varlen"],
+        use_cache=False,
+        output_hidden_states=True,
+    )
+    torch.testing.assert_close(
+        encoder_output.last_hidden_state, hidden.last_hidden_state
+    )
+    if encoder_output.hidden_states is not None:
+        assert all(
+            state.shape == hidden.last_hidden_state.shape
+            for state in encoder_output.hidden_states
+        )
+    rows, positions = torch.tensor([[0, 1]]), torch.tensor([[2, 4]])
+    selected = packed.forward(
+        model,
+        packed_batch,
+        ids,
+        model_kwargs={"axolotl_selected_logits": (rows, positions)},
+    )
+    torch.testing.assert_close(
+        selected.logits, reference[rows, positions], atol=1e-6, rtol=1e-5
+    )
+
+
+@pytest.mark.gpu
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="varlen_attn needs CUDA")
+def test_packed_encoder_native_cuda_parity(model):
+    model = model.to(device="cuda", dtype=torch.bfloat16)
+    ids = torch.tensor([[0, 7, 100, 9, 0, 10, 11]], device="cuda")
+    docs = torch.tensor([[-1, 0, 0, 0, -1, 1, 1]], device="cuda")
+    valid = docs >= 0
+    dense = FullSequenceBackend(mask_token_id=100, attention_backend="dense")
+    packed = FullSequenceBackend(mask_token_id=100, attention_backend="varlen")
+    reference = dense.forward(model, dense.pack(ids, docs, valid), ids).logits
+    reference[valid].float().square().mean().backward()
+    expected = {name: p.grad.clone() for name, p in model.named_parameters()}
+    model.zero_grad(set_to_none=True)
+    output = packed.forward(model, packed.pack(ids, docs, valid), ids).logits
+    torch.testing.assert_close(output[valid], reference[valid], atol=5e-3, rtol=5e-2)
+    output[valid].float().square().mean().backward()
+    for name, parameter in model.named_parameters():
+        torch.testing.assert_close(parameter.grad, expected[name], atol=5e-4, rtol=5e-2)

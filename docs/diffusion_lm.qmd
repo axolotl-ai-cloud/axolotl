@@ -71,9 +71,14 @@ attn_implementation: varlen
 sample_packing: true
 ```
 
-This path gathers valid Q/K/V tokens into THD format and passes cumulative
-document offsets to `torch.nn.attention.varlen.varlen_attn`, without building a
-dense document mask. PyTorch selects the underlying kernel. `varlen` requires
+This path removes padding once before the encoder, keeps tokens packed through
+all transformer layers, and passes cumulative document offsets to
+`torch.nn.attention.varlen.varlen_attn`, without building a dense document mask.
+Diffusion mask tokens remain in the packed sequence; only positions excluded by
+semantic validity are removed. K/V retain their original head count for native
+GQA. The final hidden states are restored to the batch shape with zeros at padding
+positions, preserving the layout used by the loss and selected-logit projection.
+PyTorch selects the underlying kernel. `varlen` requires
 Torch 2.14 or newer, a native full-sequence diffusion model (Nemotron),
 uncached bidirectional attention, and zero attention dropout. Dream and
 DiffusionGemma keep their existing backends: Gemma's per-layer

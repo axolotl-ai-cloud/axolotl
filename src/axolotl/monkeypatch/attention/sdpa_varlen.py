@@ -87,6 +87,7 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
     _supports_window = (
         "window_size" in _varlen_params or "is_causal" not in _varlen_params
     )
+    _supports_gqa = "enable_gqa" in _varlen_params
 
     def sdpa_varlen_forward(
         module: Any,
@@ -149,15 +150,18 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
 
         B, Hq, S, D = query.shape
         Hkv = key.shape[1]
-        if Hq != Hkv:  # GQA -> repeat (varlen_attn has no GQA mode)
+        if Hkv != value.shape[1] or Hq % Hkv:
+            raise ValueError("GQA requires matching KV heads that divide query heads")
+        if Hq != Hkv and not _supports_gqa:
             n = Hq // Hkv
             key = key.repeat_interleave(n, dim=1)
             value = value.repeat_interleave(n, dim=1)
+            Hkv = Hq
         pid = position_ids if position_ids.dim() > 1 else position_ids[None]
         (cu_q, cu_k), (max_q, max_k) = prepare_fa_kwargs_from_position_ids(pid)
         qf = query.transpose(1, 2).reshape(B * S, Hq, D)
-        kf = key.transpose(1, 2).reshape(B * S, Hq, D)
-        vf = value.transpose(1, 2).reshape(B * S, Hq, D)
+        kf = key.transpose(1, 2).reshape(B * S, Hkv, D)
+        vf = value.transpose(1, 2).reshape(B * S, Hkv, D)
         if _supports_window:
             # (left, right): (-1, 0) = causal full; (W-1, 0) = causal sliding window of W.
             window = (sliding_window - 1, 0) if sliding_window else (-1, 0)
@@ -166,6 +170,8 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
             causal_kw = {
                 "is_causal": True
             }  # is_causal-only build (sliding already refused above)
+        if _supports_gqa:
+            causal_kw["enable_gqa"] = Hq != Hkv
         out = varlen_attn(
             qf,
             kf,
