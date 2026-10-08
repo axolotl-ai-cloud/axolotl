@@ -706,11 +706,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def _build_turn_locator(
         self, turns: list[dict], tools: list[dict] | None, input_ids: list[int]
-    ) -> tuple[str, list[int], list[int]] | None:
+    ) -> tuple[str, list[int], list[int], list[int]] | None:
         """Render and tokenize the conversation once so turns can be located in char space.
 
-        Returns ``(rendered_text, token_starts, token_ends)``, or ``None`` when the
-        render can't be trusted to line up with ``input_ids``.
+        Returns ``(rendered_text, token_starts, token_ends, input_ids)``, or ``None``
+        when the render can't be trusted to line up with ``input_ids``.
         """
         if not getattr(self.tokenizer, "is_fast", False):
             self._log_fallback_once("tokenizer is not a fast tokenizer")
@@ -730,7 +730,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return None
 
         offsets = encoded["offset_mapping"]
-        return full_text, [s for s, _ in offsets], [e for _, e in offsets]
+        return (
+            full_text,
+            [s for s, _ in offsets],
+            [e for _, e in offsets],
+            list(encoded["input_ids"]),
+        )
 
     # Block compares keep the diff scan in C; a per-char Python loop would cost more
     # than the tokenization it saves.
@@ -769,7 +774,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         content_only: bool,
         reasoning_only: bool,
         tools: list[dict] | None,
-        locator: tuple[str, list[int], list[int]],
+        locator: tuple[str, list[int], list[int], list[int]],
     ) -> tuple[int, int] | None:
         """Locate a turn by diffing the real render against placeholder renders.
 
@@ -780,7 +785,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         Returns ``None`` to fall back to the token diff, ``(-1, -1)`` when the field
         is absent from the render, otherwise the token span.
         """
-        full_text, token_starts, token_ends = locator
+        full_text, token_starts, token_ends, locator_ids = locator
 
         spans = []
         for sentinel in self._SENTINELS:
@@ -807,6 +812,25 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         end_idx = bisect_left(token_starts, char_end)
         if start_idx >= len(token_ends) or end_idx > len(token_ends):
             return None
+
+        # A header added token with rstrip=True absorbs following whitespace into
+        # its offset span, so a turn starting with whitespace diffs inside the
+        # header's span and the header token would be trained. Skip leading added
+        # tokens whose span starts before the diff, but only when the part of the
+        # span inside the diff is whitespace (absorbed by rstrip): a content
+        # added token with lstrip=True can also straddle the diff start, and its
+        # overlap is real content that must be trained. Regular tokens are never
+        # skipped, so BPE merges straddling the boundary keep their content token.
+        added_token_ids = set(
+            getattr(self.tokenizer, "added_tokens_decoder", None) or {}
+        )
+        while (
+            start_idx < end_idx
+            and token_starts[start_idx] < char_start
+            and locator_ids[start_idx] in added_token_ids
+            and not full_text[char_start : token_ends[start_idx]].strip()
+        ):
+            start_idx += 1
 
         return start_idx, end_idx
 
@@ -891,7 +915,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         tools: list[dict] | None = None,
         content_only: bool = False,
         reasoning_only: bool = False,
-        locator: tuple[str, list[int], list[int]] | None = None,
+        locator: tuple[str, list[int], list[int], list[int]] | None = None,
     ):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
