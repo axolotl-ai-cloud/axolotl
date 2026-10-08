@@ -55,10 +55,15 @@ def test_ratio_clip_hsdp_and_tensor_parallel_layouts(tmp_path):
 
 
 @pytest.mark.distributed_cpu
-def test_ratio_clip_expert_parallel_keeps_per_rank_experts(tmp_path):
+def test_ratio_clip_per_expert_matches_across_ep_sizes(tmp_path):
     _run(tmp_path, "ep", 4)
 
 
 @pytest.mark.distributed_cpu
 def test_ratio_clip_averages_resume_through_fsdp2_optimizer_checkpoints(tmp_path):
     _run(tmp_path, "resume", 2)
+
+
+@pytest.mark.distributed_cpu
+def test_ratio_clip_expert_averages_resume_for_every_ep_rank(tmp_path):
+    _run(tmp_path, "ep_resume", 4)

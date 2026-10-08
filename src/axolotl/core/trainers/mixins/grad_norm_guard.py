@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import dataclass
 from statistics import median
 from typing import Any
 
@@ -61,6 +62,64 @@ class StepOutlierState(TrainerCallback, ExportableState):
         }
 
 
+def _local(tensor: torch.Tensor) -> torch.Tensor:
+    return tensor.to_local() if hasattr(tensor, "to_local") else tensor
+
+
+@dataclass(frozen=True)
+class _EmaSpec:
+    """Shape of one parameter's running averages in the optimizer state.
+
+    ``experts`` is ``None`` for one average per tensor (a 0-dim tensor), else the
+    number of experts in this rank's tensor (a vector). ``ep_mesh`` stores an
+    expert-parallel vector as a DTensor over all experts, sharded on that mesh's
+    ``ep`` axis and replicated on the others, so checkpoints address every EP rank's
+    experts at their own offset instead of under one shared name.
+    """
+
+    experts: int | None = None
+    ep_mesh: Any = None
+
+    def _placements(self):
+        from torch.distributed.tensor import Replicate, Shard
+
+        return [
+            Shard(0) if name == "ep" else Replicate()
+            for name in self.ep_mesh.mesh_dim_names
+        ]
+
+    def adopt(self, value, device) -> torch.Tensor:
+        """``value`` as this spec's float32 tensor on ``device`` (NaN if unusable)."""
+        sharded = self.ep_mesh is not None and self.experts is not None
+        local_shape = () if self.experts is None else (self.experts,)
+        local = _local(value) if torch.is_tensor(value) else None
+        if local is None or tuple(local.shape) != local_shape:
+            local = torch.full(local_shape, math.nan, dtype=torch.float32)
+            value = None
+        target = device if device is not None else local.device
+        if (
+            value is not None
+            and local.device == target
+            and local.dtype == torch.float32
+            and hasattr(value, "to_local") == sharded
+        ):
+            return value
+        local = local.detach().to(device=target, dtype=torch.float32)
+        if not sharded:
+            return local
+        from torch.distributed.tensor import DTensor
+
+        size = self.experts * self.ep_mesh["ep"].size()
+        return DTensor.from_local(
+            local,
+            self.ep_mesh,
+            self._placements(),
+            run_check=False,
+            shape=torch.Size((size,)),
+            stride=(1,),
+        )
+
+
 def _unwrap_optimizer(optimizer):
     try:
         from accelerate.optimizer import AcceleratedOptimizer
@@ -89,6 +148,7 @@ class _GradNormEmaStore:
         self.optimizer = None
         self.handles: list = []
         self.template_placeholders = False
+        self.spec_fn = lambda parameter: _EmaSpec()
 
     def attach(self, optimizer) -> None:
         optimizer = _unwrap_optimizer(optimizer)
@@ -111,23 +171,26 @@ class _GradNormEmaStore:
         state = getattr(self.optimizer, "state", None)
         return state.get(parameter) if state is not None else None
 
-    def lookup(self, parameters, device) -> list[torch.Tensor]:
-        """The running average of each parameter (NaN when it has none yet)."""
+    def lookup(self, parameters, specs, device) -> list[torch.Tensor]:
+        """The running averages of each parameter (NaN where there are none yet).
+
+        ``specs`` gives each parameter's :class:`_EmaSpec`. The stored value is a 0-dim
+        tensor, a vector over the parameter's experts, or (under expert parallelism) a
+        DTensor over all experts sharded on the ``ep`` axis; the returned tensors are
+        the local float32 pieces on ``device``, updated in place by the caller.
+        """
         values = []
-        for parameter in parameters:
+        for parameter, spec in zip(parameters, specs, strict=True):
             state = self._state(parameter)
             value = state.get(GRAD_NORM_EMA_KEY) if state else None
             if value is None:
                 value = self.pending.pop(parameter, None)
-            if value is None:
-                value = torch.full((), math.nan, dtype=torch.float32, device=device)
-            elif value.device != device or value.dtype != torch.float32:
-                value = value.detach().to(device=device, dtype=torch.float32)
+            value = spec.adopt(value, device)
             if state:
                 state[GRAD_NORM_EMA_KEY] = value
             else:
                 self.pending[parameter] = value
-            values.append(value)
+            values.append(_local(value))
         return values
 
     def flush(self) -> None:
@@ -143,12 +206,20 @@ class _GradNormEmaStore:
         if not self.template_placeholders:
             return None
         state = state_dict["state"]
+        parameters = [
+            parameter
+            for group in optimizer.param_groups
+            for parameter in group["params"]
+        ]
         for key, entry in list(state.items()):
             if entry and GRAD_NORM_EMA_KEY not in entry:
-                state[key] = {
-                    **entry,
-                    GRAD_NORM_EMA_KEY: torch.full((), math.nan, dtype=torch.float32),
-                }
+                parameter = (
+                    parameters[key]
+                    if isinstance(key, int) and key < len(parameters)
+                    else None
+                )
+                spec = self.spec_fn(parameter) if parameter is not None else _EmaSpec()
+                state[key] = {**entry, GRAD_NORM_EMA_KEY: spec.adopt(None, None)}
         return state_dict
 
     def _before_load(self, optimizer, state_dict):
@@ -242,11 +313,22 @@ class GradNormGuardMixin:
     The norm is that of the whole logical tensor under FSDP2 (incl. HSDP and CPU
     offload) and DTensor tensor parallelism: local pieces are reduced over each
     gradient's sharded mesh axes, one collective per distinct layout, and each rank
-    scales only its local shard. Under expert parallelism an expert tensor holds a
-    different block of experts on each EP rank; it is never reduced over the EP axis,
-    so its norm and running average are those of this rank's experts. The averages
-    live in the optimizer state (``grad_norm_exp_avg``, as in OLMo), so they are
-    saved, sharded and restored with it.
+    scales only its local shard.
+
+    Fused expert tensors (the experts modules the expert-parallel plugin detects,
+    their per-expert biases and expert LoRA) are clipped **per expert**: one norm,
+    one coefficient and one running average per expert slice, with or without
+    expert parallelism, so turning EP on (at any EP size) does not change training.
+    Under EP each rank holds whole experts, so no collective crosses the ``ep`` axis.
+    An EP-local tensor whose expert dimension is unknown is clipped as one fused
+    tensor over all EP ranks (its norm is reduced over ``ep`` too).
+
+    The averages live in the optimizer state (``grad_norm_exp_avg``, as in OLMo): a
+    0-dim tensor per tensor, or a vector over the experts. Under EP that vector is a
+    DTensor over all experts, sharded on the ``ep`` axis, so FSDP2 checkpoints keep
+    every EP rank's experts (the experts' own weights and Adam moments in an EP
+    checkpoint currently keep only EP group 0's experts). Clip counts are logged
+    per tensor or expert slice, from rank 0.
 
     The logged ``grad_norm`` stays the raw pre-clip global norm.
     """
@@ -309,6 +391,12 @@ class GradNormGuardMixin:
         store = self._grad_clip_store()
         if store is not None:
             store.attach(getattr(self, "optimizer", None))
+            model = getattr(self, "model", None)
+            if model is not None:
+                layouts, ep_local, ep_mesh = self._grad_clip_layout(model)
+                store.spec_fn = lambda parameter: self._grad_clip_spec(
+                    parameter, layouts, ep_local, ep_mesh
+                )
             # FSDP2 loads into a template built from the fresh optimizer's state_dict():
             # DCP reads only the template's keys (and fails on keys the checkpoint
             # lacks), and the full-state-dict path fails on 0-dim keys missing from it
@@ -481,18 +569,68 @@ class GradNormGuardMixin:
             self._grad_clip_ema_store = store
         return store
 
-    def _grad_clip_layout(self, model) -> tuple[Any, Any]:
-        """EP-local parameter ids and the global device mesh (``(frozenset(), None)`` without EP)."""
+    def _grad_clip_ep_mesh(self, model=None):
+        """The device mesh with the ``ep`` axis, or ``None`` without expert parallelism.
+
+        Pure EP builds no global mesh; there the experts' own (per-rank) root mesh
+        carries the ``ep`` axis.
+        """
         enabled = getattr(self, "_expert_parallel_enabled", None)
         if not (callable(enabled) and enabled()):
-            return frozenset(), None
-        cached = getattr(self, "_grad_clip_ep_layout", None)
-        if cached is None or cached[0] is not model:
+            return None
+        meshes = [self._global_mesh()]  # type: ignore[attr-defined]
+        try:
+            from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+            meshes.append(getattr(ExpertParallelPlugin, "_device_mesh", None))
+        except ImportError:  # pragma: no cover
+            pass
+        if model is not None:
             from axolotl.utils.gradient_clipping import ep_local_parameter_ids
 
-            cached = (model, frozenset(ep_local_parameter_ids(model)))
-            self._grad_clip_ep_layout = cached
-        return cached[1], self._global_mesh()  # type: ignore[attr-defined]
+            ep_local = ep_local_parameter_ids(model)
+            for parameter in model.parameters():
+                mesh = getattr(parameter, "device_mesh", None)
+                if id(parameter) in ep_local and mesh is not None:
+                    meshes.append(mesh._get_root_mesh())
+        return next(
+            (
+                mesh
+                for mesh in meshes
+                if mesh is not None and "ep" in (mesh.mesh_dim_names or ())
+            ),
+            None,
+        )
+
+    def _grad_clip_layout(self, model):
+        """Expert layouts, EP-local parameter ids and the EP mesh, computed once per model."""
+        cached = getattr(self, "_grad_clip_model_layout", None)
+        if cached is None or cached[0] is not model:
+            from axolotl.utils.gradient_clipping import (
+                ep_local_parameter_ids,
+                expert_parameter_layouts,
+            )
+
+            ep_mesh = self._grad_clip_ep_mesh(model)
+            cached = (
+                model,
+                expert_parameter_layouts(model),
+                frozenset(ep_local_parameter_ids(model))
+                if ep_mesh is not None
+                else frozenset(),
+                ep_mesh,
+            )
+            self._grad_clip_model_layout = cached
+        return cached[1:]
+
+    def _grad_clip_spec(self, parameter, layouts, ep_local, ep_mesh) -> _EmaSpec:
+        layout = layouts.get(id(parameter))
+        if layout is None:
+            return _EmaSpec()
+        return _EmaSpec(
+            layout.num_experts,
+            ep_mesh if id(parameter) in ep_local else None,
+        )
 
     def _grad_clip_by_ratio(self, model) -> None:
         store = self._grad_clip_store()
@@ -504,28 +642,45 @@ class GradNormGuardMixin:
         )
 
         ratio = float(self.args.grad_clip_norm_ratio)  # type: ignore[attr-defined]
-        ep_local, global_mesh = self._grad_clip_layout(model)
-        params, norms = get_grad_norms_per_tensor_(
+        layouts, ep_local, ep_mesh = self._grad_clip_layout(model)
+        result = get_grad_norms_per_tensor_(
             model.parameters(),
             ep_local_parameters=ep_local,
-            global_mesh=global_mesh,
+            global_mesh=ep_mesh,
+            expert_layouts=layouts,
         )
-        if not params:
+        if not result.parameters:
             return
+        norms = result.norms
         store.attach(getattr(self, "optimizer", None))
-        averages = store.lookup(params, norms.device)
-        ema = torch.stack(averages)
-        # a tensor's first step (or a non-finite average) starts from its current norm
+        averages = store.lookup(
+            result.parameters,
+            [
+                self._grad_clip_spec(p, layouts, ep_local, ep_mesh)
+                for p in result.parameters
+            ],
+            norms.device,
+        )
+        ema = torch.cat([average.reshape(-1) for average in averages])
+        # a tensor's (or expert's) first step, or a non-finite average, starts from its norm
         ema = torch.where(torch.isfinite(ema), ema, norms)
         coef = torch.clamp(ratio * ema / (norms + 1e-6), max=1.0)
-        scale_grads_per_tensor_(params, coef)
+        scale_grads_per_tensor_(result, coef)
         ema = ema.lerp(norms * coef, 1.0 - self._grad_clip_beta())
-        torch._foreach_copy_(averages, list(ema.unbind()))
+        torch._foreach_copy_(
+            averages,
+            [
+                piece.view_as(average)
+                for piece, average in zip(
+                    ema.split(result.sizes), averages, strict=True
+                )
+            ],
+        )
         self._grad_clip_last_clipped = (coef < 1.0).sum()
-        self._grad_clip_last_total = len(params)
+        self._grad_clip_last_total = int(coef.numel())
 
     def _grad_clip_averages(self, params) -> torch.Tensor:
-        """Current running averages of ``params`` (for inspection and tests)."""
+        """This rank's running averages of ``params``, flattened (for inspection and tests)."""
         store = self._grad_clip_store()
         assert store is not None
         values = []
@@ -535,9 +690,11 @@ class GradNormGuardMixin:
             if value is None:
                 value = store.pending.get(param)
             values.append(
-                torch.tensor(math.nan) if value is None else value.detach().cpu()
+                torch.tensor([math.nan])
+                if value is None
+                else _local(value).detach().cpu().reshape(-1)
             )
-        return torch.stack(values)
+        return torch.cat(values)
 
     def log(self, logs: dict[str, float], start_time: float | None = None) -> None:
         if "loss" in logs:

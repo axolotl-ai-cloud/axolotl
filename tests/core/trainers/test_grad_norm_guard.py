@@ -509,3 +509,116 @@ def test_ratio_averages_live_in_the_accelerated_optimizer_state():
     _ratio_step(trainer, model, optimizer, 1)
     assert GRAD_NORM_EMA_KEY in optimizer.optimizer.state[model.a]
     assert GRAD_NORM_EMA_KEY in optimizer.state_dict()["state"][0]
+
+
+class _Experts(torch.nn.Module):
+    def __init__(self, num_experts=4):
+        super().__init__()
+        self.gate_up_proj = torch.nn.Parameter(torch.zeros(num_experts, 6, 3))
+        self.down_proj = torch.nn.Parameter(torch.zeros(num_experts, 3, 4))
+
+
+def _expert_model():
+    model = torch.nn.Module()
+    model.experts = _Experts()
+    model.dense = torch.nn.Parameter(torch.zeros(5))
+    return model
+
+
+def _expert_grads(model, step, spike=None):
+    generator = torch.Generator().manual_seed(step)
+    for param in model.parameters():
+        param.grad = torch.randn(param.shape, generator=generator)
+    if spike is not None:
+        model.experts.gate_up_proj.grad[spike] *= 50.0
+
+
+def test_ratio_clips_each_expert_on_its_own():
+    from axolotl.core.trainers.mixins.grad_norm_guard import GRAD_NORM_EMA_KEY
+
+    model = _expert_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    trainer = _RatioTrainer(ratio=1.5, beta=0.8)
+    trainer.optimizer = optimizer
+    for step in range(4):
+        _expert_grads(model, step)
+        trainer._get_grad_norm(model, torch.tensor(1.0))
+        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+    before = trainer._grad_clip_averages([model.experts.gate_up_proj])
+    _expert_grads(model, 4, spike=2)
+    raw = model.experts.gate_up_proj.grad.clone()
+    norms = raw.reshape(4, -1).norm(dim=1)
+    trainer._get_grad_norm(model, torch.tensor(1.0))
+    coef = torch.clamp(1.5 * before / (norms + 1e-6), max=1.0)
+    assert coef[2] < 0.1 and (coef[[0, 1, 3]] > 0.5).all()
+    torch.testing.assert_close(
+        model.experts.gate_up_proj.grad, raw * coef.view(-1, 1, 1)
+    )
+    stored = optimizer.state[model.experts.gate_up_proj][GRAD_NORM_EMA_KEY]
+    assert stored.shape == (4,) and stored.dtype == torch.float32
+    torch.testing.assert_close(stored, before.lerp(norms * coef, 0.2))
+    assert optimizer.state[model.dense][GRAD_NORM_EMA_KEY].shape == ()
+    # one count per expert slice plus one for the dense tensor
+    assert trainer._grad_clip_last_total == 4 + 4 + 1
+
+
+def test_expert_lora_layouts_follow_the_expert_packing():
+    from axolotl.utils.gradient_clipping import (
+        ExpertLayout,
+        get_grad_norms_per_tensor_,
+    )
+
+    experts, rank = 3, 2
+    lora_a = torch.nn.Parameter(torch.zeros(experts * rank, 4))
+    lora_b = torch.nn.Parameter(torch.zeros(5, rank * experts))
+    lora_a.grad = torch.randn(experts * rank, 4)
+    lora_b.grad = torch.randn(5, rank * experts)
+    layouts = {
+        id(lora_a): ExpertLayout(0, experts, group=rank),
+        id(lora_b): ExpertLayout(1, experts, interleaved=True),
+    }
+    result = get_grad_norms_per_tensor_([lora_a, lora_b], expert_layouts=layouts)
+    expected_a = lora_a.grad.reshape(experts, rank * 4).norm(dim=1)
+    expected_b = lora_b.grad.reshape(5, rank, experts).permute(2, 0, 1)
+    expected_b = expected_b.reshape(experts, -1).norm(dim=1)
+    torch.testing.assert_close(result.norms, torch.cat([expected_a, expected_b]))
+    assert result.sizes == [experts, experts]
+
+
+def test_expert_averages_resume_from_the_optimizer_state(tmp_path):
+    model = _expert_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2)
+    trainer = _RatioTrainer(ratio=1.5, beta=0.8)
+    trainer.optimizer = optimizer
+    for step in range(3):
+        _expert_grads(model, step)
+        trainer._get_grad_norm(model, torch.tensor(1.0))
+        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+    torch.save(optimizer.state_dict(), tmp_path / "optimizer.pt")
+
+    resumed_model = _expert_model()
+    resumed_model.load_state_dict(model.state_dict())
+    resumed_optimizer = torch.optim.AdamW(resumed_model.parameters(), lr=1e-2)
+    resumed = _RatioTrainer(ratio=1.5, beta=0.8)
+    resumed.optimizer = resumed_optimizer
+    resumed._grad_clip_store().attach(resumed_optimizer)
+    resumed_optimizer.load_state_dict(torch.load(tmp_path / "optimizer.pt"))
+    params = list(model.parameters())
+    resumed_params = list(resumed_model.parameters())
+    torch.testing.assert_close(
+        resumed._grad_clip_averages(resumed_params),
+        trainer._grad_clip_averages(params),
+        rtol=0,
+        atol=0,
+    )
+    for step in range(3, 6):
+        for target, run in ((model, trainer), (resumed_model, resumed)):
+            _expert_grads(target, step, spike=1 if step == 4 else None)
+            run._get_grad_norm(target, torch.tensor(1.0))
+        for a, b in zip(resumed_params, params, strict=True):
+            torch.testing.assert_close(a.grad, b.grad, rtol=0, atol=0)
+        for opt in (optimizer, resumed_optimizer):
+            opt.step()
+            opt.zero_grad(set_to_none=True)
