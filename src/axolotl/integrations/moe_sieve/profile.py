@@ -19,10 +19,19 @@ def profile(config: str, output: str | None = None):
     from axolotl.cli.utils import load_model_and_tokenizer
     from axolotl.common.datasets import load_datasets
 
-    cfg = load_cfg(config)
-    validate_runtime(cfg)
     if int(os.environ.get("WORLD_SIZE", "1")) != 1:
         raise ValueError("Run MoE-Sieve calibration in one process")
+    cfg = load_cfg(
+        config,
+        fsdp=None,
+        fsdp_config=None,
+        dp_shard_size=1,
+        dp_replicate_size=1,
+        expert_parallel_size=1,
+        context_parallel_size=1,
+        context_parallel=None,
+    )
+    validate_runtime(cfg)
     if cfg.rl or cfg.is_multimodal or cfg.streaming or cfg.pretraining_dataset:
         raise ValueError(
             "MoE-Sieve calibration currently requires a map-style text SFT dataset"

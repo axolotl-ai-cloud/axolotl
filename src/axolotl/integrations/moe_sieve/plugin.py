@@ -22,26 +22,37 @@ def validate_runtime(cfg):
         "qat",
         "fp8",
         "deepspeed",
-        "fsdp",
-        "fsdp_config",
-        "use_scattermoe",
-        "use_sonicmoe",
         "relora",
         "lora_on_cpu",
         "torch_compile",
     )
     enabled = [key for key in unsupported if cfg.get(key)]
     for key in (
-        "expert_parallel_size",
         "tensor_parallel_size",
-        "context_parallel_size",
-        "dp_shard_size",
         "sequence_parallel_degree",
     ):
         if (cfg.get(key) or 1) > 1:
             enabled.append(key)
-    if cfg.get("experts_implementation") not in (None, "eager", "batched_mm"):
+    if cfg.get("experts_implementation") not in (
+        None,
+        "eager",
+        "batched_mm",
+        "scattermoe",
+        "sonicmoe",
+        "grouped_mm",
+        "expert_parallel",
+    ):
         enabled.append("experts_implementation")
+    if (cfg.get("fsdp") or cfg.get("fsdp_config")) and cfg.get("fsdp_version") == 1:
+        enabled.append("FSDP1")
+    if (cfg.get("expert_parallel_size") or 1) > 1:
+        if not cfg.get("fsdp_config"):
+            enabled.append("expert_parallel_size requires FSDP2")
+        if cfg.get("expert_parallel_backend") not in (None, "auto", "torch"):
+            enabled.append("expert_parallel_backend (use torch)")
+        state = (cfg.get("fsdp_config") or {}).get("state_dict_type")
+        if state and state != "FULL_STATE_DICT":
+            enabled.append("EP checkpoints require FULL_STATE_DICT")
     if cfg.get("expert_backend"):
         enabled.append("expert_backend")
     if enabled:
@@ -129,9 +140,16 @@ class MoeSievePlugin(BasePlugin):
         if cfg.peft_autocast_adapter_dtype is not None:
             kwargs["autocast_adapter_dtype"] = cfg.peft_autocast_adapter_dtype
         if checkpoint:
-            model = PeftModel.from_pretrained(
-                model, checkpoint, config=config, is_trainable=not inference, **kwargs
-            )
+            from .distributed import local_adapter_checkpoint
+
+            with local_adapter_checkpoint(model, config, checkpoint) as directory:
+                model = PeftModel.from_pretrained(
+                    model,
+                    directory,
+                    config=config,
+                    is_trainable=not inference,
+                    **kwargs,
+                )
             cfg.lora_model_dir = checkpoint
         else:
             if cfg.seed is not None:

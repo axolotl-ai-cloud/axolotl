@@ -645,7 +645,29 @@ class ExpertParallelPlugin(BasePlugin):
 
         kwargs = dict(fsdp2_kwargs)
         kwargs["mesh"] = dp_shard_mesh
-        kwargs.pop("ignored_params", None)
+        ignored = fsdp2_kwargs.setdefault("ignored_params", set())
+        replacements = {}
+        if ignored:
+            from torch.distributed.tensor import DTensor, Replicate, distribute_tensor
+
+            for parameter in list(ignored):
+                if parameter.numel() == 0 and not isinstance(parameter, DTensor):
+                    empty = distribute_tensor(
+                        parameter.detach(),
+                        dp_shard_mesh,
+                        [Replicate()] * dp_shard_mesh.ndim,
+                        src_data_rank=None,
+                    )
+                    replacements[parameter] = torch.nn.Parameter(
+                        empty, requires_grad=parameter.requires_grad
+                    )
+            for module in model.modules():
+                for name, parameter in list(module._parameters.items()):
+                    if parameter in replacements:
+                        module.register_parameter(name, replacements[parameter])
+            ignored.difference_update(replacements)
+            ignored.update(replacements.values())
+        kwargs["ignored_params"] = {p for p in ignored if p.numel() == 0}
 
         root = dp_shard_mesh._get_root_mesh()
         ep_size = (

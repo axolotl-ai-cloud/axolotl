@@ -104,6 +104,9 @@ def _ep_local_expert_lora(lora_A, lora_B, experts, wrapper=None):
     e_local = experts.num_experts
     e_global = getattr(experts, "num_experts_global", e_local)
     rank = _wrapper_lora_rank(wrapper)
+    if hasattr(wrapper, "kernel_lora_factors"):
+        lora_A, lora_B = wrapper.kernel_lora_factors(lora_A, lora_B)
+        return lora_A, lora_B, e_local, rank
     if rank is None:
         rank = lora_A.shape[0] // e_global
     if (

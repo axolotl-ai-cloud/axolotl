@@ -17,6 +17,8 @@ def packed_experts(model):
             for key, param in parameters.items()
             if param.ndim == 3 and param.shape[0] == module.num_experts
         }
+        for shape in shapes.values():
+            shape[0] = getattr(module, "num_experts_global", module.num_experts)
         if shapes:
             result[name] = (module, shapes)
     if not result:
@@ -48,14 +50,13 @@ def validate_selection(model, selection):
     for name, (module, shapes) in modules.items():
         spec = selection[name]
         ids = spec["selected_experts"]
-        if (
-            spec["parameter_shapes"] != shapes
-            or spec["num_experts"] != module.num_experts
+        if spec["parameter_shapes"] != shapes or spec["num_experts"] != getattr(
+            module, "num_experts_global", module.num_experts
         ):
             raise ValueError(f"MoE-Sieve parameter layout mismatch for {name}")
         if (
             not ids
-            or any(type(i) is not int or not 0 <= i < module.num_experts for i in ids)
+            or any(type(i) is not int or not 0 <= i < spec["num_experts"] for i in ids)
             or len(set(ids)) != len(ids)
         ):
             raise ValueError(f"Invalid selected expert IDs for {name}")
