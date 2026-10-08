@@ -44,6 +44,7 @@ class ParamWrapper(PeftParamWrapper):
 
     def __init__(self, *args, selected_experts, **kwargs):
         self.selected_experts = tuple(selected_experts)
+        self.global_selected_experts = self.selected_experts
         super().__init__(*args, **kwargs)
 
     def update_layer(self, adapter_name, r, lora_alpha, config, **kwargs):
@@ -70,8 +71,16 @@ class ParamWrapper(PeftParamWrapper):
         count = len(self.selected_experts)
         weight_a = self.lora_A[adapter_name].weight
         weight_b = self.lora_B[adapter_name].weight
-        weight_a = weight_a.reshape(count, -1, self.in_features)
-        weight_b = weight_b.reshape(self.out_features, -1, count).permute(2, 0, 1)
+        if not count:
+            weight_a = (
+                weight_a.to_local() if hasattr(weight_a, "to_local") else weight_a
+            )
+            weight_b = (
+                weight_b.to_local() if hasattr(weight_b, "to_local") else weight_b
+            )
+        rank = self.r[adapter_name]
+        weight_a = weight_a.reshape(count, rank, self.in_features)
+        weight_b = weight_b.reshape(self.out_features, rank, count).permute(2, 0, 1)
         if self._did_swap_in_out_features:
             lhs, rhs = weight_b, weight_a
         else:
@@ -84,8 +93,34 @@ class ParamWrapper(PeftParamWrapper):
         param = self.get_param()
         with torch.autocast(device_type=param.device.type, enabled=False):
             delta = (lhs @ rhs) * scaling
-        indices = torch.tensor(self.selected_experts, device=param.device)
+        indices = torch.tensor(
+            self.selected_experts, device=param.device, dtype=torch.long
+        )
         return torch.zeros_like(param).index_add(0, indices, delta)
+
+    def kernel_lora_factors(self, weight_a, weight_b):
+        """Supply existing kernels with zero factors for frozen experts."""
+        rank = self.r[self.active_adapters[0]]
+        count = len(self.selected_experts)
+        if not count:
+            weight_a = (
+                weight_a.to_local() if hasattr(weight_a, "to_local") else weight_a
+            )
+            weight_b = (
+                weight_b.to_local() if hasattr(weight_b, "to_local") else weight_b
+            )
+        indices = torch.tensor(
+            self.selected_experts, device=weight_a.device, dtype=torch.long
+        )
+        expanded_a = weight_a.new_zeros(self.num_experts, rank, weight_a.shape[1])
+        expanded_b = weight_b.new_zeros(weight_b.shape[0], rank, self.num_experts)
+        expanded_a = expanded_a.index_copy(
+            0, indices, weight_a.reshape(count, rank, weight_a.shape[1])
+        )
+        expanded_b = expanded_b.index_copy(
+            2, indices, weight_b.reshape(weight_b.shape[0], rank, count)
+        )
+        return expanded_a.flatten(0, 1), expanded_b.flatten(1, 2)
 
     @contextmanager
     def _activate_lora(self, active_adapters):
@@ -97,7 +132,7 @@ class ParamWrapper(PeftParamWrapper):
             raise ValueError("MoE-Sieve currently supports one active adapter")
         param = self.get_param()
         proxy = _SelectedFactorsProxy(
-            torch.tensor(self.selected_experts, device=param.device),
+            torch.tensor(self.selected_experts, device=param.device, dtype=torch.long),
             *self.get_delta_factors(adapters[0]),
         )
         base_layer = self.get_base_layer()
@@ -130,14 +165,21 @@ def register_selected_experts(model, config):
         name = by_identity.get(id(base))
         if name is None or parameter_name is None:
             raise ValueError("MoE-Sieve dispatch requires a selected expert parameter")
-        return SelectiveExpertParamWrapper(
+        selected = config.moe_sieve_selection[name]["selected_experts"]
+        offset = getattr(base, "local_expert_offset", 0)
+        local = [
+            i - offset for i in selected if offset <= i < offset + base.num_experts
+        ]
+        wrapper = SelectiveExpertParamWrapper(
             target,
             adapter_name,
             parameter_name=parameter_name,
             config=config,
-            selected_experts=config.moe_sieve_selection[name]["selected_experts"],
+            selected_experts=local,
             **kwargs,
         )
+        wrapper.global_selected_experts = tuple(selected)
+        return wrapper
 
     config._register_custom_module(
         {type(module): dispatch for module, _ in modules.values()}

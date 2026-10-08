@@ -328,7 +328,7 @@ def reinit_lora_from_seed(model: torch.nn.Module, seed: int | None) -> int:
     for name, module in model.named_modules():
         if not isinstance(module, LoraLayer) or not getattr(module, "lora_A", None):
             continue
-        is_expert = isinstance(module, ParamWrapper) and module.num_experts > 1
+        is_expert = isinstance(module, ParamWrapper) and module._param_ndim == 3
         if is_expert:
             base = module.get_base_layer()
             e_global = getattr(base, "num_experts_global", None) or module.num_experts
@@ -348,7 +348,7 @@ def reinit_lora_from_seed(model: torch.nn.Module, seed: int | None) -> int:
                 selected_experts = getattr(module, "selected_experts", None)
                 if selected_experts is not None:
                     local = full.reshape(e_global, r, -1)[
-                        list(selected_experts)
+                        [i + offset for i in selected_experts]
                     ].flatten(0, 1)
                 else:
                     local = full[offset * r : (offset + module.num_experts) * r]

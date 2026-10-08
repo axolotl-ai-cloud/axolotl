@@ -249,7 +249,7 @@ def test_profile_cleanup_on_unsupported_routing():
 
 @pytest.mark.parametrize(
     "key,value",
-    [("load_in_4bit", True), ("use_scattermoe", True), ("expert_parallel_size", 2)],
+    [("load_in_4bit", True), ("tensor_parallel_size", 2), ("expert_parallel_size", 2)],
 )
 def test_unsupported_runtime_fails_early(key, value):
     with pytest.raises(ValueError, match=key):
@@ -312,7 +312,9 @@ def test_calibration_command_writes_reproducible_profile(
         settings["torch_dtype"] = torch.bfloat16
     monkeypatch.setenv("WORLD_SIZE", "1")
     monkeypatch.setattr(
-        config_module, "load_cfg", lambda *args: DictDefault(copy.deepcopy(settings))
+        config_module,
+        "load_cfg",
+        lambda *args, **kwargs: DictDefault(copy.deepcopy(settings)),
     )
     monkeypatch.setattr(
         cli_utils, "load_model_and_tokenizer", lambda **kwargs: (base, None, None)
@@ -356,3 +358,157 @@ def test_seeded_initialization_matches_full_expert_slices():
             torch.testing.assert_close(
                 module.lora_A["default"].weight, full_a[[1, 5]].flatten(0, 1)
             )
+
+
+def local_experts(model, offset, count=4):
+    for module, _ in packed_experts(model).values():
+        total = module.num_experts
+        for name, parameter in list(module.named_parameters(recurse=False)):
+            if parameter.ndim == 3:
+                setattr(
+                    module,
+                    name,
+                    nn.Parameter(parameter[offset : offset + count].detach().clone()),
+                )
+        module.num_experts_global = total
+        module.num_experts = count
+        module.num_local_experts = count
+        module.local_expert_offset = offset
+
+
+@pytest.mark.parametrize("selected", [[1, 5], [0, 1], [7, 0]])
+@pytest.mark.parametrize("offset", [0, 4])
+def test_ep_compact_ownership_and_checkpoint(tmp_path, selected, offset):
+    from axolotl.integrations.expert_parallel.shard import shard_expert_lora
+    from axolotl.integrations.moe_sieve.distributed import local_adapter_checkpoint
+    from axolotl.loaders.adapter import reinit_lora_from_seed
+    from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+        _coordinates,
+        _index,
+        _layout,
+        expert_ownership,
+    )
+
+    torch.manual_seed(42)
+    base = tiny_model()
+    original = copy.deepcopy(base)
+    config = adapter_config(base)
+    for spec in config.moe_sieve_selection.values():
+        spec["selected_experts"] = selected
+    register_selected_experts(base, config)
+    full = get_peft_model(base, config)
+    reinit_lora_from_seed(full, 42)
+    for module in full.modules():
+        if isinstance(module, SelectiveExpertParamWrapper):
+            nn.init.normal_(module.lora_B["default"].weight)
+    full.save_pretrained(tmp_path)
+    local_experts(original, offset)
+    local_config = MoeSieveLoraConfig.from_pretrained(tmp_path)
+    register_selected_experts(original, local_config)
+    with local_adapter_checkpoint(original, local_config, tmp_path) as directory:
+        local = PeftModel.from_pretrained(
+            original, directory, config=local_config, is_trainable=True
+        )
+    shard_expert_lora(local, 2)
+    owners = expert_ownership(local)
+    full_params = dict(full.named_parameters())
+    for name, parameter in local.named_parameters():
+        if name not in owners or "lora_" not in name:
+            continue
+        layout = _layout(parameter, owners[name])
+        assert layout["shape"] == list(full_params[name].shape)
+        expected = full_params[name][_index(_coordinates(layout))]
+        torch.testing.assert_close(parameter, expected)
+    full_modules = dict(full.named_modules())
+    for name, wrapper in local.named_modules():
+        if not isinstance(wrapper, SelectiveExpertParamWrapper):
+            continue
+        assert wrapper.selected_experts == tuple(
+            i - offset for i in selected if offset <= i < offset + 4
+        )
+        delta = wrapper.get_delta_weight("default")
+        torch.testing.assert_close(
+            delta, full_modules[name].get_delta_weight("default")[offset : offset + 4]
+        )
+        delta.sum().backward()
+        assert wrapper.lora_A["default"].weight.grad is not None
+        assert wrapper.lora_B["default"].weight.grad is not None
+    reinit_lora_from_seed(local, 42)
+    for name, parameter in local.named_parameters():
+        if name in owners and ".lora_A." in name:
+            expected = full_params[name][
+                _index(_coordinates(_layout(parameter, owners[name])))
+            ]
+            torch.testing.assert_close(parameter, expected)
+
+
+@pytest.mark.parametrize("selected", [[1, 5], []])
+def test_kernel_factor_expansion_preserves_compact_gradients(selected):
+    from axolotl.integrations.moe_sieve.peft import SelectiveExpertParamWrapper
+
+    class Experts(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(torch.randn(8, 12, 16))
+            self.num_experts = 8
+
+    wrapper = SelectiveExpertParamWrapper(
+        Experts(),
+        "default",
+        parameter_name="weight",
+        config=MoeSieveLoraConfig(r=2, lora_alpha=4),
+        r=2,
+        lora_alpha=4,
+        selected_experts=selected,
+    )
+    nn.init.normal_(wrapper.lora_B["default"].weight)
+    a = wrapper.lora_A["default"].weight
+    b = wrapper.lora_B["default"].weight
+    expanded_a, expanded_b = wrapper.kernel_lora_factors(a, b)
+    delta = (
+        torch.einsum(
+            "eri,ore->eoi", expanded_a.reshape(8, 2, 16), expanded_b.reshape(12, 2, 8)
+        )
+        * 2
+    )
+    reference = wrapper.get_delta_weight("default")
+    torch.testing.assert_close(delta, reference)
+    probe = torch.randn_like(delta)
+    expected = torch.autograd.grad((reference * probe).sum(), (a, b))
+    actual = torch.autograd.grad((delta * probe).sum(), (a, b))
+    for actual_grad, expected_grad in zip(actual, expected, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_fsdp_optimizer_keeps_distinct_empty_parameters(monkeypatch):
+    from accelerate import Accelerator
+
+    from axolotl.monkeypatch.accelerate.fsdp2 import patch_accelerate_fsdp2
+
+    model = nn.Module()
+    model.register_parameter("empty_a", nn.Parameter(torch.empty(0, 4)))
+    model.register_parameter("empty_b", nn.Parameter(torch.empty(8, 0)))
+    model.register_parameter("dense", nn.Parameter(torch.ones(4)))
+    optimizer = torch.optim.AdamW(model.parameters())
+    assert model.empty_a.data_ptr() == model.empty_b.data_ptr() == 0
+
+    def prepare(_self, model, optimizer):
+        old_pointers = {name: p.data_ptr() for name, p in model.named_parameters()}
+        group_pointers = [p.data_ptr() for p in optimizer.param_groups[0]["params"]]
+        for name, parameter in list(model.named_parameters()):
+            model.register_parameter(name, nn.Parameter(parameter.detach().clone()))
+        mapping = {old_pointers[name]: p for name, p in model.named_parameters()}
+        optimizer.param_groups[0]["params"] = [
+            mapping[pointer] for pointer in group_pointers
+        ]
+        return model, optimizer
+
+    monkeypatch.setattr(Accelerator, "_prepare_fsdp2", prepare)
+    patch_accelerate_fsdp2()
+    patched = Accelerator._prepare_fsdp2
+    patch_accelerate_fsdp2()
+    assert Accelerator._prepare_fsdp2 is patched
+    patched(None, model, optimizer)
+    assert [id(p) for p in optimizer.param_groups[0]["params"]] == [
+        id(p) for p in model.parameters()
+    ]
