@@ -7,7 +7,7 @@ import torch
 import torch.distributed as dist
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import CPUOffloadPolicy, fully_shard
-from torch.distributed.tensor import distribute_tensor
+from torch.distributed.tensor import DTensor, distribute_tensor
 
 from axolotl.core.trainers.mixins.grad_norm_guard import (
     GRAD_NORM_EMA_KEY,
@@ -65,8 +65,16 @@ def _run(mesh, offload: bool):
             average = ema.get(name, norm)
             coef = torch.clamp(RATIO * average / (norm + 1e-6), max=1.0)
             ema[name] = average + (norm * coef - average) * (1 - BETA)
+            # gather on the GPU: an NCCL-only group cannot gather offloaded CPU shards
+            gathered = DTensor.from_local(
+                param.grad.to_local().cuda(),
+                mesh,
+                param.grad.placements,
+                shape=param.grad.shape,
+                stride=param.grad.stride(),
+            ).full_tensor()
             torch.testing.assert_close(
-                param.grad.full_tensor().cpu().double(), grads[name].double() * coef
+                gathered.cpu().double(), grads[name].double() * coef
             )
             if offload:
                 assert param.grad.to_local().device.type == "cpu"
