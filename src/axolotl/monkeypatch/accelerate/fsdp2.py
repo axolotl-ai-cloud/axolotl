@@ -816,13 +816,17 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             shard_expert_lora,
         )
 
+        ep_ignored_ids = {id(p) for p in getattr(model, "_ep_ignored_params", [])}
         ep_ignored = {
             p
             for n, p in model.named_parameters()
-            if ".experts." in n
-            and ".shared_experts." not in n
-            and n.rsplit(".", 1)[-1]
-            in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
+            if id(p) in ep_ignored_ids
+            or (
+                ".experts." in n
+                and ".shared_experts." not in n
+                and n.rsplit(".", 1)[-1]
+                in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
+            )
         }
         if ep_ignored:
             # Every param must be a DTensor (foreach/fused optimizers and clip reject a

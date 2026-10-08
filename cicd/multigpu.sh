@@ -23,12 +23,18 @@ done
 
 env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
 
+pytest -v --durations=10 -n1 --maxfail=10 -m gpu \
+  /workspace/axolotl/tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \
+  /workspace/axolotl/tests/integrations/test_expert_parallel_bnb.py \
+  --cov=axolotl
+
 # Only run two tests at a time to avoid OOM on GPU (with coverage collection)
 pytest -v --durations=10 -n2 --maxfail=10 \
   --ignore=/workspace/axolotl/tests/e2e/multigpu/solo/ \
   --ignore=/workspace/axolotl/tests/e2e/multigpu/patched/ \
   /workspace/axolotl/tests/e2e/multigpu/ \
-  --cov=axolotl
+  --cov=axolotl \
+  --cov-append
 
 pytest -v --durations=10 -n1 --maxfail=10 -m slow \
   /workspace/axolotl/tests/e2e/multigpu/test_ringmaster.py \

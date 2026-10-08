@@ -64,6 +64,10 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, ep_rank_of):
     tensors; runs on GPU (NCCL), result moved to the param's original device."""
     import torch.distributed as dist
 
+    from .bnb import scatter_quantized_expert
+
+    if scatter_quantized_expert(module, attr_name, e_local, ep_rank_of):
+        return
     old = getattr(module, attr_name)
     nv = old.data
     dev = torch.device("cuda", torch.cuda.current_device())
@@ -130,7 +134,7 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, ep_rank_of):
 def _detect_experts_modules(model):
     """Yield (name, module) pairs for every module that looks like an Experts class.
 
-    Detection: 3D `gate_up_proj` and `down_proj` parameters with experts on dim 0.
+    Detection: logical 3D `gate_up_proj` and `down_proj` weights with experts on dim 0.
     This is the canonical layout enforced by `@use_experts_implementation`.
     Mixtral's `ModuleList[MixtralBlockSparseTop2MLP]` does NOT match — out of scope
     for v1.
@@ -141,15 +145,17 @@ def _detect_experts_modules(model):
         # fully_shard). Yield only the real experts module (the wrapped base_layer).
         if _is_param_wrapper(module):
             continue
-        gp = getattr(module, "gate_up_proj", None)
-        dp = getattr(module, "down_proj", None)
+        from .bnb import expert_storage
+
+        gp, gp_shape, _ = expert_storage(module, "gate_up_proj")
+        dp, dp_shape, _ = expert_storage(module, "down_proj")
         if gp is None or dp is None:
             continue
         if not (
             isinstance(gp, torch.nn.Parameter) and isinstance(dp, torch.nn.Parameter)
         ):
             continue
-        if gp.dim() != 3 or dp.dim() != 3:
+        if len(gp_shape) != 3 or len(dp_shape) != 3:
             continue
         yield name, module
 
@@ -190,8 +196,10 @@ def shard_expert_weights(model, ep_group) -> int:
     ignore_params: list[torch.nn.Parameter] = []
 
     for name, module in _detect_experts_modules(model):
-        gp = module.gate_up_proj
-        E = gp.shape[0]
+        from .bnb import expert_storage
+
+        _gp, gp_shape, _ = expert_storage(module, "gate_up_proj")
+        E = gp_shape[0]
         if E % ep_size != 0:
             raise ValueError(
                 f"Expert module {name!r}: num_experts={E} not divisible by "
@@ -231,9 +239,15 @@ def shard_expert_weights(model, ep_group) -> int:
 
         # Mark sharded params as DDP-ignored — they hold rank-specific content
         # and must NOT be broadcast from rank 0 at DDP construction.
-        ignore_names.append(f"{name}.gate_up_proj")
-        ignore_names.append(f"{name}.down_proj")
-        ignore_params.extend([module.gate_up_proj, module.down_proj])
+        for parameter_name in ("gate_up_proj", "down_proj"):
+            parameter, _, quantization = expert_storage(module, parameter_name)
+            suffix = (
+                f"parametrizations.{parameter_name}.original"
+                if quantization is not None
+                else parameter_name
+            )
+            ignore_names.append(f"{name}.{suffix}")
+            ignore_params.append(parameter)
         for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
             if isinstance(getattr(module, bias_name, None), torch.nn.Parameter):
                 ignore_names.append(f"{name}.{bias_name}")
@@ -529,57 +543,6 @@ def _gather_adapter_tensor(parameter: torch.Tensor) -> torch.Tensor:
         del temporary
 
 
-def gather_ep_experts_into_state_dict(state_dict: dict, model, ep_group) -> int:
-    """All-gather each EP-sharded expert weight across ``ep_group`` and write the full
-    ``[E_global, ...]`` tensor into ``state_dict`` in place.
-
-    A full state dict gathered by FSDP alone holds only the calling rank's ep-slice of
-    the experts (their FSDP mesh excludes the ep axis). Collective: call on every rank;
-    ranks whose state dict is empty (CPU-offloaded full state dicts live on rank 0 only)
-    take part in the gather and write nothing. Returns the number of tensors replaced.
-    """
-    ep_size = dist.get_world_size(ep_group)
-    if ep_size <= 1:
-        return 0
-    keys = list(state_dict.keys())
-    replaced = 0
-    for name, module in _detect_experts_modules(model):
-        e_global = getattr(module, "num_experts_global", None)
-        e_local = getattr(module, "num_local_experts", None)
-        if e_global is None or e_local is None or e_local >= e_global:
-            continue
-        for attr in (
-            "gate_up_proj",
-            "down_proj",
-            "gate_up_proj_bias",
-            "down_proj_bias",
-        ):
-            param = getattr(module, attr, None)
-            if not isinstance(param, torch.nn.Parameter):
-                continue
-            local = _gather_adapter_tensor(param).contiguous()
-            chunks = [torch.empty_like(local) for _ in range(ep_size)]
-            dist.all_gather(chunks, local, group=ep_group)
-            full = torch.cat(chunks, dim=0)
-            target = _strip_checkpoint_wrapper(f"{name}.{attr}")
-            matches = [
-                k
-                for k in keys
-                if _strip_checkpoint_wrapper(k) == target
-                or _strip_checkpoint_wrapper(k).endswith("." + target)
-            ]
-            if not matches and not state_dict:
-                continue
-            if len(matches) != 1:
-                raise RuntimeError(
-                    f"expert_parallel: expected one state-dict key for {target!r}, "
-                    f"found {matches}"
-                )
-            state_dict[matches[0]] = full.to(state_dict[matches[0]].device)
-            replaced += 1
-    return replaced
-
-
 def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     """Write a complete LoRA adapter when experts are EP-sharded.
 
@@ -615,8 +578,11 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
             and m.num_local_experts < m.num_experts_global
         ):
             e_global = m.num_experts_global
+            from .bnb import expert_storage
+
             for pn in ("gate_up_proj", "down_proj"):
-                if hasattr(m, pn):
+                parameter, _, _ = expert_storage(m, pn)
+                if torch.is_tensor(parameter):
                     expert_param_names.add(pn)
     if e_global is None or not expert_param_names:
         return False
