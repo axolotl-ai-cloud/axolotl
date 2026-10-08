@@ -110,3 +110,97 @@ def test_records_without_ids_get_positional_ids_and_keep_their_metadata():
     ]
     assert grouped[1]["grouped_record_ids"] == ("group#record1",)
     assert grouped[1]["grouped_source_metadata"] == {"group#record1": {"origin": "two"}}
+
+
+def _split_halves(group_suffixes):
+    records = []
+    for half, (suffix, count) in enumerate(zip(group_suffixes, (6, 5), strict=True)):
+        record = _record(f"state/{half}", group=f"state{suffix}", state="shared")
+        record["family"] = "state"
+        record["questions"] = {
+            f"h{half}q{index}": {"type": "noul"} for index in range(count)
+        }
+        record["labels"] = {
+            f"h{half}q{index}": {"kind": "hard", "gold_idx": index % 2}
+            for index in range(count)
+        }
+        records.append(record)
+    return records
+
+
+def test_exporter_split_halves_with_distinct_groups_stay_separate_and_unchanged():
+    records = _split_halves(("/0", "/1"))
+
+    grouped = group_records(records, max_questions=10)
+
+    assert [record["id"] for record in grouped] == ["state/0", "state/1"]
+    assert [len(record["questions"]) for record in grouped] == [6, 5]
+    assert grouped == records
+    assert all("grouped_record_ids" not in record for record in grouped)
+
+
+def test_exporter_split_halves_sharing_a_group_are_merged_and_resplit():
+    records = _split_halves(("", ""))
+
+    grouped = group_records(records, max_questions=10)
+
+    assert [record["id"] for record in grouped] == [
+        "state/0#group0",
+        "state/0#group1",
+    ]
+    assert [len(record["questions"]) for record in grouped] == [10, 1]
+    assert [record["grouped_record_ids"] for record in grouped] == [
+        ("state/0", "state/1"),
+        ("state/1",),
+    ]
+
+
+class _CollidingState(str):
+    """A state string whose hash collides with every other instance."""
+
+    def __hash__(self):
+        return 0
+
+
+def test_hash_collisions_never_merge_unequal_states():
+    records = [
+        _record("one", state=_CollidingState("first")),
+        _record("two", state=_CollidingState("second")),
+        _record("three", state=_CollidingState("first")),
+    ]
+
+    grouped = group_records(records, max_questions=4)
+
+    assert [record["id"] for record in grouped] == ["one#group0", "two"]
+    assert grouped[0]["grouped_record_ids"] == ("one", "three")
+
+
+def test_structured_state_groups_with_its_compact_json_text():
+    records = [_record("one", state={"a": 1}), _record("two", state='{"a":1}')]
+
+    grouped = group_records(records, max_questions=4)
+
+    assert len(grouped) == 1
+    assert grouped[0]["grouped_record_ids"] == ("one", "two")
+
+
+def test_unchanged_records_are_new_top_level_dicts():
+    record = _record("one")
+
+    (grouped,) = group_records([record], max_questions=4)
+
+    assert grouped == record
+    assert grouped is not record
+    grouped["id"] = "changed"
+    assert record["id"] == "one"
+
+
+def test_split_canvases_do_not_alias_input_targets():
+    first, second = _record("one"), _record("two")
+
+    grouped = group_records([first, second], max_questions=1)
+
+    grouped[0]["labels"]["q"]["gold_idx"] = 9
+    grouped[1]["grouped_source_metadata"]["two"]["origin"] = "changed"
+    assert first["labels"]["q"]["gold_idx"] == 0
+    assert second["source_metadata"] == {"origin": "two"}

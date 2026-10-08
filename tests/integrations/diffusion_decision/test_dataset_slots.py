@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
 import pytest
@@ -258,3 +259,45 @@ def test_validated_cfg_model_config_overrides_reach_slot_plan(
         datasets._resolve_slot_plan(
             ChatCharacterTokenizer(), cfg, _spec(encoder=True), 256
         )
+
+
+def test_worker_processes_prepare_rows_identical_to_the_serial_path(monkeypatch):
+    cfg = _cfg("learned", count=2, ids=(7, 8))
+    spec = _spec()
+    records = [
+        make_record(f"r{index}", state=f"state {index}", question=f"q{index}")
+        for index in range(5)
+    ]
+    serial, serial_dropped = datasets._canvas_rows(
+        ChatCharacterTokenizer(), records, cfg, {"test": 2.0}, spec
+    )
+    monkeypatch.setattr(datasets, "_CANVAS_CHUNK_SIZE", 2)
+    parallel, parallel_dropped = datasets._canvas_rows(
+        ChatCharacterTokenizer(),
+        records,
+        {**cfg, "dataset_num_proc": 2},
+        {"test": 2.0},
+        spec,
+    )
+
+    assert parallel_dropped == serial_dropped == 0
+    assert [row["record"]["id"] for row in parallel] == [f"r{i}" for i in range(5)]
+    assert all(row["slot_plan"] is parallel[0]["slot_plan"] for row in parallel)
+    assert all(
+        row["record"]["state"] is record["state"]
+        for row, record in zip(parallel, records, strict=True)
+    )
+    assert parallel == serial
+    assert [_cache_bytes(row) for row in parallel] == [
+        _cache_bytes(row) for row in serial
+    ]
+
+
+def _cache_bytes(row) -> bytes:
+    from axolotl.integrations.diffusion_decision import prepared_cache
+
+    return json.dumps(
+        prepared_cache._row_to_json(row),
+        sort_keys=True,
+        default=prepared_cache._json_default,
+    ).encode()

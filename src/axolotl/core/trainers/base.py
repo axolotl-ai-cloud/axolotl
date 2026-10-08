@@ -919,6 +919,13 @@ class AxolotlTrainer(
         """
         cfg = getattr(self, "axolotl_cfg", None)
         ep_size = (getattr(cfg, "expert_parallel_size", 1) or 1) if cfg else 1
+        plugin = getattr(getattr(self.accelerator, "state", None), "fsdp_plugin", None)
+        if (
+            ep_size > 1
+            and getattr(plugin, "fsdp_version", None) == 2
+            and "FULL_STATE_DICT" in str(getattr(plugin, "state_dict_type", ""))
+        ):
+            return False
         if ep_size <= 1 and not self._is_fsdp2_checkpoint_save_enabled():
             return False
         try:
@@ -1053,6 +1060,7 @@ class AxolotlTrainer(
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
+        self._save_fsdp2_model_only_checkpoint(output_dir, state_dict)
 
         # fix for Context Parallel save: CP eval invalidates tensor storage
         # pointers, so clone to CPU to get fresh valid storage for safetensors
