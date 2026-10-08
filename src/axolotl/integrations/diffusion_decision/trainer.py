@@ -1089,6 +1089,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             recurrent_conditioning_mask=recurrent,
             update_mask=update_mask,
             kernel_options=getattr(self.axolotl_cfg, "flex_attn_compile_kwargs", None),
+            return_encoder_logits=self._encoder_ar_weight() != 0.0,
         )
         logical_rows = inputs["decision_logical_rows"].long()
         positions = inputs["decision_label_positions"].long()
@@ -1170,12 +1171,14 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         reads = torch.rand(count, device=device) < decision.read_fraction
         return torch.where(reads, torch.ones_like(times), times)
 
+    def _encoder_ar_weight(self) -> float:
+        weight = self._native_value("encoder_ar_weight")
+        return 1.0 if weight is None else float(weight)
+
     def _encoder_ar_loss(
         self, model, outputs, packed, num_items_in_batch
     ) -> torch.Tensor:
-        weight = self._native_value("encoder_ar_weight")
-        if weight is None:
-            weight = 1.0
+        weight = self._encoder_ar_weight()
         if not weight:
             return outputs.logits.new_zeros(())
         encoder_logits = getattr(outputs, "encoder_logits", None)

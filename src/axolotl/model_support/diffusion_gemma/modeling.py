@@ -55,6 +55,7 @@ class AxolotlDiffusionGemmaForBlockDiffusion(DiffusionGemmaForBlockDiffusion):
         recurrent_conditioning_mask: torch.Tensor | None = None,
         update_mask: torch.Tensor | None = None,
         kernel_options: dict | None = None,
+        return_encoder_logits: bool = True,
         **kwargs,
     ):
         if encoder_input_ids is None:
@@ -106,6 +107,7 @@ class AxolotlDiffusionGemmaForBlockDiffusion(DiffusionGemmaForBlockDiffusion):
                 recurrent_conditioning_mask=recurrent_conditioning_mask,
                 update_mask=update_mask,
                 kernel_options=kernel_options,
+                return_encoder_logits=return_encoder_logits,
             )
         output = forward_packed_encoder_canvas(
             self,
@@ -124,7 +126,13 @@ class AxolotlDiffusionGemmaForBlockDiffusion(DiffusionGemmaForBlockDiffusion):
             logits=output.logits,
             past_key_values=output.past_key_values,
             encoder_last_hidden_state=output.encoder_last_hidden_state,
-            encoder_logits=_encoder_logits(self, output.encoder_last_hidden_state),
+            # Full-vocabulary logits over every prompt token are [tokens, 262k] fp32;
+            # skip them when no encoder AR loss consumes them.
+            encoder_logits=(
+                _encoder_logits(self, output.encoder_last_hidden_state)
+                if return_encoder_logits
+                else None
+            ),
         )
 
 
@@ -315,6 +323,7 @@ def forward_packed_encoder_canvas_unroll(
     update_mask: torch.Tensor,
     past_key_values=None,
     kernel_options: dict | None = None,
+    return_encoder_logits: bool = True,
 ) -> PackedDiffusionGemmaOutput:
     """Run a packed denoising unroll inside one DDP-visible model forward."""
     encoder_last_hidden_state = None
@@ -362,7 +371,11 @@ def forward_packed_encoder_canvas_unroll(
         logits=logits,
         past_key_values=past_key_values,
         encoder_last_hidden_state=encoder_last_hidden_state,
-        encoder_logits=_encoder_logits(model, encoder_last_hidden_state),
+        encoder_logits=(
+            _encoder_logits(model, encoder_last_hidden_state)
+            if return_encoder_logits
+            else None
+        ),
         denoised_input_ids=torch.where(
             update_mask, logits.detach().argmax(-1).to(final_state.dtype), final_state
         ),

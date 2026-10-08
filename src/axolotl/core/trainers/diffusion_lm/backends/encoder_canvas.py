@@ -295,10 +295,12 @@ class EncoderCanvasBackend:
         recurrent_conditioning_mask: torch.Tensor | None = None,
         update_mask: torch.Tensor | None = None,
         kernel_options: dict | None = None,
+        return_encoder_logits: bool = True,
     ):
         """Run one packed canvas state through the native model."""
         if input_ids.shape != packed.canvas_clean_ids.shape:
             raise ValueError("packed canvas state must match canvas_clean_ids")
+        extra = {} if return_encoder_logits else {"return_encoder_logits": False}
         return model(
             encoder_input_ids=packed.encoder_input_ids,
             encoder_attention_mask=packed.encoder_attention_mask,
@@ -316,6 +318,7 @@ class EncoderCanvasBackend:
             recurrent_conditioning_mask=recurrent_conditioning_mask,
             update_mask=update_mask,
             kernel_options=kernel_options,
+            **extra,
         )
 
     @staticmethod
