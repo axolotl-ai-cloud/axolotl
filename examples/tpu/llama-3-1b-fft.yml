@@ -1,0 +1,40 @@
+base_model: meta-llama/Llama-3.2-1B-Instruct
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+
+# Full fine-tune (no adapter)
+
+# TPU-safe attention
+attn_implementation: sdpa
+
+# Precision
+bf16: true
+
+# Static shapes
+pad_to_sequence_len: true
+sequence_len: 2048
+
+dataloader_drop_last: true
+dataloader_pin_memory: false
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+
+dataset_prepared_path: ./data/tpu-fft-prepared
+output_dir: ./outputs/tpu-fft-out
+
+# Training hyperparameters
+num_epochs: 1
+micro_batch_size: 2
+gradient_accumulation_steps: 8
+learning_rate: 1e-5
+lr_scheduler: cosine
+warmup_steps: 50
+
+gradient_checkpointing: true
+
+logging_steps: 10
+eval_steps: 100
+eval_sample_packing: false
+save_safetensors: true

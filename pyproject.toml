@@ -141,6 +141,10 @@ opentelemetry = [
     "prometheus-client",
 ]
 kernels-curated = ["kernels[curated]"]
+# TPU support: install torch_xla matching the torch pin.
+# On a TPU VM the libtpu wheel is pre-installed; for other hosts run:
+#   pip install torch_xla[tpu] -f https://storage.googleapis.com/libtpu-releases/index.html
+tpu = ["torch_xla[tpu]>=2.13.0,<2.15.0"]
 
 [dependency-groups]
 dev = [
@@ -309,6 +313,15 @@ conflicts = [
     [
         { package = "axolotl" },
         { extra = "llmcompressor" },
+    ],
+    # TPU (XLA) is incompatible with GPU-only runtime packages.
+    [
+        { extra = "tpu" },
+        { extra = "vllm" },
+    ],
+    [
+        { extra = "tpu" },
+        { extra = "deepspeed" },
     ],
 ]
 
