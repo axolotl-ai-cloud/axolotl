@@ -2,6 +2,7 @@
 Mixin for correctly saving fsdp
 """
 
+import contextlib
 import os
 
 from accelerate import PartialState
@@ -288,6 +289,43 @@ class DistributedParallelMixin(Trainer):
                 target = output_dir or self.args.output_dir
                 os.makedirs(target, exist_ok=True)
                 torch.save(state_dict, os.path.join(target, "pytorch_model_fsdp.bin"))
+
+    @contextlib.contextmanager
+    def _ep_checkpoint_functions(self):
+        """Route the Trainer's FSDP checkpoint save/load through the EP-aware functions.
+
+        accelerate's FULL_STATE_DICT checkpoint gathers each expert only over its own
+        (non-ep) FSDP mesh and rank 0 writes it, so the file would hold EP group 0's
+        experts and, on resume, every EP group would load group 0's experts and optimizer
+        moments. The EP-aware functions gather the experts across ep on save and give each
+        rank its own block back on load."""
+        if not self._ep_full_param_experts():
+            yield
+            return
+        from axolotl.integrations.expert_parallel.checkpoint import (
+            ep_fsdp_checkpoint_functions,
+        )
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+        ep_group = ExpertParallelPlugin._resolve_ep_group(self.axolotl_cfg)
+        with ep_fsdp_checkpoint_functions(ep_group):
+            yield
+
+    def _save_optimizer_and_scheduler(self, output_dir):
+        with self._ep_checkpoint_functions():
+            return super()._save_optimizer_and_scheduler(output_dir)
+
+    def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
+        with self._ep_checkpoint_functions():
+            return super()._load_from_checkpoint(resume_from_checkpoint, model)
+
+    def _load_optimizer_and_scheduler(self, checkpoint):
+        with self._ep_checkpoint_functions():
+            return super()._load_optimizer_and_scheduler(checkpoint)
+
+    def _load_best_model(self):
+        with self._ep_checkpoint_functions():
+            return super()._load_best_model()
 
     def _save(self, output_dir: str | None = None, state_dict=None):
         if (
