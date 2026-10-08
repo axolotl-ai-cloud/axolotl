@@ -309,7 +309,10 @@ class DistributedParallelMixin(Trainer):
         over its own (non-ep) FSDP mesh and rank 0 writes it, so the file would hold EP
         group 0's experts and, on resume, every EP group would load group 0's experts and
         optimizer moments. The EP-aware functions gather the experts across ep on save and give each
-        rank its own block back on load."""
+        rank its own block back on load. Full-parameter and expert-LoRA checkpoints are
+        documented under "Training checkpoints and resume" in
+        src/axolotl/integrations/expert_parallel/README.md
+        (https://docs.axolotl.ai/docs/custom_integrations.html#training-checkpoints-and-resume)."""
         if not self._ep_sharded_checkpoint():
             yield
             return

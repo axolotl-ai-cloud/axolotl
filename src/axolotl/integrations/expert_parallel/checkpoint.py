@@ -31,6 +31,11 @@ and param groups load exactly as before) and then copies each rank's own block i
 tensor at a time. Because the files are full and each rank slices by its own expert
 offset, they don't depend on the ep / dp_shard layout they were saved with. Anything other
 than an FSDP2 ``FULL_STATE_DICT`` checkpoint is delegated to accelerate unchanged.
+
+The checkpoint contents, tensor layouts, the handling of checkpoints written before
+this fix, and the limits are documented under "Training checkpoints and resume"
+in src/axolotl/integrations/expert_parallel/README.md
+(https://docs.axolotl.ai/docs/custom_integrations.html#training-checkpoints-and-resume).
 """
 
 from __future__ import annotations
@@ -61,7 +66,10 @@ class EPShardedParam:
     ``dim`` is the axis packing the experts and ``rank`` the number of entries per expert
     on it: the routed expert weights are ``[E, ...]`` (dim 0, rank 1); a
     ``target_parameters`` expert LoRA is PEFT's expert-major ``lora_A`` ``[E*r, in]``
-    (dim 0, rank r) or rank-major ``lora_B`` ``[out, r*E]`` (dim 1, rank r)."""
+    (dim 0, rank r) or rank-major ``lora_B`` ``[out, r*E]`` (dim 1, rank r).
+
+    The layouts are tabulated under "What a checkpoint holds" in the expert-parallel
+    README (see the module docstring)."""
 
     fqn: str
     param: torch.nn.Parameter
@@ -225,7 +233,9 @@ def _take_full_experts(
     entries: dict, keys, sharded: EPShardedParam, stash: dict, ident
 ) -> None:
     """Swap ``entries[key]``'s full tensor for this rank's block (the shape torch's loader
-    expects) and stash the full one."""
+    expects) and stash the full one. A tensor holding only one EP group's experts comes
+    from a checkpoint written before this fix and is refused; recovery is documented
+    under "Checkpoints from earlier versions" in the expert-parallel README."""
     for key in keys:
         value = entries.get(key)
         if not isinstance(value, torch.Tensor) or not sharded.holds_experts(value):
@@ -532,7 +542,11 @@ def load_fsdp_optimizer(
 @contextmanager
 def ep_fsdp_checkpoint_functions(ep_group):
     """Point ``transformers.trainer``'s FSDP checkpoint functions at the EP-aware ones for
-    the duration of the block (the Trainer calls them by their module-global names)."""
+    the duration of the block (the Trainer calls them by their module-global names).
+
+    Behaviour and limits: "Training checkpoints and resume" in
+    src/axolotl/integrations/expert_parallel/README.md
+    (https://docs.axolotl.ai/docs/custom_integrations.html#training-checkpoints-and-resume)."""
     import functools
 
     import transformers.trainer as hf_trainer
