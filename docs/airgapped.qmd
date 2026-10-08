@@ -1,0 +1,958 @@
+---
+title: "Offline and Air-Gapped Deployment"
+description: Install Axolotl and train on a machine with no internet access, from a bundle built on a connected host.
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+execute:
+  enabled: false
+---
+
+This guide covers an offline install of Axolotl and training on a machine with no internet access, whether that machine is fully air-gapped, sits behind a firewall with no package index or Hugging Face Hub access, or is a compute node on a Slurm or similar cluster where only the login node can reach the internet. For a normal online install, see [Installation](installation.qmd).
+
+## Overview {#sec-airgap-overview}
+
+The guide uses two hosts. An online staging host fetches and builds everything the target will need: the repo, `uv`, a managed Python interpreter, the Python wheels, the model, the dataset, the Hub kernels and, optionally, the tokenized dataset. An offline target host receives that as one bundle, unpacks it, installs from local files only, and trains.
+
+```
+ ONLINE staging host                                  OFFLINE target host
+ ┌────────────────────────────┐                      ┌───────────────────────────┐
+ │ fetch uv + Python          │                      │ unbundle + verify         │
+ │ build wheelhouse           │   tar + SHA256SUMS   │ install uv, Python, venv  │
+ │ fetch HF cache + kernels   │ ------------------>  │ install from wheelhouse   │
+ │ (optional) preprocess      │  removable media /   │ set offline env           │
+ │ bundle + checksum          │  one-way transfer    │ axolotl train config.yaml │
+ └────────────────────────────┘                      └───────────────────────────┘
+```
+
+The worked example uses Python 3.14, torch 2.14.0 built for CUDA 13.0 (`cu130`), and the demo config `examples/llama-3/lora-1b.yml`. That config trains a LoRA on `NousResearch/Llama-3.2-1B` with the `teknium/GPT4-LLM-Cleaned` dataset and `attn_implementation: flash_attention_2`.
+
+### Prerequisites {#sec-airgap-prereqs}
+
+The target host needs:
+
+- Linux on x86_64 or aarch64, with glibc 2.28 or newer (torch and many other wheels are `manylinux_2_28`).
+- An NVIDIA driver that supports CUDA 13.0 (R580 or newer).
+- A C compiler (`gcc` or `cc`). Triton compiles a small launcher at runtime.
+- No system Python. The bundle supplies one.
+
+The staging host needs:
+
+- Internet access, `git` and `curl`.
+- Free disk of roughly 15-20 GB for the bundle (an estimate; check with `du -sh "$BUNDLE"`), plus the same again for the tarball.
+- A C compiler and Python build tools, to build the few packages that have no Python 3.14 wheel. If the staging architecture differs from the target's, you also need a builder of the target architecture for `zstandard` (an arm64 machine or container for an aarch64 target).
+
+::: {.callout-note}
+Some dependencies are x86_64 only in this dependency set: DeepSpeed, xformers, torchao and flash-linear-attention (the `fla` extra). The demo config needs none of them. The bundle also carries the extras the Docker image ships, listed in [Resolve the pins](#sec-wheelhouse-resolve).
+:::
+
+### Quick reference {#sec-airgap-quickref}
+
+The fastest path: export the [shared variables](#sec-airgap-variables), pick a kernel from the [table by GPU](#sec-airgap-kernels), and run the staging script. It executes every staging command in this guide in order, into the [bundle layout](#sec-airgap-layout) described below:
+
+```{.bash}
+BUNDLE=$HOME/axolotl-airgap AXOLOTL_REF=$AXOLOTL_REF TARGET_ARCH=x86_64 KERNELS="fa2 fa3" \
+  scripts/airgap/build_bundle.sh                 # every staging step
+scripts/airgap/build_bundle.sh hf_cache manifest archive   # rerun a subset
+```
+
+`EXTRAS` defaults to `fla,ringmaster,ray,deepspeed` (`ringmaster,ray` for an aarch64 target) and `WITH_CCE=1` builds the cut-cross-entropy wheel; set `PREPROCESS=0` to skip tokenizing on staging and `SPLIT_SIZE=4000M` to split the archive. When the staging and target architectures differ, the script downloads the wheels but leaves the `zstandard` and DeepSpeed builds to you, as described in [Build zstandard](#sec-wheelhouse-zstd).
+
+The same work, condensed to one command per step. Each one is explained in full in the sections that follow, which is where to go when a step fails or your target differs from the worked example:
+
+```{.bash}
+# ---------- staging host (online) ----------
+# toolchain
+git clone https://github.com/axolotl-ai-cloud/axolotl.git "$BUNDLE/axolotl" && git -C "$BUNDLE/axolotl" checkout "$AXOLOTL_REF"
+curl -LsSf "https://astral.sh/uv/$UV_VERSION/install.sh" | UV_NO_MODIFY_PATH=1 sh
+curl -fLO "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz"   # into $BUNDLE/uv
+curl -fL -o "$BUNDLE/python-mirror/$PBS_RELEASE/cpython-$PY_VERSION+$PBS_RELEASE-..." "https://releases.astral.sh/..."
+# wheelhouse
+uv pip compile pyproject.toml --extra fla --extra ringmaster --extra ray --extra deepspeed --python-version 3.14 --python-platform $TARGET_ARCH-manylinux_2_28 --torch-backend cu130 -o requirements.target.txt
+uvx pip download --no-deps --only-binary=:all: --platform ... -r requirements.binary.txt -d wheelhouse
+uvx --python 3.14 pip wheel --no-deps -w wheelhouse <pure-python sdists>     # plus zstandard and deepspeed on a target-arch builder
+uv build --wheel --python 3.14 --out-dir wheelhouse                           # axolotl itself
+uvx --python 3.14 pip wheel --no-deps -w wheelhouse "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.0-rc0"
+# HF cache (HF_HOME=$BUNDLE/hf)
+hf download NousResearch/Llama-3.2-1B --exclude 'original/*'
+hf download teknium/GPT4-LLM-Cleaned --repo-type dataset
+hf download kernels-community/flash-attn2 --repo-type kernel --revision v3 --include 'build/<variant>/*'
+axolotl preprocess config.yaml --dataset-prepared-path "$BUNDLE/prepared"   # optional
+# bundle
+MANIFEST.txt, SYMLINKS.txt, SHA256SUMS; tar -cf axolotl-airgap.tar; split -b 4000M (optional)
+
+# ---------- target host (offline) ----------
+tar -C /opt/axolotl/bundle --strip-components=1 -xf axolotl-airgap.tar && sha256sum -c SHA256SUMS
+tar -xzf uv/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz -C /opt/axolotl/bin --strip-components=1
+uv python install 3.14.4 --mirror file:///opt/axolotl/bundle/python-mirror --no-bin
+uv venv --python 3.14 --managed-python /opt/axolotl/venv
+uv pip sync --offline --no-index --no-build --find-links wheelhouse requirements.target.txt
+uv pip install --offline --no-index --no-build --no-deps wheelhouse/axolotl-*.whl wheelhouse/cut_cross_entropy-*.whl
+source /opt/axolotl/airgap.env && axolotl train config.yaml
+```
+
+### Bundle layout {#sec-airgap-layout}
+
+Everything that ships lives under one directory, `$BUNDLE`. On the target it is unpacked to `/opt/axolotl/bundle`, and the toolchain is installed beside it under `$PREFIX=/opt/axolotl`.
+
+```
+$BUNDLE/                              (target: /opt/axolotl/bundle)
+├── axolotl/                          pinned clone; supplies examples/ and configs
+├── uv/                               uv-<arch>-unknown-linux-gnu.tar.gz + .sha256
+├── python-mirror/<release>/          python-build-standalone tarball, laid out as a uv mirror
+├── wheelhouse/                       every wheel for the target, including axolotl-*.whl
+├── requirements.target.txt           pins resolved for the target platform
+├── hf/                               HF_HOME: model, tokenizer, dataset and Hub kernels in hf/hub/
+├── prepared/<hash>/                  optional: tokenized dataset
+├── config.yaml                       the training config, identical on both hosts
+├── MANIFEST.txt  SYMLINKS.txt  SHA256SUMS
+```
+
+On the target:
+
+```
+/opt/axolotl/
+├── bundle/        the unpacked $BUNDLE
+├── bin/           uv, uvx
+├── python/        uv-managed CPython 3.14
+├── venv/          the Axolotl virtual environment
+├── cache/         uv, triton, inductor caches (writable)
+└── airgap.env     runtime environment, sourced before every run
+```
+
+### Shared variables {#sec-airgap-variables}
+
+Every later section uses these. Set them in each shell on the staging host.
+
+```{.bash}
+export AXOLOTL_REF=19b890c537490f38efb1b121b7b37f7234e715f2   # pinned commit
+export UV_VERSION=0.11.7          # same uv on staging and in the bundle
+export PY_VERSION=3.14.4          # confirmed in "Fetch the managed Python"
+export PBS_RELEASE=20260414       # python-build-standalone release carrying $PY_VERSION
+export TARGET_ARCH=x86_64         # the TARGET's architecture: x86_64 or aarch64
+export BUNDLE=$HOME/axolotl-airgap
+```
+
+::: {.callout-important}
+Pin `AXOLOTL_REF` to a commit whose `pyproject.toml` matches the pins this guide uses (`transformers==5.18.0`, `kernels>=0.17,<0.18`). The example commit is on `main` (`VERSION` 0.20.1.dev0). The `v0.20.0` tag pins `transformers==5.17.0` and `kernels>=0.16,<0.17`, so check `pyproject.toml` at your ref before relying on the versions below.
+:::
+
+### Choose the attention kernel by GPU {#sec-airgap-kernels}
+
+Axolotl resolves `flash_attention_N` to a Hugging Face Hub kernel at runtime, so the kernel must be in the bundled HF cache. Pick the row that matches the target's GPU:
+
+| GPU generation | `attn_implementation` | Hub kernel and branch | Variant at torch 2.14 + cu130 |
+|---|---|---|---|
+| Ampere / Ada | `flash_attention_2` | `kernels-community/flash-attn2` `v3` | `torch-stable-abi210-cu130-<x86_64\|aarch64>-linux` |
+| Hopper | `kernels-community/flash-attn3` | `kernels-community/flash-attn3` `v1` | `torch-stable-abi29-cu130-x86_64-linux` (no cu130 aarch64 build) |
+| Blackwell | `flash_attention_4` | `kernels-community/flash-attn4` `v0` | `torch-cuda` (one universal variant) |
+
+The demo config uses `flash_attention_2`, which also runs on Hopper and Blackwell.
+
+- The branch for each repo is the major version transformers pins in `FLASH_ATTN_KERNEL_VERSIONS` ([modeling_flash_attention_utils.py](https://github.com/huggingface/transformers/blob/469230357aab0f2b303b0d638c1f8d06edb14184/src/transformers/modeling_flash_attention_utils.py#L73-L81)): `flash-attn2` 3, `flash-attn3` 1, `flash-attn4` 0. Check that table at your pinned transformers version before staging.
+- For Hopper, set `attn_implementation: kernels-community/flash-attn3` (the hub-kernel path) rather than `flash_attention_3`. The canonical name falls back to `kernels-community/vllm-flash-attn3`, a different repo, which would then be the one the target needs. The `flash-attn3` repo also has a `v2` branch, which the version-1 lookup does not accept.
+- Hopper on aarch64 (GH200) has no cu130 FA3 build. Use `flash_attention_2` or `sdpa` there.
+- FA4 needs extra Python packages (`einops`, `apache-tvm-ffi`, `nvidia-cutlass-dsl[cu13]`) that are not Axolotl dependencies. See [Build a wheelhouse](#sec-wheelhouse).
+- Axolotl's config pre-flight check covers only the canonical names `flash_attention_2` and `flash_attention_3`. With a hub-kernel path or `flash_attention_4`, a missing kernel surfaces at model load rather than at validation.
+
+## Stage the toolchain: repo, uv, and Python {#sec-staging-toolchain}
+
+These steps run on the online staging host. They put the pinned repo, a `uv` binary and a managed Python interpreter, both for the target, into the bundle, so the target needs neither internet nor a system Python.
+
+```{.bash}
+mkdir -p "$BUNDLE"/{uv,python-mirror,wheelhouse}
+```
+
+### Clone the repo at a pinned ref {#sec-staging-clone}
+
+```{.bash}
+git clone https://github.com/axolotl-ai-cloud/axolotl.git "$BUNDLE/axolotl"
+git -C "$BUNDLE/axolotl" checkout "$AXOLOTL_REF"
+git -C "$BUNDLE/axolotl" rev-parse HEAD
+```
+
+The clone supplies `examples/` and is the source for the Axolotl wheel. It keeps `.git` on purpose: the package version is derived with `setuptools_scm`, and the checkout lets you re-verify the commit on the target. If bundle size matters, fetch just the one commit:
+
+```{.bash}
+git init "$BUNDLE/axolotl"
+git -C "$BUNDLE/axolotl" remote add origin https://github.com/axolotl-ai-cloud/axolotl.git
+git -C "$BUNDLE/axolotl" fetch --depth 1 origin "$AXOLOTL_REF"
+git -C "$BUNDLE/axolotl" checkout FETCH_HEAD
+```
+
+::: {.callout-warning}
+UNVERIFIED: the shallow fetch-by-SHA recipe was not run for this guide. GitHub allows fetching by SHA. Building the wheel from a `git archive` tree without `.git` is also untested and may need `SETUPTOOLS_SCM_PRETEND_VERSION`.
+:::
+
+### Install uv on the staging host {#sec-staging-uv}
+
+Use the version-pinned installer so staging and target run the same `uv`:
+
+```{.bash}
+curl -LsSf "https://astral.sh/uv/$UV_VERSION/install.sh" | \
+  UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
+export PATH="$HOME/.local/bin:$PATH"
+uv --version     # must print $UV_VERSION
+```
+
+`UV_INSTALL_DIR` and `UV_NO_MODIFY_PATH=1` are optional. They keep the installer from editing your shell profile.
+
+### Fetch the uv binary for the target {#sec-staging-target-uv}
+
+The target gets the standalone release tarball. It is a plain archive holding `uv-<arch>-unknown-linux-gnu/{uv,uvx}`, so nothing runs an installer on the target.
+
+```{.bash}
+cd "$BUNDLE/uv"
+BASE="https://github.com/astral-sh/uv/releases/download/$UV_VERSION"
+curl -fLO "$BASE/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz"
+curl -fLO "$BASE/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz.sha256"
+sha256sum -c "uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz.sha256"
+```
+
+::: {.callout-important}
+The bundled `uv` must be the same version as the `uv` on staging. `uv` embeds its Python download metadata, so the staging `uv` decides which interpreter build you fetch next, and a different `uv` on the target may not recognise the file you bundled.
+:::
+
+### Fetch the managed Python for the target {#sec-staging-target-python}
+
+Python comes from python-build-standalone through `uv`. List the 3.14 builds for every platform and pick the one for your target:
+
+```{.bash}
+uv python list 3.14 --all-platforms --all-arches --only-downloads --show-urls \
+  | grep -E "linux-$TARGET_ARCH-gnu[[:space:]]"
+```
+
+The pattern keeps the plain `x86_64` or `aarch64` build. On x86_64 the list also carries `x86_64_v2`, `x86_64_v3` and `x86_64_v4` builds, which this guide does not use. With `uv` 0.11.7 the URL is:
+
+```
+https://releases.astral.sh/github/python-build-standalone/releases/download/20260414/cpython-3.14.4%2B20260414-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
+```
+
+Confirm `PY_VERSION` and `PBS_RELEASE` against that URL, then download it into a mirror layout. The URL contains `%2B`, but the file on disk must be named with a literal `+`:
+
+```{.bash}
+PBS_FILE="cpython-$PY_VERSION+$PBS_RELEASE-$TARGET_ARCH-unknown-linux-gnu-install_only_stripped.tar.gz"
+mkdir -p "$BUNDLE/python-mirror/$PBS_RELEASE"
+curl -fL -o "$BUNDLE/python-mirror/$PBS_RELEASE/$PBS_FILE" \
+  "https://releases.astral.sh/github/python-build-standalone/releases/download/$PBS_RELEASE/cpython-$PY_VERSION%2B$PBS_RELEASE-$TARGET_ARCH-unknown-linux-gnu-install_only_stripped.tar.gz"
+```
+
+`uv python install --mirror file://...` expects this `<mirror>/<release>/<file>` layout. The `--mirror` option replaces the `https://github.com/astral-sh/python-build-standalone/releases/download` prefix. The target-side install is in [Install offline on the target](#sec-install-offline).
+
+::: {.callout-note}
+The guide downloads the interpreter with `curl` because `uv python install cpython-3.14-linux-aarch64-gnu` installing a foreign-architecture interpreter on an x86_64 host is unverified. `uv python list cpython-3.14-linux-aarch64-gnu --only-downloads --show-urls` does print the aarch64 URL from an x86_64 host. The mirror install was verified for x86_64 only.
+:::
+
+### Install Python 3.14 on staging {#sec-staging-python}
+
+Staging needs its own Python 3.14 to build wheels. It is built for the staging architecture and stays out of the bundle:
+
+```{.bash}
+uv python install "$PY_VERSION"
+```
+
+## Build a wheelhouse for the target platform {#sec-wheelhouse}
+
+The wheelhouse is built on staging and holds a wheel for every pinned dependency, built for the target platform, which may differ from staging in CPU architecture and GPU.
+
+`uv` has no `uv pip download` subcommand, so the work is split:
+
+1. `uv pip compile` resolves the full pin list for the target.
+2. `pip`, run through `uvx`, downloads the binary wheels.
+3. `pip wheel` and `uv build` build the few packages that have no usable wheel, plus Axolotl itself.
+
+### Resolve the pins for the target {#sec-wheelhouse-resolve}
+
+The bundle should carry the same extras as the published Docker image, which installs `deepspeed,optimizers,ray,fla,ringmaster` on amd64 and `optimizers,ray,ringmaster` on arm64 (`docker/Dockerfile-uv`), plus the cut-cross-entropy plugin from git. This guide ships four of them and the plugin:
+
+| Extra | What it enables | Wheels for cp314 |
+|---|---|---|
+| `fla` | flash-linear-attention with TileLang kernels (GDN, KDA, Mamba-style mixers; see [FLA and Mamba](fla-mamba.qmd)) | binary, x86_64 only |
+| `ringmaster` | context parallelism ([Sequence parallelism](sequence_parallelism.qmd)) | pure Python |
+| `ray` | the Ray launcher ([Ray integration](ray-integration.qmd)) | binary |
+| `deepspeed` | ZeRO 1 to 3 and CPU offload ([Multi-GPU](multi-gpu.qmd)) | sdist only, built in [Build DeepSpeed](#sec-wheelhouse-deepspeed), x86_64 only |
+| cut-cross-entropy | the `cut_cross_entropy` plugin, installed from a git tag | built in [Build the cut-cross-entropy wheel](#sec-wheelhouse-cce) |
+
+```{.bash}
+cd "$BUNDLE/axolotl"
+uv pip compile pyproject.toml \
+  --extra fla --extra ringmaster --extra ray --extra deepspeed \
+  --python-version 3.14 \
+  --python-platform "$TARGET_ARCH-manylinux_2_28" \
+  --torch-backend cu130 \
+  --no-annotate --no-header \
+  -o "$BUNDLE/requirements.target.txt"
+```
+
+The output pins `torch==2.14.0+cu130`, the matching `nvidia-*-cu13` packages, `transformers==5.18.0` and `kernels==0.17.2`. The base dependency set resolves to 257 pins; `fla`, `ringmaster` and `ray` add eight more (`axolotl-ringmaster`, `ray`, `tilelang`, `apache-tvm-ffi`, `ml-dtypes`, `msgpack`, `tensorboardx`, `z3-solver`), and `deepspeed` adds `deepspeed`, `deepspeed-kernels`, `hjson`, `ninja`, `psutil` and `py-cpuinfo`. The output does not include Axolotl itself, which is built later. `UV_TORCH_BACKEND=cu130` is equivalent to `--torch-backend cu130`, but use it only on staging; [Install offline on the target](#sec-install-offline) explains why it must be unset there.
+
+For an aarch64 target drop `--extra fla` and `--extra deepspeed`: `deepspeed-kernels` ships only x86_64 wheels, and the markers in `pyproject.toml` already exclude `flash-linear-attention`, `fla-core`, `xformers` and `torchao` there.
+
+A Blackwell target using FA4 also needs the kernel's Python dependencies, passed as a second input file:
+
+```{.bash}
+printf '%s\n' 'nvidia-cutlass-dsl[cu13]' apache-tvm-ffi einops > "$BUNDLE/kernel-deps.in"
+
+uv pip compile pyproject.toml "$BUNDLE/kernel-deps.in" \
+  --python-version 3.14 \
+  --python-platform "$TARGET_ARCH-manylinux_2_28" \
+  --torch-backend cu130 \
+  --no-annotate --no-header \
+  -o "$BUNDLE/requirements.target.txt"
+```
+
+The `[cu13]` extra selects `nvidia-cutlass-dsl-libs-cu13`. Plain `nvidia-cutlass-dsl` resolves the CUDA 12 libraries. Ampere, Ada and Hopper targets skip this, because the FA2 and FA3 kernels have no Python dependencies.
+
+### Split out the packages without wheels {#sec-wheelhouse-split}
+
+On Python 3.14, seven pinned packages have no usable wheel for the target. Six of them are pure-Python sdists: `langdetect`, `rouge-score`, `sqlitedict`, `word2number`, `axolotl-contribs-lgpl` and `axolotl-contribs-mit`. The seventh, `zstandard==0.22.0`, is a C extension with wheels only up to cp312. With the DeepSpeed extra, `deepspeed` (sdist only) is an eighth.
+
+```{.bash}
+NOWHEEL='^(zstandard|langdetect|rouge-score|sqlitedict|word2number|axolotl-contribs-lgpl|axolotl-contribs-mit|deepspeed)=='
+grep -v -E -i "$NOWHEEL" "$BUNDLE/requirements.target.txt" > "$BUNDLE/requirements.binary.txt"
+grep    -E -i "$NOWHEEL" "$BUNDLE/requirements.target.txt"   # built in the steps below
+```
+
+If a later Axolotl release adds another package with no wheel, the download below fails on it. Add it to the filter and build it.
+
+### Download the binary wheels {#sec-wheelhouse-download}
+
+`pip` does not expand a platform tag to older glibc tags, so a wheel tagged only `manylinux_2_17` is skipped unless that tag is passed too. Pass every tag explicitly:
+
+```{.bash}
+PLAT=()
+for v in $(seq 28 -1 5); do PLAT+=(--platform "manylinux_2_${v}_$TARGET_ARCH"); done
+PLAT+=(--platform "manylinux2014_$TARGET_ARCH"
+       --platform "manylinux2010_$TARGET_ARCH"
+       --platform "manylinux1_$TARGET_ARCH")
+
+uvx pip download --no-deps --only-binary=:all: \
+  "${PLAT[@]}" \
+  --python-version 3.14 --implementation cp \
+  --abi cp314 --abi abi3 --abi none \
+  --extra-index-url https://download.pytorch.org/whl/cu130 \
+  -r "$BUNDLE/requirements.binary.txt" \
+  -d "$BUNDLE/wheelhouse"
+```
+
+`--abi none` is needed for `py3-none-any` and `py39-none` wheels. One package without a matching wheel aborts the whole download, which is why the sdist-only packages were filtered out first.
+
+The full tag list matters beyond DeepSpeed: `audioop-lts` and `crc32c`, for example, publish wheels tagged `manylinux1`, `manylinux_2_5` and `manylinux_2_28` together, and `deepspeed-kernels` ships only a `manylinux1_x86_64` wheel. The complete download for an x86_64 target (257 pins, about 3.3 GB) was run end to end with this command.
+
+### Build the pure-Python wheels {#sec-wheelhouse-purepy}
+
+These build to `py3-none-any` wheels, which work on any target architecture:
+
+```{.bash}
+uvx --python 3.14 pip wheel --no-deps -w "$BUNDLE/wheelhouse" \
+  langdetect==1.0.9 word2number==1.1 sqlitedict==2.1.0 rouge-score==0.1.2 \
+  axolotl-contribs-lgpl==0.0.7 axolotl-contribs-mit==0.0.6
+```
+
+### Build zstandard {#sec-wheelhouse-zstd}
+
+`zstandard==0.22.0` produces an architecture-specific wheel, so build it on a host or container of the target architecture with Python 3.14 and a C compiler. If staging is the same architecture as the target, build it on staging:
+
+```{.bash}
+uv venv --seed --python 3.14 /tmp/zstd-build
+/tmp/zstd-build/bin/python -m pip install setuptools wheel cffi
+/tmp/zstd-build/bin/python -m pip wheel --no-deps --no-build-isolation \
+  -w "$BUNDLE/wheelhouse" zstandard==0.22.0
+```
+
+The build takes several minutes (about 7.5 on an x86_64 test host) and produces `zstandard-0.22.0-cp314-cp314-linux_<arch>.whl`. If you built it elsewhere, copy the wheel into `$BUNDLE/wheelhouse`.
+
+::: {.callout-important}
+Build without isolation. With isolation, the build pulls an old pinned `cffi` that fails on Python 3.14 with `undefined symbol: _PyErr_WriteUnraisableMsg`. The build venv must already contain `setuptools`, `wheel` and a current `cffi`.
+:::
+
+### Build DeepSpeed (optional, x86_64 only) {#sec-wheelhouse-deepspeed}
+
+`deepspeed==0.19.7` ships only an sdist and imports torch while building, so it gets its own build venv:
+
+```{.bash}
+uv venv --seed --python 3.14 /tmp/ds-build
+uv pip install --python /tmp/ds-build/bin/python --torch-backend cu130 \
+  setuptools wheel ninja torch==2.14.0
+DS_BUILD_OPS=0 /tmp/ds-build/bin/python -m pip wheel --no-deps --no-build-isolation \
+  -w "$BUNDLE/wheelhouse" deepspeed==0.19.7
+```
+
+With `DS_BUILD_OPS=0` the build takes about a minute and produces `deepspeed-0.19.7-py3-none-any.whl`, a pure-Python wheel with none of the CUDA or C++ ops compiled. ZeRO stages 1 to 3 with the optimizer that Axolotl builds (`adamw_torch` and friends) need none of them. The configs under `deepspeed_configs/` define no DeepSpeed optimizer, and the offload ones set `zero_force_ds_cpu_optimizer: false` so that offload also runs on the torch optimizer. An op is JIT-compiled only when something asks for it, for example `DeepSpeedCPUAdam` or `FusedAdam` configured through an `optimizer` block in the DeepSpeed JSON. A JIT build needs `nvcc`, `ninja` (in the wheelhouse) and a C++ compiler on the target, with `TORCH_EXTENSIONS_DIR` pointing at a writable directory. If you rely on such an op, prebuild it on staging instead: set `DS_BUILD_CPU_ADAM=1` or `DS_BUILD_FUSED_ADAM=1` in place of `DS_BUILD_OPS=0`, with `TORCH_CUDA_ARCH_LIST` set to the target GPU, and expect a platform-specific wheel that is only valid for that CUDA and torch build.
+
+::: {.callout-warning}
+UNVERIFIED: the `DS_BUILD_OPS=0` build was run on x86_64 for this guide; prebuilding ops with `DS_BUILD_*=1` was not.
+:::
+
+### Build the Axolotl wheel {#sec-wheelhouse-axolotl}
+
+The target installs Axolotl from a built wheel rather than with `-e .`. An editable install would also need `setuptools>=64`, `wheel` and `setuptools_scm>=8` in the wheelhouse and `--no-build-isolation`.
+
+```{.bash}
+cd "$BUNDLE/axolotl"
+uv build --wheel --python 3.14 --out-dir "$BUNDLE/wheelhouse"
+```
+
+This produces `axolotl-<version>-py3-none-any.whl`, for example `axolotl-0.20.1.dev0-py3-none-any.whl`.
+
+### Build the cut-cross-entropy wheel {#sec-wheelhouse-cce}
+
+The Docker image installs the `cut_cross_entropy` plugin's backend from a git tag (`scripts/cutcrossentropy_install.py` prints the exact requirement for the installed torch). It is not a pyproject extra, so build it separately:
+
+```{.bash}
+uvx --python 3.14 pip wheel --no-deps -w "$BUNDLE/wheelhouse" \
+  "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.0-rc0"
+```
+
+This produces `cut_cross_entropy-25.5.2-py3-none-any.whl`. Its dependencies (`torch`, `triton`, `transformers`) are already pinned in the wheelhouse, so the target installs it with `--no-deps`. Check the tag in `scripts/cutcrossentropy_install.py` at your `AXOLOTL_REF`, because it moves with torch support.
+
+### Check the wheelhouse {#sec-wheelhouse-check}
+
+Every pin should have a wheel:
+
+```{.bash}
+grep '==' "$BUNDLE/requirements.target.txt" | cut -d= -f1 | sed 's/\[.*//' | while read -r name; do
+  norm=$(echo "$name" | tr 'A-Z.-' 'a-z__')
+  ls "$BUNDLE/wheelhouse" | tr 'A-Z.-' 'a-z__' | grep -q "^${norm}-" || echo "MISSING: $name"
+done
+grep -c '==' "$BUNDLE/requirements.target.txt"   # pins
+ls "$BUNDLE/wheelhouse"/*.whl | wc -l             # pins + 2 (axolotl, cut-cross-entropy)
+du -sh "$BUNDLE/wheelhouse"
+```
+
+If you resolved with `--extra deepspeed` but skipped the DeepSpeed build, the loop reports `MISSING: deepspeed`. The loop checks only `requirements.target.txt`, so confirm `axolotl-*.whl` and `cut_cross_entropy-*.whl` by eye.
+
+::: {.callout-warning}
+Do not use `uv pip compile --generate-hashes` with `--require-hashes`. The wheels built locally (`zstandard`, the pure-Python sdists and Axolotl) will not match the PyPI hashes. Integrity is covered by the bundle's `SHA256SUMS`.
+:::
+
+## Fetch model, dataset, and Hub kernels into a portable HF cache {#sec-hf-assets}
+
+Still on staging, build a self-contained Hugging Face cache at `$BUNDLE/hf`. The target uses it as `HF_HOME`.
+
+### Set up the staging tools environment {#sec-hf-tools}
+
+The `hf` and `kernels` CLIs and `axolotl preprocess` need an Axolotl environment on staging. It stays out of the bundle.
+
+If staging has the same architecture as the target, install from the wheelhouse, which also tests it:
+
+```{.bash}
+unset UV_TORCH_BACKEND
+uv venv --python "$PY_VERSION" "$HOME/.venv-staging"
+source "$HOME/.venv-staging/bin/activate"
+uv pip sync --offline --no-index --no-build --find-links "$BUNDLE/wheelhouse" "$BUNDLE/requirements.target.txt"
+uv pip install --offline --no-index --no-build --no-deps "$BUNDLE"/wheelhouse/axolotl-*.whl
+```
+
+If the architectures differ, the wheelhouse cannot be installed on staging. Install the same Axolotl wheel online instead. Python 3.12 avoids the cp314 source builds:
+
+```{.bash}
+uv venv --python 3.12 "$HOME/.venv-staging"
+source "$HOME/.venv-staging/bin/activate"
+uv pip install --torch-backend cu130 "$BUNDLE"/wheelhouse/axolotl-*.whl
+```
+
+The staging environment must run the same Axolotl version as the target, because the version feeds the prepared-data hash.
+
+### Point a fresh cache at the bundle {#sec-hf-cache}
+
+```{.bash}
+export HF_HOME=$BUNDLE/hf
+unset HF_HUB_CACHE          # an explicit HF_HUB_CACHE overrides HF_HOME
+mkdir -p "$HF_HOME"
+```
+
+::: {.callout-important}
+`HF_HUB_CACHE` takes precedence over `HF_HOME`. If your shell profile sets it, downloads land outside the bundle and the bundle is silently missing them. Unset it, or set `HF_HUB_CACHE=$HF_HOME/hub`. Keep this shell for every command in this section, including `axolotl preprocess`.
+:::
+
+### Model and tokenizer {#sec-hf-model}
+
+```{.bash}
+hf download NousResearch/Llama-3.2-1B --exclude 'original/*'
+cat "$HF_HOME/hub/models--NousResearch--Llama-3.2-1B/refs/main"
+```
+
+`--exclude 'original/*'` skips a second 2.47 GB copy of the weights. What remains is `config.json`, `generation_config.json`, `model.safetensors`, `tokenizer.json`, `tokenizer_config.json` and `special_tokens_map.json`.
+
+Do not pass `--revision <sha>`. A download without `--revision` writes `refs/main`, which is how `from_pretrained("NousResearch/Llama-3.2-1B")` resolves the repo by name offline. A sha-only download leaves the snapshot on disk without `refs/main`, so the name does not resolve. The manifest records the commit instead.
+
+### Dataset {#sec-hf-dataset}
+
+```{.bash}
+hf download teknium/GPT4-LLM-Cleaned --repo-type dataset
+cat "$HF_HOME/hub/datasets--teknium--GPT4-LLM-Cleaned/refs/main"
+```
+
+Leave out `--revision` here too. To pin a dataset revision, set `revision:` on the entry under `datasets:` in the config.
+
+### Hub kernels {#sec-hf-kernels}
+
+Offline, `get_kernel(repo, version=N)` resolves the version by reading `<cache>/kernels--<org>--<name>/refs/vN`. Only a download by branch name (`--revision vN`) writes that file. Download just the variant the target needs (see the [kernel table](#sec-airgap-kernels)):
+
+```{.bash}
+# FA2 (demo config). x86_64 target; for aarch64 use ...-cu130-aarch64-linux
+hf download kernels-community/flash-attn2 --repo-type kernel --revision v3 \
+  --include 'build/torch-stable-abi210-cu130-x86_64-linux/*'
+
+# FA3 (Hopper, x86_64 only)
+hf download kernels-community/flash-attn3 --repo-type kernel --revision v1 \
+  --include 'build/torch-stable-abi29-cu130-x86_64-linux/*'
+
+# FA4 (Blackwell)
+hf download kernels-community/flash-attn4 --repo-type kernel --revision v0 \
+  --include 'build/torch-cuda/*'
+
+cat "$HF_HOME/hub/kernels--kernels-community--flash-attn2/refs/v3"   # commit for the manifest
+```
+
+Branch commits and variant names change over time. Check them at staging time:
+
+```{.bash}
+kernels versions kernels-community/flash-attn2
+kernels info kernels-community/flash-attn4 --version 0 --json   # includes python_depends
+```
+
+`kernels versions` judges compatibility against the staging host, so read the variant names and ignore its checkmarks.
+
+::: {.callout-note}
+Do not use `kernels download` here. It fetches by commit sha and does not write `refs/vN`, so the kernel is not found offline. Without `--all-variants` it also fetches only the staging host's variant. `kernels lock` needs a `[tool.kernels.dependencies]` table, which Axolotl's `pyproject.toml` does not define.
+
+The resolver picks the variant that matches the machine it runs on. Do not smoke-test with `get_kernel` on a staging host of a different architecture or CUDA version, because it fails even when the bundle is correct. Test on the target instead (see [Smoke test](#sec-target-smoke)).
+:::
+
+Kernels live in the same cache as the model (`$HF_HOME/hub`) in this guide. `hf download` ignores `KERNELS_CACHE`, so if you want a separate kernel cache, pass `--cache-dir "$KERNELS_CACHE"` to every kernel download above, ship that directory, and set `KERNELS_CACHE` to the same path on the target.
+
+### Optional: preprocess on staging {#sec-hf-preprocess}
+
+Shipping tokenized data skips tokenization on the target and avoids loading the raw dataset offline. Copy the example config into the bundle and set `dataset_prepared_path` to the path that will exist on the target:
+
+```{.bash}
+cp "$BUNDLE/axolotl/examples/llama-3/lora-1b.yml" "$BUNDLE/config.yaml"
+sed -i 's|^dataset_prepared_path:.*||' "$BUNDLE/config.yaml"
+echo 'dataset_prepared_path: /opt/axolotl/bundle/prepared' >> "$BUNDLE/config.yaml"
+
+cd "$BUNDLE"
+axolotl preprocess config.yaml --dataset-prepared-path "$BUNDLE/prepared"
+ls "$BUNDLE/prepared"        # expect one <hash>/ directory
+```
+
+The CLI flag redirects output on staging only. `dataset_prepared_path` is not part of the hash, so the target finds the same `<hash>/` under `/opt/axolotl/bundle/prepared`.
+
+`--download` is the default, so preprocess also runs `from_pretrained` on the base model under `init_empty_weights`, which fills any gaps in the cache. Failures there are logged as "Skipping model pre-download" and swallowed, so confirm the cache afterwards:
+
+```{.bash}
+hf cache ls
+ls "$HF_HOME/hub"            # models--..., datasets--..., kernels--...
+```
+
+::: {.callout-important}
+The prepared-data hash covers the `base_model` string, each dataset's `path`/`type`/`split`/`shards`, `sequence_len`, `sample_packing`, `eval_sample_packing` and other tokenization settings such as `train_on_inputs`, `special_tokens` and chat-template options. Train on the target with the same `config.yaml`, keep the repo-id strings (do not swap in local paths), and use the same Axolotl version. Any mismatch triggers re-tokenization from the raw dataset.
+:::
+
+::: {.callout-warning}
+UNVERIFIED: loading `teknium/GPT4-LLM-Cleaned` with `load_dataset` from the offline Hub cache (the fallback when no prepared data matches) has not been tested. Preprocessing on staging is the reliable path.
+:::
+
+## Bundle, verify, and transfer {#sec-bundle}
+
+Packing `$BUNDLE` into one verifiable archive needs no further downloads.
+
+### Clean up {#sec-bundle-clean}
+
+```{.bash}
+git -C "$BUNDLE/axolotl" clean -ndX     # preview build leftovers (build/, *.egg-info)
+git -C "$BUNDLE/axolotl" clean -fdX
+rm -rf "$BUNDLE/hf/xet"                 # optional: Xet chunk cache, not needed offline
+rm -f "$BUNDLE/requirements.binary.txt"
+```
+
+### Write the manifest {#sec-bundle-manifest}
+
+Commit shas for the model, dataset and kernels come from the cache `refs/` files, so they reflect what was actually downloaded:
+
+```{.bash}
+cd "$BUNDLE"
+{
+  echo "created:        $(date -u +%FT%TZ)"
+  echo "axolotl_commit: $(git -C axolotl rev-parse HEAD)"
+  echo "uv:             $(uv --version)"
+  echo "python:         cpython-$PY_VERSION, python-build-standalone $PBS_RELEASE"
+  echo "python_file:    $(ls python-mirror/$PBS_RELEASE/)"
+  echo "target_arch:    $TARGET_ARCH"
+  echo "torch_backend:  cu130"
+  echo "wheel_count:    $(find wheelhouse -name '*.whl' | wc -l)"
+  echo "hf_refs:"
+  find hf/hub -path '*/refs/*' -type f | sort | while read -r r; do
+    repo=${r#hf/hub/}; repo=${repo%%/*}
+    echo "  $repo ${r#*/refs/} $(cat "$r")"
+  done
+} > MANIFEST.txt
+cat MANIFEST.txt
+```
+
+Check that every expected repo is listed, including a `refs/vN` line for each kernel.
+
+### Checksum every file {#sec-bundle-checksum}
+
+```{.bash}
+cd "$BUNDLE"
+find . -type l -printf '%p -> %l\n' | sort > SYMLINKS.txt
+find hf -xtype l                        # must print nothing (no dangling links)
+find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+```
+
+The HF cache stores files as symlinks from `snapshots/` to `blobs/`. `SHA256SUMS` covers the blobs, and `SYMLINKS.txt` lets the target confirm that every link survived.
+
+### Archive and split {#sec-bundle-archive}
+
+Archive with `tar` rather than `cp`, `zip` or a file manager, because `tar` keeps the HF cache symlinks and the executable bits.
+
+```{.bash}
+OUT=$(dirname "$BUNDLE")
+cd "$OUT"
+tar -cf axolotl-airgap.tar "$(basename "$BUNDLE")"
+sha256sum axolotl-airgap.tar > axolotl-airgap.tar.sha256
+
+# optional, for FAT32 or size-limited media
+split -b 4000M -d -a 3 axolotl-airgap.tar axolotl-airgap.tar.part-
+sha256sum axolotl-airgap.tar.part-* > PARTS.sha256
+```
+
+`-b 4000M` (4,194,304,000 bytes) stays under the FAT32 4 GiB file limit, and `-a 3` gives three-digit suffixes. Compression is optional and rarely worth it, because wheels and safetensors barely compress.
+
+::: {.callout-important}
+Never copy the **unpacked** bundle onto FAT32 or exFAT media. Those filesystems cannot hold symlinks, and the HF cache breaks. Tar first and copy the archive.
+:::
+
+### Transfer {#sec-bundle-transfer}
+
+Move the archive, or the parts, together with `axolotl-airgap.tar.sha256` and `PARTS.sha256`, by whatever your site allows: removable media, a data diode or one-way gateway, or `scp`/`rsync` through a bastion. Follow your organisation's approval and malware-scanning process. The checksums detect corruption in transit but say nothing about whether the source can be trusted.
+
+### Unbundle and verify on the target {#sec-bundle-unpack}
+
+```{.bash}
+cd /incoming
+sha256sum -c PARTS.sha256                       # split case only
+cat axolotl-airgap.tar.part-* > axolotl-airgap.tar
+sha256sum -c axolotl-airgap.tar.sha256
+
+sudo install -d -o "$USER" -g "$(id -gn)" /opt/axolotl /opt/axolotl/bundle
+tar -C /opt/axolotl/bundle --strip-components=1 --no-same-owner -xf axolotl-airgap.tar
+
+cd /opt/axolotl/bundle
+sha256sum -c SHA256SUMS --quiet && echo "bundle OK"
+find . -type l -printf '%p -> %l\n' | sort | diff - SYMLINKS.txt && echo "symlinks OK"
+find hf -xtype l                                # must print nothing
+cat MANIFEST.txt
+```
+
+To skip the intermediate tarball, verify the parts and stream them: `cat axolotl-airgap.tar.part-* | tar -C /opt/axolotl/bundle --strip-components=1 --no-same-owner -xf -`. Then run the `SHA256SUMS` check as above.
+
+`/opt/axolotl` is owned by the training user, and `--no-same-owner` stops `tar` from restoring the staging uid. The HF cache, prepared data, caches and venv must all be writable by that user. Delete the archive afterwards to reclaim space.
+
+## Install offline on the target {#sec-install-offline}
+
+The rest of the install happens on the offline host, starting from these variables:
+
+```{.bash}
+export PREFIX=/opt/axolotl
+export BUNDLE=$PREFIX/bundle
+export TARGET_ARCH=x86_64              # or aarch64
+export PY_VERSION=3.14.4               # the version in $BUNDLE/python-mirror/
+
+export UV_PYTHON_INSTALL_DIR=$PREFIX/python
+export UV_CACHE_DIR=$PREFIX/cache/uv
+export UV_LINK_MODE=copy               # avoids hardlink warnings across filesystems
+unset UV_TORCH_BACKEND
+```
+
+::: {.callout-important}
+Install Python and the venv at their final paths. A venv records the absolute path of its interpreter, so moving `$PREFIX/python` later breaks `$PREFIX/venv`.
+
+`UV_TORCH_BACKEND` must be unset. With it set, uv ignores `--find-links` for PyTorch-ecosystem packages, and the offline install of `torch==2.14.0+cu130` fails with `torch was not found in the provided package locations`. The `+cu130` pins already select the CUDA build.
+:::
+
+### Install uv {#sec-target-uv}
+
+```{.bash}
+mkdir -p "$PREFIX/bin"
+tar -xzf "$BUNDLE/uv/uv-$TARGET_ARCH-unknown-linux-gnu.tar.gz" \
+  -C "$PREFIX/bin" --strip-components=1 --wildcards '*/uv' '*/uvx'
+export PATH="$PREFIX/bin:$PATH"
+uv --version
+grep '^uv:' "$BUNDLE/MANIFEST.txt"     # must match
+```
+
+### Install Python from the bundled mirror {#sec-target-python}
+
+```{.bash}
+unset UV_PYTHON_DOWNLOADS              # "never" would also block this explicit install
+uv python install "$PY_VERSION" --mirror "file://$BUNDLE/python-mirror" --no-bin
+
+export UV_PYTHON_DOWNLOADS=never       # from here on uv never fetches a Python
+uv python find 3.14 --managed-python
+# /opt/axolotl/python/cpython-3.14-linux-x86_64-gnu/bin/python3.14
+```
+
+`UV_PYTHON_INSTALL_MIRROR=file://$BUNDLE/python-mirror` is the environment equivalent of `--mirror`, and `--no-bin` skips placing `python` shims in `~/.local/bin`. `UV_PYTHON_DOWNLOADS=never` rejects `uv python install` with `Python downloads are not allowed`, which is why it is set only afterwards. `UV_PYTHON_DOWNLOADS=manual` allows explicit installs while blocking automatic downloads.
+
+### Create the virtual environment {#sec-target-venv}
+
+```{.bash}
+uv venv --python 3.14 --managed-python "$PREFIX/venv"
+source "$PREFIX/venv/bin/activate"
+python --version                       # Python 3.14.4
+```
+
+### Install from the wheelhouse {#sec-target-wheels}
+
+```{.bash}
+uv pip sync --offline --no-index --no-build \
+  --find-links "$BUNDLE/wheelhouse" \
+  "$BUNDLE/requirements.target.txt"
+
+uv pip install --offline --no-index --no-build --no-deps \
+  --find-links "$BUNDLE/wheelhouse" \
+  "$BUNDLE"/wheelhouse/axolotl-*.whl "$BUNDLE"/wheelhouse/cut_cross_entropy-*.whl
+```
+
+`requirements.target.txt` lists neither Axolotl nor cut-cross-entropy, so they are installed second, with `--no-deps` because their dependencies are already in place. To use the plugin, add it to the config:
+
+```{.yaml}
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
+```
+
+ `--no-build` allows only prebuilt wheels. If a wheel is missing, the install fails immediately instead of trying to compile an sdist. Go back to [Build a wheelhouse](#sec-wheelhouse) and add it.
+
+The environment equivalents are `UV_OFFLINE=1`, `UV_NO_INDEX=1` and `UV_FIND_LINKS=$BUNDLE/wheelhouse`.
+
+### Smoke test {#sec-target-smoke}
+
+```{.bash}
+python -c 'import torch, transformers, kernels, axolotl; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_capability())'
+python -c 'import fla, ringmaster, ray, deepspeed, cut_cross_entropy'   # the shipped extras
+uv pip check
+axolotl --help
+HF_HUB_OFFLINE=1 HF_HOME=$BUNDLE/hf HF_HUB_CACHE=$BUNDLE/hf/hub \
+  python -c "from kernels import get_kernel; get_kernel('kernels-community/flash-attn2', version=3)"
+```
+
+Expect torch `2.14.0+cu130`, CUDA `13.0`, `True` and your GPU's compute capability, such as `(8, 0)` for A100 or `(9, 0)` for H100. `get_kernel` should return without error. If `torch.cuda.is_available()` is `False`, check the driver (R580 or newer).
+
+This whole target sequence (uv from the tarball, Python 3.14.4 from the file mirror, the venv, `uv pip sync --offline` of all 257 base pins and the Axolotl wheel, `uv pip check`) was run end to end on x86_64 with `UV_OFFLINE=1` set for every command. aarch64 was not tested.
+
+## Configure the offline runtime and train {#sec-runtime}
+
+### Write the env file {#sec-runtime-env}
+
+Every run on the target sources one env file. It pins the caches to the bundle, turns off every outbound client, and points the compile caches at writable paths.
+
+```{.bash}
+PREFIX=/opt/axolotl
+mkdir -p "$PREFIX/cache"/{triton,inductor,uv} "$PREFIX/bundle/outputs"
+cat > "$PREFIX/airgap.env" <<'EOF'
+export PREFIX=/opt/axolotl
+export BUNDLE=$PREFIX/bundle
+export PATH=$PREFIX/bin:$PATH
+
+# Hugging Face: set HF_HUB_CACHE explicitly, an inherited value would override HF_HOME
+export HF_HOME=$BUNDLE/hf
+export HF_HUB_CACHE=$HF_HOME/hub
+export HF_DATASETS_CACHE=$HF_HOME/datasets
+export HF_HUB_OFFLINE=1               # exactly "1": Axolotl's token check compares the string
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+# One switch for both Hugging Face Hub and Axolotl telemetry
+# (HF_HUB_DISABLE_TELEMETRY=1 and AXOLOTL_DO_NOT_TRACK=1 are the per-tool equivalents)
+export DO_NOT_TRACK=1
+
+# Trackers: nothing leaves the host
+export WANDB_MODE=offline
+# export TRACKIO_DIR=$BUNDLE/trackio  # default: $HF_HOME/trackio
+
+# Only if the kernels were downloaded into a separate cache
+# export KERNELS_CACHE=$BUNDLE/kernels
+
+# Writable compile caches (Triton also needs gcc or cc)
+export TRITON_CACHE_DIR=$PREFIX/cache/triton
+export TORCHINDUCTOR_CACHE_DIR=$PREFIX/cache/inductor
+export UV_CACHE_DIR=$PREFIX/cache/uv
+
+# uv ignores --find-links for PyTorch packages when a backend is set
+unset UV_TORCH_BACKEND
+EOF
+```
+
+The kernels library reads `$KERNELS_CACHE`, falling back to `$HF_HUB_CACHE`, and looks for `kernels--<org>--<name>/refs/vN` there.
+
+### Logging and trackers {#sec-runtime-trackers}
+
+With no tracker keys in the config, `report_to` is empty and nothing is reported. The demo config leaves its `wandb_*` keys empty. To keep metrics locally, use one of these:
+
+| Tracker | Config keys | Output |
+|---|---|---|
+| wandb | `wandb_project` and `wandb_mode: offline` (exported as `WANDB_MODE`) | Local run files. Sync later from a connected machine with `wandb sync`. |
+| trackio | `trackio_project_name`, with `trackio_space_id` unset | `$TRACKIO_DIR` (default `$HF_HOME/trackio`) |
+| tensorboard | `use_tensorboard: true` | Local event files |
+
+### Train {#sec-runtime-train}
+
+Use the same `$BUNDLE/config.yaml` that staging preprocessed. If you did not ship prepared data, run `axolotl preprocess config.yaml` first (this relies on the unverified offline dataset load).
+
+```{.bash}
+source /opt/axolotl/airgap.env
+source "$PREFIX/venv/bin/activate"
+cd "$BUNDLE"
+axolotl train config.yaml 2>&1 | tee outputs/train.log
+```
+
+The demo config's relative `output_dir` lands under `$BUNDLE/outputs`. Multi-GPU runs need nothing extra: Axolotl detects the GPUs, and `--launcher torchrun` or `--launcher accelerate` selects the launcher.
+
+### Confirm the run was offline {#sec-runtime-confirm}
+
+```{.bash}
+grep -E "Skipping HuggingFace token verification|Skipping publisher trust check|Loading prepared dataset" "$BUNDLE/outputs/train.log"
+```
+
+- `Skipping HuggingFace token verification because HF_HUB_OFFLINE is set to True. Only local files will be used.` appears only when `HF_HUB_OFFLINE` is exactly `1`.
+- `Skipping publisher trust check for '<repo_id>' because Hugging Face Hub is in offline mode.` comes from the kernels library when a Hub kernel was loaded from the local cache. A config using `sdpa` does not print it.
+- The startup telemetry warning is absent, because `DO_NOT_TRACK` suppresses it.
+- The prepared dataset is reused rather than tokenized again.
+
+The strongest check is to run with the network physically disabled. Alternatively, trace connection attempts:
+
+```{.bash}
+strace -f -e trace=connect -o outputs/connect.trace \
+  axolotl train config.yaml --launcher python
+grep -E 'AF_INET6?' outputs/connect.trace | grep -v -E '127\.0\.0\.[0-9]+|"::1"'
+```
+
+Any surviving line is a non-loopback connection attempt to inspect. You can also run the training command inside an empty network namespace with `sudo unshare -n`.
+
+::: {.callout-warning}
+UNVERIFIED: the `strace` and `unshare -n` checks were not run for this guide (unprivileged `unshare -rn` is blocked on the test host).
+:::
+
+## Troubleshooting {#sec-troubleshooting}
+
+Most failures fall into three groups: the wrong kernel variant was shipped, a wheel or file is missing from the bundle, or something still tries to reach the network. Paths below assume the target layout (`/opt/axolotl/bundle`) and that `airgap.env` is sourced.
+
+### Hub kernels {#sec-ts-kernels}
+
+**`Version N of 'org/name' is not available in the local cache and Hugging Face Hub is in offline mode`**
+
+The cache has no `refs/v*` file for the repo, usually because it was fetched with `kernels download` (by commit sha). Re-fetch on staging by branch name and re-bundle ([Hub kernels](#sec-hf-kernels)):
+
+```{.bash}
+hf download kernels-community/flash-attn2 --repo-type kernel --revision v3 \
+  --include 'build/torch-stable-abi210-cu130-x86_64-linux/*'
+ls "$HF_HOME/hub/kernels--kernels-community--flash-attn2/refs/"    # expect: v3
+```
+
+**`Version N not found, available versions: ...`**
+
+A different branch was shipped. Fetch the one named in the error: `v3` for `flash-attn2`, `v1` for `flash-attn3`, `v0` for `flash-attn4`. If a config uses the canonical `flash_attention_3`, transformers looks for `kernels-community/vllm-flash-attn3` `v1` instead.
+
+**`Cannot find a local snapshot for <repo>`**
+
+The cache the target reads has no snapshot for that repo. The kernel cache is `$KERNELS_CACHE` if set, otherwise `$HF_HUB_CACHE`. Check both variables and `ls "$HF_HUB_CACHE"`.
+
+**`Cannot find a build variant for this system in <repo>`, or `Variant path does not exist`**
+
+The bundle has a different variant from the one the target needs. The message lists each variant considered and why it was rejected. Compare against the [kernel table](#sec-airgap-kernels) and the target's actual torch, CUDA and architecture, then re-fetch the matching `build/<variant>/*`:
+
+```{.bash}
+python -c 'import torch; print(torch.__version__, torch.version.cuda)'; uname -m
+```
+
+**`attn_implementation: flash_attention_N is set, but no flash-attn build is available in this environment`**
+
+Axolotl's validator calls `get_kernel(repo, version=get_attn_kernel_version(repo))`. The message ends with `The kernels hub lookup failed with: <reason>`; look that reason up above. Fix the cache, or set `attn_implementation: sdpa` to proceed without a Hub kernel. The check is skipped when CUDA is unavailable, so passing on a CPU-only staging host proves nothing.
+
+**FA4 `ImportError` for `cutlass` or `tvm_ffi`**
+
+The FA4 kernel's Python dependencies are missing. Add `kernel-deps.in` to the compile step ([Resolve the pins](#sec-wheelhouse-resolve)) and rebuild the wheelhouse.
+
+### uv, wheels, and Python {#sec-ts-uv}
+
+**uv tries the network, or `torch was not found in the provided package locations`**
+
+`UV_TORCH_BACKEND` is set, or something else points uv at an index. Unset the variables and check config files:
+
+```{.bash}
+env | grep '^UV_'
+unset UV_TORCH_BACKEND UV_INDEX_URL UV_EXTRA_INDEX_URL UV_DEFAULT_INDEX UV_INDEX
+cat ~/.config/uv/uv.toml /etc/uv/uv.toml 2>/dev/null     # look for index entries
+```
+
+Keep `--offline --no-index` on every install command.
+
+**`No solution found`, or a missing-wheel error with `--no-build`**
+
+A wheel is missing, either because the platform tags excluded it or because the package is sdist-only. On Python 3.14 the known ones are `zstandard`, `langdetect`, `rouge-score`, `sqlitedict`, `word2number`, `axolotl-contribs-lgpl`, `axolotl-contribs-mit` and, with the extra, `deepspeed`. Find the gap, then build the wheel on staging ([Build a wheelhouse](#sec-wheelhouse)):
+
+```{.bash}
+uv pip install --dry-run --offline --no-index --no-build \
+  --find-links "$BUNDLE/wheelhouse" -r "$BUNDLE/requirements.target.txt"
+```
+
+**`zstandard` fails with `undefined symbol: _PyErr_WriteUnraisableMsg`**
+
+It was built with build isolation. Rebuild without isolation as in [Build zstandard](#sec-wheelhouse-zstd).
+
+**`uv python install` tries to download, or cannot find the interpreter**
+
+- The mirror path must be exactly `python-mirror/20260414/cpython-3.14.4+20260414-<arch>-unknown-linux-gnu-install_only_stripped.tar.gz`, with a literal `+` (not `%2B`).
+- The target `uv` must be the same version as staging's.
+- `UV_PYTHON_DOWNLOADS=never` blocks the install itself. Unset it for the install, or use `manual`.
+
+**The venv breaks after moving `/opt/axolotl`**
+
+The venv records the absolute interpreter path. Recreate the venv, or keep the install at its original location.
+
+### Hugging Face cache and datasets {#sec-ts-hf}
+
+**HF reaches for the Hub, or `LocalEntryNotFoundError` for model or tokenizer files**
+
+- `HF_HUB_CACHE`, if set, overrides `HF_HOME`. `airgap.env` sets both.
+- `refs/main` is missing because the repo was downloaded with a sha `--revision`. Re-download without `--revision`.
+- Tokenizer files were excluded by a filter. Llama-3.2-1B needs the six files listed in [Model and tokenizer](#sec-hf-model).
+- `HF_HUB_OFFLINE` must be exactly `1`. Axolotl's token check skips `whoami` only for the literal `1`.
+
+```{.bash}
+echo "$HF_HOME $HF_HUB_CACHE"
+hf cache ls --cache-dir "$HF_HUB_CACHE" --revisions
+ls "$HF_HUB_CACHE/models--NousResearch--Llama-3.2-1B/refs"     # expect: main
+```
+
+**Prepared data is ignored and the raw dataset is loaded again**
+
+The prepared-data hash did not match. Use the identical `config.yaml`, the same repo-id strings and the same Axolotl version on both hosts, and check that `dataset_prepared_path` points at `/opt/axolotl/bundle/prepared` ([Optional: preprocess on staging](#sec-hf-preprocess)).
+
+**`hf_xet` errors or stalls on staging behind a proxy**
+
+Fall back to plain HTTP downloads on staging. The target never contacts Xet.
+
+```{.bash}
+HF_HUB_DISABLE_XET=1 hf download NousResearch/Llama-3.2-1B --exclude 'original/*'
+```
+
+### Runtime and hardware {#sec-ts-runtime}
+
+**Triton `Failed to find C compiler. Please specify via CC environment variable`**
+
+Install `gcc` from OS media, or set `CC=gcc` if it is installed but not found. For read-only cache errors, check that `TRITON_CACHE_DIR` and `TORCHINDUCTOR_CACHE_DIR` point at writable directories.
+
+**`CUDA driver version is insufficient`, or `torch.cuda.is_available()` is `False`**
+
+cu130 wheels need a driver that supports CUDA 13.0 (R580 or newer) and glibc 2.28 or newer. Check with `nvidia-smi` and `ldd --version`, and upgrade the driver from OS media. Switching to a lower CUDA backend means rebuilding the wheelhouse and re-fetching kernel variants for that backend. First confirm that torch 2.14.0 wheels and matching kernel variants exist for it.
+
+**Telemetry or W&B network attempts**
+
+Check that `airgap.env` is sourced in the shell that launches training (`DO_NOT_TRACK=1`, `WANDB_MODE=offline`). `DO_NOT_TRACK` is read by both `huggingface_hub` and Axolotl's telemetry manager. Set `wandb_mode: offline` or `disabled` in the config, or leave `wandb_project` unset.
