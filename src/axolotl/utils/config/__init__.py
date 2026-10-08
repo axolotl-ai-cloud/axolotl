@@ -12,6 +12,7 @@ from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import (
     is_torch_npu_available,
+    is_torch_xla_available,
 )
 
 from axolotl.integrations.config import merge_input_args
@@ -125,9 +126,19 @@ def _model_with_inherited_default_fallback(model_cls, data):
         return _model_validate_with_field_names(model_cls, data_with_defaults)
 
 
+def bf16_supported() -> bool:
+    """Return True when the current hardware supports bfloat16."""
+    return is_torch_bf16_gpu_available() or is_torch_xla_available()
+
+
 def choose_device(cfg):
     def get_device():
         try:
+            # XLA is checked first so that a TPU VM (which has no CUDA) does not fall
+            # through to the SystemError below.
+            if is_torch_xla_available():
+                return "xla"
+
             if torch.cuda.is_available():
                 return f"cuda:{cfg.local_rank}"
 
@@ -137,11 +148,18 @@ def choose_device(cfg):
             if is_torch_npu_available():
                 return f"npu:{cfg.local_rank}"
 
-            raise SystemError("No CUDA/mps/npu device found")
+            raise SystemError("No CUDA/mps/npu/xla device found")
         except Exception:
             return "cpu"
 
     cfg.device = get_device()
+
+    # On XLA accelerate (or the HF Trainer directly) places the model; never use
+    # HF device_map dispatch on TPU.
+    if cfg.device == "xla":
+        cfg.device_map = None
+        return
+
     if cfg.world_size == 1:
         cfg.device_map = cfg.device_map or "auto"
     else:
@@ -163,7 +181,7 @@ def resolve_dtype(cfg):
     if (
         not cfg.fp16 and cfg.bf16 == "auto" and not cfg.use_ray
     ):  # if we use ray we want to defer this check to the worker node
-        if is_torch_bf16_gpu_available():
+        if bf16_supported():
             LOG.debug("bf16 support detected, enabling for this configuration.")
             cfg.bf16 = True
         else:
@@ -175,7 +193,14 @@ def resolve_dtype(cfg):
     if cfg.fp16 and cfg.bf16 == "auto":
         cfg.bf16 = False
 
-    if cfg.device == "mps":
+    if cfg.device == "xla":
+        # TPU has native bfloat16 support; fp16 and tf32 are not available.
+        cfg.tf32 = False
+        if cfg.fp16:
+            LOG.warning("fp16 is not supported on TPU; switching to bf16.")
+            cfg.fp16 = False
+            cfg.bf16 = True
+    elif cfg.device == "mps":
         cfg.load_in_8bit = False
         cfg.tf32 = False
         if cfg.bf16 and cfg.fp16 is not False:
@@ -251,7 +276,7 @@ def normalize_config(cfg):
     ]
     choose_device(cfg)
     cfg.ddp = cfg.ddp if cfg.ddp is not None else cfg.world_size != 1
-    if cfg.world_size != 1:
+    if cfg.world_size != 1 and cfg.device != "xla":
         cfg.device_map = {"": int(os.environ.get("LOCAL_RANK", 0))}
         if cfg.fsdp or cfg.fsdp_config or cfg.ddp:
             effective_world_size = (
