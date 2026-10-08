@@ -40,6 +40,12 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     resolve_merge_method = getattr(support, "resolve_lora_merge_method", None)
     if resolve_merge_method is not None:
         merge_method = resolve_merge_method(cfg, configured_merge_method)
+    if cfg.adapter == "moe_sieve":
+        if configured_merge_method not in (None, "legacy"):
+            raise ValueError(
+                "MoE-Sieve compact expert adapters require merge_method: legacy"
+            )
+        merge_method = "legacy"
     if merge_method == "legacy":
         if (
             getattr(cfg, "_original_nf4_backend", None) or cfg.nf4_backend
