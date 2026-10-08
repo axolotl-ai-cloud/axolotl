@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 
 import torch
@@ -54,7 +55,13 @@ def profile(config: str, output: str | None = None):
                 for key, value in inputs.items()
             }
 
-    selection = profile_routing(model, batches(), settings.fraction)
+    autocast = (
+        torch.autocast(device_type=device.type, dtype=cfg.torch_dtype)
+        if cfg.torch_dtype in (torch.float16, torch.bfloat16)
+        else nullcontext()
+    )
+    with autocast:
+        selection = profile_routing(model, batches(), settings.fraction)
     result = {
         "version": 1,
         "base_model": cfg.base_model,

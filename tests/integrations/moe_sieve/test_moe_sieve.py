@@ -282,7 +282,10 @@ def test_merge_cli_uses_registered_wrapper(monkeypatch):
         merge_lora.do_merge_lora(cfg=cfg)
 
 
-def test_calibration_command_writes_reproducible_profile(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mixed_precision", [False, True])
+def test_calibration_command_writes_reproducible_profile(
+    tmp_path, monkeypatch, mixed_precision
+):
     from datasets import Dataset
 
     from axolotl.cli import config as config_module, utils as cli_utils
@@ -303,6 +306,10 @@ def test_calibration_command_writes_reproducible_profile(tmp_path, monkeypatch):
         }
     )
     base = tiny_model()
+    if mixed_precision:
+        base.to(torch.bfloat16)
+        base.get_input_embeddings().float()
+        settings["torch_dtype"] = torch.bfloat16
     monkeypatch.setenv("WORLD_SIZE", "1")
     monkeypatch.setattr(
         config_module, "load_cfg", lambda *args: DictDefault(copy.deepcopy(settings))
