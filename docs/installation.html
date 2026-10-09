@@ -621,6 +621,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/airgapped.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Offline and Air-Gapped Deployment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
@@ -937,8 +943,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#sec-installation" id="toc-sec-installation" class="nav-link" data-scroll-target="#sec-installation"><span class="header-section-number">2</span> Installation</a>
   <ul class="collapse">
   <li><a href="#sec-uv" id="toc-sec-uv" class="nav-link" data-scroll-target="#sec-uv"><span class="header-section-number">2.1</span> Quick Install</a></li>
-  <li><a href="#sec-edge-build" id="toc-sec-edge-build" class="nav-link" data-scroll-target="#sec-edge-build"><span class="header-section-number">2.2</span> Edge/Development Build</a></li>
-  <li><a href="#sec-docker" id="toc-sec-docker" class="nav-link" data-scroll-target="#sec-docker"><span class="header-section-number">2.3</span> Docker</a></li>
+  <li><a href="#sec-offline-install" id="toc-sec-offline-install" class="nav-link" data-scroll-target="#sec-offline-install"><span class="header-section-number">2.2</span> Offline or Air-Gapped Install</a></li>
+  <li><a href="#sec-edge-build" id="toc-sec-edge-build" class="nav-link" data-scroll-target="#sec-edge-build"><span class="header-section-number">2.3</span> Edge/Development Build</a></li>
+  <li><a href="#sec-docker" id="toc-sec-docker" class="nav-link" data-scroll-target="#sec-docker"><span class="header-section-number">2.4</span> Docker</a></li>
   </ul></li>
   <li><a href="#sec-cloud" id="toc-sec-cloud" class="nav-link" data-scroll-target="#sec-cloud"><span class="header-section-number">3</span> Cloud Environments</a>
   <ul class="collapse">
@@ -1017,8 +1024,12 @@ overhead on B100 / B200 / RTX 50-series.</p>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">deepspeed</span><span class="pp">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="sec-edge-build" class="level3" data-number="2.2">
-<h3 data-number="2.2" class="anchored" data-anchor-id="sec-edge-build"><span class="header-section-number">2.2</span> Edge/Development Build</h3>
+<section id="sec-offline-install" class="level3" data-number="2.2">
+<h3 data-number="2.2" class="anchored" data-anchor-id="sec-offline-install"><span class="header-section-number">2.2</span> Offline or Air-Gapped Install</h3>
+<p>For a machine without internet access, including Slurm compute nodes where only the login node is online, build a bundle on a connected host and install from it. See <a href="../docs/airgapped.html">Offline and Air-Gapped Deployment</a>.</p>
+</section>
+<section id="sec-edge-build" class="level3" data-number="2.3">
+<h3 data-number="2.3" class="anchored" data-anchor-id="sec-edge-build"><span class="header-section-number">2.3</span> Edge/Development Build</h3>
 <p>For the latest features between releases:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl.git</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
@@ -1027,8 +1038,8 @@ overhead on B100 / B200 / RTX 50-series.</p>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[deepspeed]'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="sec-docker" class="level3" data-number="2.3">
-<h3 data-number="2.3" class="anchored" data-anchor-id="sec-docker"><span class="header-section-number">2.3</span> Docker</h3>
+<section id="sec-docker" class="level3" data-number="2.4">
+<h3 data-number="2.4" class="anchored" data-anchor-id="sec-docker"><span class="header-section-number">2.4</span> Docker</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--ipc</span><span class="op">=</span>host axolotlai/axolotl-uv:main-latest</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>For development with Docker:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">-d</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>

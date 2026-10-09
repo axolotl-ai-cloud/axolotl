@@ -621,6 +621,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/airgapped.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Offline and Air-Gapped Deployment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
@@ -975,6 +981,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#requirements-1" id="toc-requirements-1" class="nav-link" data-scroll-target="#requirements-1">Requirements</a></li>
   <li><a href="#installation-2" id="toc-installation-2" class="nav-link" data-scroll-target="#installation-2">Installation</a></li>
   <li><a href="#usage-2" id="toc-usage-2" class="nav-link" data-scroll-target="#usage-2">Usage</a></li>
+  <li><a href="#training-checkpoints-and-resume" id="toc-training-checkpoints-and-resume" class="nav-link" data-scroll-target="#training-checkpoints-and-resume">Training checkpoints and resume</a></li>
+  <li><a href="#checkpoint-files" id="toc-checkpoint-files" class="nav-link" data-scroll-target="#checkpoint-files">Checkpoint files</a></li>
+  <li><a href="#checkpoints-from-earlier-versions" id="toc-checkpoints-from-earlier-versions" class="nav-link" data-scroll-target="#checkpoints-from-earlier-versions">Checkpoints from earlier versions</a></li>
   <li><a href="#limitations-1" id="toc-limitations-1" class="nav-link" data-scroll-target="#limitations-1">Limitations</a></li>
   <li><a href="#troubleshooting" id="toc-troubleshooting" class="nav-link" data-scroll-target="#troubleshooting">Troubleshooting</a></li>
   <li><a href="#cublas_status_invalid_value-on-a-basic-bf16-gemm-after-import-deep_ep" id="toc-cublas_status_invalid_value-on-a-basic-bf16-gemm-after-import-deep_ep" class="nav-link" data-scroll-target="#cublas_status_invalid_value-on-a-basic-bf16-gemm-after-import-deep_ep"><code>CUBLAS_STATUS_INVALID_VALUE</code> on a basic bf16 GEMM after <code>import deep_ep</code></a></li>
@@ -1778,6 +1787,46 @@ The quick brown fox jumps over the loud dog</code></pre>
 <p>The pre-<code>expert_parallel</code> names (<code>deep_ep</code>, <code>deep_ep_grouped_mm</code>, <code>deep_ep_scattermoe</code>, <code>deep_ep_sonicmoe</code>, <code>torch_ep_eager</code>, <code>torch_ep_grouped_mm</code>, <code>torch_ep_scattermoe</code>, <code>torch_ep_sonicmoe</code>) are deprecated: they still load, with a warning, as the matching local implementation (<code>*_scattermoe</code> / <code>*_sonicmoe</code> set <code>use_scattermoe</code> / <code>use_sonicmoe</code>). The backend prefix is ignored, as before; <code>expert_parallel_backend</code> picks the dispatch.</p>
 <p>EP composes with FSDP on orthogonal mesh axes: experts are sharded across the <code>ep</code> axis, non-expert params across <code>dp_shard</code>. The two collectives run on disjoint process groups, so they don’t conflict. The mesh is ordered <code>(dp_replicate, dp_shard, cp, ep, tp)</code>, <code>ep</code> innermost, so each EP all-to-all group is a run of consecutive ranks that stays inside a node whenever <code>ep × tp</code> fits on one; the startup log reports which axes cross nodes. Layout follows <a href="https://tinkerings.dev/posts/expert_parallel.html"><em>Expert Parallelism with FSDP</em> (tinkerings.dev)</a> — “rows share weights, columns move tokens.”</p>
 </section>
+</section>
+<section id="training-checkpoints-and-resume" class="level3">
+<h3 class="anchored" data-anchor-id="training-checkpoints-and-resume">Training checkpoints and resume</h3>
+<p>FSDP2 <code>FULL_STATE_DICT</code> checkpoints preserve every EP group’s expert weights,
+expert LoRA, and optimizer state. The shared ownership-aware checkpoint path serves
+both Trainer and Accelerate. See <a href="https://docs.axolotl.ai/docs/multi-gpu.html#full-checkpoints-and-resume">Full checkpoints and resume</a>
+for quantization, memory, and mesh compatibility limits.</p>
+</section>
+<section id="checkpoint-files" class="level3">
+<h3 class="anchored" data-anchor-id="checkpoint-files">Checkpoint files</h3>
+<ul>
+<li><code>pytorch_model_fsdp.bin</code> is the native model checkpoint used by
+<code>resume_from_checkpoint</code> and best-model loading. Trainer LoRA/QLoRA checkpoints
+include PEFT export state, including frozen adapter factors, saved modules, and
+required embeddings; the frozen base model is loaded separately.</li>
+<li><code>optimizer.bin</code> preserves every expert owner’s optimizer state. It is absent
+when <code>save_only_model: true</code>.</li>
+<li><code>adapter_model.safetensors</code> is the ordinary PEFT adapter export used by
+<code>lora_model_dir</code>. Model-only intermediate checkpoints also include the native
+resume file; final exports do not.</li>
+</ul>
+<p>Native checkpoints and final exports need not have the same layout. For example,
+Mixtral full-model exports unpack fused expert weights, while native checkpoints
+retain fused tensors. Packed bitsandbytes checkpoints also carry owner-specific
+quantization metadata and require unchanged EP ownership ranges.</p>
+</section>
+<section id="checkpoints-from-earlier-versions" class="level3">
+<h3 class="anchored" data-anchor-id="checkpoints-from-earlier-versions">Checkpoints from earlier versions</h3>
+<p>Older EP checkpoints may contain only EP group 0’s expert weights, expert LoRA,
+and optimizer moments. The full-checkpoint loader rejects incompatible shapes on
+every rank. Model tensor shapes are checked before any model parameters are copied,
+so a truncated model checkpoint does not partially overwrite the model.</p>
+<p>To recover from an incomplete legacy checkpoint:</p>
+<ul>
+<li><strong>Full-parameter training:</strong> start a new run from a complete final model export.</li>
+<li><strong>LoRA:</strong> if the legacy checkpoint has a complete <code>adapter_model.safetensors</code>,
+load it with <code>lora_model_dir</code> in a new run.</li>
+</ul>
+<p>These recovery paths do not recover optimizer state or scheduler progress. Missing
+experts cannot be reconstructed from the truncated native checkpoint.</p>
 </section>
 <section id="limitations-1" class="level3">
 <h3 class="anchored" data-anchor-id="limitations-1">Limitations</h3>

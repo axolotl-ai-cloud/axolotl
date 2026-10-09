@@ -621,6 +621,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/airgapped.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Offline and Air-Gapped Deployment</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Multi-GPU</span></a>
   </div>
@@ -1022,6 +1028,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>When to use: MoE training where the experts dominate the parameter count and don’t fit under FSDP alone, or where you want to compose with FSDP on orthogonal mesh axes.</li>
 <li>Requires FSDP2 (<code>fsdp_version: 2</code> + <code>fsdp_config</code>) with <code>fsdp_config.state_dict_type: FULL_STATE_DICT</code>; EP under DDP or with a sharded state dict is rejected at config validation (a sharded checkpoint would keep only EP group 0’s experts). Composes with FSDP, CP and HSDP: <code>dp_replicate_size × expert_parallel_size × dp_shard_size × context_parallel_size = world_size</code>. EP shards experts on the <code>ep</code> axis; the dense parameters FSDP-shard across every other axis; the expert slices FSDP-shard across the <code>dp_shard</code> and <code>cp</code> ranks of their EP group (both see different tokens, so expert gradients reduce over both), with <code>dp_replicate</code> as an outer replication dim under HSDP (with no <code>dp_shard</code>/<code>cp</code> axis each replica keeps its expert slices whole and the replicas reduce expert gradients with each other). When <code>expert_parallel_size</code> equals the world size (pure EP) the trainable experts stay whole on each rank. Full-parameter and LoRA (<code>lora_target_parameters</code> on the experts) training both work; the saved checkpoint or adapter carries every expert. EP × TP is not supported.</li>
 <li>Two dispatch backends, set with <code>expert_parallel_backend</code> (default <code>auto</code>): <code>deep_ep</code> uses the <a href="https://github.com/deepseek-ai/DeepEP">DeepEP</a> library’s fused kernels (Ampere or Hopper, all-pairs NVLink/RDMA); <code>torch</code> dispatches over a plain <code>all_to_all_single</code> on the EP process group and runs on any NCCL/gloo fabric, including PCIe-only nodes with no NVLink. <code>auto</code> picks <code>deep_ep</code> when it’s importable, else <code>torch</code>. See <a href="../docs/custom_integrations.html#expert-parallelism-integration">Expert Parallelism Integration</a> for backend details, install steps, and the <code>torch</code> backend’s checkpointing note.</li>
+<li>Checkpoints and resume: mid-training checkpoints hold every expert of every EP group, with its optimizer state, for full-parameter training and for LoRA on the experts. Incomplete legacy checkpoints containing only EP group 0’s experts are refused on resume. See <a href="../docs/custom_integrations.html#training-checkpoints-and-resume">Training checkpoints and resume</a> for the file contents and layout, how to recover from an old checkpoint, and limits.</li>
 </ul>
 </section>
 <section id="sec-hsdp" class="level3">
