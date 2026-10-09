@@ -222,7 +222,9 @@ class DecisionManifest(BaseModel):
     diffusion_spec: DiffusionSpecManifest
     decision_layout: Literal["thought_block", "prompt_slots"]
     canvas_width: StrictInt = Field(ge=1)
-    label_codebook: Literal["vendored26", "expanded52", "expanded128"] = "vendored26"
+    label_codebook: Literal[
+        "vendored26", "expanded52", "expanded128", "expanded255"
+    ] = "vendored26"
     configured_slots: ConfiguredSlots | SampledConfiguredSlots
     noise_read_protocol: NoiseReadProtocol
     tokenizer_special_ids: TokenizerSpecialIds

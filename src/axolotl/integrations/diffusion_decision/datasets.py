@@ -46,7 +46,7 @@ from .mixture import (
     MixtureSample,
     prepare_source_pools,
 )
-from .permutation import permute_record
+from .permutation import permute_record, shuffle_labels
 from .prepared_cache import (
     identity as prepared_cache_identity,
     load as load_prepared_cache,
@@ -363,6 +363,7 @@ def _canvas_row(
     slot_plan: SlotPlan | None = None,
     thought_open_ids: Sequence[int] = (),
     thought_close_ids: Sequence[int] = (),
+    train: bool = False,
 ):
     diffusion = _value(cfg, "diffusion_lm")
     decision = _value(cfg, "diffusion_decision")
@@ -383,6 +384,16 @@ def _canvas_row(
         seed=int(_value(cfg, "seed", 0)),
         codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
     )
+    shuffle_prob = float(
+        _value(_value(decision, "labels"), "label_shuffle_prob", 0.0) or 0.0
+    )
+    if train and shuffle_prob > 0.0:
+        record = shuffle_labels(
+            record,
+            seed=int(_value(cfg, "seed", 0)),
+            probability=shuffle_prob,
+            codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
+        )
     if vocab_size is None:
         vocab_size = _value(model_config, "vocab_size")
     if vocab_size is None:
@@ -466,6 +477,7 @@ def _build_canvas_chunk(
         slot_plan,
         thought_open_ids,
         thought_close_ids,
+        train,
     ) = _CANVAS_WORKER_STATE
     return [
         _build_canvas_worker(
@@ -477,6 +489,7 @@ def _build_canvas_chunk(
             slot_plan=slot_plan,
             thought_open_ids=thought_open_ids,
             thought_close_ids=thought_close_ids,
+            train=train,
         )[1:]
         for item in items
     ]
@@ -492,6 +505,7 @@ def _build_canvas_worker(
     slot_plan: SlotPlan | None,
     thought_open_ids: tuple[int, ...],
     thought_close_ids: tuple[int, ...],
+    train: bool = False,
 ) -> tuple[int, dict[str, Any] | None, bool]:
     index, record, source_weight = item
     try:
@@ -505,6 +519,7 @@ def _build_canvas_worker(
             slot_plan=slot_plan,
             thought_open_ids=thought_open_ids,
             thought_close_ids=thought_close_ids,
+            train=train,
         )
     except SchemaError as error:
         if not _is_canvas_overflow(error):
@@ -597,6 +612,8 @@ def _canvas_rows(
     cfg: Any,
     weights: Mapping[str, float],
     spec,
+    *,
+    train: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     rows: list[dict[str, Any]] = []
     canvas_too_long = 0
@@ -626,6 +643,7 @@ def _canvas_rows(
             slot_plan,
             tuple(thought_open_ids),
             tuple(thought_close_ids),
+            train,
         )
         chunks = (
             [
@@ -678,6 +696,7 @@ def _canvas_rows(
                     slot_plan=slot_plan,
                     thought_open_ids=thought_open_ids,
                     thought_close_ids=thought_close_ids,
+                    train=train,
                 )
             )
         except SchemaError as error:
@@ -854,7 +873,12 @@ def load_decision_datasets(
     sampler = None
     if premixed:
         train_rows, train_canvas_too_long = _canvas_rows(
-            tokenizer, [dict(record) for record in train], cfg, weights, spec
+            tokenizer,
+            [dict(record) for record in train],
+            cfg,
+            weights,
+            spec,
+            train=True,
         )
         train_rows, train_budget_drops = _filter_budget_rows(train_rows, cfg, spec)
         if len(train_rows) != len(train):
@@ -871,7 +895,12 @@ def load_decision_datasets(
         usable_pools: dict[str, tuple[dict[str, Any], ...]] = {}
         for source, records in pools.records.items():
             rows, dropped = _canvas_rows(
-                tokenizer, [dict(record) for record in records], cfg, weights, spec
+                tokenizer,
+                [dict(record) for record in records],
+                cfg,
+                weights,
+                spec,
+                train=True,
             )
             train_canvas_too_long += dropped
             rows, budget_drops = _filter_budget_rows(rows, cfg, spec)

@@ -136,11 +136,22 @@ class DecisionLabelsConfig(BaseModel):
             "description": "Fraction of a one-hot CE target spread uniformly over the valid answer tokens."
         },
     )
-    codebook: Literal["vendored26", "expanded52", "expanded128"] = Field(
+    codebook: Literal["vendored26", "expanded52", "expanded128", "expanded255"] = Field(
         default="vendored26",
         json_schema_extra={
-            "description": "Answer-label codebook: djev letters A-Z (26 options), A-Z plus a-z (52), or those plus "
-            "selected Greek and Cyrillic letters (128); every label is one token in the model's tokenizer."
+            "description": "Answer-label codebook: djev letters A-Z (26 options), A-Z plus a-z (52), those plus "
+            "selected Greek and Cyrillic letters (128), or those plus kana, Hangul, Hebrew, Devanagari, Thai and "
+            "Georgian letters (255); every label is one token in the model's tokenizer."
+        },
+    )
+    label_shuffle_prob: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        json_schema_extra={
+            "description": "Training only: probability that a choice question's options get a random subset of "
+            "the codebook (kept in codebook order) instead of its first N labels, so late labels are trained on "
+            "small questions too. Deterministic per seed, record and question; evaluation rows never shuffle."
         },
     )
 
