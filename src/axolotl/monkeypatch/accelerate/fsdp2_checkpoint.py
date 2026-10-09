@@ -185,9 +185,10 @@ def _check_errors(error):
 def _transfer(value, shape, dtype, source, receiver=0):
     count = math.prod(shape)
     output = torch.empty(shape, dtype=dtype) if dist.get_rank() == receiver else None
+    # Gloo advertises CUDA even in CPU-only builds.
     device = (
         torch.device("cuda", torch.cuda.current_device())
-        if "cuda" in dist.get_backend_config()
+        if "cpu:" not in dist.get_backend_config()
         else torch.device("cpu")
     )
     chunk_size = max(1, _TRANSFER_BYTES // torch.empty((), dtype=dtype).element_size())
