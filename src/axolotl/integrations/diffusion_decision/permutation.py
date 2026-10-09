@@ -9,6 +9,7 @@ from typing import Any
 
 from ._util import canonical_json
 from .adapters.jsonl import normalize_jsonl
+from .template import codebook_labels
 
 
 def permute_record(
@@ -54,6 +55,40 @@ def permute_record(
                 inverse[index] for index in target["allowed_set"]
             )
     return result
+
+
+def shuffle_labels(
+    record: Mapping[str, Any],
+    *,
+    seed: int,
+    probability: float,
+    codebook: str = "vendored26",
+) -> dict[str, Any]:
+    """With ``probability`` per choice question, give its options a random subset of the codebook (in codebook
+    order) through ``label_indices`` instead of the first N labels. Deterministic per seed, record and question;
+    returns the record unchanged (not copied) when nothing is drawn."""
+    if probability <= 0.0:
+        return dict(record)
+    size = len(codebook_labels(codebook))
+    identity = _permutation_identity(record)
+    result = None
+    for key, question in record["questions"].items():
+        if question.get("type") != "choice" or "label_indices" in question:
+            continue
+        count = len(question.get("options") or ())
+        if count >= size:
+            continue
+        generator = _generator(seed, identity, f"labels:{key}")
+        if generator.random() >= probability:
+            continue
+        if result is None:
+            result = dict(record)
+            result["questions"] = dict(record["questions"])
+        result["questions"][key] = {
+            **question,
+            "label_indices": sorted(generator.sample(range(size), count)),
+        }
+    return dict(record) if result is None else result
 
 
 def _generator(seed: int, identity: str, stream: str) -> random.Random:
