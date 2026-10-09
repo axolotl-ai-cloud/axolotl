@@ -81,8 +81,10 @@ class MoeSievePlugin(BasePlugin):
         validate_runtime(cfg)
         settings = MoeSieveConfig.model_validate(dict(cfg.get("moe_sieve") or {}))
         checkpoint = cfg.lora_model_dir
-        if not inference and (
-            cfg.resume_from_checkpoint or cfg.auto_resume_from_checkpoints
+        if (
+            not inference
+            and not cfg.merge_lora
+            and (cfg.resume_from_checkpoint or cfg.auto_resume_from_checkpoints)
         ):
             checkpoint = determine_last_checkpoint(cfg) or checkpoint
         if checkpoint:
