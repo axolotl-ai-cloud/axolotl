@@ -28,7 +28,7 @@ class PackedDiffusionGemmaOutput(ModelOutput):
 
 
 def _encoder_feed_forward(layer, hidden_states: torch.Tensor) -> torch.Tensor:
-    """Dense MLP + routed experts half of ``DiffusionGemmaEncoderTextLayer.forward``."""
+    """Dense MLP + routed experts half of a DiffusionGemma encoder/decoder text layer."""
     residual = hidden_states
     hidden_states = layer.pre_feedforward_layernorm(hidden_states)
     hidden_states = layer.mlp(hidden_states)
@@ -49,6 +49,26 @@ def _encoder_feed_forward(layer, hidden_states: torch.Tensor) -> torch.Tensor:
     return hidden_states * layer.layer_scalar
 
 
+def _checkpointed_feed_forward(layer, hidden_states: torch.Tensor) -> torch.Tensor:
+    """The checkpointed region: the feed-forward half with autocast's cast cache off.
+
+    Autocast caches casts of leaf weights (the fp32 LoRA factors) for the lifetime of
+    the outer autocast context. The forward pass hits that cache (tied encoder/decoder
+    factors were cast earlier), the backward recompute does not, so the region's op
+    stream differs and selective checkpointing's per-op replay fails ("invocation
+    index ... not found in storage"). Without the cache both passes cast identically.
+    """
+    device_type = hidden_states.device.type
+    if torch.is_autocast_enabled(device_type):
+        with torch.autocast(
+            device_type,
+            dtype=torch.get_autocast_dtype(device_type),
+            cache_enabled=False,
+        ):
+            return _encoder_feed_forward(layer, hidden_states)
+    return _encoder_feed_forward(layer, hidden_states)
+
+
 def _encoder_layer_forward(
     self,
     hidden_states: torch.Tensor,
@@ -58,13 +78,19 @@ def _encoder_layer_forward(
     past_key_values=None,
     **kwargs,
 ) -> torch.Tensor:
-    """``DiffusionGemmaEncoderTextLayer.forward`` with the feed-forward half checkpointed.
+    """DiffusionGemma text-layer forward with only the feed-forward half checkpointed.
 
-    HF keeps encoder layers out of gradient checkpointing because attention appends
-    to the shared KV cache, and a full-layer replay would append twice. Only the
-    attention half touches the cache, so the dense MLP + MoE half (the bulk of the
+    Encoder: HF keeps encoder layers out of gradient checkpointing because attention
+    appends to the shared KV cache, and a full-layer replay would append twice. Only
+    the attention half touches the cache, so the dense MLP + MoE half (the bulk of the
     saved activations) is recomputed in backward while attention and the cache write
     run exactly once.
+
+    Decoder: the same split replaces HF's whole-layer checkpoint. Its attention runs on
+    the canvas only (small), and keeping the compiled FlexAttention call out of the
+    selective-checkpointing region keeps SAC's per-op replay bookkeeping valid: the
+    first, compiling flex call issues extra ops that its recompute does not, and SAC
+    then fails with "invocation index ... not found in storage".
     """
     residual = hidden_states
     hidden_states = self.input_layernorm(hidden_states)
@@ -84,7 +110,7 @@ def _encoder_layer_forward(
         # context_fn force-saves the router's topk so the recompute replays the
         # forward's expert choice (a near-tie could otherwise flip it silently).
         return torch.utils.checkpoint.checkpoint(
-            _encoder_feed_forward,
+            _checkpointed_feed_forward,
             self,
             hidden_states,
             **self._axolotl_checkpoint_kwargs,
@@ -95,15 +121,21 @@ def _encoder_layer_forward(
 def set_encoder_feed_forward_checkpointing(
     model, enabled: bool, checkpoint_kwargs: dict | None = None
 ) -> int:
-    """Checkpoint (or restore) the feed-forward half of every DiffusionGemma encoder layer."""
+    """Checkpoint (or restore) the feed-forward half of every DiffusionGemma text layer."""
     from transformers.models.diffusion_gemma.modeling_diffusion_gemma import (
+        DiffusionGemmaDecoderTextLayer,
         DiffusionGemmaEncoderTextLayer,
     )
 
     count = 0
     for module in model.modules():
-        if not isinstance(module, DiffusionGemmaEncoderTextLayer):
+        if not isinstance(
+            module, (DiffusionGemmaEncoderTextLayer, DiffusionGemmaDecoderTextLayer)
+        ):
             continue
+        if isinstance(module, DiffusionGemmaDecoderTextLayer):
+            # the split forward replaces HF's whole-layer checkpoint
+            module.gradient_checkpointing = False
         if enabled:
             module._axolotl_checkpoint_kwargs = dict(
                 checkpoint_kwargs or {"use_reentrant": False}
@@ -172,10 +204,11 @@ class AxolotlDiffusionGemmaForBlockDiffusion(DiffusionGemmaForBlockDiffusion):
         super().gradient_checkpointing_enable(
             gradient_checkpointing_kwargs=checkpoint_kwargs, **kwargs
         )
-        # Decoder layers checkpoint upstream; encoder layers only their feed-forward half.
+        # Encoder and decoder layers checkpoint only their feed-forward half.
         count = set_encoder_feed_forward_checkpointing(self, True, checkpoint_kwargs)
         LOG.info(
-            "DiffusionGemma: checkpointing the feed-forward half of %d encoder layers; "
+            "DiffusionGemma: checkpointing the feed-forward half of %d encoder/decoder "
+            "layers; "
             "router topk saved for recompute (%d routers)",
             count,
             routers,

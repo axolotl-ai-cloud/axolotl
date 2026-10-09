@@ -93,9 +93,13 @@ def test_encoder_feed_forward_checkpointing_matches_and_writes_the_cache_once():
         gradient_checkpointing_kwargs={"use_reentrant": False}
     )
     encoder_layers = checkpointed.get_base_model().model.encoder.language_model.layers
+    decoder_layers = checkpointed.get_base_model().model.decoder.layers
     assert all(
-        layer.forward.__func__ is _encoder_layer_forward for layer in encoder_layers
+        layer.forward.__func__ is _encoder_layer_forward
+        for layer in (*encoder_layers, *decoder_layers)
     )
+    # the split forward replaces HF's whole-layer decoder checkpoint
+    assert not any(layer.gradient_checkpointing for layer in decoder_layers)
     plain.train()
     checkpointed.train()
 
@@ -213,5 +217,33 @@ def test_reentrant_checkpointing_is_rejected():
             model.get_base_model().gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs={"use_reentrant": True}
             )
+    finally:
+        clear_registered_saves()
+
+
+def test_checkpointing_under_autocast_replays_the_same_casts():
+    """Autocast's cast cache made the forward and recompute op streams differ."""
+    clear_registered_saves()
+    try:
+        plain = _model()
+        checkpointed = copy.deepcopy(plain)
+        share_diffusion_gemma_tied_lora(checkpointed)
+        checkpointed.get_base_model().gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        gen = torch.Generator().manual_seed(4)
+        prompt = torch.randint(3, 128, (2, 24), generator=gen)
+        canvas = torch.randint(3, 128, (2, 16), generator=gen)
+        grads = []
+        for model in (plain, checkpointed):
+            model.train()
+            with torch.autocast("cpu", dtype=torch.bfloat16):
+                logits = model(input_ids=prompt, decoder_input_ids=canvas).logits
+            logits.float().square().mean().backward()
+            grads.append(
+                {n: p.grad for n, p in model.named_parameters() if p.requires_grad}
+            )
+        for name, grad in grads[0].items():
+            torch.testing.assert_close(grads[1][name], grad, rtol=2e-2, atol=1e-4)
     finally:
         clear_registered_saves()
