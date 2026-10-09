@@ -11,7 +11,7 @@ from datasets import Dataset
 from torch.utils.data import BatchSampler
 from transformers import DataCollatorWithFlattening
 
-from axolotl.utils.samplers import FlatteningAwareRandomSampler
+from axolotl.utils.samplers import LabelBalancedRandomSampler
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 4, 16])
@@ -20,8 +20,13 @@ def test_cardinality_coverage_objective_and_tail(batch_size, size):
     rng = np.random.default_rng(42)
     lengths = rng.integers(2, 129, size)
     counts = np.array([rng.integers(0, n) for n in lengths], dtype=np.int64)
-    sampler = FlatteningAwareRandomSampler(
-        lengths, counts, batch_size, seed=42, batches_per_optimizer_step=4
+    sampler = LabelBalancedRandomSampler(
+        lengths,
+        counts,
+        batch_size,
+        length_mode="flattened",
+        seed=42,
+        batches_per_optimizer_step=4,
     )
     before = torch.randperm(size, generator=torch.Generator().manual_seed(42)).tolist()
     after = list(sampler)
@@ -32,9 +37,9 @@ def test_cardinality_coverage_objective_and_tail(batch_size, size):
     assert all(len(b) == batch_size for b in batches[:-1])
     a, b = sampler.label_metrics["before"], sampler.label_metrics["after"]
     assert b["std_label_count"] <= a["std_label_count"] + 1e-10
-    assert b["max_flattened_length"] <= a["max_flattened_length"]
-    assert b["std_flattened_length"] <= a["std_flattened_length"] + 1e-10
-    assert b["mean_flattened_length"] == a["mean_flattened_length"]
+    assert b["max_unpadded_length"] <= a["max_unpadded_length"]
+    assert b["std_unpadded_length"] <= a["std_unpadded_length"] + 1e-10
+    assert b["mean_unpadded_length"] == a["mean_unpadded_length"]
     assert b["total_label_count"] == a["total_label_count"]
     assert list(sampler) == after
 
@@ -47,7 +52,9 @@ def test_collated_labels_and_strong_balance():
         }
         for i in range(64)
     ]
-    sampler = FlatteningAwareRandomSampler([4] * 64, [3] * 32 + [0] * 32, 4, seed=42)
+    sampler = LabelBalancedRandomSampler(
+        [4] * 64, [3] * 32 + [0] * 32, 4, length_mode="flattened", seed=42
+    )
     collator = DataCollatorWithFlattening()
     labels = []
     for batch in BatchSampler(sampler, 4, drop_last=True):
@@ -66,8 +73,13 @@ def test_rank_rng_epoch_and_sharding():
     for rank in range(4):
         with torch.random.fork_rng():
             torch.manual_seed(rank + 100)
-            sampler = FlatteningAwareRandomSampler(
-                [4] * 132, [0, 1, 2, 3] * 33, 4, seed=42, batches_per_optimizer_step=4
+            sampler = LabelBalancedRandomSampler(
+                [4] * 132,
+                [0, 1, 2, 3] * 33,
+                4,
+                length_mode="flattened",
+                seed=42,
+                batches_per_optimizer_step=4,
             )
             state = torch.get_rng_state().clone()
             first = list(sampler)
@@ -106,7 +118,7 @@ def test_trainer_selects_fixed_count_sampler(provided_labels):
         sample_packing=False,
         pretraining=False,
         batch_flattening=True,
-        balance_packed_labels=True,
+        balance_labels=True,
         data_seed=7,
         seed=42,
         per_device_train_batch_size=8,
@@ -116,7 +128,7 @@ def test_trainer_selects_fixed_count_sampler(provided_labels):
     trainer.state = SimpleNamespace(train_batch_size=4)
     trainer.data_collator = DataCollatorWithFlattening()
     sampler = trainer._get_train_sampler(dataset)
-    assert isinstance(sampler, FlatteningAwareRandomSampler)
+    assert isinstance(sampler, LabelBalancedRandomSampler)
     assert sampler.batch_size == 4
     assert sampler.seed == 7
     assert sampler.batches_per_optimizer_step == 16
@@ -138,16 +150,16 @@ def test_flattening_config():
         batch_flattening=True,
         attn_implementation="varlen",
         micro_batch_size=4,
-        balance_packed_labels=True,
+        balance_labels=True,
     )
-    assert AxolotlInputConfig(**cfg).balance_packed_labels
+    assert AxolotlInputConfig(**cfg).balance_labels
     for change in [
         {"streaming": True, "max_steps": 10},
         {"group_by_length": True},
         {"curriculum_sampling": True},
         {"accelerator_config": {"split_batches": True}},
     ]:
-        with pytest.raises(ValueError, match="balance_packed_labels"):
+        with pytest.raises(ValueError, match="balance_labels"):
             AxolotlInputConfig(**(cfg | change))
 
 
@@ -160,7 +172,7 @@ def test_iterable_flattening_balance_rejected_at_dataloader():
 
     trainer = object.__new__(AxolotlTrainer)
     trainer.args = SimpleNamespace(
-        balance_packed_labels=True, batch_flattening=True, sample_packing=False
+        balance_labels=True, batch_flattening=True, sample_packing=False
     )
     with pytest.raises(ValueError, match="map-style"):
         trainer._get_dataloader(Stream(), "training", 4, is_training=True)

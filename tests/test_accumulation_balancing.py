@@ -5,7 +5,7 @@ import pytest
 from accelerate.data_loader import BatchSamplerShard
 from torch.utils.data import BatchSampler
 
-from axolotl.utils.samplers import FlatteningAwareRandomSampler, MultipackBatchSampler
+from axolotl.utils.samplers import LabelBalancedRandomSampler, MultipackBatchSampler
 from axolotl.utils.samplers.accumulation import (
     accumulation_metrics,
     balance_accumulation,
@@ -63,8 +63,13 @@ def test_sampler_integration_matches_actual_rank_shards(kind):
         batch_sampler = sampler
         label_count = lambda batch: sum(int(counts[i]) for row in batch for i in row)
     else:
-        sampler = FlatteningAwareRandomSampler(
-            lengths, counts, 4, seed=42, batches_per_optimizer_step=16
+        sampler = LabelBalancedRandomSampler(
+            lengths,
+            counts,
+            4,
+            length_mode="flattened",
+            seed=42,
+            batches_per_optimizer_step=16,
         )
         batch_sampler = BatchSampler(sampler, 4, True)
         list(sampler)

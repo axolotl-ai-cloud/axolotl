@@ -82,7 +82,7 @@ different numbers of supervised tokens. Enable label balancing with:
 
 ```yaml
 sample_packing: true
-balance_packed_labels: true
+balance_labels: true
 ```
 
 The sampler first packs by context length, then balances the number of unmasked
@@ -156,18 +156,42 @@ seed, packing settings, microbatch size, data-parallel size and accumulation
 grouping, with `ignore_data_skip: false`. This applies to map-style training;
 streaming still relies on the iterable dataset's existing resume behavior.
 
-## Balancing fixed-count flattened batches
+## Balancing fixed-count padded or flattened batches
+
+Label balancing also works with ordinary padded attention, without sample
+packing or batch flattening:
+
+```yaml
+sample_packing: false
+batch_flattening: false
+balance_labels: true
+micro_batch_size: 4
+```
+
+`LabelBalancedRandomSampler` preserves the number of original samples per
+microbatch. In padded mode, batch cost is the sample count multiplied by the
+longest sequence length, rounded to the collator's padding multiple. Within each
+window of at most 64 microbatches, it tries length grouping and four passes of
+sample swaps. Changes must not increase label-count variance, padded-cost
+variance, total padding, or peak batch cost. These objectives can conflict, in
+which case the sampler leaves some imbalance instead of adding padding.
+
+The padded path requires tokenized labels and the standard Axolotl or Transformers
+seq2seq collator, with right padding, longest-sequence padding, and ignored padding
+labels (`-100`). `pad_to_sequence_len` remains supported through the collator's
+padding multiple. Counts exclude each sample's first label when the model uses a
+shifted causal loss. Custom collators that rewrite labels are not supported.
 
 For ordinary batch flattening, keep sample packing disabled:
 
 ```yaml
 sample_packing: false
 batch_flattening: true
-balance_packed_labels: true
+balance_labels: true
 micro_batch_size: 4
 ```
 
-`FlatteningAwareRandomSampler` yields ordinary scalar dataset indices. Each full
+`LabelBalancedRandomSampler` yields ordinary scalar dataset indices. Each full
 microbatch still contains exactly four original samples in this example; the
 flattening collator concatenates them into one variable-length row. The sampler
 balances both the sum of sequence lengths and the count of supervised labels
@@ -183,24 +207,28 @@ tail. It can leave unavoidable imbalance when the two objectives conflict.
 
 The sampler uses the data seed (falling back to the training seed) and epoch,
 independently of rank-local RNG. Existing DataLoader batching and distributed
-sharding apply. The opt-in path requires a map-style tokenized dataset, the
-standard flattening collator with `separator_id=-100`, and
-`accelerator_config.split_batches: false`. It cannot be combined with streaming
+sharding apply. Both fixed-count modes require a map-style tokenized dataset and
+`accelerator_config.split_batches: false`. Flattened mode requires the standard
+flattening collator with `separator_id=-100`. Neither mode can be combined with streaming
 pretraining, curriculum sampling or length-grouped sampling. Streaming sample
 packing continues to use its separate chunked balancing path.
 
-`sampler.label_metrics` reports before/after length mean, standard deviation and
-maximum, plus label mean, standard deviation and total. These describe the
+`sampler.label_metrics` reports unpadded length mean, standard deviation and
+maximum (`mean_unpadded_length`, `std_unpadded_length`, `max_unpadded_length`),
+plus label mean, standard deviation and total. Batch-cost metrics include
+`mean_batch_cost`, `std_batch_cost`, `max_batch_cost`, `total_batch_cost`, and
+`padding_tokens`. Cost is the unpadded token sum in flattened mode and the padded
+token slots in padded mode. These describe the
 unsharded plan including the final partial batch. The accumulation-aware pass described below further smooths label totals
-without changing any flattened microbatch or its length.
+without changing any microbatch or its cost.
 
 
 ## Accumulation-aware ordering
 
-For map-style packed and fixed-count flattened training, `balance_packed_labels`
+For map-style packed, padded, and flattened training, `balance_labels`
 receives a normalized `batches_per_optimizer_step` from the trainer: data-parallel
 replicas multiplied by `gradient_accumulation_steps`. Both `MultipackBatchSampler`
-and `FlatteningAwareRandomSampler` use this same grouping value. With accumulation
+and `LabelBalancedRandomSampler` use this same grouping value. With accumulation
 steps times rank count greater than one, a second pass reorders whole microbatches across up to
 16 complete optimizer updates. With `W` ranks and `G` accumulation steps, each
 update spans `W * G` batches of the common plan; rank `r` consumes every `W`th

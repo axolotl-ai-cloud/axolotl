@@ -206,7 +206,7 @@ def wrap_streaming_dataset(
             batch_size=cfg.micro_batch_size,
             multipack_attn=multipack_attn,
             bin_size=cfg.sample_packing_bin_size,
-            balance_labels=bool(cfg.balance_packed_labels),
+            balance_labels=bool(cfg.balance_labels),
             seed=cfg.seed or 0,
         )
 

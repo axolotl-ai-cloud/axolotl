@@ -194,7 +194,6 @@ def test_nonidentity_sampler_indices():
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"sample_packing": False},
         {"sample_packing_sequentially": True},
         {"curriculum_sampling": True},
         {"reward_model": True},
@@ -210,10 +209,10 @@ def test_incompatible_config_rejected(overrides):
         learning_rate=1e-5,
         datasets=[{"path": "test", "type": "alpaca"}],
         sample_packing=True,
-        balance_packed_labels=True,
+        balance_labels=True,
     )
     config.update(overrides)
-    with pytest.raises(ValueError, match="balance_packed_labels"):
+    with pytest.raises(ValueError, match="balance_labels"):
         AxolotlInputConfig(**config)
 
 
@@ -226,10 +225,8 @@ def test_config_accepts_opt_in_and_defaults_off():
         datasets=[{"path": "test", "type": "alpaca"}],
         sample_packing=True,
     )
-    assert not AxolotlInputConfig(**config).balance_packed_labels
-    assert AxolotlInputConfig(
-        **config, balance_packed_labels=True
-    ).balance_packed_labels
+    assert not AxolotlInputConfig(**config).balance_labels
+    assert AxolotlInputConfig(**config, balance_labels=True).balance_labels
 
 
 @pytest.mark.parametrize("real_batches", [False, True])
@@ -247,7 +244,7 @@ def test_trainer_passes_label_metadata(real_batches, shift_labels):
         multipack_real_batches=real_batches,
         per_device_train_batch_size=2,
         max_seq_length=8,
-        balance_packed_labels=True,
+        balance_labels=True,
         sample_packing_efficiency=1.0,
         sample_packing_group_size=100,
         sample_packing_bin_size=8,
@@ -272,7 +269,7 @@ def test_trainer_passes_label_metadata(real_batches, shift_labels):
     )
     with pytest.raises(ValueError, match="right padding"):
         trainer._create_multipack_sampler(list(range(8)), dataset)
-    trainer.args.balance_packed_labels = False
+    trainer.args.balance_labels = False
     sampler = trainer._create_multipack_sampler(
         list(range(8)), dataset.remove_columns("labels")
     )
@@ -287,7 +284,7 @@ def test_streaming_config_accepts_label_balancing(pretraining):
         base_model="test",
         learning_rate=1e-5,
         sample_packing=True,
-        balance_packed_labels=True,
+        balance_labels=True,
         max_steps=10,
     )
     if pretraining:
@@ -295,7 +292,7 @@ def test_streaming_config_accepts_label_balancing(pretraining):
         config["streaming"] = True
     else:
         config.update(streaming=True, datasets=[{"path": "test", "type": "alpaca"}])
-    assert AxolotlInputConfig(**config).balance_packed_labels
+    assert AxolotlInputConfig(**config).balance_labels
 
 
 @pytest.mark.parametrize("pretraining", [False, True])
@@ -336,7 +333,7 @@ def test_streaming_balances_each_chunk(pretraining, explicit_labels, multipack_a
         cfg = DictDefault(
             dict(
                 sample_packing=True,
-                balance_packed_labels=balance,
+                balance_labels=balance,
                 pretraining_dataset="test" if pretraining else None,
                 pretrain_multipack_attn=multipack_attn,
                 sequence_len=4,

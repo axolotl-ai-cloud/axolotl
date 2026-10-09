@@ -26,7 +26,12 @@ from torch.utils.data import (
     Sampler,
     SequentialSampler,
 )
-from transformers import DataCollatorWithFlattening, PreTrainedModel, Trainer
+from transformers import (
+    DataCollatorForSeq2Seq as HFDataCollatorForSeq2Seq,
+    DataCollatorWithFlattening,
+    PreTrainedModel,
+    Trainer,
+)
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
 from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
@@ -51,6 +56,7 @@ from axolotl.core.trainers.utils import (
 )
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_world_size,
@@ -59,7 +65,7 @@ from axolotl.utils.distributed import (
 )
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import (
-    FlatteningAwareRandomSampler,
+    LabelBalancedRandomSampler,
     MultipackBatchSampler,
     get_dataset_lengths,
 )
@@ -186,7 +192,7 @@ class AxolotlTrainer(
             trial,
         )
         if (
-            self.args.balance_packed_labels
+            self.args.balance_labels
             and not self.args.pretraining
             and resume_from_checkpoint is not None
             and self.state.epoch is not None
@@ -196,7 +202,7 @@ class AxolotlTrainer(
         return epochs, steps
 
     def _run_epoch(self, model, epoch, train_dataloader, **kwargs):
-        if self.args.balance_packed_labels and not self.args.pretraining:
+        if self.args.balance_labels and not self.args.pretraining:
             # Resume's SkipBatchSampler hides samplers from Accelerate's epoch forwarding.
             pending = [train_dataloader]
             visited = set()
@@ -206,7 +212,7 @@ class AxolotlTrainer(
                     continue
                 visited.add(id(current))
                 if isinstance(
-                    current, (MultipackBatchSampler, FlatteningAwareRandomSampler)
+                    current, (MultipackBatchSampler, LabelBalancedRandomSampler)
                 ):
                     current.set_epoch(epoch)
                 for attribute in ("batch_sampler", "sampler"):
@@ -260,7 +266,7 @@ class AxolotlTrainer(
             batch_max_len = train_batch_size * self.args.max_seq_length
 
         label_counts = label_start_counts = None
-        if self.args.balance_packed_labels:
+        if self.args.balance_labels:
             tokenizer = getattr(getattr(self, "data_collator", None), "tokenizer", None)
             if getattr(tokenizer, "padding_side", "right") != "right":
                 raise ValueError("Label-balanced packing requires right padding")
@@ -311,27 +317,40 @@ class AxolotlTrainer(
 
         use_sample_packing = self.args.sample_packing and not self.args.pretraining
 
-        if (
-            self.args.balance_packed_labels
-            and getattr(self.args, "batch_flattening", False)
-            and not use_sample_packing
-        ):
-            if (
-                not isinstance(self.data_collator, DataCollatorWithFlattening)
-                or self.data_collator.separator_id != -100
+        if self.args.balance_labels and not use_sample_packing:
+            flattened = getattr(self.args, "batch_flattening", False)
+            collator = self.data_collator
+            if flattened:
+                if (
+                    not isinstance(collator, DataCollatorWithFlattening)
+                    or collator.separator_id != -100
+                ):
+                    raise ValueError(
+                        "Label balancing requires the standard flattening collator with separator_id=-100"
+                    )
+            elif (
+                type(collator) not in (DataCollatorForSeq2Seq, HFDataCollatorForSeq2Seq)
+                or collator.label_pad_token_id != -100
+                or collator.tokenizer.padding_side != "right"
+                or collator.padding not in (True, "longest")
             ):
                 raise ValueError(
-                    "Label balancing requires the standard flattening collator with separator_id=-100"
+                    "Padded label balancing requires a standard right-padding seq2seq collator "
+                    "with longest padding and label_pad_token_id=-100"
                 )
             lengths = get_dataset_lengths(train_dataset)
             if "labels" in train_dataset.column_names:
                 counts, starts = get_dataset_label_counts(
-                    train_dataset.select_columns(["labels"])
+                    train_dataset.select_columns(["labels"]),
+                    shift_labels=flattened
+                    or getattr(self, "_loss_shifts_labels", True),
                 )
                 counts = counts - starts
-            else:
+            elif flattened:
                 counts = lengths - 1
-            return FlatteningAwareRandomSampler(
+            else:
+                raise ValueError("Padded label balancing requires tokenized labels")
+            return LabelBalancedRandomSampler(
                 lengths,
                 counts,
                 batch_size=self.state.train_batch_size
@@ -340,6 +359,8 @@ class AxolotlTrainer(
                 if self.args.data_seed is not None
                 else self.args.seed,
                 batches_per_optimizer_step=self._batches_per_optimizer_step(),
+                length_mode="flattened" if flattened else "padded",
+                padding_multiple=getattr(collator, "pad_to_multiple_of", None) or 1,
             )
 
         # Determine the base sampler first
@@ -404,8 +425,8 @@ class AxolotlTrainer(
         """Create a [`~torch.utils.data.DataLoader`] from the given dataset."""
 
         if (
-            self.args.balance_packed_labels
-            and getattr(self.args, "batch_flattening", False)
+            self.args.balance_labels
+            and is_training
             and not self.args.sample_packing
             and isinstance(dataset, torch.utils.data.IterableDataset)
         ):

@@ -276,9 +276,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
         training_arguments_kwargs["batch_flattening"] = bool(self.cfg.batch_flattening)
-        training_arguments_kwargs["balance_packed_labels"] = bool(
-            self.cfg.balance_packed_labels
-        )
+        training_arguments_kwargs["balance_labels"] = bool(self.cfg.balance_labels)
         training_arguments_kwargs["sample_packing_drop_attention_mask"] = (
             self.cfg.attn_decontaminates_packing
         )

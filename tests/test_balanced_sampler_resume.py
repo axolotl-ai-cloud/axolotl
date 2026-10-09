@@ -16,7 +16,7 @@ from transformers import Trainer, TrainerCallback, TrainingArguments
 
 from axolotl.core.trainers.base import AxolotlTrainer
 from axolotl.core.training_args_base import AxolotlTrainingMixins
-from axolotl.utils.samplers import FlatteningAwareRandomSampler, MultipackBatchSampler
+from axolotl.utils.samplers import LabelBalancedRandomSampler, MultipackBatchSampler
 
 
 class IndexDataset:
@@ -53,8 +53,13 @@ def make_loader(kind, rank=0, replicas=1, variable_lengths=False):
         len(sampler)
         batches = sampler
     else:
-        sampler = FlatteningAwareRandomSampler(
-            lengths, counts, 4, seed=42, batches_per_optimizer_step=4 * replicas
+        sampler = LabelBalancedRandomSampler(
+            lengths,
+            counts,
+            4,
+            length_mode="flattened" if kind == "flattened" else "padded",
+            seed=42,
+            batches_per_optimizer_step=4 * replicas,
         )
         batches = BatchSampler(sampler, 4, drop_last=True)
     shard = BatchSamplerShard(
@@ -64,7 +69,7 @@ def make_loader(kind, rank=0, replicas=1, variable_lengths=False):
     return sampler, loader
 
 
-@pytest.mark.parametrize("kind", ["packed", "flattened"])
+@pytest.mark.parametrize("kind", ["packed", "flattened", "padded"])
 @pytest.mark.parametrize("epoch", [0, 2])
 @pytest.mark.parametrize("replicas", [1, 4])
 @pytest.mark.parametrize("skip", [0, 4, 12])
@@ -82,7 +87,7 @@ def test_resumed_rank_batches_match_uninterrupted(
 
     monkeypatch.setattr(Trainer, "_run_epoch", run_epoch)
     trainer = object.__new__(AxolotlTrainer)
-    trainer.args = SimpleNamespace(balance_packed_labels=True, pretraining=False)
+    trainer.args = SimpleNamespace(balance_labels=True, pretraining=False)
     for rank in range(replicas):
         sampler, loader = make_loader(kind, rank, replicas)
         sampler.set_epoch(epoch)
@@ -129,7 +134,7 @@ def tensor_collator(batch):
     return {"input_ids": torch.tensor(batch)}
 
 
-@pytest.mark.parametrize("kind", ["packed", "flattened"])
+@pytest.mark.parametrize("kind", ["packed", "flattened", "padded"])
 @pytest.mark.parametrize("variable_lengths", [False, True])
 @pytest.mark.parametrize("checkpoint_epoch", [1, 3])
 def test_actual_checkpoint_resume(
@@ -155,7 +160,7 @@ def test_actual_checkpoint_resume(
                 max_steps=max_steps,
                 gradient_accumulation_steps=4,
                 per_device_train_batch_size=4,
-                balance_packed_labels=True,
+                balance_labels=True,
                 save_steps=save_step,
                 logging_strategy="no",
                 report_to="none",
