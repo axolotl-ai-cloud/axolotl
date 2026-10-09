@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import torch
 
+from axolotl.monkeypatch.attention.segment_mask import (
+    decoder_segment_meta,
+    encoder_segment_meta,
+)
+from axolotl.utils.logging import get_logger
+
 from ..attention import (
     decoder_flex_block_mask,
     decoder_prefix_canvas_mask,
@@ -12,6 +18,8 @@ from ..attention import (
     ensure_flex_recompile_budget,
 )
 from ..batch import CorruptedCanvas, DiffusionBatch, PackedEncoderCanvasBatch
+
+LOG = get_logger(__name__)
 
 
 class EncoderCanvasBackend:
@@ -23,6 +31,7 @@ class EncoderCanvasBackend:
         sliding_window: int,
         attention_backend: str = "dense",
         physical_bucket_size: int | None = None,
+        segment_kernel: bool | None = None,
     ):
         if vocab_size <= 0:
             raise ValueError("vocab_size must be positive")
@@ -35,6 +44,17 @@ class EncoderCanvasBackend:
         self.attention_backend = attention_backend
         if attention_backend == "flex_attention":
             ensure_flex_recompile_budget()
+        if segment_kernel is None:
+            from axolotl.monkeypatch.attention.large_head import (
+                segment_kernel_enabled,
+            )
+
+            segment_kernel = segment_kernel_enabled()
+        # Global (head_dim 512) layers through the Triton segment kernel instead of flex
+        # (large_head_attention: auto | triton_flash). Sliding layers always stay on flex.
+        self.segment_kernel = (
+            bool(segment_kernel) and attention_backend == "flex_attention"
+        )
         self.physical_bucket_size = (
             128
             if attention_backend == "flex_attention" and physical_bucket_size is None
@@ -217,6 +237,26 @@ class EncoderCanvasBackend:
                 self.sliding_window,
                 logical_ids=batch.logical_ids,
             )
+        # segment_kernel implies the flex backend (see __init__).
+        if self.segment_kernel and encoder_docs.is_cuda:
+            self._attach_segment_meta(
+                encoder_mask,
+                encoder_segment_meta(encoder_docs, encoder_validity, encoder_pos),
+                "encoder",
+            )
+            self._attach_segment_meta(
+                decoder_mask,
+                decoder_segment_meta(
+                    encoder_docs,
+                    canvas_docs,
+                    encoder_validity,
+                    canvas_validity,
+                    batch.decoder_prefix_lengths,
+                    encoder_pos,
+                    logical_ids=batch.logical_ids,
+                ),
+                "decoder",
+            )
         masks = {
             "full_attention": encoder_mask,
             "sliding_attention": encoder_sliding_mask,
@@ -248,6 +288,22 @@ class EncoderCanvasBackend:
             masks,
             decoder_masks,
         )
+
+    @staticmethod
+    def _attach_segment_meta(block_mask, meta, kind: str) -> None:
+        """Hang row-segment metadata on a global-layer BlockMask for the Triton kernel."""
+        from axolotl.monkeypatch.attention.large_head import patch_flex_large_head
+        from axolotl.monkeypatch.attention.segment_mask import SEGMENTS_ATTR
+
+        if meta is None:
+            LOG.warning_once(
+                "segment kernel: %s mask layout not expressible as row segments; "
+                "keeping FlexAttention for it",
+                kind,
+            )
+            return
+        patch_flex_large_head()
+        setattr(block_mask, SEGMENTS_ATTR, meta)
 
     def corrupt(
         self,

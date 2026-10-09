@@ -917,6 +917,17 @@ class PatchManager:
         # inherit a previous run's stale auto/triton_flash policy on an sdpa run.
         set_large_head_policy(policy)
         set_large_head_packed(bool(self.cfg.sample_packing))
+        from axolotl.monkeypatch.attention.large_head import (
+            patch_flex_large_head,
+            unpatch_flex_large_head,
+        )
+
+        # FlexAttention: only BlockMasks carrying segment metadata (packed encoder/canvas global
+        # layers) are routed; everything else stays on flex.
+        if policy != "sdpa" and self.cfg.attn_implementation == "flex_attention":
+            patch_flex_large_head()
+        else:
+            unpatch_flex_large_head()
         if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
             unpatch_sdpa_large_head()
             return
