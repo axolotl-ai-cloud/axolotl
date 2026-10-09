@@ -9,6 +9,7 @@ from ..attention import (
     decoder_prefix_canvas_mask,
     encoder_causal_mask,
     encoder_flex_block_mask,
+    ensure_flex_recompile_budget,
 )
 from ..batch import CorruptedCanvas, DiffusionBatch, PackedEncoderCanvasBatch
 
@@ -32,6 +33,8 @@ class EncoderCanvasBackend:
         if physical_bucket_size is not None and physical_bucket_size <= 0:
             raise ValueError("physical_bucket_size must be positive")
         self.attention_backend = attention_backend
+        if attention_backend == "flex_attention":
+            ensure_flex_recompile_budget()
         self.physical_bucket_size = (
             128
             if attention_backend == "flex_attention" and physical_bucket_size is None
