@@ -5,6 +5,7 @@ from __future__ import annotations
 __ci_config_keys__ = ("diffusion_decision",)
 
 import json
+import logging
 import math
 from pathlib import Path
 from typing import Any, Literal, get_type_hints
@@ -20,7 +21,7 @@ from pydantic import (
 )
 from transformers import TrainerCallback
 
-from axolotl.model_support import DiffusionSpec
+from axolotl.model_support import DiffusionLayout, DiffusionSpec
 
 from ._util import (
     CONTROL_TOKEN_FIELDS,
@@ -31,6 +32,8 @@ from ._util import (
     resolve_mask_token_id,
 )
 from .args import DiffusionDecisionConfig
+
+LOG = logging.getLogger(__name__)
 
 MANIFEST_FILENAME = "diffusion_decision_manifest.json"
 MANIFEST_SCHEMA_VERSION = 1
@@ -173,13 +176,28 @@ _RETIRED_READ_FIELDS = frozenset({"eval_steps", "noise_draws", "reader"})
 
 
 class NoiseReadProtocol(BaseModel):
-    """Configured decision read and diffusion controls."""
+    """Configured decision read and diffusion controls.
+
+    ``read_passes`` is the number of model forward passes a decision read depends on.
+    A read masks every label slot (``read_fraction`` 1.0) and takes the restricted softmax
+    at each slot; on a full-sequence layout without free latent slots the later steps of a
+    ``k_max`` unroll re-read the same unchanged canvas, so the read is one pass. ``None``
+    means the count is drawn per batch (1..``unroll_k_max``) and changes the result.
+
+    ``generation_diffusion_steps`` is ``diffusion_lm.num_diffusion_steps``, the step count
+    of free-text diffusion *generation* (``axolotl chat``, sample generation). Decision
+    training and reads never use it. Manifests written before this field existed call it
+    ``diffusion_steps``; it is parsed into ``generation_diffusion_steps``.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     read_fraction: float
     carry_enabled: bool
-    diffusion_steps: StrictInt = Field(ge=1)
+    read_passes: StrictInt | None = Field(default=None, ge=1)
+    unroll_k_max: StrictInt | None = Field(default=None, ge=1)
+    unroll_eval_steps: StrictInt | None = Field(default=None, ge=1)
+    generation_diffusion_steps: StrictInt | None = Field(default=None, ge=1)
     t_eps: float | None = Field(default=None, ge=0.0, le=1.0)
     time_weighting: str | None = None
     objective_reduction: str | None = None
@@ -189,6 +207,9 @@ class NoiseReadProtocol(BaseModel):
     def drop_retired_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
             data = {k: v for k, v in data.items() if k not in _RETIRED_READ_FIELDS}
+            if "diffusion_steps" in data:
+                legacy = data.pop("diffusion_steps")
+                data.setdefault("generation_diffusion_steps", legacy)
         return data
 
     @model_validator(mode="after")
@@ -200,6 +221,12 @@ class NoiseReadProtocol(BaseModel):
             raise ValueError("read_fraction must be finite and in [0, 1]")
         if self.t_eps is not None and not math.isfinite(self.t_eps):
             raise ValueError("t_eps must be finite")
+        if (
+            self.unroll_eval_steps is not None
+            and self.unroll_k_max is not None
+            and self.unroll_eval_steps > self.unroll_k_max
+        ):
+            raise ValueError("unroll_eval_steps cannot exceed unroll_k_max")
         return self
 
 
@@ -210,6 +237,27 @@ class ImageInputs(BaseModel):
 
     max_image_size: StrictInt = Field(ge=28)
     placement: Literal["images_before_state"] = "images_before_state"
+
+
+def decision_read_passes(cfg: Any, spec: Any = None) -> int | None:
+    """Forward passes a decision read depends on under ``cfg`` (see NoiseReadProtocol)."""
+    unroll = _value(_value(cfg, "diffusion_lm"), "unroll")
+    eval_steps = _value(unroll, "eval_steps")
+    if eval_steps is not None:
+        return int(eval_steps)
+    k_max = int(_value(unroll, "k_max", 1) or 1)
+    if k_max == 1:
+        return 1
+    if spec is None:
+        spec = require_diffusion_spec(cfg)
+    latent_mode = _value(_value(_value(cfg, "diffusion_decision"), "latent"), "mode")
+    if (
+        _value(spec, "layout") is DiffusionLayout.FULL_SEQUENCE
+        and latent_mode != "free"
+        and not _value(spec, "self_conditioning", False)
+    ):
+        return 1
+    return None
 
 
 class DecisionManifest(BaseModel):
@@ -225,6 +273,8 @@ class DecisionManifest(BaseModel):
     label_codebook: Literal[
         "vendored26", "expanded52", "expanded128", "expanded255"
     ] = "vendored26"
+    canvas_prefix_ids: list[StrictInt] = Field(default_factory=list)
+    max_questions_per_canvas: StrictInt | None = Field(default=None, ge=1)
     configured_slots: ConfiguredSlots | SampledConfiguredSlots
     noise_read_protocol: NoiseReadProtocol
     tokenizer_special_ids: TokenizerSpecialIds
@@ -288,6 +338,8 @@ def build_decision_manifest(
         decision_layout=decision.layout,
         canvas_width=canvas_width,
         label_codebook=decision.labels.codebook,
+        canvas_prefix_ids=list(getattr(decision, "canvas_prefix_ids", ()) or ()),
+        max_questions_per_canvas=decision.max_questions_per_canvas,
         configured_slots=(
             SampledConfiguredSlots(
                 mode=decision.latent.mode,
@@ -323,7 +375,10 @@ def build_decision_manifest(
         noise_read_protocol=NoiseReadProtocol(
             read_fraction=decision.read_fraction,
             carry_enabled=decision.carry.enabled,
-            diffusion_steps=_value(diffusion, "num_diffusion_steps", 1),
+            read_passes=decision_read_passes(cfg, spec),
+            unroll_k_max=int(_value(_value(diffusion, "unroll"), "k_max", 1) or 1),
+            unroll_eval_steps=_value(_value(diffusion, "unroll"), "eval_steps"),
+            generation_diffusion_steps=_value(diffusion, "num_diffusion_steps"),
             t_eps=_value(diffusion, "t_eps"),
             time_weighting=_value(diffusion, "time_weighting"),
             objective_reduction=_value(diffusion, "objective_reduction"),
@@ -341,6 +396,97 @@ def build_decision_manifest(
             ImageInputs(max_image_size=decision.max_image_size) if has_images else None
         ),
     )
+
+
+def manifest_mismatches(
+    saved: DecisionManifest, expected: DecisionManifest
+) -> list[str]:
+    """Read-relevant fields where an adapter's manifest disagrees with a read config.
+
+    ``saved`` is the adapter's (or merged checkpoint's) manifest and ``expected`` the
+    manifest the read config would write. Fields a legacy manifest does not record
+    (``None``) are not compared.
+    """
+    problems: list[str] = []
+
+    def compare(name: str, trained: Any, configured: Any) -> None:
+        if trained != configured:
+            problems.append(f"{name}: adapter {trained!r}, config {configured!r}")
+
+    compare("label_codebook", saved.label_codebook, expected.label_codebook)
+    compare("canvas_width", saved.canvas_width, expected.canvas_width)
+    compare("decision_layout", saved.decision_layout, expected.decision_layout)
+    compare(
+        "canvas_prefix_ids",
+        list(saved.canvas_prefix_ids),
+        list(expected.canvas_prefix_ids),
+    )
+    if saved.max_questions_per_canvas is not None:
+        compare(
+            "max_questions_per_canvas",
+            saved.max_questions_per_canvas,
+            expected.max_questions_per_canvas,
+        )
+    compare(
+        "diffusion_spec.layout",
+        getattr(saved.diffusion_spec, "layout", None),
+        getattr(expected.diffusion_spec, "layout", None),
+    )
+    for field in ("mode", "num_slots", "token_ids", "sample_num_slots"):
+        compare(
+            f"configured_slots.{field}",
+            getattr(saved.configured_slots, field),
+            getattr(expected.configured_slots, field),
+        )
+    trained_passes = saved.noise_read_protocol.read_passes
+    if trained_passes is not None:
+        compare(
+            "noise_read_protocol.read_passes",
+            trained_passes,
+            expected.noise_read_protocol.read_passes,
+        )
+    trained_mask = saved.model.mask_token_id
+    configured_mask = expected.model.mask_token_id
+    if trained_mask is not None and configured_mask is not None:
+        compare("model.mask_token_id", trained_mask, configured_mask)
+    return problems
+
+
+def read_manifest_path(cfg: Any) -> Path | None:
+    """The manifest a read config loads weights from: the adapter's, else a merged checkpoint's."""
+    adapter_dir = _value(cfg, "lora_model_dir")
+    candidates = [adapter_dir] if adapter_dir else []
+    candidates.append(_value(cfg, "base_model"))
+    for directory in candidates:
+        if isinstance(directory, (str, Path)) and directory:
+            path = Path(directory) / MANIFEST_FILENAME
+            if path.is_file():
+                return path
+        if adapter_dir:
+            # an adapter without a manifest says nothing about the base model's
+            break
+    return None
+
+
+def validate_read_manifest(cfg: Any, *, model: Any = None) -> Path | None:
+    """Refuse a config whose canvas or read protocol disagrees with the loaded weights' manifest."""
+    source = read_manifest_path(cfg)
+    if source is None:
+        return None
+    saved = DecisionManifest.from_path(source)
+    expected = build_decision_manifest(cfg, model=model)
+    problems = manifest_mismatches(saved, expected)
+    if problems:
+        message = (
+            "diffusion_decision config does not match the manifest of the weights it "
+            f"loads ({source}): " + "; ".join(problems)
+        )
+        if not _value(_value(cfg, "diffusion_decision"), "allow_manifest_mismatch"):
+            raise ValueError(message)
+        LOG.warning(
+            "%s (allowed by diffusion_decision.allow_manifest_mismatch)", message
+        )
+    return source
 
 
 class DecisionManifestCheckpointCallback(TrainerCallback):

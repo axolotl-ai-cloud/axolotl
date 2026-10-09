@@ -352,6 +352,29 @@ def _resolve_slot_plan(
     return plan, thought_open_ids, thought_close_ids
 
 
+def _read_overflow_width(
+    decision: Any, spec, slot_plan: SlotPlan | None, scaffold_ids: Sequence[int]
+) -> int | None:
+    """The read-time fallback width for a canvas whose template overflows, or None."""
+    value = _value(decision, "read_overflow_canvas_width")
+    if value is None:
+        return None
+    if _value(spec, "layout") is not DiffusionLayout.FULL_SEQUENCE:
+        raise ValueError(
+            "diffusion_decision.read_overflow_canvas_width requires a full_sequence "
+            "layout; encoder-canvas batches need one shared canvas width"
+        )
+    if slot_plan is not None or scaffold_ids:
+        raise ValueError(
+            "diffusion_decision.read_overflow_canvas_width cannot be combined with "
+            "latent slots"
+        )
+    width = int(value)
+    if spec.max_canvas is not None:
+        width = min(width, int(spec.max_canvas))
+    return width
+
+
 def _canvas_row(
     tokenizer,
     record: dict[str, Any],
@@ -402,27 +425,44 @@ def _canvas_row(
         _value(model_config, "turn_close_token_id", _value(tokenizer, "eos_token_id")),
         "turn_close_token_id",
     )
-    canvas = build_decision_canvas(
-        tokenizer,
-        record,
-        scaffold_ids=scaffold_ids,
-        turn_close_id=turn_close_id,
-        pad_id=required_token_id(
-            _value(tokenizer, "pad_token_id"), "tokenizer.pad_token_id"
-        ),
-        vocab_size=int(vocab_size),
-        width=width,
-        seed=int(_value(cfg, "seed", 0)),
-        steps=int(_value(_value(diffusion, "unroll"), "k_max", 1)),
-        noise_kind="absorbing" if spec.noise is DiffusionNoise.ABSORBING else "uniform",
-        mask_token_id=mask_token_id,
-        slot_plan=slot_plan,
-        thought_open_ids=thought_open_ids,
-        thought_close_ids=thought_close_ids,
-        codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
-        prevalidated_record=True,
-        max_image_size=int(_value(decision, "max_image_size", 1400)),
-    )
+
+    def build(canvas_width: int):
+        return build_decision_canvas(
+            tokenizer,
+            record,
+            scaffold_ids=scaffold_ids,
+            turn_close_id=turn_close_id,
+            pad_id=required_token_id(
+                _value(tokenizer, "pad_token_id"), "tokenizer.pad_token_id"
+            ),
+            vocab_size=int(vocab_size),
+            width=canvas_width,
+            seed=int(_value(cfg, "seed", 0)),
+            steps=int(_value(_value(diffusion, "unroll"), "k_max", 1)),
+            noise_kind="absorbing"
+            if spec.noise is DiffusionNoise.ABSORBING
+            else "uniform",
+            mask_token_id=mask_token_id,
+            slot_plan=slot_plan,
+            thought_open_ids=thought_open_ids,
+            thought_close_ids=thought_close_ids,
+            codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
+            prevalidated_record=True,
+            max_image_size=int(_value(decision, "max_image_size", 1400)),
+        )
+
+    try:
+        canvas = build(width)
+    except SchemaError as error:
+        overflow_width = _read_overflow_width(decision, spec, slot_plan, scaffold_ids)
+        if (
+            train
+            or overflow_width is None
+            or overflow_width <= width
+            or not _is_canvas_overflow(error)
+        ):
+            raise
+        canvas = build(overflow_width)
     row = {
         "canvas": canvas,
         "decision_example": decision_example_from_canvas(
