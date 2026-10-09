@@ -172,12 +172,14 @@ diffusion_lm:
   unroll:
     k_max: 2
     grad_through_steps: false
+    eval_steps: 1
 ```
 
 With `unroll.k_max` above 1, each step draws a read count uniformly from 1 to
 `k_max`. Earlier reads run without retained gradients and the final read
 supplies the loss. `grad_through_steps: true` is available only for models with
-self-conditioning.
+self-conditioning. `eval_steps` (1 to `k_max`) fixes the read count for
+evaluation and prediction instead of drawing it; unset, they draw like training.
 
 ## Adapters, merging and inference
 

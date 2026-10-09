@@ -437,6 +437,23 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
             return 1, False
         return int(unroll.k_max), bool(unroll.grad_through_steps)
 
+    def _native_unroll_steps(
+        self, k_max: int, device: torch.device, training: bool | None = None
+    ) -> int:
+        """Read count for this batch: ``unroll.eval_steps`` when not training, else a draw."""
+        if training is None:
+            training = bool(getattr(getattr(self, "model", None), "training", True))
+        if not training:
+            unroll = self._native_value("unroll")
+            eval_steps = getattr(unroll, "eval_steps", None)
+            if eval_steps is not None:
+                if not 1 <= int(eval_steps) <= k_max:
+                    raise ValueError(
+                        "unroll.eval_steps must be between 1 and unroll.k_max"
+                    )
+                return int(eval_steps)
+        return self._sample_native_unroll_steps(k_max, device)
+
     @staticmethod
     def _sample_native_unroll_steps(k_max: int, device: torch.device) -> int:
         if k_max < 1:
@@ -458,11 +475,12 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
         update_state,
         forward_final=None,
         final_logits_from_outputs=None,
+        training: bool | None = None,
     ):
         """Run the shared native K-step recurrence and retain only its final loss pass."""
 
         k_max, grad_through_steps = self._native_unroll_settings()
-        steps = self._sample_native_unroll_steps(k_max, state.device)
+        steps = self._native_unroll_steps(k_max, state.device, training)
         outputs, logits, final_state = run_unroll(
             state=state,
             update_mask=update_mask,
@@ -676,6 +694,7 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
             update_state=backend.update,
             forward_final=forward_final,
             final_logits_from_outputs=(lambda _outputs: None) if cce_enabled else None,
+            training=model.training,
         )
         if cce_enabled:
             token_loss = getattr(outputs, "loss", None)
@@ -904,7 +923,7 @@ class AxolotlDiffusionTrainer(AxolotlTrainer):
         )
         update_mask = packed.canvas_update_mask & ~packed.canvas_input_pinned_mask
         k_max, grad_through_steps = self._native_unroll_settings()
-        steps = self._sample_native_unroll_steps(k_max, packed.device)
+        steps = self._native_unroll_steps(k_max, packed.device, model.training)
         outputs = backend.forward(
             model,
             packed,

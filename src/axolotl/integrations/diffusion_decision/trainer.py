@@ -919,6 +919,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
                 ),
                 update_state=update_state,
+                training=model.training,
                 **final_kwargs,
             )
         else:
@@ -931,7 +932,9 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     "full-sequence decision K-step self-conditioning is not implemented"
                 )
             # Non-SC full-sequence reads retain the same noisy labels each step.
-            steps = self._sample_native_unroll_steps(k_max, packed["input_ids"].device)
+            steps = self._native_unroll_steps(
+                k_max, packed["input_ids"].device, model.training
+            )
             kernel_options = getattr(self.axolotl_cfg, "flex_attn_compile_kwargs", None)
             step_model_kwargs = None
             if free_slot_mask is not None:
@@ -1063,7 +1066,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         state = corrupted.input_ids
         k1, recurrent = self._conditioning_masks(packed, batch.logical_ids.numel())
         k_max, grad_through_steps = self._native_unroll_settings()
-        steps = self._sample_native_unroll_steps(k_max, packed.device)
+        steps = self._native_unroll_steps(k_max, packed.device, model.training)
         update_mask = packed.canvas_update_mask & ~packed.canvas_input_pinned_mask
         if decision.latent.mode == "free":
             free_slot_mask = (
