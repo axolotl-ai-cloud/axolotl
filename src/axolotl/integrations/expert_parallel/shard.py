@@ -488,6 +488,7 @@ def shard_expert_lora(model, ep_size: int) -> int:
             continue
         start = base.local_expert_offset
         end = start + e_local
+        compact = hasattr(wrapper, "global_selected_experts")
 
         for adapters, dim in (
             (getattr(wrapper, "lora_A", {}), 0),
@@ -495,7 +496,9 @@ def shard_expert_lora(model, ep_size: int) -> int:
         ):
             for ad in list(adapters.keys()):
                 r = getattr(wrapper, "r", {}).get(ad)
-                if r is None or adapters[ad].weight.shape[dim] != e_local * r:
+                if not compact and (
+                    r is None or adapters[ad].weight.shape[dim] != e_local * r
+                ):
                     _slice_expert_lora_param(adapters[ad], dim, e_global, start, end)
                 adapters[ad].weight.register_post_accumulate_grad_hook(_scale_hook)
                 n += 1
@@ -623,11 +626,18 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
         for sub, kind in (("lora_A", "A"), ("lora_B", "B")):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
                 full_local = _gather_adapter_tensor(w).contiguous()
-                full = (
-                    gather_expert_lora_full(full_local, kind, e_global, ep_group)
-                    if ep_sharded
-                    else full_local
-                )
+                if ep_sharded and hasattr(wrapper, "global_selected_experts"):
+                    from axolotl.integrations.moe_sieve.distributed import (
+                        gather_adapter,
+                    )
+
+                    full = gather_adapter(full_local, wrapper, kind, ep_group)
+                else:
+                    full = (
+                        gather_expert_lora_full(full_local, kind, e_global, ep_group)
+                        if ep_sharded
+                        else full_local
+                    )
                 key = _strip_checkpoint_wrapper(f"{wname}.{sub}.weight")
                 target = (
                     key

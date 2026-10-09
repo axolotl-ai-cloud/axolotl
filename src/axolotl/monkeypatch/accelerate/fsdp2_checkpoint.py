@@ -47,8 +47,15 @@ def expert_ownership(model):
             if not getattr(module, "_ep_lora_sharded", False):
                 continue
             for kind in ("A", "B"):
+                adapter_owner = dict(owner, kind=kind)
+                if hasattr(module, "global_selected_experts"):
+                    from axolotl.integrations.moe_sieve.distributed import (
+                        adapter_owner as compact_owner,
+                    )
+
+                    adapter_owner = compact_owner(module, kind)
                 for adapter in getattr(module, f"lora_{kind}", {}).values():
-                    by_id[id(adapter.weight)] = dict(owner, kind=kind)
+                    by_id[id(adapter.weight)] = adapter_owner
         else:
             for parameter in module.parameters(recurse=False):
                 by_id[id(parameter)] = dict(owner, kind="expert")
@@ -106,7 +113,11 @@ def _layout(value, owner=None):
     shape = list(value.shape)
     if owner is not None:
         dim = 1 if owner["kind"] == "B" else 0
-        shape[dim] = shape[dim] * owner["total"] // owner["local"]
+        shape[dim] = (
+            owner["total"] * owner["rank"]
+            if "indices" in owner
+            else shape[dim] * owner["total"] // owner["local"]
+        )
     return dict(
         shape=shape,
         local_shape=list(local.shape),
@@ -125,6 +136,21 @@ def _coordinates(layout):
         axes = [torch.tensor(axis, dtype=torch.int64) for axis in layout["axes"]]
     owner = layout["owner"]
     if owner is not None:
+        if "indices" in owner:
+            indices = torch.tensor(owner["indices"], dtype=torch.long)
+            dim = 1 if owner["kind"] == "B" else 0
+            if axes[dim].numel():
+                if dim == 1:
+                    axes[dim] = (
+                        axes[dim] // owner["local"] * owner["total"]
+                        + indices[axes[dim] % owner["local"]]
+                    )
+                else:
+                    axes[dim] = (
+                        indices[axes[dim] // owner["rank"]] * owner["rank"]
+                        + axes[dim] % owner["rank"]
+                    )
+            return axes
         if owner["kind"] == "B":
             axes[1] = (
                 axes[1] // owner["local"] * owner["total"]
@@ -159,9 +185,10 @@ def _check_errors(error):
 def _transfer(value, shape, dtype, source, receiver=0):
     count = math.prod(shape)
     output = torch.empty(shape, dtype=dtype) if dist.get_rank() == receiver else None
+    # Gloo advertises CUDA even in CPU-only builds.
     device = (
         torch.device("cuda", torch.cuda.current_device())
-        if dist.get_backend() == "nccl"
+        if "cpu:" not in dist.get_backend_config()
         else torch.device("cpu")
     )
     chunk_size = max(1, _TRANSFER_BYTES // torch.empty((), dtype=dtype).element_size())

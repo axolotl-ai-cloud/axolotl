@@ -714,6 +714,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             else None
         ),
     }
+    # FSDP's gradient chunk_cat rejects empty tensors on EP ranks with no selected adapters.
+    empty_parameters = {p for p in model.parameters() if p.numel() == 0}
+    if empty_parameters:
+        for parameter in empty_parameters:
+            parameter.data = parameter.data.to(accelerator.device)
+        fsdp2_kwargs["ignored_params"] = empty_parameters
     if getattr(model, "_axolotl_lora_fp32_gradients", False):
         from axolotl.utils.lora_precision import lora_fsdp2_precision_policy
 
@@ -1151,3 +1157,45 @@ def patch_accelerate_fsdp2():
 
     accelerate.accelerator.fsdp2_prepare_model = fsdp2_prepare_model
     accelerate.accelerator.fsdp2_apply_ac = fsdp2_apply_ac
+    original = accelerate.Accelerator._prepare_fsdp2
+    if getattr(original, "_axolotl_empty_parameters", False):
+        return
+
+    @functools.wraps(original)
+    def prepare(self, *args):
+        from accelerate.utils.fsdp_utils import fsdp2_canonicalize_names
+
+        names = {
+            id(p): name
+            for obj in args
+            if isinstance(obj, nn.Module)
+            for name, p in fsdp2_canonicalize_names(
+                dict(obj.named_parameters())
+            ).items()
+            if p.numel() == 0
+        }
+        empty = [
+            (obj, group_index, index, names[id(p)])
+            for obj in args
+            if isinstance(obj, torch.optim.Optimizer)
+            for group_index, group in enumerate(obj.param_groups)
+            for index, p in enumerate(group["params"])
+            if id(p) in names
+        ]
+        result = original(self, *args)
+        if empty:
+            parameters = {
+                name: p
+                for obj in result
+                if isinstance(obj, nn.Module)
+                for name, p in fsdp2_canonicalize_names(
+                    dict(obj.named_parameters())
+                ).items()
+            }
+            # Accelerate keys optimizer remapping by data_ptr(), which is zero for every empty tensor.
+            for optimizer, group_index, index, name in empty:
+                optimizer.param_groups[group_index]["params"][index] = parameters[name]
+        return result
+
+    prepare._axolotl_empty_parameters = True
+    accelerate.Accelerator._prepare_fsdp2 = prepare

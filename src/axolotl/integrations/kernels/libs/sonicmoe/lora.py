@@ -143,6 +143,8 @@ def unwrap_experts_lora(experts_module):
                 lora_A_owner=wrapper.lora_A[adapter_name],
                 lora_B_owner=wrapper.lora_B[adapter_name],
             )
+            if hasattr(wrapper, "kernel_lora_factors"):
+                lora_A, lora_B = wrapper.kernel_lora_factors(lora_A, lora_B)
             lora_dict[param_name] = (lora_A, lora_B, scaling)
 
     return base_experts, lora_dict

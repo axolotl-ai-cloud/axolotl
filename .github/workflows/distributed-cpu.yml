@@ -111,6 +111,7 @@ jobs:
             tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \
             tests/monkeypatch/test_fsdp2_mixed_dtype_groups.py \
             tests/integrations/test_expert_parallel_bnb.py \
+            tests/integrations/moe_sieve/test_distributed.py \
             --cov=axolotl --cov-config=.coveragerc-distributed \
             --cov-append --cov-report=xml:distributed-cpu-coverage.xml
       - name: Run other distributed CPU tests
