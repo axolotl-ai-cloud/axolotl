@@ -186,6 +186,29 @@ def _attach_torchao_quantizer(
     model.hf_quantizer = quantizer
 
 
+def _model_device(model) -> torch.device | None:
+    param = next(model.parameters(), None)
+    return param.device if param is not None else None
+
+
+def _maybe_install_native_nvfp4(
+    weight_dtype: TorchAOQuantDType | None = None,
+    device: torch.device | int | None = None,
+) -> None:
+    """On Blackwell, route torchao to_nvfp4 through the byte-identical hardware-cvt fast path (no-op elsewhere)."""
+    if weight_dtype is not None and weight_dtype != TorchAOQuantDType.nvfp4:
+        return
+    try:
+        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_native_quant import (
+            install_native_nvfp4,
+            is_blackwell_native_nvfp4_available,
+        )
+    except ImportError:  # pragma: no cover - native quant module optional
+        return
+    if is_blackwell_native_nvfp4_available(device):
+        install_native_nvfp4()
+
+
 def quantize_model(
     model,
     weight_dtype: TorchAOQuantDType,
@@ -204,6 +227,7 @@ def quantize_model(
         quantize_embedding: Whether to quantize the model's embedding weights.
 
     """
+    _maybe_install_native_nvfp4(weight_dtype, _model_device(model))
     linear_ptq_config = get_quantization_config(
         weight_dtype=weight_dtype,
         activation_dtype=activation_dtype,
@@ -411,6 +435,7 @@ def convert_qat_model(
     """
     This function converts a QAT model which has fake quantized layers back to the original model.
     """
+    _maybe_install_native_nvfp4(device=_model_device(model))
     was_ternary = convert_ternary_model(model)
     config = QATConfig(step="convert")
     if not was_ternary:
