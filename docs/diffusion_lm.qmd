@@ -431,6 +431,34 @@ the recorded value. Axolotl does not ship a decision-serving
 endpoint. Use a separate config for a frozen test split, and do not use test
 data for checkpoint selection.
 
+The manifest also records `max_questions_per_canvas`, `canvas_prefix_ids` and,
+under `noise_read_protocol`:
+
+- `read_passes`: model forward passes a decision read depends on. Reads mask
+  every label slot in one pass; on a full-sequence layout without free latent
+  slots the later steps of a `k_max` unroll re-read the same canvas, so this is
+  `1`. `null` means the count is drawn per batch and changes the result.
+- `unroll_k_max` and `unroll_eval_steps`: the configured unroll.
+- `generation_diffusion_steps`: `diffusion_lm.num_diffusion_steps`, used only by
+  free-text generation, never by decision training or reads. Older manifests
+  call this field `diffusion_steps`; it is read as `generation_diffusion_steps`.
+
+Loading weights through `lora_model_dir`, or a merged checkpoint directory
+(`base_model` pointing at a local directory with the manifest), refuses a
+config whose codebook, canvas width, canvas prefix, decision layout, questions
+per canvas, latent slots, read passes or mask token disagree with the manifest.
+Fields an older manifest does not record are not compared. To continue
+training an adapter under a deliberately different canvas or codebook, set
+`diffusion_decision.allow_manifest_mismatch: true`; the mismatch is then logged
+as a warning. Reads should leave it off.
+
+`diffusion_decision.read_overflow_canvas_width` is a read-time option for
+full-sequence layouts: a read canvas whose answer template does not fit
+`canvas_width` is rebuilt at this wider width instead of being dropped. Canvases
+that fit are unchanged, and training rows never widen. The wider canvases are
+outside the training distribution, so validate their accuracy before relying on
+them.
+
 ### Public procedural decision mix
 
 `scripts/diffusion_lm/build_public_decision_mix.py` materializes a reproducible

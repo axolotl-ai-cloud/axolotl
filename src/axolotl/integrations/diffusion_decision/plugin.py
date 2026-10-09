@@ -18,6 +18,7 @@ from .manifest import (
     DecisionManifest,
     DecisionManifestCheckpointCallback,
     build_decision_manifest,
+    validate_read_manifest,
 )
 
 
@@ -130,6 +131,10 @@ class DiffusionDecisionPlugin(BasePlugin):
         decision = self._require_runtime(cfg)
         if decision is None:
             return
+        # Refuse to read (or resume) weights through a canvas or read protocol they were
+        # not trained on: codebook, canvas width/prefix/layout, questions per canvas,
+        # latent slots and read passes must match the adapter's (or merged model's) manifest.
+        validate_read_manifest(cfg, model=model)
         from .slot_runtime import (
             merge_trainable_slot_indices,
             resolve_trainable_slot_runtime,

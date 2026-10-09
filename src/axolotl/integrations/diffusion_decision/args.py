@@ -274,6 +274,30 @@ class DiffusionDecisionConfig(BaseModel):
             "description": "Normalized image tensors each collator (and dataloader worker) keeps in an LRU; 0 disables the cache."
         },
     )
+    read_overflow_canvas_width: int | None = Field(
+        default=None,
+        ge=2,
+        json_schema_extra={
+            "description": (
+                "Read-time only (evaluation and student reads; never training rows): when a record's "
+                "answer template does not fit diffusion_lm.canvas_width, rebuild that one canvas at this "
+                "wider width instead of dropping it. Canvases that fit keep the trained width, so their "
+                "reads are unchanged. Wider canvases are outside the training distribution (the adapter "
+                "only saw canvas_width), so treat their probabilities as unvalidated. Full-sequence "
+                "layouts without latent slots only. Default: unset, overflowing canvases are dropped."
+            )
+        },
+    )
+    allow_manifest_mismatch: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Warn instead of refusing when the loaded adapter's (or merged checkpoint's) "
+                "decision manifest disagrees with this config. Only for deliberately continuing "
+                "training under a new canvas or codebook; reads should leave it off."
+            )
+        },
+    )
     mixture: DecisionMixtureConfig = Field(
         default_factory=DecisionMixtureConfig,
         json_schema_extra={"description": "Source sampling and loss weighting."},
