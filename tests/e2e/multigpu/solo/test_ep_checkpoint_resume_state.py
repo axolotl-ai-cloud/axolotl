@@ -48,7 +48,7 @@ def _config(
         },
         "bf16": True,
         "save_strategy": "steps",
-        "save_steps": 2,
+        "save_steps": 1,
         "logging_steps": 1,
         "plugins": ["axolotl.integrations.expert_parallel.ExpertParallelPlugin"],
         "expert_parallel_size": 2,
@@ -110,6 +110,24 @@ def _experts_held(name, shape):
     return shape[0]
 
 
+def _assert_optimizer_matches(expected, resumed):
+    assert expected["state"], "Uninterrupted run saved no optimizer state"
+    assert resumed["state"].keys() == expected["state"].keys()
+    assert resumed["param_groups"] == expected["param_groups"]
+    for name, state in expected["state"].items():
+        restored = resumed["state"][name]
+        for key in ("exp_avg", "exp_avg_sq", "step"):
+            assert key in state and key in restored, f"{name}: missing {key}"
+            # Allow BF16 gradient roundoff while comparing moments at their own scale.
+            torch.testing.assert_close(
+                restored[key],
+                state[key],
+                rtol=0 if key == "step" else 0.02,
+                atol=0 if key == "step" else 1e-8,
+                msg=lambda message, n=name, k=key: f"{n} {k}: {message}",
+            )
+
+
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires two CUDA GPUs")
 @pytest.mark.parametrize("adapter", [None, "lora"], ids=["full", "lora"])
 def test_ep_checkpoint_keeps_every_ep_ranks_experts_and_optimizer_state(
@@ -143,6 +161,13 @@ def test_ep_checkpoint_keeps_every_ep_ranks_experts_and_optimizer_state(
     # resuming at step 2 and training to step 3 must match the uninterrupted run
     resumed_dir = tmp_path / "resumed"
     _train(_config(resumed_dir, 3, str(checkpoint), adapter))
+    expected_optimizer = torch.load(
+        straight / "checkpoint-3" / "optimizer.bin", weights_only=True
+    )
+    resumed_optimizer = torch.load(
+        resumed_dir / "checkpoint-3" / "optimizer.bin", weights_only=True
+    )
+    _assert_optimizer_matches(expected_optimizer, resumed_optimizer)
     final = "adapter_model.safetensors" if adapter else "model.safetensors"
     expected = load_file(straight / final)
     resumed = load_file(resumed_dir / final)
