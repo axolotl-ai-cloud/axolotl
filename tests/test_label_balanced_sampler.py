@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+from accelerate.data_loader import BatchSamplerShard
 from datasets import Dataset
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
@@ -140,3 +141,97 @@ def test_padded_configuration_without_varlen_attention():
         attn_implementation="sdpa",
     )
     assert cfg.balance_labels
+
+
+@pytest.mark.parametrize("mode", ["padded", "flattened"])
+@pytest.mark.parametrize("replicas, steps", [(1, 4), (2, 1), (4, 4)])
+@pytest.mark.parametrize("size", [3, 259])
+@pytest.mark.parametrize("drop_last", [False, True])
+@pytest.mark.parametrize("even_batches", [False, True])
+def test_distributed_tail_settings(
+    mode, replicas, steps, size, drop_last, even_batches
+):
+    batch_size = 4
+    lengths = np.random.default_rng(19).integers(4, 33, size)
+    counts = np.arange(size) % 4
+    sampler = LabelBalancedRandomSampler(
+        lengths,
+        counts,
+        batch_size,
+        length_mode=mode,
+        seed=42,
+        batches_per_optimizer_step=replicas * steps,
+    )
+    plan = list(sampler)
+    batches = BatchSampler(sampler, batch_size, drop_last)
+    shards = [
+        list(
+            BatchSamplerShard(
+                batches,
+                num_processes=replicas,
+                process_index=rank,
+                even_batches=even_batches,
+            )
+        )
+        for rank in range(replicas)
+    ]
+    if drop_last:
+        expected = plan[: size // (batch_size * replicas) * batch_size * replicas]
+    elif even_batches:
+        total = (
+            (size + batch_size * replicas - 1)
+            // (batch_size * replicas)
+            * batch_size
+            * replicas
+        )
+        expected = (plan * ((total + size - 1) // size))[:total]
+    else:
+        expected = plan
+    expected_batches = [
+        expected[i : i + batch_size] for i in range(0, len(expected), batch_size)
+    ]
+    assert shards == [expected_batches[rank::replicas] for rank in range(replicas)]
+    if drop_last or even_batches:
+        assert len({len(shard) for shard in shards}) == 1
+    else:
+        assert max(map(len, shards)) - min(map(len, shards)) <= 1
+    updates = size // (batch_size * replicas * steps)
+    totals = [
+        sum(
+            int(counts[index])
+            for shard in shards
+            for batch in shard[update * steps : (update + 1) * steps]
+            for index in batch
+        )
+        for update in range(updates)
+    ]
+    # Metrics exclude the tail that Accelerate may drop or repeat to equalize ranks.
+    metrics = sampler.label_metrics["after"]
+    assert metrics["updates"] == updates
+    assert metrics["mean_global_update_labels"] == pytest.approx(
+        np.mean(totals) if totals else 0
+    )
+    assert metrics["std_global_update_labels"] == pytest.approx(
+        np.std(totals) if totals else 0
+    )
+
+
+@pytest.mark.parametrize("mode", ["packed", "flattened", "padded"])
+def test_split_batches_rejected_for_all_balanced_modes(mode):
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    config = dict(
+        base_model="test",
+        learning_rate=1e-5,
+        datasets=[{"path": "test", "type": "alpaca"}],
+        sample_packing=mode == "packed",
+        batch_flattening=mode == "flattened",
+        attn_implementation="varlen" if mode == "flattened" else "sdpa",
+        micro_batch_size=4,
+        balance_labels=True,
+        accelerator_config={"split_batches": False},
+    )
+    assert AxolotlInputConfig(**config).balance_labels
+    config["accelerator_config"] = {"split_batches": True}
+    with pytest.raises(ValueError, match="split_batches=False"):
+        AxolotlInputConfig(**config)

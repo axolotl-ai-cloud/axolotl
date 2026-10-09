@@ -42,8 +42,9 @@ def test_concentrated_windows_are_smoothed():
     assert totals["std_global_update_labels"] == 0
 
 
-@pytest.mark.parametrize("kind", ["packed", "flattened"])
-def test_sampler_integration_matches_actual_rank_shards(kind):
+@pytest.mark.parametrize("kind", ["packed", "flattened", "padded"])
+@pytest.mark.parametrize("replicas, steps", [(1, 4), (2, 1), (2, 4), (4, 1), (4, 4)])
+def test_sampler_integration_matches_actual_rank_shards(kind, replicas, steps):
     lengths = np.full(523, 4)
     counts = np.tile([0, 1, 2, 3], 131)[:523]
     if kind == "packed":
@@ -56,7 +57,7 @@ def test_sampler_integration_matches_actual_rank_shards(kind):
             bin_size=4,
             num_processes=1,
             seed=42,
-            batches_per_optimizer_step=16,
+            batches_per_optimizer_step=replicas * steps,
         )
         batches = sampler.generate_batches()
         sampler._len_across_ranks = len(batches)
@@ -67,9 +68,9 @@ def test_sampler_integration_matches_actual_rank_shards(kind):
             lengths,
             counts,
             4,
-            length_mode="flattened",
+            length_mode=kind,
             seed=42,
-            batches_per_optimizer_step=16,
+            batches_per_optimizer_step=replicas * steps,
         )
         batch_sampler = BatchSampler(sampler, 4, True)
         list(sampler)
@@ -77,15 +78,21 @@ def test_sampler_integration_matches_actual_rank_shards(kind):
     shards = [
         list(
             BatchSamplerShard(
-                batch_sampler, num_processes=4, process_index=r, even_batches=False
+                batch_sampler,
+                num_processes=replicas,
+                process_index=r,
+                even_batches=False,
             )
         )
-        for r in range(4)
+        for r in range(replicas)
     ]
-    n = min(len(s) for s in shards) // 4 * 4
+    n = min(len(s) for s in shards) // steps * steps
     totals = np.array(
         [
-            [sum(label_count(b) for b in shard[i : i + 4]) for i in range(0, n, 4)]
+            [
+                sum(label_count(b) for b in shard[i : i + steps])
+                for i in range(0, n, steps)
+            ]
             for shard in shards
         ]
     )
@@ -117,8 +124,11 @@ def test_global_objective_does_not_require_rank_balance():
     assert rank_after.std() > rank_before.std()
 
 
-@pytest.mark.parametrize("with_parallelism, expected", [(False, 32), (True, 16)])
-def test_trainer_normalizes_data_parallel_update_size(with_parallelism, expected):
+@pytest.mark.parametrize(
+    "dp_replicate, dp_shard, expected",
+    [(None, None, 32), (4, 1, 16), (1, 4, 16), (2, 2, 16), (1, 1, 4)],
+)
+def test_trainer_normalizes_data_parallel_update_size(dp_replicate, dp_shard, expected):
     from types import SimpleNamespace
 
     from axolotl.core.trainers.base import AxolotlTrainer
@@ -126,8 +136,8 @@ def test_trainer_normalizes_data_parallel_update_size(with_parallelism, expected
     trainer = object.__new__(AxolotlTrainer)
     trainer.args = SimpleNamespace(world_size=8, gradient_accumulation_steps=4)
     parallelism = (
-        SimpleNamespace(dp_replicate_size=2, dp_shard_size=2)
-        if with_parallelism
+        SimpleNamespace(dp_replicate_size=dp_replicate, dp_shard_size=dp_shard)
+        if dp_replicate is not None
         else None
     )
     trainer.accelerator = SimpleNamespace(parallelism_config=parallelism)
