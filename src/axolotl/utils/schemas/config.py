@@ -722,6 +722,12 @@ class AxolotlInputConfig(
             "description": "Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'"
         },
     )
+    balance_packed_labels: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Balance supervised token counts for causal LM sample packing or fixed-count batch flattening. Supports streaming with sample packing."
+        },
+    )
     sample_packing_group_size: int | None = Field(
         default=100_000,
         json_schema_extra={
@@ -1685,6 +1691,34 @@ class AxolotlInputConfig(
                 f"Allowed: {sorted(INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)}."
             )
         return value
+
+    @model_validator(mode="after")
+    def check_label_balanced_packing(self):
+        """Label balancing requires static token-level labels and reorderable samples."""
+        if self.balance_packed_labels and (
+            not (self.sample_packing or self.batch_flattening)
+            or (
+                not self.sample_packing
+                and (self.streaming or self.pretraining_dataset or self.group_by_length)
+            )
+            or self.sample_packing_sequentially
+            or self.curriculum_sampling
+            or self.diffusion_lm
+            or self.rl
+            or self.reward_model
+            or self.process_reward_model
+        ):
+            raise ValueError(
+                "balance_packed_labels requires causal LM "
+                "sample_packing or map-style batch_flattening without sequential, curriculum, or conflicting length-grouped sampling"
+            )
+        if self.balance_packed_labels and (self.accelerator_config or {}).get(
+            "split_batches"
+        ):
+            raise ValueError(
+                "balance_packed_labels requires split_batches=False for optimizer-step grouping"
+            )
+        return self
 
     @model_validator(mode="after")
     def check_torch_compile_options_requires_compile(self):

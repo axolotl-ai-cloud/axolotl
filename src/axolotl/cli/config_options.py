@@ -2477,6 +2477,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'",
     ),
     (
+        ("--balance-packed-labels/--no-balance-packed-labels",),
+        None,
+        None,
+        "Balance supervised token counts for causal LM sample packing or fixed-count batch flattening. Supports streaming with sample packing.",
+    ),
+    (
         ("--sample-packing-group-size",),
         None,
         None,

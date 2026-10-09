@@ -26,7 +26,7 @@ from torch.utils.data import (
     Sampler,
     SequentialSampler,
 )
-from transformers import PreTrainedModel, Trainer
+from transformers import DataCollatorWithFlattening, PreTrainedModel, Trainer
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
 from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
@@ -58,7 +58,12 @@ from axolotl.utils.distributed import (
     is_main_process,
 )
 from axolotl.utils.logging import get_logger
-from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.samplers import (
+    FlatteningAwareRandomSampler,
+    MultipackBatchSampler,
+    get_dataset_lengths,
+)
+from axolotl.utils.samplers.utils import get_dataset_label_counts
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
 
 LOG = get_logger(__name__)
@@ -165,6 +170,71 @@ class AxolotlTrainer(
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
+    def _init_training_state(
+        self,
+        max_steps,
+        num_update_steps_per_epoch,
+        num_train_epochs,
+        resume_from_checkpoint,
+        trial,
+    ):
+        epochs, steps = super()._init_training_state(
+            max_steps,
+            num_update_steps_per_epoch,
+            num_train_epochs,
+            resume_from_checkpoint,
+            trial,
+        )
+        if (
+            self.args.balance_packed_labels
+            and not self.args.pretraining
+            and resume_from_checkpoint is not None
+            and self.state.epoch is not None
+        ):
+            # Packed epoch lengths can vary, invalidating global_step // updates_per_epoch.
+            epochs = int(self.state.epoch)
+        return epochs, steps
+
+    def _run_epoch(self, model, epoch, train_dataloader, **kwargs):
+        if self.args.balance_packed_labels and not self.args.pretraining:
+            # Resume's SkipBatchSampler hides samplers from Accelerate's epoch forwarding.
+            pending = [train_dataloader]
+            visited = set()
+            while pending:
+                current = pending.pop()
+                if id(current) in visited:
+                    continue
+                visited.add(id(current))
+                if isinstance(
+                    current, (MultipackBatchSampler, FlatteningAwareRandomSampler)
+                ):
+                    current.set_epoch(epoch)
+                for attribute in ("batch_sampler", "sampler"):
+                    child = getattr(current, attribute, None)
+                    if child is not None:
+                        pending.append(child)
+            if (
+                kwargs.get("resume_from_checkpoint") is not None
+                and epoch == kwargs["epochs_trained"]
+                and not self.args.ignore_data_skip
+                and self.state.epoch is not None
+            ):
+                kwargs["steps_trained_in_current_epoch"] = round(
+                    (self.state.epoch - epoch) * kwargs["steps_in_epoch"]
+                )
+        return super()._run_epoch(
+            model=model, epoch=epoch, train_dataloader=train_dataloader, **kwargs
+        )
+
+    def _batches_per_optimizer_step(self) -> int:
+        replicas = getattr(self.args, "world_size", 1)
+        parallelism = getattr(
+            getattr(self, "accelerator", None), "parallelism_config", None
+        )
+        if parallelism is not None:
+            replicas = parallelism.dp_replicate_size * parallelism.dp_shard_size
+        return replicas * getattr(self.args, "gradient_accumulation_steps", 1)
+
     def _create_multipack_sampler(
         self, base_sampler: Sampler, dataset: Dataset
     ) -> MultipackBatchSampler:
@@ -189,9 +259,25 @@ class AxolotlTrainer(
             )
             batch_max_len = train_batch_size * self.args.max_seq_length
 
+        label_counts = label_start_counts = None
+        if self.args.balance_packed_labels:
+            tokenizer = getattr(getattr(self, "data_collator", None), "tokenizer", None)
+            if getattr(tokenizer, "padding_side", "right") != "right":
+                raise ValueError("Label-balanced packing requires right padding")
+            label_counts, label_start_counts = get_dataset_label_counts(
+                dataset, shift_labels=getattr(self, "_loss_shifts_labels", True)
+            )
         sampler = MultipackBatchSampler(
             base_sampler,
             lengths=get_dataset_lengths(dataset),
+            label_counts=label_counts,
+            label_start_counts=label_start_counts,
+            seed=self.args.seed,
+            batches_per_optimizer_step=self._batches_per_optimizer_step(),
+            padding_multiple=getattr(
+                getattr(self, "data_collator", None), "pad_to_multiple_of", None
+            )
+            or 1,
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
             batch_max_len=batch_max_len,
             batch_size=batch_size,
@@ -224,6 +310,37 @@ class AxolotlTrainer(
             return None
 
         use_sample_packing = self.args.sample_packing and not self.args.pretraining
+
+        if (
+            self.args.balance_packed_labels
+            and getattr(self.args, "batch_flattening", False)
+            and not use_sample_packing
+        ):
+            if (
+                not isinstance(self.data_collator, DataCollatorWithFlattening)
+                or self.data_collator.separator_id != -100
+            ):
+                raise ValueError(
+                    "Label balancing requires the standard flattening collator with separator_id=-100"
+                )
+            lengths = get_dataset_lengths(train_dataset)
+            if "labels" in train_dataset.column_names:
+                counts, starts = get_dataset_label_counts(
+                    train_dataset.select_columns(["labels"])
+                )
+                counts = counts - starts
+            else:
+                counts = lengths - 1
+            return FlatteningAwareRandomSampler(
+                lengths,
+                counts,
+                batch_size=self.state.train_batch_size
+                or self.args.per_device_train_batch_size,
+                seed=self.args.data_seed
+                if self.args.data_seed is not None
+                else self.args.seed,
+                batches_per_optimizer_step=self._batches_per_optimizer_step(),
+            )
 
         # Determine the base sampler first
         if self.args.curriculum_sampling:
@@ -285,6 +402,14 @@ class AxolotlTrainer(
         dataloader_key: Optional[str] = None,
     ) -> DataLoader:
         """Create a [`~torch.utils.data.DataLoader`] from the given dataset."""
+
+        if (
+            self.args.balance_packed_labels
+            and getattr(self.args, "batch_flattening", False)
+            and not self.args.sample_packing
+            and isinstance(dataset, torch.utils.data.IterableDataset)
+        ):
+            raise ValueError("Fixed-count label balancing requires a map-style dataset")
 
         data_collator = self.data_collator if is_training else self.eval_data_collator
 

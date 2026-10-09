@@ -4,6 +4,7 @@ import functools
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
+import numpy as np
 import torch
 from datasets import Dataset
 from torch.utils.data import RandomSampler
@@ -12,6 +13,7 @@ from transformers import PreTrainedTokenizerBase
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.samplers.utils import get_dataset_label_counts
 from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 
 LOG = get_logger(__name__)
@@ -204,6 +206,8 @@ def wrap_streaming_dataset(
             batch_size=cfg.micro_batch_size,
             multipack_attn=multipack_attn,
             bin_size=cfg.sample_packing_bin_size,
+            balance_labels=bool(cfg.balance_packed_labels),
+            seed=cfg.seed or 0,
         )
 
         # Set this to 1 so downstream data_loader doesn't try to increase the batch size
@@ -259,6 +263,8 @@ def encode_packed_streaming(
     max_seq_length: int = 2048,
     batch_size: int = 4,
     multipack_attn: Optional[bool] = True,
+    balance_labels: bool = False,
+    seed: int = 0,
 ) -> Dict[str, List]:
     # tokenize all the examples
     # rows get split with stride (overlap)
@@ -273,9 +279,25 @@ def encode_packed_streaming(
         drop_attention_mask=multipack_attn,
     )
 
+    lengths = get_dataset_lengths(train_dataset)
+    label_counts = label_start_counts = None
+    if balance_labels:
+        if collate_fn.tokenizer.padding_side != "right":
+            raise ValueError("Label-balanced packing requires right padding")
+        if {"labels", "shift_labels"}.intersection(train_dataset.column_names):
+            label_counts, label_start_counts = get_dataset_label_counts(train_dataset)
+        else:
+            # Pretraining creates labels from input_ids during collation.
+            label_counts = lengths
+            label_start_counts = np.ones_like(lengths)
+
     sampler = MultipackBatchSampler(
         sampler=RandomSampler(train_dataset),
-        lengths=get_dataset_lengths(train_dataset),
+        lengths=lengths,
+        label_counts=label_counts,
+        label_start_counts=label_start_counts,
+        seed=seed,
+        padding_multiple=getattr(collate_fn, "pad_to_multiple_of", None) or 1,
         batch_size=1,
         batch_max_len=batch_size * max_seq_length,
         drop_last=True,

@@ -31,6 +31,11 @@ class AxolotlTrainingMixins:
         default=False,
         metadata={"help": "Use sample packing for efficient training."},
     )
+    batch_flattening: bool = field(default=False)
+    balance_packed_labels: bool = field(
+        default=False,
+        metadata={"help": "Balance supervised token counts across packed batches."},
+    )
     sample_packing_sequentially: bool = field(
         default=False,
         metadata={
