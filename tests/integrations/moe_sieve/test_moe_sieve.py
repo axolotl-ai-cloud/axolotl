@@ -231,6 +231,51 @@ def test_plugin_load_and_resume_without_profile(tmp_path, resume):
     assert any(p.requires_grad for p in reloaded.parameters())
 
 
+@pytest.mark.parametrize("mode", ["train", "inference", "merge"])
+@pytest.mark.parametrize("resume", ["explicit", "auto"])
+def test_resume_settings_do_not_override_merge_or_inference(tmp_path, mode, resume):
+    base = tiny_model().eval()
+    original = copy.deepcopy(base)
+    config = adapter_config(base)
+    register_selected_experts(base, config)
+    adapted = get_peft_model(base, config)
+    checkpoint = tmp_path / "checkpoint-1"
+    snapshots = {}
+    for directory, value in ((checkpoint, 0.01), (tmp_path, 0.05)):
+        with torch.no_grad():
+            for name, parameter in adapted.named_parameters():
+                if "lora_B" in name:
+                    parameter.fill_(value)
+        adapted.save_pretrained(directory)
+        snapshots[str(directory)] = {
+            name: parameter.detach().clone()
+            for name, parameter in adapted.named_parameters()
+            if "lora_" in name
+        }
+    cfg = DictDefault(
+        adapter="moe_sieve",
+        output_dir=str(tmp_path),
+        lora_model_dir=str(tmp_path),
+        merge_lora=mode == "merge",
+        resume_from_checkpoint=str(checkpoint) if resume == "explicit" else None,
+        auto_resume_from_checkpoints=resume == "auto",
+    )
+    loaded, _ = MoeSievePlugin().load_adapter(
+        original, cfg, inference=mode == "inference"
+    )
+    expected_path = str(checkpoint if mode == "train" else tmp_path)
+    assert cfg.lora_model_dir == expected_path
+    parameters = dict(loaded.named_parameters())
+    for name, expected in snapshots[expected_path].items():
+        torch.testing.assert_close(parameters[name], expected, atol=0, rtol=0)
+    if mode == "merge":
+        tokens = torch.tensor([[1, 2, 3]])
+        with torch.no_grad():
+            expected = adapted.eval()(input_ids=tokens).logits
+            merged = loaded.eval().merge_and_unload(safe_merge=True)
+            torch.testing.assert_close(merged(input_ids=tokens).logits, expected)
+
+
 def test_profile_cleanup_on_unsupported_routing():
     model = tiny_model()
     model.model.layers[0].eval()
