@@ -118,3 +118,48 @@ def test_untied_config_is_left_alone(ensure_weight_tying):
     assert tie_lora_output_embeddings(model) == []
     _, head = _adapters(model)
     assert isinstance(head.lora_A["default"], torch.nn.Linear)
+
+
+def test_tied_lora_fsdp_ownership():
+    from axolotl.utils.lora_tying import tied_lora_no_wrap_modules
+
+    model = _tied_peft_model()
+    assert tied_lora_no_wrap_modules(model) == set()
+    tie_lora_output_embeddings(model)
+    emb, head = _adapters(model)
+    protected = tied_lora_no_wrap_modules(model)
+    assert set(emb.modules()) <= protected
+    assert head in protected
+    assert head.base_layer in protected
+    assert model in protected
+    assert model.base_model.model.model in protected
+    assert model.base_model.model.model.layers[0] not in protected
+
+
+def test_tied_lora_fsdp_checkpoint_has_head_aliases(tmp_path):
+    from safetensors.torch import load_file
+
+    from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
+
+    model = _tied_peft_model()
+    tie_lora_output_embeddings(model)
+    assert save_fsdp2_lora_adapter(model, str(tmp_path))
+    saved = load_file(tmp_path / "adapter_model.safetensors")
+    emb, _ = _adapters(model)
+    for head_name, weight in (
+        ("lora_A", emb.lora_embedding_B["default"]),
+        ("lora_B", emb.lora_embedding_A["default"]),
+    ):
+        torch.testing.assert_close(
+            saved[f"base_model.model.lm_head.{head_name}.weight"], weight.t()
+        )
+
+
+def test_tied_lora_rejects_tp_on_the_head():
+    model = _tied_peft_model()
+    _, head = _adapters(model)
+    original = head.lora_A["default"]
+    head.base_layer._hf_tp_plan = "colwise"
+    with pytest.raises(ValueError, match="outside the tensor-parallel plan"):
+        tie_lora_output_embeddings(model)
+    assert head.lora_A["default"] is original

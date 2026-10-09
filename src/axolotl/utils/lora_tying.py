@@ -57,6 +57,8 @@ def tie_lora_output_embeddings(model) -> list[str]:
     states for one buffer. Replacing the head's ``lora_A``/``lora_B`` with parameterless
     views gives one set of weights whose gradient sums both uses.
     """
+    from torch.distributed.tensor import DTensor
+
     peft_configs = getattr(model, "peft_config", None) or {}
     tied: list[str] = []
     for adapter_name, peft_config in peft_configs.items():
@@ -80,9 +82,62 @@ def tie_lora_output_embeddings(model) -> list[str]:
             lora_A = getattr(module, "lora_A", None)
             if lora_A is None or adapter_name not in lora_A:
                 continue
+            weights = (
+                emb_A[adapter_name],
+                emb_B[adapter_name],
+                module.lora_A[adapter_name].weight,
+                module.lora_B[adapter_name].weight,
+            )
+            if any(isinstance(weight, DTensor) for weight in weights) or any(
+                getattr(layer.get_base_layer(), "_hf_tp_plan", None)
+                for layer in (embeddings, module)
+            ):
+                raise ValueError(
+                    "Tied embedding LoRA requires embed_tokens and lm_head outside "
+                    "the tensor-parallel plan. TP on other layers is supported; "
+                    "TP-sharded embedding/head adapters cannot be replaced safely."
+                )
             module.lora_A[adapter_name] = TiedTransposedLinear(emb_B, adapter_name)
             module.lora_B[adapter_name] = TiedTransposedLinear(emb_A, adapter_name)
             tied.append(name)
     if tied:
         LOG.info("Tied LoRA adapters on %s to the input-embedding adapter", tied)
     return tied
+
+
+def tied_lora_no_wrap_modules(model) -> set[nn.Module]:
+    """Keep tied adapter owners and consumers in the root FSDP group."""
+    modules = list(model.modules())
+    tied = [module for module in modules if isinstance(module, TiedTransposedLinear)]
+    if not tied:
+        return set()
+    sources = {module._source for module in tied}
+    protected = set(tied)
+    for module in modules:
+        if any(child in sources for child in module.children()):
+            protected.update(module.modules())
+    # Base embedding weights may also be shared with the head.
+    owners: dict[int, list[nn.Module]] = {}
+    for module in modules:
+        for parameter in module.parameters(recurse=False):
+            owners.setdefault(id(parameter), []).append(module)
+    for shared in owners.values():
+        if len(shared) > 1:
+            protected.update(shared)
+    for module in reversed(modules):
+        if any(child in protected for child in module.children()):
+            protected.add(module)
+    return protected
+
+
+def add_tied_lora_state_dict_weights(
+    model, state_dict, name_transform=lambda name: name
+):
+    """Rebuild head aliases from gathered embedding tensors without extra collectives."""
+    sources = {id(module): name for name, module in model.named_modules()}
+    for name, module in model.named_modules():
+        if not isinstance(module, TiedTransposedLinear):
+            continue
+        source_name = sources[id(module._source)]
+        source_key = name_transform(f"{source_name}.{module.adapter_name}")
+        state_dict[name_transform(f"{name}.weight")] = state_dict[source_key].t()

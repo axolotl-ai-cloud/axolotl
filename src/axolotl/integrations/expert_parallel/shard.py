@@ -612,6 +612,9 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
         for name, p in model.named_parameters()
         if "lora_" in name
     }
+    from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
+
+    add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
     adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
 
     # Expert LoRA: gather each wrapper's adapter across FSDP (dp_shard) + EP, key by module name.
@@ -701,6 +704,9 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
         for name, p in model.named_parameters()
         if "lora_" in name
     }
+    from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
+
+    add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
     adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
 
     gathered = 0
