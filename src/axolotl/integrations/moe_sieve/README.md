@@ -127,8 +127,16 @@ to `plugins` alongside `MoeSievePlugin`, then set either `use_scattermoe: true` 
 `use_sonicmoe: true`. SonicMoE requires its compatible CUTLASS DSL dependency and
 GPU architecture; the kernels plugin validates these before training.
 
-The slow CUDA regression matrix is in
-`tests/e2e/multigpu/test_moe_sieve.py`. It forces all selected experts onto one EP
+The regular distributed CPU CI job runs
+`tests/integrations/moe_sieve/test_distributed.py` with four Gloo processes and
+real FSDP2/torch A2A. It covers FSDP2+EP and HSDP+EP, empty owners, non-monotonic
+expert selections, parity with unsharded training, portable adapter export, and
+exact model/optimizer checkpoint continuation. The four-process HSDP case uses
+two replicas, a size-one expert shard axis, and two EP owners.
+
+The additional CUDA regression matrix is in
+`tests/e2e/multigpu/test_moe_sieve.py`, which launches the committed helper
+`tests/e2e/multigpu/_moe_sieve.py`. It forces all selected experts onto one EP
 rank, trains, resumes, and compares with uninterrupted training. Direct fused
 kernel output/input-gradient/adapter-gradient comparisons live in
 `tests/integrations/moe_sieve/test_kernels.py`.

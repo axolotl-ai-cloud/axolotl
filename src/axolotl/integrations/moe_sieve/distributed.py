@@ -73,7 +73,7 @@ def gather_adapter(tensor, wrapper, kind, group):
     owner = adapter_owner(wrapper, kind)
     device = (
         torch.device("cuda", torch.cuda.current_device())
-        if "cuda" in dist.get_backend_config(group)
+        if "cpu:" not in dist.get_backend_config(group)
         else tensor.device
     )
     indices = torch.tensor(owner["indices"], device=device, dtype=torch.long)
