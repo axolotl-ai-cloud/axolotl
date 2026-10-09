@@ -21,6 +21,7 @@ _BUILTIN_MODULES = (
     "axolotl.model_support.diffusion_gemma",
     "axolotl.model_support.dream",
     "axolotl.model_support.glm4_moe_lite",
+    "axolotl.model_support.glm5_next",
     "axolotl.model_support.k2_horizon",
     "axolotl.model_support.kimi_linear",
     "axolotl.model_support.mamba",
