@@ -32,6 +32,7 @@ from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.lora_tying import tie_lora_output_embeddings
 
 LOG = get_logger(__name__)
 
@@ -491,6 +492,8 @@ def load_lora(
         from axolotl.utils.lora_precision import upcast_lora_parameters
 
         upcast_lora_parameters(model)
+
+    tie_lora_output_embeddings(model)
 
     if rank == 0:
         try:
