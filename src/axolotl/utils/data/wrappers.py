@@ -36,6 +36,7 @@ from axolotl.prompters import (
     SummarizeTLDRPrompter,
     UnsupportedPrompter,
 )
+from axolotl.utils.datasets import dataset_map_buffer_kwargs
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -83,6 +84,10 @@ def get_dataset_wrapper(
         "process_count": cfg.dataset_num_proc,
         "keep_in_memory": cfg.dataset_keep_in_memory is True,
     }
+
+    dataset_kwargs.update(
+        dataset_map_buffer_kwargs(cfg, batched=True, multimodal=processor is not None)
+    )
 
     LOG.info(
         f"Loading dataset: {dataset_config['path']} with base_type: "

@@ -111,6 +111,29 @@ def test_all_rows_dropped_raises_actionable_error(dataset):
         )
 
 
+def test_batch_size_caps_rows_per_call(dataset):
+    """Multimodal rows are large; batch_size must bound rows per tokenize call."""
+
+    class BatchSizeStrategy(FakeStrategy):
+        supports_batched = True
+
+        def tokenize_prompt(self, batch):
+            n = len(batch["text"])
+            return {"input_ids": [[0]] * n, "rows_in_call": [n] * n}
+
+    result = tokenize_with_work_queue(
+        BatchSizeStrategy(),
+        dataset,
+        num_proc=2,
+        keep_in_memory=True,
+        batch_size=4,
+        writer_batch_size=8,
+    )
+
+    assert result.num_rows == len(dataset)
+    assert max(result["rows_in_call"]) <= 4
+
+
 def test_cache_round_trip(dataset, tmp_path):
     """Second call must load from the Arrow cache and match the first."""
     dataset = dataset.map(lambda row: row, cache_file_name=str(tmp_path / "base.arrow"))

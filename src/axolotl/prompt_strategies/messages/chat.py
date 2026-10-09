@@ -35,6 +35,7 @@ class ChatMessageDatasetWrappingStrategy(DatasetWrappingStrategy):
         dataset,
         process_count: Optional[int] = None,
         keep_in_memory: Optional[bool] = False,
+        writer_batch_size: Optional[int] = None,
         **kwargs,
     ):
         self.dataset = TokenizedChatDataset(
@@ -44,6 +45,7 @@ class ChatMessageDatasetWrappingStrategy(DatasetWrappingStrategy):
             formatter=self.formatter,
             process_count=process_count,
             keep_in_memory=keep_in_memory,
+            writer_batch_size=writer_batch_size,
         )
         return self.dataset
 
