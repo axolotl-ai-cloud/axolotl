@@ -24,11 +24,11 @@ activation_offloading: true
 ```
 
 With `activation_offloading: true` or `disk`, `gradient_checkpointing` decides whether anything is
-recomputed. LoRA/QLoRA never recompute: every activation is offloaded, so `gradient_checkpointing`
-has no effect for adapters. A full finetune with `gradient_checkpointing: true` recomputes each
-decoder layer and offloads only what is saved outside the checkpointed layers; with
-`gradient_checkpointing: false` it offloads every activation with no recompute, which is bound by
-CPU memory and PCIe bandwidth.
+recomputed, for LoRA/QLoRA and full finetunes alike. With `gradient_checkpointing: true` each decoder
+layer is recomputed in backward and only what is saved outside the checkpointed layers is offloaded.
+With `gradient_checkpointing: false` nothing is recomputed and every activation is offloaded, which is
+bound by host RAM and PCIe bandwidth; adapter runs keep fewer activations, so this can be the faster
+choice for LoRA/QLoRA.
 `legacy` and `hidden_states` require `gradient_checkpointing: true`.
 
 Activation offloading variants:
@@ -55,14 +55,14 @@ parallelism.
 
 | Mode | What moves | Best for |
 |------|-----------|----------|
-| `true` | All activations → CPU, stream-overlapped | General use; LoRA/QLoRA (offloads instead of recomputing) |
+| `true` | Saved activations → CPU, stream-overlapped | General use; with `gradient_checkpointing: false`, LoRA/QLoRA without recompute |
 | `legacy` | All activations → CPU, synchronous | Lowest resident GPU memory; when the streamed path's in-flight buffering inflates peak |
 | `disk` | Activations → disk | Severely CPU-RAM-constrained hosts |
 | `hidden_states` | Per-layer checkpoint input only → CPU, stream-overlapped | Long-context training where full activation offload is CPU-memory or bandwidth-bound |
 
 `hidden_states` uses gradient checkpointing and recomputes each layer during backward. With LoRA/QLoRA,
-`activation_offloading: true` can still be faster because adapter activations are smaller and pure offload
-avoids the recompute cost.
+`activation_offloading: true` with `gradient_checkpointing: false` can still be faster because adapter
+activations are smaller and pure offload avoids the recompute cost.
 
 ### Selective Activation Checkpointing (SAC)
 

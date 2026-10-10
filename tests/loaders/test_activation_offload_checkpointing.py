@@ -184,40 +184,33 @@ def test_offload_without_gc_offloads_everything(
     )
 
 
-def test_offload_with_gc_and_adapter_replaces_recompute(base_model_path, min_base_cfg):
-    with_gc = _train_step(
-        base_model_path,
-        min_base_cfg,
-        gradient_checkpointing=True,
-        activation_offloading=True,
-        **LORA,
-    )
-    without_gc = _train_step(
-        base_model_path,
-        min_base_cfg,
-        gradient_checkpointing=False,
-        activation_offloading=True,
-        **LORA,
-    )
-
-    assert not with_gc.model.is_gradient_checkpointing
-    assert with_gc.mlp_calls == NUM_LAYERS
-    assert with_gc.offload.tensor_id == without_gc.offload.tensor_id
-
-
-def test_offload_with_gc_full_finetune_keeps_recompute(base_model_path, min_base_cfg):
+@pytest.mark.parametrize("mode", [True, "disk"])
+@pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
+def test_offload_with_gc_recomputes_and_offloads_saved_tensors(
+    base_model_path, min_base_cfg, mode, adapter
+):
     step = _train_step(
         base_model_path,
         min_base_cfg,
         gradient_checkpointing=True,
-        activation_offloading=True,
+        activation_offloading=mode,
+        **(LORA if adapter else {}),
     )
 
-    assert _checkpoint_wrapped(step.model)
+    if adapter:
+        assert step.args["gradient_checkpointing"] is True
+        assert step.model.is_gradient_checkpointing
+    else:
+        assert step.args["gradient_checkpointing"] is False
+        assert _checkpoint_wrapped(step.model)
+    assert step.args["activation_offloading"] == mode
     assert step.mlp_calls == 2 * NUM_LAYERS
-    # Only tensors saved outside the checkpointed layers reach the offloader.
-    assert step.offload.tensor_id < _saved_tensors_without_checkpointing(
-        base_model_path, adapter=False
+    # The checkpointed layers keep their saves to themselves; the offloader still
+    # sees, and offloads, what is saved outside them.
+    assert (
+        0
+        < step.offload.tensor_id
+        < _saved_tensors_without_checkpointing(base_model_path, adapter)
     )
 
 

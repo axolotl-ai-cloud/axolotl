@@ -2038,26 +2038,16 @@ class ModelCompatibilityValidationMixin:
                 f"activation_offloading: {self.activation_offloading} requires "
                 "gradient_checkpointing"
             )
-        if self.activation_offloading not in (True, "disk"):
-            return self
-        # TRL offloader (true/disk): without gradient checkpointing every saved
-        # activation is offloaded and nothing is recomputed. Adapters always run
-        # that way; a full finetune keeps recompute when gradient checkpointing is
-        # on and offloads only the checkpoint boundaries.
-        if self.gradient_checkpointing and self.adapter:
-            LOG.info(
-                f"activation_offloading: {self.activation_offloading} with an adapter "
-                "offloads every activation instead of recomputing, so "
-                "gradient_checkpointing is not applied; use activation_offloading: "
-                "hidden_states to keep recompute."
-            )
-        elif not self.gradient_checkpointing and not self.adapter:
+        if (
+            self.activation_offloading in (True, "disk")
+            and not self.gradient_checkpointing
+        ):
             LOG.warning(
                 f"activation_offloading: {self.activation_offloading} without "
-                "gradient_checkpointing offloads every activation of a full finetune "
-                "with no recompute, which is bound by CPU memory and PCIe bandwidth; "
-                "set gradient_checkpointing: true to recompute and offload only the "
-                "checkpoint boundaries."
+                "gradient_checkpointing offloads every activation with no recompute, "
+                "which is bound by host RAM and PCIe bandwidth; set "
+                "gradient_checkpointing: true to recompute the layers and offload only "
+                "what is saved outside them."
             )
         return self
 
@@ -2223,8 +2213,9 @@ class ModelCompatibilityValidationMixin:
         if self.adapter:
             LOG.warning(
                 "activation_offloading: hidden_states uses gradient checkpointing; "
-                "with LoRA/QLoRA, activation_offloading: true can be faster because "
-                "it avoids recompute while offloading smaller adapter activations."
+                "with LoRA/QLoRA, activation_offloading: true with "
+                "gradient_checkpointing: false can be faster because it avoids "
+                "recompute while offloading smaller adapter activations."
             )
         return self
 
