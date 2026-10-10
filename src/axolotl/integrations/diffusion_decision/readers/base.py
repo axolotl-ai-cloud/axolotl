@@ -8,15 +8,14 @@ from typing import Sequence
 
 import torch
 
-from axolotl.processing_strategies import (
+from .._image_tokens import (
     NEMOTRON_VLM_IMAGE_BREAK_ID,
     NEMOTRON_VLM_IMAGE_END_ID,
     NEMOTRON_VLM_IMAGE_PAD_ID,
     NEMOTRON_VLM_IMAGE_START_ID,
     NEMOTRON_VLM_TOKEN_SIDE,
-    NemotronDiffusionVLMProcessingStrategy,
+    merged_patch_count,
 )
-
 from ..records import DecisionCanvas, OrdinalMetadata
 
 _IMAGE_MARKER_IDS = frozenset(
@@ -163,10 +162,7 @@ def _validate_canvas_images(
         raise ValueError("image marker tokens cannot occupy the decision canvas")
     if any(not isinstance(ref, str) or not ref for ref in canvas.image_refs):
         raise ValueError("image_refs must be nonempty strings")
-    expected = sum(
-        NemotronDiffusionVLMProcessingStrategy.merged_patch_count(size)
-        for size in canvas.image_sizes
-    )
+    expected = sum(merged_patch_count(size) for size in canvas.image_sizes)
     prompt = list(canvas.prompt_ids)
     if prompt.count(NEMOTRON_VLM_IMAGE_PAD_ID) != expected:
         raise ValueError("prompt image pad tokens must match image_sizes")

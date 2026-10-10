@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from transformers import PretrainedConfig
 
-from axolotl.integrations.diffusion_decision import datasets, prepared_cache
+from axolotl.integrations.diffusion_decision import canvas, datasets, prepared_cache
 from axolotl.integrations.diffusion_decision.args import DecisionMixtureConfig
 from axolotl.integrations.diffusion_decision.loss import decision_example_from_canvas
 from axolotl.integrations.diffusion_decision.records import (
@@ -470,7 +470,7 @@ def test_budget_filter_uses_resolved_payload_capacity(monkeypatch):
         calls.append(packed)
         return SimpleNamespace(payload_capacity=128)
 
-    monkeypatch.setattr(datasets, "resolve_native_packing_budget", resolve)
+    monkeypatch.setattr(canvas, "resolve_native_packing_budget", resolve)
     row = {"canvas": SimpleNamespace(prompt_ids=(1,), canvas_ids=(2,) * 128)}
     cfg = {
         "sample_packing": False,

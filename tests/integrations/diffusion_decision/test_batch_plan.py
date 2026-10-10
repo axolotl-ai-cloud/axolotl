@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from torch.utils.data import DataLoader
 
-from axolotl.integrations.diffusion_decision import datasets, prepared_cache
+from axolotl.integrations.diffusion_decision import canvas, datasets, prepared_cache
 from axolotl.integrations.diffusion_decision.batch_plan import (
     BudgetLimits,
     DecisionBatchPlan,
@@ -241,7 +241,7 @@ def test_budget_filter_uses_cached_lengths_and_replaces_unfit_lazy_draws():
 
 def test_physical_budget_follows_micro_batch_size(monkeypatch):
     monkeypatch.setattr(
-        datasets,
+        canvas,
         "resolve_native_packing_budget",
         lambda cfg, *, packed, batch_size=None: SimpleNamespace(
             payload_capacity=cfg["sequence_len"] * batch_size
