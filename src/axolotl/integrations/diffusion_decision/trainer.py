@@ -26,6 +26,7 @@ from axolotl.processing_strategies import (
     NEMOTRON_VLM_IMAGE_PAD_ID,
     NEMOTRON_VLM_IMAGE_START_ID,
 )
+from axolotl.utils.logging import get_logger
 
 from ._util import _value, token_budget_eval_packing
 from .args import DiffusionDecisionConfig
@@ -36,6 +37,8 @@ from .loss import (
     decision_label_loss_from_hidden,
 )
 from .slot_sampling import DecisionDraw
+
+LOG = get_logger(__name__)
 
 
 class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
@@ -873,13 +876,18 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             if free_slot_mask is not None:
                 update_mask = free_slot_mask
             else:
+                # Without free slots nothing is committed (labels keep their noisy
+                # tokens) and nothing conditions the next pass (no
+                # self-conditioning, no gradient through earlier passes, both
+                # rejected above), so every non-final pass re-reads the final
+                # pass's exact state under no_grad and its full-vocabulary logits
+                # are discarded. Run only the final pass, in training and
+                # evaluation alike: loss and gradients are bitwise identical. The
+                # step count is still drawn above, so the RNG stream is unchanged.
                 update_mask = torch.zeros_like(update_mask)
-                if not model.training:
-                    # Nothing is committed and nothing conditions the next pass, so
-                    # every non-final pass re-reads the final pass's exact state and
-                    # its full-vocabulary logits are discarded. Evaluation keeps only
-                    # the final (selected-logit) pass; training is left unchanged.
-                    steps = 1
+                if steps > 1:
+                    self._log_skipped_unroll_passes_once(k_max)
+                steps = 1
             outputs, logits, _ = run_unroll(
                 state=state,
                 update_mask=update_mask,
@@ -909,6 +917,18 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                 **final_kwargs,
             )
         return logits, outputs
+
+    def _log_skipped_unroll_passes_once(self, k_max: int) -> None:
+        if getattr(self, "_logged_skipped_unroll_passes", False):
+            return
+        self._logged_skipped_unroll_passes = True
+        LOG.info(
+            "diffusion_decision: unroll.k_max=%d on a full-sequence layout without "
+            "free latent slots or self-conditioning; earlier passes commit and "
+            "condition nothing, so only the final (loss) pass is run. Use "
+            "diffusion_decision.latent.mode: free for passes that feed forward.",
+            k_max,
+        )
 
     def _encoder_canvas_logits(
         self,
