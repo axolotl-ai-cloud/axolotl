@@ -23,6 +23,7 @@ from axolotl.utils.samplers.accumulation import (
     balance_accumulation,
 )
 from axolotl.utils.samplers.label_balance import _batch_labels, balance_labels
+from axolotl.utils.samplers.microbatch_balance import balance_microbatches
 
 LOG = get_logger(__name__)
 
@@ -470,7 +471,18 @@ class MultipackBatchSampler(BatchSampler):
                 self.batches_per_optimizer_step,
             )
 
+            before_microbatch = self._get_label_metrics(batches)
+            batches[:limit] = balance_microbatches(
+                batches[:limit],
+                self.lengths,
+                self.label_counts,
+                self.label_start_counts,
+                self.batches_per_optimizer_step,
+                padding_multiple=self.padding_multiple or 1,
+                capacity=self.batch_max_len,
+            )
             self.label_metrics = {
+                "before_microbatch": before_microbatch,
                 "before": before,
                 "before_accumulation": before_accumulation,
                 "after": self._get_label_metrics(batches),

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright (c) Axolotl AI
+# Copyright (c) 2026 Axolotl AI
 
 """Accumulation grouping follows the rank-strided microbatch schedule."""
 
@@ -105,10 +105,8 @@ def test_sampler_integration_matches_actual_rank_shards(kind, replicas, steps):
     )
     for key in ["std_global_update_labels"]:
         assert metrics["after"][key] <= metrics["before_accumulation"][key] + 1e-8
-    for key in ["mean_label_count", "std_label_count", "total_label_count"]:
-        assert metrics["after"][key] == pytest.approx(
-            metrics["before_accumulation"][key]
-        )
+    for key in ["mean_label_count", "total_label_count"]:
+        assert metrics["after"][key] == pytest.approx(metrics["before_microbatch"][key])
 
 
 def test_incomplete_update_unchanged():

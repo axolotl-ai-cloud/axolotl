@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright (c) Axolotl AI
+# Copyright (c) 2026 Axolotl AI
 
 """Bounded label balancing that preserves packed capacity and sample coverage."""
 
@@ -8,6 +8,7 @@ import heapq
 import numpy as np
 
 from axolotl.utils.samplers.accumulation import balance_accumulation
+from axolotl.utils.samplers.microbatch_balance import balance_microbatches
 
 
 def _bin_labels(bin_, counts, starts):
@@ -220,6 +221,15 @@ def balance_labels(
         result,
         [_batch_labels(batch, counts, starts) for batch in result],
         batches_per_optimizer_step,
+    )
+    result = balance_microbatches(
+        result,
+        lengths,
+        counts,
+        starts,
+        batches_per_optimizer_step,
+        padding_multiple=padding_multiple or 1,
+        capacity=capacity,
     )
     result.extend(batches[full_count:])
     return result

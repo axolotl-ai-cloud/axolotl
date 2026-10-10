@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright (c) Axolotl AI
+# Copyright (c) 2026 Axolotl AI
 
 """Fixed-cardinality label balancing for padded and flattened causal-LM batches."""
 
@@ -15,6 +15,7 @@ from axolotl.utils.samplers.accumulation import (
     accumulation_metrics,
     balance_accumulation,
 )
+from axolotl.utils.samplers.microbatch_balance import balance_microbatches
 
 LOG = get_logger(__name__)
 
@@ -305,7 +306,28 @@ class LabelBalancedRandomSampler(Sampler[int]):
             ],
             self.batches_per_optimizer_step,
         )
+        before_microbatch = self._metrics(batches)
+        if size > 1 and self.batches_per_optimizer_step > 1:
+            nested = (
+                [[batch] for batch in batches[:full_count]]
+                if self.length_mode == "flattened"
+                else [[[i] for i in batch] for batch in batches[:full_count]]
+            )
+            refined = balance_microbatches(
+                nested,
+                self.lengths,
+                self.label_counts,
+                np.zeros_like(self.label_counts),
+                self.batches_per_optimizer_step,
+                padding_multiple=self.padding_multiple
+                if self.length_mode == "padded"
+                else 1,
+            )
+            batches[:full_count] = [
+                [i for row in batch for i in row] for batch in refined
+            ]
         self.label_metrics = {
+            "before_microbatch": before_microbatch,
             "before": before,
             "before_accumulation": before_accumulation,
             "after": self._metrics(batches),
