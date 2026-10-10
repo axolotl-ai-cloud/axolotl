@@ -28,7 +28,8 @@ recomputed, for LoRA/QLoRA and full finetunes alike. With `gradient_checkpointin
 layer is recomputed in backward and only what is saved outside the checkpointed layers is offloaded.
 With `gradient_checkpointing: false` nothing is recomputed and every activation is offloaded, which is
 bound by host RAM and PCIe bandwidth; adapter runs keep fewer activations, so this can be the faster
-choice for LoRA/QLoRA.
+choice for LoRA/QLoRA. Unless set, `gradient_checkpointing_kwargs.use_reentrant` defaults to `false`
+here (DeepSpeed ZeRO-3 keeps reentrant checkpointing).
 `legacy` and `hidden_states` require `gradient_checkpointing: true`.
 
 Activation offloading variants:

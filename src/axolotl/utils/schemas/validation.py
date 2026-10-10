@@ -22,6 +22,7 @@ from axolotl.utils.schemas.enums import (
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
+from axolotl.utils.schemas.utils import is_deepspeed_zero3_config
 
 LOG = get_logger(__name__)
 
@@ -2015,10 +2016,16 @@ class ModelCompatibilityValidationMixin:
                 f"activation_offloading: {self.activation_offloading} requires "
                 "gradient_checkpointing"
             )
-        if (
-            self.activation_offloading in (True, "disk")
-            and not self.gradient_checkpointing
-        ):
+        if self.activation_offloading not in (True, "disk"):
+            return self
+        if self.gradient_checkpointing:
+            # Non-reentrant is PyTorch's recommended default; DeepSpeed ZeRO-3 keeps
+            # reentrant (non-reentrant recompute sees partitioned parameters).
+            if not is_deepspeed_zero3_config(self.deepspeed):
+                gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
+                gc_kwargs.setdefault("use_reentrant", False)
+                self.gradient_checkpointing_kwargs = gc_kwargs
+        else:
             LOG.warning(
                 f"activation_offloading: {self.activation_offloading} without "
                 "gradient_checkpointing offloads every activation with no recompute, "
