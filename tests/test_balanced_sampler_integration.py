@@ -121,7 +121,8 @@ def test_rank_order_is_integrated_and_preserves_step_membership(mode, dp):
 
 
 @pytest.mark.parametrize("seed", [None, 0, 7])
-def test_packing_uses_effective_batch_size_and_data_seed(seed):
+@pytest.mark.parametrize("window", [1, 8])
+def test_packing_uses_effective_batch_size_and_data_seed(seed, window):
     trainer = object.__new__(AxolotlTrainer)
     trainer._train_batch_size = 3
     trainer.state = SimpleNamespace(train_batch_size=99)
@@ -132,6 +133,7 @@ def test_packing_uses_effective_batch_size_and_data_seed(seed):
         balance_labels=True,
         seed=42,
         data_seed=seed,
+        label_balance_window_optim_steps=window,
         world_size=2,
         gradient_accumulation_steps=4,
         sample_packing_efficiency=1,
@@ -145,6 +147,7 @@ def test_packing_uses_effective_batch_size_and_data_seed(seed):
         {"input_ids": [[1, 2, 3, 4]] * 32, "labels": [[1, 2, 3, 4]] * 32}
     )
     sampler = trainer._create_multipack_sampler(RandomSampler(data), data)
+    assert sampler.label_balance_window_optim_steps == window
     assert sampler.batch_max_len == 24
     assert sampler.seed == (42 if seed is None else seed)
     assert sampler.dp_count == 2

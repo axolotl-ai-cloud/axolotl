@@ -213,3 +213,17 @@ squared size changes. Each step protects both simultaneous squared spread and
 the sum of microstep maximum costs. These are tensor-size proxies, not measured
 compute time. Tail batches remain in their original positions. Streaming uses
 a content-derived chunk seed and does not apply cross-chunk rank ordering.
+
+### Cross-step refinement window
+
+`label_balance_window_optim_steps` defaults to 1 and must be a positive integer.
+For values greater than 1, both map-style samplers run `balance_microbatches`
+with that window, then with window 1, before rank ordering. The number of
+rank-local microbatches is window × normalized `batches_per_optimizer_step`
+(GAS × DP, excluding CP/TP). The helper protects global-step token and label
+variance, capacity, and padding constraints. Incomplete windows skip cross-step
+swaps but still receive within-step refinement. This setting is recorded in
+checkpoint sampler settings when non-default; omitting the default preserves
+compatibility with earlier manifests. Changing it on resume rejects exact replay.
+Wider windows require `balance_labels` and non-streaming training; preprocessing
+chunks cannot establish the eventual training optimizer-step boundaries.

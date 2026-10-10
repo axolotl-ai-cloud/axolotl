@@ -201,7 +201,10 @@ def test_actual_checkpoint_resume(
 
 
 @pytest.mark.parametrize("kind", ["packed", "padded", "flattened"])
-def test_checkpoint_resume_with_production_dataloader(tmp_path, kind, monkeypatch):
+@pytest.mark.parametrize("window", [1, 8])
+def test_checkpoint_resume_with_production_dataloader(
+    tmp_path, kind, monkeypatch, window
+):
     import json
 
     from datasets import Dataset
@@ -238,7 +241,7 @@ def test_checkpoint_resume_with_production_dataloader(tmp_path, kind, monkeypatc
         ):
             return super().forward(input_ids)
 
-    def make(output, data_seed=7):
+    def make(output, data_seed=7, balance_window=window):
         if kind == "packed":
             collator = BatchSamplerDataCollatorForSeq2Seq(tok, pad_to_multiple_of=8)
         elif kind == "flattened":
@@ -263,6 +266,7 @@ def test_checkpoint_resume_with_production_dataloader(tmp_path, kind, monkeypatc
                 sample_packing_group_size=100,
                 dataset_num_proc=1,
                 data_seed=data_seed,
+                label_balance_window_optim_steps=balance_window,
                 save_steps=2,
                 logging_strategy="no",
                 report_to="none",
@@ -291,3 +295,9 @@ def test_checkpoint_resume_with_production_dataloader(tmp_path, kind, monkeypatc
     incompatible = make(tmp_path / "incompatible", data_seed=8)
     with pytest.raises(ValueError, match="resume changed settings"):
         incompatible.train(resume_from_checkpoint=str(checkpoint))
+
+    changed_window = make(
+        tmp_path / "changed-window", balance_window=8 if window == 1 else 1
+    )
+    with pytest.raises(ValueError, match="resume changed settings"):
+        changed_window.train(resume_from_checkpoint=str(checkpoint))

@@ -135,6 +135,27 @@ reduce differences between its microbatches, without changing that step's total
 labels or tokens. This adjustment helps when unpacked microbatches contain
 multiple samples, or when sample packing is enabled.
 
+To also refine the balance across several optimizer steps, set:
+
+```yaml
+balance_labels: true
+label_balance_window_optim_steps: 32
+```
+
+The default is `1`, which only refines microbatches within each optimizer step.
+Larger values allow sample swaps across that many complete optimizer steps,
+while protecting both token-count and label-count variance at the step level.
+Axolotl then refines microbatches within each step. A larger window can improve
+balance, but takes more CPU time to prepare and does not guarantee an improvement.
+
+The window counts optimizer steps, not individual ranks or microbatches. For
+example, a window of `8` with four data-parallel ranks and gradient accumulation
+of four covers 128 rank-local microbatches. Context- and tensor-parallel ranks do
+not multiply that count. An incomplete window still receives within-step
+refinement. Keep this setting unchanged when resuming a checkpoint.
+Windows larger than `1` require non-streaming training; streaming preprocessing
+chunks do not identify the eventual optimizer-step boundaries.
+
 With multiple data-parallel ranks, a final ordering pass tries to make consecutive
 microbatches on each rank closer in size. It keeps each optimizer step’s samples
 and label/token totals intact, and protects the existing balance between ranks

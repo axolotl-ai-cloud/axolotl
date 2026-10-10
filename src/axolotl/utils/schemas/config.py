@@ -728,6 +728,14 @@ class AxolotlInputConfig(
             "description": "Balance supervised tokens across causal LM packed, flattened, or padded batches. Supports streaming with sample packing."
         },
     )
+    label_balance_window_optim_steps: int = Field(
+        default=1,
+        ge=1,
+        strict=True,
+        json_schema_extra={
+            "description": "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only."
+        },
+    )
     sample_packing_group_size: int | None = Field(
         default=100_000,
         json_schema_extra={
@@ -1711,6 +1719,15 @@ class AxolotlInputConfig(
                 "balance_labels requires causal LM "
                 "sample_packing or map-style fixed-count batching without sequential, curriculum, or conflicting length-grouped sampling"
             )
+        if self.label_balance_window_optim_steps > 1:
+            if not self.balance_labels:
+                raise ValueError(
+                    "label_balance_window_optim_steps requires balance_labels"
+                )
+            if self.streaming or self.pretraining_dataset:
+                raise ValueError(
+                    "label_balance_window_optim_steps > 1 requires non-streaming training"
+                )
         if self.balance_labels and (self.accelerator_config or {}).get("split_batches"):
             raise ValueError(
                 "balance_labels requires split_batches=False for optimizer-step grouping"

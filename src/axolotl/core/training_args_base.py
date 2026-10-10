@@ -36,6 +36,10 @@ class AxolotlTrainingMixins:
         default=False,
         metadata={"help": "Balance supervised token counts across training batches."},
     )
+    label_balance_window_optim_steps: int = field(
+        default=1,
+        metadata={"help": "Optimizer steps per label-balancing refinement window."},
+    )
     sample_packing_sequentially: bool = field(
         default=False,
         metadata={

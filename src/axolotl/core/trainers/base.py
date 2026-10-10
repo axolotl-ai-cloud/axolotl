@@ -283,6 +283,9 @@ class AxolotlTrainer(
             "drop_last",
         )
         settings = {name: getattr(sampler, name, None) for name in names}
+        window = getattr(sampler, "label_balance_window_optim_steps", 1)
+        if window != 1:
+            settings["label_balance_window_optim_steps"] = window
         settings["type"] = type(sampler).__name__
         digest = hashlib.sha256()
         for name in ("lengths", "label_counts", "label_start_counts"):
@@ -362,6 +365,9 @@ class AxolotlTrainer(
             else self.args.seed,
             dp_count=self._data_parallel_size() if is_training else 1,
             batches_per_optimizer_step=self._batches_per_optimizer_step(),
+            label_balance_window_optim_steps=getattr(
+                self.args, "label_balance_window_optim_steps", 1
+            ),
             padding_multiple=getattr(
                 getattr(self, "data_collator", None), "pad_to_multiple_of", None
             )
@@ -441,6 +447,9 @@ class AxolotlTrainer(
                 if self.args.data_seed is not None
                 else self.args.seed,
                 batches_per_optimizer_step=self._batches_per_optimizer_step(),
+                label_balance_window_optim_steps=getattr(
+                    self.args, "label_balance_window_optim_steps", 1
+                ),
                 length_mode="flattened" if flattened else "padded",
                 padding_multiple=getattr(collator, "pad_to_multiple_of", None) or 1,
             )

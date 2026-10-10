@@ -283,6 +283,7 @@ class MultipackBatchSampler(BatchSampler):
         padding_multiple: int | None = None,
         batches_per_optimizer_step: int = 1,
         dp_count: int = 1,
+        label_balance_window_optim_steps: int = 1,
         **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
@@ -309,6 +310,15 @@ class MultipackBatchSampler(BatchSampler):
         if dp_count < 1 or batches_per_optimizer_step % dp_count:
             raise ValueError("Optimizer-step width must be divisible by dp_count")
         self.dp_count = dp_count
+        if (
+            isinstance(label_balance_window_optim_steps, bool)
+            or not isinstance(label_balance_window_optim_steps, (int, np.integer))
+            or label_balance_window_optim_steps < 1
+        ):
+            raise ValueError(
+                "label_balance_window_optim_steps must be a positive integer"
+            )
+        self.label_balance_window_optim_steps = label_balance_window_optim_steps
         if label_counts is not None:
             if sequential:
                 raise ValueError(
@@ -477,15 +487,18 @@ class MultipackBatchSampler(BatchSampler):
             )
 
             before_microbatch = self._get_label_metrics(batches)
-            batches[:limit] = balance_microbatches(
-                batches[:limit],
-                self.lengths,
-                self.label_counts,
-                self.label_start_counts,
-                self.batches_per_optimizer_step,
-                padding_multiple=self.padding_multiple or 1,
-                capacity=self.batch_max_len,
-            )
+            windows = (self.label_balance_window_optim_steps, 1)
+            for refinement_window in windows if windows[0] > 1 else (1,):
+                batches[:limit] = balance_microbatches(
+                    batches[:limit],
+                    self.lengths,
+                    self.label_counts,
+                    self.label_start_counts,
+                    self.batches_per_optimizer_step,
+                    window_steps=refinement_window,
+                    padding_multiple=self.padding_multiple or 1,
+                    capacity=self.batch_max_len,
+                )
             before_rank = self._get_label_metrics(batches)
             if self.dp_count > 1 and limit:
                 multiple = self.padding_multiple or 1

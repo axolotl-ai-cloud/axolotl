@@ -39,6 +39,7 @@ class LabelBalancedRandomSampler(Sampler[int]):
         length_mode: Literal["padded", "flattened"] = "padded",
         padding_multiple: int = 1,
         dp_count: int = 1,
+        label_balance_window_optim_steps: int = 1,
     ):
         self.lengths = np.asarray(lengths, dtype=np.int64)
         self.label_counts = np.asarray(label_counts)
@@ -61,6 +62,15 @@ class LabelBalancedRandomSampler(Sampler[int]):
         if dp_count < 1 or batches_per_optimizer_step % dp_count:
             raise ValueError("Optimizer-step width must be divisible by dp_count")
         self.dp_count = dp_count
+        if (
+            isinstance(label_balance_window_optim_steps, bool)
+            or not isinstance(label_balance_window_optim_steps, (int, np.integer))
+            or label_balance_window_optim_steps < 1
+        ):
+            raise ValueError(
+                "label_balance_window_optim_steps must be a positive integer"
+            )
+        self.label_balance_window_optim_steps = label_balance_window_optim_steps
         self.length_mode = length_mode
         self.padding_multiple = padding_multiple
         self.seed = seed
@@ -312,24 +322,30 @@ class LabelBalancedRandomSampler(Sampler[int]):
             self.batches_per_optimizer_step,
         )
         before_microbatch = self._metrics(batches)
-        if size > 1 and self.batches_per_optimizer_step > 1:
+        if size > 1 and (
+            self.batches_per_optimizer_step > 1
+            or self.label_balance_window_optim_steps > 1
+        ):
             nested = (
                 [[batch] for batch in batches[:full_count]]
                 if self.length_mode == "flattened"
                 else [[[i] for i in batch] for batch in batches[:full_count]]
             )
-            refined = balance_microbatches(
-                nested,
-                self.lengths,
-                self.label_counts,
-                np.zeros_like(self.label_counts),
-                self.batches_per_optimizer_step,
-                padding_multiple=self.padding_multiple
-                if self.length_mode == "padded"
-                else 1,
-            )
+            windows = (self.label_balance_window_optim_steps, 1)
+            for refinement_window in windows if windows[0] > 1 else (1,):
+                nested = balance_microbatches(
+                    nested,
+                    self.lengths,
+                    self.label_counts,
+                    np.zeros_like(self.label_counts),
+                    self.batches_per_optimizer_step,
+                    window_steps=refinement_window,
+                    padding_multiple=self.padding_multiple
+                    if self.length_mode == "padded"
+                    else 1,
+                )
             batches[:full_count] = [
-                [i for row in batch for i in row] for batch in refined
+                [i for row in batch for i in row] for batch in nested
             ]
         before_rank = self._metrics(batches)
         if self.dp_count > 1 and full_count:
