@@ -37,15 +37,17 @@ from ._util import (
     resolve_mask_token_id,
 )
 from .adapters import normalize_record
-from .budgets import decision_budget, exceeds_budget
+from .batch_plan import (
+    BudgetLimits,
+    DecisionBatchPlan,
+    SourcePool,
+    budget_reason,
+    encode_reserve,
+)
 from .grouping import group_records
 from .hygiene import assert_split_isolation, decontaminate, family_key
 from .loss import decision_example_from_canvas
-from .mixture import (
-    DeterministicMixtureSampler,
-    MixtureSample,
-    prepare_source_pools,
-)
+from .mixture import cap_window, prepare_source_pools
 from .permutation import permute_record, shuffle_labels
 from .prepared_cache import (
     identity as prepared_cache_identity,
@@ -441,6 +443,7 @@ def _canvas_row(
     thought_open_ids: Sequence[int] = (),
     thought_close_ids: Sequence[int] = (),
     train: bool = False,
+    draw: tuple[int, int] | None = None,
 ):
     diffusion = _value(cfg, "diffusion_lm")
     decision = _value(cfg, "diffusion_decision")
@@ -453,6 +456,7 @@ def _canvas_row(
         record,
         seed=int(_value(cfg, "seed", 0)),
         codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
+        draw=draw,
     )
     shuffle_prob = float(
         _value(_value(decision, "labels"), "label_shuffle_prob", 0.0) or 0.0
@@ -463,6 +467,7 @@ def _canvas_row(
             seed=int(_value(cfg, "seed", 0)),
             probability=shuffle_prob,
             codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
+            draw=draw,
         )
     if vocab_size is None:
         vocab_size = _value(model_config, "vocab_size")
@@ -649,38 +654,103 @@ class DecisionDataset(Dataset):
                     raise TypeError("packed decision indices must be integers")
                 rows.append(self._rows[item])
             return rows
-        maximum = self._rows[index.index]
-        recipe = maximum.get("slot_sampling")
-        plan = maximum.get("slot_plan")
-        if not isinstance(recipe, Mapping) or not isinstance(plan, SlotPlan):
-            raise ValueError("decision draw requires a sampled maximum slot row")
-        count = sample_slot_count(
-            seed=int(recipe["seed"]),
-            epoch=index.epoch,
-            global_draw_ordinal=index.global_draw_ordinal,
-            max_slots=int(recipe["max_slots"]),
-        )
-        canvas = project_max_canvas(
-            maximum["canvas"],
-            plan,
-            count,
-            pad_token_id=int(recipe["pad_token_id"]),
-            padding_pinned=bool(recipe["padding_pinned"]),
-        )
-        row = dict(maximum)
-        row["canvas"] = canvas
-        row["slot_plan"] = project_slot_plan(plan, count)
-        row["decision_example"] = decision_example_from_canvas(
-            canvas, source_weight=maximum["decision_example"].source_weight
-        )
-        row["decision_slot_count"] = count
-        row["decision_draw"] = index
-        return row
+        return _project_draw(self._rows[index.index], index)
 
     def remove_columns(self, columns: Sequence[str]) -> "DecisionDataset":
         if tuple(columns) != ("length",) or "length" not in self.column_names:
             raise ValueError("DecisionDataset only exposes the derived length column")
         return DecisionDataset(self._rows, self.manifest, expose_lengths=False)
+
+
+def _project_draw(maximum: Mapping[str, Any], draw: DecisionDraw) -> dict[str, Any]:
+    """Project a maximum-slot row to the slot count sampled for ``draw``."""
+    recipe = maximum.get("slot_sampling")
+    plan = maximum.get("slot_plan")
+    if not isinstance(recipe, Mapping) or not isinstance(plan, SlotPlan):
+        raise ValueError("decision draw requires a sampled maximum slot row")
+    count = sample_slot_count(
+        seed=int(recipe["seed"]),
+        epoch=draw.epoch,
+        global_draw_ordinal=draw.global_draw_ordinal,
+        max_slots=int(recipe["max_slots"]),
+    )
+    canvas = project_max_canvas(
+        maximum["canvas"],
+        plan,
+        count,
+        pad_token_id=int(recipe["pad_token_id"]),
+        padding_pinned=bool(recipe["padding_pinned"]),
+    )
+    row = dict(maximum)
+    row["canvas"] = canvas
+    row["slot_plan"] = project_slot_plan(plan, count)
+    row["decision_example"] = decision_example_from_canvas(
+        canvas, source_weight=maximum["decision_example"].source_weight
+    )
+    row["decision_slot_count"] = count
+    row["decision_draw"] = draw
+    return row
+
+
+class DecisionPlanDataset(Dataset):
+    """Training draws of a :class:`DecisionBatchPlan`, one epoch at a time.
+
+    A :class:`DecisionDraw` addresses position ``index`` of epoch ``epoch``; the
+    trainer's plan sampler yields those. Integer indices address epoch 0, so
+    index-based consumers (core multipack, plain iteration) see a fixed epoch.
+    ``set_epoch`` (called by accelerate on the dataset, also after a resume skip)
+    moves the shared plan, which the plan sampler reads.
+    """
+
+    def __init__(
+        self,
+        plan: DecisionBatchPlan,
+        manifest: Mapping[str, Any],
+        *,
+        expose_lengths: bool = True,
+    ):
+        self.batch_plan = plan
+        self.manifest = dict(manifest)
+        self.column_names = ("length",) if expose_lengths else ()
+
+    def __len__(self) -> int:
+        return self.batch_plan.draws_per_epoch
+
+    def set_epoch(self, epoch: int) -> None:
+        self.batch_plan.set_epoch(epoch)
+
+    def _draw_row(self, epoch: int, position: int) -> dict[str, Any]:
+        if not 0 <= position < len(self):
+            raise IndexError(position)
+        return self.batch_plan.row(epoch, position)
+
+    def __getitem__(
+        self, index: int | str | DecisionDraw | Sequence[int]
+    ) -> dict[str, Any] | list[int] | list[dict[str, Any]]:
+        if isinstance(index, str):
+            if index != "length":
+                raise KeyError(index)
+            return self.batch_plan.lengths(0)
+        if isinstance(index, int):
+            return self._draw_row(0, index)
+        if isinstance(index, DecisionDraw):
+            row = self._draw_row(index.epoch, index.index)
+            if isinstance(row.get("slot_sampling"), Mapping):
+                return _project_draw(row, index)
+            return row
+        if isinstance(index, Sequence):
+            rows = []
+            for item in index:
+                if not isinstance(item, int):
+                    raise TypeError("packed decision indices must be integers")
+                rows.append(self._draw_row(0, item))
+            return rows
+        raise TypeError(f"unsupported decision dataset index {type(index)!r}")
+
+    def remove_columns(self, columns: Sequence[str]) -> "DecisionPlanDataset":
+        if tuple(columns) != ("length",) or "length" not in self.column_names:
+            raise ValueError("DecisionPlanDataset only exposes the derived length column")
+        return DecisionPlanDataset(self.batch_plan, self.manifest, expose_lengths=False)
 
 
 def _is_canvas_overflow(error: SchemaError) -> bool:
@@ -702,7 +772,9 @@ def _canvas_rows(
     spec,
     *,
     train: bool = False,
+    aligned: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
+    """Build canvases; ``aligned`` keeps a None in place of each overflowing record."""
     rows: list[dict[str, Any]] = []
     canvas_too_long = 0
     vocab_size = _value(model_config_overrides(cfg), "vocab_size")
@@ -757,6 +829,8 @@ def _canvas_rows(
                     index += 1
                     if row is None:
                         canvas_too_long += int(overflow)
+                        if aligned:
+                            rows.append(None)
                         continue
                     # Rows come back unpickled; restore the sharing the serial path
                     # has with the parent's slot plan and (large) state strings.
@@ -791,12 +865,13 @@ def _canvas_rows(
             if not _is_canvas_overflow(error):
                 raise
             canvas_too_long += 1
+            if aligned:
+                rows.append(None)
     return rows, canvas_too_long
 
 
-def _filter_budget_rows(
-    rows: Sequence[dict[str, Any]], cfg: Any, spec, *, is_eval: bool = False
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def _budget_limits(cfg: Any, *, is_eval: bool = False) -> BudgetLimits:
+    """Logical (sequence_len) and packed physical token limits for one split."""
     logical_limit = _value(cfg, "sequence_len")
     sample_packed = bool(_value(cfg, "sample_packing", False)) and (
         not is_eval or _value(cfg, "eval_sample_packing") is not False
@@ -817,20 +892,20 @@ def _filter_budget_rows(
         if packed
         else None
     )
-    physical_limit = None if resolved is None else resolved.payload_capacity
+    return BudgetLimits(
+        logical=None if logical_limit is None else int(logical_limit),
+        physical=None if resolved is None else int(resolved.payload_capacity),
+    )
+
+
+def _filter_budget_rows(
+    rows: Sequence[dict[str, Any]], cfg: Any, spec, *, is_eval: bool = False
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    limits = _budget_limits(cfg, is_eval=is_eval)
     kept: list[dict[str, Any]] = []
     drops = {"logical": 0, "physical": 0}
     for row in rows:
-        canvas = row["canvas"]
-        reason = exceeds_budget(
-            decision_budget(
-                prompt_tokens=len(canvas.prompt_ids),
-                canvas_tokens=len(canvas.canvas_ids),
-                layout=spec.layout,
-            ),
-            logical_limit=None if logical_limit is None else int(logical_limit),
-            physical_limit=None if physical_limit is None else int(physical_limit),
-        )
+        reason = budget_reason(row, limits, spec.layout)
         if reason is None:
             kept.append(row)
         else:
@@ -888,6 +963,7 @@ def load_decision_datasets(
             LOG.info("Decision prepared-row cache bypassed: nonlocal or opaque source")
     elif isinstance(prepared_path, (str, Path)) and str(prepared_path):
         LOG.info("Decision prepared-row cache bypassed: unsupported latent mode")
+    layer = None
     if cache_identity is not None:
         cache_key, cache_payload = cache_identity
         cached = load_prepared_cache(
@@ -899,14 +975,32 @@ def load_decision_datasets(
         if cached is not None:
             cached_train, cached_eval, cached_manifest = cached
             LOG.info("Decision prepared-row cache hit")
-            return TrainDatasetMeta(
-                train_dataset=DecisionDataset(cached_train, cached_manifest),
-                eval_dataset=DecisionDataset(cached_eval, cached_manifest)
-                if cached_eval
-                else None,
-                total_num_steps=None,
-            )
-        LOG.info("Decision prepared-row cache miss")
+            layer = (cached_train, cached_eval, cached_manifest)
+        else:
+            LOG.info("Decision prepared-row cache miss")
+    if layer is None:
+        layer = _build_canvas_layer(cfg, tokenizer, spec, train_entries, test_entries)
+        if cache_identity is not None:
+            store_prepared_cache(Path(prepared_path), cache_key, cache_payload, cfg, *layer)
+    return _assemble_datasets(cfg, tokenizer, spec, *layer)
+
+
+def _build_canvas_layer(
+    cfg: Any,
+    tokenizer: Any,
+    spec: Any,
+    train_entries: Sequence[Any],
+    test_entries: Sequence[Any],
+) -> tuple[list[Any], list[dict[str, Any]], dict[str, Any]]:
+    """Normalize, decontaminate, group and canvasize; no batch setting is read here.
+
+    Returns (train, eval rows, base manifest). ``train`` is a list of
+    :class:`SourcePool` (the epoch-0 capped subset prepared, the rest of each capped
+    source kept as compact reserve records), or, for premixed data, the prepared
+    draws in input order. Budget filtering and mixture draws happen in
+    :func:`_assemble_datasets`, so batch settings never invalidate this layer.
+    """
+    decision = _value(cfg, "diffusion_decision")
     train: list[dict[str, Any]] = []
     explicit_eval: list[dict[str, Any]] = []
     protected_eval: list[dict[str, Any]] = []
@@ -966,12 +1060,10 @@ def load_decision_datasets(
     assert_split_isolation({"train": train, "eval": dev})
     weights = _value(_value(decision, "mixture"), "loss_weight", {}) or {}
     train_canvas_too_long = 0
-    train_budget_drops = {"logical": 0, "physical": 0}
-    pools = None
-    sampled_batches: tuple[tuple[MixtureSample[dict[str, Any]], ...], ...] = ()
-    sampler = None
+    drop_counts = dict(drops)
+    layer_train: list[Any]
     if premixed:
-        train_rows, train_canvas_too_long = _canvas_rows(
+        layer_train, train_canvas_too_long = _canvas_rows(
             tokenizer,
             [dict(record) for record in train],
             cfg,
@@ -979,63 +1071,46 @@ def load_decision_datasets(
             spec,
             train=True,
         )
-        train_rows, train_budget_drops = _filter_budget_rows(train_rows, cfg, spec)
-        if len(train_rows) != len(train):
-            raise ValueError(
-                "premixed decision rows must all pass canvas and budget validation"
-            )
     else:
+        seed = int(_value(cfg, "seed", 0))
+        cap = _value(mixture, "max_examples_per_source")
         pools = prepare_source_pools(
-            train,
-            (),
-            max_examples_per_source=_value(mixture, "max_examples_per_source"),
-            seed=int(_value(cfg, "seed", 0)),
+            train, (), max_examples_per_source=cap, seed=seed
         )
-        usable_pools: dict[str, tuple[dict[str, Any], ...]] = {}
-        for source, records in pools.records.items():
-            rows, dropped = _canvas_rows(
+        assert pools.candidates is not None
+        layer_train = []
+        reserve = 0
+        for source, candidates in pools.candidates.items():
+            source_cap = cap.get(source) if isinstance(cap, Mapping) else cap
+            window = cap_window(len(candidates), source_cap, seed, source)
+            built, dropped = _canvas_rows(
                 tokenizer,
-                [dict(record) for record in records],
+                [dict(candidates[index]) for index in window],
                 cfg,
                 weights,
                 spec,
                 train=True,
+                aligned=True,
             )
             train_canvas_too_long += dropped
-            rows, budget_drops = _filter_budget_rows(rows, cfg, spec)
-            for reason, count in budget_drops.items():
-                train_budget_drops[reason] += count
-            if rows:
-                usable_pools[source] = tuple(rows)
-        configured_weights = _value(mixture, "weights")
-        if isinstance(configured_weights, Mapping):
-            configured_weights = {
-                source: configured_weights[source]
-                for source in usable_pools
-                if source in configured_weights
-            }
-        sampler = DeterministicMixtureSampler(
-            usable_pools,
-            weights=configured_weights,
-            temperature=_value(mixture, "temperature"),
-            seed=int(_value(cfg, "seed", 0)),
-        )
-        batch_size = int(_value(cfg, "micro_batch_size", 1))
-        sampled_batches = tuple(
-            sampler.epoch_batches(
-                batch_size,
-                stratified=bool(_value(mixture, "per_batch_stratified", True)),
+            entries: list[Any] = [None] * len(candidates)
+            records: list[Any] = [None] * len(candidates)
+            for index, row in zip(window, built, strict=True):
+                entries[index] = row
+                records[index] = candidates[index]
+            prepared = set(window)
+            for index, candidate in enumerate(candidates):
+                if index not in prepared:
+                    entries[index] = encode_reserve(candidate)
+                    reserve += 1
+            layer_train.append(
+                SourcePool(
+                    source=source,
+                    cap=None if source_cap is None else int(source_cap),
+                    entries=entries,
+                    records=records,
+                )
             )
-        )
-        train_rows = [
-            dict(sample.record) for batch in sampled_batches for sample in batch
-        ]
-    eval_rows, eval_canvas_too_long = _canvas_rows(tokenizer, dev, cfg, weights, spec)
-    eval_rows, eval_budget_drops = _filter_budget_rows(
-        eval_rows, cfg, spec, is_eval=True
-    )
-    drop_counts = dict(drops)
-    if pools is not None:
         drop_counts.update(
             {
                 key: value
@@ -1043,9 +1118,9 @@ def load_decision_datasets(
                 if key not in drop_counts
             }
         )
-    manifest = {
-        "train_rows": len(train_rows),
-        "eval_rows": len(eval_rows),
+        drop_counts["reserve"] = reserve
+    eval_rows, eval_canvas_too_long = _canvas_rows(tokenizer, dev, cfg, weights, spec)
+    manifest: dict[str, Any] = {
         "protected_eval_rows": len(protected_eval),
         "train_sources": sorted({row["source"] for row in train}),
         "eval_sources": sorted({row["source"] for row in dev}),
@@ -1054,15 +1129,7 @@ def load_decision_datasets(
             "train": train_canvas_too_long,
             "eval": eval_canvas_too_long,
         },
-        "budget_drops": {"train": train_budget_drops, "eval": eval_budget_drops},
-        "mixture_probabilities": dict(sampler.probabilities) if sampler else {},
         "premixed": premixed,
-        "per_batch_stratified": bool(_value(mixture, "per_batch_stratified", True)),
-        "stratified_micro_batch_size": int(_value(cfg, "micro_batch_size", 1)),
-        "mixture_seed": int(_value(cfg, "seed", 0)),
-        "stratified_epoch_batches": tuple(
-            tuple(sample.source for sample in batch) for batch in sampled_batches
-        ),
     }
     if any(
         _value(record.get("source_metadata", {}), "official_split") is not None
@@ -1072,24 +1139,130 @@ def load_decision_datasets(
         manifest["procedural_grouping_limit"] = (
             "official partitions and state decontamination only; no parent-family key"
         )
-    if cache_identity is not None:
-        store_prepared_cache(
-            Path(prepared_path),
-            cache_key,
-            cache_payload,
-            cfg,
-            train_rows,
-            eval_rows,
-            manifest,
+    return layer_train, eval_rows, manifest
+
+
+def _plan_row_builder(cfg: Any, tokenizer: Any, spec: Any):
+    """Lazily build the training row of one draw of a record (see DecisionBatchPlan)."""
+    decision = _value(cfg, "diffusion_decision")
+    weights = _value(_value(decision, "mixture"), "loss_weight", {}) or {}
+    vocab_size = _value(model_config_overrides(cfg), "vocab_size")
+    if vocab_size is None:
+        vocab_size = len(tokenizer)
+    slot_plan, thought_open_ids, thought_close_ids = _resolve_slot_plan(
+        tokenizer, cfg, spec, int(vocab_size)
+    )
+
+    def build(
+        source: str, record: Mapping[str, Any], draw: tuple[int, int]
+    ) -> dict[str, Any] | None:
+        try:
+            return _canvas_row(
+                tokenizer,
+                dict(record),
+                cfg,
+                float(weights.get(source, 1.0)),
+                spec=spec,
+                vocab_size=int(vocab_size),
+                slot_plan=slot_plan,
+                thought_open_ids=thought_open_ids,
+                thought_close_ids=thought_close_ids,
+                train=True,
+                draw=draw,
+            )
+        except SchemaError as error:
+            # Records outside the prepared subset were never canvasized; one that
+            # cannot be (not only overflow) is replaced rather than ending the run.
+            LOG.debug("Decision draw of %s could not be built: %s", source, error)
+            return None
+
+    return build
+
+
+def _assemble_datasets(
+    cfg: Any,
+    tokenizer: Any,
+    spec: Any,
+    layer_train: Sequence[Any],
+    layer_eval: Sequence[dict[str, Any]],
+    base_manifest: Mapping[str, Any],
+) -> TrainDatasetMeta:
+    """Apply the batch settings to a canvas layer: budgets, mixture plan, datasets."""
+    decision = _value(cfg, "diffusion_decision")
+    mixture = _value(decision, "mixture")
+    premixed = bool(base_manifest.get("premixed", False))
+    stratified = bool(_value(mixture, "per_batch_stratified", True))
+    micro_batch_size = int(_value(cfg, "micro_batch_size", 1))
+    seed = int(_value(cfg, "seed", 0))
+    manifest = dict(base_manifest)
+    plan = None
+    if premixed:
+        train_rows, train_budget_drops = _filter_budget_rows(
+            list(layer_train), cfg, spec
         )
+        if manifest["canvas_too_long"]["train"] or len(train_rows) != len(layer_train):
+            raise ValueError(
+                "premixed decision rows must all pass canvas and budget validation"
+            )
+        manifest.update(
+            {
+                "train_rows": len(train_rows),
+                "mixture_probabilities": {},
+                "stratified_epoch_batches": (),
+            }
+        )
+    else:
+        plan = DecisionBatchPlan(
+            layer_train,
+            seed=seed,
+            micro_batch_size=micro_batch_size,
+            stratified=stratified,
+            weights=_value(mixture, "weights"),
+            temperature=_value(mixture, "temperature"),
+            limits=_budget_limits(cfg),
+            layout=spec.layout,
+            build_row=_plan_row_builder(cfg, tokenizer, spec),
+        )
+        train_budget_drops = dict(plan.budget_drops)
+        epoch_sources = plan.epoch_sources(0)
+        manifest.update(
+            {
+                "train_rows": plan.draws_per_epoch,
+                "mixture_probabilities": dict(plan.probabilities),
+                "stratified_epoch_batches": tuple(
+                    tuple(epoch_sources[start : start + micro_batch_size])
+                    for start in range(0, len(epoch_sources), micro_batch_size)
+                ),
+                "batch_plan": {
+                    "per_epoch": True,
+                    "draws_per_epoch": plan.draws_per_epoch,
+                    "batches_per_epoch": plan.batches_per_epoch,
+                    "reserve_records": plan.reserve_records,
+                },
+            }
+        )
+    eval_rows, eval_budget_drops = _filter_budget_rows(
+        list(layer_eval), cfg, spec, is_eval=True
+    )
+    manifest.update(
+        {
+            "eval_rows": len(eval_rows),
+            "budget_drops": {"train": train_budget_drops, "eval": eval_budget_drops},
+            "per_batch_stratified": stratified,
+            "stratified_micro_batch_size": micro_batch_size,
+            "mixture_seed": seed,
+        }
+    )
     LOG.info(
-        "Prepared %s training draws and %s evaluation rows; budget drops: %s",
-        len(train_rows),
+        "Prepared %s training draws per epoch and %s evaluation rows; budget drops: %s",
+        manifest["train_rows"],
         len(eval_rows),
         manifest["budget_drops"],
     )
     return TrainDatasetMeta(
-        train_dataset=DecisionDataset(train_rows, manifest),
+        train_dataset=DecisionPlanDataset(plan, manifest)
+        if plan is not None
+        else DecisionDataset(train_rows, manifest),
         eval_dataset=DecisionDataset(eval_rows, manifest) if eval_rows else None,
         total_num_steps=None,
     )

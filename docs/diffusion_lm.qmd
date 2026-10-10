@@ -393,6 +393,21 @@ source. `loss_weight` multiplies each source's loss. Loss is averaged over the
 questions on a canvas and then over canvases, so a canvas with many questions
 does not outweigh a single-question canvas.
 
+Every epoch is drawn afresh with the same number of microbatches as the first:
+each capped source contributes its next `max_examples_per_source` window of
+one seeded shuffle (so later epochs see records the first did not, before any
+repeat), the mixture draw and the stratified microbatches are redrawn, and
+question and option order is seeded by the record, the epoch and how many
+times the epoch has already drawn that record. A record's first draw in epoch 0
+uses the order prepared at startup; any other draw rebuilds its canvas when the
+batch is loaded (about 25 ms per canvas on a 16k-token context), so runs that
+pass the first epoch may want `dataloader_num_workers: 1` or more to overlap
+that work. A drawn record that was not prepared at startup and does not fit the
+token budget is replaced by a prepared record of the same source. Epochs are a
+function of the seed, the batch settings and the epoch number, so ranks agree
+and a resumed run replays the same batches. With training `sample_packing`
+(core multipack) or `premixed` rows, every epoch reuses the first epoch's draws.
+
 To train on a prebuilt draw sequence, set `mixture.premixed: true` and
 `per_batch_stratified: false`. Each training row then needs a unique draw ID
 and an origin matching its own identity; copies of one origin must be identical
@@ -443,12 +458,23 @@ full-vocabulary logits over the sequence.
 
 ### Prepared-row cache
 
-With `dataset_prepared_path` set and local JSONL sources, prepared rows are
+With `dataset_prepared_path` set and local JSONL sources, prepared canvases are
 cached under `<dataset_prepared_path>/diffusion_decision_cache/` and reused when
 the cache identity matches: the decision config and the other preparation
-fields, the tokenizer files and vocabulary, the plugin's code, and the source
-files. A source file is matched by its resolved path, size and modification
-time, so touching it without changing its content still re-prepares once.
+fields (seed, `sequence_len`, model config), the tokenizer files and
+vocabulary, the plugin's code, and the source files. A source file is matched
+by its resolved path, size and modification time, so touching it without
+changing its content still re-prepares once.
+
+The cache holds the canvas layer only: every decontaminated, grouped training
+record per source, with canvases built for the first epoch's capped subset
+(the rest of a capped source is kept compressed for later epochs), and the
+evaluation canvases. Batch settings are not part of its identity:
+`micro_batch_size`, `gradient_accumulation_steps`, `eval_batch_size`,
+`sample_packing`, `eval_sample_packing`, `batch_flattening` and the mixture's
+`weights`, `temperature` and `per_batch_stratified` only shape the batch plan
+(token-budget filter over the cached lengths, mixture draws and microbatch
+grouping), which is rebuilt at startup in seconds.
 
 `diffusion_decision.prepared_cache_verify: true` trades load time for stronger
 checks: sources are matched by content sha256 instead, and a cache hit hashes

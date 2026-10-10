@@ -31,12 +31,15 @@ from ._util import (
 )
 from .records import DecisionCanvas
 
-SCHEMA_VERSION = 2
-PRODUCER = "decision-prepared-rows-v3"
+SCHEMA_VERSION = 3
+PRODUCER = "decision-canvas-layer-v4"
 CACHE_DIR = "diffusion_decision_cache"
 CACHE_SUFFIX = ".pkl"
 # File layout: MAGIC | rows pickle | header JSON | u64 header length | MAGIC.
-# The rows section is one pickle (protocol 5) of {"train", "eval", "manifest"}.
+# The rows section is one pickle (protocol 5) of {"train", "eval", "manifest"}: the
+# canvas layer (per-source pools, or premixed rows), unfiltered eval rows and the
+# base manifest. Batch settings are not part of the key; they only shape the batch
+# plan built over the layer at startup (batch_plan.py).
 # The trailing header carries the identity hash and the rows section's length and
 # sha256, so identity is checked before any rows are deserialized and a truncated
 # file is rejected by its size alone.
@@ -79,6 +82,11 @@ def _json_value(value: Any) -> Any:
     raise TypeError(f"cannot serialize decision preparation value {type(value)!r}")
 
 
+# Read only by the batch plan (mixture draws, grouping, budget filter), never by
+# canvas preparation, so changing them reuses the canvas layer.
+_PLAN_ONLY_MIXTURE_FIELDS = ("weights", "temperature", "per_batch_stratified")
+
+
 def _semantic_config(cfg: Any) -> dict[str, Any]:
     fields = (
         "base_model",
@@ -86,13 +94,7 @@ def _semantic_config(cfg: Any) -> dict[str, Any]:
         "model_config_type",
         "seed",
         "sequence_len",
-        "micro_batch_size",
-        "eval_batch_size",
-        "gradient_accumulation_steps",
         "attn_implementation",
-        "sample_packing",
-        "eval_sample_packing",
-        "batch_flattening",
     )
     result = {
         name: _json_value(value)
@@ -107,6 +109,10 @@ def _semantic_config(cfg: Any) -> dict[str, Any]:
     if isinstance(decision, dict):
         # How a cache is checked does not change what it holds.
         decision.pop("prepared_cache_verify", None)
+        mixture = decision.get("mixture")
+        if isinstance(mixture, dict):
+            for name in _PLAN_ONLY_MIXTURE_FIELDS:
+                mixture.pop(name, None)
     return result
 
 
@@ -308,13 +314,7 @@ def identity(
         "config": semantic_config,
         "entries": _entry_identity(cfg, selected_entries),
         "scope": dict(scope or {}),
-        "preparation": {
-            "model_config": model_config_overrides(cfg),
-            "sample_packing": _value(cfg, "sample_packing"),
-            "eval_sample_packing": _value(cfg, "eval_sample_packing"),
-            "batch_flattening": _value(cfg, "batch_flattening"),
-            "eval_batch_size": _value(cfg, "eval_batch_size"),
-        },
+        "preparation": {"model_config": model_config_overrides(cfg)},
         "spec": spec_value,
         "tokenizer": {
             "files": [
@@ -456,8 +456,8 @@ def load(
     identity_payload: Mapping[str, Any],
     *,
     verify: bool = False,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]] | None:
-    """Return cached (train, eval, manifest), or None on any miss or damage.
+) -> tuple[list[Any], list[dict[str, Any]], dict[str, Any]] | None:
+    """Return the cached canvas layer (train, eval, manifest), or None on a miss.
 
     The identity is always compared. ``verify`` additionally hashes the rows
     section against the sha256 recorded at store time; without it a damaged file
@@ -528,16 +528,17 @@ def store(
     key: str,
     identity_payload: Mapping[str, Any],
     cfg: Any,
-    train: Sequence[Mapping[str, Any]],
+    train: Sequence[Any],
     eval_rows: Sequence[Mapping[str, Any]],
     manifest: Mapping[str, Any],
 ) -> None:
+    """Write the canvas layer: ``train`` holds source pools (or premixed rows)."""
     parent = root / CACHE_DIR
     parent.mkdir(parents=True, exist_ok=True)
     path = _cache_path(root, key)
     content = {
-        "train": [dict(row) for row in train],
-        "eval": [dict(row) for row in eval_rows],
+        "train": list(train),
+        "eval": list(eval_rows),
         "manifest": dict(manifest),
     }
     descriptor, temporary = tempfile.mkstemp(

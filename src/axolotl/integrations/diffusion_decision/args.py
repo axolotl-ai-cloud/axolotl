@@ -37,7 +37,7 @@ class DecisionMixtureConfig(BaseModel):
     max_examples_per_source: int | dict[str, int] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Cap on training rows kept per source, as one integer or a per-source mapping."
+            "description": "Cap on training rows drawn per source and epoch, as one integer or a per-source mapping; each epoch takes the next window of one seeded shuffle of the source."
         },
     )
     loss_weight: dict[str, float] = Field(

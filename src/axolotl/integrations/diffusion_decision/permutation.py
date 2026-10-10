@@ -12,13 +12,39 @@ from .adapters.jsonl import normalize_jsonl
 from .template import codebook_labels
 
 
+def draw_stream(draw: tuple[int, int] | None) -> str:
+    """Stream suffix for one draw of a record: (epoch, draw number within the epoch).
+
+    The first draw of a record in epoch 0 keeps the unsuffixed streams, so its order
+    matches records permuted before draws were distinguished (and the prepared canvas).
+    """
+    if draw is None:
+        return ""
+    epoch, number = draw
+    if (epoch, number) == (0, 0):
+        return ""
+    if min(epoch, number) < 0:
+        raise ValueError("decision draw epoch and number must be nonnegative")
+    return f"@{int(epoch)}.{int(number)}"
+
+
 def permute_record(
-    record: Mapping[str, Any], *, seed: int, codebook: str = "vendored26"
+    record: Mapping[str, Any],
+    *,
+    seed: int,
+    codebook: str = "vendored26",
+    draw: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
+    """Shuffle question and choice order, seeded by the record's identity and draw.
+
+    ``draw`` is (epoch, draw number of this record within the epoch); every draw
+    but (0, 0) gets its own order.
+    """
     result = normalize_jsonl(record, codebook=codebook)
     identity = _permutation_identity(result)
+    suffix = draw_stream(draw)
     keys = sorted(result["questions"])
-    _generator(seed, identity, "questions").shuffle(keys)
+    _generator(seed, identity, f"questions{suffix}").shuffle(keys)
     result["questions"] = {key: result["questions"][key] for key in keys}
     result["labels"] = {key: result["labels"][key] for key in keys}
     for key, question in result["questions"].items():
@@ -26,7 +52,7 @@ def permute_record(
             continue
         options = question["options"]
         order = list(range(len(options)))
-        _generator(seed, identity, f"choices:{key}").shuffle(order)
+        _generator(seed, identity, f"choices:{key}{suffix}").shuffle(order)
         question["options"] = [options[index] for index in order]
         target = result["labels"][key]
         inverse = {old: new for new, old in enumerate(order)}
@@ -63,6 +89,7 @@ def shuffle_labels(
     seed: int,
     probability: float,
     codebook: str = "vendored26",
+    draw: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
     """With ``probability`` per choice question, give its options a random subset of the codebook (in codebook
     order) through ``label_indices`` instead of the first N labels. Deterministic per seed, record and question;
@@ -71,6 +98,7 @@ def shuffle_labels(
         return dict(record)
     size = len(codebook_labels(codebook))
     identity = _permutation_identity(record)
+    suffix = draw_stream(draw)
     result = None
     for key, question in record["questions"].items():
         if question.get("type") != "choice" or "label_indices" in question:
@@ -78,7 +106,7 @@ def shuffle_labels(
         count = len(question.get("options") or ())
         if count >= size:
             continue
-        generator = _generator(seed, identity, f"labels:{key}")
+        generator = _generator(seed, identity, f"labels:{key}{suffix}")
         if generator.random() >= probability:
             continue
         if result is None:

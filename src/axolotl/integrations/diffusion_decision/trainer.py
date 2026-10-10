@@ -82,6 +82,17 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         dataset = self.train_dataset if train_dataset is None else train_dataset
         manifest = getattr(dataset, "manifest", None)
         sampled_draws = self._uses_sampled_slot_draws()
+        plan = getattr(dataset, "batch_plan", None)
+        if plan is not None and not getattr(self.args, "sample_packing", False):
+            if self.args.per_device_train_batch_size != plan.micro_batch_size:
+                raise ValueError(
+                    "decision dataset microbatch size does not match per_device_train_batch_size"
+                )
+            return _DecisionPlanBatchSampler(
+                plan,
+                self.args.world_size,
+                drop_last=bool(getattr(self.args, "dataloader_drop_last", False)),
+            )
         if getattr(self.args, "sample_packing", False):
             if sampled_draws:
                 raise ValueError(
@@ -156,6 +167,11 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         sampled_slot_training = (
             is_training and typed_decision_dataset and self._uses_sampled_slot_draws()
         )
+        planned_training = (
+            is_training
+            and getattr(dataset, "batch_plan", None) is not None
+            and not self.args.sample_packing
+        )
         if not hasattr(dataset, "column_names"):
             dataset.column_names = ()
         sample_packing = self.args.sample_packing
@@ -168,7 +184,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             self.args.sample_packing = False
             if not is_training:
                 self.args.dataloader_drop_last = False
-        if stratified_training or sampled_slot_training:
+        if stratified_training or sampled_slot_training or planned_training:
             self.accelerator.even_batches = True
         try:
             dataloader = super()._get_dataloader(
@@ -1728,6 +1744,45 @@ class _StratifiedDecisionBatchSampler(BatchSampler):
 
     def __len__(self) -> int:
         groups = self._dataset_size // self._batch_size
+        return groups + (-groups) % self._world_size
+
+
+class _DecisionPlanBatchSampler(BatchSampler):
+    """Microbatches of a DecisionBatchPlan epoch, as DecisionDraw descriptors.
+
+    The epoch comes from the plan, which both this sampler's ``set_epoch`` and the
+    dataset's (accelerate reaches only the dataset after a resume skip) move. Each
+    epoch is drawn afresh; every epoch has the same number of batches.
+    """
+
+    def __init__(self, plan, world_size: int = 1, *, drop_last: bool = False) -> None:
+        _validate_decision_sampler_args(
+            plan.draws_per_epoch, plan.micro_batch_size, plan.seed, world_size
+        )
+        self._plan = plan
+        self._world_size = world_size
+        self._drop_last = drop_last
+        super().__init__(
+            SequentialSampler(range(plan.draws_per_epoch)),
+            plan.micro_batch_size,
+            drop_last,
+        )
+
+    def set_epoch(self, epoch: int) -> None:
+        self._plan.set_epoch(epoch)
+
+    def __iter__(self):
+        epoch = self._plan.epoch
+        yield from _decision_draw_groups(
+            self._plan.batches(epoch, drop_last=self._drop_last),
+            epoch=epoch,
+            batch_size=self._plan.micro_batch_size,
+            world_size=self._world_size,
+        )
+
+    def __len__(self) -> int:
+        # Every epoch holds batches_per_epoch full microbatches.
+        groups = self._plan.batches_per_epoch
         return groups + (-groups) % self._world_size
 
 
