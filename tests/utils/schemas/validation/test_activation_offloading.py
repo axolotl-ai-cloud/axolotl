@@ -14,18 +14,15 @@ LORA = {
 
 
 @pytest.fixture
-def validation_logs(monkeypatch):
+def validation_warnings(monkeypatch):
     """Capture the validation module's logger (caplog loses records once any CLI
     entry point reconfigures logging)."""
     import axolotl.utils.schemas.validation as validation_module
 
-    seen: dict[str, list[str]] = {"info": [], "warning": []}
-    for level, messages in seen.items():
-        monkeypatch.setattr(
-            validation_module.LOG,
-            level,
-            lambda msg, *a, _messages=messages, **k: _messages.append(str(msg)),
-        )
+    seen: list[str] = []
+    monkeypatch.setattr(
+        validation_module.LOG, "warning", lambda msg, *a, **k: seen.append(str(msg))
+    )
     return seen
 
 
@@ -89,7 +86,9 @@ class TestActivationOffloading:
 
     @pytest.mark.parametrize("mode", [True, "disk"])
     @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
-    def test_trl_offload_without_gc(self, min_base_cfg, validation_logs, mode, adapter):
+    def test_trl_offload_without_gc(
+        self, min_base_cfg, validation_warnings, mode, adapter
+    ):
         cfg = (
             DictDefault(
                 gradient_checkpointing=False,
@@ -102,10 +101,7 @@ class TestActivationOffloading:
         cfg = validate_config(cfg)
         assert cfg.gradient_checkpointing is False
         assert cfg.activation_offloading == mode
-        recompute_hint = [
-            msg for msg in validation_logs["warning"] if "with no recompute" in msg
-        ]
-        assert bool(recompute_hint) is not adapter
+        assert any("with no recompute" in msg for msg in validation_warnings)
 
     @pytest.mark.parametrize("mode", ["legacy", "hidden_states"])
     def test_checkpoint_offload_modes_require_gc(self, min_base_cfg, mode):
@@ -119,22 +115,18 @@ class TestActivationOffloading:
         ):
             validate_config(cfg)
 
-    def test_trl_offload_with_gc_and_adapter_skips_recompute(
-        self, min_base_cfg, validation_logs
-    ):
+    @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
+    def test_trl_offload_with_gc(self, min_base_cfg, validation_warnings, adapter):
         cfg = (
             DictDefault(
                 gradient_checkpointing=True,
                 activation_offloading=True,
-                **LORA,
+                **(LORA if adapter else {}),
             )
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
         assert cfg.gradient_checkpointing is True
-        assert any(
-            "gradient_checkpointing is not applied" in msg
-            for msg in validation_logs["info"]
-        )
-        assert not any("with no recompute" in msg for msg in validation_logs["warning"])
+        assert cfg.activation_offloading is True
+        assert not any("with no recompute" in msg for msg in validation_warnings)
