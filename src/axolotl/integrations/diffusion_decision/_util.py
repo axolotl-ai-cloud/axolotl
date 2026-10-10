@@ -38,12 +38,16 @@ def model_config_overrides(cfg: Any) -> Any:
     return _value(cfg, "model_config") if overrides is None else overrides
 
 
-def eval_batch_flattening(cfg: Any) -> bool:
-    """Whether evaluation batches are token-budget flattened (default: ``batch_flattening``)."""
-    value = _value(cfg, "eval_batch_flattening")
-    if value is None:
-        value = _value(cfg, "batch_flattening", False)
-    return value is True
+def token_budget_eval_packing(cfg: Any) -> bool:
+    """Whether the plugin packs evaluation rows into token-budget batches.
+
+    ``eval_sample_packing: true`` without training ``sample_packing``. When
+    ``sample_packing`` is also on, core's MultipackBatchSampler packs evaluation
+    instead, so exactly one packing mechanism applies.
+    """
+    return _value(cfg, "eval_sample_packing") is True and not _value(
+        cfg, "sample_packing", False
+    )
 
 
 def require_diffusion_spec(cfg: Any) -> DiffusionSpec:

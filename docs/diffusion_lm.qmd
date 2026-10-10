@@ -418,6 +418,24 @@ budget. It requires `mixture.per_batch_stratified: false` and does not support
 sampled latent-slot counts. Reduce `micro_batch_size` and raise
 `gradient_accumulation_steps` if the effective batch does not fit.
 
+Evaluation batches hold a fixed `eval_batch_size` rows by default. With
+`sample_packing: false`, set `eval_sample_packing: true` to pack evaluation
+instead: consecutive rows are concatenated, in dataset order, into one varlen
+row of at most `sequence_len * eval_batch_size` tokens, so short rows share a
+forward and a micro-batch never exceeds the fixed-batch worst case. This works
+with or without `batch_flattening` for training, applies to full-sequence
+layouts (encoder/canvas layouts keep fixed batches), and repeats no row across
+ranks. `eval_loss` and the `eval_decision/*` metrics remain per-example means,
+equal to the fixed-batch values. With `sample_packing: true`, evaluation is
+packed by the same multipack sampler as training unless
+`eval_sample_packing: false`; only one packing mechanism applies.
+
+Evaluation reads only the final pass of a `k_max` unroll when no free latent
+slots are used: the earlier passes commit nothing and condition nothing, so
+they would re-read the same canvas. The final pass computes logits only at
+label slots, so evaluation never materializes full-vocabulary logits over the
+sequence. Training still runs every sampled pass.
+
 ### Outputs
 
 Each saved adapter includes `diffusion_decision_manifest.json`, which records

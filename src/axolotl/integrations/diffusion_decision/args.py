@@ -356,16 +356,3 @@ class DiffusionDecisionArgs(BaseModel):
             "description": "Typed-decision training settings for native diffusion models."
         },
     )
-    eval_batch_flattening: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": (
-                "Evaluate in token-budget micro-batches: consecutive evaluation rows are "
-                "concatenated into one varlen row of at most sequence_len x eval_batch_size "
-                "tokens, so a micro-batch holds as many short rows as fit instead of a fixed "
-                "eval_batch_size rows. Full-sequence layouts without eval sample packing only. "
-                "Logged metrics and eval_loss stay example-weighted means. Default: follow "
-                "batch_flattening."
-            )
-        },
-    )

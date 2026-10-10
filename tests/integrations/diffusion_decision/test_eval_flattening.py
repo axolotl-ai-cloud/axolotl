@@ -8,7 +8,7 @@ import pytest
 import torch
 from accelerate.data_loader import BatchSamplerShard
 
-from axolotl.integrations.diffusion_decision._util import eval_batch_flattening
+from axolotl.integrations.diffusion_decision._util import token_budget_eval_packing
 from axolotl.integrations.diffusion_decision.datasets import DecisionDataset
 from axolotl.integrations.diffusion_decision.loss import decision_example_from_canvas
 from axolotl.integrations.diffusion_decision.trainer import (
@@ -85,23 +85,73 @@ def test_accelerate_shards_token_budget_batches_without_repeating_rows(world_siz
 
 
 @pytest.mark.parametrize(
-    ("batch_flattening", "eval_flattening", "expected"),
+    ("sample_packing", "eval_sample_packing", "expected"),
     [
-        (True, None, True),
         (False, None, False),
-        ("auto", None, False),
-        (True, False, False),
+        (False, False, False),
         (False, True, True),
+        (True, True, False),
+        (True, None, False),
     ],
 )
-def test_eval_batch_flattening_defaults_to_batch_flattening(
-    batch_flattening, eval_flattening, expected
+def test_eval_sample_packing_alone_selects_token_budget_eval_batches(
+    sample_packing, eval_sample_packing, expected
 ):
-    cfg = {"batch_flattening": batch_flattening}
-    if eval_flattening is not None:
-        cfg["eval_batch_flattening"] = eval_flattening
+    cfg = {"sample_packing": sample_packing, "batch_flattening": True}
+    if eval_sample_packing is not None:
+        cfg["eval_sample_packing"] = eval_sample_packing
 
-    assert eval_batch_flattening(cfg) is expected
+    assert token_budget_eval_packing(cfg) is expected
+
+
+@pytest.mark.parametrize(
+    ("sample_packing", "eval_sample_packing", "expected"),
+    [
+        (False, None, "sequential"),
+        (False, False, "sequential"),
+        (False, True, "token_budget"),
+        (True, True, "core_multipack"),
+    ],
+)
+def test_exactly_one_eval_packing_mechanism_applies(
+    monkeypatch, sample_packing, eval_sample_packing, expected
+):
+    from torch.utils.data import SequentialSampler
+
+    from axolotl.core.trainers.diffusion_lm.trainer import AxolotlDiffusionTrainer
+
+    from tests.integrations.diffusion_decision.test_trainer import _harness
+
+    monkeypatch.setattr(
+        AxolotlDiffusionTrainer,
+        "_get_eval_sampler",
+        lambda _self, dataset: "core_multipack",
+    )
+    dataset = DecisionDataset(_eval_rows(5, 128), {"per_batch_stratified": False})
+    trainer = _harness()
+    trainer.args.sample_packing = sample_packing
+    trainer.args.eval_sample_packing = eval_sample_packing
+    trainer.args.per_device_eval_batch_size = _EVAL_BATCH
+    trainer.axolotl_cfg = {
+        "sequence_len": _SEQUENCE_LEN,
+        "eval_batch_size": _EVAL_BATCH,
+        "sample_packing": sample_packing,
+        "eval_sample_packing": eval_sample_packing,
+        "diffusion_decision": {},
+    }
+
+    sampler = trainer._get_eval_sampler(dataset)
+
+    observed = (
+        "core_multipack"
+        if sampler == "core_multipack"
+        else "token_budget"
+        if isinstance(sampler, _TokenBudgetEvalBatchSampler)
+        else "sequential"
+        if isinstance(sampler, SequentialSampler)
+        else sampler
+    )
+    assert observed == expected
 
 
 @pytest.mark.parametrize("selected", [False, True])
@@ -250,12 +300,14 @@ def _evaluate(tmp_path, model, rows, *, flatten: bool, selected: bool):
         "sequence_len": _SEQUENCE_LEN,
         "eval_batch_size": _EVAL_BATCH,
         "batch_flattening": True,
-        "eval_batch_flattening": flatten,
+        "sample_packing": False,
+        "eval_sample_packing": flatten,
         "diffusion_decision": {
             "read_fraction": 1.0,
             "labels": {"label_softmax": "both", "brier_weight": 0.1},
         },
     }
+    trainer.args.eval_sample_packing = flatten
     trainer.post_set_axolotl_cfg()
     dataloader = trainer.get_eval_dataloader()
     assert _uses_token_budget_batches(dataloader) is flatten
@@ -321,3 +373,33 @@ def test_flattened_selected_evaluation_metrics_match_fixed_full_logit_batches(
                 key,
                 name,
             )
+
+
+@pytest.mark.parametrize("batch_flattening", [False, True])
+def test_eval_sample_packing_alone_caps_the_eval_collator_at_the_eval_budget(
+    batch_flattening,
+):
+    from types import SimpleNamespace
+
+    from axolotl.integrations.diffusion_decision.training_collator import (
+        decision_collator_for_config,
+    )
+    from axolotl.utils.dict import DictDefault
+
+    _collator, kwargs = decision_collator_for_config(
+        DictDefault(
+            {
+                "model_config_type": "nemotron_labs_diffusion",
+                "tokenizer": SimpleNamespace(pad_token_id=0),
+                "sample_packing": False,
+                "eval_sample_packing": True,
+                "batch_flattening": batch_flattening,
+                "micro_batch_size": 1,
+                "eval_batch_size": 8,
+                "sequence_len": 128,
+                "diffusion_lm": {"from_causal_lm": False},
+            }
+        ),
+        is_eval=True,
+    )
+    assert kwargs["physical_payload_capacity"] == 1024
