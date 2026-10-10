@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import pickle  # nosec B403 - round trip of a canvas this test built
 import re
 from types import SimpleNamespace
 
@@ -223,9 +225,7 @@ def test_prepared_cache_round_trips_image_fields_and_hashes_image_bytes(
 ):
     wide, square = images
     canvas = _image_canvas((str(wide), str(square)), ((28, 56), (28, 28)))
-    restored = prepared_cache._canvas_from_json(
-        json.loads(json.dumps(prepared_cache._canvas_to_json(canvas)))
-    )
+    restored = prepared_cache._CacheUnpickler(io.BytesIO(pickle.dumps(canvas))).load()
     assert restored == canvas
     assert restored.image_sizes == ((28, 56), (28, 28))
     tokenizer_root = tmp_path / "tok"
@@ -455,7 +455,7 @@ def test_load_decision_datasets_hashes_image_files_into_the_cache_key(
     class Stop(Exception):
         pass
 
-    def identity(cfg, tokenizer, spec, sources, *, image_paths=None):
+    def identity(cfg, tokenizer, spec, sources, *, image_paths=None, verify=False):
         seen.append((list(sources), image_paths))
         raise Stop
 
