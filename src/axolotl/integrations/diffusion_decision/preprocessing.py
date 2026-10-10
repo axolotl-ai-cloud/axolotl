@@ -18,10 +18,67 @@ from .records import DecisionCanvas, OrdinalMetadata
 from .slots import SlotPlan
 from .template import (
     SchemaError,
+    answer_text,
     parse_decision_schema,
     resolve_template,
     system_text,
 )
+
+ANSWER_FORMATS = ("auto", "lines", "indexed")
+_DEPENDENCY_KEYS = frozenset({"depends_on", "ask_if"})
+
+
+def canvas_head(
+    scaffold_ids: Sequence[int],
+    plan: SlotPlan | None,
+    thought_open_ids: Sequence[int] = (),
+    thought_close_ids: Sequence[int] = (),
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """The token run a canvas starts with and the slot ids appended after the turn close."""
+    head = tuple(scaffold_ids)
+    if plan is not None and plan.placement == "thought":
+        head = (*head, *thought_open_ids, *plan.ids, *thought_close_ids)
+    pad_slots = () if plan is None or plan.placement != "after_turn" else plan.ids
+    return head, tuple(pad_slots)
+
+
+def template_fits(
+    tokenizer,
+    questions: Mapping[str, Mapping[str, Any]],
+    *,
+    head: Sequence[int],
+    pad_slots: int,
+    width: int,
+    answer_format: str,
+    codebook: str = "vendored26",
+) -> bool:
+    """Whether these normalized questions' answer template fits one canvas.
+
+    Measures the same base template ``build_decision_canvas`` resolves (every
+    question at its first label, plus the turn close and any after-turn slots).
+    Codebook labels are single tokens, so neither the question permutation nor
+    label shuffling changes the length.
+    """
+    if answer_format not in ("lines", "indexed"):
+        raise ValueError("template_fits needs an explicit lines or indexed format")
+    # Dependencies do not change the template; dropping them lets a partial
+    # group be measured before the questions it depends on join it.
+    schema = parse_decision_schema(
+        {
+            "questions": [
+                {
+                    **{k: v for k, v in question.items() if k not in _DEPENDENCY_KEYS},
+                    "id": key,
+                }
+                for key, question in questions.items()
+            ]
+        },
+        codebook=codebook,
+    )
+    qs = schema["questions"]
+    text = answer_text(qs, [0] * len(qs), answer_format)
+    length = len(head) + len(tokenizer.encode(text, add_special_tokens=False))
+    return length + 1 + pad_slots <= width
 
 
 def _reserves_image_markers(tokenizer) -> bool:
@@ -53,7 +110,10 @@ def build_decision_canvas(
     codebook: str = "vendored26",
     prevalidated_record: bool = False,
     max_image_size: int = 1400,
+    answer_format: str = "auto",
 ) -> DecisionCanvas:
+    if answer_format not in ANSWER_FORMATS:
+        raise ValueError(f"unknown decision answer format {answer_format!r}")
     if steps < 1 or width < 2 or vocab_size < 2:
         raise ValueError("steps, canvas width, and vocabulary must be positive")
     if noise_kind not in {"uniform", "absorbing"}:
@@ -79,6 +139,8 @@ def build_decision_canvas(
     )
     image_refs = tuple(normalized.get("images") or ())
     image_sizes: tuple[tuple[int, int], ...] = ()
+    if answer_format != "auto":
+        schema["format"] = answer_format
     if prompt_ids is None:
         prompt_ids, image_sizes = decision_prompt(
             tokenizer,
@@ -97,10 +159,9 @@ def build_decision_canvas(
         prompt_slot_mask = (True,) * len(plan.ids) + (False,) * (
             len(prompt_ids) - len(plan.ids)
         )
-    head = tuple(scaffold_ids)
-    if plan is not None and plan.placement == "thought":
-        head = (*head, *thought_open_ids, *plan.ids, *thought_close_ids)
-    pad_slots = () if plan is None or plan.placement != "after_turn" else plan.ids
+    head, pad_slots = canvas_head(
+        scaffold_ids, plan, thought_open_ids, thought_close_ids
+    )
     base, slots = resolve_template(
         tokenizer,
         schema["questions"],

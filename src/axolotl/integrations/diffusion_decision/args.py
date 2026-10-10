@@ -251,7 +251,24 @@ class DiffusionDecisionConfig(BaseModel):
         ge=1,
         le=MAX_QUESTIONS,
         json_schema_extra={
-            "description": "Maximum questions grouped into one canvas; capped by the template."
+            "description": (
+                "Maximum questions grouped into one canvas; capped by the template. Above 10, set "
+                "answer_format: lines (the auto format switches to indexed there)."
+            )
+        },
+    )
+    answer_format: Literal["auto", "lines", "indexed"] = Field(
+        default="auto",
+        json_schema_extra={
+            "description": (
+                "Answer template format. auto (default) is the vendored djev rule: lines "
+                "(`id: label` per line) for up to 10 questions, indexed (`idLABEL` space-separated) "
+                "above. lines or indexed forces that format for every canvas and makes grouping "
+                "width-aware: a canvas takes as many questions as fit in diffusion_lm.canvas_width "
+                "(up to max_questions_per_canvas) and larger groups are split instead of dropped. "
+                "Indexed merges digit-ending or noul ids with their label in some tokenizers, so "
+                "use lines to go above 10 questions."
+            )
         },
     )
     read_fraction: float = Field(

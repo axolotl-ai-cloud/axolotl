@@ -52,7 +52,7 @@ from .prepared_cache import (
     load as load_prepared_cache,
     store as store_prepared_cache,
 )
-from .preprocessing import build_decision_canvas
+from .preprocessing import build_decision_canvas, canvas_head, template_fits
 from .prompts import resolve_image_refs
 from .slot_sampling import (
     DecisionDraw,
@@ -375,6 +375,59 @@ def _read_overflow_width(
     return width
 
 
+def _canvas_width(cfg: Any, spec) -> int:
+    configured_width = _value(_value(cfg, "diffusion_lm"), "canvas_width")
+    width = 128 if configured_width is None else int(configured_width)
+    if spec.max_canvas is not None:
+        width = min(width, spec.max_canvas)
+    return width
+
+
+def _scaffold_ids(latent: Any, slot_plan: SlotPlan | None) -> tuple[int, ...]:
+    if slot_plan is not None:
+        return ()
+    return tuple(int(token) for token in (_value(latent, "token_ids", ()) or ()))
+
+
+def _grouping_fits(tokenizer: Any, cfg: Any, spec) -> Any:
+    """The width check ``group_records`` packs against, or None for count-only grouping.
+
+    Only an explicit answer format (lines or indexed) packs by width, so configs on
+    the default auto format group exactly as before.
+    """
+    decision = _value(cfg, "diffusion_decision")
+    answer_format = str(_value(decision, "answer_format", "auto") or "auto")
+    if answer_format == "auto":
+        return None
+    vocab_size = _value(model_config_overrides(cfg), "vocab_size")
+    if vocab_size is None:
+        vocab_size = len(tokenizer)
+    slot_plan, thought_open_ids, thought_close_ids = _resolve_slot_plan(
+        tokenizer, cfg, spec, int(vocab_size)
+    )
+    head, pad_slots = canvas_head(
+        _scaffold_ids(_value(decision, "latent"), slot_plan),
+        slot_plan,
+        thought_open_ids,
+        thought_close_ids,
+    )
+    width = _canvas_width(cfg, spec)
+    codebook = _value(_value(decision, "labels"), "codebook", "vendored26")
+
+    def fits(questions: Mapping[str, Mapping[str, Any]]) -> bool:
+        return template_fits(
+            tokenizer,
+            questions,
+            head=head,
+            pad_slots=len(pad_slots),
+            width=width,
+            answer_format=answer_format,
+            codebook=codebook,
+        )
+
+    return fits
+
+
 def _canvas_row(
     tokenizer,
     record: dict[str, Any],
@@ -392,16 +445,9 @@ def _canvas_row(
     decision = _value(cfg, "diffusion_decision")
     model_config = model_config_overrides(cfg)
     latent = _value(decision, "latent")
-    configured_width = _value(diffusion, "canvas_width")
-    width = 128 if configured_width is None else int(configured_width)
-    if spec.max_canvas is not None:
-        width = min(width, spec.max_canvas)
+    width = _canvas_width(cfg, spec)
     mask_token_id = resolve_mask_token_id(diffusion, model_config)
-    scaffold_ids = (
-        tuple(int(token) for token in (_value(latent, "token_ids", ()) or ()))
-        if slot_plan is None
-        else ()
-    )
+    scaffold_ids = _scaffold_ids(latent, slot_plan)
     record = permute_record(
         record,
         seed=int(_value(cfg, "seed", 0)),
@@ -449,6 +495,7 @@ def _canvas_row(
             codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
             prevalidated_record=True,
             max_image_size=int(_value(decision, "max_image_size", 1400)),
+            answer_format=str(_value(decision, "answer_format", "auto") or "auto"),
         )
 
     try:
@@ -898,12 +945,13 @@ def load_decision_datasets(
         raise ValueError("premixed decision rows overlap an evaluation split")
     train = [dict(record) for record in retained]
     max_questions = int(_value(decision, "max_questions_per_canvas", 20))
+    fits = _grouping_fits(tokenizer, cfg, spec)
     if premixed:
         _validate_premixed_records(train)
     else:
         LOG.info("Grouping compatible decision records")
-        train = group_records(train, max_questions=max_questions)
-    dev = group_records(dev, max_questions=max_questions)
+        train = group_records(train, max_questions=max_questions, fits=fits)
+    dev = group_records(dev, max_questions=max_questions, fits=fits)
     assert_split_isolation({"train": train, "eval": dev})
     weights = _value(_value(decision, "mixture"), "loss_weight", {}) or {}
     train_canvas_too_long = 0
