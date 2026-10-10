@@ -27,7 +27,7 @@ from axolotl.processing_strategies import (
     NEMOTRON_VLM_IMAGE_START_ID,
 )
 
-from ._util import _value
+from ._util import _value, eval_batch_flattening
 from .args import DiffusionDecisionConfig
 from .loss import (
     DecisionLabelExample,
@@ -168,8 +168,73 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
             return super()._get_eval_sampler(dataset)
         if isinstance(getattr(dataset, "manifest", None), Mapping):
+            budget = self._eval_token_budget()
+            if budget is not None:
+                return _TokenBudgetEvalBatchSampler(
+                    _decision_row_lengths(dataset),
+                    budget,
+                    self.args.world_size,
+                )
             return SequentialSampler(dataset)
         return super()._get_eval_sampler(dataset)
+
+    def evaluation_loop(
+        self,
+        dataloader,
+        description,
+        prediction_loss_only=None,
+        ignore_keys=None,
+        metric_key_prefix="eval",
+    ):
+        output = super().evaluation_loop(
+            dataloader,
+            description,
+            prediction_loss_only=prediction_loss_only,
+            ignore_keys=ignore_keys,
+            metric_key_prefix=metric_key_prefix,
+        )
+        if _uses_token_budget_batches(dataloader):
+            # The core loop weights every step's mean loss by the fixed
+            # eval_batch_size; token-budget steps hold different numbers of rows.
+            # Report the example-weighted mean the fixed batches produced instead,
+            # from the decision totals (summed over ranks, each row counted once).
+            totals = _reduce_decision_metric_totals(
+                self._decision_metric_totals("eval")
+            ).get("decision/all")
+            if totals and totals["examples"]:
+                output.metrics[f"{metric_key_prefix}_loss"] = (
+                    totals["loss"] / totals["examples"]
+                )
+        return output
+
+    def _eval_token_budget(self) -> int | None:
+        """Physical tokens per flattened evaluation micro-batch, or None for fixed batches."""
+        spec = self._native_spec
+        cfg = self.axolotl_cfg
+        if (
+            spec is None
+            or spec.layout is not DiffusionLayout.FULL_SEQUENCE
+            or not eval_batch_flattening(cfg)
+        ):
+            return None
+        sequence_len = _value(cfg, "sequence_len")
+        batch_size = (
+            _value(cfg, "eval_batch_size")
+            or _value(cfg, "micro_batch_size")
+            or getattr(self.args, "per_device_eval_batch_size", None)
+        )
+        if not all(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0
+            for value in (sequence_len, batch_size)
+        ):
+            raise ValueError(
+                "eval_batch_flattening requires positive sequence_len and eval_batch_size"
+            )
+        budget = sequence_len * batch_size
+        if _value(cfg, "attn_implementation") == "flex_attention":
+            # Same physical bucket rounding as the collator's native packing budget.
+            budget = budget // 128 * 128
+        return budget
 
     def compute_loss(
         self,
@@ -802,6 +867,12 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                 update_mask = free_slot_mask
             else:
                 update_mask = torch.zeros_like(update_mask)
+                if not model.training:
+                    # Nothing is committed and nothing conditions the next pass, so
+                    # every non-final pass re-reads the final pass's exact state and
+                    # its full-vocabulary logits are discarded. Evaluation keeps only
+                    # the final (selected-logit) pass; training is left unchanged.
+                    steps = 1
             outputs, logits, _ = run_unroll(
                 state=state,
                 update_mask=update_mask,
@@ -1405,6 +1476,83 @@ def _validate_question_coordinates(
         (positions[question_mask] < position_count).all(),
         "active label positions are out of range",
     )
+
+
+def _uses_token_budget_batches(dataloader) -> bool:
+    sampler = getattr(dataloader, "batch_sampler", None)
+    for _ in range(4):
+        if isinstance(sampler, _TokenBudgetEvalBatchSampler):
+            return True
+        sampler = getattr(sampler, "batch_sampler", None)
+    return False
+
+
+def _decision_row_lengths(dataset) -> list[int]:
+    """Flattened full-sequence tokens each row contributes (prompt plus canvas)."""
+    lengths = []
+    for index in range(len(dataset)):
+        canvas = dataset[index]["canvas"]
+        lengths.append(len(canvas.prompt_ids) + len(canvas.canvas_ids))
+    return lengths
+
+
+class _TokenBudgetEvalBatchSampler(BatchSampler):
+    """Sequential evaluation batches filled up to a physical token budget.
+
+    Rows keep dataset order and each appears exactly once. The batch count is made
+    a multiple of ``world_size`` by splitting the batches with the most rows, so
+    accelerate shards whole batches without repeating any row. ``batch_size`` is
+    None: accelerate treats the batches as dynamic and never tops them up.
+    """
+
+    def __init__(
+        self, lengths: Sequence[int], token_budget: int, world_size: int = 1
+    ) -> None:
+        if (
+            isinstance(token_budget, bool)
+            or not isinstance(token_budget, int)
+            or token_budget < 1
+        ):
+            raise ValueError("evaluation token budget must be a positive integer")
+        if isinstance(world_size, bool) or not isinstance(world_size, int):
+            raise ValueError("evaluation world_size must be an integer")
+        if world_size < 1:
+            raise ValueError("evaluation world_size must be positive")
+        batches: list[list[int]] = []
+        current: list[int] = []
+        used = 0
+        for index, length in enumerate(lengths):
+            if length < 1 or length > token_budget:
+                raise ValueError(
+                    f"evaluation row {index} has {length} tokens; the flattened "
+                    f"evaluation budget is {token_budget}"
+                )
+            if current and used + length > token_budget:
+                batches.append(current)
+                current, used = [], 0
+            current.append(index)
+            used += length
+        if current:
+            batches.append(current)
+        while len(batches) % world_size:
+            widest = max(range(len(batches)), key=lambda item: len(batches[item]))
+            batch = batches[widest]
+            if len(batch) < 2:
+                # Fewer rows than ranks: accelerate repeats rows to even the ranks.
+                break
+            half = len(batch) // 2
+            batches[widest : widest + 1] = [batch[:half], batch[half:]]
+        self._batches = batches
+        self.sampler = range(len(lengths))
+        self.batch_size = None
+        self.drop_last = False
+
+    def __iter__(self):
+        for batch in self._batches:
+            yield list(batch)
+
+    def __len__(self) -> int:
+        return len(self._batches)
 
 
 class _DecisionDrawBatchSampler(BatchSampler):

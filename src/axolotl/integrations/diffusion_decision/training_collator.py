@@ -11,6 +11,7 @@ import torch
 
 from axolotl.integrations.diffusion_decision._util import (
     _value,
+    eval_batch_flattening,
     require_diffusion_spec,
 )
 from axolotl.integrations.diffusion_decision.collator import DecisionCanvasCollator
@@ -356,7 +357,9 @@ def decision_collator_for_config(cfg: Any, is_eval: bool = False):
     packed = bool(_value(cfg, "sample_packing", False)) and (
         not is_eval or _value(cfg, "eval_sample_packing", False) is not False
     )
-    fixed_logical_batch = bool(_value(cfg, "batch_flattening", False))
+    fixed_logical_batch = bool(_value(cfg, "batch_flattening", False)) or (
+        is_eval and eval_batch_flattening(cfg)
+    )
     budget = resolve_native_packing_budget(
         cfg, packed=packed or fixed_logical_batch, is_eval=is_eval
     )
