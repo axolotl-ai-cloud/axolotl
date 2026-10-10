@@ -315,6 +315,19 @@ class DiffusionDecisionConfig(BaseModel):
             )
         },
     )
+    prepared_cache_verify: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Fully verify the prepared-row cache under dataset_prepared_path. Off "
+                "(default): source files are keyed by path, size and mtime, and a cache hit "
+                "checks the identity and the file's framing but not a content hash of the "
+                "rows. On: sources are keyed by content sha256 and a hit re-hashes the rows "
+                "section before loading. The two modes key sources differently, so switching "
+                "it prepares (and caches) once more."
+            )
+        },
+    )
     mixture: DecisionMixtureConfig = Field(
         default_factory=DecisionMixtureConfig,
         json_schema_extra={"description": "Source sampling and loss weighting."},

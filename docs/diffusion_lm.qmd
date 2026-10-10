@@ -441,6 +441,22 @@ slots, which commit their argmax predictions between passes. The final pass
 computes logits only at label slots, so it never materializes
 full-vocabulary logits over the sequence.
 
+### Prepared-row cache
+
+With `dataset_prepared_path` set and local JSONL sources, prepared rows are
+cached under `<dataset_prepared_path>/diffusion_decision_cache/` and reused when
+the cache identity matches: the decision config and the other preparation
+fields, the tokenizer files and vocabulary, the plugin's code, and the source
+files. A source file is matched by its resolved path, size and modification
+time, so touching it without changing its content still re-prepares once.
+
+`diffusion_decision.prepared_cache_verify: true` trades load time for stronger
+checks: sources are matched by content sha256 instead, and a cache hit hashes
+the stored rows against the hash recorded when they were written. Without it a
+damaged or truncated cache file is still rejected when its framing or contents
+do not decode, and the rows are prepared again. The two modes key sources
+differently, so switching the option prepares and caches once more.
+
 ### Outputs
 
 Each saved adapter includes `diffusion_decision_manifest.json`, which records

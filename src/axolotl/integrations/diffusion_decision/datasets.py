@@ -50,6 +50,7 @@ from .permutation import permute_record, shuffle_labels
 from .prepared_cache import (
     identity as prepared_cache_identity,
     load as load_prepared_cache,
+    prepared_cache_verify,
     store as store_prepared_cache,
 )
 from .preprocessing import build_decision_canvas, canvas_head, template_fits
@@ -871,7 +872,12 @@ def load_decision_datasets(
         )
         if source_paths is not None and image_paths is not None:
             cache_identity = prepared_cache_identity(
-                cfg, tokenizer, spec, source_paths, image_paths=image_paths
+                cfg,
+                tokenizer,
+                spec,
+                source_paths,
+                image_paths=image_paths,
+                verify=prepared_cache_verify(cfg),
             )
             if cache_identity is None:
                 LOG.warning(
@@ -884,7 +890,12 @@ def load_decision_datasets(
         LOG.info("Decision prepared-row cache bypassed: unsupported latent mode")
     if cache_identity is not None:
         cache_key, cache_payload = cache_identity
-        cached = load_prepared_cache(Path(prepared_path), cache_key, cache_payload)
+        cached = load_prepared_cache(
+            Path(prepared_path),
+            cache_key,
+            cache_payload,
+            verify=prepared_cache_verify(cfg),
+        )
         if cached is not None:
             cached_train, cached_eval, cached_manifest = cached
             LOG.info("Decision prepared-row cache hit")

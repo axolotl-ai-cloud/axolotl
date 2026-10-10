@@ -296,8 +296,7 @@ def test_worker_processes_prepare_rows_identical_to_the_serial_path(monkeypatch)
 def _cache_bytes(row) -> bytes:
     from axolotl.integrations.diffusion_decision import prepared_cache
 
+    # Structural bytes of everything the prepared-row cache stores for a row.
     return json.dumps(
-        prepared_cache._row_to_json(row),
-        sort_keys=True,
-        default=prepared_cache._json_default,
+        row, sort_keys=True, default=prepared_cache._json_default
     ).encode()

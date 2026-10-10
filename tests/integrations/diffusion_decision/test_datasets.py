@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
@@ -577,7 +578,14 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(
         datasets.load_decision_datasets(cfg)
         assert calls == before
 
-    requires_rebuild(lambda: write_source("changed"), lambda: write_source("state"))
+    original_stat = source.stat()
+
+    def restore_source() -> None:
+        # Stat-keyed sources (the default) hit again once size and mtime match.
+        write_source("state")
+        os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    requires_rebuild(lambda: write_source("changed"), restore_source)
     requires_rebuild(
         lambda: setattr(tokenizer, "chat_template", "changed"),
         lambda: setattr(tokenizer, "chat_template", "base"),
@@ -592,7 +600,7 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(
 
 
 def test_prepared_cache_preserves_nested_typed_values_and_live_vocab_identity(
-    tokenizer_root, empty_source
+    tmp_path, tokenizer_root, empty_source
 ):
     first, second = (
         prepared_cache.identity(
@@ -616,9 +624,10 @@ def test_prepared_cache_preserves_nested_typed_values_and_live_vocab_identity(
         "source": "x",
         "slot_plan": SlotPlan((9,), "thought", (True,), (False,), (False,), (9,)),
     }
-    restored = prepared_cache._row_from_json(
-        json.loads(json.dumps(prepared_cache._row_to_json(row)))
-    )
+    prepared_cache.store(tmp_path, "nested", IDENTITY, {}, [row], [], {})
+    loaded = prepared_cache.load(tmp_path, "nested", IDENTITY)
+    assert loaded is not None
+    restored = loaded[0][0]
     assert restored["canvas"] == canvas
     assert restored["slot_plan"] == row["slot_plan"]
     assert restored["decision_example"] == row["decision_example"]
@@ -710,11 +719,11 @@ def test_prepared_cache_identity_binds_entry_roles_and_model_controls(
 def test_prepared_cache_repairs_corrupt_payload_and_warms(tmp_path):
     row = _cache_row()
     prepared_cache.store(tmp_path, "key", IDENTITY, {}, [row], [], {})
-    path = tmp_path / "diffusion_decision_cache" / "key.json"
-    payload = json.loads(path.read_text())
-    payload["content"]["manifest"] = {"bad": True}
-    path.write_text(json.dumps(payload))
-    assert prepared_cache.load(tmp_path, "key", IDENTITY) is None
+    path = tmp_path / "diffusion_decision_cache" / "key.pkl"
+    data = bytearray(path.read_bytes())
+    data[len(prepared_cache.MAGIC) + 4] ^= 0xFF
+    path.write_bytes(bytes(data))
+    assert prepared_cache.load(tmp_path, "key", IDENTITY, verify=True) is None
     prepared_cache.store(tmp_path, "key", IDENTITY, {}, [row], [], {})
     first = prepared_cache.load(tmp_path, "key", IDENTITY)
     second = prepared_cache.load(tmp_path, "key", IDENTITY)
