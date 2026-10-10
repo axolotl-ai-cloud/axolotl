@@ -625,6 +625,42 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Gradient clipping max norm",
     ),
     (
+        ("--step-outlier-grad-norm-zscore",),
+        None,
+        None,
+        "Treat a step as an outlier when its pre-clip gradient norm is more than this many robust standard deviations (1.4826 x MAD) above the median of the previous `step_outlier_window` accepted steps. Outlier steps are scaled down or skipped (`step_outlier_action`); non-finite norms are always skipped. Disabled when unset; 10 is a conservative start.",
+    ),
+    (
+        ("--step-outlier-loss-zscore",),
+        None,
+        None,
+        "Same as `step_outlier_grad_norm_zscore`, on the step's training loss averaged over micro-batches and ranks. Loss rises only after a destabilising update, so it complements the gradient-norm trigger; 6 is a conservative start.",
+    ),
+    (
+        ("--step-outlier-window",),
+        None,
+        None,
+        "Accepted steps in the outlier history; the outlier triggers act only once the window is full. The history is saved in `trainer_state.json` and restored on resume.",
+    ),
+    (
+        ("--step-outlier-action",),
+        None,
+        None,
+        "`scale`: multiply the clipped gradients by the smallest threshold/value of the triggered signals. `skip`: drop the step; weights and optimizer state stay unchanged.",
+    ),
+    (
+        ("--grad-clip-norm-ratio",),
+        None,
+        None,
+        "Per-tensor adaptive gradient clipping (OLMo's max_grad_norm_ratio): each trainable tensor's gradient norm is clipped to this ratio times the exponential average of its previous clipped norms. Applied after `max_grad_norm`; set `max_grad_norm: 0` to match OLMo, where it replaces the global clip. Norms are of whole tensors under DDP, FSDP2 and tensor parallelism; fused expert tensors (MoE experts and expert LoRA) are clipped per expert, identically with or without expert parallelism. The averages live in the optimizer state (`grad_norm_exp_avg`) and are restored with it on resume. Not supported with DeepSpeed.",
+    ),
+    (
+        ("--grad-clip-norm-ratio-beta",),
+        None,
+        None,
+        "Decay of the per-tensor running averages for `grad_clip_norm_ratio`; defaults to the optimizer's larger beta (0.99 if it has none).",
+    ),
+    (
         ("--num-epochs",),
         None,
         None,

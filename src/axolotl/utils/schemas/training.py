@@ -304,6 +304,48 @@ class HyperparametersConfig(BaseModel):
     max_grad_norm: float | None = Field(
         default=None, json_schema_extra={"description": "Gradient clipping max norm"}
     )
+    step_outlier_grad_norm_zscore: float | None = Field(
+        default=None,
+        gt=0,
+        json_schema_extra={
+            "description": "Treat a step as an outlier when its pre-clip gradient norm is more than this many robust standard deviations (1.4826 x MAD) above the median of the previous `step_outlier_window` accepted steps. Outlier steps are scaled down or skipped (`step_outlier_action`); non-finite norms are always skipped. Disabled when unset; 10 is a conservative start."
+        },
+    )
+    step_outlier_loss_zscore: float | None = Field(
+        default=None,
+        gt=0,
+        json_schema_extra={
+            "description": "Same as `step_outlier_grad_norm_zscore`, on the step's training loss averaged over micro-batches and ranks. Loss rises only after a destabilising update, so it complements the gradient-norm trigger; 6 is a conservative start."
+        },
+    )
+    step_outlier_window: int = Field(
+        default=100,
+        ge=10,
+        json_schema_extra={
+            "description": "Accepted steps in the outlier history; the outlier triggers act only once the window is full. The history is saved in `trainer_state.json` and restored on resume."
+        },
+    )
+    step_outlier_action: Literal["scale", "skip"] = Field(
+        default="scale",
+        json_schema_extra={
+            "description": "`scale`: multiply the clipped gradients by the smallest threshold/value of the triggered signals. `skip`: drop the step; weights and optimizer state stay unchanged."
+        },
+    )
+    grad_clip_norm_ratio: float | None = Field(
+        default=None,
+        gt=0,
+        json_schema_extra={
+            "description": "Per-tensor adaptive gradient clipping (OLMo's max_grad_norm_ratio): each trainable tensor's gradient norm is clipped to this ratio times the exponential average of its previous clipped norms. Applied after `max_grad_norm`; set `max_grad_norm: 0` to match OLMo, where it replaces the global clip. Norms are of whole tensors under DDP, FSDP2 and tensor parallelism; fused expert tensors (MoE experts and expert LoRA) are clipped per expert, identically with or without expert parallelism. The averages live in the optimizer state (`grad_norm_exp_avg`) and are restored with it on resume. Not supported with DeepSpeed."
+        },
+    )
+    grad_clip_norm_ratio_beta: float | None = Field(
+        default=None,
+        gt=0,
+        lt=1,
+        json_schema_extra={
+            "description": "Decay of the per-tensor running averages for `grad_clip_norm_ratio`; defaults to the optimizer's larger beta (0.99 if it has none)."
+        },
+    )
     num_epochs: float = Field(default=1.0)
 
     @field_validator("batch_size")

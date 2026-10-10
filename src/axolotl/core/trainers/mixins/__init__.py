@@ -6,6 +6,7 @@ from .activation_checkpointing import ActivationOffloadingMixin
 from .checkpoints import CheckpointSaveMixin
 from .layer_offloading import LayerOffloadingMixin
 from .distributed_parallel import DistributedParallelMixin
+from .grad_norm_guard import GradNormGuardMixin
 from .optimizer import OptimizerMixin
 from .packing import PackingMixin
 from .rng_state_loader import RngLoaderMixin
