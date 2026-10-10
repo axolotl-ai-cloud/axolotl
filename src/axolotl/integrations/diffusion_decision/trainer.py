@@ -27,7 +27,7 @@ from axolotl.processing_strategies import (
     NEMOTRON_VLM_IMAGE_START_ID,
 )
 
-from ._util import _value, eval_batch_flattening
+from ._util import _value, token_budget_eval_packing
 from .args import DiffusionDecisionConfig
 from .loss import (
     DecisionLabelExample,
@@ -208,16 +208,23 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         return output
 
     def _eval_token_budget(self) -> int | None:
-        """Physical tokens per flattened evaluation micro-batch, or None for fixed batches."""
+        """Token budget of a packed evaluation micro-batch, or None for fixed batches.
+
+        ``eval_sample_packing: true`` with ``sample_packing: false`` packs consecutive
+        full-sequence rows up to ``sequence_len * eval_batch_size`` tokens. With
+        ``sample_packing: true`` the core MultipackBatchSampler packs evaluation
+        (``_get_eval_sampler`` returns it before reaching this budget).
+        """
         spec = self._native_spec
         cfg = self.axolotl_cfg
         if (
             spec is None
             or spec.layout is not DiffusionLayout.FULL_SEQUENCE
-            or not eval_batch_flattening(cfg)
+            or not token_budget_eval_packing(cfg)
         ):
             return None
         sequence_len = _value(cfg, "sequence_len")
+        # resolve_native_packing_budget(is_eval=True) without training packing.
         batch_size = (
             _value(cfg, "eval_batch_size")
             or _value(cfg, "micro_batch_size")
@@ -228,7 +235,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             for value in (sequence_len, batch_size)
         ):
             raise ValueError(
-                "eval_batch_flattening requires positive sequence_len and eval_batch_size"
+                "eval_sample_packing requires positive sequence_len and eval_batch_size"
             )
         budget = sequence_len * batch_size
         if _value(cfg, "attn_implementation") == "flex_attention":
