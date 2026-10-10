@@ -80,6 +80,41 @@ class TestSaveAndEvalStrategy:
         if eval_steps:
             assert kwargs["eval_steps"] == eval_steps
 
+    @pytest.mark.parametrize(
+        ("eval_strategy", "eval_steps"), [("epoch", None), ("steps", 5)]
+    )
+    def test_explicit_eval_on_start_false_skips_initial_eval(
+        self, eval_strategy, eval_steps
+    ):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=eval_strategy,
+                eval_steps=eval_steps,
+                eval_on_start=False,
+            )
+        )
+
+        assert kwargs["eval_on_start"] is False
+
+    def test_explicit_eval_on_start_true_is_kept(self):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=None,
+                eval_steps=5,
+                eval_on_start=True,
+            )
+        )
+
+        assert kwargs["eval_on_start"] is True
+
 
 class TestGradientCheckpointingConfig:
     def test_hidden_states_offload_uses_non_reentrant_trainer_path(self):

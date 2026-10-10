@@ -1283,6 +1283,12 @@ class AxolotlInputConfig(
             "description": "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`"
         },
     )
+    eval_on_start: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Run an evaluation before the first training step. Leave empty to keep the default (on whenever evaluation is enabled); set to false to skip the step-0 eval"
+        },
+    )
 
     save_steps: int | float | None = Field(
         default=None,
