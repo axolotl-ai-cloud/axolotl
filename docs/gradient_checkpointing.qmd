@@ -19,9 +19,17 @@ on ZeRO-3 need it set explicitly.
 ### Enabling Activation Offloading
 
 ```yaml
-gradient_checkpointing: true  # required for activation offloading
+gradient_checkpointing: true
 activation_offloading: true
 ```
+
+With `activation_offloading: true` or `disk`, `gradient_checkpointing` decides whether anything is
+recomputed. LoRA/QLoRA never recompute: every activation is offloaded, so `gradient_checkpointing`
+has no effect for adapters. A full finetune with `gradient_checkpointing: true` recomputes each
+decoder layer and offloads only what is saved outside the checkpointed layers; with
+`gradient_checkpointing: false` it offloads every activation with no recompute, which is bound by
+CPU memory and PCIe bandwidth.
+`legacy` and `hidden_states` require `gradient_checkpointing: true`.
 
 Activation offloading variants:
 
