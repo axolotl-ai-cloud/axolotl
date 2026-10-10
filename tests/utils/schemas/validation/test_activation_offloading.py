@@ -130,3 +130,52 @@ class TestActivationOffloading:
         assert cfg.gradient_checkpointing is True
         assert cfg.activation_offloading is True
         assert not any("with no recompute" in msg for msg in validation_warnings)
+
+    @pytest.mark.parametrize("mode", [True, "disk"])
+    @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
+    def test_trl_offload_with_gc_defaults_to_non_reentrant(
+        self, min_base_cfg, mode, adapter
+    ):
+        cfg = (
+            DictDefault(
+                gradient_checkpointing=True,
+                activation_offloading=mode,
+                **(LORA if adapter else {}),
+            )
+            | min_base_cfg
+        )
+
+        cfg = validate_config(cfg)
+        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is False
+
+    def test_trl_offload_with_gc_keeps_explicit_reentrant(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                gradient_checkpointing=True,
+                gradient_checkpointing_kwargs={"use_reentrant": True},
+                activation_offloading=True,
+                **LORA,
+            )
+            | min_base_cfg
+        )
+
+        cfg = validate_config(cfg)
+        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
+
+    def test_trl_offload_with_gc_leaves_zero3_reentrant_default(
+        self, min_base_cfg, tmp_path
+    ):
+        ds_config = tmp_path / "ds.json"
+        ds_config.write_text('{"zero_optimization": {"stage": 3}}')
+        cfg = (
+            DictDefault(
+                gradient_checkpointing=True,
+                activation_offloading=True,
+                deepspeed=str(ds_config),
+                **LORA,
+            )
+            | min_base_cfg
+        )
+
+        cfg = validate_config(cfg)
+        assert "use_reentrant" not in (cfg.gradient_checkpointing_kwargs or {})
