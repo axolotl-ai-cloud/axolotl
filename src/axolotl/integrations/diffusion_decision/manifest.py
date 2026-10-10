@@ -275,6 +275,7 @@ class DecisionManifest(BaseModel):
     ] = "vendored26"
     canvas_prefix_ids: list[StrictInt] = Field(default_factory=list)
     max_questions_per_canvas: StrictInt | None = Field(default=None, ge=1)
+    answer_format: Literal["auto", "lines", "indexed"] | None = None
     configured_slots: ConfiguredSlots | SampledConfiguredSlots
     noise_read_protocol: NoiseReadProtocol
     tokenizer_special_ids: TokenizerSpecialIds
@@ -340,6 +341,7 @@ def build_decision_manifest(
         label_codebook=decision.labels.codebook,
         canvas_prefix_ids=list(getattr(decision, "canvas_prefix_ids", ()) or ()),
         max_questions_per_canvas=decision.max_questions_per_canvas,
+        answer_format=decision.answer_format,
         configured_slots=(
             SampledConfiguredSlots(
                 mode=decision.latent.mode,
@@ -398,6 +400,16 @@ def build_decision_manifest(
     )
 
 
+def effective_answer_format(
+    answer_format: str | None, max_questions: int | None
+) -> str:
+    """The format canvases actually use: auto is lines while no canvas can exceed 10 questions."""
+    fmt = answer_format or "auto"
+    if fmt == "auto" and max_questions is not None and max_questions <= 10:
+        return "lines"
+    return fmt
+
+
 def manifest_mismatches(
     saved: DecisionManifest, expected: DecisionManifest
 ) -> list[str]:
@@ -427,6 +439,20 @@ def manifest_mismatches(
             saved.max_questions_per_canvas,
             expected.max_questions_per_canvas,
         )
+    if saved.answer_format is not None:
+        trained_format = effective_answer_format(
+            saved.answer_format, saved.max_questions_per_canvas
+        )
+        configured_format = effective_answer_format(
+            expected.answer_format, expected.max_questions_per_canvas
+        )
+        if trained_format != configured_format:
+            problems.append(
+                f"answer_format: adapter {saved.answer_format!r} "
+                f"(max_questions_per_canvas {saved.max_questions_per_canvas!r}), "
+                f"config {expected.answer_format!r} "
+                f"(max_questions_per_canvas {expected.max_questions_per_canvas!r})"
+            )
     compare(
         "diffusion_spec.layout",
         getattr(saved.diffusion_spec, "layout", None),

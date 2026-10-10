@@ -5,12 +5,17 @@ from __future__ import annotations
 import copy
 import json
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
+
+Fits = Callable[[Mapping[str, Mapping[str, Any]]], bool]
 
 
 def group_records(
-    records: Sequence[Mapping[str, Any]], *, max_questions: int
+    records: Sequence[Mapping[str, Any]],
+    *,
+    max_questions: int,
+    fits: Fits | None = None,
 ) -> list[dict[str, Any]]:
     """Combine only records with identical serving context and split without loss.
 
@@ -20,6 +25,13 @@ def group_records(
     as a shallow copy (nested ``questions``/``labels``/metadata are shared with
     the input, so do not mutate them in place); merged or split canvases are
     built from deep copies.
+
+    ``fits`` (optional) takes a canvas's ``{question id: question}`` mapping and
+    says whether its answer template fits one canvas. With it, a canvas closes
+    when it reaches ``max_questions`` or when the next question would not fit,
+    so groups that would overflow are split instead; a single question that does
+    not fit alone still gets its own canvas (and is dropped at canvas build).
+    Without it, grouping counts questions only (the historical behaviour).
     """
     if max_questions <= 0:
         raise ValueError("max_questions must be positive")
@@ -31,7 +43,7 @@ def group_records(
         groups.setdefault(_key(record), []).append(record)
     result: list[dict[str, Any]] = []
     for group in groups.values():
-        result.extend(_split_group(group, max_questions))
+        result.extend(_split_group(group, max_questions, fits))
     return result
 
 
@@ -95,7 +107,9 @@ def _copy(value: Any) -> Any:
 
 
 def _split_group(
-    records: Sequence[Mapping[str, Any]], max_questions: int
+    records: Sequence[Mapping[str, Any]],
+    max_questions: int,
+    fits: Fits | None = None,
 ) -> list[dict[str, Any]]:
     if len(records) == 1:
         record = records[0]
@@ -107,7 +121,7 @@ def _split_group(
             raise ValueError("decision record requires at least one question")
         if set(questions) != set(labels):
             raise ValueError("decision record question and label ids differ")
-        if len(questions) <= max_questions:
+        if len(questions) <= max_questions and (fits is None or fits(questions)):
             # Unchanged records are returned as a new top-level dict that shares
             # its nested values with the input; deep-copying every record
             # dominated preprocessing time and doubled label memory, and the
@@ -133,11 +147,20 @@ def _split_group(
         for question_id, question in questions.items():
             if not isinstance(question_id, str) or not question_id:
                 raise ValueError("decision question ids must be nonempty strings")
+            output_id = None
+            if current is not None and fits is not None:
+                if len(current["questions"]) < max_questions:
+                    output_id = _unique_id(question_id, used)
+                    if not fits({**current["questions"], output_id: question}):
+                        output_id = None
+                        current = None
             if current is None or len(current["questions"]) == max_questions:
                 current = _new_chunk(records[0], len(chunks))
                 chunks.append(current)
                 used = set()
-            output_id = _unique_id(question_id, used)
+                output_id = None
+            if output_id is None:
+                output_id = _unique_id(question_id, used)
             used.add(output_id)
             current["questions"][output_id] = _copy(question)
             current["labels"][output_id] = _copy(labels[question_id])
