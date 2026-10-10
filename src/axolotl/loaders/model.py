@@ -309,18 +309,6 @@ class ModelLoader:
         """Property that determines if FSDP with QLoRA is enabled."""
         return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
 
-    @property
-    def use_adapter_gradient_checkpointing(self) -> bool:
-        """Whether the adapter model gets HF gradient checkpointing.
-
-        The TRL offloader (true/disk) replaces recompute for adapters: HF
-        checkpointing would hide each layer's saved tensors behind its own hooks,
-        so the offloader would only see the checkpoint boundaries.
-        """
-        return bool(self.cfg.gradient_checkpointing) and (
-            self.cfg.activation_offloading not in (True, "disk")
-        )
-
     @send_errors
     def load(self) -> tuple[PreTrainedModel | PeftModelForCausalLM, PeftConfig | None]:
         """Load and prepare the model with all configurations and patches.
@@ -547,13 +535,13 @@ class ModelLoader:
 
             patch_hidden_states_offload()
             return
-        # TRL offloader is adapter-aware:
-        #   - LoRA/QLoRA: offload *replaces* recompute (pure offload is leaner/faster;
-        #     recompute would pin the offloaded tensors and balloon memory). No wrap.
-        #   - Full finetune: pure offload of every activation exceeds PCIe bandwidth
-        #     (backlogs on-GPU, OOMs at long seq), so keep recompute and offload only
-        #     the checkpoint boundaries — apply the manual wrap.
-        #   - Without gradient_checkpointing nothing is recomputed for either.
+        # TRL offloader offloads whatever autograd saves:
+        #   - gradient_checkpointing on: layers recompute and only the tensors saved
+        #     outside the checkpointed layers are offloaded. Adapters use HF
+        #     checkpointing (enabled with the embedding dtypes and by the Trainer);
+        #     a full finetune gets the manual wrap here.
+        #   - gradient_checkpointing off: nothing is recomputed and every activation
+        #     is offloaded, which is bound by host RAM and PCIe bandwidth.
         if ao and not self.cfg.adapter and self.cfg.gradient_checkpointing:
             from axolotl.core.trainers.mixins.activation_checkpointing import (
                 ac_wrap_hf_model,
@@ -690,7 +678,7 @@ class ModelLoader:
         # Apply gradient checkpointing if needed
         if (
             self.cfg.adapter in ["lora", "qlora", "mixlora"]
-            and self.use_adapter_gradient_checkpointing
+            and self.cfg.gradient_checkpointing
         ):
             self.model.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
@@ -1497,8 +1485,7 @@ class ModelLoader:
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
-                self.model,
-                use_gradient_checkpointing=self.use_adapter_gradient_checkpointing,
+                self.model, use_gradient_checkpointing=self.cfg.gradient_checkpointing
             )
 
     def _convert_embedding_modules_dtype(
