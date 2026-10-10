@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+
 """Fixed-count balancing, collation and distributed sharding regressions."""
 
 from collections import Counter

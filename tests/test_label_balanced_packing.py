@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+
 """Coverage and objective regressions for supervised-token balanced packing."""
 
 from collections import Counter

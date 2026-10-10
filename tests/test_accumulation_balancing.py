@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+
 """Accumulation grouping follows the rank-strided microbatch schedule."""
 
 import numpy as np

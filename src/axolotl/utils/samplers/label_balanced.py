@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+
 """Fixed-cardinality label balancing for padded and flattened causal-LM batches."""
 
 import heapq

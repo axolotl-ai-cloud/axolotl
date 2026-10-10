@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+
 """Bounded label balancing that preserves packed capacity and sample coverage."""
 
 import heapq

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+
 """Padded-batch costs and collated loss targets for fixed-count label balancing."""
 
 from collections import Counter

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+
 """Checkpoint skipping must restore the epoch before nested sharding wrappers."""
 
 from dataclasses import dataclass
