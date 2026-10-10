@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import pytest
 
-from axolotl.integrations.diffusion_decision import datasets
+from axolotl.integrations.diffusion_decision import canvas, datasets
 from axolotl.integrations.diffusion_decision.datasets import DecisionDataset
 from axolotl.integrations.diffusion_decision.preprocessing import build_decision_canvas
 from axolotl.integrations.diffusion_decision.slot_sampling import DecisionDraw
@@ -97,7 +97,7 @@ def test_none_mode_uses_the_legacy_canvas_call_and_row_shape():
     row = _prepared(cfg, _spec())
     expected = build_decision_canvas(
         ChatCharacterTokenizer(),
-        datasets.permute_record(deepcopy(record), seed=23),
+        canvas.permute_record(deepcopy(record), seed=23),
         scaffold_ids=(),
         turn_close_id=11,
         pad_id=0,

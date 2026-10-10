@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from typing import Any
 
 import torch
@@ -14,11 +13,9 @@ from axolotl.integrations.diffusion_decision._util import (
     require_diffusion_spec,
     token_budget_eval_packing,
 )
+from axolotl.integrations.diffusion_decision.canvas import _decision_example
 from axolotl.integrations.diffusion_decision.collator import DecisionCanvasCollator
-from axolotl.integrations.diffusion_decision.loss import (
-    DecisionLabelExample,
-    decision_example_from_canvas,
-)
+from axolotl.integrations.diffusion_decision.loss import DecisionLabelExample
 from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 from axolotl.model_support import (
     DiffusionLayout,
@@ -29,25 +26,6 @@ from axolotl.processing_strategies import (
     NemotronDiffusionVLMProcessingStrategy,
     pad_image_batch,
 )
-
-
-def _decision_example(
-    canvas: DecisionCanvas, row: Mapping[str, Any]
-) -> DecisionLabelExample:
-    source = row.get("decision_example")
-    if source is None:
-        source = decision_example_from_canvas(
-            canvas, source_weight=float(row.get("source_weight", 1.0))
-        )
-    if not isinstance(source, DecisionLabelExample):
-        raise TypeError("decision_example must be a DecisionLabelExample")
-    return replace(
-        source,
-        questions=tuple(
-            replace(question, position=index)
-            for index, question in enumerate(source.questions)
-        ),
-    )
 
 
 class DecisionTrainingCollator:

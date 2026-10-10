@@ -6,11 +6,10 @@ import random
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from axolotl.processing_strategies import (
+from ._image_tokens import (
     NEMOTRON_VLM_IMAGE_START_ID,
     NEMOTRON_VLM_IMAGE_START_MARKER,
 )
-
 from .adapters.jsonl import normalize_jsonl
 from .prompts import decision_prompt
 from .readers.base import validate_canvas
