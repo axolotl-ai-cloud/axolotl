@@ -1202,7 +1202,7 @@ class AxolotlTrainer(
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
 
-        if self.args.should_save and getattr(self, "_balanced_sampler_state", None):
+        if getattr(self, "_balanced_sampler_state", None) and self.args.should_save:
             saved = dict(self._balanced_sampler_state)
             saved["resume_epoch"] = int(self.state.epoch)
             offset = (
