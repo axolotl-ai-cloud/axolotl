@@ -8,9 +8,11 @@ Implementation details for `balance_labels`. User-facing guidance lives in
 The sampler paths below run the within-optimizer-step refinement with
 `window_steps=1`. The helper also supports wider windows, but the experimental
 32-step then within-step pipeline is not wired into the trainer.
-`rank_balance.order_batches_by_rank` is an experimental standalone helper, also
-not wired into the trainer. It currently supports only one through four ranks.
-Do not describe either experiment as behavior enabled by `balance_labels`.
+`rank_balance.order_batches_by_rank` is the final ordering pass in both map-style
+training samplers when `dp_count > 1`. It preserves optimizer-step membership.
+Rank permutations are exhaustive up to four ranks; larger jobs use at most 24
+deterministic cyclic/reversed permutations per layout. The 32-step refinement
+experiment remains separate from this production rank-ordering pass.
 
 ## Balancing supervised tokens
 
@@ -58,7 +60,7 @@ lengths, so it may benefit less than data with masked prompts.
 Label balancing requires causal LM data with fixed tokenized labels (or pretraining
 labels derived from input IDs) and right padding. It is incompatible with
 sequential/curriculum sampling, reward models, and diffusion or RL training. It
-applies to packed evaluation as well as training. For map-style data, an additional accumulation-aware ordering pass smooths
+applies to training only, including packed training. For map-style data, an additional accumulation-aware ordering pass smooths
 update totals using the configured gradient accumulation and rank count. This
 does not replace token-weighted loss normalization. Collators that dynamically
 change label masking are not supported.
@@ -74,7 +76,7 @@ sharding or minimum-length truncation; they are not measured per-rank training
 or gradient-accumulation statistics.
 
 With balancing enabled, random sampling and balancing use the configured seed
-plus epoch, independently of rank-local RNG state. Identical input datasets,
+(`data_seed`, falling back to `seed`) plus epoch, independently of rank-local RNG state. Identical input datasets,
 metadata, and packing settings therefore produce identical plans before rank
 sharding. Existing distributed length synchronization and sharding remain in
 place. Custom input samplers must themselves yield the same order on each rank
@@ -83,9 +85,12 @@ when used with this shared-plan sharding scheme.
 Checkpoint resume reconstructs the balanced plan from its seed and epoch; the
 Trainer skips the microbatches already consumed in that epoch. Axolotl forwards
 the restored epoch to both balanced samplers before Accelerate adds its resume
-wrappers, clearing any cached plan from another epoch. The saved `TrainerState`
-epoch position determines the resume offset, since differing packed epoch
-lengths can make a position inferred from `global_step` inaccurate.
+wrappers, clearing any cached plan from another epoch. New checkpoints save `balanced_sampler.json` with sampler settings, metadata
+hashes, dataset fingerprint, epoch length, and consumed batches. Resume validates
+these fields before skipping. Legacy checkpoints reconstruct the offset from
+`TrainerState.epoch` and require an integer optimizer-step boundary. Packing is
+deterministic for a given seed and epoch, but different epochs can pack to
+different lengths.
 The samplers do not keep
 a second consumed-batch cursor, which would conflict with Trainer skipping and
 DataLoader prefetching. Exact continuation requires the same dataset order,
@@ -191,7 +196,8 @@ fixed-count padded batches, the longest sample still determines the update's
 peak padded size; token balancing does not necessarily lower that peak. These
 costs approximate activation-memory demand, not measured GPU memory or runtime.
 
-Metrics include `before`, `before_accumulation`, `before_microbatch` (after
+Metrics include `before`, `before_accumulation`, `before_rank` (before final rank
+ordering), `before_microbatch` (after
 optimizer-step grouping), and `after` summaries, with
 `mean_global_update_labels`,
 `std_global_update_labels`, `updates`, and `excluded_tail_microbatches`.
@@ -200,3 +206,10 @@ ordinary microbatch statistics retain their existing tail semantics. These are
 plan statistics, not measurements of runtime loss normalization or arbitrary
 custom sharding. Streaming retains chunk-local microbatch balancing: this pass
 is not enabled there because accumulation windows can cross chunk boundaries.
+
+The rank-ordering beam search minimizes worst-rank cumulative squared size
+changes, then cumulative workload imbalance, simultaneous rank spread, and total
+squared size changes. Each step protects both simultaneous squared spread and
+the sum of microstep maximum costs. These are tensor-size proxies, not measured
+compute time. Tail batches remain in their original positions. Streaming uses
+a content-derived chunk seed and does not apply cross-chunk rank ordering.

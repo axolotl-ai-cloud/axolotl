@@ -116,7 +116,7 @@ def test_refinement_matches_reference(case):
 
 @pytest.mark.parametrize(
     "options",
-    [{"dp": 0}, {"dp": 5}, {"gas": 0}, {"window_steps": 0}, {"beam_width": 0}],
+    [{"dp": 0}, {"dp": 1.5}, {"gas": 0}, {"window_steps": 0}, {"beam_width": 0}],
 )
 def test_invalid_rank_dimensions(options):
     with pytest.raises(ValueError):

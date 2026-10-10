@@ -16,6 +16,7 @@ from axolotl.utils.samplers.accumulation import (
     balance_accumulation,
 )
 from axolotl.utils.samplers.microbatch_balance import balance_microbatches
+from axolotl.utils.samplers.rank_balance import order_batches_by_rank
 
 LOG = get_logger(__name__)
 
@@ -37,6 +38,7 @@ class LabelBalancedRandomSampler(Sampler[int]):
         batches_per_optimizer_step: int = 1,
         length_mode: Literal["padded", "flattened"] = "padded",
         padding_multiple: int = 1,
+        dp_count: int = 1,
     ):
         self.lengths = np.asarray(lengths, dtype=np.int64)
         self.label_counts = np.asarray(label_counts)
@@ -56,6 +58,9 @@ class LabelBalancedRandomSampler(Sampler[int]):
         self.label_counts = self.label_counts.astype(np.int64)
         self.batch_size = batch_size
         self.batches_per_optimizer_step = batches_per_optimizer_step
+        if dp_count < 1 or batches_per_optimizer_step % dp_count:
+            raise ValueError("Optimizer-step width must be divisible by dp_count")
+        self.dp_count = dp_count
         self.length_mode = length_mode
         self.padding_multiple = padding_multiple
         self.seed = seed
@@ -326,7 +331,17 @@ class LabelBalancedRandomSampler(Sampler[int]):
             batches[:full_count] = [
                 [i for row in batch for i in row] for batch in refined
             ]
+        before_rank = self._metrics(batches)
+        if self.dp_count > 1 and full_count:
+            prefix = batches[:full_count]
+            order = order_batches_by_rank(
+                [self._batch_cost(batch) for batch in prefix],
+                dp=self.dp_count,
+                gas=self.batches_per_optimizer_step // self.dp_count,
+            )
+            batches[:full_count] = [prefix[i] for i in order]
         self.label_metrics = {
+            "before_rank": before_rank,
             "before_microbatch": before_microbatch,
             "before": before,
             "before_accumulation": before_accumulation,

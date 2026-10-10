@@ -24,6 +24,7 @@ from axolotl.utils.samplers.accumulation import (
 )
 from axolotl.utils.samplers.label_balance import _batch_labels, balance_labels
 from axolotl.utils.samplers.microbatch_balance import balance_microbatches
+from axolotl.utils.samplers.rank_balance import order_batches_by_rank
 
 LOG = get_logger(__name__)
 
@@ -281,6 +282,7 @@ class MultipackBatchSampler(BatchSampler):
         seed: int = 0,
         padding_multiple: int | None = None,
         batches_per_optimizer_step: int = 1,
+        dp_count: int = 1,
         **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
@@ -304,6 +306,9 @@ class MultipackBatchSampler(BatchSampler):
         if batches_per_optimizer_step < 1:
             raise ValueError("batches_per_optimizer_step must be positive")
         self.batches_per_optimizer_step = batches_per_optimizer_step
+        if dp_count < 1 or batches_per_optimizer_step % dp_count:
+            raise ValueError("Optimizer-step width must be divisible by dp_count")
+        self.dp_count = dp_count
         if label_counts is not None:
             if sequential:
                 raise ValueError(
@@ -481,7 +486,31 @@ class MultipackBatchSampler(BatchSampler):
                 padding_multiple=self.padding_multiple or 1,
                 capacity=self.batch_max_len,
             )
+            before_rank = self._get_label_metrics(batches)
+            if self.dp_count > 1 and limit:
+                multiple = self.padding_multiple or 1
+                costs = [
+                    len(batch)
+                    * (
+                        (
+                            max(sum(int(self.lengths[i]) for i in row) for row in batch)
+                            + multiple
+                            - 1
+                        )
+                        // multiple
+                        * multiple
+                    )
+                    for batch in batches[:limit]
+                ]
+                order = order_batches_by_rank(
+                    costs,
+                    dp=self.dp_count,
+                    gas=self.batches_per_optimizer_step // self.dp_count,
+                )
+                prefix = batches[:limit]
+                batches[:limit] = [prefix[i] for i in order]
             self.label_metrics = {
+                "before_rank": before_rank,
                 "before_microbatch": before_microbatch,
                 "before": before,
                 "before_accumulation": before_accumulation,
@@ -609,6 +638,13 @@ class MultipackBatchSampler(BatchSampler):
         """
         if self._batches is None:
             self._batches = self.generate_batches(set_stats=True)
+
+        if (
+            self._len_across_ranks is None
+            and self.label_counts is not None
+            and isinstance(self.sampler, (RandomSampler, SequentialSampler))
+        ):
+            self._len_across_ranks = self.gather_len_batches(len(self._batches))
 
         if self._len_across_ranks is None:
             # Sample multiple times to get stable estimate

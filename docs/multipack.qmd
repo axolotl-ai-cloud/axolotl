@@ -132,8 +132,14 @@ step.
 For non-streaming datasets, label balancing also makes the total supervision per
 optimizer step more consistent. It then adjusts samples within each step to
 reduce differences between its microbatches, without changing that step's total
-labels or tokens. This final adjustment helps when unpacked microbatches contain
+labels or tokens. This adjustment helps when unpacked microbatches contain
 multiple samples, or when sample packing is enabled.
+
+With multiple data-parallel ranks, a final ordering pass tries to make consecutive
+microbatches on each rank closer in size. It keeps each optimizer step’s samples
+and label/token totals intact, and protects the existing balance between ranks
+at simultaneous microsteps. Larger jobs use a bounded search rather than trying
+every possible rank assignment.
 
 These adjustments do not guarantee equal memory use or runtime. In ordinary
 padded batches, one long sample can still determine the size of the whole batch.
@@ -169,14 +175,19 @@ behavior.
 
 Label balancing cannot be combined with curriculum/sequential sampling, reward
 models, diffusion, or RL training. Unpacked modes also cannot be combined with
-length-grouped sampling. Packed evaluation uses label balancing as well.
+length-grouped sampling. Balancing applies to training only; evaluation keeps its
+existing sampling behavior.
 
 Streaming SFT and pretraining support balancing within each packing buffer,
 controlled by `streaming_multipack_buffer_size`. They do not balance across
-optimizer steps because those steps can span buffer boundaries.
+optimizer steps because those steps can span buffer boundaries. Each chunk uses
+a seed derived from its tokenized contents and `data_seed` (falling back to
+`seed`), so replaying the same chunk reproduces its packing.
 
 For non-streaming checkpoint resume, keep the dataset order, seed, batching and
 packing settings, data-parallel size, and gradient accumulation unchanged. Leave
 `ignore_data_skip: false` so the trainer resumes at the correct position in the
-reconstructed schedule. Streaming uses its existing iterable-dataset resume
-behavior.
+reconstructed schedule. New checkpoints also record sampler settings and the
+consumed-batch position, and reject incompatible replay settings. Older
+checkpoints use the saved epoch position, with an optimizer-step boundary check.
+Streaming uses its existing iterable-dataset resume behavior.

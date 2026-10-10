@@ -1,6 +1,7 @@
 """Data handling specific to streaming datasets."""
 
 import functools
+import hashlib
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
@@ -207,7 +208,7 @@ def wrap_streaming_dataset(
             multipack_attn=multipack_attn,
             bin_size=cfg.sample_packing_bin_size,
             balance_labels=bool(cfg.balance_labels),
-            seed=cfg.seed or 0,
+            seed=cfg.data_seed if cfg.data_seed is not None else (cfg.seed or 0),
         )
 
         # Set this to 1 so downstream data_loader doesn't try to increase the batch size
@@ -290,6 +291,14 @@ def encode_packed_streaming(
             # Pretraining creates labels from input_ids during collation.
             label_counts = lengths
             label_start_counts = np.ones_like(lengths)
+
+    if balance_labels:
+        digest = hashlib.sha256(str(seed).encode("ascii"))
+        for batch in train_dataset.select_columns(["input_ids"]).iter(batch_size=1024):
+            for ids in batch["input_ids"]:
+                digest.update(len(ids).to_bytes(8, "little"))
+                digest.update(np.asarray(ids, dtype="<i8").tobytes())
+        seed = int.from_bytes(digest.digest()[:8], "little")
 
     sampler = MultipackBatchSampler(
         sampler=RandomSampler(train_dataset),

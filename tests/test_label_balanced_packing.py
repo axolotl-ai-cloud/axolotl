@@ -259,6 +259,7 @@ def test_trainer_passes_label_metadata(real_batches, shift_labels):
         world_size=4,
     )
     trainer.state = SimpleNamespace(train_batch_size=2)
+    trainer._train_batch_size = 2
     trainer._loss_shifts_labels = shift_labels
     sampler = trainer._create_multipack_sampler(list(range(8)), dataset)
     assert sampler.batches_per_optimizer_step == 16

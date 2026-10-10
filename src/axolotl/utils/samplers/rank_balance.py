@@ -4,6 +4,7 @@
 """Deterministic bounded search for rank-local batch ordering."""
 
 import itertools
+from numbers import Integral
 
 import numpy as np
 
@@ -12,17 +13,34 @@ def order_batches_by_rank(costs, dp=4, gas=4, window_steps=32, beam_width=8):
     """Return batch indices ordered by rank while preserving step membership.
 
     Costs describe rank-local padded or flattened tensor sizes. Input order is
-    microstep-major, then rank. This experimental exhaustive rank-permutation
-    search supports at most four ranks. Incomplete optimizer steps are rejected.
+    microstep-major, then rank. Search is exhaustive over rank permutations for
+    up to four ranks, and uses at most 24 deterministic permutations above that.
+    Incomplete optimizer steps are rejected.
     """
-    if dp not in (1, 2, 3, 4) or gas < 1 or window_steps < 1 or beam_width < 1:
-        raise ValueError("Expected 1–4 ranks and positive GAS, window, and beam widths")
+    if any(
+        not isinstance(n, Integral) or isinstance(n, bool) or n < 1
+        for n in (dp, gas, window_steps, beam_width)
+    ):
+        raise ValueError(
+            "Ranks, GAS, window, and beam widths must be positive integers"
+        )
     costs = np.asarray(costs)
     if costs.ndim != 1 or np.any(costs < 0) or not np.all(np.isfinite(costs)):
         raise ValueError("Costs must be finite, nonnegative, and one-dimensional")
     if not len(costs):
         return np.empty(0, dtype=np.int64)
-    permutations = np.array(list(itertools.permutations(range(dp))))
+    if dp <= 4:
+        permutations = np.array(list(itertools.permutations(range(dp))))
+    else:
+        ranks = np.arange(dp)
+        shifts = np.unique(np.linspace(0, dp - 1, min(dp, 12), dtype=int))
+        permutations = np.array(
+            [
+                np.roll(ranks[::direction], shift)
+                for direction in (1, -1)
+                for shift in shifts
+            ]
+        )
     width = dp * gas
     if len(costs) % width:
         raise ValueError("Complete optimizer steps required")
@@ -30,9 +48,9 @@ def order_batches_by_rank(costs, dp=4, gas=4, window_steps=32, beam_width=8):
     energy = np.zeros(dp, dtype=float)
     work = np.zeros(dp, dtype=float)
     last = None
-    sync = 0.0
+    cumulative_spread = 0.0
     for window in range(0, len(costs), width * window_steps):
-        beam = [(energy.copy(), work.copy(), last, sync, [])]
+        beam = [(energy.copy(), work.copy(), last, cumulative_spread, [])]
         for start in range(
             window, min(len(costs), window + width * window_steps), width
         ):
@@ -105,6 +123,6 @@ def order_batches_by_rank(costs, dp=4, gas=4, window_steps=32, beam_width=8):
                     )
                 )
             beam = updated
-        energy, work, last, sync, path = beam[0]
+        energy, work, last, cumulative_spread, path = beam[0]
         order.extend(np.concatenate(path).ravel().tolist())
     return np.array(order, dtype=int)

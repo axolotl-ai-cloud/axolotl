@@ -102,11 +102,12 @@ def test_actual_padded_collator_matches_sampler_metrics(multiple):
         balance_labels=True,
         data_seed=7,
         seed=42,
-        per_device_train_batch_size=4,
+        per_device_train_batch_size=8,
         world_size=1,
         gradient_accumulation_steps=4,
     )
-    trainer.state = SimpleNamespace(train_batch_size=4)
+    trainer.state = SimpleNamespace(train_batch_size=99)
+    trainer._train_batch_size = 4
     trainer.data_collator = DataCollatorForSeq2Seq(
         tokenizer(), pad_to_multiple_of=multiple
     )

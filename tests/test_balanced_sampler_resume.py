@@ -52,6 +52,7 @@ def make_loader(kind, rank=0, replicas=1, variable_lengths=False):
             num_count_samples=1,
             seed=42,
             batches_per_optimizer_step=4 * replicas,
+            dp_count=replicas,
         )
         len(sampler)
         batches = sampler
@@ -63,6 +64,7 @@ def make_loader(kind, rank=0, replicas=1, variable_lengths=False):
             length_mode="flattened" if kind == "flattened" else "padded",
             seed=42,
             batches_per_optimizer_step=4 * replicas,
+            dp_count=replicas,
         )
         batches = BatchSampler(sampler, 4, drop_last=True)
     shard = BatchSamplerShard(
@@ -196,3 +198,96 @@ def test_actual_checkpoint_resume(
     torch.testing.assert_close(
         restored.model.weight, original.model.weight, rtol=0, atol=0
     )
+
+
+@pytest.mark.parametrize("kind", ["packed", "padded", "flattened"])
+def test_checkpoint_resume_with_production_dataloader(tmp_path, kind, monkeypatch):
+    import json
+
+    from datasets import Dataset
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from transformers import DataCollatorWithFlattening, PreTrainedTokenizerFast
+
+    from axolotl.utils.collators import (
+        BatchSamplerDataCollatorForSeq2Seq,
+        DataCollatorForSeq2Seq,
+    )
+
+    tok = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(
+            WordLevel({"[PAD]": 0, "[UNK]": 1}, unk_token="[UNK]")
+        ),
+        pad_token="[PAD]",
+        unk_token="[UNK]",
+    )
+    dataset = Dataset.from_list(
+        [
+            {
+                "input_ids": [i + 2] * (3 + i % 6),
+                "labels": [i + 2] * (3 + i % 6),
+                "attention_mask": [1] * (3 + i % 6),
+            }
+            for i in range(131)
+        ]
+    )
+
+    class Model(TraceModel):
+        def forward(
+            self, input_ids, labels=None, attention_mask=None, position_ids=None
+        ):
+            return super().forward(input_ids)
+
+    def make(output, data_seed=7):
+        if kind == "packed":
+            collator = BatchSamplerDataCollatorForSeq2Seq(tok, pad_to_multiple_of=8)
+        elif kind == "flattened":
+            collator = DataCollatorWithFlattening()
+        else:
+            collator = DataCollatorForSeq2Seq(tok, pad_to_multiple_of=8)
+        return AxolotlTrainer(
+            model=Model(),
+            train_dataset=dataset,
+            data_collator=collator,
+            args=ResumeTrainingArguments(
+                output_dir=str(output),
+                use_cpu=True,
+                max_steps=4,
+                gradient_accumulation_steps=4,
+                per_device_train_batch_size=4,
+                balance_labels=True,
+                sample_packing=kind == "packed",
+                batch_flattening=kind == "flattened",
+                max_seq_length=8,
+                sample_packing_bin_size=8,
+                sample_packing_group_size=100,
+                dataset_num_proc=1,
+                data_seed=data_seed,
+                save_steps=2,
+                logging_strategy="no",
+                report_to="none",
+                disable_tqdm=True,
+                dataloader_pin_memory=False,
+            ),
+        )
+
+    if kind == "packed":
+        from axolotl.monkeypatch.data.batch_dataset_fetcher import _MapDatasetFetcher
+
+        monkeypatch.setattr(
+            torch.utils.data._utils.fetch, "_MapDatasetFetcher", _MapDatasetFetcher
+        )
+    original = make(tmp_path / "original")
+    original.train()
+    checkpoint = tmp_path / "original" / "checkpoint-2"
+    metadata = json.loads((checkpoint / "balanced_sampler.json").read_text())
+    assert metadata["consumed_batches"] == 8
+    restored = make(tmp_path / "restored")
+    restored.train(resume_from_checkpoint=str(checkpoint))
+    assert restored.model.trace == original.model.trace[8:]
+    torch.testing.assert_close(
+        restored.model.weight, original.model.weight, rtol=0, atol=0
+    )
+    incompatible = make(tmp_path / "incompatible", data_seed=8)
+    with pytest.raises(ValueError, match="resume changed settings"):
+        incompatible.train(resume_from_checkpoint=str(checkpoint))

@@ -7,9 +7,6 @@ import heapq
 
 import numpy as np
 
-from axolotl.utils.samplers.accumulation import balance_accumulation
-from axolotl.utils.samplers.microbatch_balance import balance_microbatches
-
 
 def _bin_labels(bin_, counts, starts):
     return sum(int(counts[i]) for i in bin_) - int(starts[bin_[0]])
@@ -217,19 +214,5 @@ def balance_labels(
                 break
         rng.shuffle(window)
         result.extend(window)
-    result = balance_accumulation(
-        result,
-        [_batch_labels(batch, counts, starts) for batch in result],
-        batches_per_optimizer_step,
-    )
-    result = balance_microbatches(
-        result,
-        lengths,
-        counts,
-        starts,
-        batches_per_optimizer_step,
-        padding_multiple=padding_multiple or 1,
-        capacity=capacity,
-    )
     result.extend(batches[full_count:])
     return result

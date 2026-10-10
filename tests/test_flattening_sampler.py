@@ -129,6 +129,7 @@ def test_trainer_selects_fixed_count_sampler(provided_labels):
         gradient_accumulation_steps=4,
     )
     trainer.state = SimpleNamespace(train_batch_size=4)
+    trainer._train_batch_size = 4
     trainer.data_collator = DataCollatorWithFlattening()
     sampler = trainer._get_train_sampler(dataset)
     assert isinstance(sampler, LabelBalancedRandomSampler)
