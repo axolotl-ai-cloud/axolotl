@@ -38,6 +38,14 @@ def model_config_overrides(cfg: Any) -> Any:
     return _value(cfg, "model_config") if overrides is None else overrides
 
 
+def eval_batch_flattening(cfg: Any) -> bool:
+    """Whether evaluation batches are token-budget flattened (default: ``batch_flattening``)."""
+    value = _value(cfg, "eval_batch_flattening")
+    if value is None:
+        value = _value(cfg, "batch_flattening", False)
+    return value is True
+
+
 def require_diffusion_spec(cfg: Any) -> DiffusionSpec:
     if isinstance(cfg, Mapping) and not isinstance(cfg, DictDefault):
         cfg = DictDefault(cfg)
