@@ -698,8 +698,9 @@ class TrainerBuilderBase(abc.ABC):
                     self.cfg.activation_offloading
                 )
         elif self.cfg.activation_offloading:
-            # TRL offloader replaces HF recompute (re-added for full finetune in the
-            # model loader), so disable HF checkpointing and pass the mode through.
+            # TRL offloader replaces HF recompute (re-added by the model loader for a
+            # full finetune with gradient_checkpointing), so disable HF checkpointing
+            # and pass the mode through.
             training_args_kwargs["gradient_checkpointing"] = False
             training_args_kwargs["activation_offloading"] = (
                 self.cfg.activation_offloading
