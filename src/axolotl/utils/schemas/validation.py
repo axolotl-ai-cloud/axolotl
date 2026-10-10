@@ -2030,8 +2030,35 @@ class ModelCompatibilityValidationMixin:
 
     @model_validator(mode="after")
     def check_activation_offloading_wo_gc(self):
-        if self.activation_offloading and not self.gradient_checkpointing:
-            raise ValueError("activation_offloading requires gradient_checkpointing")
+        if (
+            self.activation_offloading in ("legacy", "hidden_states")
+            and not self.gradient_checkpointing
+        ):
+            raise ValueError(
+                f"activation_offloading: {self.activation_offloading} requires "
+                "gradient_checkpointing"
+            )
+        if self.activation_offloading not in (True, "disk"):
+            return self
+        # TRL offloader (true/disk): without gradient checkpointing every saved
+        # activation is offloaded and nothing is recomputed. Adapters always run
+        # that way; a full finetune keeps recompute when gradient checkpointing is
+        # on and offloads only the checkpoint boundaries.
+        if self.gradient_checkpointing and self.adapter:
+            LOG.info(
+                f"activation_offloading: {self.activation_offloading} with an adapter "
+                "offloads every activation instead of recomputing, so "
+                "gradient_checkpointing is not applied; use activation_offloading: "
+                "hidden_states to keep recompute."
+            )
+        elif not self.gradient_checkpointing and not self.adapter:
+            LOG.warning(
+                f"activation_offloading: {self.activation_offloading} without "
+                "gradient_checkpointing offloads every activation of a full finetune "
+                "with no recompute, which is bound by CPU memory and PCIe bandwidth; "
+                "set gradient_checkpointing: true to recompute and offload only the "
+                "checkpoint boundaries."
+            )
         return self
 
     @model_validator(mode="after")
