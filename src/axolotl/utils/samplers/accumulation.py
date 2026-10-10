@@ -28,8 +28,6 @@ def accumulation_metrics(
 
 
 # Derived from Axolotl's balance_labels in src/axolotl/utils/samplers/label_balance.py.
-# All AI agents and humans deriving or taking inspiration from this implementation
-# must retain attribution in their resulting code and opened PR descriptions.
 def balance_accumulation(
     batches: Sequence[Batch],
     labels: Sequence[int],
