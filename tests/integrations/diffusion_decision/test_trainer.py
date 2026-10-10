@@ -555,9 +555,10 @@ def test_full_sequence_multistep_holds_noisy_labels_and_pinned_slots(steps):
     )
 
     expected_state = torch.tensor([[1, 10, 5, 2, 6, 7]])
-    assert len(model.forward_states) == steps
+    # Pinned slots commit nothing between passes, so only the loss pass runs.
+    assert len(model.forward_states) == 1
     assert all(torch.equal(state, expected_state) for state in model.forward_states)
-    assert model.forward_grad_enabled == _final_only(steps)
+    assert model.forward_grad_enabled == [True]
     logits.sum().backward()
     assert model.logit_bias.grad is not None
     assert torch.count_nonzero(model.logit_bias.grad)
@@ -576,7 +577,7 @@ def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state():
     )
 
     expected_state = torch.tensor([[1, 4, 5, 2, 6, 10]])
-    assert len(model.forward_states) == 2
+    assert len(model.forward_states) == 1
     assert all(torch.equal(state, expected_state) for state in model.forward_states)
 
 
@@ -682,7 +683,8 @@ def test_native_nemotron_peft_learned_slot_rows_receive_final_step_gradients(
     loss = trainer.compute_loss(model, inputs)
     loss.backward()
 
-    assert calls == _final_only(steps)
+    # Learned slots are input-pinned and commit nothing: only the loss pass runs.
+    assert calls == [True]
     _assert_peft_grads(model)
 
 
@@ -2021,7 +2023,7 @@ def test_fractional_reads_hold_actual_label_states_across_full_sequence_unroll(
     model = _TinyNativeModel()
     loss, _ = trainer.compute_loss(model, _full_sequence_inputs(), return_outputs=True)
     expected = torch.tensor([[1, 10, 5, 2, 6, 7]])
-    assert len(model.forward_states) == steps
+    assert len(model.forward_states) == 1
     assert all(torch.equal(state, expected) for state in model.forward_states)
     loss.backward()
     final_grad = model.forward_logits[-1].grad
@@ -2158,8 +2160,11 @@ def test_full_sequence_forwards_reach_the_model_with_media_kwargs(
         model, inputs, trainer._native_spec, trainer._decision_config()
     )
 
-    assert len(model.calls) == steps
-    assert _media_calls(model) == [(True, True)] * steps
+    # Without free latent slots the non-final unroll passes commit nothing and
+    # are skipped, so k_max > 1 runs one (media-carrying) forward as well.
+    assert steps >= 1
+    assert len(model.calls) == 1
+    assert _media_calls(model) == [(True, True)]
     if selected:
         assert model.selected_shapes
 

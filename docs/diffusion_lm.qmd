@@ -430,11 +430,16 @@ equal to the fixed-batch values. With `sample_packing: true`, evaluation is
 packed by the same multipack sampler as training unless
 `eval_sample_packing: false`; only one packing mechanism applies.
 
-Evaluation reads only the final pass of a `k_max` unroll when no free latent
-slots are used: the earlier passes commit nothing and condition nothing, so
-they would re-read the same canvas. The final pass computes logits only at
-label slots, so evaluation never materializes full-vocabulary logits over the
-sequence. Training still runs every sampled pass.
+On a full-sequence layout without free latent slots, training and evaluation
+run only the final pass of a `k_max` unroll: label slots keep their noisy
+tokens between passes, nothing self-conditions and no gradient flows through
+earlier passes, so those passes would re-read the same canvas and their logits
+would be discarded. Loss and gradients are identical to running them, and the
+read count is still drawn so the random stream is unchanged. The trainer logs
+this once. Earlier passes only feed forward through `latent.mode: free`
+slots, which commit their argmax predictions between passes. The final pass
+computes logits only at label slots, so it never materializes
+full-vocabulary logits over the sequence.
 
 ### Outputs
 

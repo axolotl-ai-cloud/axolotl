@@ -165,7 +165,7 @@ def test_evaluation_reads_only_the_final_pass_when_nothing_is_committed(selected
 
     with torch.no_grad():
         torch.manual_seed(3)
-        reference = _multistep(2, k_max=2, decision=decision).compute_loss(
+        reference = _multistep(1, k_max=1, decision=decision).compute_loss(
             reference_model, inputs
         )
         model.eval()
@@ -173,10 +173,10 @@ def test_evaluation_reads_only_the_final_pass_when_nothing_is_committed(selected
         trainer = _multistep(2, k_max=2, decision=decision)
         loss = trainer.compute_loss(model, inputs)
 
-    assert len(reference_model.forward_states) == 2
+    assert len(reference_model.forward_states) == 1
     assert len(model.forward_states) == 1
     torch.testing.assert_close(
-        model.forward_states[0], reference_model.forward_states[1]
+        model.forward_states[0], reference_model.forward_states[0]
     )
     torch.testing.assert_close(loss, reference, rtol=1e-6, atol=1e-6)
     eval_totals = trainer._decision_metric_totals("eval")["decision/all"]
@@ -185,12 +185,12 @@ def test_evaluation_reads_only_the_final_pass_when_nothing_is_committed(selected
         assert model.selected_shapes == [torch.Size([1, 2, 11])]
 
 
-def test_training_keeps_every_unroll_pass():
+def test_training_skips_unroll_passes_that_commit_nothing():
     model = _TinyNativeModel()
 
     _multistep(2, k_max=2).compute_loss(model, _full_sequence_inputs())
 
-    assert model.forward_grad_enabled == [False, True]
+    assert model.forward_grad_enabled == [True]
 
 
 def _eval_rows(count: int, vocab_size: int) -> list[dict[str, object]]:
