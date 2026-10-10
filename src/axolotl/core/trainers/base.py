@@ -192,7 +192,7 @@ class AxolotlTrainer(
             trial,
         )
         if (
-            self.args.balance_labels
+            getattr(self.args, "balance_labels", False)
             and not self.args.pretraining
             and resume_from_checkpoint is not None
             and self.state.epoch is not None
@@ -202,7 +202,7 @@ class AxolotlTrainer(
         return epochs, steps
 
     def _run_epoch(self, model, epoch, train_dataloader, **kwargs):
-        if self.args.balance_labels and not self.args.pretraining:
+        if getattr(self.args, "balance_labels", False) and not self.args.pretraining:
             # Resume's SkipBatchSampler hides samplers from Accelerate's epoch forwarding.
             pending = [train_dataloader]
             visited = set()
@@ -266,7 +266,7 @@ class AxolotlTrainer(
             batch_max_len = train_batch_size * self.args.max_seq_length
 
         label_counts = label_start_counts = None
-        if self.args.balance_labels:
+        if getattr(self.args, "balance_labels", False):
             tokenizer = getattr(getattr(self, "data_collator", None), "tokenizer", None)
             if getattr(tokenizer, "padding_side", "right") != "right":
                 raise ValueError("Label-balanced packing requires right padding")
@@ -317,7 +317,7 @@ class AxolotlTrainer(
 
         use_sample_packing = self.args.sample_packing and not self.args.pretraining
 
-        if self.args.balance_labels and not use_sample_packing:
+        if getattr(self.args, "balance_labels", False) and not use_sample_packing:
             flattened = getattr(self.args, "batch_flattening", False)
             collator = self.data_collator
             if flattened:
@@ -425,7 +425,7 @@ class AxolotlTrainer(
         """Create a [`~torch.utils.data.DataLoader`] from the given dataset."""
 
         if (
-            self.args.balance_labels
+            getattr(self.args, "balance_labels", False)
             and is_training
             and not self.args.sample_packing
             and isinstance(dataset, torch.utils.data.IterableDataset)

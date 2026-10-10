@@ -1171,8 +1171,9 @@ def test_decision_dataset_exposes_canvas_lengths_to_multipack():
 @pytest.mark.parametrize(
     ("is_training", "eval_packing"), [(True, True), (False, True), (False, False)]
 )
+@pytest.mark.parametrize("explicit_balance_labels", [False, True])
 def test_core_dataloader_removes_only_a_lengthless_decision_dataset_copy(
-    is_training, eval_packing
+    is_training, eval_packing, explicit_balance_labels
 ):
     class _CoreDataLoaderHarness(TrainerHarness):
         def _get_collator_with_removed_columns(self, collator, description):
@@ -1197,6 +1198,8 @@ def test_core_dataloader_removes_only_a_lengthless_decision_dataset_copy(
         pretraining=False,
         sample_packing_drop_attention_mask=False,
     )
+    if explicit_balance_labels:
+        trainer.args.balance_labels = False
     trainer.accelerator = SimpleNamespace(
         even_batches=True, prepare=lambda dataloader: dataloader
     )
