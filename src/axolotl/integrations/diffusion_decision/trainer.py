@@ -41,6 +41,24 @@ from .slot_sampling import DecisionDraw
 LOG = get_logger(__name__)
 
 
+def _commit_selected_argmax(
+    state: torch.Tensor,
+    logits: torch.Tensor,
+    update_mask: torch.Tensor,
+    *,
+    rows: torch.Tensor,
+    positions: torch.Tensor,
+) -> torch.Tensor:
+    """Commit argmax predictions from logits selected at ``(rows, positions)``."""
+
+    del update_mask
+    if logits.shape[:2] != rows.shape:
+        raise ValueError("selected logits must match the committed coordinates")
+    committed = state.clone()
+    committed[rows[0], positions[0]] = logits.detach()[0].argmax(-1).to(state.dtype)
+    return committed
+
+
 class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
     """Train typed decisions through the backend selected by ``DiffusionSpec``."""
 
@@ -873,8 +891,32 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                 )
             # Non-SC full-sequence reads retain the same noisy labels each step.
             steps = self._sample_native_unroll_steps(k_max, packed["input_ids"].device)
+            kernel_options = getattr(self.axolotl_cfg, "flex_attn_compile_kwargs", None)
+            step_model_kwargs = None
             if free_slot_mask is not None:
                 update_mask = free_slot_mask
+                if (
+                    steps > 1
+                    and spec.logit_alignment is LogitAlignment.ALIGNED
+                    and bool(
+                        getattr(capability_model, "supports_selected_logits", False)
+                    )
+                ):
+                    # Non-final passes feed forward only the argmax at free slots,
+                    # so project logits there instead of over every position.
+                    slot_rows, slot_positions = free_slot_mask.nonzero(as_tuple=True)
+                    slot_rows = slot_rows.unsqueeze(0)
+                    slot_positions = slot_positions.unsqueeze(0)
+                    step_model_kwargs = {
+                        "axolotl_selected_logits": (slot_rows, slot_positions)
+                    }
+                    update_state = partial(
+                        _commit_selected_argmax,
+                        rows=slot_rows,
+                        positions=slot_positions,
+                    )
+                    if media_kwargs:
+                        update_state = _without_image_markers(update_state)
             else:
                 # Without free slots nothing is committed (labels keep their noisy
                 # tokens) and nothing conditions the next pass (no
@@ -888,6 +930,25 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                 if steps > 1:
                     self._log_skipped_unroll_passes_once(k_max)
                 steps = 1
+
+            def forward_step(current_state, _conditioning, _conditioning_mask):
+                return backend.forward(
+                    model,
+                    packed,
+                    current_state,
+                    kernel_options=kernel_options,
+                    model_kwargs={**media_kwargs, **(step_model_kwargs or {})} or None,
+                )
+
+            def logits_from_outputs(current_outputs):
+                if step_model_kwargs is not None:
+                    return current_outputs.logits
+                return backend.canvas_logits(
+                    current_outputs,
+                    packed,
+                    aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
+                )
+
             outputs, logits, _ = run_unroll(
                 state=state,
                 update_mask=update_mask,
@@ -896,22 +957,8 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                 supports_self_conditioning=False,
                 k1_conditioning_mask=None,
                 recurrent_conditioning_mask=None,
-                forward_step=lambda current_state, _conditioning, _conditioning_mask: (
-                    backend.forward(
-                        model,
-                        packed,
-                        current_state,
-                        kernel_options=getattr(
-                            self.axolotl_cfg, "flex_attn_compile_kwargs", None
-                        ),
-                        model_kwargs=media_kwargs or None,
-                    )
-                ),
-                logits_from_outputs=lambda current_outputs: backend.canvas_logits(
-                    current_outputs,
-                    packed,
-                    aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
-                ),
+                forward_step=forward_step,
+                logits_from_outputs=logits_from_outputs,
                 update_state=update_state,
                 pilot_for_single_step=False,
                 **final_kwargs,

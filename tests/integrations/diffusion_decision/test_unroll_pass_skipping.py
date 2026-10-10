@@ -16,6 +16,7 @@ from tests.integrations.diffusion_decision.test_trainer import (
     _full_sequence_inputs,
     _latent,
     _multistep,
+    _SelectedTinyNativeModel,
     _TinyNativeModel,
 )
 
@@ -129,3 +130,65 @@ def test_free_slot_passes_still_run_and_feed_the_final_pass():
     assert model.forward_grad_enabled == [False, False, True]
     assert model.forward_states[1][0, 1].item() == 10
 
+
+def _free_slot_inputs():
+    return _collate(
+        _free_slot_canvas((1, 2), (9, 3, 4, 0), "first"),
+        _free_slot_canvas((3,), (8, 5, 6, 0), "second"),
+        layout=_FULL,
+    )
+
+
+@pytest.mark.parametrize("model_kind", ["bias", "nemotron"])
+@pytest.mark.parametrize("steps", [2, 3])
+def test_free_slot_passes_use_selected_logits_with_identical_commits(
+    model_kind, steps
+):
+    def make(selected: bool):
+        if model_kind == "nemotron":
+            model = _tiny_nemotron()
+            if not selected:
+                model.supports_selected_logits = False
+            return model
+        model = (_SelectedTinyNativeModel if selected else _TinyNativeModel)(
+            vocab_size=128
+        )
+        torch.manual_seed(9)
+        with torch.no_grad():
+            model.logit_bias.copy_(torch.randn(128))
+        return model
+
+    results = {}
+    for selected in (False, True):
+        model = make(selected)
+        if model_kind == "nemotron":
+            calls = _recording(model)
+        trainer = _multistep(
+            steps, decision={**_DECISION, **_latent("free", free_update_policy="argmax")}
+        )
+        loss, grads = _train_step(model, trainer, _free_slot_inputs())
+        states = (
+            [state for state, _ in calls]
+            if model_kind == "nemotron"
+            else model.forward_states
+        )
+        results[selected] = (loss, grads, states, model)
+
+    dense_loss, dense_grads, dense_states, _ = results[False]
+    loss, grads, states, selected_model = results[True]
+    assert len(states) == len(dense_states) == steps
+    for state, dense_state in zip(states, dense_states, strict=True):
+        assert torch.equal(state, dense_state)
+    # Free slots really are committed between passes.
+    slots = _free_slot_inputs()["decision_slot_mask"]
+    assert not torch.equal(dense_states[0][slots], dense_states[1][slots]) or (
+        model_kind == "bias"
+    )
+    torch.testing.assert_close(loss, dense_loss, rtol=1e-6, atol=1e-6)
+    for name, grad in dense_grads.items():
+        torch.testing.assert_close(grads[name], grad, rtol=1e-6, atol=1e-6)
+    if model_kind == "bias":
+        # Every non-final pass projects only the two free slots.
+        assert selected_model.selected_shapes[: steps - 1] == [
+            torch.Size([1, 2, 128])
+        ] * (steps - 1)
