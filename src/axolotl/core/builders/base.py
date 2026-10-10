@@ -53,6 +53,12 @@ with suppress(ImportError):
     import torch._dynamo
 
 
+
+def _eval_on_start(cfg) -> bool:
+    """An explicit `eval_on_start` wins; unset keeps the step-0 eval."""
+    eval_on_start = getattr(cfg, "eval_on_start", None)
+    return True if eval_on_start is None else bool(eval_on_start)
+
 class TrainerBuilderBase(abc.ABC):
     """Base class for trainer builder."""
 
@@ -563,10 +569,10 @@ class TrainerBuilderBase(abc.ABC):
         elif self.cfg.eval_steps:
             training_args_kwargs["eval_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
-            training_args_kwargs["eval_on_start"] = True
+            training_args_kwargs["eval_on_start"] = _eval_on_start(self.cfg)
         elif self.cfg.eval_strategy:
             training_args_kwargs["eval_strategy"] = self.cfg.eval_strategy
-            training_args_kwargs["eval_on_start"] = True
+            training_args_kwargs["eval_on_start"] = _eval_on_start(self.cfg)
 
     def _configure_reporting(self, training_args_kwargs: dict):
         report_to = []
