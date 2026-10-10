@@ -2356,7 +2356,9 @@ class LoRA_Embedding(torch.autograd.Function):
 
             # d_A: gradient flows through F.embedding lookup
             # d_after_A = s * grad @ B = [T, hidden] @ [hidden, rank] = [T, rank]
-            d_after_A = s * grad_flat @ B_f
+            # custom_bwd restores autocast, but index_add_ requires fp32 contributions.
+            with torch.autocast(device_type=grad_flat.device.type, enabled=False):
+                d_after_A = s * grad_flat @ B_f
 
             # F.embedding backward: scatter d_after_A into A^T gradient
             x_flat = x.view(-1)
