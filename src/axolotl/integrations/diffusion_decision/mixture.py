@@ -21,6 +21,9 @@ class PreparedSourcePools:
 
     records: Mapping[str, tuple[Mapping[str, Any], ...]]
     counts: Mapping[str, int]
+    # Every decontaminated record of each nonempty source, in input order; the
+    # capped ``records`` are ``cap_window(..., epoch=0)`` of these.
+    candidates: Mapping[str, tuple[Mapping[str, Any], ...]] | None = None
 
 
 @dataclass(frozen=True)
@@ -103,10 +106,20 @@ class DeterministicMixtureSampler(Generic[T]):
                 yield self.draw(batch_size)
 
     def epoch_batches(
-        self, batch_size: int, *, stratified: bool = True
+        self,
+        batch_size: int,
+        *,
+        stratified: bool = True,
+        batch_count: int | None = None,
     ) -> Iterator[tuple[MixtureSample[T], ...]]:
-        """Yield batches until every capped source record is seen once."""
+        """Yield batches until every capped source record is seen once.
+
+        ``batch_count`` instead yields exactly that many batches, so later epochs can
+        keep the first epoch's length (sources keep cycling past a full pass).
+        """
         _validate_count(batch_size, "batch_size", positive=True)
+        if batch_count is not None:
+            _validate_count(batch_count, "batch_count")
         epoch_seed = self._source_random.randrange(1 << 63)  # nosec B311 - Reproducible seed.
         cursors = {
             source: _SourceCursor(records, stable_seed(epoch_seed, source))
@@ -114,8 +127,13 @@ class DeterministicMixtureSampler(Generic[T]):
         }
         credit = {source: 0.0 for source in self.sources}
         seen = {source: 0 for source in self.sources}
-        while not all(
-            seen[source] >= len(self._pools[source]) for source in self.sources
+        yielded = 0
+        while (
+            yielded < batch_count
+            if batch_count is not None
+            else not all(
+                seen[source] >= len(self._pools[source]) for source in self.sources
+            )
         ):
             if stratified:
                 sources = self._stratified_sources(batch_size, credit)
@@ -130,6 +148,7 @@ class DeterministicMixtureSampler(Generic[T]):
             )
             for source in sources:
                 seen[source] += 1
+            yielded += 1
             yield batch
 
     def _stratified_sources(
@@ -178,6 +197,9 @@ def prepare_source_pools(
         )
         for source, records in grouped.items()
     }
+    candidates = {
+        source: tuple(grouped[source]) for source, pool in pools.items() if pool
+    }
     records = {source: pool for source, pool in pools.items() if pool}
     if not records:
         raise ValueError("no nonempty source pools remain after decontamination")
@@ -185,7 +207,9 @@ def prepare_source_pools(
     result_counts = dict(counts)
     result_counts["capped"] = capped
     result_counts["sources"] = len(records)
-    return PreparedSourcePools(records=records, counts=result_counts)
+    return PreparedSourcePools(
+        records=records, counts=result_counts, candidates=candidates
+    )
 
 
 def source_counts(samples: Sequence[MixtureSample[object]]) -> Mapping[str, int]:
@@ -266,16 +290,34 @@ def _cap_for_source(cap: int | Mapping[str, int] | None, source: str) -> int | N
     return cap
 
 
+def cap_window(
+    count: int, cap: int | None, seed: int, source: str, epoch: int = 0
+) -> list[int]:
+    """Indices of the capped subset of a source's ``count`` records for ``epoch``.
+
+    One seeded shuffle of the source is cut into consecutive ``cap``-sized windows,
+    one per epoch (wrapping around), so successive epochs see different records
+    before any repeats. Epoch 0 is the first window. Uncapped sources keep every
+    record in input order.
+    """
+    _validate_count(epoch, "epoch")
+    if cap is None or count <= cap:
+        return list(range(count))
+    order = list(range(count))
+    random.Random(stable_seed(seed, source)).shuffle(order)  # nosec B311
+    start = (epoch * cap) % count
+    return [order[(start + offset) % count] for offset in range(cap)]
+
+
 def _cap_records(
     records: Sequence[Mapping[str, Any]], cap: int | None, seed: int
 ) -> tuple[Mapping[str, Any], ...]:
-    if cap is None or len(records) <= cap:
-        return tuple(records)
-    order = list(range(len(records)))
-    random.Random(stable_seed(seed, records[0]["source"])).shuffle(  # nosec B311
-        order
+    if not records:
+        return ()
+    return tuple(
+        records[index]
+        for index in cap_window(len(records), cap, seed, records[0]["source"])
     )
-    return tuple(records[index] for index in order[:cap])
 
 
 def _positive_finite(value: float, name: str) -> float:

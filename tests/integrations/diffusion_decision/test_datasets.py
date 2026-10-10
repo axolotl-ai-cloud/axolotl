@@ -594,9 +594,12 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(
         lambda: cfg["diffusion_lm"].update(canvas_width=129),
         lambda: cfg["diffusion_lm"].update(canvas_width=128),
     )
-    requires_rebuild(
-        lambda: cfg.update(micro_batch_size=3), lambda: cfg.update(micro_batch_size=2)
-    )
+    # Batch settings shape only the batch plan built over the cached canvas layer.
+    before = calls
+    cfg.update(micro_batch_size=3, gradient_accumulation_steps=7, eval_batch_size=5)
+    resized = datasets.load_decision_datasets(cfg)
+    assert calls == before
+    assert resized.train_dataset.manifest["stratified_micro_batch_size"] == 3
 
 
 def test_prepared_cache_preserves_nested_typed_values_and_live_vocab_identity(
