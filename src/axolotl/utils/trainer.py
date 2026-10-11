@@ -15,12 +15,14 @@ import torch
 import torch.cuda
 from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers.utils import is_torch_bf16_gpu_available
+from transformers.utils import is_torch_bf16_gpu_available  # noqa: F401  (kept for any external callers)
 
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.config import bf16_supported
 from axolotl.utils.distributed import (
     get_world_size,
     init_distributed_state,
+    is_xla,
     reduce_and_broadcast,
 )
 from axolotl.utils.environment import check_cuda_p2p_ib_support
@@ -726,15 +728,16 @@ def prepare_optim_env(cfg):
     if cfg.ddp_timeout:
         os.environ.setdefault("AXOLOTL_NCCL_TIMEOUT", str(cfg.ddp_timeout))
 
-    if not check_cuda_p2p_ib_support():
+    if not is_xla() and not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
             LOG.warning("P2P support not detected, setting `NCCL_P2P_DISABLE=1`")
             os.environ["NCCL_P2P_DISABLE"] = "1"
     # TODO @SalmanMohammadi remove the cfg.fsdp check in 0.12
-    if cfg.fsdp or cfg.fsdp_config:
+    # XLA handles its own distributed setup; skip FSDP/DeepSpeed env vars.
+    if not is_xla() and (cfg.fsdp or cfg.fsdp_config):
         # fsdp_config is source of truth; mutating cfg.fsdp to bool breaks Ray worker schema validation
         setup_fsdp_envs(cfg)
-    elif cfg.deepspeed:
+    elif not is_xla() and cfg.deepspeed:
         stage = None
         deepspeed_config = None
         # check if the cfg.deepspeed is a file
@@ -753,9 +756,9 @@ def prepare_optim_env(cfg):
 
     if cfg.fp8:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
-    elif (cfg.bf16 == "auto" and is_torch_bf16_gpu_available()) or cfg.bf16 is True:
+    elif (cfg.bf16 == "auto" and bf16_supported()) or cfg.bf16 is True:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "bf16"
-    elif cfg.fp16:
+    elif cfg.fp16 and not is_xla():
         os.environ["ACCELERATE_MIXED_PRECISION"] = "fp16"
     else:
         os.environ["ACCELERATE_MIXED_PRECISION"] = "no"

@@ -13,6 +13,7 @@ import posthog
 import psutil
 import torch
 import yaml
+from transformers.utils.import_utils import is_torch_xla_available
 
 from axolotl.utils.logging import get_logger
 
@@ -333,6 +334,18 @@ class TelemetryManager:
                         "memory": memory,
                     }
                 )
+
+        # TPU / XLA
+        elif is_torch_xla_available():
+            import torch_xla.runtime as xr  # noqa: PLC0415
+
+            accelerator_type = "xla"
+            try:
+                device_count = xr.addressable_device_count()
+                for _ in range(device_count):
+                    gpu_info.append({"name": "TPU", "memory": None})
+            except Exception:  # noqa: BLE001
+                gpu_info.append({"name": "TPU", "memory": None})
 
         # Get relevant package versions
         installed_packages = {}

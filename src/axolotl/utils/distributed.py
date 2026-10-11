@@ -13,12 +13,22 @@ from transformers.utils.import_utils import (
     is_torch_cuda_available,
     is_torch_mps_available,
     is_torch_npu_available,
+    is_torch_xla_available,
 )
 
 distributed_state = None
 
 
+def is_xla() -> bool:
+    """Return True when torch_xla is installed and active (i.e. we're on a TPU/XLA device)."""
+    return is_torch_xla_available()
+
+
 def get_device_type() -> torch.device:
+    # XLA is checked first: TPU VMs typically have no CUDA, but is_torch_cuda_available
+    # could theoretically return True on a GPU-equipped XLA host, so guard explicitly.
+    if is_xla():
+        return torch.device("xla")
     device = torch.device("cpu")
     if is_torch_cuda_available():
         device = torch.device("cuda")
@@ -30,6 +40,10 @@ def get_device_type() -> torch.device:
 
 
 def get_device_count() -> int:
+    if is_xla():
+        import torch_xla.runtime as xr  # noqa: PLC0415
+
+        return xr.addressable_device_count()
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.device_count()
@@ -39,12 +53,38 @@ def get_device_count() -> int:
 
 
 def get_current_device() -> int:
+    if is_xla():
+        import torch_xla.runtime as xr  # noqa: PLC0415
+
+        return xr.local_ordinal()
     cur_device = get_device_type()
     if "cuda" in str(cur_device):
         return torch.cuda.current_device()
     if "npu" in str(cur_device):
         return torch.npu.current_device()
     return 0
+
+
+def get_device_str() -> str:
+    """Return a device string suitable for ``torch.tensor(..., device=...)``.
+
+    On XLA the device is just ``"xla"``; on all other backends it is
+    ``"<type>:<ordinal>"``.
+    """
+    if is_xla():
+        return "xla"
+    return f"{get_device_type()}:{get_current_device()}"
+
+
+def empty_device_cache() -> None:
+    """Free the accelerator's memory cache.  No-op on XLA and CPU."""
+    if is_xla():
+        return
+    cur = get_device_type()
+    if "cuda" in str(cur) and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif "npu" in str(cur) and is_torch_npu_available():
+        torch.npu.empty_cache()
 
 
 def _backend_timeout(group, device) -> timedelta | None:
@@ -119,6 +159,11 @@ def barrier():
     Acts as a barrier to wait for all processes. This ensures that all processes
     reach the barrier before proceeding further.
     """
+    if is_xla():
+        import torch_xla.core.xla_model as xm  # noqa: PLC0415
+
+        xm.rendezvous("axolotl_barrier")
+        return
     if is_distributed():
         dist.barrier()
 
@@ -156,12 +201,15 @@ def cleanup_distributed():
     Destroy process group if torch distributed is initialized. Called in training early
     termination or when training successfully completes.
     """
-    # Ensure that all operations are completed before destroying the process group
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
+    if is_xla():
+        import torch_xla.core.xla_model as xm  # noqa: PLC0415
 
-    if torch.xpu.is_available():
-        torch.xpu.synchronize()
+        xm.wait_device_ops()
+    else:
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            torch.xpu.synchronize()
 
     # Destroy the process group
     if torch.distributed.is_initialized():
@@ -196,7 +244,7 @@ def gather_scalar_from_all_ranks(fn, world_size=1):
     if not is_distributed():
         return [value_scalar]
     value_tensor = torch.tensor(
-        value_scalar, device=f"{get_device_type()}:{get_current_device()}"
+        value_scalar, device=get_device_str()
     ).float()
 
     if not is_main_process():
@@ -220,7 +268,7 @@ def broadcast_dict(vals: dict):
     if not is_distributed():
         return vals
 
-    cur_device = get_device_type()
+    cur_device = get_device_str()
     if is_main_process():
         data_byte = pickle.dumps(vals)
         data_tensor = torch.ByteTensor(list(data_byte)).to(cur_device)
@@ -256,7 +304,7 @@ def compute_and_broadcast(fn):
     Returns:
     - The computed value (int or float).
     """
-    cur_device = f"{get_device_type()}:{get_current_device()}"
+    cur_device = get_device_str()
     if is_main_process():
         value_scalar = fn()
         value_tensor = torch.tensor(
@@ -291,7 +339,7 @@ def gather_from_all_ranks(fn, world_size=1):
     """
     value_scalar = fn()
     value_tensor = torch.tensor(
-        value_scalar, device=f"{get_device_type()}:{get_current_device()}"
+        value_scalar, device=get_device_str()
     ).float()
 
     # Placeholder tensor for gathering results
@@ -340,6 +388,10 @@ def reduce_and_broadcast(fn1, fn2):
 
 
 def build_parallelism_config(cfg):
+    # XLA uses its own device placement; the CUDA device mesh is not applicable.
+    if is_xla():
+        return None, None
+
     pc_kwargs = _get_parallel_config_kwargs(
         get_world_size(),
         cfg.tensor_parallel_size,

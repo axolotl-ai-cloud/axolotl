@@ -43,7 +43,7 @@ from axolotl.utils.callbacks import (
     SkipEvalOnResumeCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
-from axolotl.utils.distributed import build_parallelism_config
+from axolotl.utils.distributed import build_parallelism_config, is_xla
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
@@ -592,6 +592,16 @@ class TrainerBuilderBase(abc.ABC):
         else:
             training_args_kwargs["run_name"] = None
 
+    def _configure_xla_settings(self, training_args_kwargs: dict):
+        """Apply XLA/TPU-specific TrainingArguments overrides."""
+        if not is_xla():
+            return
+        # XLA recompiles on shape changes; drop the last batch to prevent a
+        # ragged final batch from triggering extra compilations.
+        training_args_kwargs["dataloader_drop_last"] = True
+        # torch_compile targets inductor, not XLA's compiler; keep it off.
+        training_args_kwargs["torch_compile"] = False
+
     def _configure_torch_compile(self, training_args_kwargs: dict):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
             torch._dynamo.config.suppress_errors = True
@@ -664,6 +674,7 @@ class TrainerBuilderBase(abc.ABC):
         self._configure_precision_settings(training_args_kwargs)
         self._configure_save_and_eval_strategy(training_args_kwargs)
         self._configure_gradient_checkpointing(training_args_kwargs)
+        self._configure_xla_settings(training_args_kwargs)
 
         # set arg into trainer_args_kwargs with same name if value not None
         for arg in [

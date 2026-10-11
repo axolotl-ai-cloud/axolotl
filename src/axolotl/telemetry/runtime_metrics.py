@@ -6,6 +6,7 @@ from typing import Any
 
 import psutil
 import torch
+from transformers.utils.import_utils import is_torch_xla_available
 
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.logging import get_logger
@@ -148,6 +149,8 @@ class RuntimeMetricsTracker:
 
     def _get_memory_backend(self):
         """Select the same accelerator for current and peak allocation queries."""
+        if is_torch_xla_available():
+            return "xla"
         for name in ("cuda", "hip"):
             backend = getattr(torch, name, None)
             if backend is not None and backend.is_available():
@@ -165,6 +168,14 @@ class RuntimeMetricsTracker:
         backend = self._get_memory_backend()
         if backend is None:
             return {}
+        if backend == "xla":
+            try:
+                import torch_xla.core.xla_model as xm  # noqa: PLC0415
+
+                info = xm.get_memory_info(xm.xla_device())
+                return {0: info.get("bytes_used", 0)}
+            except Exception:  # noqa: BLE001
+                return {}
         if backend is getattr(torch, "mps", None):
             if hasattr(backend, "current_allocated_memory"):
                 return {0: backend.current_allocated_memory()}
@@ -185,7 +196,8 @@ class RuntimeMetricsTracker:
         """Accumulate allocator high-water marks, falling back to samples."""
         memory_used = self._get_allocated_memory()
         backend = self._get_memory_backend()
-        peak_memory = getattr(backend, "max_memory_allocated", None)
+        # "xla" is a sentinel string, not a module with max_memory_allocated.
+        peak_memory = getattr(backend, "max_memory_allocated", None) if backend != "xla" else None
         for i, memory in memory_used.items():
             if peak_memory is not None:
                 memory = max(memory, peak_memory(i))

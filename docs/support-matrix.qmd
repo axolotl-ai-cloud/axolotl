@@ -321,6 +321,7 @@ Not in a tagged release yet:
 ### ⚪ Out-of-scope / won't-fix
 
 - **Ascend NPU** feature parity: attention, optimizers, and quantization are all unsupported there (cross-cutting, no single-row home)
+- **Google TPU** (experimental): single-host data-parallel SFT + LoRA in bf16 is supported; QLoRA, flash-attn, DeepSpeed, FSDP, sample packing, and RL trainers are not yet. See [TPU guide](tpu.qmd).
 
 Everything else out-of-scope is marked on its own row above:
 

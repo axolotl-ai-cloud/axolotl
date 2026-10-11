@@ -13,6 +13,7 @@ import numpy as np
 import torch
 from transformers import Trainer, is_torch_npu_available
 from transformers.trainer import safe_globals
+from transformers.utils.import_utils import is_torch_xla_available
 from transformers.trainer_pt_utils import set_rng_state_for_device
 from transformers.training_args import ParallelMode
 
@@ -58,11 +59,16 @@ class RngLoaderMixin(Trainer):
         torch.random.set_rng_state(checkpoint_rng_state["cpu"])
 
         is_distributed = self.args.parallel_mode == ParallelMode.DISTRIBUTED
-        if torch.cuda.is_available():
+        if is_torch_xla_available():
+            import torch_xla.core.xla_model as xm  # noqa: PLC0415
+
+            if "xla" in checkpoint_rng_state:
+                xm.set_rng_state(checkpoint_rng_state["xla"])
+        elif torch.cuda.is_available():
             set_rng_state_for_device(
                 "CUDA", torch.cuda, checkpoint_rng_state, is_distributed
             )
-        if is_torch_npu_available():
+        if not is_torch_xla_available() and is_torch_npu_available():
             set_rng_state_for_device(
                 "NPU", torch.npu, checkpoint_rng_state, is_distributed
             )
