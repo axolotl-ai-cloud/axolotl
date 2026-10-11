@@ -475,7 +475,7 @@ def patch_peft_param_wrapper_for_fsdp2():
 def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     """Helper function to process LoRA modules for FSDP2."""
     from peft.tuners.lora.layer import ParamWrapper
-    from torch.distributed.fsdp import fully_shard
+    from torch.distributed.fsdp import FSDPModule, fully_shard
 
     # Skip ParamWrapper — its lora_A/B must not be independently sharded.
     # The parent decoder layer's FSDP wrapper handles unsharding them.
@@ -495,12 +495,9 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
             )
 
     for active_adapter in module.active_adapters:
-        if module.lora_A:
-            fully_shard(module.lora_A[active_adapter], **fsdp2_kwargs)
-        if module.lora_B:
-            fully_shard(module.lora_B[active_adapter], **fsdp2_kwargs)
-        if module.lora_magnitude_vector:
-            fully_shard(module.lora_magnitude_vector[active_adapter], **fsdp2_kwargs)
+        for adapters in (module.lora_A, module.lora_B, module.lora_magnitude_vector):
+            if adapters and not isinstance(adapters[active_adapter], FSDPModule):
+                fully_shard(adapters[active_adapter], **fsdp2_kwargs)
 
     # lora_embedding_A/B are ParameterDicts containing nn.Parameter (Tensors),
     # not nn.Module. fully_shard() only accepts nn.Module, so we cannot shard
@@ -508,8 +505,6 @@ def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
     # override groups already assigned by fully_shard(), so modules
     # where fully_shard() was already called are not affected [see https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html]
     if module.lora_embedding_A or module.lora_embedding_B:
-        from torch.distributed.fsdp import FSDPModule
-
         if not isinstance(module, FSDPModule):
             fully_shard(module, **fsdp2_kwargs)
 
@@ -858,6 +853,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 # ParamWrapper reads adapter weights directly, without invoking their forward hooks.
                 nf4_unwrapped_children.update(list(module.modules())[1:])
 
+    from axolotl.utils.lora_tying import tied_lora_no_wrap_modules
+
+    tied_no_wrap = tied_lora_no_wrap_modules(model)
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -911,9 +909,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
         if auto_wrap_policy is not None:
             for module in get_module_children_bottom_up(model)[:-1]:
-                if module in nf4_unwrapped_children:
+                if module in nf4_unwrapped_children or module in tied_no_wrap:
                     continue
-                if staged_nf4 and isinstance(
+                if isinstance(
                     module,
                     (nn.ModuleList, nn.ModuleDict, nn.ParameterList, nn.ParameterDict),
                 ):

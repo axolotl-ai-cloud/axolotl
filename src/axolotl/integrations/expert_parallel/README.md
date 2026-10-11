@@ -218,6 +218,46 @@ The pre-`expert_parallel` names (`deep_ep`, `deep_ep_grouped_mm`, `deep_ep_scatt
 
 EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. The mesh is ordered `(dp_replicate, dp_shard, cp, ep, tp)`, `ep` innermost, so each EP all-to-all group is a run of consecutive ranks that stays inside a node whenever `ep × tp` fits on one; the startup log reports which axes cross nodes. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
 
+## Training checkpoints and resume
+
+FSDP2 `FULL_STATE_DICT` checkpoints preserve every EP group's expert weights,
+expert LoRA, and optimizer state. The shared ownership-aware checkpoint path serves
+both Trainer and Accelerate. See [Full checkpoints and resume](https://docs.axolotl.ai/docs/multi-gpu.html#full-checkpoints-and-resume)
+for quantization, memory, and mesh compatibility limits.
+
+### Checkpoint files
+
+- `pytorch_model_fsdp.bin` is the native model checkpoint used by
+  `resume_from_checkpoint` and best-model loading. Trainer LoRA/QLoRA checkpoints
+  include PEFT export state, including frozen adapter factors, saved modules, and
+  required embeddings; the frozen base model is loaded separately.
+- `optimizer.bin` preserves every expert owner's optimizer state. It is absent
+  when `save_only_model: true`.
+- `adapter_model.safetensors` is the ordinary PEFT adapter export used by
+  `lora_model_dir`. Model-only intermediate checkpoints also include the native
+  resume file; final exports do not.
+
+Native checkpoints and final exports need not have the same layout. For example,
+Mixtral full-model exports unpack fused expert weights, while native checkpoints
+retain fused tensors. Packed bitsandbytes checkpoints also carry owner-specific
+quantization metadata and require unchanged EP ownership ranges.
+
+### Checkpoints from earlier versions
+
+Older EP checkpoints may contain only EP group 0's expert weights, expert LoRA,
+and optimizer moments. The full-checkpoint loader rejects incompatible shapes on
+every rank. Model tensor shapes are checked before any model parameters are copied,
+so a truncated model checkpoint does not partially overwrite the model.
+
+To recover from an incomplete legacy checkpoint:
+
+- **Full-parameter training:** start a new run from a complete final model export.
+- **LoRA:** if the legacy checkpoint has a complete `adapter_model.safetensors`,
+  load it with `lora_model_dir` in a new run.
+
+These recovery paths do not recover optimizer state or scheduler progress. Missing
+experts cannot be reconstructed from the truncated native checkpoint.
+
 ## Limitations
 
 - Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). `ModuleList` as used in Mixtral is not supported.

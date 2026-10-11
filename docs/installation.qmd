@@ -43,6 +43,10 @@ source .venv/bin/activate
 uv pip install --no-build-isolation axolotl[deepspeed]
 ```
 
+### Offline or Air-Gapped Install {#sec-offline-install}
+
+For a machine without internet access, including Slurm compute nodes where only the login node is online, build a bundle on a connected host and install from it. See [Offline and Air-Gapped Deployment](airgapped.qmd).
+
 ### Edge/Development Build {#sec-edge-build}
 
 For the latest features between releases:

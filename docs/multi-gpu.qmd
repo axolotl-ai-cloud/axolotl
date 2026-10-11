@@ -94,6 +94,8 @@ fsdp_config:
 
 When using `auto_wrap_policy: SIZE_BASED_WRAP`, set `min_num_params` to the minimum parameter count a module must have to be wrapped (e.g. `100000000`).
 
+With `peft_ensure_weight_tying: true`, tied embedding LoRA adapters and their output-head consumers stay in the root FSDP group under either wrapping policy. This keeps the shared parameters available for both uses and combines their gradients before FSDP/HSDP reduction. These weights remain gathered across the root forward, which can use more memory than separately wrapping the embedding and head. The root group follows the configured distributed mesh, including CP/EP data axes and TP on other layers. Keep the tied embedding and output head out of the tensor-parallel plan; TP-sharded adapters on those modules are rejected.
+
 ### Full checkpoints and resume
 
 `fsdp_config.state_dict_type: FULL_STATE_DICT` saves a single gathered model checkpoint and `optimizer.bin`. With expert parallelism, both checkpoints include every EP group's experts. Restore selects each rank's expert ownership before applying its FSDP/HSDP shard, including the different row and column packing of expert LoRA factors. LoRA/QLoRA Trainer checkpoints save only the adapter tensors; the frozen base model is loaded separately. Model-only intermediate checkpoints also write `pytorch_model_fsdp.bin` so Trainer uses the ownership-aware FSDP restore path.
