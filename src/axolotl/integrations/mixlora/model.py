@@ -85,7 +85,7 @@ class MixLoraRouter(nn.Module):
             hidden_states = hidden_states * noise
 
         # Compute router logits and softmax probabilities
-        router_logits = self.gate(hidden_states)  # [T, E]
+        router_logits = self.gate(hidden_states.to(self.gate.weight.dtype))  # [T, E]
         router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
         # Select top-k experts
@@ -211,13 +211,18 @@ class MixLoraExpert(nn.Module):
         else:
             x_drop = x
 
+        # Expert weights may be fp32 while activations are fp16/bf16 (no autocast at
+        # inference or with bf16: full), so cast in and out like PEFT's LoRA layers.
+        lora_dtype = self.gate_lora_a.weight.dtype
+        x_drop = x_drop.to(lora_dtype)
+
         # gate_proj LoRA delta
         gate_delta = self.gate_lora_b(self.gate_lora_a(x_drop)) * self.scaling
-        gate_total = gate_out + gate_delta
+        gate_total = gate_out + gate_delta.to(gate_out.dtype)
 
         # up_proj LoRA delta
         up_delta = self.up_lora_b(self.up_lora_a(x_drop)) * self.scaling
-        up_total = up_out + up_delta
+        up_total = up_out + up_delta.to(up_out.dtype)
 
         # SwiGLU activation: act(gate) * up
         intermediate = self.activation_fn(gate_total) * up_total
@@ -226,9 +231,12 @@ class MixLoraExpert(nn.Module):
         # Note: we need to apply the original down_proj to intermediate,
         # but that's handled in MixLoraFFN. Here we compute the
         # down LoRA delta on the intermediate result.
-        down_delta = self.down_lora_b(self.down_lora_a(intermediate)) * self.scaling
+        down_delta = (
+            self.down_lora_b(self.down_lora_a(intermediate.to(lora_dtype)))
+            * self.scaling
+        )
 
-        return intermediate, down_delta
+        return intermediate, down_delta.to(intermediate.dtype)
 
 
 class MixLoraFFN(nn.Module):
