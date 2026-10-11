@@ -40,19 +40,44 @@ def permute_record(
     ``draw`` is (epoch, draw number of this record within the epoch); every draw
     but (0, 0) gets its own order.
     """
-    result = normalize_jsonl(record, codebook=codebook)
+    return permute_record_with_orders(record, seed=seed, codebook=codebook, draw=draw)[
+        0
+    ]
+
+
+def permute_record_with_orders(
+    record: Mapping[str, Any],
+    *,
+    seed: int,
+    codebook: str = "vendored26",
+    draw: tuple[int, int] | None = None,
+    share: bool = False,
+) -> tuple[dict[str, Any], dict[str, list[int]]]:
+    """:func:`permute_record`, plus each choice question's option order.
+
+    ``orders[key][new_position]`` is the option's index in the normalized
+    (source-ordered) record, which is how pre-tokenized segments are keyed.
+    ``share=True`` returns an equal record that shares the values this function
+    does not change (state, metadata, options, non-choice questions) with
+    ``record`` instead of deep-copying them; callers must not mutate them.
+    """
+    result = normalize_jsonl(record, codebook=codebook, share=share)
     identity = _permutation_identity(result)
     suffix = draw_stream(draw)
     keys = sorted(result["questions"])
     _generator(seed, identity, f"questions{suffix}").shuffle(keys)
     result["questions"] = {key: result["questions"][key] for key in keys}
     result["labels"] = {key: result["labels"][key] for key in keys}
+    orders: dict[str, list[int]] = {}
     for key, question in result["questions"].items():
         if question["type"] != "choice":
             continue
+        if share:
+            question = result["questions"][key] = dict(question)
         options = question["options"]
         order = list(range(len(options)))
         _generator(seed, identity, f"choices:{key}{suffix}").shuffle(order)
+        orders[key] = order
         question["options"] = [options[index] for index in order]
         target = result["labels"][key]
         inverse = {old: new for new, old in enumerate(order)}
@@ -80,7 +105,7 @@ def permute_record(
             target["allowed_set"] = sorted(
                 inverse[index] for index in target["allowed_set"]
             )
-    return result
+    return result, orders
 
 
 def shuffle_labels(

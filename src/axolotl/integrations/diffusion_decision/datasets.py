@@ -36,11 +36,14 @@ from .batch_plan import (
 from .canvas import (  # noqa: F401  (canvas building lives in .canvas; re-exported)
     _budget_limits,
     _canvas_row,
+    _canvas_settings,
     _canvas_width,
     _filter_budget_rows,
     _grouping_fits,
     _is_canvas_overflow,
+    _prepared_segments,
     _read_overflow_width,
+    _reserve_segments,
     _resolve_slot_plan,
     _scaffold_ids,
     _thought_delimiters,
@@ -56,6 +59,7 @@ from .prepared_cache import (
     store as store_prepared_cache,
 )
 from .prompts import resolve_image_refs
+from .segments import label_tables, segment_safety
 from .slot_sampling import (
     DecisionDraw,
     project_max_canvas,
@@ -314,9 +318,15 @@ def _init_canvas_worker(state: tuple[Any, ...]) -> None:
     _CANVAS_WORKER_STATE = state
 
 
+# Item modes: "row" builds a canvas row; "segments" also pre-tokenizes the row's
+# segments for re-permuted training draws; "reserve" pre-tokenizes only the
+# segments of a record whose canvas is built when a later epoch draws it.
+_ROW, _ROW_SEGMENTS, _RESERVE = "row", "segments", "reserve"
+
+
 def _build_canvas_chunk(
-    items: Sequence[tuple[int, dict[str, Any], float]],
-) -> list[tuple[dict[str, Any] | None, bool]]:
+    items: Sequence[tuple[int, Mapping[str, Any], float, str]],
+) -> list[tuple[dict[str, Any] | None, bool, Any, str | None]]:
     if _CANVAS_WORKER_STATE is None:
         raise RuntimeError("decision canvas worker was not initialized")
     (
@@ -346,7 +356,8 @@ def _build_canvas_chunk(
 
 
 def _build_canvas_worker(
-    item: tuple[int, dict[str, Any], float],
+    item: tuple[int, Mapping[str, Any], float]
+    | tuple[int, Mapping[str, Any], float, str],
     *,
     tokenizer: Any,
     cfg: Any,
@@ -356,8 +367,22 @@ def _build_canvas_worker(
     thought_open_ids: tuple[int, ...],
     thought_close_ids: tuple[int, ...],
     train: bool = False,
-) -> tuple[int, dict[str, Any] | None, bool]:
-    index, record, source_weight = item
+) -> tuple[int, dict[str, Any] | None, bool, Any, str | None]:
+    """(index, row, overflowed, segments, why no segments) of one item."""
+    index, record, source_weight = item[:3]
+    mode = item[3] if len(item) > 3 else _ROW
+    if mode == _RESERVE:
+        segments, reason = _reserve_segments(
+            tokenizer,
+            record,
+            cfg,
+            spec,
+            vocab_size=vocab_size,
+            slot_plan=slot_plan,
+            thought_open_ids=thought_open_ids,
+            thought_close_ids=thought_close_ids,
+        )
+        return index, None, False, segments, reason
     try:
         row = _canvas_row(
             tokenizer,
@@ -374,8 +399,21 @@ def _build_canvas_worker(
     except SchemaError as error:
         if not _is_canvas_overflow(error):
             raise
-        return index, None, True
-    return index, row, False
+        return index, None, True, None, None
+    if mode != _ROW_SEGMENTS:
+        return index, row, False, None, None
+    segments, reason = _prepared_segments(
+        tokenizer,
+        record,
+        row,
+        cfg,
+        spec,
+        vocab_size=vocab_size,
+        slot_plan=slot_plan,
+        thought_open_ids=thought_open_ids,
+        thought_close_ids=thought_close_ids,
+    )
+    return index, row, False, segments, reason
 
 
 class DecisionDataset(Dataset):
@@ -521,8 +559,60 @@ def _canvas_rows(
     aligned: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     """Build canvases; ``aligned`` keeps a None in place of each overflowing record."""
-    rows: list[dict[str, Any]] = []
+    prepared = _prepare_canvas_items(
+        tokenizer,
+        [(record, _ROW) for record in records],
+        cfg,
+        weights,
+        spec,
+        train=train,
+    )
+    rows: list[Any] = []
     canvas_too_long = 0
+    for row, overflow, _, _ in prepared:
+        if row is None:
+            canvas_too_long += int(overflow)
+            if aligned:
+                rows.append(None)
+            continue
+        rows.append(row)
+    return rows, canvas_too_long
+
+
+def _warm_segment_caches(tokenizer: Any, cfg: Any) -> None:
+    """Fill the per-process tokenizer caches once, before workers fork.
+
+    The segment safety check (parses the tokenizer JSON), the label tables and
+    the compiled chat template would otherwise be rebuilt in every worker of
+    every source's pool.
+    """
+    codebook = _value(
+        _value(_value(cfg, "diffusion_decision"), "labels"), "codebook", "vendored26"
+    )
+    try:
+        if segment_safety(tokenizer) is None:
+            label_tables(tokenizer, codebook)
+        tokenizer.apply_chat_template(
+            [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except Exception:  # noqa: BLE001 - a cold cache is only slower
+        LOG.debug("Decision segment caches not warmed", exc_info=True)
+
+
+def _prepare_canvas_items(
+    tokenizer: Any,
+    items: Sequence[tuple[Mapping[str, Any], str]],
+    cfg: Any,
+    weights: Mapping[str, float],
+    spec,
+    *,
+    train: bool = False,
+) -> list[tuple[dict[str, Any] | None, bool, Any, str | None]]:
+    """(row, overflowed, segments, why no segments) per (record, mode) item, in order."""
+    results: list[tuple[dict[str, Any] | None, bool, Any, str | None]] = []
     vocab_size = _value(model_config_overrides(cfg), "vocab_size")
     if vocab_size is None:
         vocab_size = len(tokenizer)
@@ -530,7 +620,9 @@ def _canvas_rows(
         tokenizer, cfg, spec, int(vocab_size)
     )
     workers = _value(cfg, "dataset_num_proc", 1) or 1
-    workers = min(int(workers), max(1, len(records) // _CANVAS_CHUNK_SIZE))
+    workers = min(int(workers), max(1, len(items) // _CANVAS_CHUNK_SIZE))
+    if workers > 1 and any(mode != _ROW for _, mode in items):
+        _warm_segment_caches(tokenizer, cfg)
     if workers > 1:
         # Canvas building is GIL-bound Python (template resolution, validation,
         # per-canvas tokenizer calls), so threads never scaled; worker
@@ -538,7 +630,7 @@ def _canvas_rows(
         # pool initializer, and build ordered chunks of records.
         LOG.info(
             "Preparing %s decision canvases with %s worker processes",
-            len(records),
+            len(items),
             workers,
         )
         state = (
@@ -555,12 +647,13 @@ def _canvas_rows(
             [
                 (
                     index,
-                    records[index],
-                    float(weights.get(records[index]["source"], 1.0)),
+                    items[index][0],
+                    float(weights.get(items[index][0]["source"], 1.0)),
+                    items[index][1],
                 )
-                for index in range(start, min(start + _CANVAS_CHUNK_SIZE, len(records)))
+                for index in range(start, min(start + _CANVAS_CHUNK_SIZE, len(items)))
             ]
-            for start in range(0, len(records), _CANVAS_CHUNK_SIZE)
+            for start in range(0, len(items), _CANVAS_CHUNK_SIZE)
         )
         with ProcessPoolExecutor(
             max_workers=workers,
@@ -570,50 +663,39 @@ def _canvas_rows(
         ) as executor:
             index = 0
             for prepared in executor.map(_build_canvas_chunk, chunks):
-                for row, overflow in prepared:
-                    record = records[index]
+                for row, overflow, segments, reason in prepared:
+                    record = items[index][0]
                     index += 1
-                    if row is None:
-                        canvas_too_long += int(overflow)
-                        if aligned:
-                            rows.append(None)
-                        continue
-                    # Rows come back unpickled; restore the sharing the serial path
-                    # has with the parent's slot plan and (large) state strings.
-                    if slot_plan is not None:
-                        row["slot_plan"] = slot_plan
-                    text = record.get("state")
-                    if isinstance(text, str) and row["record"].get("state") == text:
-                        row["record"]["state"] = text
-                    rows.append(row)
+                    if row is not None:
+                        # Rows come back unpickled; restore the sharing the serial
+                        # path has with the parent's slot plan and (large) state
+                        # strings.
+                        if slot_plan is not None:
+                            row["slot_plan"] = slot_plan
+                        text = record.get("state")
+                        if isinstance(text, str) and row["record"].get("state") == text:
+                            row["record"]["state"] = text
+                    results.append((row, overflow, segments, reason))
                 if index % (_CANVAS_CHUNK_SIZE * 40) < len(prepared):
-                    LOG.info("Preparing decision canvases: %s/%s", index, len(records))
-        return rows, canvas_too_long
-    for index, record in enumerate(records):
+                    LOG.info("Preparing decision canvases: %s/%s", index, len(items))
+        return results
+    for index, (record, mode) in enumerate(items):
         if index % 1000 == 0:
-            LOG.info("Preparing decision canvases: %s/%s", index, len(records))
-        try:
-            rows.append(
-                _canvas_row(
-                    tokenizer,
-                    record,
-                    cfg,
-                    float(weights.get(record["source"], 1.0)),
-                    spec=spec,
-                    vocab_size=int(vocab_size),
-                    slot_plan=slot_plan,
-                    thought_open_ids=thought_open_ids,
-                    thought_close_ids=thought_close_ids,
-                    train=train,
-                )
-            )
-        except SchemaError as error:
-            if not _is_canvas_overflow(error):
-                raise
-            canvas_too_long += 1
-            if aligned:
-                rows.append(None)
-    return rows, canvas_too_long
+            LOG.info("Preparing decision canvases: %s/%s", index, len(items))
+        results.append(
+            _build_canvas_worker(
+                (index, record, float(weights.get(record["source"], 1.0)), mode),
+                tokenizer=tokenizer,
+                cfg=cfg,
+                spec=spec,
+                vocab_size=int(vocab_size),
+                slot_plan=slot_plan,
+                thought_open_ids=thought_open_ids,
+                thought_close_ids=thought_close_ids,
+                train=train,
+            )[1:]
+        )
+    return results
 
 
 def load_decision_datasets(
@@ -783,35 +865,58 @@ def _build_canvas_layer(
         assert pools.candidates is not None
         layer_train = []
         reserve = 0
+        segment_counts: dict[str, Any] = {
+            "prepared": 0,
+            "reserve": 0,
+            "fallback": {},
+        }
         for source, candidates in pools.candidates.items():
             source_cap = cap.get(source) if isinstance(cap, Mapping) else cap
             window = cap_window(len(candidates), source_cap, seed, source)
-            built, dropped = _canvas_rows(
+            prepared = set(window)
+            rest = [index for index in range(len(candidates)) if index not in prepared]
+            built = _prepare_canvas_items(
                 tokenizer,
-                [dict(candidates[index]) for index in window],
+                [
+                    *((dict(candidates[index]), _ROW_SEGMENTS) for index in window),
+                    *((candidates[index], _RESERVE) for index in rest),
+                ],
                 cfg,
                 weights,
                 spec,
                 train=True,
-                aligned=True,
             )
-            train_canvas_too_long += dropped
             entries: list[Any] = [None] * len(candidates)
             records: list[Any] = [None] * len(candidates)
-            for index, row in zip(window, built, strict=True):
-                entries[index] = row
-                records[index] = candidates[index]
-            prepared = set(window)
-            for index, candidate in enumerate(candidates):
-                if index not in prepared:
-                    entries[index] = encode_reserve(candidate)
+            segments: list[Any] = [None] * len(candidates)
+            for index, (row, overflow, segment, reason) in zip(
+                [*window, *rest], built, strict=True
+            ):
+                if index in prepared:
+                    train_canvas_too_long += int(overflow)
+                    entries[index] = row
+                    records[index] = candidates[index]
+                    if row is None:
+                        continue
+                else:
+                    entries[index] = encode_reserve(candidates[index])
                     reserve += 1
+                segments[index] = segment
+                kind = "prepared" if index in prepared else "reserve"
+                if segment is not None:
+                    segment_counts[kind] += 1
+                else:
+                    key = f"{kind}: {reason}"
+                    segment_counts["fallback"][key] = (
+                        segment_counts["fallback"].get(key, 0) + 1
+                    )
             layer_train.append(
                 SourcePool(
                     source=source,
                     cap=None if source_cap is None else int(source_cap),
                     entries=entries,
                     records=records,
+                    segments=segments,
                 )
             )
         drop_counts.update(
@@ -822,6 +927,7 @@ def _build_canvas_layer(
             }
         )
         drop_counts["reserve"] = reserve
+        LOG.info("Pre-tokenized decision canvas segments: %s", segment_counts)
     eval_rows, eval_canvas_too_long = _canvas_rows(tokenizer, dev, cfg, weights, spec)
     manifest: dict[str, Any] = {
         "protected_eval_rows": len(protected_eval),
@@ -834,6 +940,8 @@ def _build_canvas_layer(
         },
         "premixed": premixed,
     }
+    if not premixed:
+        manifest["segments"] = segment_counts
     if any(
         _value(record.get("source_metadata", {}), "official_split") is not None
         for record in [*train, *dev, *protected_eval]
@@ -855,10 +963,22 @@ def _plan_row_builder(cfg: Any, tokenizer: Any, spec: Any):
     slot_plan, thought_open_ids, thought_close_ids = _resolve_slot_plan(
         tokenizer, cfg, spec, int(vocab_size)
     )
+    settings: list[Mapping[str, Any] | None] = []  # computed at the first build
 
     def build(
-        source: str, record: Mapping[str, Any], draw: tuple[int, int]
+        source: str,
+        record: Mapping[str, Any],
+        draw: tuple[int, int],
+        segments: Any = None,
+        cached_prompt: Sequence[int] | None = None,
     ) -> dict[str, Any] | None:
+        if not settings:
+            try:
+                settings.append(
+                    _canvas_settings(tokenizer, cfg, spec, int(vocab_size), slot_plan)
+                )
+            except (TypeError, ValueError):
+                settings.append(None)  # _canvas_row raises it where it did before
         try:
             return _canvas_row(
                 tokenizer,
@@ -872,6 +992,9 @@ def _plan_row_builder(cfg: Any, tokenizer: Any, spec: Any):
                 thought_close_ids=thought_close_ids,
                 train=True,
                 draw=draw,
+                segments=segments,
+                cached_prompt=cached_prompt,
+                settings=settings[0],
             )
         except SchemaError as error:
             # Records outside the prepared subset were never canvasized; one that

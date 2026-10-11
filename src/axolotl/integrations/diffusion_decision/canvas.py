@@ -26,11 +26,26 @@ from ._util import (
 )
 from .batch_plan import BudgetLimits, budget_reason
 from .loss import DecisionLabelExample, decision_example_from_canvas
-from .permutation import permute_record, shuffle_labels
-from .preprocessing import build_decision_canvas, canvas_head, template_fits
+from .permutation import permute_record, permute_record_with_orders, shuffle_labels
+from .preprocessing import (
+    build_decision_canvas,
+    canvas_head,
+    decision_schema,
+    template_fits,
+)
+from .prompts import decision_prompt_ids
 from .records import DecisionCanvas
+from .segments import (
+    SEGMENT_STATS,
+    RecordSegments,
+    SegmentFallback,
+    answer_base_ids,
+    assemble_canvas,
+    build_segments,
+    segment_suffix,
+)
 from .slots import SlotInit, SlotPlan
-from .template import SchemaError
+from .template import SchemaError, system_text
 
 
 def _thought_delimiters(model_config: Any) -> tuple[tuple[int, ...], tuple[int, ...]]:
@@ -166,9 +181,50 @@ def _grouping_fits(tokenizer: Any, cfg: Any, spec) -> Any:
     return fits
 
 
+def _canvas_settings(
+    tokenizer: Any,
+    cfg: Any,
+    spec,
+    vocab_size: int | None,
+    slot_plan: SlotPlan | None,
+) -> dict[str, Any]:
+    """The build_decision_canvas keywords (and permutation settings) of one config."""
+    diffusion = _value(cfg, "diffusion_lm")
+    decision = _value(cfg, "diffusion_decision")
+    model_config = model_config_overrides(cfg)
+    labels = _value(decision, "labels")
+    if vocab_size is None:
+        vocab_size = _value(model_config, "vocab_size")
+    if vocab_size is None:
+        vocab_size = len(tokenizer)
+    return {
+        "seed": int(_value(cfg, "seed", 0)),
+        "codebook": _value(labels, "codebook", "vendored26"),
+        "shuffle_prob": float(_value(labels, "label_shuffle_prob", 0.0) or 0.0),
+        "answer_format": str(_value(decision, "answer_format", "auto") or "auto"),
+        "width": _canvas_width(cfg, spec),
+        "scaffold_ids": _scaffold_ids(_value(decision, "latent"), slot_plan),
+        "turn_close_id": required_token_id(
+            _value(
+                model_config, "turn_close_token_id", _value(tokenizer, "eos_token_id")
+            ),
+            "turn_close_token_id",
+        ),
+        "pad_id": required_token_id(
+            _value(tokenizer, "pad_token_id"), "tokenizer.pad_token_id"
+        ),
+        "vocab_size": int(vocab_size),
+        "steps": int(_value(_value(diffusion, "unroll"), "k_max", 1)),
+        "noise_kind": "absorbing"
+        if spec.noise is DiffusionNoise.ABSORBING
+        else "uniform",
+        "mask_token_id": resolve_mask_token_id(diffusion, model_config),
+    }
+
+
 def _canvas_row(
     tokenizer,
-    record: dict[str, Any],
+    record: Mapping[str, Any],
     cfg: Any,
     source_weight: float,
     *,
@@ -179,64 +235,74 @@ def _canvas_row(
     thought_close_ids: Sequence[int] = (),
     train: bool = False,
     draw: tuple[int, int] | None = None,
+    segments: RecordSegments | None = None,
+    cached_prompt: Sequence[int] | None = None,
+    settings: Mapping[str, Any] | None = None,
 ):
-    diffusion = _value(cfg, "diffusion_lm")
+    """One canvas row; a training draw with ``segments`` is assembled from cached
+    token spans (``cached_prompt``: a prepared record's cached prompt, which holds
+    the chat suffix), falling back to full tokenization where they cannot.
+    ``settings``: ``_canvas_settings`` of these arguments, when the caller keeps them."""
     decision = _value(cfg, "diffusion_decision")
-    model_config = model_config_overrides(cfg)
-    latent = _value(decision, "latent")
-    width = _canvas_width(cfg, spec)
-    mask_token_id = resolve_mask_token_id(diffusion, model_config)
-    scaffold_ids = _scaffold_ids(latent, slot_plan)
-    record = permute_record(
-        record,
-        seed=int(_value(cfg, "seed", 0)),
-        codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
-        draw=draw,
-    )
-    shuffle_prob = float(
-        _value(_value(decision, "labels"), "label_shuffle_prob", 0.0) or 0.0
-    )
-    if train and shuffle_prob > 0.0:
+    if settings is None:
+        settings = _canvas_settings(tokenizer, cfg, spec, vocab_size, slot_plan)
+    if segments is not None and train:
+        try:
+            record_out, canvas = assemble_canvas(
+                tokenizer,
+                record,
+                segments,
+                None
+                if segments.suffix_stored
+                else segment_suffix(segments, cached_prompt),
+                draw=draw,
+                slot_plan=slot_plan,
+                thought_open_ids=thought_open_ids,
+                thought_close_ids=thought_close_ids,
+                **settings,
+            )
+        except SegmentFallback as error:
+            SEGMENT_STATS[f"fallback:{error}"] += 1
+        except Exception as error:  # noqa: BLE001 - the full path decides
+            SEGMENT_STATS[f"fallback:{type(error).__name__}"] += 1
+        else:
+            SEGMENT_STATS["assembled"] += 1
+            return _row(
+                canvas, record_out, source_weight, decision, slot_plan, settings
+            )
+    seed, codebook = settings["seed"], settings["codebook"]
+    record = permute_record(record, seed=seed, codebook=codebook, draw=draw)
+    if train and settings["shuffle_prob"] > 0.0:
         record = shuffle_labels(
             record,
-            seed=int(_value(cfg, "seed", 0)),
-            probability=shuffle_prob,
-            codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
+            seed=seed,
+            probability=settings["shuffle_prob"],
+            codebook=codebook,
             draw=draw,
         )
-    if vocab_size is None:
-        vocab_size = _value(model_config, "vocab_size")
-    if vocab_size is None:
-        vocab_size = len(tokenizer)
-    turn_close_id = required_token_id(
-        _value(model_config, "turn_close_token_id", _value(tokenizer, "eos_token_id")),
-        "turn_close_token_id",
-    )
+    width = settings["width"]
+    scaffold_ids = settings["scaffold_ids"]
 
     def build(canvas_width: int):
         return build_decision_canvas(
             tokenizer,
             record,
             scaffold_ids=scaffold_ids,
-            turn_close_id=turn_close_id,
-            pad_id=required_token_id(
-                _value(tokenizer, "pad_token_id"), "tokenizer.pad_token_id"
-            ),
-            vocab_size=int(vocab_size),
+            turn_close_id=settings["turn_close_id"],
+            pad_id=settings["pad_id"],
+            vocab_size=settings["vocab_size"],
             width=canvas_width,
-            seed=int(_value(cfg, "seed", 0)),
-            steps=int(_value(_value(diffusion, "unroll"), "k_max", 1)),
-            noise_kind="absorbing"
-            if spec.noise is DiffusionNoise.ABSORBING
-            else "uniform",
-            mask_token_id=mask_token_id,
+            seed=seed,
+            steps=settings["steps"],
+            noise_kind=settings["noise_kind"],
+            mask_token_id=settings["mask_token_id"],
             slot_plan=slot_plan,
             thought_open_ids=thought_open_ids,
             thought_close_ids=thought_close_ids,
-            codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
+            codebook=codebook,
             prevalidated_record=True,
             max_image_size=int(_value(decision, "max_image_size", 1400)),
-            answer_format=str(_value(decision, "answer_format", "auto") or "auto"),
+            answer_format=settings["answer_format"],
         )
 
     try:
@@ -251,6 +317,17 @@ def _canvas_row(
         ):
             raise
         canvas = build(overflow_width)
+    return _row(canvas, record, source_weight, decision, slot_plan, settings)
+
+
+def _row(
+    canvas: DecisionCanvas,
+    record: dict[str, Any],
+    source_weight: float,
+    decision: Any,
+    slot_plan: SlotPlan | None,
+    settings: Mapping[str, Any],
+) -> dict[str, Any]:
     row = {
         "canvas": canvas,
         "decision_example": decision_example_from_canvas(
@@ -263,16 +340,147 @@ def _canvas_row(
     }
     if slot_plan is not None:
         row["slot_plan"] = slot_plan
-        if _value(latent, "sample_num_slots", False):
+        if _value(_value(decision, "latent"), "sample_num_slots", False):
             row["slot_sampling"] = {
-                "seed": int(_value(cfg, "seed", 0)),
+                "seed": settings["seed"],
                 "max_slots": len(slot_plan.ids),
-                "pad_token_id": required_token_id(
-                    _value(tokenizer, "pad_token_id"), "tokenizer.pad_token_id"
-                ),
+                "pad_token_id": settings["pad_id"],
                 "padding_pinned": True,
             }
     return row
+
+
+def _segments_supported(slot_plan: SlotPlan | None) -> bool:
+    # A prompt-placed plan prefixes the prompt; segments split the plain prompt.
+    return slot_plan is None or slot_plan.placement != "prompt"
+
+
+def _prepared_segments(
+    tokenizer: Any,
+    record: Mapping[str, Any],
+    row: Mapping[str, Any],
+    cfg: Any,
+    spec,
+    *,
+    vocab_size: int | None,
+    slot_plan: SlotPlan | None,
+    thought_open_ids: Sequence[int],
+    thought_close_ids: Sequence[int],
+) -> tuple[RecordSegments | None, str | None]:
+    """Segments of a prepared training record, checked against its built canvas.
+
+    Returns (segments without the chat suffix, None) or (None, why not).
+    """
+    if not _segments_supported(slot_plan):
+        return None, "prompt-placed slots"
+    canvas = row["canvas"]
+    try:
+        settings = _canvas_settings(tokenizer, cfg, spec, vocab_size, slot_plan)
+        _, orders = permute_record_with_orders(
+            record, seed=settings["seed"], codebook=settings["codebook"]
+        )
+        segments = build_segments(
+            tokenizer,
+            record,
+            codebook=settings["codebook"],
+            answer_format=settings["answer_format"],
+            permuted=row["record"],
+            orders=orders,
+            prompt_ids=canvas.prompt_ids,
+        )
+        _, assembled = assemble_canvas(
+            tokenizer,
+            record,
+            segments,
+            None,
+            draw=None,
+            slot_plan=slot_plan,
+            thought_open_ids=thought_open_ids,
+            thought_close_ids=thought_close_ids,
+            **settings,
+        )
+    except SegmentFallback as error:
+        return None, str(error)
+    except Exception as error:  # noqa: BLE001 - such a record keeps full tokenization
+        return None, type(error).__name__
+    if assembled != canvas:
+        return None, "assembled first draw differs from its canvas"
+    return segments.without_suffix(), None
+
+
+def _reserve_segments(
+    tokenizer: Any,
+    record: Mapping[str, Any],
+    cfg: Any,
+    spec,
+    *,
+    vocab_size: int | None,
+    slot_plan: SlotPlan | None,
+    thought_open_ids: Sequence[int],
+    thought_close_ids: Sequence[int],
+) -> tuple[RecordSegments | None, str | None]:
+    """Segments (with the chat suffix) of a training record not built at preprocess.
+
+    Its first draw's prompt is tokenized in full to place the chat suffix, and its
+    answer template base is checked against a full encode.
+    """
+    if not _segments_supported(slot_plan):
+        return None, "prompt-placed slots"
+    try:
+        settings = _canvas_settings(tokenizer, cfg, spec, vocab_size, slot_plan)
+        seed, codebook = settings["seed"], settings["codebook"]
+        permuted, orders = permute_record_with_orders(
+            record, seed=seed, codebook=codebook
+        )
+        if settings["shuffle_prob"] > 0.0:
+            permuted = shuffle_labels(
+                permuted,
+                seed=seed,
+                probability=settings["shuffle_prob"],
+                codebook=codebook,
+            )
+        schema = decision_schema(
+            permuted, codebook=codebook, answer_format=settings["answer_format"]
+        )
+        prompt_ids = decision_prompt_ids(
+            tokenizer, system_text(schema), permuted["state"]
+        )
+        segments = build_segments(
+            tokenizer,
+            record,
+            codebook=codebook,
+            answer_format=settings["answer_format"],
+            permuted=permuted,
+            orders=orders,
+            prompt_ids=prompt_ids,
+        )
+        _, assembled = assemble_canvas(
+            tokenizer,
+            record,
+            segments,
+            None,
+            draw=None,
+            slot_plan=slot_plan,
+            thought_open_ids=thought_open_ids,
+            thought_close_ids=thought_close_ids,
+            **settings,
+        )
+        head, _ = canvas_head(
+            settings["scaffold_ids"], slot_plan, thought_open_ids, thought_close_ids
+        )
+        base = answer_base_ids(tokenizer, schema, head)
+    except SegmentFallback as error:
+        return None, str(error)
+    except Exception as error:  # noqa: BLE001 - such a record keeps full tokenization
+        return None, type(error).__name__
+    actual = list(assembled.canvas_ids[: assembled.template_length])
+    for position, label_ids in zip(
+        assembled.label_positions, assembled.allowed_ids, strict=True
+    ):
+        actual[position] = label_ids[0]
+    if tuple(assembled.prompt_ids) != tuple(prompt_ids) or actual != base:
+        return None, "assembled first draw differs from full tokenization"
+    return segments, None
 
 
 def _is_canvas_overflow(error: SchemaError) -> bool:

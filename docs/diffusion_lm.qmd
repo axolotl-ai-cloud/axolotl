@@ -399,11 +399,19 @@ one seeded shuffle (so later epochs see records the first did not, before any
 repeat), the mixture draw and the stratified microbatches are redrawn, and
 question and option order is seeded by the record, the epoch and how many
 times the epoch has already drawn that record. A record's first draw in epoch 0
-uses the order prepared at startup; any other draw rebuilds its canvas when the
-batch is loaded (about 25 ms per canvas on a 16k-token context), so runs that
-pass the first epoch may want `dataloader_num_workers: 1` or more to overlap
-that work. A drawn record that was not prepared at startup and does not fit the
-token budget is replaced by a prepared record of the same source. Epochs are a
+uses the order prepared at startup; any other draw builds its canvas when the
+batch is loaded by concatenating the record's token spans pre-tokenized at
+startup (prompt preamble, each question's header and option lines, the format
+instruction, the chat turn around them, and each question's answer piece), so
+re-ordering questions and options or reassigning labels needs no tokenizer
+(a few milliseconds per canvas, most of it seeding the permutation and
+validating the canvas, against about 25 ms to re-tokenize one on a 16k-token
+context). This is exact only where no pre-token crosses a span boundary; the
+plugin proves that for the Nemotron-Labs-Diffusion tokenizers, checks each
+record's first draw against full tokenization when the spans are built, and
+re-tokenizes records or tokenizers it cannot prove. A drawn record that was not
+prepared at startup and does not fit the token budget is replaced by a prepared
+record of the same source. Epochs are a
 function of the seed, the batch settings and the epoch number, so ranks agree
 and a resumed run replays the same batches. With training `sample_packing`
 (core multipack) or `premixed` rows, every epoch reuses the first epoch's draws.
@@ -468,8 +476,9 @@ changing its content still re-prepares once.
 
 The cache holds the canvas layer only: every decontaminated, grouped training
 record per source, with canvases built for the first epoch's capped subset
-(the rest of a capped source is kept compressed for later epochs), and the
-evaluation canvases. Batch settings are not part of its identity:
+(the rest of a capped source is kept compressed for later epochs), the
+pre-tokenized canvas spans of every training record, and the evaluation
+canvases. Batch settings are not part of its identity:
 `micro_batch_size`, `gradient_accumulation_steps`, `eval_batch_size`,
 `sample_packing`, `eval_sample_packing`, `batch_flattening` and the mixture's
 `weights`, `temperature` and `per_batch_stratified` only shape the batch plan

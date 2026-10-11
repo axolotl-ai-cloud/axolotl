@@ -11,7 +11,8 @@ training draws at startup (and again for every epoch):
   source), a fresh mixture draw and stratified grouping at ``micro_batch_size``,
 - per draw: the canvas. A record's first draw in epoch 0 is the cached canvas; every
   other draw rebuilds it lazily with question/choice order seeded by the record
-  identity, the epoch and the draw number of that record within the epoch.
+  identity, the epoch and the draw number of that record within the epoch, by
+  concatenating the record's pre-tokenized segments where it has them.
 
 Every epoch has the first epoch's batch count, so the trainer's step math holds.
 Everything is a pure function of (canvas layer, seed, batch settings, epoch), so
@@ -45,12 +46,16 @@ class SourcePool:
     None when its canvas overflowed, or ``bytes`` (zlib JSON of the record) for a
     candidate outside the epoch-0 subset, built only when a later epoch draws it.
     ``records[i]`` is the original (unpermuted) record of a prepared entry.
+    ``segments[i]`` (when present) holds candidate ``i``'s pre-tokenized canvas
+    segments (segments.py), so a re-permuted draw concatenates cached token spans
+    instead of re-tokenizing; None where a record keeps full tokenization.
     """
 
     source: str
     cap: int | None
     entries: list[Any]
     records: list[Any]
+    segments: list[Any] | None = None
 
 
 def encode_reserve(record: Mapping[str, Any]) -> bytes:
@@ -90,7 +95,9 @@ class _EpochDraws:
     number: array  # how many earlier draws of this record the epoch holds
 
 
-RowBuilder = Callable[[str, Mapping[str, Any], tuple[int, int]], "dict[str, Any] | None"]
+# build_row(source, record, draw[, segments=..., cached_prompt=...]); the keywords
+# are passed only for a candidate with pre-tokenized segments.
+RowBuilder = Callable[..., "dict[str, Any] | None"]
 
 
 class DecisionBatchPlan:
@@ -285,7 +292,19 @@ class DecisionBatchPlan:
                 if isinstance(entry, dict)
                 else decode_reserve(entry)
             )
-            row = self._build_row(source, record, draw)
+            segments = None if pool.segments is None else pool.segments[candidate]
+            if segments is None:
+                row = self._build_row(source, record, draw)
+            else:
+                row = self._build_row(
+                    source,
+                    record,
+                    draw,
+                    segments=segments,
+                    cached_prompt=entry["canvas"].prompt_ids
+                    if isinstance(entry, dict)
+                    else None,
+                )
             if row is not None and budget_reason(row, self.limits, self._layout) is None:
                 return row
             if candidate == index:
