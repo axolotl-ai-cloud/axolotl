@@ -331,8 +331,9 @@ class LabelBalancedRandomSampler(Sampler[int]):
                 if self.length_mode == "flattened"
                 else [[[i] for i in batch] for batch in batches[:full_count]]
             )
-            windows = (self.label_balance_window_optim_steps, 1)
-            for refinement_window in windows if windows[0] > 1 else (1,):
+            window_steps = self.label_balance_window_optim_steps
+            refinement_windows = (window_steps, 1) if window_steps > 1 else (1,)
+            for refinement_window in refinement_windows:
                 nested = balance_microbatches(
                     nested,
                     self.lengths,

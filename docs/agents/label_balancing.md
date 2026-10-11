@@ -87,7 +87,7 @@ Trainer skips the microbatches already consumed in that epoch. Axolotl forwards
 the restored epoch to both balanced samplers before Accelerate adds its resume
 wrappers, clearing any cached plan from another epoch. New checkpoints save `balanced_sampler.json` with sampler settings, metadata
 hashes, dataset fingerprint, epoch length, and consumed batches. Resume validates
-these fields before skipping. Legacy checkpoints reconstruct the offset from
+the schedule fields before skipping; fingerprint mismatches only warn. Legacy checkpoints reconstruct the offset from
 `TrainerState.epoch` and require an integer optimizer-step boundary. Packing is
 deterministic for a given seed and epoch, but different epochs can pack to
 different lengths.
@@ -227,3 +227,14 @@ checkpoint sampler settings when non-default; omitting the default preserves
 compatibility with earlier manifests. Changing it on resume rejects exact replay.
 Wider windows require `balance_labels` and non-streaming training; preprocessing
 chunks cannot establish the eventual training optimizer-step boundaries.
+
+### Replay validation and save failures
+
+Dataset fingerprint mismatches warn; sampler settings and metadata hashes remain
+strict. Equal hashes do not certify identical token contents. Invalid checkpoint
+position bookkeeping writes a `replay_error` manifest marker while allowing the
+normal checkpoint save to proceed. The marker must be rejected on exact resume,
+not treated as a missing legacy manifest. `ignore_data_skip: true` bypasses data
+replay validation and skips restoration of the previous data position. Packing
+capacity uses `_train_batch_size` in training and `args.eval_batch_size` in eval,
+including when label balancing is disabled.

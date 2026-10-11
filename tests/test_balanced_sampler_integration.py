@@ -122,15 +122,19 @@ def test_rank_order_is_integrated_and_preserves_step_membership(mode, dp):
 
 @pytest.mark.parametrize("seed", [None, 0, 7])
 @pytest.mark.parametrize("window", [1, 8])
-def test_packing_uses_effective_batch_size_and_data_seed(seed, window):
+@pytest.mark.parametrize("real_batches", [False, True])
+@pytest.mark.parametrize("balanced", [False, True])
+def test_packing_uses_effective_batch_size_and_data_seed(
+    seed, window, real_batches, balanced
+):
     trainer = object.__new__(AxolotlTrainer)
     trainer._train_batch_size = 3
     trainer.state = SimpleNamespace(train_batch_size=99)
     trainer.args = SimpleNamespace(
-        multipack_real_batches=False,
+        multipack_real_batches=real_batches,
         per_device_train_batch_size=2,
         max_seq_length=8,
-        balance_labels=True,
+        balance_labels=balanced,
         seed=42,
         data_seed=seed,
         label_balance_window_optim_steps=window,
@@ -148,7 +152,8 @@ def test_packing_uses_effective_batch_size_and_data_seed(seed, window):
     )
     sampler = trainer._create_multipack_sampler(RandomSampler(data), data)
     assert sampler.label_balance_window_optim_steps == window
-    assert sampler.batch_max_len == 24
+    assert sampler.batch_size == (3 if real_batches else 1)
+    assert sampler.batch_max_len == (8 if real_batches else 24)
     assert sampler.seed == (42 if seed is None else seed)
     assert sampler.dp_count == 2
 
@@ -168,13 +173,16 @@ def test_resume_accepts_float_roundoff_and_final_partial_update():
     assert trainer._validated_balanced_offset(15, 15) == 15
 
 
-def test_eval_does_not_count_or_balance_labels():
+@pytest.mark.parametrize("real_batches", [False, True])
+@pytest.mark.parametrize("train_size", [1, 8])
+def test_eval_does_not_count_or_balance_labels(real_batches, train_size):
     trainer = object.__new__(AxolotlTrainer)
-    trainer._train_batch_size = 2
+    trainer._train_batch_size = train_size
     trainer.args = SimpleNamespace(
         sample_packing=True,
         eval_sample_packing=True,
-        multipack_real_batches=False,
+        eval_batch_size=3,
+        multipack_real_batches=real_batches,
         per_device_train_batch_size=2,
         max_seq_length=8,
         balance_labels=True,
@@ -192,12 +200,14 @@ def test_eval_does_not_count_or_balance_labels():
     trainer.data_collator = SimpleNamespace(
         tokenizer=SimpleNamespace(padding_side="left")
     )
-    data = Dataset.from_dict({"input_ids": [[1, 2, 3, 4]] * 32})
+    data = Dataset.from_dict({"input_ids": [[1, 2, 3, 4]] * 36})
     with patch(
         "axolotl.core.trainers.base.get_dataset_label_counts",
         side_effect=AssertionError("eval labels scanned"),
     ):
         sampler = trainer._get_eval_sampler(data)
+        assert sampler.batch_size == (3 if real_batches else 1)
+        assert sampler.batch_max_len == (8 if real_batches else 24)
         assert sampler.label_counts is None
         assert sampler.dp_count == 1
         assert sampler.label_metrics is None

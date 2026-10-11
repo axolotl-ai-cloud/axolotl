@@ -286,6 +286,7 @@ def test_checkpoint_resume_with_production_dataloader(
     checkpoint = tmp_path / "original" / "checkpoint-2"
     metadata = json.loads((checkpoint / "balanced_sampler.json").read_text())
     assert metadata["consumed_batches"] == 8
+    dataset._fingerprint = "retokenized-same-content"
     restored = make(tmp_path / "restored")
     restored.train(resume_from_checkpoint=str(checkpoint))
     assert restored.model.trace == original.model.trace[8:]

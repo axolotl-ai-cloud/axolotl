@@ -487,8 +487,9 @@ class MultipackBatchSampler(BatchSampler):
             )
 
             before_microbatch = self._get_label_metrics(batches)
-            windows = (self.label_balance_window_optim_steps, 1)
-            for refinement_window in windows if windows[0] > 1 else (1,):
+            window = self.label_balance_window_optim_steps
+            refinement_windows = (window, 1) if window > 1 else (1,)
+            for refinement_window in refinement_windows:
                 batches[:limit] = balance_microbatches(
                     batches[:limit],
                     self.lengths,

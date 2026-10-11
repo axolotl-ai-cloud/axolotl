@@ -245,17 +245,35 @@ class AxolotlTrainer(
                     with open(manifest, encoding="utf-8") as stream:
                         saved = json.load(stream)
                     current = self._balanced_sampler_state
-                    for key in ("version", "settings", "dataset_fingerprint"):
+                    if saved.get("replay_error"):
+                        raise ValueError(
+                            "Balanced sampler checkpoint cannot restore exact data replay: "
+                            f"{saved['replay_error']}. Set ignore_data_skip: true to resume "
+                            "without restoring the previous data position."
+                        )
+                    for key in ("version", "settings"):
                         if saved[key] != current[key]:
                             raise ValueError(
-                                f"Balanced sampler resume changed {key}; exact data replay is not possible"
+                                f"Balanced sampler resume changed {key}; exact data replay is not possible. "
+                                "Settings include data-parallel size, batch size, and accumulation steps. "
+                                "Set ignore_data_skip: true to resume without restoring the previous data position."
                             )
+                    if (
+                        saved.get("dataset_fingerprint")
+                        != current["dataset_fingerprint"]
+                    ):
+                        LOG.warning(
+                            "Balanced sampler dataset fingerprint changed, but sampler settings "
+                            "and length/label metadata match. Replaying the same index order; "
+                            "this does not verify identical dataset contents."
+                        )
                     if saved["resume_epoch"] != epoch or (
                         saved["consumed_batches"]
                         and saved["steps_in_epoch"] != current["steps_in_epoch"]
                     ):
                         raise ValueError(
-                            "Balanced sampler resume changed epoch length or position"
+                            "Balanced sampler resume changed epoch length or position. "
+                            "Set ignore_data_skip: true to resume without restoring the previous data position."
                         )
                     skipped = saved["consumed_batches"]
                 else:
@@ -307,7 +325,8 @@ class AxolotlTrainer(
             )
         ):
             raise ValueError(
-                "Balanced sampler resume must land on an optimizer-step boundary"
+                "Balanced sampler resume must land on an optimizer-step boundary. "
+                "Set ignore_data_skip: true to resume without restoring the previous data position."
             )
         return rounded
 
@@ -339,13 +358,15 @@ class AxolotlTrainer(
         Returns:
             Multipack (sample packing) batch sampler.
         """
+        payload_batch_size = (
+            self._train_batch_size if is_training else self.args.eval_batch_size
+        )
         if self.args.multipack_real_batches:
-            batch_size = self._train_batch_size
+            batch_size = payload_batch_size
             batch_max_len = self.args.max_seq_length
         else:
             batch_size = 1
-            train_batch_size = self._train_batch_size
-            batch_max_len = train_batch_size * self.args.max_seq_length
+            batch_max_len = payload_batch_size * self.args.max_seq_length
 
         label_counts = label_start_counts = None
         if is_training and getattr(self.args, "balance_labels", False):
@@ -1213,15 +1234,23 @@ class AxolotlTrainer(
 
         if getattr(self, "_balanced_sampler_state", None) and self.args.should_save:
             saved = dict(self._balanced_sampler_state)
-            saved["resume_epoch"] = int(self.state.epoch)
-            offset = (
-                (self.state.epoch - saved["epoch"]) * saved["steps_in_epoch"]
-                if saved["resume_epoch"] == saved["epoch"]
-                else 0
-            )
-            saved["consumed_batches"] = self._validated_balanced_offset(
-                offset, saved["steps_in_epoch"]
-            )
+            try:
+                saved["resume_epoch"] = int(self.state.epoch)
+                offset = (
+                    (self.state.epoch - saved["epoch"]) * saved["steps_in_epoch"]
+                    if saved["resume_epoch"] == saved["epoch"]
+                    else 0
+                )
+                saved["consumed_batches"] = self._validated_balanced_offset(
+                    offset, saved["steps_in_epoch"]
+                )
+            except (ValueError, TypeError, OverflowError) as exc:
+                saved["replay_error"] = str(exc)
+                LOG.warning(
+                    "Saving checkpoint without exact balanced-sampler replay metadata: %s. "
+                    "Resume requires ignore_data_skip: true, which does not restore the previous data position.",
+                    exc,
+                )
             with open(
                 os.path.join(output_dir, "balanced_sampler.json"), "w", encoding="utf-8"
             ) as stream:
