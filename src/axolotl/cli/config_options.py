@@ -2477,6 +2477,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'",
     ),
     (
+        ("--balance-labels/--no-balance-labels",),
+        None,
+        None,
+        "Balance supervised tokens across causal LM packed, flattened, or padded batches. Supports streaming with sample packing.",
+    ),
+    (
+        ("--label-balance-window-optim-steps",),
+        None,
+        None,
+        "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only.",
+    ),
+    (
         ("--sample-packing-group-size",),
         None,
         None,

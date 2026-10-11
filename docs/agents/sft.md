@@ -117,6 +117,11 @@ The trace shows per-kernel CUDA times, memory allocations, and operator-level br
 
 Full troubleshooting: [training_stability.qmd](../training_stability.qmd), [debugging.qmd](../debugging.qmd)
 
+## Label balancing
+
+See [label_balancing.md](label_balancing.md) for sampler objectives, metric scopes,
+collator requirements, distributed ordering, and checkpoint-resume invariants.
+
 ## File Map
 
 ```
