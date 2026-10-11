@@ -259,6 +259,84 @@ def test_blocker_rejects_the_training_plugin():
     assert _run(code, TRAINING_STACK)["blocked"] in TRAINING_STACK
 
 
+def test_segment_assembly_without_the_training_stack():
+    code = COMMON + textwrap.dedent(
+        """
+        import json
+
+        from axolotl.integrations.diffusion_decision import canvas, segments
+
+
+        class Tokenizer:
+            # One token per character, so any segmentation concatenates.
+            decision_segments_safe = True
+            pad_token_id = 0
+            eos_token_id = 11
+
+            def encode(self, text, add_special_tokens=False):
+                return [ord(character) % 256 for character in text]
+
+            def apply_chat_template(self, messages, *, tokenize, **kwargs):
+                text = "<s>" + messages[0]["content"] + "|" + messages[1]["content"] + ">"
+                return self.encode(text) if tokenize else text
+
+
+        record = {
+            "source": "light.test",
+            "group": "g",
+            "id": "r",
+            "state": "The color is red.",
+            "questions": {
+                "color": {
+                    "type": "choice",
+                    "instructions": "Which color?",
+                    "options": ["red", "blue", "green"],
+                },
+                "warm": {"type": "choice", "instructions": "Warm?", "options": ["x", "y"]},
+            },
+            "labels": {
+                "color": {"kind": "hard", "gold_idx": 0},
+                "warm": {"kind": "hard", "gold_idx": 1},
+            },
+        }
+        cfg = {
+            "seed": 23,
+            "model_config": {"vocab_size": 256, "mask_token_id": 9},
+            "diffusion_lm": {"canvas_width": 128, "mask_token_id": 9},
+            "diffusion_decision": {"max_questions_per_canvas": 20},
+        }
+        kwargs = dict(
+            spec=SPEC, vocab_size=256, slot_plan=None, thought_open_ids=(), thought_close_ids=()
+        )
+        tokenizer = Tokenizer()
+        built, reason = canvas._reserve_segments(tokenizer, record, cfg, **kwargs)
+        same = []
+        for draw in [(0, 1), (1, 0), (3, 2)]:
+            full = canvas._canvas_row(tokenizer, dict(record), cfg, 1.0, train=True, draw=draw, **kwargs)
+            fast = canvas._canvas_row(
+                tokenizer, dict(record), cfg, 1.0, train=True, draw=draw, segments=built, **kwargs
+            )
+            same.append(full == fast)
+        print(
+            json.dumps(
+                {
+                    "reason": reason,
+                    "same": same,
+                    "assembled": segments.SEGMENT_STATS["assembled"],
+                    "loaded": sorted(
+                        name
+                        for name in sys.modules
+                        if any(name == b or name.startswith(b + ".") for b in BLOCKED)
+                    ),
+                }
+            )
+        )
+        """
+    )
+    result = _run(code, TRAINING_STACK)
+    assert result == {"reason": None, "same": [True] * 3, "assembled": 3, "loaded": []}
+
+
 def test_light_image_tokens_match_processing_strategies():
     from axolotl import processing_strategies as ps
     from axolotl.integrations.diffusion_decision import _image_tokens as light

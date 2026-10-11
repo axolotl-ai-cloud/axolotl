@@ -56,9 +56,15 @@ class DecisionRead:
 
 
 def validate_canvas(
-    canvas: DecisionCanvas, *, image_markers_reserved: bool = False
+    canvas: DecisionCanvas,
+    *,
+    check_prompt_tokens: bool = True,
+    image_markers_reserved: bool = False,
 ) -> int:
     """Validate the model-agnostic canvas invariants before any model execution.
+
+    ``check_prompt_tokens=False`` skips the per-token type check of a prompt known
+    to hold nonnegative ints (concatenated from validated token spans).
 
     ``image_markers_reserved`` marks ids 18-21 as image markers (they are ordinary
     vocabulary for other tokenizers), so text-only canvases must not contain them.
@@ -73,7 +79,8 @@ def validate_canvas(
         or not 0 < canvas.template_length < width
     ):
         raise ValueError("template_length must end before the turn-close token")
-    for tokens in (canvas.prompt_ids, canvas.canvas_ids, *canvas.allowed_ids):
+    checked = (canvas.prompt_ids,) if check_prompt_tokens else ()
+    for tokens in (*checked, canvas.canvas_ids, *canvas.allowed_ids):
         if any(
             (
                 type(token) is not int

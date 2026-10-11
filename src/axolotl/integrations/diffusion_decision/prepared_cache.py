@@ -32,13 +32,14 @@ from ._util import (
 from .records import DecisionCanvas
 
 SCHEMA_VERSION = 3
-PRODUCER = "decision-canvas-layer-v4"
+PRODUCER = "decision-canvas-layer-v5"
 CACHE_DIR = "diffusion_decision_cache"
 CACHE_SUFFIX = ".pkl"
 # File layout: MAGIC | rows pickle | header JSON | u64 header length | MAGIC.
 # The rows section is one pickle (protocol 5) of {"train", "eval", "manifest"}: the
 # canvas layer (per-source pools, or premixed rows), unfiltered eval rows and the
-# base manifest. Batch settings are not part of the key; they only shape the batch
+# base manifest. Pools carry each training record's pre-tokenized canvas segments
+# (segments.py) so re-permuted draws are assembled without the tokenizer. Batch settings are not part of the key; they only shape the batch
 # plan built over the layer at startup (batch_plan.py).
 # The trailing header carries the identity hash and the rows section's length and
 # sha256, so identity is checked before any rows are deserialized and a truncated
