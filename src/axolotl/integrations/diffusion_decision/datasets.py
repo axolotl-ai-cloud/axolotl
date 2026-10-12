@@ -865,6 +865,8 @@ def _build_canvas_layer(
         train, dev = _family_dev_split(train)
     mixture = _value(decision, "mixture")
     premixed = bool(_value(mixture, "premixed", False))
+    retained: Sequence[Mapping[str, Any]]
+    drops: dict[str, int]
     if bool(_value(decision, "decontaminate", False)):
         LOG.info(
             "Decontaminating %s training records against %s development and %s protected records",
