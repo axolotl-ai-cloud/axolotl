@@ -60,6 +60,58 @@ def template_fits(
     """
     if answer_format not in ("lines", "indexed"):
         raise ValueError("template_fits needs an explicit lines or indexed format")
+    text = _base_answer_text(questions, answer_format, codebook)
+    length = len(head) + len(tokenizer.encode(text, add_special_tokens=False))
+    return length + 1 + pad_slots <= width
+
+
+def template_fits_many(
+    tokenizer,
+    batch: Sequence[Mapping[str, Mapping[str, Any]]],
+    *,
+    head: Sequence[int],
+    pad_slots: int,
+    width: int,
+    answer_format: str,
+    codebook: str = "vendored26",
+    chunk_size: int = 4096,
+) -> list[bool | None]:
+    """``template_fits`` of each question mapping, tokenizing in batches.
+
+    Each result equals ``template_fits`` of that mapping: the text is built by
+    the same function, equal texts are encoded once, and a fast tokenizer's
+    batch call runs the same encode pipeline per text as ``encode`` (which
+    batches a single text). An entry is None where building or encoding its
+    text raised; ``template_fits`` of that mapping raises the same error, so
+    callers measure it with ``template_fits`` at the point the error belongs.
+    """
+    results: list[bool | None] = [None] * len(batch)
+    if answer_format not in ("lines", "indexed"):
+        return results  # template_fits raises the format error
+    for start in range(0, len(batch), chunk_size):
+        # Many records share one answer template; each distinct text is
+        # encoded once (equal strings encode to equal ids).
+        text_of: dict[int, str] = {}
+        unique: dict[str, int] = {}
+        for index in range(start, min(start + chunk_size, len(batch))):
+            text = _base_answer_text_or_none(batch[index], answer_format, codebook)
+            if text is not None:
+                text_of[index] = text
+                unique.setdefault(text, len(unique))
+        if not unique:
+            continue
+        encoded = _encode_texts_or_none(tokenizer, list(unique))
+        if encoded is None or len(encoded) != len(unique):
+            continue
+        fit = [len(head) + len(ids) + 1 + pad_slots <= width for ids in encoded]
+        for index, text in text_of.items():
+            results[index] = fit[unique[text]]
+    return results
+
+
+def _base_answer_text(
+    questions: Mapping[str, Mapping[str, Any]], answer_format: str, codebook: str
+) -> str:
     # Dependencies do not change the template; dropping them lets a partial
     # group be measured before the questions it depends on join it.
     schema = parse_decision_schema(
@@ -75,9 +127,38 @@ def template_fits(
         codebook=codebook,
     )
     qs = schema["questions"]
-    text = answer_text(qs, [0] * len(qs), answer_format)
-    length = len(head) + len(tokenizer.encode(text, add_special_tokens=False))
-    return length + 1 + pad_slots <= width
+    return answer_text(qs, [0] * len(qs), answer_format)
+
+
+def _base_answer_text_or_none(
+    questions: Mapping[str, Mapping[str, Any]], answer_format: str, codebook: str
+) -> str | None:
+    try:
+        return _base_answer_text(questions, answer_format, codebook)
+    except Exception:  # noqa: BLE001  (template_fits re-raises it)
+        return None
+
+
+def _encode_texts_or_none(
+    tokenizer, texts: Sequence[str]
+) -> list[Sequence[int]] | None:
+    try:
+        return _encode_texts(tokenizer, texts)
+    except Exception:  # noqa: BLE001  (template_fits re-raises it)
+        return None
+
+
+def _encode_texts(tokenizer, texts: Sequence[str]) -> list[Sequence[int]]:
+    """``tokenizer.encode(text, add_special_tokens=False)`` of each text.
+
+    A fast (Rust) tokenizer encodes the list in one call: transformers routes
+    both ``encode(text)`` and ``tokenizer(texts)`` through ``_encode_plus`` and
+    the backend's ``encode_batch``, which encodes each text independently
+    (without padding or truncation here). Other tokenizers encode one by one.
+    """
+    if getattr(tokenizer, "is_fast", False) is True:
+        return tokenizer(list(texts), add_special_tokens=False)["input_ids"]
+    return [tokenizer.encode(text, add_special_tokens=False) for text in texts]
 
 
 def _reserves_image_markers(tokenizer) -> bool:
