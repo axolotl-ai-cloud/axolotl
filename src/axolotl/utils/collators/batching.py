@@ -138,7 +138,8 @@ class DataCollatorForSeq2Seq:
                 )
             )
         ):
-            # Precompute FA2 varlen metadata once so transformers' per-layer derivation (a data-dependent op that breaks the compiled decoder loop) is skipped; bit-identical to what it would compute itself.
+            # Precompute FA varlen metadata once per batch so transformers skips its per-layer derivation
+            # (host syncs per layer, and a graph break under compile); bit-identical to what it would compute.
             try:
                 from transformers.modeling_flash_attention_utils import (
                     prepare_fa_kwargs_from_position_ids,
@@ -163,7 +164,7 @@ class DataCollatorForSeq2Seq:
             ) as exc:  # pragma: no cover - fall back to per-layer derivation
                 LOG.warning_once(
                     f"FA varlen kwargs precompute failed ({exc}); falling back to "
-                    "transformers' per-layer derivation (decoder loop will not compile)"
+                    "transformers' per-layer derivation"
                 )
 
         return features

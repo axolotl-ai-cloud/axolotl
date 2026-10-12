@@ -514,7 +514,7 @@ def test_packed_collator_flash_attention_metadata(
         DictDefault(
             attn_implementation=attn_implementation,
             model_config_type="llama",
-            torch_compile=True,
+            torch_compile=False,
         ),
         model=None,
         tokenizer=MagicMock(),
@@ -547,21 +547,21 @@ def test_packed_collator_flash_attention_metadata(
 
 @pytest.mark.parametrize("is_eval", [False, True])
 @pytest.mark.parametrize(
-    ("torch_compile", "packing", "model_type", "collator_cls"),
+    ("fa_varlen_kwargs_in_collator", "packing", "model_type", "collator_cls"),
     [
         (False, True, "llama", V2BatchSamplerDataCollatorForSeq2Seq),
         (True, False, "llama", DataCollatorForSeq2Seq),
         (True, True, "gpt2", BatchSamplerDataCollatorForSeq2Seq),
     ],
 )
-def test_collator_flash_attention_metadata_requires_supported_packed_compile(
-    torch_compile, packing, model_type, collator_cls, is_eval
+def test_collator_flash_attention_metadata_requires_supported_packed(
+    fa_varlen_kwargs_in_collator, packing, model_type, collator_cls, is_eval
 ):
     builder = HFCausalTrainerBuilder(
         DictDefault(
             attn_implementation="flash_attention_2",
             model_config_type=model_type,
-            torch_compile=torch_compile,
+            fa_varlen_kwargs_in_collator=fa_varlen_kwargs_in_collator,
         ),
         model=None,
         tokenizer=MagicMock(),

@@ -764,6 +764,12 @@ class AxolotlInputConfig(
             "description": "Set to 'false' if getting errors during eval with sample_packing on"
         },
     )
+    fa_varlen_kwargs_in_collator: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "With sample_packing and flash attention, precompute the varlen metadata (cu_seq_lens, max_length) once per batch in the collator instead of letting transformers derive it in every attention layer, which costs several host-device syncs per layer. Set to 'false' to restore the per-layer derivation."
+        },
+    )
     pad_to_sequence_len: bool | None = Field(
         default=None,
         json_schema_extra={

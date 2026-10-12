@@ -635,12 +635,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 requested_attention_implementation=self.cfg.attn_implementation
             )
             and is_packed_mode
-            and self.cfg.torch_compile
+            and self.cfg.fa_varlen_kwargs_in_collator is not False
             and self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
         ):
-            # Model-agnostic: transformers consumes these FlashAttentionKwargs for any model, skipping its
-            # per-layer varlen derivation — a data-dependent op (aten.nonzero) that graph-breaks under compile.
-            # Gated on torch_compile so non-compiled runs keep the existing per-layer derivation behavior.
+            # transformers consumes these FlashAttentionKwargs for any in-tree model and skips its per-layer
+            # varlen derivation, which syncs the host several times per layer (and graph-breaks under compile).
+            # The allowlist guards remote-code forwards that may not accept the extra kwargs.
             kwargs["emit_fa_varlen_kwargs"] = True
 
         return collator(
