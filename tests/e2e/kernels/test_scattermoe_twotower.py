@@ -16,6 +16,8 @@ forward and backward:
   model-support hook scopes it) through the fused scattermoe LoRA path.
 """
 
+import contextlib
+
 import pytest
 import torch
 
@@ -34,6 +36,52 @@ def _rel(a, b):
     return (a.float() - b.float()).abs().max().item() / max(
         b.float().abs().max().item(), 1e-8
     )
+
+
+@contextlib.contextmanager
+def _same_routing(model, record):
+    """Record every MoE router's top-k choices into an empty ``record``, else replay them.
+
+    In bf16, last-bit differences between expert implementations flip a few
+    near-tied top-6 choices downstream, which moves those tokens' logits by O(1)
+    and says nothing about the kernel. Replaying the reference pass's choice
+    compares the implementations on identical routing; the weights are recomputed
+    from the live router logits (as ``NemotronHTopkRouter`` does) so router
+    gradients still flow.
+    """
+
+    replay = bool(record)
+    calls: dict[str, int] = {}
+
+    def hook(name, module, _inputs, output):
+        # routers run once per call (the context tower once per document)
+        router_logits, _, indices = output
+        if not replay:
+            record.setdefault(name, []).append(indices.detach())
+            return None
+        call = calls.get(name, 0)
+        calls[name] = call + 1
+        indices = record[name][call]
+        weights = router_logits.sigmoid().gather(1, indices)
+        if module.norm_topk_prob:
+            weights = weights / (weights.sum(dim=-1, keepdim=True) + 1e-20)
+        return router_logits, weights * module.routed_scaling_factor, indices
+
+    from transformers.models.nemotron_h.modeling_nemotron_h import NemotronHTopkRouter
+
+    handles = [
+        module.register_forward_hook(lambda *a, name=name: hook(name, *a))
+        for name, module in model.named_modules()
+        if isinstance(module, NemotronHTopkRouter)
+    ]
+    assert handles
+    try:
+        yield
+    finally:
+        for handle in handles:
+            handle.remove()
+    if replay:
+        assert calls == {name: len(seen) for name, seen in record.items()}
 
 
 def _model(dtype=torch.bfloat16, seed=0):
@@ -117,6 +165,7 @@ def test_two_tower_forward_backward_matches_eager(dtype):
     _register()
     model = _model(dtype).train()
     ids, positions, canvas = _batch()
+    routing = {}
 
     def run(impl):
         model.set_experts_implementation(impl)
@@ -127,7 +176,8 @@ def test_two_tower_forward_backward_matches_eager(dtype):
             if hasattr(layer.mixer, "experts")
         )
         model.zero_grad(set_to_none=True)
-        out = model(ids, position_ids=positions, axolotl_canvas_mask=canvas)
+        with _same_routing(model, routing):
+            out = model(ids, position_ids=positions, axolotl_canvas_mask=canvas)
         loss = out.logits[canvas].float().logsumexp(-1).mean()
         loss.backward()
         grads = {
@@ -185,11 +235,13 @@ def test_expert_lora_through_scattermoe_matches_eager():
     assert expert_lora and all("denoiser_tower" in n for n in expert_lora)
     model = peft_model.base_model.model
     ids, positions, canvas = _batch()
+    routing = {}
 
     def run(impl):
         model.set_experts_implementation(impl)
         peft_model.zero_grad(set_to_none=True)
-        out = peft_model(ids, position_ids=positions, axolotl_canvas_mask=canvas)
+        with _same_routing(model, routing):
+            out = peft_model(ids, position_ids=positions, axolotl_canvas_mask=canvas)
         out.logits[canvas].float().logsumexp(-1).mean().backward()
         grads = {
             n: p.grad.float().clone()

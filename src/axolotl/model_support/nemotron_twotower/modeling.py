@@ -25,6 +25,7 @@ are skipped. Logits exist only on canvas positions.
 
 from __future__ import annotations
 
+import contextlib
 import math
 from dataclasses import dataclass
 from functools import partial
@@ -110,6 +111,19 @@ class _ContextStates:
     key_valid: torch.Tensor  # [docs, max_ctx] bool
     conv: dict[int, torch.Tensor]  # [docs, conv_dim, kernel - 1]
     ssm: dict[int, torch.Tensor]  # [docs, heads, head_dim, state] fp32
+
+
+def _current_device(device: torch.device):
+    """Make ``device`` the current CUDA device while a tower runs on it.
+
+    Triton kernels (scattermoe experts) launch on the current device, not on their
+    tensors' device; with the towers on two GPUs the second tower would otherwise
+    read the other GPU's addresses. Backward needs nothing: autograd runs each
+    device's backward on a thread that already has that device current.
+    """
+    if device.type != "cuda":
+        return contextlib.nullcontext()
+    return torch.cuda.device(device)
 
 
 def _modulate(x, shift, scale):
@@ -322,12 +336,15 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
         context_device = self.context_tower.embeddings.weight.device
         dtype = self.context_tower.embeddings.weight.dtype
         per_doc = []
-        for doc in documents:
-            if doc.canvas_start > doc.start:
-                prompt = input_ids[doc.row : doc.row + 1, doc.start : doc.canvas_start]
-                per_doc.append(self._context_states_one(prompt.to(context_device)))
-            else:
-                per_doc.append(self._empty_context(context_device, dtype))
+        with _current_device(context_device):
+            for doc in documents:
+                if doc.canvas_start > doc.start:
+                    prompt = input_ids[
+                        doc.row : doc.row + 1, doc.start : doc.canvas_start
+                    ]
+                    per_doc.append(self._context_states_one(prompt.to(context_device)))
+                else:
+                    per_doc.append(self._empty_context(context_device, dtype))
         lengths = [doc.canvas_start - doc.start for doc in documents]
         max_ctx = max(lengths)
         key_valid = torch.zeros(
@@ -517,7 +534,8 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
             timesteps = axolotl_canvas_times[starts[:, 0], starts[:, 1]]
         if timesteps is not None:
             timesteps = timesteps.to(device)
-        hidden = self.denoise(canvas_ids, canvas_valid, context, timesteps)
+        with _current_device(device):
+            hidden = self.denoise(canvas_ids, canvas_valid, context, timesteps)
         flat_hidden = hidden.reshape(-1, hidden.shape[-1])
 
         if axolotl_selected_logits is not None:
