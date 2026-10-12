@@ -5,6 +5,9 @@ gate and an ``nn.ModuleList`` of experts; the native modules train and expose
 fused experts to the MoE kernels. Vision, audio and MTP weights are not loaded.
 """
 
+import shutil
+from pathlib import Path
+
 import torch
 from transformers import core_model_loading
 from transformers.core_model_loading import Concatenate, ConversionOps, _IdentityOp
@@ -33,11 +36,26 @@ class MiMoV2ForCausalLM(MiMoV2FlashForCausalLM):
     config_class = MiMoV2Config
     _keys_to_ignore_on_load_unexpected = _TEXT_ONLY_UNEXPECTED
 
-    def save_pretrained(self, *args, save_original_format=False, **kwargs):
-        # dequantization cannot be reversed; the bf16 native layout reloads as-is
-        return super().save_pretrained(
-            *args, save_original_format=save_original_format, **kwargs
-        )
+    def save_pretrained(
+        self, save_directory, *args, save_original_format=False, **kwargs
+    ):
+        # dequantization cannot be reversed; the bf16 native layout reloads as-is.
+        # FSDP2's generated subclass would otherwise be written into auto_map, so
+        # ship this module under the auto_map name the config already carries.
+        cls = type(self)
+        auto_class, cls._auto_class = cls._auto_class, None
+        try:
+            result = super().save_pretrained(
+                save_directory,
+                *args,
+                save_original_format=save_original_format,
+                **kwargs,
+            )
+        finally:
+            cls._auto_class = auto_class
+        if auto_class is not None and kwargs.get("is_main_process", True):
+            shutil.copy(__file__, Path(save_directory) / Path(__file__).name)
+        return result
 
 
 class MiMoV2Dequantize(Fp8Dequantize):

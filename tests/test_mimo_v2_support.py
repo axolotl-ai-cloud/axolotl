@@ -11,6 +11,7 @@ from transformers.conversion_mapping import register_checkpoint_conversion_mappi
 from axolotl.model_support import get_model_support
 from axolotl.model_support.mimo_v2 import _redirect_remote_code, _weight_conversions
 from axolotl.model_support.mimo_v2.configuration_mimo_v2 import MiMoV2Config
+from axolotl.utils.dict import DictDefault
 
 HUB_CONFIG = {
     "architectures": ["MiMoV2ForCausalLM"],
@@ -181,6 +182,10 @@ def test_published_checkpoint_loads_dequantized_and_trains(checkpoint_dir):
 
     assert type(model).__module__ == "axolotl.model_support.mimo_v2.modeling_mimo_v2"
     state = model.state_dict()
+    # noaux_tc biases collapse in bf16; the model keeps them fp32
+    assert (
+        state["model.layers.1.mlp.gate.e_score_correction_bias"].dtype == torch.float32
+    )
     for name, tensor in expected.items():
         torch.testing.assert_close(state[name], tensor.bfloat16(), msg=name)
     model.save_pretrained(checkpoint_dir / "saved")
@@ -193,3 +198,43 @@ def test_published_checkpoint_loads_dequantized_and_trains(checkpoint_dir):
     out = model(input_ids=torch.randint(0, 64, (1, 8)), labels=torch.ones(1, 8).long())
     out.loss.backward()
     assert model.model.layers[1].mlp.experts.gate_up_proj.grad is not None
+
+
+def test_published_layout_forces_legacy_merge(checkpoint_dir, tmp_path):
+    support = get_model_support("mimo_v2")
+    published = DictDefault(base_model_config=str(checkpoint_dir))
+    assert support.resolve_lora_merge_method(published, None) == "legacy"
+    with pytest.raises(ValueError, match="merge_method: legacy"):
+        support.resolve_lora_merge_method(published, "memory_efficient")
+
+    native = tmp_path / "native"
+    native.mkdir()
+    config = {k: v for k, v in HUB_CONFIG.items() if k != "quantization_config"}
+    (native / "config.json").write_text(json.dumps(config))
+    saved = DictDefault(base_model_config=str(native))
+    assert support.resolve_lora_merge_method(saved, None) == "memory_efficient"
+    assert support.resolve_lora_merge_method(saved, "legacy") == "legacy"
+
+
+def test_save_under_fsdp_generated_subclass_keeps_auto_map(tmp_path, monkeypatch):
+    from axolotl.model_support.mimo_v2.modeling_mimo_v2 import MiMoV2ForCausalLM
+
+    monkeypatch.setattr(MiMoV2ForCausalLM, "_auto_class", "AutoModelForCausalLM")
+    model = MiMoV2ForCausalLM(MiMoV2Config(**HUB_CONFIG))
+    model.config.auto_map = dict(HUB_CONFIG["auto_map"])
+    # fully_shard swaps in a generated subclass defined in torch's FSDP package
+    model.__class__ = type(
+        "FSDPMiMoV2ForCausalLM",
+        (MiMoV2ForCausalLM,),
+        {"__module__": "torch.distributed.fsdp._fully_shard._fully_shard"},
+    )
+
+    model.save_pretrained(tmp_path)
+
+    saved = json.loads((tmp_path / "config.json").read_text())
+    assert saved["auto_map"]["AutoModelForCausalLM"] == (
+        "modeling_mimo_v2.MiMoV2ForCausalLM"
+    )
+    assert (tmp_path / "modeling_mimo_v2.py").exists()
+    assert not list(tmp_path.glob("_fsdp*.py"))
+    assert MiMoV2ForCausalLM._auto_class == "AutoModelForCausalLM"

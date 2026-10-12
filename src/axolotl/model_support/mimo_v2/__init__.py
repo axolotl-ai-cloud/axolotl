@@ -29,6 +29,15 @@ def _matches_mimo_v2_cfg(cfg) -> bool:
     )
 
 
+def _is_published_layout(cfg) -> bool:
+    from transformers import PretrainedConfig
+
+    config, _ = PretrainedConfig.get_config_dict(
+        cfg.base_model_config or cfg.base_model
+    )
+    return "quantization_config" in config
+
+
 def _redirect_remote_code(_context: ModelHookContext) -> None:
     from axolotl.model_support.remote_code import redirect_dynamic_modules
 
@@ -87,6 +96,19 @@ class MiMoV2Support(ModelSupport):
     """Descriptor for MiMo-V2.6 (`mimo_v2`) sparse MoE checkpoints, text only."""
 
     model_types = ("mimo_v2",)
+
+    @staticmethod
+    def resolve_lora_merge_method(cfg, requested: str | None) -> str:
+        """The shard-wise merge cannot map q/k/v LoRA onto the published fused FP8 ``qkv_proj``."""
+        if not _is_published_layout(cfg):
+            return requested or "memory_efficient"
+        if requested == "memory_efficient":
+            raise ValueError(
+                "MiMo-V2.6's published FP8/MXFP4 checkpoint requires merge_method: legacy; "
+                "memory_efficient merging cannot split its fused qkv_proj."
+            )
+        return "legacy"
+
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
         capabilities={
