@@ -678,6 +678,12 @@ class TrainerBuilderBase(abc.ABC):
             "optim_target_modules",
             # trainer
             "max_grad_norm",
+            "step_outlier_grad_norm_zscore",
+            "step_outlier_loss_zscore",
+            "step_outlier_window",
+            "step_outlier_action",
+            "grad_clip_norm_ratio",
+            "grad_clip_norm_ratio_beta",
             "dataloader_num_workers",
             "dataloader_pin_memory",
             "dataloader_prefetch_factor",

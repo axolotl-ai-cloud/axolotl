@@ -38,6 +38,7 @@ from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
     CheckpointSaveMixin,
     DistributedParallelMixin,
+    GradNormGuardMixin,
     LayerOffloadingMixin,
     OptimizerMixin,
     PackingMixin,
@@ -99,6 +100,7 @@ REDUCTION_FNS = {
 
 
 class AxolotlTrainer(
+    GradNormGuardMixin,
     PackingMixin,
     SchedulerMixin,
     OptimizerMixin,

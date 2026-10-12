@@ -150,6 +150,42 @@ class AxolotlTrainingMixins:
             "help": "Starting constant learning rate step is cosine_constant_lr_ratio * max_steps"
         },
     )
+    step_outlier_grad_norm_zscore: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Robust z-score of the pre-clip gradient norm that marks a step as an outlier; None disables."
+        },
+    )
+    step_outlier_loss_zscore: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Robust z-score of the step's training loss that marks a step as an outlier; None disables."
+        },
+    )
+    step_outlier_window: Optional[int] = field(
+        default=100,
+        metadata={
+            "help": "Number of previous accepted steps the outlier median and MAD use."
+        },
+    )
+    step_outlier_action: Optional[str] = field(
+        default="scale",
+        metadata={
+            "help": "'scale' (gradients times threshold/value) or 'skip' (no optimizer step)."
+        },
+    )
+    grad_clip_norm_ratio: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Clip each tensor's gradient norm to this times its running average (OLMo max_grad_norm_ratio)."
+        },
+    )
+    grad_clip_norm_ratio_beta: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Decay of the per-tensor running average; defaults to the optimizer's larger beta."
+        },
+    )
     loraplus_lr_ratio: Optional[float] = field(
         default=None, metadata={"help": "loraplus learning rate ratio lr_B / lr_A."}
     )

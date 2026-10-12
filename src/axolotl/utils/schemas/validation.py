@@ -1238,6 +1238,22 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_grad_norm_guard_compat(cls, data):
+        if (
+            data.get("step_outlier_grad_norm_zscore")
+            or data.get("step_outlier_loss_zscore")
+        ) and data.get("deepspeed"):
+            raise ValueError(
+                "step_outlier_* is not supported with DeepSpeed, which manages gradients inside its engine"
+            )
+        if data.get("grad_clip_norm_ratio") and data.get("deepspeed"):
+            raise ValueError(
+                "grad_clip_norm_ratio is not supported with DeepSpeed, which shards gradients inside its engine; it supports DDP, FSDP2, tensor and expert parallelism"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
         if data.get("optimizer") == "muon":
             if data.get("deepspeed"):
