@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from functools import partial
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers.generation import GenerationMixin
@@ -156,6 +157,9 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
     supports_diffusion_varlen = True
     supports_selected_logits = True
     requires_canvas_mask = True
+    # The MoE layers see per-document prompts and [docs, width] canvases, not the
+    # batch's [rows, tokens]: a padding mask built from input_ids does not line up.
+    moe_tokens_match_input_ids = False
 
     def __init__(self, config: NemotronHTwoTowerConfig):
         super().__init__(config)
@@ -331,12 +335,43 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
                 values[index] = torch.zeros(shape, device=device, dtype=dtype)
         return keys, values, conv, ssm
 
+    def _context_experts_parallel(self) -> bool:
+        """True when the context tower's routed experts are expert-parallel sharded."""
+        return any(
+            getattr(module, "num_experts_global", 0)
+            > getattr(module, "num_experts", 0)
+            for module in self.context_tower.modules()
+        )
+
+    def _ep_context_padding_calls(self, calls: int, device) -> int:
+        """Extra context-tower passes this rank runs so every rank runs the same number.
+
+        Under expert parallelism every MoE forward is a collective (token all-to-all)
+        across ranks. The context tower runs once per document with a prompt, and ranks
+        hold different packed batches, so the counts differ and the rank with fewer
+        documents would leave the others blocked in their next all-to-all. The max is
+        taken over the whole world, a superset of every EP group.
+        """
+        if not (
+            dist.is_available()
+            and dist.is_initialized()
+            and dist.get_world_size() > 1
+            and self._context_experts_parallel()
+        ):
+            return 0
+        count = torch.tensor([calls], device=device, dtype=torch.long)
+        dist.all_reduce(count, op=dist.ReduceOp.MAX)
+        return int(count.item()) - calls
+
     def _context_states(self, input_ids, documents, device) -> _ContextStates:
         """Context states of every document, batched on ``device`` (the denoiser's)."""
         context_device = self.context_tower.embeddings.weight.device
         dtype = self.context_tower.embeddings.weight.dtype
         per_doc = []
         with _current_device(context_device):
+            # agreed before any context pass: each pass is a collective under EP
+            calls = sum(doc.canvas_start > doc.start for doc in documents)
+            padding = self._ep_context_padding_calls(calls, context_device)
             for doc in documents:
                 if doc.canvas_start > doc.start:
                     prompt = input_ids[
@@ -345,6 +380,11 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
                     per_doc.append(self._context_states_one(prompt.to(context_device)))
                 else:
                     per_doc.append(self._empty_context(context_device, dtype))
+            for _ in range(padding):
+                # discarded one-token pass: only its MoE collectives matter
+                self._context_states_one(
+                    torch.zeros(1, 1, dtype=torch.long, device=context_device)
+                )
         lengths = [doc.canvas_start - doc.start for doc in documents]
         max_ctx = max(lengths)
         key_valid = torch.zeros(

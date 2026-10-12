@@ -285,7 +285,7 @@ experts cannot be reconstructed from the truncated native checkpoint.
 
 ## Limitations
 
-- Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). `ModuleList` as used in Mixtral is not supported.
+- Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`, or `up_proj` / `down_proj` for non-gated experts such as Nemotron-H's relu² MoE). `ModuleList` as used in Mixtral is not supported.
 - `num_experts` must be divisible by `expert_parallel_size`.
 - EP requires FSDP2 with `fsdp_config.state_dict_type: FULL_STATE_DICT` (see [Usage](#usage));
   DDP, DeepSpeed and `SHARDED_STATE_DICT` are rejected at config validation.
