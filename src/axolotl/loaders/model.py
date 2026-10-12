@@ -59,9 +59,11 @@ from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     build_parallelism_config,
+    empty_device_cache,
     get_device_count,
     get_device_type,
     init_distributed_state,
+    is_xla,
 )
 from axolotl.utils.fp32_norms import (
     _matches_norm_class,
@@ -844,10 +846,14 @@ class ModelLoader:
             and not skip_move_to_device
             # would drag the offloaded table onto the accelerator with everything else
             and not self.cfg.ple_cpu_offload
+            # XLA/TPU: the Trainer moves the model to the XLA device via MpDeviceLoader
+            and not is_xla()
         ):
             self.model.to(f"{str(get_device_type())}:{self.cfg.local_rank}")
 
-        if get_device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
+        # On XLA, get_device_count() reflects chip count before spawn — don't
+        # interpret that as naive model parallelism.
+        if not is_xla() and get_device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
             self.model.is_parallelizable = True
             self.model.model_parallel = True
 
@@ -867,7 +873,7 @@ class ModelLoader:
 
         for _ in range(3):
             gc.collect()
-            torch.cuda.empty_cache()
+            empty_device_cache()
 
     def _set_parallel_config(self):
         """Set parallelism configuration (DP, FSDP, TP, CP) in PartialState/Accelerator"""
@@ -978,16 +984,20 @@ class ModelLoader:
             # the device map at bf16 size (before quantization), causing it to offload
             # layers to CPU, which BnB then rejects. Force single-GPU placement to
             # prevent this. Only applies to the non-FSDP, non-ZeRO3 path (DDP/single).
-            if getattr(self.cfg, "quantize_moe_experts", False) and device_map in (
-                "auto",
-                None,
+            if (
+                not is_xla()
+                and getattr(self.cfg, "quantize_moe_experts", False)
+                and device_map in ("auto", None)
             ):
                 self.model_kwargs["device_map"] = {
                     "": int(os.environ.get("LOCAL_RANK", 0))
                 }
 
             cur_device = get_device_type()
-            if "mps" in str(cur_device):
+            if is_xla():
+                # Load model on CPU; the XLA runtime moves weights to device.
+                self.model_kwargs["device_map"] = None
+            elif "mps" in str(cur_device):
                 self.model_kwargs["device_map"] = "mps:0"
             elif "npu" in str(cur_device):
                 self.model_kwargs["device_map"] = "npu:0"

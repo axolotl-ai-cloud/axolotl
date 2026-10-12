@@ -10,6 +10,8 @@ from torch import nn
 from transformers import PreTrainedTokenizerBase, ProcessorMixin
 from trl import DPOTrainer
 
+from axolotl.utils.distributed import empty_device_cache
+
 from axolotl.core.trainers.mixins import (
     DistributedParallelMixin,
     RngLoaderMixin,
@@ -98,5 +100,5 @@ class AxolotlDPOTrainer(
     ) -> torch.Tensor:
         loss: torch.Tensor = super().training_step(model, inputs, num_items_in_batch)
         gc.collect()
-        torch.cuda.empty_cache()
+        empty_device_cache()
         return loss
