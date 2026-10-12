@@ -175,6 +175,7 @@ def test_offload_without_gc_offloads_everything(
     )
 
     assert step.args["gradient_checkpointing"] is False
+    assert step.args["activation_offloading"] == mode
     assert not step.model.is_gradient_checkpointing
     assert not _checkpoint_wrapped(step.model)
     assert step.mlp_calls == NUM_LAYERS
