@@ -9,6 +9,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
+import numpy as np
+
 from ._util import stable_seed
 from .hygiene import decontaminate
 
@@ -76,7 +78,9 @@ class DeterministicMixtureSampler(Generic[T]):
             source: _SourceCursor(records, stable_seed(seed, source))
             for source, records in self._pools.items()
         }
-        self._fractional_credit = {source: 0.0 for source in self.sources}
+        # Per-source carried fractional slot credit, indexed like ``self.sources``.
+        self._fractional_credit = np.zeros(len(self.sources), dtype=np.float64)
+        self._stratified_plans: dict[int, tuple[tuple[str, ...], np.ndarray, int]] = {}
 
     def draw(self, count: int) -> tuple[MixtureSample[T], ...]:
         """Draw examples by source probability, cycling deterministically within sources."""
@@ -125,7 +129,8 @@ class DeterministicMixtureSampler(Generic[T]):
             source: _SourceCursor(records, stable_seed(epoch_seed, source))
             for source, records in self._pools.items()
         }
-        credit = {source: 0.0 for source in self.sources}
+        credit = np.zeros(len(self.sources), dtype=np.float64)
+        order_random = random.Random()  # nosec B311 - Reseeded per batch below.
         seen = {source: 0 for source in self.sources}
         yielded = 0
         while (
@@ -137,7 +142,9 @@ class DeterministicMixtureSampler(Generic[T]):
         ):
             if stratified:
                 sources = self._stratified_sources(batch_size, credit)
-                random.Random(epoch_seed).shuffle(sources)  # nosec B311 - Reproducible order.
+                # Reseeding equals a fresh random.Random(epoch_seed) per batch.
+                order_random.seed(epoch_seed)
+                order_random.shuffle(sources)
             else:
                 sources = self._source_random.choices(
                     self.sources, weights=self._probability_values, k=batch_size
@@ -151,27 +158,56 @@ class DeterministicMixtureSampler(Generic[T]):
             yielded += 1
             yield batch
 
+    def _stratified_plan(
+        self, batch_size: int
+    ) -> tuple[tuple[str, ...], np.ndarray, int]:
+        """(fixed sources in source order, fractional credit per batch, slots left).
+
+        Constant for a sampler and batch size, so it is computed once.
+        """
+        plan = self._stratified_plans.get(batch_size)
+        if plan is None:
+            expected = [
+                self.probabilities[source] * batch_size for source in self.sources
+            ]
+            fixed = [math.floor(value) for value in expected]
+            plan = (
+                tuple(
+                    source
+                    for source, count in zip(self.sources, fixed, strict=True)
+                    for _ in range(count)
+                ),
+                np.array(
+                    [
+                        value - floor
+                        for value, floor in zip(expected, fixed, strict=True)
+                    ],
+                    dtype=np.float64,
+                ),
+                batch_size - sum(fixed),
+            )
+            self._stratified_plans[batch_size] = plan
+        return plan
+
     def _stratified_sources(
-        self, batch_size: int, fractional_credit: dict[str, float] | None = None
+        self, batch_size: int, fractional_credit: np.ndarray | None = None
     ) -> list[str]:
+        """Each source's whole expected slots, then the rest by largest credit.
+
+        ``fractional_credit`` (indexed like ``self.sources``) is updated in place.
+        Ties go to the earliest source; a source may take more than one of the
+        remaining slots.
+        """
         credit = (
             self._fractional_credit if fractional_credit is None else fractional_credit
         )
-        expected = {
-            source: self.probabilities[source] * batch_size for source in self.sources
-        }
-        fixed = {source: math.floor(value) for source, value in expected.items()}
-        remaining = batch_size - sum(fixed.values())
-        selected = [source for source in self.sources for _ in range(fixed[source])]
-        for source in self.sources:
-            credit[source] += expected[source] - fixed[source]
+        fixed, fraction, remaining = self._stratified_plan(batch_size)
+        selected = list(fixed)
+        credit += fraction
         for _ in range(remaining):
-            source = max(
-                enumerate(self.sources),
-                key=lambda item: (credit[item[1]], -item[0]),
-            )[1]
-            selected.append(source)
-            credit[source] -= 1.0
+            index = int(np.argmax(credit))
+            selected.append(self.sources[index])
+            credit[index] -= 1.0
         return selected
 
 
