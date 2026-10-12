@@ -181,6 +181,10 @@ class AxolotlTrainer(
         self.train_data_collator = self.data_collator
         self._tkps_prev_trainable: float | None = None
         self._tkps_prev_time: float | None = None
+        # Per-rank token counters stay on device between logs; see _sync_token_counts.
+        self._tkps_trainable_acc: torch.Tensor | None = None
+        self._tkps_total_acc: int = 0
+        self._tkps_restored: tuple[int, int] = (0, 0)
         self._stored_metrics = defaultdict(
             lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
         )
@@ -711,6 +715,46 @@ class AxolotlTrainer(
         cp_size = pc.non_data_parallel_size // pc.tp_size
         return count // cp_size if cp_size > 1 else count
 
+    def _accumulate_token_counts(self, inputs):
+        tokens = inputs["labels"] if "labels" in inputs else inputs["input_ids"]
+        if self._tkps_trainable_acc is None:
+            # Counters restored from a checkpoint are already summed across ranks.
+            restored = getattr(self.state, "tokens", None) or {}
+            self._tkps_restored = (
+                int(torch.as_tensor(restored.get("trainable", 0)).item()),
+                int(torch.as_tensor(restored.get("total", 0)).item()),
+            )
+            self._tkps_trainable_acc = torch.zeros(
+                (), dtype=torch.int64, device=tokens.device
+            )
+        self._tkps_trainable_acc += (tokens != -100).sum()
+        self._tkps_total_acc += tokens.numel()
+
+    def _sync_token_counts(self):
+        """Reduce the per-rank token counters into state.tokens; one sync per call.
+
+        Collective: every rank must call it (log and checkpoint save both do).
+        """
+        if self._tkps_trainable_acc is None:
+            return
+        counts = torch.stack(
+            [
+                self._tkps_trainable_acc,
+                torch.tensor(
+                    self._tkps_total_acc,
+                    dtype=torch.int64,
+                    device=self._tkps_trainable_acc.device,
+                ),
+            ]
+        )
+        if is_distributed():
+            torch.distributed.all_reduce(counts, op=torch.distributed.ReduceOp.SUM)
+        trainable, total = counts.tolist()
+        self.state.tokens = {
+            "trainable": torch.tensor(self._tkps_restored[0] + trainable),
+            "total": torch.tensor(self._tkps_restored[1] + total),
+        }
+
     def _maybe_inject_mm_token_type_ids(self, inputs):
         # Gemma4 requires mm_token_type_ids even for text-only batches.
         if (
@@ -730,32 +774,8 @@ class AxolotlTrainer(
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
 
-        # track number of tokens for tokens per second calculation
         if self.args.include_tkps and model.training:
-            inputs_key = "labels" if "labels" in inputs else "input_ids"
-            trainable_tokens = (inputs[inputs_key] != -100).sum()
-            total_tokens = inputs[inputs_key].numel()
-            total_tokens = torch.tensor(total_tokens, device=inputs[inputs_key].device)
-
-            if is_distributed():
-                torch.distributed.all_reduce(
-                    trainable_tokens, op=torch.distributed.ReduceOp.SUM
-                )
-                torch.distributed.all_reduce(
-                    total_tokens, op=torch.distributed.ReduceOp.SUM
-                )
-
-            if not hasattr(self.state, "tokens"):
-                self.state.tokens = {
-                    "trainable": torch.zeros(1),
-                    "total": torch.zeros(1),
-                }
-
-            # trainable tokens for throughput and total token slots for summaries
-            self.state.tokens["trainable"] = (
-                self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
-            )
-            self.state.tokens["total"] = self.state.tokens["total"] + total_tokens.cpu()
+            self._accumulate_token_counts(inputs)
 
         self._maybe_inject_mm_token_type_ids(inputs)
 
@@ -1087,6 +1107,8 @@ class AxolotlTrainer(
             except (ValueError, TypeError, FileNotFoundError):
                 pass
 
+        if self.args.include_tkps and train_eval == "train":
+            self._sync_token_counts()
         if (
             self.args.include_tkps
             and train_eval == "train"
@@ -1220,6 +1242,9 @@ class AxolotlTrainer(
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
+
+        if self.args.include_tkps:
+            self._sync_token_counts()
 
         if getattr(self, "_balanced_sampler_state", None) and self.args.should_save:
             saved = dict(self._balanced_sampler_state)
