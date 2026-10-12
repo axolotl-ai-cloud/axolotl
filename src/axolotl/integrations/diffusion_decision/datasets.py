@@ -325,7 +325,7 @@ _ROW, _ROW_SEGMENTS, _RESERVE = "row", "segments", "reserve"
 
 
 def _build_canvas_chunk(
-    items: Sequence[tuple[int, Mapping[str, Any], float, str]],
+    items: Sequence[tuple[int, Mapping[str, Any], float, str, bool]],
 ) -> list[tuple[dict[str, Any] | None, bool, Any, str | None]]:
     if _CANVAS_WORKER_STATE is None:
         raise RuntimeError("decision canvas worker was not initialized")
@@ -357,7 +357,8 @@ def _build_canvas_chunk(
 
 def _build_canvas_worker(
     item: tuple[int, Mapping[str, Any], float]
-    | tuple[int, Mapping[str, Any], float, str],
+    | tuple[int, Mapping[str, Any], float, str]
+    | tuple[int, Mapping[str, Any], float, str, bool],
     *,
     tokenizer: Any,
     cfg: Any,
@@ -368,9 +369,15 @@ def _build_canvas_worker(
     thought_close_ids: tuple[int, ...],
     train: bool = False,
 ) -> tuple[int, dict[str, Any] | None, bool, Any, str | None]:
-    """(index, row, overflowed, segments, why no segments) of one item."""
+    """(index, row, overflowed, segments, why no segments) of one item.
+
+    An item's fifth field, when present, overrides ``train`` for that item, so
+    training and evaluation canvases can share one worker pool.
+    """
     index, record, source_weight = item[:3]
     mode = item[3] if len(item) > 3 else _ROW
+    if len(item) > 4:
+        train = bool(item[4])
     if mode == _RESERVE:
         segments, reason = _reserve_segments(
             tokenizer,
@@ -544,7 +551,9 @@ class DecisionPlanDataset(Dataset):
 
     def remove_columns(self, columns: Sequence[str]) -> "DecisionPlanDataset":
         if tuple(columns) != ("length",) or "length" not in self.column_names:
-            raise ValueError("DecisionPlanDataset only exposes the derived length column")
+            raise ValueError(
+                "DecisionPlanDataset only exposes the derived length column"
+            )
         return DecisionPlanDataset(self.batch_plan, self.manifest, expose_lengths=False)
 
 
@@ -567,6 +576,15 @@ def _canvas_rows(
         spec,
         train=train,
     )
+    return _collect_canvas_rows(prepared, aligned=aligned)
+
+
+def _collect_canvas_rows(
+    prepared: Sequence[tuple[dict[str, Any] | None, bool, Any, str | None]],
+    *,
+    aligned: bool = False,
+) -> tuple[list[dict[str, Any]], int]:
+    """(rows, overflow count) of prepared ``_ROW`` items; see :func:`_canvas_rows`."""
     rows: list[Any] = []
     canvas_too_long = 0
     for row, overflow, _, _ in prepared:
@@ -602,16 +620,29 @@ def _warm_segment_caches(tokenizer: Any, cfg: Any) -> None:
         LOG.debug("Decision segment caches not warmed", exc_info=True)
 
 
+def _item_train(item: Sequence[Any], default: bool) -> bool:
+    """An item's own ``train`` flag (its third field), else ``default``."""
+    return bool(item[2]) if len(item) > 2 else default
+
+
 def _prepare_canvas_items(
     tokenizer: Any,
-    items: Sequence[tuple[Mapping[str, Any], str]],
+    items: Sequence[
+        tuple[Mapping[str, Any], str] | tuple[Mapping[str, Any], str, bool]
+    ],
     cfg: Any,
     weights: Mapping[str, float],
     spec,
     *,
     train: bool = False,
 ) -> list[tuple[dict[str, Any] | None, bool, Any, str | None]]:
-    """(row, overflowed, segments, why no segments) per (record, mode) item, in order."""
+    """(row, overflowed, segments, why no segments) per (record, mode) item, in order.
+
+    An item may carry a third field overriding ``train`` for that item. Callers
+    pass every record of a build in one call: the worker pool (and its fork,
+    tokenizer and template state) is then started once, and small sources share
+    it instead of running serially in the parent.
+    """
     results: list[tuple[dict[str, Any] | None, bool, Any, str | None]] = []
     vocab_size = _value(model_config_overrides(cfg), "vocab_size")
     if vocab_size is None:
@@ -621,7 +652,7 @@ def _prepare_canvas_items(
     )
     workers = _value(cfg, "dataset_num_proc", 1) or 1
     workers = min(int(workers), max(1, len(items) // _CANVAS_CHUNK_SIZE))
-    if workers > 1 and any(mode != _ROW for _, mode in items):
+    if workers > 1 and any(item[1] != _ROW for item in items):
         _warm_segment_caches(tokenizer, cfg)
     if workers > 1:
         # Canvas building is GIL-bound Python (template resolution, validation,
@@ -650,6 +681,7 @@ def _prepare_canvas_items(
                     items[index][0],
                     float(weights.get(items[index][0]["source"], 1.0)),
                     items[index][1],
+                    _item_train(items[index], train),
                 )
                 for index in range(start, min(start + _CANVAS_CHUNK_SIZE, len(items)))
             ]
@@ -679,12 +711,19 @@ def _prepare_canvas_items(
                 if index % (_CANVAS_CHUNK_SIZE * 40) < len(prepared):
                     LOG.info("Preparing decision canvases: %s/%s", index, len(items))
         return results
-    for index, (record, mode) in enumerate(items):
+    for index, item in enumerate(items):
+        record, mode = item[0], item[1]
         if index % 1000 == 0:
             LOG.info("Preparing decision canvases: %s/%s", index, len(items))
         results.append(
             _build_canvas_worker(
-                (index, record, float(weights.get(record["source"], 1.0)), mode),
+                (
+                    index,
+                    record,
+                    float(weights.get(record["source"], 1.0)),
+                    mode,
+                    _item_train(item, train),
+                ),
                 tokenizer=tokenizer,
                 cfg=cfg,
                 spec=spec,
@@ -766,7 +805,9 @@ def load_decision_datasets(
     if layer is None:
         layer = _build_canvas_layer(cfg, tokenizer, spec, train_entries, test_entries)
         if cache_identity is not None:
-            store_prepared_cache(Path(prepared_path), cache_key, cache_payload, cfg, *layer)
+            store_prepared_cache(
+                Path(prepared_path), cache_key, cache_payload, cfg, *layer
+            )
     return _assemble_datasets(cfg, tokenizer, spec, *layer)
 
 
@@ -847,21 +888,28 @@ def _build_canvas_layer(
     train_canvas_too_long = 0
     drop_counts = dict(drops)
     layer_train: list[Any]
+    # Every canvas of the build (train sources, then eval) goes through one
+    # _prepare_canvas_items call, so one worker pool serves the whole build.
+    eval_items = [(record, _ROW, False) for record in dev]
     if premixed:
-        layer_train, train_canvas_too_long = _canvas_rows(
+        built = _prepare_canvas_items(
             tokenizer,
-            [dict(record) for record in train],
+            [
+                *((dict(record), _ROW, True) for record in train),
+                *eval_items,
+            ],
             cfg,
             weights,
             spec,
             train=True,
         )
+        layer_train, train_canvas_too_long = _collect_canvas_rows(built[: len(train)])
+        eval_built = built[len(train) :]
+        del built
     else:
         seed = int(_value(cfg, "seed", 0))
         cap = _value(mixture, "max_examples_per_source")
-        pools = prepare_source_pools(
-            train, (), max_examples_per_source=cap, seed=seed
-        )
+        pools = prepare_source_pools(train, (), max_examples_per_source=cap, seed=seed)
         assert pools.candidates is not None
         layer_train = []
         reserve = 0
@@ -870,27 +918,31 @@ def _build_canvas_layer(
             "reserve": 0,
             "fallback": {},
         }
+        plans: list[tuple[str, Any, Any, list[int], list[int]]] = []
+        items: list[tuple[Mapping[str, Any], str, bool]] = []
         for source, candidates in pools.candidates.items():
             source_cap = cap.get(source) if isinstance(cap, Mapping) else cap
             window = cap_window(len(candidates), source_cap, seed, source)
             prepared = set(window)
             rest = [index for index in range(len(candidates)) if index not in prepared]
-            built = _prepare_canvas_items(
-                tokenizer,
-                [
-                    *((dict(candidates[index]), _ROW_SEGMENTS) for index in window),
-                    *((candidates[index], _RESERVE) for index in rest),
-                ],
-                cfg,
-                weights,
-                spec,
-                train=True,
+            plans.append((source, source_cap, candidates, list(window), rest))
+            items.extend(
+                (dict(candidates[index]), _ROW_SEGMENTS, True) for index in window
             )
+            items.extend((candidates[index], _RESERVE, True) for index in rest)
+        items.extend(eval_items)
+        built = _prepare_canvas_items(tokenizer, items, cfg, weights, spec, train=True)
+        del items
+        offset = 0
+        for source, source_cap, candidates, window, rest in plans:
+            prepared = set(window)
+            source_built = built[offset : offset + len(candidates)]
+            offset += len(candidates)
             entries: list[Any] = [None] * len(candidates)
             records: list[Any] = [None] * len(candidates)
             segments: list[Any] = [None] * len(candidates)
             for index, (row, overflow, segment, reason) in zip(
-                [*window, *rest], built, strict=True
+                [*window, *rest], source_built, strict=True
             ):
                 if index in prepared:
                     train_canvas_too_long += int(overflow)
@@ -919,6 +971,8 @@ def _build_canvas_layer(
                     segments=segments,
                 )
             )
+        eval_built = built[offset:]
+        del built
         drop_counts.update(
             {
                 key: value
@@ -928,7 +982,8 @@ def _build_canvas_layer(
         )
         drop_counts["reserve"] = reserve
         LOG.info("Pre-tokenized decision canvas segments: %s", segment_counts)
-    eval_rows, eval_canvas_too_long = _canvas_rows(tokenizer, dev, cfg, weights, spec)
+    eval_rows, eval_canvas_too_long = _collect_canvas_rows(eval_built)
+    del eval_built
     manifest: dict[str, Any] = {
         "protected_eval_rows": len(protected_eval),
         "train_sources": sorted({row["source"] for row in train}),

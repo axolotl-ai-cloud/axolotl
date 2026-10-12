@@ -438,6 +438,81 @@ def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
     assert parallel_drops == serial_drops == 1
 
 
+def test_multi_source_build_opens_one_canvas_pool(monkeypatch):
+    """Every source, and the eval split, shares one worker pool; output matches serial."""
+    opened = []
+
+    class CountingExecutor:
+        def __init__(self, *, initializer, initargs, **_kwargs):
+            opened.append(self)
+            initializer(*initargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def map(self, fn, values, **_kwargs):
+            return [fn(value) for value in values]
+
+    sources = ["alpha", "beta", "gamma", "delta"]
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [
+                _record(
+                    source, f"{source}{index}", f"{source}-{index}", f"{source}{index}"
+                )
+                for source in sources
+                for index in range(5)
+            ],
+            "dev": [
+                _record("dev", f"dev{index}", f"dev-{index}", f"dev{index}")
+                for index in range(3)
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        datasets,
+        "_canvas_row",
+        lambda _tokenizer, row, _cfg, source_weight, **kwargs: {
+            "canvas": SimpleNamespace(prompt_ids=(1,), canvas_ids=(2,) * 128),
+            "record": row,
+            "source": row["source"],
+            "train": kwargs["train"],
+        },
+    )
+    monkeypatch.setattr(datasets, "ProcessPoolExecutor", CountingExecutor)
+    monkeypatch.setattr(datasets, "_CANVAS_CHUNK_SIZE", 2)
+
+    def build(num_proc: int):
+        cfg = _cfg(
+            _entry("train"),
+            test_datasets=(_entry("dev", "dev"),),
+            mixture={
+                "max_examples_per_source": {source: 2 for source in sources},
+                "per_batch_stratified": False,
+            },
+        )
+        cfg["dataset_num_proc"] = num_proc
+        result = datasets.load_decision_datasets(cfg, tokenizer=range(131072))
+        return (
+            [(row["record"], row["train"]) for row in result.train_dataset],
+            [(row["record"], row["train"]) for row in result.eval_dataset or []],
+            result.train_dataset.manifest,
+        )
+
+    serial = build(1)
+    assert opened == []
+    parallel = build(4)
+    assert len(opened) == 1
+    assert parallel == serial
+    assert {record["source"] for record, _ in serial[0]} == set(sources)
+    assert all(train for _, train in serial[0])
+    assert [train for _, train in serial[1]] == [False] * 3
+
+
 def test_budget_filter_precedes_source_probabilities_and_sampling(
     monkeypatch, two_source_cfg
 ):
