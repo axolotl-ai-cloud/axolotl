@@ -206,6 +206,7 @@ class DecisionTrainingCollator:
         loss: list[bool] = []
         corruptible: list[bool] = []
         pinned: list[bool] = []
+        canvas_positions: list[bool] = []
         slots: list[bool] = []
         prompt_slots: list[bool] = []
         label_positions: list[list[int]] = []
@@ -221,6 +222,7 @@ class DecisionTrainingCollator:
             loss.extend([False] * len(prompt) + output_loss)
             corruptible.extend([False] * len(prompt) + output_loss)
             pinned.extend([True] * len(prompt) + list(canvas.pinned_mask))
+            canvas_positions.extend([False] * len(prompt) + [True] * len(output))
             slots.extend([False] * len(prompt) + list(canvas.slot_mask))
             prompt_slots.extend(canvas.prompt_slot_mask or (False,) * len(prompt))
             prompt_slots.extend([False] * len(output))
@@ -252,6 +254,11 @@ class DecisionTrainingCollator:
                 "canvas_update_mask": torch.tensor(corruptible, dtype=torch.bool)[None]
                 & ~torch.tensor(pinned, dtype=torch.bool)[None],
                 "decision_slot_mask": torch.tensor(slots, dtype=torch.bool)[None],
+                # The whole canvas (pinned template tokens included): two-tower models
+                # denoise it as one block over the prompt's context states.
+                "decision_canvas_mask": torch.tensor(
+                    canvas_positions, dtype=torch.bool
+                )[None],
                 "decision_prompt_slot_mask": torch.tensor(
                     prompt_slots, dtype=torch.bool
                 )[None],

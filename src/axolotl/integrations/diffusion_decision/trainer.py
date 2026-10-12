@@ -829,6 +829,22 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         capability_model = model
         while hasattr(capability_model, "module"):
             capability_model = capability_model.module
+        canvas_kwargs: dict[str, Any] = {}
+        if getattr(capability_model, "requires_canvas_mask", False):
+            # Two-tower models denoise the canvas as one block over context states of
+            # the clean prompt, so they need to know where each canvas starts.
+            if "decision_canvas_mask" not in inputs:
+                raise ValueError(
+                    "this model needs decision_canvas_mask in full-sequence decision batches"
+                )
+            canvas_kwargs["axolotl_canvas_mask"] = _pad_to_packed(
+                inputs["decision_canvas_mask"].bool(), packed, False
+            )
+
+        def with_canvas(extra: dict[str, Any] | None = None) -> dict[str, Any] | None:
+            merged = {**media_kwargs, **canvas_kwargs, **(extra or {})}
+            return merged or None
+
         use_selected_logits = (
             not return_hidden_states
             and spec.logit_alignment is LogitAlignment.ALIGNED
@@ -844,13 +860,14 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs={
-                            **media_kwargs,
-                            "axolotl_selected_logits": (
-                                selected_rows,
-                                selected_positions,
-                            ),
-                        },
+                        model_kwargs=with_canvas(
+                            {
+                                "axolotl_selected_logits": (
+                                    selected_rows,
+                                    selected_positions,
+                                )
+                            }
+                        ),
                     )
                 ),
                 "final_logits_from_outputs": lambda output: output.logits,
@@ -865,7 +882,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs={**media_kwargs, "cce_return_hidden_states": True},
+                        model_kwargs=with_canvas({"cce_return_hidden_states": True}),
                     )
                 ),
                 "final_logits_from_outputs": lambda output: output.last_hidden_state,
@@ -885,7 +902,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs=media_kwargs or None,
+                        model_kwargs=with_canvas(),
                     )
                 ),
                 logits_from_outputs=lambda current_outputs: backend.canvas_logits(
@@ -953,7 +970,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     packed,
                     current_state,
                     kernel_options=kernel_options,
-                    model_kwargs={**media_kwargs, **(step_model_kwargs or {})} or None,
+                    model_kwargs=with_canvas(step_model_kwargs),
                 )
 
             def logits_from_outputs(current_outputs):
