@@ -1,8 +1,12 @@
 """Test for config validation for activation offloading."""
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import pytest
 
-from axolotl.utils.config import validate_config
+from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 LORA = {
@@ -179,3 +183,18 @@ class TestActivationOffloading:
 
         cfg = validate_config(cfg)
         assert "use_reentrant" not in (cfg.gradient_checkpointing_kwargs or {})
+
+        # normalize_config then applies the reentrant default, which the trainer
+        # builder passes to the Trainer.
+        with patch(
+            "axolotl.utils.config.load_model_config",
+            return_value=SimpleNamespace(model_type="llama", to_dict=dict),
+        ):
+            normalize_config(cfg)
+        args: dict = {}
+        TrainerBuilderBase._configure_gradient_checkpointing(
+            SimpleNamespace(cfg=cfg), args
+        )
+        assert args["gradient_checkpointing"] is True
+        assert args["gradient_checkpointing_kwargs"] == {"use_reentrant": True}
+        assert args["activation_offloading"] is True
