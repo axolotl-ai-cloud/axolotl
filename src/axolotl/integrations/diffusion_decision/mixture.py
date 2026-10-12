@@ -220,9 +220,19 @@ def prepare_source_pools(
     seed: int = 0,
 ) -> PreparedSourcePools:
     """Decontaminate records, then deterministically cap each nonempty source pool."""
-    retained, counts = decontaminate(
-        training, evaluation, exclude_families=exclude_families
-    )
+    if evaluation:
+        retained, counts = decontaminate(
+            training, evaluation, exclude_families=exclude_families
+        )
+    else:
+        # Nothing to decontaminate against: keep every record without fingerprinting states.
+        retained = list(training)
+        counts = {
+            "input": len(retained),
+            "state_overlap": 0,
+            "family_overlap": 0,
+            "kept": len(retained),
+        }
     grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for record in retained:
         grouped[record["source"]].append(record)

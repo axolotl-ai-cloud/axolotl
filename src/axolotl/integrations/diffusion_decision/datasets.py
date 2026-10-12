@@ -863,15 +863,23 @@ def _build_canvas_layer(
         dev = explicit_eval
     else:
         train, dev = _family_dev_split(train)
-    LOG.info(
-        "Decontaminating %s training records against %s development and %s protected records",
-        len(train),
-        len(dev),
-        len(protected_eval),
-    )
     mixture = _value(decision, "mixture")
     premixed = bool(_value(mixture, "premixed", False))
-    retained, drops = decontaminate(train, [*dev, *protected_eval])
+    if bool(_value(decision, "decontaminate", False)):
+        LOG.info(
+            "Decontaminating %s training records against %s development and %s protected records",
+            len(train),
+            len(dev),
+            len(protected_eval),
+        )
+        retained, drops = decontaminate(train, [*dev, *protected_eval])
+    else:
+        LOG.info(
+            "Skipping decontamination of %s training records (diffusion_decision.decontaminate "
+            "is off); train/dev isolation is still asserted, protected splits are not checked",
+            len(train),
+        )
+        retained, drops = train, {}
     if premixed and len(retained) != len(train):
         raise ValueError("premixed decision rows overlap an evaluation split")
     train = [dict(record) for record in retained]
