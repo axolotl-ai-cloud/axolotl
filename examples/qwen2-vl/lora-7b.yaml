@@ -6,6 +6,10 @@ skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
 
+# dataset_map_batch_size / dataset_writer_batch_size cap per-worker RAM when
+# datasets are pre-tokenized; unused with skip_prepare_dataset: true.
+# See docs/dataset_preprocessing.qmd
+
 chat_template: qwen2_vl
 datasets:
   - path: HuggingFaceH4/llava-instruct-mix-vsft

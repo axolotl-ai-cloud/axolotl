@@ -83,9 +83,13 @@ def _tokenize_chunk(bounds: tuple[int, int]) -> dict[str, list]:
     return {key: [row[key] for row in rows] for key in keys}
 
 
-def _chunk_bounds(num_rows: int, num_proc: int) -> list[tuple[int, int]]:
+def _chunk_bounds(
+    num_rows: int, num_proc: int, max_chunk_size: int = MAX_CHUNK_SIZE
+) -> list[tuple[int, int]]:
     chunk_size = math.ceil(num_rows / (num_proc * CHUNKS_PER_WORKER))
-    chunk_size = max(MIN_CHUNK_SIZE, min(MAX_CHUNK_SIZE, chunk_size))
+    chunk_size = max(
+        min(MIN_CHUNK_SIZE, max_chunk_size), min(max_chunk_size, chunk_size)
+    )
     return [
         (start, min(start + chunk_size, num_rows))
         for start in range(0, num_rows, chunk_size)
@@ -140,12 +144,16 @@ def tokenize_with_work_queue(
     dataset: Dataset,
     num_proc: int,
     keep_in_memory: bool | None = False,
+    batch_size: int | None = None,
+    writer_batch_size: int | None = None,
 ) -> Dataset:
     """Tokenize ``dataset`` across ``num_proc`` workers, dropping input columns.
 
     Equivalent to ``dataset.map(..., remove_columns=<all>)`` except that workers
     take the next chunk as they finish rather than owning a fixed shard. A hung
-    worker is not detected; only a dead one.
+    worker is not detected; only a dead one. ``batch_size`` caps the rows per
+    chunk (one ``tokenize_prompt`` call) and ``writer_batch_size`` the rows
+    buffered before each Arrow flush, like their ``Dataset.map`` namesakes.
     """
     fingerprint = update_fingerprint(
         dataset._fingerprint,
@@ -180,7 +188,9 @@ def tokenize_with_work_queue(
         buf_writer = pa.BufferOutputStream()
         writer_kwargs["stream"] = buf_writer
 
-    chunks = _chunk_bounds(len(dataset), num_proc)
+    max_chunk_size = min(MAX_CHUNK_SIZE, batch_size) if batch_size else MAX_CHUNK_SIZE
+    chunks = _chunk_bounds(len(dataset), num_proc, max_chunk_size)
+    writer_batch_size = writer_batch_size or WRITER_BATCH_SIZE
     LOG.info(
         f"Tokenizing {len(dataset)} examples with {num_proc} workers "
         f"({len(chunks)} chunks)"
@@ -210,7 +220,7 @@ def tokenize_with_work_queue(
                 ):
                     if batch:
                         _extend(buffered, batch)
-                    if _num_rows(buffered) >= WRITER_BATCH_SIZE:
+                    if _num_rows(buffered) >= writer_batch_size:
                         writer.write_batch(buffered)
                         written += _num_rows(buffered)
                         buffered = {}
