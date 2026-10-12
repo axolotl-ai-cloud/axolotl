@@ -947,6 +947,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#streaming-pretraining_dataset" id="toc-streaming-pretraining_dataset" class="nav-link" data-scroll-target="#streaming-pretraining_dataset">Streaming: <code>pretraining_dataset</code></a></li>
   <li><a href="#dataset-format" id="toc-dataset-format" class="nav-link" data-scroll-target="#dataset-format">Dataset Format</a></li>
   <li><a href="#key-settings" id="toc-key-settings" class="nav-link" data-scroll-target="#key-settings">Key Settings</a></li>
+  <li><a href="#label-balancing" id="toc-label-balancing" class="nav-link" data-scroll-target="#label-balancing">Label balancing</a></li>
   <li><a href="#file-map" id="toc-file-map" class="nav-link" data-scroll-target="#file-map">File Map</a></li>
   </ul></li>
   </ul>
@@ -1048,6 +1049,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>No adapter — typically full fine-tune for pretraining</li>
 <li><code>train_on_inputs: true</code> — default for completion (all tokens trained on)</li>
 </ul>
+</section>
+<section id="label-balancing" class="level2">
+<h2 class="anchored" data-anchor-id="label-balancing">Label balancing</h2>
+<p>See <a href="../../docs/agents/label_balancing.html">label_balancing.md</a> for the chunk-local streaming packing
+path and its distinction from map-style optimizer-step balancing.</p>
 </section>
 <section id="file-map" class="level2">
 <h2 class="anchored" data-anchor-id="file-map">File Map</h2>

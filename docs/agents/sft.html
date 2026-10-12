@@ -949,6 +949,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#healthy-training-indicators" id="toc-healthy-training-indicators" class="nav-link" data-scroll-target="#healthy-training-indicators">Healthy Training Indicators</a></li>
   <li><a href="#known-issues" id="toc-known-issues" class="nav-link" data-scroll-target="#known-issues">Known Issues</a></li>
   <li><a href="#profiling" id="toc-profiling" class="nav-link" data-scroll-target="#profiling">Profiling</a></li>
+  <li><a href="#label-balancing" id="toc-label-balancing" class="nav-link" data-scroll-target="#label-balancing">Label balancing</a></li>
   <li><a href="#file-map" id="toc-file-map" class="nav-link" data-scroll-target="#file-map">File Map</a></li>
   </ul></li>
   </ul>
@@ -1215,6 +1216,11 @@ View the Chrome trace at <code>chrome://tracing</code>.</p>
 - <strong>Small frequent kernels</strong>: candidates for kernel fusion
 - <strong>Gaps between kernels</strong>: pipeline bubbles from CPU overhead</p>
 <p>Full troubleshooting: <a href="../../docs/training_stability.html">training_stability.qmd</a>, <a href="../../docs/debugging.html">debugging.qmd</a></p>
+</section>
+<section id="label-balancing" class="level2">
+<h2 class="anchored" data-anchor-id="label-balancing">Label balancing</h2>
+<p>See <a href="../../docs/agents/label_balancing.html">label_balancing.md</a> for sampler objectives, metric scopes,
+collator requirements, distributed ordering, and checkpoint-resume invariants.</p>
 </section>
 <section id="file-map" class="level2">
 <h2 class="anchored" data-anchor-id="file-map">File Map</h2>
