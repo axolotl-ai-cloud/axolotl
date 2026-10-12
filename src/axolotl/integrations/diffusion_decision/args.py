@@ -246,6 +246,17 @@ class DiffusionDecisionConfig(BaseModel):
             "description": "Decision layout recorded in the adapter manifest."
         },
     )
+    decontaminate: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Drop training records whose state (or held-out family) also appears in a dev or "
+                "protected (test/calibration/ood) split before grouping. Off by default for data "
+                "decontaminated upstream. When off, train-vs-dev isolation is still asserted after "
+                "grouping (overlap fails the build), but overlap with protected splits is not checked."
+            )
+        },
+    )
     max_questions_per_canvas: int = Field(
         default=20,
         ge=1,

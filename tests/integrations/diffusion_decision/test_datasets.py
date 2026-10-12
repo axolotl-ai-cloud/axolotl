@@ -178,6 +178,7 @@ def test_loader_protects_official_test_calibration_and_ood(monkeypatch):
         _entry("ood", "ood"),
         test_datasets=(DEV_ENTRY, _entry("heldout", "test")),
     )
+    cfg["diffusion_decision"]["decontaminate"] = True
 
     result = datasets.load_decision_datasets(cfg)
     retained = [row["record"] for row in result.train_dataset]
@@ -188,6 +189,45 @@ def test_loader_protects_official_test_calibration_and_ood(monkeypatch):
     assert result.train_dataset.manifest["protected_eval_rows"] == 3
     assert result.train_dataset.manifest["dropped"]["state_overlap"] == 1
     assert result.train_dataset.manifest["dropped"]["family_overlap"] == 1
+
+
+def test_loader_skips_decontamination_by_default(monkeypatch):
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [
+                _record("alpha", "keep", "train-keep", "a0"),
+                _record("alpha", "state-overlap", "shared", "a1"),
+                _record("beta", "keep-b", "train-b", "b0"),
+            ],
+            "cal": [_record("alpha", "cal", "shared", "c0")],
+            "dev": [_record("gamma", "dev", "dev-state", "d0")],
+        },
+    )
+    cfg = _cfg(
+        _entry("train", "train"),
+        _entry("cal", "calibration"),
+        test_datasets=(DEV_ENTRY,),
+    )
+
+    result = datasets.load_decision_datasets(cfg)
+
+    assert {row["record"]["id"] for row in result.train_dataset} == {"a0", "a1", "b0"}
+    assert result.train_dataset.manifest["dropped"].get("state_overlap", 0) == 0
+
+
+def test_loader_still_rejects_train_dev_leakage_without_decontamination(monkeypatch):
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [_record("alpha", "leak", "dev-state", "a0")],
+            "dev": [_record("gamma", "dev", "dev-state", "d0")],
+        },
+    )
+    cfg = _cfg(_entry("train", "train"), test_datasets=(DEV_ENTRY,))
+
+    with pytest.raises(ValueError, match="state overlaps splits"):
+        datasets.load_decision_datasets(cfg)
 
 
 def test_loader_realizes_each_capped_record_once_in_stratified_batches(monkeypatch):
@@ -295,6 +335,7 @@ def test_premixed_rejects_invalid_draws(monkeypatch, train, dev, match):
         test_datasets=(DEV_ENTRY,) if dev else (),
         mixture=PREMIXED,
     )
+    cfg["diffusion_decision"]["decontaminate"] = True
 
     with pytest.raises(ValueError, match=match):
         datasets.load_decision_datasets(cfg)
