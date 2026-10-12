@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import hashlib
 import inspect
 import json
 import math
@@ -26,7 +27,12 @@ from torch.utils.data import (
     Sampler,
     SequentialSampler,
 )
-from transformers import PreTrainedModel, Trainer
+from transformers import (
+    DataCollatorForSeq2Seq as HFDataCollatorForSeq2Seq,
+    DataCollatorWithFlattening,
+    PreTrainedModel,
+    Trainer,
+)
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
 from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
@@ -51,6 +57,7 @@ from axolotl.core.trainers.utils import (
 )
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_world_size,
@@ -58,7 +65,12 @@ from axolotl.utils.distributed import (
     is_main_process,
 )
 from axolotl.utils.logging import get_logger
-from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.samplers import (
+    LabelBalancedRandomSampler,
+    MultipackBatchSampler,
+    get_dataset_lengths,
+)
+from axolotl.utils.samplers.utils import get_dataset_label_counts
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
 
 LOG = get_logger(__name__)
@@ -165,8 +177,175 @@ class AxolotlTrainer(
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
+    def _init_training_state(
+        self,
+        max_steps,
+        num_update_steps_per_epoch,
+        num_train_epochs,
+        resume_from_checkpoint,
+        trial,
+    ):
+        epochs, steps = super()._init_training_state(
+            max_steps,
+            num_update_steps_per_epoch,
+            num_train_epochs,
+            resume_from_checkpoint,
+            trial,
+        )
+        if (
+            getattr(self.args, "balance_labels", False)
+            and not self.args.pretraining
+            and resume_from_checkpoint is not None
+            and self.state.epoch is not None
+        ):
+            # Packing is repeatable within an epoch, but its length can differ across epochs.
+            epochs = int(self.state.epoch)
+        return epochs, steps
+
+    def _run_epoch(self, model, epoch, train_dataloader, **kwargs):
+        if getattr(self.args, "balance_labels", False) and not self.args.pretraining:
+            # Resume's SkipBatchSampler hides samplers from Accelerate's epoch forwarding.
+            pending = [train_dataloader]
+            visited = set()
+            samplers = []
+            while pending:
+                current = pending.pop()
+                if id(current) in visited:
+                    continue
+                visited.add(id(current))
+                if isinstance(
+                    current, (MultipackBatchSampler, LabelBalancedRandomSampler)
+                ):
+                    current.set_epoch(epoch)
+                    samplers.append(current)
+                for attribute in ("batch_sampler", "sampler"):
+                    child = getattr(current, attribute, None)
+                    if child is not None:
+                        pending.append(child)
+            if "steps_in_epoch" in kwargs:
+                self._balanced_sampler_state = {
+                    "version": 1,
+                    "settings": [self._balanced_sampler_settings(s) for s in samplers],
+                    "dataset_fingerprint": getattr(
+                        self.train_dataset, "_fingerprint", None
+                    ),
+                    "steps_in_epoch": kwargs["steps_in_epoch"],
+                    "epoch": epoch,
+                }
+            if (
+                kwargs.get("resume_from_checkpoint") is not None
+                and epoch == kwargs["epochs_trained"]
+                and not self.args.ignore_data_skip
+                and self.state.epoch is not None
+            ):
+                manifest = os.path.join(
+                    kwargs["resume_from_checkpoint"], "balanced_sampler.json"
+                )
+                if os.path.isfile(manifest):
+                    with open(manifest, encoding="utf-8") as stream:
+                        saved = json.load(stream)
+                    current = self._balanced_sampler_state
+                    if saved.get("replay_error"):
+                        raise ValueError(
+                            "Balanced sampler checkpoint cannot restore exact data replay: "
+                            f"{saved['replay_error']}. Set ignore_data_skip: true to resume "
+                            "without restoring the previous data position."
+                        )
+                    for key in ("version", "settings"):
+                        if saved[key] != current[key]:
+                            raise ValueError(
+                                f"Balanced sampler resume changed {key}; exact data replay is not possible. "
+                                "Settings include data-parallel size, batch size, and accumulation steps. "
+                                "Set ignore_data_skip: true to resume without restoring the previous data position."
+                            )
+                    if (
+                        saved.get("dataset_fingerprint")
+                        != current["dataset_fingerprint"]
+                    ):
+                        LOG.warning(
+                            "Balanced sampler dataset fingerprint changed, but sampler settings "
+                            "and length/label metadata match. Replaying the same index order; "
+                            "this does not verify identical dataset contents."
+                        )
+                    if saved["resume_epoch"] != epoch or (
+                        saved["consumed_batches"]
+                        and saved["steps_in_epoch"] != current["steps_in_epoch"]
+                    ):
+                        raise ValueError(
+                            "Balanced sampler resume changed epoch length or position. "
+                            "Set ignore_data_skip: true to resume without restoring the previous data position."
+                        )
+                    skipped = saved["consumed_batches"]
+                else:
+                    skipped = (self.state.epoch - epoch) * kwargs["steps_in_epoch"]
+                kwargs["steps_trained_in_current_epoch"] = (
+                    self._validated_balanced_offset(skipped, kwargs["steps_in_epoch"])
+                )
+        return super()._run_epoch(
+            model=model, epoch=epoch, train_dataloader=train_dataloader, **kwargs
+        )
+
+    @staticmethod
+    def _balanced_sampler_settings(sampler):
+        names = (
+            "seed",
+            "batch_size",
+            "batch_max_len",
+            "bin_size",
+            "group_size",
+            "sequential",
+            "padding_multiple",
+            "dp_count",
+            "batches_per_optimizer_step",
+            "length_mode",
+            "drop_last",
+        )
+        settings = {name: getattr(sampler, name, None) for name in names}
+        window = getattr(sampler, "label_balance_window_optim_steps", 1)
+        if window != 1:
+            settings["label_balance_window_optim_steps"] = window
+        settings["type"] = type(sampler).__name__
+        digest = hashlib.sha256()
+        for name in ("lengths", "label_counts", "label_start_counts"):
+            values = getattr(sampler, name, None)
+            if values is not None:
+                digest.update(name.encode("ascii"))
+                digest.update(values.astype("<i8").tobytes())
+        settings["metadata_sha256"] = digest.hexdigest()
+        return settings
+
+    def _validated_balanced_offset(self, offset, steps_in_epoch):
+        rounded = round(offset)
+        if (
+            not math.isclose(offset, rounded, abs_tol=1e-6, rel_tol=0)
+            or not 0 <= rounded <= steps_in_epoch
+            or (
+                rounded != steps_in_epoch
+                and rounded % self.args.gradient_accumulation_steps
+            )
+        ):
+            raise ValueError(
+                "Balanced sampler resume must land on an optimizer-step boundary. "
+                "Set ignore_data_skip: true to resume without restoring the previous data position."
+            )
+        return rounded
+
+    def _data_parallel_size(self) -> int:
+        replicas = getattr(self.args, "world_size", 1)
+        parallelism = getattr(
+            getattr(self, "accelerator", None), "parallelism_config", None
+        )
+        if parallelism is not None:
+            replicas = parallelism.dp_replicate_size * parallelism.dp_shard_size
+        return replicas
+
+    def _batches_per_optimizer_step(self) -> int:
+        return self._data_parallel_size() * getattr(
+            self.args, "gradient_accumulation_steps", 1
+        )
+
     def _create_multipack_sampler(
-        self, base_sampler: Sampler, dataset: Dataset
+        self, base_sampler: Sampler, dataset: Dataset, *, is_training: bool = True
     ) -> MultipackBatchSampler:
         """
         Helper method to create a `MultipackBatchSampler` for multipacking sequences
@@ -179,19 +358,41 @@ class AxolotlTrainer(
         Returns:
             Multipack (sample packing) batch sampler.
         """
+        payload_batch_size = (
+            self._train_batch_size if is_training else self.args.eval_batch_size
+        )
         if self.args.multipack_real_batches:
-            batch_size = self.args.per_device_train_batch_size
+            batch_size = payload_batch_size
             batch_max_len = self.args.max_seq_length
         else:
             batch_size = 1
-            train_batch_size = (
-                self.state.train_batch_size or self.args.per_device_train_batch_size
-            )
-            batch_max_len = train_batch_size * self.args.max_seq_length
+            batch_max_len = payload_batch_size * self.args.max_seq_length
 
+        label_counts = label_start_counts = None
+        if is_training and getattr(self.args, "balance_labels", False):
+            tokenizer = getattr(getattr(self, "data_collator", None), "tokenizer", None)
+            if getattr(tokenizer, "padding_side", "right") != "right":
+                raise ValueError("Label-balanced packing requires right padding")
+            label_counts, label_start_counts = get_dataset_label_counts(
+                dataset, shift_labels=getattr(self, "_loss_shifts_labels", True)
+            )
         sampler = MultipackBatchSampler(
             base_sampler,
             lengths=get_dataset_lengths(dataset),
+            label_counts=label_counts,
+            label_start_counts=label_start_counts,
+            seed=self.args.data_seed
+            if getattr(self.args, "data_seed", None) is not None
+            else self.args.seed,
+            dp_count=self._data_parallel_size() if is_training else 1,
+            batches_per_optimizer_step=self._batches_per_optimizer_step(),
+            label_balance_window_optim_steps=getattr(
+                self.args, "label_balance_window_optim_steps", 1
+            ),
+            padding_multiple=getattr(
+                getattr(self, "data_collator", None), "pad_to_multiple_of", None
+            )
+            or 1,
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
             batch_max_len=batch_max_len,
             batch_size=batch_size,
@@ -224,6 +425,55 @@ class AxolotlTrainer(
             return None
 
         use_sample_packing = self.args.sample_packing and not self.args.pretraining
+
+        if getattr(self.args, "balance_labels", False) and not use_sample_packing:
+            flattened = getattr(self.args, "batch_flattening", False)
+            collator = self.data_collator
+            if flattened:
+                if (
+                    not isinstance(collator, DataCollatorWithFlattening)
+                    or collator.separator_id != -100
+                ):
+                    raise ValueError(
+                        "Label balancing requires the standard flattening collator with separator_id=-100"
+                    )
+            elif (
+                type(collator) not in (DataCollatorForSeq2Seq, HFDataCollatorForSeq2Seq)
+                or collator.label_pad_token_id != -100
+                or collator.tokenizer.padding_side != "right"
+                or collator.padding not in (True, "longest")
+            ):
+                raise ValueError(
+                    "Padded label balancing requires a standard right-padding seq2seq collator "
+                    "with longest padding and label_pad_token_id=-100"
+                )
+            lengths = get_dataset_lengths(train_dataset)
+            if "labels" in train_dataset.column_names:
+                counts, starts = get_dataset_label_counts(
+                    train_dataset.select_columns(["labels"]),
+                    shift_labels=flattened
+                    or getattr(self, "_loss_shifts_labels", True),
+                )
+                counts = counts - starts
+            elif flattened:
+                counts = lengths - 1
+            else:
+                raise ValueError("Padded label balancing requires tokenized labels")
+            return LabelBalancedRandomSampler(
+                lengths,
+                counts,
+                batch_size=self._train_batch_size,
+                dp_count=self._data_parallel_size(),
+                seed=self.args.data_seed
+                if self.args.data_seed is not None
+                else self.args.seed,
+                batches_per_optimizer_step=self._batches_per_optimizer_step(),
+                label_balance_window_optim_steps=getattr(
+                    self.args, "label_balance_window_optim_steps", 1
+                ),
+                length_mode="flattened" if flattened else "padded",
+                padding_multiple=getattr(collator, "pad_to_multiple_of", None) or 1,
+            )
 
         # Determine the base sampler first
         if self.args.curriculum_sampling:
@@ -271,6 +521,7 @@ class AxolotlTrainer(
             return self._create_multipack_sampler(
                 base_sampler=base_sampler,
                 dataset=eval_dataset,
+                is_training=False,
             )
 
         return base_sampler
@@ -285,6 +536,14 @@ class AxolotlTrainer(
         dataloader_key: Optional[str] = None,
     ) -> DataLoader:
         """Create a [`~torch.utils.data.DataLoader`] from the given dataset."""
+
+        if (
+            getattr(self.args, "balance_labels", False)
+            and is_training
+            and not self.args.sample_packing
+            and isinstance(dataset, torch.utils.data.IterableDataset)
+        ):
+            raise ValueError("Fixed-count label balancing requires a map-style dataset")
 
         data_collator = self.data_collator if is_training else self.eval_data_collator
 
@@ -972,6 +1231,30 @@ class AxolotlTrainer(
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
+
+        if getattr(self, "_balanced_sampler_state", None) and self.args.should_save:
+            saved = dict(self._balanced_sampler_state)
+            try:
+                saved["resume_epoch"] = int(self.state.epoch)
+                offset = (
+                    (self.state.epoch - saved["epoch"]) * saved["steps_in_epoch"]
+                    if saved["resume_epoch"] == saved["epoch"]
+                    else 0
+                )
+                saved["consumed_batches"] = self._validated_balanced_offset(
+                    offset, saved["steps_in_epoch"]
+                )
+            except (ValueError, TypeError, OverflowError) as exc:
+                saved["replay_error"] = str(exc)
+                LOG.warning(
+                    "Saving checkpoint without exact balanced-sampler replay metadata: %s. "
+                    "Resume requires ignore_data_skip: true, which does not restore the previous data position.",
+                    exc,
+                )
+            with open(
+                os.path.join(output_dir, "balanced_sampler.json"), "w", encoding="utf-8"
+            ) as stream:
+                json.dump(saved, stream, indent=2)
 
         # EP-sharded expert LoRA is never gathered by the FSDP/DCP saves, and FSDP2 + a quantized
         # (NVFP4/Float8) frozen base breaks the DCP sharded save ("Failed to validate global plan").
