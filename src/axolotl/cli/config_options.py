@@ -3047,6 +3047,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--torch-compile-regional/--no-torch-compile-regional",),
+        None,
+        None,
+        "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time since identical blocks hit the compiler cache. Set to 'false' to compile the whole model.",
+    ),
+    (
         ("--torch-compile-options",),
         None,
         None,

@@ -1226,6 +1226,12 @@ class AxolotlInputConfig(
     torch_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
         None
     )
+    torch_compile_regional: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time since identical blocks hit the compiler cache. Set to 'false' to compile the whole model."
+        },
+    )
     torch_compile_options: dict[str, bool | int | float | str] | None = Field(
         default=None,
         json_schema_extra={
