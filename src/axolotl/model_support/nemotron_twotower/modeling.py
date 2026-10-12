@@ -451,6 +451,7 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
         position_ids: torch.Tensor | None = None,
         attention_mask=None,
         axolotl_canvas_mask: torch.Tensor | None = None,
+        axolotl_canvas_times: torch.Tensor | None = None,
         axolotl_selected_logits: tuple[torch.Tensor, torch.Tensor] | None = None,
         timesteps: torch.Tensor | None = None,
         labels=None,
@@ -461,8 +462,11 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
 
         Document boundaries come from ``position_ids`` (restarting at 0), so dense,
         flex and varlen packing metadata (``attention_mask`` / ``diffusion_varlen``)
-        are accepted and not needed. ``timesteps`` optionally overrides the
-        per-document ``t`` (one value per canvas, in document order).
+        are accepted and not needed. The denoiser's ``t`` is, in priority order:
+        ``timesteps`` (one value per canvas, in document order),
+        ``axolotl_canvas_times`` (``[rows, tokens]``, read at each canvas start; the
+        decision trainer passes its sampled corruption time), else the masked
+        fraction of the canvas (the reference's inference rule).
         """
         del attention_mask
         if labels is not None:
@@ -476,9 +480,10 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
         if input_ids.ndim != 2:
             raise ValueError("TwoTower input_ids must be [rows, tokens]")
         if position_ids is None:
-            position_ids = torch.arange(
-                input_ids.shape[1], device=input_ids.device
-            ).expand_as(input_ids)
+            raise ValueError(
+                "TwoTower forward needs document-local position_ids (restarting at 0 "
+                "per packed document)"
+            )
         documents = self._documents(position_ids, axolotl_canvas_mask)
         # Logits go back to the caller's device: with the towers on two GPUs the
         # trainer's label/supervision tensors stay where the batch was placed.
@@ -504,6 +509,14 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
             valid_t, input_ids[rows_t, cols_t], self.config.mask_token_id
         ).view(len(documents), width)
         canvas_valid = valid_t.view(len(documents), width)
+        if timesteps is None and axolotl_canvas_times is not None:
+            starts = torch.tensor(
+                [[doc.row, doc.canvas_start] for doc in documents],
+                device=axolotl_canvas_times.device,
+            )
+            timesteps = axolotl_canvas_times[starts[:, 0], starts[:, 1]]
+        if timesteps is not None:
+            timesteps = timesteps.to(device)
         hidden = self.denoise(canvas_ids, canvas_valid, context, timesteps)
         flat_hidden = hidden.reshape(-1, hidden.shape[-1])
 

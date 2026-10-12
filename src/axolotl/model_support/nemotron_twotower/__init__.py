@@ -173,6 +173,11 @@ def scope_target_modules(target_modules) -> str | None:
     if isinstance(target_modules, str):
         return target_modules
     names = sorted({str(name) for name in target_modules})
+    if "lm_head" in names or "context_lm_head" in names:
+        raise ValueError(
+            "TwoTower lora_target_modules cover denoiser-tower layers only; train the "
+            "head's codebook rows with peft_trainable_token_indices (diffusion_head)"
+        )
     for name in names:
         if not re.fullmatch(r"[A-Za-z0-9_]+", name):
             raise ValueError(
@@ -223,12 +228,12 @@ def scope_trainable_token_indices(indices):
     scoped = {}
     for name, ids in indices.items():
         target = _EMBEDDING_ALIASES.get(str(name), str(name))
-        if target.startswith(CONTEXT_PREFIXES) or target in ("context_lm_head",):
+        if target.startswith(CONTEXT_PREFIXES):
             raise ValueError(
                 f"TwoTower trains only the denoiser tower; trainable tokens on {name!r} "
                 "would target the frozen context tower"
             )
-        if target not in ("lm_head",) and not target.startswith(f"{DENOISER_PREFIX}."):
+        if target != "lm_head" and not target.startswith(f"{DENOISER_PREFIX}."):
             raise ValueError(
                 f"TwoTower trainable-token module {name!r} is not the denoiser embedding "
                 "(embed_tokens) or head (diffusion_head / lm_head)"
@@ -253,6 +258,14 @@ def _validate(context: ModelHookContext) -> None:
         # Document boundaries come from position_ids; varlen packing metadata is
         # cheap, whereas the dense backend would build a [rows, T, T] mask.
         cfg.attn_implementation = "varlen"
+    if getattr(cfg, "diffusion_lm", None) is not None and not getattr(
+        cfg, "diffusion_decision", None
+    ):
+        # Only the decision trainer tells the model where each canvas starts.
+        raise ValueError(
+            "Nemotron-Labs-TwoTower currently trains through the diffusion_decision "
+            "plugin only (plain diffusion_lm training/generation is not implemented)"
+        )
     if getattr(cfg, "cut_cross_entropy", False):
         raise ValueError("Nemotron-Labs-TwoTower does not support cut_cross_entropy")
     if getattr(cfg, "load_in_4bit", False) or getattr(cfg, "load_in_8bit", False):

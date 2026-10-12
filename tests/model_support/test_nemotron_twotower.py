@@ -416,6 +416,16 @@ def test_time_is_masked_fraction_and_can_be_overridden():
     ).logits
     torch.testing.assert_close(automatic, explicit)
     assert not torch.allclose(automatic, other)
+    per_token = torch.full(ids.shape, 0.9)
+    from_map = model(
+        ids,
+        position_ids=positions,
+        axolotl_canvas_mask=canvas,
+        axolotl_canvas_times=per_token,
+    ).logits
+    torch.testing.assert_close(from_map, other)
+    with pytest.raises(ValueError, match="position_ids"):
+        model(ids, axolotl_canvas_mask=canvas)
 
 
 def test_context_tower_gets_no_gradient_and_checkpointing_matches():
@@ -612,6 +622,7 @@ def test_validate_hook_rewrites_run_config():
         lora_target_parameters=["mixer.experts.down_proj"],
         peft_trainable_token_indices={"embed_tokens": [5]},
         diffusion_lm={"canvas_width": 8},
+        diffusion_decision={"max_questions_per_canvas": 2},
     )
     _validate(ModelHookContext(cfg=cfg, model_config=tiny_config()))
     assert cfg.attn_implementation == "varlen"
@@ -624,10 +635,21 @@ def test_validate_hook_rewrites_run_config():
     with pytest.raises(ValueError, match="mask_token_id"):
         _validate(
             ModelHookContext(
-                cfg=DictDefault(diffusion_lm={"mask_token_id": 100}),
+                cfg=DictDefault(
+                    diffusion_lm={"mask_token_id": 100}, diffusion_decision={"a": 1}
+                ),
                 model_config=tiny_config(),
             )
         )
+    with pytest.raises(ValueError, match="diffusion_decision plugin"):
+        _validate(
+            ModelHookContext(
+                cfg=DictDefault(diffusion_lm={"canvas_width": 8}),
+                model_config=tiny_config(),
+            )
+        )
+    with pytest.raises(ValueError, match="trainable_token_indices"):
+        scope_target_modules(["q_proj", "lm_head"])
     with pytest.raises(ValueError, match="lora_target_linear"):
         _validate(
             ModelHookContext(
@@ -748,6 +770,14 @@ def test_decision_loss_runs_through_the_trainer():
         mask_token_id=MASK,
     )
     model = tiny_model().train()
+    seen = []
+    original = model.forward
+
+    def recording(*args, **kwargs):
+        seen.append(kwargs.get("axolotl_canvas_times"))
+        return original(*args, **kwargs)
+
+    model.forward = recording
     for selected in (True, False):
         model.supports_selected_logits = selected
         model.zero_grad(set_to_none=True)
@@ -756,6 +786,8 @@ def test_decision_loss_runs_through_the_trainer():
         loss.backward()
         assert model.denoiser_tower.layers[0].mixer.in_proj.weight.grad.abs().sum() > 0
         assert model.context_tower.layers[0].mixer.in_proj.weight.grad is None
+    canvas_times = seen[-1][inputs["decision_canvas_mask"]]
+    assert canvas_times.numel() == 8 and bool((canvas_times > 0).all())
 
 
 # ------------------------------------------------------------ axolotl loader e2e

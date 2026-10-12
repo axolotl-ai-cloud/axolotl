@@ -840,6 +840,14 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             canvas_kwargs["axolotl_canvas_mask"] = _pad_to_packed(
                 inputs["decision_canvas_mask"].bool(), packed, False
             )
+            # The sampled corruption time of each document (per token): canvases
+            # carry pinned template tokens that are never masked, so the masked
+            # fraction of the canvas understates the noise level the loss assumes.
+            canvas_kwargs["axolotl_canvas_times"] = torch.where(
+                logical_rows >= 0,
+                times[logical_rows.clamp_min(0)],
+                torch.zeros((), dtype=times.dtype, device=times.device),
+            )
 
         def with_canvas(extra: dict[str, Any] | None = None) -> dict[str, Any] | None:
             merged = {**media_kwargs, **canvas_kwargs, **(extra or {})}
