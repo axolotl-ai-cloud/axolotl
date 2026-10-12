@@ -9,7 +9,11 @@ stack: no ``axolotl.core``, peft, accelerate, ``datasets``, pandas or
 
 from __future__ import annotations
 
+import gc
+import logging
+import multiprocessing
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import replace
 from typing import Any
 
@@ -32,6 +36,7 @@ from .preprocessing import (
     canvas_head,
     decision_schema,
     template_fits,
+    template_fits_many,
 )
 from .prompts import decision_prompt_ids
 from .records import DecisionCanvas
@@ -46,6 +51,8 @@ from .segments import (
 )
 from .slots import SlotInit, SlotPlan
 from .template import SchemaError, system_text
+
+LOG = logging.getLogger(__name__)
 
 
 def _thought_delimiters(model_config: Any) -> tuple[tuple[int, ...], tuple[int, ...]]:
@@ -166,19 +173,138 @@ def _grouping_fits(tokenizer: Any, cfg: Any, spec) -> Any:
     )
     width = _canvas_width(cfg, spec)
     codebook = _value(_value(decision, "labels"), "codebook", "vendored26")
+    return _GroupingFits(
+        tokenizer,
+        head=head,
+        pad_slots=len(pad_slots),
+        width=width,
+        answer_format=answer_format,
+        codebook=codebook,
+        workers=int(_value(cfg, "dataset_num_proc", 1) or 1),
+    )
 
-    def fits(questions: Mapping[str, Mapping[str, Any]]) -> bool:
+
+# Smallest batch measured in worker processes: forking a preprocessing process
+# that holds every loaded record costs about a second per pool, more than a
+# smaller batch takes serially.
+_FITS_MIN_BATCH = 65536
+# Fewest canvases per worker task; a batch is split into about four tasks per
+# worker.
+_FITS_CHUNK_SIZE = 1024
+# (fits, batch) of the running ``_GroupingFits.many``: forked workers inherit it,
+# so the records are never pickled to them; tasks carry only index ranges.
+_FITS_WORKER_STATE: tuple[Any, Sequence[Any]] | None = None
+
+
+def _init_fits_worker() -> None:
+    # Keep the cyclic collector off the heap inherited from the parent: a full
+    # collection there walks (and copies the pages of) every loaded record.
+    gc.freeze()
+
+
+def _fits_range(bounds: tuple[int, int]) -> list[bool | None]:
+    if _FITS_WORKER_STATE is None:
+        raise RuntimeError("grouping fits worker has no batch")
+    fits, batch = _FITS_WORKER_STATE
+    start, stop = bounds
+    return fits.many_serial(batch[start:stop])
+
+
+class _GroupingFits:
+    """``template_fits`` bound to one config; ``many`` measures a batch of canvases.
+
+    ``group_records`` calls ``many`` on every record that is alone in its group
+    (most records) and calls the instance itself for incremental merges.
+    """
+
+    def __init__(
+        self,
+        tokenizer: Any,
+        *,
+        head: Sequence[int],
+        pad_slots: int,
+        width: int,
+        answer_format: str,
+        codebook: str,
+        workers: int = 1,
+    ) -> None:
+        self.tokenizer = tokenizer
+        self.head = head
+        self.pad_slots = pad_slots
+        self.width = width
+        self.answer_format = answer_format
+        self.codebook = codebook
+        self.workers = workers
+
+    def __call__(self, questions: Mapping[str, Mapping[str, Any]]) -> bool:
         return template_fits(
-            tokenizer,
+            self.tokenizer,
             questions,
-            head=head,
-            pad_slots=len(pad_slots),
-            width=width,
-            answer_format=answer_format,
-            codebook=codebook,
+            head=self.head,
+            pad_slots=self.pad_slots,
+            width=self.width,
+            answer_format=self.answer_format,
+            codebook=self.codebook,
         )
 
-    return fits
+    def many_serial(
+        self, batch: Sequence[Mapping[str, Mapping[str, Any]]]
+    ) -> list[bool | None]:
+        return template_fits_many(
+            self.tokenizer,
+            batch,
+            head=self.head,
+            pad_slots=self.pad_slots,
+            width=self.width,
+            answer_format=self.answer_format,
+            codebook=self.codebook,
+        )
+
+    def many(
+        self, batch: Sequence[Mapping[str, Mapping[str, Any]]]
+    ) -> list[bool | None]:
+        """``many_serial`` of the batch, split over ``workers`` forked processes.
+
+        Each worker measures contiguous index ranges of the batch it inherited
+        and results are joined in range order, so the output is the serial one.
+        Without fork (or if the pool fails) the batch is measured serially.
+        """
+        workers = min(self.workers, len(batch) // _FITS_CHUNK_SIZE)
+        if (
+            workers <= 1
+            or len(batch) < _FITS_MIN_BATCH
+            or "fork" not in multiprocessing.get_all_start_methods()
+        ):
+            return self.many_serial(batch)
+        global _FITS_WORKER_STATE
+        size = max(_FITS_CHUNK_SIZE, -(-len(batch) // (4 * workers)))
+        ranges = [
+            (start, min(start + size, len(batch)))
+            for start in range(0, len(batch), size)
+        ]
+        LOG.info(
+            "Measuring %s grouping canvases with %s worker processes",
+            len(batch),
+            workers,
+        )
+        _FITS_WORKER_STATE = (self, batch)
+        try:
+            with ProcessPoolExecutor(
+                max_workers=workers,
+                mp_context=multiprocessing.get_context("fork"),
+                initializer=_init_fits_worker,
+            ) as executor:
+                results: list[bool | None] = []
+                for part in executor.map(_fits_range, ranges):
+                    results.extend(part)
+        except Exception:  # noqa: BLE001  (a lost worker must not fail the build)
+            LOG.warning(
+                "Grouping fits worker pool failed; measuring serially", exc_info=True
+            )
+            return self.many_serial(batch)
+        finally:
+            _FITS_WORKER_STATE = None
+        return results
 
 
 def _canvas_settings(
