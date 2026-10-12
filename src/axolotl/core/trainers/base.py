@@ -159,13 +159,23 @@ class AxolotlTrainer(
 
         super().__init__(*_args, **kwargs)
 
+        # Resolved once: accelerate's unwrap_model walks every module, and
+        # DDP/FSDP wrappers don't proxy .config.
+        unwrapped_model = self.accelerator.unwrap_model(self.model)
+        self._model_type = getattr(
+            getattr(unwrapped_model, "config", None), "model_type", None
+        )
+        self._inject_mm_token_type_ids = self._model_type in (
+            "gemma4",
+            "gemma4_unified",
+        )
+
         # Gemma4-style models declare **kwargs in forward(), which HF Trainer reads as
         # "handles num_items_in_batch internally". Only override when the loss really
         # does not take it: a wrong False mis-normalises the loss under gradient
         # accumulation and moves the gradient, not just the logged value.
         if self.model_accepts_loss_kwargs:
-            model_to_check = self.accelerator.unwrap_model(self.model)
-            if not model_loss_accepts_num_items_in_batch(model_to_check):
+            if not model_loss_accepts_num_items_in_batch(unwrapped_model):
                 self.model_accepts_loss_kwargs = False
 
         self.train_data_collator = self.data_collator
@@ -701,6 +711,15 @@ class AxolotlTrainer(
         cp_size = pc.non_data_parallel_size // pc.tp_size
         return count // cp_size if cp_size > 1 else count
 
+    def _maybe_inject_mm_token_type_ids(self, inputs):
+        # Gemma4 requires mm_token_type_ids even for text-only batches.
+        if (
+            self._inject_mm_token_type_ids
+            and "mm_token_type_ids" not in inputs
+            and "input_ids" in inputs
+        ):
+            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
@@ -738,17 +757,7 @@ class AxolotlTrainer(
             )
             self.state.tokens["total"] = self.state.tokens["total"] + total_tokens.cpu()
 
-        # Gemma4 requires mm_token_type_ids during training (even for text-only).
-        # Inject zeros (= text token type) when not provided by the data collator.
-        # Use unwrap_model to handle DDP/FSDP wrappers that don't proxy .config.
-        _unwrapped = self.accelerator.unwrap_model(model)
-        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
-        if (
-            "mm_token_type_ids" not in inputs
-            and "input_ids" in inputs
-            and _model_type in ("gemma4", "gemma4_unified")
-        ):
-            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+        self._maybe_inject_mm_token_type_ids(inputs)
 
         # Gemma4 (and Gemma3): transformers' masking_utils detects packed sequences
         # from position_ids, but only when attention_mask is None.  When sample
@@ -757,7 +766,7 @@ class AxolotlTrainer(
         # per-sequence causal masks.
         if (
             self.args.sample_packing
-            and _model_type in ("gemma4", "gemma3", "gemma4_unified")
+            and self._model_type in ("gemma4", "gemma3", "gemma4_unified")
             and "attention_mask" in inputs
             and "position_ids" in inputs
         ):
@@ -813,15 +822,7 @@ class AxolotlTrainer(
 
     @override
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-        # Gemma4 requires mm_token_type_ids even during evaluation.
-        _unwrapped = self.accelerator.unwrap_model(model)
-        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
-        if (
-            "mm_token_type_ids" not in inputs
-            and "input_ids" in inputs
-            and _model_type in ("gemma4", "gemma4_unified")
-        ):
-            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+        self._maybe_inject_mm_token_type_ids(inputs)
         return super().prediction_step(
             model, inputs, prediction_loss_only, ignore_keys=ignore_keys
         )
@@ -938,22 +939,10 @@ class AxolotlTrainer(
             "attention_mask": concat_inputs["attention_mask"],
             "labels": concat_inputs["labels"],
         }
-        # Gemma4 requires mm_token_type_ids during training (even for text-only).
-        # Unwrap to read .config (DDP/DeepSpeed wrappers don't proxy it).
-        _orpo_model_type = getattr(
-            getattr(self.accelerator.unwrap_model(model), "config", None),
-            "model_type",
-            None,
-        )
-        if (
-            _orpo_model_type in ("gemma4", "gemma4_unified")
-            and "mm_token_type_ids" not in concat_inputs
-        ):
-            forward_kwargs["mm_token_type_ids"] = torch.zeros_like(
-                concat_inputs["input_ids"]
-            )
-        elif "mm_token_type_ids" in concat_inputs:
+        if "mm_token_type_ids" in concat_inputs:
             forward_kwargs["mm_token_type_ids"] = concat_inputs["mm_token_type_ids"]
+        else:
+            self._maybe_inject_mm_token_type_ids(forward_kwargs)
 
         outputs = model(
             **forward_kwargs,
