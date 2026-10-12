@@ -61,6 +61,36 @@ class ChatCharacterTokenizer(CharacterTokenizer):
         return [99]
 
 
+class WorkerTokenizer:
+    """A module-level (so picklable) one-token-per-character chat tokenizer.
+
+    Used where datasets are pickled into DataLoader workers; every segmentation
+    concatenates, so the plan's pre-tokenized segment path is exercised too.
+    """
+
+    decision_segments_safe = True
+    pad_token_id = 0
+    bos_token_id = 1
+    eos_token_id = 11
+    unk_token_id = 2
+    mask_token_id = None
+    chat_template = "character"
+
+    def __len__(self) -> int:
+        return 256
+
+    def encode(self, text, add_special_tokens=False):
+        assert not add_special_tokens
+        return [ord(character) % 256 for character in text]
+
+    def apply_chat_template(self, messages, *, tokenize=True, **_kwargs):
+        text = "".join(
+            f"<{message['role']}>{message['content']}" for message in messages
+        )
+        text += "<assistant>"
+        return self.encode(text) if tokenize else text
+
+
 class RecordedTokenizer:
     def __init__(self, encodings):
         self.encodings = encodings

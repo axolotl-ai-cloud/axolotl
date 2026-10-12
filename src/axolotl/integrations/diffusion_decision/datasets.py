@@ -1008,48 +1008,99 @@ def _build_canvas_layer(
     return layer_train, eval_rows, manifest
 
 
-def _plan_row_builder(cfg: Any, tokenizer: Any, spec: Any):
-    """Lazily build the training row of one draw of a record (see DecisionBatchPlan)."""
-    decision = _value(cfg, "diffusion_decision")
-    weights = _value(_value(decision, "mixture"), "loss_weight", {}) or {}
-    vocab_size = _value(model_config_overrides(cfg), "vocab_size")
-    if vocab_size is None:
-        vocab_size = len(tokenizer)
-    slot_plan, thought_open_ids, thought_close_ids = _resolve_slot_plan(
-        tokenizer, cfg, spec, int(vocab_size)
-    )
-    settings: list[Mapping[str, Any] | None] = []  # computed at the first build
+# Top-level config keys a plan row build reads (``_canvas_row`` reads the decision
+# section; ``_canvas_settings`` the rest). A pickled builder keeps only these, so a
+# DataLoader worker does not receive the whole training config.
+_ROW_BUILDER_CFG_KEYS = (
+    "seed",
+    "diffusion_decision",
+    "diffusion_lm",
+    "overrides_of_model_config",
+    "model_config",
+)
 
-    def build(
+
+def _row_builder_cfg(cfg: Any) -> dict[str, Any]:
+    """The config keys of ``_ROW_BUILDER_CFG_KEYS`` that ``cfg`` sets."""
+    if isinstance(cfg, Mapping):
+        return {key: cfg[key] for key in _ROW_BUILDER_CFG_KEYS if key in cfg}
+    missing = object()
+    values = {key: getattr(cfg, key, missing) for key in _ROW_BUILDER_CFG_KEYS}
+    return {key: value for key, value in values.items() if value is not missing}
+
+
+class _PlanRowBuilder:
+    """Lazily build the training row of one draw of a record (see DecisionBatchPlan).
+
+    A module-level callable rather than a closure so a DecisionPlanDataset pickles
+    into DataLoader workers (``spawn`` / ``forkserver`` start methods, the default
+    from Python 3.14). Pickling keeps the config keys a build reads, the tokenizer,
+    spec, resolved slot plan and canvas settings (computed at the first build).
+    """
+
+    def __init__(self, cfg: Any, tokenizer: Any, spec: Any) -> None:
+        decision = _value(cfg, "diffusion_decision")
+        self._weights = _value(_value(decision, "mixture"), "loss_weight", {}) or {}
+        vocab_size = _value(model_config_overrides(cfg), "vocab_size")
+        if vocab_size is None:
+            vocab_size = len(tokenizer)
+        self._cfg = cfg
+        self._tokenizer = tokenizer
+        self._spec = spec
+        self._vocab_size = vocab_size
+        (
+            self._slot_plan,
+            self._thought_open_ids,
+            self._thought_close_ids,
+        ) = _resolve_slot_plan(tokenizer, cfg, spec, int(vocab_size))
+        self._settings: Mapping[str, Any] | None = None
+        self._settings_ready = False  # computed at the first build
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = dict(self.__dict__)
+        state["_cfg"] = _row_builder_cfg(self._cfg)
+        return state
+
+    def _canvas_settings(self) -> Mapping[str, Any] | None:
+        if not self._settings_ready:
+            self._settings_ready = True
+            try:
+                self._settings = _canvas_settings(
+                    self._tokenizer,
+                    self._cfg,
+                    self._spec,
+                    int(self._vocab_size),
+                    self._slot_plan,
+                )
+            except (TypeError, ValueError):
+                self._settings = None  # _canvas_row raises it where it did before
+        return self._settings
+
+    def __call__(
+        self,
         source: str,
         record: Mapping[str, Any],
         draw: tuple[int, int],
         segments: Any = None,
         cached_prompt: Sequence[int] | None = None,
     ) -> dict[str, Any] | None:
-        if not settings:
-            try:
-                settings.append(
-                    _canvas_settings(tokenizer, cfg, spec, int(vocab_size), slot_plan)
-                )
-            except (TypeError, ValueError):
-                settings.append(None)  # _canvas_row raises it where it did before
+        settings = self._canvas_settings()
         try:
             return _canvas_row(
-                tokenizer,
+                self._tokenizer,
                 dict(record),
-                cfg,
-                float(weights.get(source, 1.0)),
-                spec=spec,
-                vocab_size=int(vocab_size),
-                slot_plan=slot_plan,
-                thought_open_ids=thought_open_ids,
-                thought_close_ids=thought_close_ids,
+                self._cfg,
+                float(self._weights.get(source, 1.0)),
+                spec=self._spec,
+                vocab_size=int(self._vocab_size),
+                slot_plan=self._slot_plan,
+                thought_open_ids=self._thought_open_ids,
+                thought_close_ids=self._thought_close_ids,
                 train=True,
                 draw=draw,
                 segments=segments,
                 cached_prompt=cached_prompt,
-                settings=settings[0],
+                settings=settings,
             )
         except SchemaError as error:
             # Records outside the prepared subset were never canvasized; one that
@@ -1057,7 +1108,10 @@ def _plan_row_builder(cfg: Any, tokenizer: Any, spec: Any):
             LOG.debug("Decision draw of %s could not be built: %s", source, error)
             return None
 
-    return build
+
+def _plan_row_builder(cfg: Any, tokenizer: Any, spec: Any) -> _PlanRowBuilder:
+    """Lazily build the training row of one draw of a record (see DecisionBatchPlan)."""
+    return _PlanRowBuilder(cfg, tokenizer, spec)
 
 
 def _assemble_datasets(
