@@ -12,6 +12,7 @@ from axolotl.cli.utils.lora_merge import merge_lora_sharded_efficient
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.mtp import copy_mtp_weights
 
 LOG = get_logger(__name__)
 
@@ -66,6 +67,7 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
 
         if processor:
             processor.save_pretrained(str(Path(cfg.output_dir) / "merged"))
+        copy_mtp_weights(cfg.base_model, Path(cfg.output_dir) / "merged")
 
 
 def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
