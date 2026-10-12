@@ -28,7 +28,7 @@ class ModelInputConfig(BaseModel):
     cls_model_config: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "transformers config class (e.g., 'LlamaConfig', 'MistralConfig'). Defaults to AutoConfig."
+            "description": "transformers config class (e.g., 'LlamaConfig', 'MistralConfig') or a dotted import path to a config class. Defaults to AutoConfig."
         },
     )
     tokenizer_config: str | None = Field(
