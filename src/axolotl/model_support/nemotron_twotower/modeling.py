@@ -480,6 +480,9 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
                 input_ids.shape[1], device=input_ids.device
             ).expand_as(input_ids)
         documents = self._documents(position_ids, axolotl_canvas_mask)
+        # Logits go back to the caller's device: with the towers on two GPUs the
+        # trainer's label/supervision tensors stay where the batch was placed.
+        output_device = input_ids.device
         device = self.denoiser_tower.embeddings.weight.device
         context = self._context_states(input_ids, documents, device)
 
@@ -526,9 +529,11 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
                 "selected logits must point at canvas positions",
             )
             logits = self.lm_head(flat_hidden[index.clamp_min(0)])
-            return TwoTowerDiffusionOutput(logits=logits, axolotl_selected_logits=True)
+            return TwoTowerDiffusionOutput(
+                logits=logits.to(output_device), axolotl_selected_logits=True
+            )
 
         canvas_logits = self.lm_head(flat_hidden[valid_t])
         logits = canvas_logits.new_zeros(*input_ids.shape, canvas_logits.shape[-1])
         logits[rows_t[valid_t], cols_t[valid_t]] = canvas_logits
-        return TwoTowerDiffusionOutput(logits=logits)
+        return TwoTowerDiffusionOutput(logits=logits.to(output_device))

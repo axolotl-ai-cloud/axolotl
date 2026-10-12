@@ -221,5 +221,6 @@ def test_towers_on_two_gpus_match_one_gpu():
         single = model(ids, position_ids=positions, axolotl_canvas_mask=canvas).logits
         model.place_towers_on_devices("cuda:0", "cuda:1")
         split = model(ids, position_ids=positions, axolotl_canvas_mask=canvas).logits
-    assert split.device == torch.device("cuda:1")
-    assert _rel(split[canvas.to(split.device)], single[canvas]) < 1e-5
+    # logits come back on the batch's device for the trainer's loss tensors
+    assert split.device == ids.device
+    assert _rel(split[canvas], single[canvas]) < 1e-5
