@@ -89,14 +89,29 @@ def test_already_wrapped_children_are_excluded():
     assert carved == []  # only the frozen norm remains in the unit
 
 
-def test_keeps_the_dtype_owned_directly_by_the_unit():
+def test_non_adapter_modules_are_never_carved():
     root = nn.Module()
     root.scale = nn.Parameter(torch.zeros(1))  # fp32 owned by the unit itself
     root.head = nn.Linear(4, 4, bias=False).to(torch.bfloat16)  # trainable bf16 leaf
 
-    carved = plan_trainable_dtype_carveout(root)
+    # a plain Linear may be read directly (F.linear(x, m.weight)); refuse to split it out
+    assert plan_trainable_dtype_carveout(root) == []
 
-    assert carved == [root.head]
+
+def test_adapters_are_carved_even_when_they_are_the_larger_dtype():
+    layer = _Layer()  # frozen bf16 bases, fp32 adapters (64 params)
+    layer.gate = nn.Linear(2, 2, bias=False).to(
+        torch.bfloat16
+    )  # unfrozen router, 4 params
+
+    carved = plan_trainable_dtype_carveout(layer)
+
+    assert carved == [
+        layer.q.lora_A["default"],
+        layer.q.lora_B["default"],
+        layer.v.lora_A["default"],
+        layer.v.lora_B["default"],
+    ]
 
 
 def test_mixed_owner_on_the_carved_side_blocks_the_split():

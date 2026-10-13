@@ -60,6 +60,24 @@ def _is_lora_base_layer(module: nn.Module, parent: nn.Module | None) -> bool:
     return parent is not None and getattr(parent, "base_layer", None) is module
 
 
+_ADAPTER_DICTS = ("lora_A", "lora_B", "lora_magnitude_vector")
+
+
+def _is_adapter_module(module: nn.Module, parents: dict[int, nn.Module | None]) -> bool:
+    """A PEFT adapter factor (or an embedding LoRA layer): always run through its own forward,
+    so a unit of its own is gathered when needed. Anything else may be read directly
+    (ScatterMoE routers, fused kernels, ...) and must stay in the enclosing unit."""
+    if getattr(module, "lora_embedding_A", None) or getattr(
+        module, "lora_embedding_B", None
+    ):
+        return True
+    parent = parents.get(id(module))
+    grand = parents.get(id(parent)) if parent is not None else None
+    if not isinstance(parent, nn.ModuleDict) or grand is None:
+        return False
+    return any(getattr(grand, name, None) is parent for name in _ADAPTER_DICTS)
+
+
 def plan_trainable_dtype_carveout(
     root: nn.Module,
     is_wrapped: Callable[[nn.Module], bool] | None = None,
@@ -68,13 +86,13 @@ def plan_trainable_dtype_carveout(
     """Modules to shard on their own so that ``fully_shard(root)`` sees one trainable dtype.
 
     Returns an empty list when the unit already has at most one trainable dtype.
-    One dtype stays in the unit: the one owned directly by ``root`` if any, else
-    the one with the most parameters. Every other dtype is carved out through the
-    modules that own it, which must be pure in that dtype.
-
-    ``pinned`` modules, and a LoRA layer's ``base_layer`` (the fused kernels read
-    its weight directly, bypassing any hook a unit of its own would need), count
-    as owned by ``root``: they are never carved.
+    Only PEFT adapter modules are ever carved out (their forward always runs, so
+    their own unit gets gathered); every other module may have its weight read
+    directly and stays in the unit. One dtype is kept: the one owned by ``root``
+    or by a non-adapter module if any, else the one with the most parameters.
+    The others are carved through their adapter modules, which must be pure in
+    that dtype. ``pinned`` modules and a LoRA layer's ``base_layer`` count as
+    owned by ``root``.
     """
     is_wrapped = is_wrapped or _is_fsdp_module
     pinned_ids = {id(m) for m in pinned}
@@ -95,6 +113,7 @@ def plan_trainable_dtype_carveout(
                 or owner is root
                 or id(owner) in pinned_ids
                 or _is_lora_base_layer(owner, parents.get(id(owner)))
+                or not _is_adapter_module(owner, parents)
             ):
                 root_dtypes.add(param.dtype)
             elif owner not in owners_by_dtype[param.dtype]:
@@ -134,7 +153,7 @@ def plan_trainable_dtype_carveout(
         ):
             return carved
     LOG.warning(
-        "FSDP2 unit %s mixes trainable dtypes %s in modules that cannot be split; "
+        "FSDP2 unit %s mixes trainable dtypes %s outside its adapter modules; "
         "leaving it to FSDP2, which will reject the unit",
         type(root).__name__,
         sorted(str(d) for d in numel_by_dtype),
