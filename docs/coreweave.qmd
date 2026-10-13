@@ -104,6 +104,16 @@ save. Normal training completion drains the queue and reports any failure. On
 training abort, teardown cancels queued work and joins the active publication.
 Set `async_publish: false` for synchronous checkpoint-save publishing.
 
+The queue is shared infrastructure in
+`axolotl.core.checkpoint_publisher.BackgroundCheckpointPublisher`. Other integrations
+can pass a `publish(directory, step)` callable, for example one that uploads files
+directly to S3. The default retention function pins all checkpoint files, including
+nested files; a custom `retain(source, queue_root)` callable can select a subset
+with `retain_checkpoint(..., files=[...])`. Call `submit` after each completed save,
+`check` at training boundaries, and `close` to drain publication. Abort handling
+should call `close(cancel_pending=True)`. The CoreWeave subclass selects only HF
+model or adapter files and loads tensors inside the worker.
+
 Artifacts are stored under `output_dir/coreweave-checkpoints/` and uploaded under
 unique checkpoint identities. Shards are uploaded before the index. Hot-loading
 uses `PROMPT_CACHE_POLICY_RESET_ALL` and waits for operation completion and all

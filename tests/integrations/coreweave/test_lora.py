@@ -15,7 +15,7 @@ from safetensors import safe_open
 from transformers import LlamaConfig, LlamaForCausalLM
 
 from axolotl.cli.utils.lora_merge import merge_lora_sharded_efficient
-from axolotl.integrations.coreweave.async_publisher import retain_checkpoint
+from axolotl.integrations.coreweave.async_publisher import retain_model_checkpoint
 from axolotl.integrations.coreweave.lora import LoRACheckpointPublisher
 from axolotl.integrations.coreweave.plugin import (
     CoreWeaveCheckpointCallback,
@@ -142,7 +142,7 @@ def test_adapter_rotation_and_background_merge(tmp_path, model_and_adapter):
         base_model=str(base),
     )
     directory = save(1)
-    retained = retain_checkpoint(directory, tmp_path / "retained")
+    retained = retain_model_checkpoint(directory, tmp_path / "retained")
     assert (retained / "adapter_model.safetensors").stat().st_ino == (
         directory / "adapter_model.safetensors"
     ).stat().st_ino

@@ -10,8 +10,8 @@ import pytest
 import torch
 
 from axolotl.integrations.coreweave.async_publisher import (
-    BackgroundCheckpointPublisher,
-    retain_checkpoint,
+    CoreWeaveBackgroundPublisher,
+    retain_model_checkpoint,
 )
 from axolotl.integrations.coreweave.plugin import (
     CoreWeaveCheckpointCallback,
@@ -112,7 +112,7 @@ def test_unload_cancels_queued_work_and_waits_for_active_upload(tmp_path):
         assert release.wait(5)
 
     publisher.publish.side_effect = publish
-    worker = BackgroundCheckpointPublisher(
+    worker = CoreWeaveBackgroundPublisher(
         lambda: publisher, load_weights, tmp_path / "queue"
     )
     worker.submit(checkpoint(tmp_path, 1), 1)
@@ -141,24 +141,24 @@ def test_unload_cancels_queued_work_and_waits_for_active_upload(tmp_path):
 
 def test_retention_uses_links_without_copying_weights(tmp_path):
     source = checkpoint(tmp_path, 1)
-    retained = retain_checkpoint(source, tmp_path / "queue")
+    retained = retain_model_checkpoint(source, tmp_path / "queue")
     for path in retained.iterdir():
         assert path.stat().st_ino == (source / path.name).stat().st_ino
 
 
 def test_retention_falls_back_to_copy_and_cleans_up_errors(tmp_path, monkeypatch):
-    import axolotl.integrations.coreweave.async_publisher as module
+    import axolotl.core.checkpoint_publisher as module
 
     source = checkpoint(tmp_path, 1)
     monkeypatch.setattr(
         module.os, "link", MagicMock(side_effect=OSError(errno.EXDEV, "cross device"))
     )
-    retained = retain_checkpoint(source, tmp_path / "queue")
+    retained = retain_model_checkpoint(source, tmp_path / "queue")
     assert load_weights(retained)[0]["weight"].item() == 1
     shutil.rmtree(retained)
     monkeypatch.setattr(
         module.os, "link", MagicMock(side_effect=OSError(errno.ENOSPC, "disk full"))
     )
     with pytest.raises(OSError, match="disk full"):
-        retain_checkpoint(source, tmp_path / "queue")
+        retain_model_checkpoint(source, tmp_path / "queue")
     assert not list((tmp_path / "queue").iterdir())

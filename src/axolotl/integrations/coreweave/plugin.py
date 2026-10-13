@@ -84,10 +84,10 @@ class CoreWeaveCheckpointCallback(TrainerCallback):
 
                     loader = adapter_checkpoint
                 if self.config.async_publish:
-                    from .async_publisher import BackgroundCheckpointPublisher
+                    from .async_publisher import CoreWeaveBackgroundPublisher
 
                     if self.worker is None:
-                        self.worker = BackgroundCheckpointPublisher(
+                        self.worker = CoreWeaveBackgroundPublisher(
                             lambda: self._get_publisher(args.output_dir),
                             loader,
                             Path(args.output_dir) / "coreweave-checkpoints" / ".queue",
