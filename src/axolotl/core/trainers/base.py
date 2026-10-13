@@ -735,7 +735,7 @@ class AxolotlTrainer(
 
         Collective: every rank must call it (log and checkpoint save both do).
         """
-        if self._tkps_trainable_acc is None:
+        if getattr(self, "_tkps_trainable_acc", None) is None:
             return
         counts = torch.stack(
             [
@@ -1243,7 +1243,7 @@ class AxolotlTrainer(
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
 
-        if self.args.include_tkps:
+        if getattr(self.args, "include_tkps", False):
             self._sync_token_counts()
 
         if getattr(self, "_balanced_sampler_state", None) and self.args.should_save:
