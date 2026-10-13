@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
+import torch._dynamo.config as _dynamo_cfg
 import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
 
@@ -486,6 +487,30 @@ class TestApplyTorchCompileOptions:
         if accelerator_config:
             for key, value in accelerator_config.items():
                 assert getattr(config, key) is value
+
+    def test_configure_torch_compile_disables_dynamo_lru_under_checkpointing(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=True)
+        with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+        set_lru.assert_called_once_with(False)
+
+    def test_configure_torch_compile_keeps_dynamo_lru_without_checkpointing(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=False)
+        with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+        set_lru.assert_not_called()
+
+    def test_configure_torch_compile_raises_recompile_limit_for_regional(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, torch_compile_regional=True)
+        before = _dynamo_cfg.recompile_limit
+        try:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+            assert _dynamo_cfg.recompile_limit >= 64
+        finally:
+            _dynamo_cfg.recompile_limit = before
 
     def test_configure_torch_compile_invokes_apply_when_options_set(self):
         builder = MagicMock(spec=TrainerBuilderBase)

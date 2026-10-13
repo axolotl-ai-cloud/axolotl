@@ -606,6 +606,21 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
             torch._dynamo.config.suppress_errors = True
             torch._dynamo.config.accumulated_cache_size_limit = 256
+            if self.cfg.gradient_checkpointing:
+                # pytorch/pytorch#166926: the checkpoint recompute must run the same Dynamo
+                # cache entry as the forward, which the LRU reordering does not guarantee.
+                eval_frame = getattr(
+                    getattr(torch._C, "_dynamo", None), "eval_frame", None
+                )
+                set_lru_cache = getattr(eval_frame, "_set_lru_cache", None)
+                if callable(set_lru_cache):
+                    set_lru_cache(False)
+            if self.cfg.torch_compile_regional:
+                # In-place regional compile sends every module through the one shared
+                # nn.Module._call_impl frame, so each module class is a recompile.
+                torch._dynamo.config.recompile_limit = max(
+                    torch._dynamo.config.recompile_limit, 64
+                )
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (
