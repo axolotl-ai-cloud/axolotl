@@ -65,8 +65,14 @@ an architecture allowlist entry. ModelSupport descriptors can mark
 metadata uses generic handling; it does not imply tested accuracy for every
 architecture. Kernel and configuration prerequisites still apply.
 
-The plugin shards input IDs, labels, masks, and positions using model hooks.
-Accelerate replicates each batch within its CP group. Trainer's supervised-token
+Accelerate replicates each batch within its CP group, and the sequence collator
+cuts each rank's shard of input IDs, labels, masks, and positions in the
+dataloader worker (`shard_in_collator: true`, the default), together with the
+packed-document boundaries the Ulysses varlen path needs, so the forward pre-hook
+has nothing to broadcast or scan on the device. Runs whose batches Accelerate
+dispatches (streaming or pretraining datasets), collators other than Axolotl's
+sequence collators, and older ringmaster releases shard in the forward pre-hook
+instead, which `shard_in_collator: false` also selects. Trainer's supervised-token
 count is preserved across the full accumulation window, including unequal
 microbatches and partial final windows.
 
