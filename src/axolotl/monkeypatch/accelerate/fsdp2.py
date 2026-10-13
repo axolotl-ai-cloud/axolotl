@@ -836,6 +836,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     from axolotl.utils.lora_tying import tied_lora_no_wrap_modules
 
     tied_no_wrap = tied_lora_no_wrap_modules(model)
+    # Modules the loop leaves unwrapped read their parameters directly; a unit of their own
+    # would never gather them, so the dtype carve-out must not create one either.
+    no_carve = set(nf4_unwrapped_children) | set(tied_no_wrap)
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -899,10 +902,10 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 if is_peft_model and isinstance(module, LoraLayer):
                     log_bias_dtype_mismatch |= _process_lora_module_for_fsdp(module)
                 if auto_wrap_policy(module) and not isinstance(module, FSDPModule):
-                    carve_trainable_dtype(module, fsdp2_kwargs)
+                    carve_trainable_dtype(module, fsdp2_kwargs, pinned=no_carve)
                     fully_shard(module, **fsdp2_kwargs)
 
-        carve_trainable_dtype(model, fsdp2_kwargs)
+        carve_trainable_dtype(model, fsdp2_kwargs, pinned=no_carve)
         fully_shard(model, **fsdp2_kwargs)
 
     if log_bias_dtype_mismatch:

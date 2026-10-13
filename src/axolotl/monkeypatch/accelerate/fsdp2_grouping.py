@@ -9,7 +9,7 @@ adapters next to trainable bf16 weights from ``unfrozen_parameters`` or
 """
 
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 
 import torch
 from torch import nn
@@ -56,8 +56,14 @@ def _owner_with_forward(
     return module
 
 
+def _is_lora_base_layer(module: nn.Module, parent: nn.Module | None) -> bool:
+    return parent is not None and getattr(parent, "base_layer", None) is module
+
+
 def plan_trainable_dtype_carveout(
-    root: nn.Module, is_wrapped: Callable[[nn.Module], bool] | None = None
+    root: nn.Module,
+    is_wrapped: Callable[[nn.Module], bool] | None = None,
+    pinned: Collection[nn.Module] = (),
 ) -> list[nn.Module]:
     """Modules to shard on their own so that ``fully_shard(root)`` sees one trainable dtype.
 
@@ -65,8 +71,13 @@ def plan_trainable_dtype_carveout(
     One dtype stays in the unit: the one owned directly by ``root`` if any, else
     the one with the most parameters. Every other dtype is carved out through the
     modules that own it, which must be pure in that dtype.
+
+    ``pinned`` modules, and a LoRA layer's ``base_layer`` (the fused kernels read
+    its weight directly, bypassing any hook a unit of its own would need), count
+    as owned by ``root``: they are never carved.
     """
     is_wrapped = is_wrapped or _is_fsdp_module
+    pinned_ids = {id(m) for m in pinned}
     members = _unit_members(root, is_wrapped)
     parents = {id(module): parent for module, parent in members}
 
@@ -79,7 +90,12 @@ def plan_trainable_dtype_carveout(
                 continue
             numel_by_dtype[param.dtype] += param.numel()
             owner = _owner_with_forward(module, parents)
-            if owner is None or owner is root:
+            if (
+                owner is None
+                or owner is root
+                or id(owner) in pinned_ids
+                or _is_lora_base_layer(owner, parents.get(id(owner)))
+            ):
                 root_dtypes.add(param.dtype)
             elif owner not in owners_by_dtype[param.dtype]:
                 owners_by_dtype[param.dtype].append(owner)
@@ -126,11 +142,13 @@ def plan_trainable_dtype_carveout(
     return []
 
 
-def carve_trainable_dtype(root: nn.Module, fsdp2_kwargs: dict) -> int:
+def carve_trainable_dtype(
+    root: nn.Module, fsdp2_kwargs: dict, pinned: Collection[nn.Module] = ()
+) -> int:
     """Shard the minority trainable-dtype modules under ``root`` as their own units."""
     from torch.distributed.fsdp import fully_shard
 
-    carved = plan_trainable_dtype_carveout(root)
+    carved = plan_trainable_dtype_carveout(root, pinned=pinned)
     for module in carved:
         fully_shard(module, **fsdp2_kwargs)
     if carved:

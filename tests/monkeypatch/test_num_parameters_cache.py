@@ -24,12 +24,13 @@ def tiny_model():
 
 @pytest.fixture
 def patched():
-    original = ModuleUtilsMixin.num_parameters
+    installed = ModuleUtilsMixin.num_parameters
+    original = installed
     if getattr(original, "_axolotl_cached", False):
         original = original.__wrapped__
     patch_num_parameters()
     yield original
-    ModuleUtilsMixin.num_parameters = original
+    ModuleUtilsMixin.num_parameters = installed
 
 
 def test_matches_original_for_every_argument_set(tiny_model, patched):
@@ -68,3 +69,21 @@ def test_patch_is_idempotent(patched):
     first = ModuleUtilsMixin.num_parameters
     patch_num_parameters()
     assert ModuleUtilsMixin.num_parameters is first
+
+
+def test_trainable_count_follows_requires_grad(tiny_model, patched):
+    before = tiny_model.num_parameters(only_trainable=True)
+    tiny_model.lm_head.weight.requires_grad_(False)
+
+    after = tiny_model.num_parameters(only_trainable=True)
+
+    assert before - after == tiny_model.lm_head.weight.numel()
+
+
+def test_resize_token_embeddings_invalidates(tiny_model, patched):
+    before = tiny_model.num_parameters()
+
+    tiny_model.resize_token_embeddings(80)
+
+    assert tiny_model.num_parameters() == patched(tiny_model)
+    assert tiny_model.num_parameters() != before

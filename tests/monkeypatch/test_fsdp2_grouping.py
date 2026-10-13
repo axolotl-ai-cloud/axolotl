@@ -90,13 +90,13 @@ def test_already_wrapped_children_are_excluded():
 
 
 def test_keeps_the_dtype_owned_directly_by_the_unit():
-    layer = _Layer(base_trainable=True)
-    # an fp32 parameter on the layer itself cannot be carved out, so the bf16 side must go
-    layer.scale = nn.Parameter(torch.zeros(1))
+    root = nn.Module()
+    root.scale = nn.Parameter(torch.zeros(1))  # fp32 owned by the unit itself
+    root.head = nn.Linear(4, 4, bias=False).to(torch.bfloat16)  # trainable bf16 leaf
 
-    carved = plan_trainable_dtype_carveout(layer)
+    carved = plan_trainable_dtype_carveout(root)
 
-    assert carved == [layer.q.base_layer, layer.v.base_layer]
+    assert carved == [root.head]
 
 
 def test_mixed_owner_on_the_carved_side_blocks_the_split():
@@ -113,3 +113,24 @@ def test_unsplittable_mix_returns_nothing():
     root.lin.bias = nn.Parameter(torch.zeros(4))  # fp32 inside a bf16 module
 
     assert plan_trainable_dtype_carveout(root) == []
+
+
+def test_pinned_modules_are_never_carved():
+    layer = _Layer(base_trainable=True)
+
+    carved = plan_trainable_dtype_carveout(
+        layer, pinned=[layer.q.lora_A["default"], layer.q.lora_B["default"]]
+    )
+
+    # the pinned fp32 modules stay, so fp32 is treated as owned by the unit and the
+    # bf16 side would have to go; its owners are LoRA base layers, which cannot move
+    assert carved == []
+
+
+def test_lora_base_layer_is_never_carved():
+    layer = _Layer(base_trainable=True)
+    layer.scale = nn.Parameter(torch.zeros(1))  # fp32 owned by the unit itself
+
+    # the only way to keep fp32 would be carving the bf16 base layers, which the
+    # fused LoRA kernels read directly; refuse rather than create hookless units
+    assert plan_trainable_dtype_carveout(layer) == []

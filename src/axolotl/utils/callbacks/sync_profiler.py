@@ -60,6 +60,8 @@ class SyncProfilerCallback(TrainerCallback):
         self._samples: dict[str, list[str]] = {}
         self._buckets: list[dict] = []
         self._substep = 0
+        self._window_done = False
+        self._prev_sync_mode: str | None = None
         self.result: dict | None = None
 
     # ---- lifecycle -------------------------------------------------------
@@ -73,6 +75,9 @@ class SyncProfilerCallback(TrainerCallback):
     ):
         if self._active:
             self._flush(state.global_step, "between_steps")
+            if self._window_done:
+                # the last measured step's log/save/evaluate events have now run
+                self._finish(args)
         elif state.global_step == self.start_step:
             self._enable()
         self._substep = 0
@@ -100,7 +105,7 @@ class SyncProfilerCallback(TrainerCallback):
         self._flush(state.global_step, "microstep")
         # HF increments global_step before on_step_end, so it already counts this step.
         if state.global_step >= self.start_step + self.num_steps:
-            self._finish(args)
+            self._window_done = True
 
     def on_log(
         self,
@@ -140,6 +145,7 @@ class SyncProfilerCallback(TrainerCallback):
         **kwargs,
     ):
         if self._active:
+            self._flush(state.global_step, "between_steps")
             self._finish(args)
 
     # ---- capture ---------------------------------------------------------
@@ -148,6 +154,7 @@ class SyncProfilerCallback(TrainerCallback):
         if not torch.cuda.is_available():
             LOG.warning("sync profiler needs CUDA; skipping")
             return
+        self._prev_sync_mode = torch.cuda.get_sync_debug_mode()
         torch.cuda.set_sync_debug_mode("warn")
         self._prev_showwarning = warnings.showwarning
         self._prev_filters = warnings.filters[:]
@@ -161,7 +168,7 @@ class SyncProfilerCallback(TrainerCallback):
     def _disable(self):
         if not self._active:
             return
-        torch.cuda.set_sync_debug_mode("default")
+        torch.cuda.set_sync_debug_mode(self._prev_sync_mode or "default")
         warnings.showwarning = self._prev_showwarning
         if self._prev_filters is not None:
             warnings.filters[:] = self._prev_filters

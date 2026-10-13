@@ -140,7 +140,11 @@ class TrainerBuilderBase(abc.ABC):
 
             callbacks.append(
                 SyncProfilerCallback(
-                    start_step=self.cfg.sync_profiler_start_step or 2,
+                    start_step=(
+                        2
+                        if self.cfg.sync_profiler_start_step is None
+                        else self.cfg.sync_profiler_start_step
+                    ),
                     num_steps=self.cfg.sync_profiler_steps,
                 )
             )

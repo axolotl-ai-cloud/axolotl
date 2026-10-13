@@ -81,6 +81,24 @@ class TestValidation(BaseValidation):
         assert cfg.train_on_inputs is False
         assert cfg.weight_decay is None
 
+    def test_regional_compile_rejected_with_gradient_checkpointing(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "torch_compile": True,
+                "torch_compile_regional": True,
+                "gradient_checkpointing": True,
+            }
+            | minimal_cfg
+        )
+
+        with pytest.raises(
+            ValueError, match="torch_compile_regional cannot be combined"
+        ):
+            validate_config(test_cfg)
+
+        test_cfg.gradient_checkpointing = False
+        validate_config(test_cfg)
+
     def test_zero3_qlora_use_reentrant_false(self, minimal_cfg):
         test_cfg = DictDefault(
             {

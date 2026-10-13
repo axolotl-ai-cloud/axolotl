@@ -139,7 +139,7 @@ class RuntimeMetricsTracker:
         self.metrics.current_step = step
         self.metrics.total_steps += 1
 
-        # Allocator high-water marks persist, so sampling every step buys nothing.
+        # Peaks are also sampled by the callback right before each logging step.
         if step % self.update_interval == 0:
             self.update_memory_metrics()
 
