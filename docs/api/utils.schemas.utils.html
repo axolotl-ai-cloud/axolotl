@@ -944,6 +944,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.utils.schemas.utils.handle_legacy_message_fields_logic" id="toc-axolotl.utils.schemas.utils.handle_legacy_message_fields_logic" class="nav-link" data-scroll-target="#axolotl.utils.schemas.utils.handle_legacy_message_fields_logic">handle_legacy_message_fields_logic</a></li>
+  <li><a href="#axolotl.utils.schemas.utils.is_deepspeed_zero3_config" id="toc-axolotl.utils.schemas.utils.is_deepspeed_zero3_config" class="nav-link" data-scroll-target="#axolotl.utils.schemas.utils.is_deepspeed_zero3_config">is_deepspeed_zero3_config</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -972,6 +973,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td><a href="#axolotl.utils.schemas.utils.handle_legacy_message_fields_logic">handle_legacy_message_fields_logic</a></td>
 <td>Handle backwards compatibility between legacy message field mapping and new property mapping system.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.utils.schemas.utils.is_deepspeed_zero3_config">is_deepspeed_zero3_config</a></td>
+<td>Whether a <code>deepspeed</code> config (a JSON path or a dict) selects ZeRO stage 3.</td>
 </tr>
 </tbody>
 </table>
@@ -1061,9 +1066,14 @@ additional_field: source_field</p>
 </tr>
 </tbody>
 </table>
-
-
 </section>
+</section>
+<section id="axolotl.utils.schemas.utils.is_deepspeed_zero3_config" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.utils.is_deepspeed_zero3_config">is_deepspeed_zero3_config</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.utils.is_deepspeed_zero3_config(deepspeed)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Whether a <code>deepspeed</code> config (a JSON path or a dict) selects ZeRO stage 3.</p>
+
+
 </section>
 </section>
 </section>

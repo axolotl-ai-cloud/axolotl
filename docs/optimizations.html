@@ -1087,7 +1087,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li><strong>Compile-safe:</strong> the kernel is wrapped as a <code>torch.library.triton_op</code> and traces under <code>torch.compile(fullgraph=True)</code>.</li>
 <li><strong>Baseline perf:</strong> stacking <code>torch_compile: true</code> is a steady-state win that scales with arch — ~−14% to −16.5% on sm_86 (vanilla RTX 3090 / 3090 Ti), ~−19% on sm_120 (Blackwell/RTX 5090), measured on Qwen3-8B + LoRA r=16 + torch 2.11. Also trims peak memory ~2%.</li>
-<li><strong>Compile cold-start:</strong> adds 5–15 min on the first step.</li>
+<li><strong>Compile cold-start:</strong> adds 5–15 min on the first step. <code>torch_compile_regional: true</code> compiles each decoder block separately so identical blocks reuse one compiled artifact, but it is off by default: with <code>gradient_checkpointing</code> the recompute can run a different Dynamo cache entry than the forward and fail with a <code>CheckpointError</code> (pytorch/pytorch#166926). Whole-model compile with non-reentrant checkpointing traces cleanly (zero graph breaks on Qwen3-8B LoRA under FSDP2).</li>
 <li><strong>Tuning (<code>torch_compile_options</code>):</strong> optionally sets allowlisted <code>torch._inductor.config</code> flags (disallowed keys are rejected at validation; see the config reference for the list). Payoff is arch-specific: the only measured win is <code>max_autotune_gemm: true</code> on sm_120 with ≥32 GB (~−2.6% over plain compile) — the same flag <em>regresses</em> ~+13% on sm_86, and every other flag tested was within noise. <code>triton.cudagraphs</code> needs static shapes and is incompatible with <code>sample_packing</code>.</li>
 </ul>
 </section>

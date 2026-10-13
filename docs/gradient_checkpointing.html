@@ -974,6 +974,10 @@ models by reducing the memory footprint and improving computational efficiency.<
 <section id="enabling-gradient-checkpointing" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-gradient-checkpointing">Enabling Gradient Checkpointing</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Unless <code>gradient_checkpointing_kwargs.use_reentrant</code> is set, Axolotl uses PyTorch’s recommended
+non-reentrant checkpointing (<code>use_reentrant: false</code>). SFT runs on DeepSpeed ZeRO-3 default to
+<code>use_reentrant: true</code>, since non-reentrant recompute raises a <code>CheckpointError</code> there; <code>rl:</code> runs
+on ZeRO-3 need it set explicitly.</p>
 </section>
 <section id="enabling-activation-offloading" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-activation-offloading">Enabling Activation Offloading</h3>

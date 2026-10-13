@@ -1341,9 +1341,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="step-2-enable-gradient-checkpointing" class="level3">
 <h3 class="anchored" data-anchor-id="step-2-enable-gradient-checkpointing">Step 2: Enable Gradient Checkpointing</h3>
 <p>Trades compute for memory by recomputing activations during the backward pass instead of storing them.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing_kwargs</span><span class="kw">:</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_reentrant</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">     # Recommended default</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Non-reentrant checkpointing (<code>gradient_checkpointing_kwargs.use_reentrant: false</code>) is the default: it is what PyTorch recommends and it lets <code>torch_compile</code> trace through the checkpointed layer.</p>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -1354,10 +1353,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>Some configurations require <code>use_reentrant: true</code>:</p>
+<p>These need <code>use_reentrant: true</code>:</p>
 <ul>
-<li>DeepSpeed ZeRO-3 (non-reentrant causes <code>CheckpointError</code>)</li>
-<li>EBFT strided mode with flex_attention</li>
+<li>DeepSpeed ZeRO-3 (non-reentrant causes <code>CheckpointError</code>): the default for SFT; set it explicitly for <code>rl:</code> methods</li>
+<li>EBFT strided mode with flex_attention: set automatically</li>
 </ul>
 </div>
 </div>
