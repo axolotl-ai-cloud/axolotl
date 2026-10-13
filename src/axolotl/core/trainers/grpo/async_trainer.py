@@ -2793,6 +2793,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     to_device_async(rows, device), to_device_async(cols, device)
                 ] = flat_logps[to_device_async(src, device)]
 
+            # Free this chunk's logits before the next chunk's forward allocates its own.
+            del logits, flat_logits, flat_logps, flat_ids
+
         return all_logps
 
     def _get_per_token_logps_and_entropies_flattened(
