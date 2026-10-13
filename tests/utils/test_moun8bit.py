@@ -178,29 +178,18 @@ def test_momentum_is_updated_before_it_is_quantized():
     assert (momentum - grad).abs().max() <= grad.abs().max() / 127 / 2 + 1e-6
 
 
-QUANTIZE_KEEPS_PADDING = pytest.mark.xfail(
-    strict=True,
-    reason="quantize() returns a view onto the padded blocks, so the state keeps the "
-    "full padded buffer alive; add .contiguous() before the final reshape",
-)
-
-
-@QUANTIZE_KEEPS_PADDING
 @pytest.mark.parametrize("shape", [(64, 32), (48, BLOCK_SIZE + 137)])
 def test_quantized_momentum_owns_its_bytes(shape):
     """The int8 buffer must not be a view onto the zero-padded blocks.
 
     quantize() slices the padded (rows, nblocks, BLOCK_SIZE) buffer back down to the
-    momentum's shape. The slice is a view, so the whole padded allocation stays alive
-    and the state is no smaller than the fp momentum it replaced -- on Qwen2.5-0.5B in
-    bf16 the muon momentum measures 678.7 MiB quantized against 682.5 MiB dense.
-    Adding .contiguous() before the final reshape in quantize() restores the 2x saving.
+    momentum's shape. If that slice stayed a view, the whole padded allocation would
+    stay alive and the state would be no smaller than the fp momentum it replaced.
     """
     q, _ = quantize(torch.randn(*shape))
     assert q.untyped_storage().nbytes() == q.numel() * q.element_size()
 
 
-@QUANTIZE_KEEPS_PADDING
 def test_muon_state_is_smaller_than_dist_muon():
     """The point of the optimizer: quantized momentum must actually free memory."""
     dense_model, quant_model = _mlp(), _mlp()
