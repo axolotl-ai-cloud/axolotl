@@ -646,7 +646,6 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         ):
             # transformers consumes these FlashAttentionKwargs for any in-tree model and skips its per-layer
             # varlen derivation, which syncs the host several times per layer (and graph-breaks under compile).
-            # The allowlist guards remote-code forwards that may not accept the extra kwargs.
             kwargs["emit_fa_varlen_kwargs"] = True
 
         return collator(
