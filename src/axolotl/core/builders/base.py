@@ -135,6 +135,16 @@ class TrainerBuilderBase(abc.ABC):
         if gc_collect_steps:
             callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
 
+        if self.cfg.sync_census_steps:
+            from axolotl.utils.callbacks.sync_census import SyncCensusCallback
+
+            callbacks.append(
+                SyncCensusCallback(
+                    start_step=self.cfg.sync_census_start_step or 2,
+                    num_steps=self.cfg.sync_census_steps,
+                )
+            )
+
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
                 DynamicCheckpointCallback,
