@@ -10,8 +10,13 @@ from axolotl.utils.trainer import setup_torch_compile_env
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
-    monkeypatch.delenv("ACCELERATE_DYNAMO_BACKEND", raising=False)
-    monkeypatch.delenv("ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION", raising=False)
+    for name in (
+        "ACCELERATE_DYNAMO_BACKEND",
+        "ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION",
+    ):
+        # setenv first: delenv on an unset var records nothing, so writes by the code under test would leak
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
 
 
 def test_regional_compilation_defaults_off():
