@@ -139,12 +139,9 @@ class RuntimeMetricsTracker:
         self.metrics.current_step = step
         self.metrics.total_steps += 1
 
-        # Periodically update memory metrics
+        # Peaks are also sampled by the callback right before each logging step.
         if step % self.update_interval == 0:
             self.update_memory_metrics()
-        else:
-            # Trainer logging resets allocator peaks after on_step_end.
-            self.update_gpu_memory_metrics()
 
     def _get_memory_backend(self):
         """Select the same accelerator for current and peak allocation queries."""

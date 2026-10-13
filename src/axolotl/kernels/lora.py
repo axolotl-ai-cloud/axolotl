@@ -152,11 +152,10 @@ def get_lora_parameters(
     linear_A = proj.lora_A[active_adapter]
     linear_B = proj.lora_B[active_adapter]
 
-    # This manual unsharding is needed for FSDP2 + LoRA kernels compatibility.
-    # We fuse linear layers + LoRA adapters calculations into a single
-    # torch.autograd.Function, bypassing the registered unshard / reshard behavior.
-    # Note that we don't apply resharding later in this module (it gets messy quickly),
-    # but LoRA parameters are generally small enough that this is not an issue.
+    # Adapters normally live in the decoder-layer FSDP2 unit, so by the time this runs
+    # the layer's pre-forward has gathered them and these are plain tensors. The
+    # manual unshard only fires when the adapters were carved into their own unit
+    # (mixed trainable dtypes), since this fused path bypasses that unit's hooks.
     if isinstance(linear_A.weight, DTensor):
         linear_A.unshard()
         linear_B.unshard()

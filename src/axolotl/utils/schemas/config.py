@@ -764,6 +764,12 @@ class AxolotlInputConfig(
             "description": "Set to 'false' if getting errors during eval with sample_packing on"
         },
     )
+    fa_varlen_kwargs_in_collator: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "With sample_packing and flash attention, precompute the varlen metadata (cu_seq_lens, max_length) once per batch in the collator instead of letting transformers derive it in every attention layer, which costs several host-device syncs per layer. Not used when batches are dispatched (streaming or pretraining datasets unless accelerator_config.dispatch_batches is false) or under DeepSpeed sequence parallel, since both slice every batch tensor per rank. Set to 'false' to restore the per-layer derivation."
+        },
+    )
     pad_to_sequence_len: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1220,6 +1226,12 @@ class AxolotlInputConfig(
     torch_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
         None
     )
+    torch_compile_regional: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks gradient_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without gradient checkpointing."
+        },
+    )
     torch_compile_options: dict[str, bool | int | float | str] | None = Field(
         default=None,
         json_schema_extra={
@@ -1303,6 +1315,12 @@ class AxolotlInputConfig(
     logging_steps: int | None = Field(
         default=None, json_schema_extra={"description": "Logging frequency"}
     )
+    logging_nan_inf_filter: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss (HF default). The check reads the loss on the host every micro-step, one device sync; set to 'false' to remove it."
+        },
+    )
     early_stopping_patience: int | None = Field(
         default=None,
         json_schema_extra={
@@ -1318,6 +1336,18 @@ class AxolotlInputConfig(
     )
     use_tensorboard: bool | None = Field(
         default=None, json_schema_extra={"description": "Use tensorboard for logging"}
+    )
+    sync_profiler_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Debugging aid, separate from profiler_steps (the torch profiler timeline): count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the call sites and write sync_profile.json to output_dir."
+        },
+    )
+    sync_profiler_start_step: int = Field(
+        default=2,
+        json_schema_extra={
+            "description": "Optimizer step at which the sync profiler starts (after warm-up)."
+        },
     )
     profiler_steps: int | None = Field(
         default=None,

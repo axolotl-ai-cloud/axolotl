@@ -11,6 +11,7 @@ import torch
 import torch.distributed as dist
 from torch import nn
 
+from axolotl.monkeypatch.accelerate.fsdp2_grouping import carve_trainable_dtype
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.fp32_norms import get_fp32_norm_patterns, shard_norms_fp32
 from axolotl.utils.logging import get_logger
@@ -472,43 +473,22 @@ def patch_peft_param_wrapper_for_fsdp2():
     LOG.info("Patched PEFT _LoraParameterProxy.forward for FSDP2 DTensor compatibility")
 
 
-def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
-    """Helper function to process LoRA modules for FSDP2."""
+def _process_lora_module_for_fsdp(module):
+    """Align a LoRA layer's base bias dtype with its weight; returns whether it had to."""
     from peft.tuners.lora.layer import ParamWrapper
-    from torch.distributed.fsdp import FSDPModule, fully_shard
 
-    # Skip ParamWrapper — its lora_A/B must not be independently sharded.
-    # The parent decoder layer's FSDP wrapper handles unsharding them.
-    # TODO: review if we even need to shard them separately in first place.
     if isinstance(module, ParamWrapper):
         return False
 
-    log_bias_dtype_mismatch = False
-
-    # Linear4Bit will keep it's bias term in fp32. If the weight dtype is in bf16 we are not able to
-    # wrap this. Therefore we must ensure the bias has the same dtype as the weight
-    if hasattr(module.base_layer, "bias") and module.base_layer.bias is not None:
-        if module.base_layer.weight.dtype != module.base_layer.bias.dtype:
-            log_bias_dtype_mismatch = True
-            module.base_layer.bias.data = module.base_layer.bias.data.to(
-                module.base_layer.weight.dtype
-            )
-
-    for active_adapter in module.active_adapters:
-        for adapters in (module.lora_A, module.lora_B, module.lora_magnitude_vector):
-            if adapters and not isinstance(adapters[active_adapter], FSDPModule):
-                fully_shard(adapters[active_adapter], **fsdp2_kwargs)
-
-    # lora_embedding_A/B are ParameterDicts containing nn.Parameter (Tensors),
-    # not nn.Module. fully_shard() only accepts nn.Module, so we cannot shard
-    # individual embedding Parameters. Instead, shard the entire LoraLayer module. fully_shard() can be used hierarchically because it does not
-    # override groups already assigned by fully_shard(), so modules
-    # where fully_shard() was already called are not affected [see https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html]
-    if module.lora_embedding_A or module.lora_embedding_B:
-        if not isinstance(module, FSDPModule):
-            fully_shard(module, **fsdp2_kwargs)
-
-    return log_bias_dtype_mismatch
+    # The adapters themselves stay inside the enclosing decoder-layer unit: FSDP2 only
+    # requires one dtype across a unit's *trainable* parameters, so fp32 factors next to
+    # frozen bf16/uint8 base weights are fine. See fsdp2_grouping for the mixed case.
+    base_layer = getattr(module, "base_layer", None)
+    bias = getattr(base_layer, "bias", None)
+    if bias is not None and base_layer.weight.dtype != bias.dtype:
+        bias.data = bias.data.to(base_layer.weight.dtype)
+        return True
+    return False
 
 
 def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool:
@@ -856,6 +836,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     from axolotl.utils.lora_tying import tied_lora_no_wrap_modules
 
     tied_no_wrap = tied_lora_no_wrap_modules(model)
+    # Modules the loop leaves unwrapped read their parameters directly; a unit of their own
+    # would never gather them, so the dtype carve-out must not create one either.
+    no_carve = set(nf4_unwrapped_children) | set(tied_no_wrap)
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -917,13 +900,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 ):
                     continue
                 if is_peft_model and isinstance(module, LoraLayer):
-                    module_log_bias_mismatch = _process_lora_module_for_fsdp(
-                        module, fsdp2_kwargs
-                    )
-                    log_bias_dtype_mismatch |= module_log_bias_mismatch
+                    log_bias_dtype_mismatch |= _process_lora_module_for_fsdp(module)
                 if auto_wrap_policy(module) and not isinstance(module, FSDPModule):
+                    carve_trainable_dtype(module, fsdp2_kwargs, pinned=no_carve)
                     fully_shard(module, **fsdp2_kwargs)
 
+        carve_trainable_dtype(model, fsdp2_kwargs, pinned=no_carve)
         fully_shard(model, **fsdp2_kwargs)
 
     if log_bias_dtype_mismatch:

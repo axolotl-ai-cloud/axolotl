@@ -1,8 +1,23 @@
 """Utilities for Axolotl Pydantic models"""
 
+import json
+import os
+
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+def is_deepspeed_zero3_config(deepspeed) -> bool:
+    """Whether a `deepspeed` config (a JSON path or a dict) selects ZeRO stage 3."""
+    if not deepspeed:
+        return False
+    if isinstance(deepspeed, str):
+        if not os.path.isfile(deepspeed):
+            return "zero3" in deepspeed
+        with open(deepspeed, encoding="utf-8") as fin:
+            deepspeed = json.load(fin)
+    return str((deepspeed.get("zero_optimization") or {}).get("stage")) == "3"
 
 
 def handle_legacy_message_fields_logic(data: dict) -> dict:

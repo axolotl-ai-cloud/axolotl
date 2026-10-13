@@ -32,6 +32,7 @@ from transformers import (
     DataCollatorWithFlattening,
     PreTrainedModel,
     Trainer,
+    TrainerState,
 )
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
@@ -159,18 +160,33 @@ class AxolotlTrainer(
 
         super().__init__(*_args, **kwargs)
 
+        # Resolved once: accelerate's unwrap_model walks every module, and
+        # DDP/FSDP wrappers don't proxy .config.
+        unwrapped_model = self.accelerator.unwrap_model(self.model)
+        self._model_type = getattr(
+            getattr(unwrapped_model, "config", None), "model_type", None
+        )
+        self._inject_mm_token_type_ids = self._model_type in (
+            "gemma4",
+            "gemma4_unified",
+        )
+
         # Gemma4-style models declare **kwargs in forward(), which HF Trainer reads as
         # "handles num_items_in_batch internally". Only override when the loss really
         # does not take it: a wrong False mis-normalises the loss under gradient
         # accumulation and moves the gradient, not just the logged value.
         if self.model_accepts_loss_kwargs:
-            model_to_check = self.accelerator.unwrap_model(self.model)
-            if not model_loss_accepts_num_items_in_batch(model_to_check):
+            if not model_loss_accepts_num_items_in_batch(unwrapped_model):
                 self.model_accepts_loss_kwargs = False
 
         self.train_data_collator = self.data_collator
         self._tkps_prev_trainable: float | None = None
         self._tkps_prev_time: float | None = None
+        # Per-rank token counters stay on device between logs; see _sync_token_counts.
+        self._tkps_trainable_acc: torch.Tensor | None = None
+        self._tkps_total_acc: int = 0
+        self._tkps_restored: tuple[int, int] = (0, 0)
+        self._tkps_state: TrainerState | None = None
         self._stored_metrics = defaultdict(
             lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
         )
@@ -701,6 +717,57 @@ class AxolotlTrainer(
         cp_size = pc.non_data_parallel_size // pc.tp_size
         return count // cp_size if cp_size > 1 else count
 
+    def _accumulate_token_counts(self, inputs):
+        tokens = inputs["labels"] if "labels" in inputs else inputs["input_ids"]
+        if self._tkps_trainable_acc is None or self._tkps_state is not self.state:
+            # auto_find_batch_size retries with a fresh state; restored counts are cross-rank sums.
+            restored = getattr(self.state, "tokens", None) or {}
+            self._tkps_restored = (
+                int(torch.as_tensor(restored.get("trainable", 0)).item()),
+                int(torch.as_tensor(restored.get("total", 0)).item()),
+            )
+            self._tkps_trainable_acc = torch.zeros(
+                (), dtype=torch.int64, device=tokens.device
+            )
+            self._tkps_total_acc = 0
+            self._tkps_state = self.state
+        self._tkps_trainable_acc += (tokens != -100).sum()
+        self._tkps_total_acc += tokens.numel()
+
+    def _sync_token_counts(self):
+        """Reduce the per-rank token counters into state.tokens; one sync per call.
+
+        Collective: every rank must call it (log and checkpoint save both do).
+        """
+        if getattr(self, "_tkps_trainable_acc", None) is None:
+            return
+        counts = torch.stack(
+            [
+                self._tkps_trainable_acc,
+                torch.tensor(
+                    self._tkps_total_acc,
+                    dtype=torch.int64,
+                    device=self._tkps_trainable_acc.device,
+                ),
+            ]
+        )
+        if is_distributed():
+            torch.distributed.all_reduce(counts, op=torch.distributed.ReduceOp.SUM)
+        trainable, total = counts.tolist()
+        self.state.tokens = {
+            "trainable": torch.tensor(self._tkps_restored[0] + trainable),
+            "total": torch.tensor(self._tkps_restored[1] + total),
+        }
+
+    def _maybe_inject_mm_token_type_ids(self, inputs):
+        # Gemma4 requires mm_token_type_ids even for text-only batches.
+        if (
+            self._inject_mm_token_type_ids
+            and "mm_token_type_ids" not in inputs
+            and "input_ids" in inputs
+        ):
+            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
@@ -711,44 +778,10 @@ class AxolotlTrainer(
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
 
-        # track number of tokens for tokens per second calculation
         if self.args.include_tkps and model.training:
-            inputs_key = "labels" if "labels" in inputs else "input_ids"
-            trainable_tokens = (inputs[inputs_key] != -100).sum()
-            total_tokens = inputs[inputs_key].numel()
-            total_tokens = torch.tensor(total_tokens, device=inputs[inputs_key].device)
+            self._accumulate_token_counts(inputs)
 
-            if is_distributed():
-                torch.distributed.all_reduce(
-                    trainable_tokens, op=torch.distributed.ReduceOp.SUM
-                )
-                torch.distributed.all_reduce(
-                    total_tokens, op=torch.distributed.ReduceOp.SUM
-                )
-
-            if not hasattr(self.state, "tokens"):
-                self.state.tokens = {
-                    "trainable": torch.zeros(1),
-                    "total": torch.zeros(1),
-                }
-
-            # trainable tokens for throughput and total token slots for summaries
-            self.state.tokens["trainable"] = (
-                self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
-            )
-            self.state.tokens["total"] = self.state.tokens["total"] + total_tokens.cpu()
-
-        # Gemma4 requires mm_token_type_ids during training (even for text-only).
-        # Inject zeros (= text token type) when not provided by the data collator.
-        # Use unwrap_model to handle DDP/FSDP wrappers that don't proxy .config.
-        _unwrapped = self.accelerator.unwrap_model(model)
-        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
-        if (
-            "mm_token_type_ids" not in inputs
-            and "input_ids" in inputs
-            and _model_type in ("gemma4", "gemma4_unified")
-        ):
-            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+        self._maybe_inject_mm_token_type_ids(inputs)
 
         # Gemma4 (and Gemma3): transformers' masking_utils detects packed sequences
         # from position_ids, but only when attention_mask is None.  When sample
@@ -757,7 +790,7 @@ class AxolotlTrainer(
         # per-sequence causal masks.
         if (
             self.args.sample_packing
-            and _model_type in ("gemma4", "gemma3", "gemma4_unified")
+            and self._model_type in ("gemma4", "gemma3", "gemma4_unified")
             and "attention_mask" in inputs
             and "position_ids" in inputs
         ):
@@ -813,15 +846,7 @@ class AxolotlTrainer(
 
     @override
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-        # Gemma4 requires mm_token_type_ids even during evaluation.
-        _unwrapped = self.accelerator.unwrap_model(model)
-        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
-        if (
-            "mm_token_type_ids" not in inputs
-            and "input_ids" in inputs
-            and _model_type in ("gemma4", "gemma4_unified")
-        ):
-            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+        self._maybe_inject_mm_token_type_ids(inputs)
         return super().prediction_step(
             model, inputs, prediction_loss_only, ignore_keys=ignore_keys
         )
@@ -938,22 +963,10 @@ class AxolotlTrainer(
             "attention_mask": concat_inputs["attention_mask"],
             "labels": concat_inputs["labels"],
         }
-        # Gemma4 requires mm_token_type_ids during training (even for text-only).
-        # Unwrap to read .config (DDP/DeepSpeed wrappers don't proxy it).
-        _orpo_model_type = getattr(
-            getattr(self.accelerator.unwrap_model(model), "config", None),
-            "model_type",
-            None,
-        )
-        if (
-            _orpo_model_type in ("gemma4", "gemma4_unified")
-            and "mm_token_type_ids" not in concat_inputs
-        ):
-            forward_kwargs["mm_token_type_ids"] = torch.zeros_like(
-                concat_inputs["input_ids"]
-            )
-        elif "mm_token_type_ids" in concat_inputs:
+        if "mm_token_type_ids" in concat_inputs:
             forward_kwargs["mm_token_type_ids"] = concat_inputs["mm_token_type_ids"]
+        else:
+            self._maybe_inject_mm_token_type_ids(forward_kwargs)
 
         outputs = model(
             **forward_kwargs,
@@ -1098,6 +1111,8 @@ class AxolotlTrainer(
             except (ValueError, TypeError, FileNotFoundError):
                 pass
 
+        if self.args.include_tkps and train_eval == "train":
+            self._sync_token_counts()
         if (
             self.args.include_tkps
             and train_eval == "train"
@@ -1231,6 +1246,9 @@ class AxolotlTrainer(
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
+
+        if getattr(self.args, "include_tkps", False):
+            self._sync_token_counts()
 
         if getattr(self, "_balanced_sampler_state", None) and self.args.should_save:
             saved = dict(self._balanced_sampler_state)

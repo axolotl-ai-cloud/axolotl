@@ -126,6 +126,9 @@ class TelemetryCallback(TrainerCallback):
     ):
         """Handle step end."""
         step = state.global_step
+        if getattr(control, "should_log", False):
+            # Trainer.log() reads get_gpu_memory_usage(), which resets the allocator peaks.
+            self.tracker.update_gpu_memory_metrics()
         self.tracker.update_step(step)
 
         # Check if we should report metrics
