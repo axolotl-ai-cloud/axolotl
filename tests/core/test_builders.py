@@ -626,6 +626,13 @@ def test_packed_collator_flash_attention_metadata_streaming_without_dispatch(is_
         (False, True, "llama", V2BatchSamplerDataCollatorForSeq2Seq, {}),
         (True, False, "llama", DataCollatorForSeq2Seq, {}),
         (True, True, "gpt2", BatchSamplerDataCollatorForSeq2Seq, {}),
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {"accelerator_config": {"dispatch_batches": True}},
+        ),
         # DeepSpeed Ulysses slices every batch tensor as [batch, seq]
         (
             True,

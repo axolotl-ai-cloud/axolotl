@@ -485,9 +485,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         # accelerate's DataLoaderDispatcher, its default for iterable datasets, reads the batch
         # size off the first tensor and slices every tensor along dim 0 per process, which
         # cuts the 1-D cu_seq_lens metadata down to a single element.
-        if not (self.cfg.streaming or self.cfg.pretraining_dataset):
-            return False
-        return (self.cfg.accelerator_config or {}).get("dispatch_batches") is not False
+        dispatch_batches = (self.cfg.accelerator_config or {}).get("dispatch_batches")
+        if dispatch_batches is not None:
+            return dispatch_batches
+        return bool(self.cfg.streaming or self.cfg.pretraining_dataset)
 
     def build_collator(
         self,
