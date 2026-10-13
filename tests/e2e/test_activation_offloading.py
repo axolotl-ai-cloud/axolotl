@@ -154,8 +154,9 @@ class TestActivationOffloading:
 
     @requires_flash_attn
     def test_offload_is_adapter_aware(self, temp_dir, monkeypatch):
-        """Full finetune keeps recompute and offloads the checkpoint boundaries;
-        pure offload is PCIe-bound and OOMs at full-param scale."""
+        """With gradient_checkpointing, a full finetune recomputes through the
+        loader's checkpoint wrap and offloads only what is saved outside the
+        checkpointed layers."""
         captured = {}
         original_step = ActivationOffloadingMixin.training_step
 
