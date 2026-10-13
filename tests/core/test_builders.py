@@ -459,6 +459,34 @@ class TestApplyTorchCompileOptions:
         for k, v in inductor_config_snapshot.items():
             assert getattr(_inductor_cfg, k) == v
 
+    @pytest.mark.parametrize(
+        ("accelerator_config", "pin_memory", "expected"),
+        [
+            (None, None, True),
+            (None, True, True),
+            (None, False, False),
+            ({"split_batches": False}, None, True),
+            ({"non_blocking": False}, None, False),
+            ({"non_blocking": True}, False, True),
+        ],
+    )
+    def test_configure_accelerator_config_non_blocking(
+        self, accelerator_config, pin_memory, expected
+    ):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(
+            accelerator_config=accelerator_config, dataloader_pin_memory=pin_memory
+        )
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_accelerator_config(builder, training_args_kwargs)
+
+        config = training_args_kwargs["accelerator_config"]
+        assert config.non_blocking is expected
+        if accelerator_config:
+            for key, value in accelerator_config.items():
+                assert getattr(config, key) is value
+
     def test_configure_torch_compile_invokes_apply_when_options_set(self):
         builder = MagicMock(spec=TrainerBuilderBase)
         builder.cfg = MagicMock()

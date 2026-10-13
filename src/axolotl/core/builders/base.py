@@ -616,12 +616,15 @@ class TrainerBuilderBase(abc.ABC):
             setattr(inductor_cfg, key, value)
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
-        if self.cfg.accelerator_config:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                **self.cfg.accelerator_config
-            )
-        else:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig()
+        accelerator_config = dict(self.cfg.accelerator_config or {})
+        # Pinned host-to-device copies are stream-ordered, so non-blocking only stops the CPU
+        # from draining the previous step at every batch boundary. HF pins memory by default.
+        accelerator_config.setdefault(
+            "non_blocking", self.cfg.dataloader_pin_memory is not False
+        )
+        training_args_kwargs["accelerator_config"] = AcceleratorConfig(
+            **accelerator_config
+        )
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.layer_offloading:
