@@ -35,9 +35,10 @@ def _run(callback, tmp_path, syncs_per_microstep, ga=2, steps=2, start=1):
                 _sync()
             if sub < ga - 1:
                 callback.on_substep_end(args, _state(step), control)
-        callback.on_step_end(args, _state(step), control)
+        # HF Trainer increments global_step before on_step_end
+        callback.on_step_end(args, _state(step + 1), control)
         _sync()  # logging-time sync
-        callback.on_log(args, _state(step), control)
+        callback.on_log(args, _state(step + 1), control)
     return args
 
 
@@ -63,7 +64,7 @@ def test_only_counts_sync_warnings(fake_cuda, tmp_path):
         warnings.simplefilter("always")
         warnings.warn("something unrelated", UserWarning, stacklevel=2)
     _sync()
-    callback.on_step_end(args, _state(1), control)
+    callback.on_step_end(args, _state(2), control)
 
     assert callback.result["syncs_per_microstep"]["max"] == 1
 
@@ -85,7 +86,7 @@ def test_inactive_before_start_step(fake_cuda, tmp_path):
 
     callback.on_step_begin(args, _state(0), control)
     _sync()
-    callback.on_step_end(args, _state(0), control)
+    callback.on_step_end(args, _state(1), control)
 
     assert callback.result is None
     assert not callback._active

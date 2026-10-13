@@ -98,7 +98,8 @@ class SyncCensusCallback(TrainerCallback):
         if not self._active:
             return
         self._flush(state.global_step, "microstep")
-        if state.global_step + 1 >= self.start_step + self.num_steps:
+        # HF increments global_step before on_step_end, so it already counts this step.
+        if state.global_step >= self.start_step + self.num_steps:
             self._finish(args)
 
     def on_log(
