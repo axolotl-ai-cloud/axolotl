@@ -1316,9 +1316,9 @@ class AxolotlInputConfig(
         default=None, json_schema_extra={"description": "Logging frequency"}
     )
     logging_nan_inf_filter: bool | None = Field(
-        default=False,
+        default=True,
         json_schema_extra={
-            "description": "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss. It checks the loss on the host every micro-step, which is a device sync, so Axolotl turns it off; loss blow-ups are still caught by loss_watchdog_threshold."
+            "description": "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss (HF default). The check reads the loss on the host every micro-step, one device sync; set to 'false' to remove it."
         },
     )
     early_stopping_patience: int | None = Field(

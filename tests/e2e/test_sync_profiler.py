@@ -62,6 +62,8 @@ class TestSyncProfiler(unittest.TestCase):
                 "max_steps": 5,
                 # keep logging out of the profiler window: it syncs by design
                 "logging_steps": 10,
+                # HF's NaN/inf loss filter is one sync per micro-step; measure our floor without it
+                "logging_nan_inf_filter": False,
                 "save_first_step": False,
                 "save_strategy": "no",
                 "sync_profiler_start_step": 2,
