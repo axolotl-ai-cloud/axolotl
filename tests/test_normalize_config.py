@@ -65,6 +65,22 @@ class NormalizeConfigTestCase(unittest.TestCase):
             assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": True}
 
     @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_zero3_detected_from_config_file(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        for deepspeed, expected in (
+            ("deepspeed_configs/zero3_bf16.json", True),
+            ("deepspeed_configs/zero2.json", False),
+            ("/nonexistent/my_zero3.json", True),
+        ):
+            cfg = self._get_base_cfg()
+            cfg.gradient_checkpointing = True
+            cfg.deepspeed = deepspeed
+            with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
+                normalize_config(cfg)
+
+            assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": expected}
+
+    @patch("axolotl.utils.config.load_model_config")
     def test_gradient_checkpointing_kwargs_kept_when_set(self, load_config):
         load_config.return_value = SimpleNamespace(model_type="llama")
         cfg = self._get_base_cfg()

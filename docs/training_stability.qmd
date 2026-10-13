@@ -204,13 +204,13 @@ Trades compute for memory by recomputing activations during the backward pass in
 
 ```yaml
 gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false     # Recommended default
 ```
+
+Non-reentrant checkpointing (`gradient_checkpointing_kwargs.use_reentrant: false`) is the default: it is what PyTorch recommends and it lets `torch_compile` trace through the checkpointed layer.
 
 ::: {.callout-warning}
 ## Reentrant Checkpointing Exceptions
-Some configurations require `use_reentrant: true`:
+Axolotl keeps `use_reentrant: true` by default for these, and you can set it explicitly for any other case:
 
 - DeepSpeed ZeRO-3 (non-reentrant causes `CheckpointError`)
 - EBFT strided mode with flex_attention
