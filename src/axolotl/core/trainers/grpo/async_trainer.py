@@ -2791,7 +2791,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             if src.numel():
                 all_logps[
                     to_device_async(rows, device), to_device_async(cols, device)
-                ] = flat_logps[to_device_async(src, device)]
+                ] = flat_logps[to_device_async(src, device)].to(all_logps.dtype)
 
             # Free this chunk's logits before the next chunk's forward allocates its own.
             del logits, flat_logits, flat_logps, flat_ids
@@ -2877,10 +2877,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     lps = selective_log_softmax(
                         sel_logits.unsqueeze(0), sel_targets.unsqueeze(0)
                     )[0]
-                    chunk_logps = chunk_logps.index_put((rows_d, cols_d), lps)
+                    chunk_logps = chunk_logps.index_put(
+                        (rows_d, cols_d), lps.to(chunk_logps.dtype)
+                    )
                     if chunk_entropy is not None:
                         chunk_entropy = chunk_entropy.index_put(
-                            (rows_d, cols_d), entropy_from_logits(sel_logits)
+                            (rows_d, cols_d),
+                            entropy_from_logits(sel_logits).to(chunk_entropy.dtype),
                         )
             all_logps_list.append(chunk_logps)
             if chunk_entropy is not None:
