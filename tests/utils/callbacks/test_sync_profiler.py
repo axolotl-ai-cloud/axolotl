@@ -150,3 +150,32 @@ def test_restores_previous_sync_debug_mode(fake_cuda, tmp_path):
     _run(callback, tmp_path, syncs_per_microstep=1, steps=1)
 
     assert fake_cuda == ["warn", "error"]
+
+
+def test_save_and_evaluate_get_their_own_buckets(fake_cuda, tmp_path):
+    callback = SyncProfilerCallback(start_step=1, num_steps=1)
+    args = SimpleNamespace(output_dir=str(tmp_path), process_index=0)
+    control = SimpleNamespace(should_log=False)
+    callback.on_step_begin(args, _state(1), control)
+    callback.on_step_end(args, _state(2), control)
+    _sync()
+    callback.on_save(args, _state(2), control)
+    _sync()
+    _sync()
+    callback.on_evaluate(args, _state(2), control)
+    callback.on_train_end(args, _state(2), control)
+
+    assert callback.result["other_buckets"]["save"] == 1
+    assert callback.result["other_buckets"]["evaluate"] == 2
+
+
+def test_site_falls_back_when_only_torch_frames_remain():
+    stack = [
+        SimpleNamespace(
+            filename="/x/site-packages/torch/_tensor.py", lineno=5, name="__int__"
+        ),
+        SimpleNamespace(
+            filename="/x/site-packages/torch/_ops.py", lineno=9, name="__call__"
+        ),
+    ]
+    assert _site_of(stack) == "<torch-internal>"

@@ -1,6 +1,7 @@
 """Tests for the deferred tokens-per-second accounting."""
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
@@ -82,3 +83,21 @@ def test_counts_keep_integer_precision():
     trainer._sync_token_counts()
 
     assert trainer.state.tokens["trainable"].item() == 2**24 + 1
+
+
+def test_sync_reduces_across_ranks_when_distributed():
+    trainer = _trainer()
+    trainer._accumulate_token_counts(_batch([[1, 2, -100]]))
+
+    def fake_all_reduce(tensor, op=None):
+        tensor.mul_(2)  # pretend a second rank contributed the same counts
+
+    with (
+        patch("axolotl.core.trainers.base.is_distributed", return_value=True),
+        patch("torch.distributed.all_reduce", side_effect=fake_all_reduce) as reduce,
+    ):
+        trainer._sync_token_counts()
+
+    reduce.assert_called_once()
+    assert trainer.state.tokens["trainable"].item() == 4
+    assert trainer.state.tokens["total"].item() == 6
