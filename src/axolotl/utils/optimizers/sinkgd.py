@@ -25,6 +25,8 @@ back to AdamW, reusing torchao's low-bit optimizer base so that this state is ke
 in 8-bit and the overall footprint stays close to plain SGD.
 """
 
+import math
+
 import torch
 import torch.distributed as dist
 from torch import Tensor
@@ -521,7 +523,7 @@ class SinkGDMD(SinkGD):
         )
 
 
-def _sinkgd_param_groups(opt_model, weight_decay):
+def _sinkgd_param_groups(opt_model, weight_decay, fallback_lr=None):
     """Split params: 2D/3D weight matrices -> SR-Sinkhorn; everything else -> AdamW.
 
     Routing is by tensor rank, not module type, so fused MoE experts (transformers
@@ -552,9 +554,14 @@ def _sinkgd_param_groups(opt_model, weight_decay):
             {"params": sinkgd_params, "use_sinkgd": True, "weight_decay": weight_decay}
         )
     if adamw_params:
-        param_groups.append(
-            {"params": adamw_params, "use_sinkgd": False, "weight_decay": 0.0}
-        )
+        fallback_group = {
+            "params": adamw_params,
+            "use_sinkgd": False,
+            "weight_decay": 0.0,
+        }
+        if fallback_lr is not None:
+            fallback_group["lr"] = fallback_lr
+        param_groups.append(fallback_group)
     return param_groups
 
 
@@ -562,6 +569,38 @@ def _as_bool(v) -> bool:
     if isinstance(v, str):
         return v.strip().lower() in ("1", "true", "yes", "on")
     return bool(v)
+
+
+def _pop_sinkgd_fallback_lr(optimizer_kwargs: dict) -> float | None:
+    """Extract and validate the AdamW fallback learning-rate override."""
+    fallback_lr = optimizer_kwargs.pop("sinkgd_fallback_lr", None)
+    if fallback_lr is None:
+        return None
+    if isinstance(fallback_lr, bool):
+        raise ValueError("sinkgd_fallback_lr must be a positive finite number")
+    try:
+        fallback_lr = float(fallback_lr)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("sinkgd_fallback_lr must be a positive finite number") from exc
+    if not math.isfinite(fallback_lr) or fallback_lr <= 0:
+        raise ValueError("sinkgd_fallback_lr must be a positive finite number")
+    return fallback_lr
+
+
+def _validate_sinkgd_training_args(training_args) -> None:
+    if training_args is None:
+        return
+    unsupported = [
+        name
+        for name in ("embedding_lr", "embedding_lr_scale", "lr_groups")
+        if getattr(training_args, name, None) is not None
+    ]
+    if unsupported:
+        raise ValueError(
+            "SinkGD does not support "
+            f"{', '.join(unsupported)}; use optim_args.sinkgd_fallback_lr to set one "
+            "learning rate for all AdamW fallback parameters."
+        )
 
 
 def _pop_sinkgd_extra_kwargs(optimizer_kwargs: dict) -> dict:
@@ -602,12 +641,14 @@ class SinkGDOptimizerFactory(BaseOptimizerFactory):
     """Builds a :class:`SinkGD` optimizer, routing weight matrices to SR-Sinkhorn."""
 
     def __call__(self, opt_model, training_args=None, **optimizer_kwargs) -> "SinkGD":
+        _validate_sinkgd_training_args(training_args)
         lr = optimizer_kwargs.pop("lr")
         weight_decay = optimizer_kwargs.pop("weight_decay", 0.0)
         betas = optimizer_kwargs.pop("betas", (0.9, 0.999))
         eps = optimizer_kwargs.pop("eps", 1e-8)
         sinkhorn_iters = int(optimizer_kwargs.pop("sinkhorn_iters", 5))
         sinkgd_lr_scale = float(optimizer_kwargs.pop("sinkgd_lr_scale", 0.05))
+        fallback_lr = _pop_sinkgd_fallback_lr(optimizer_kwargs)
         optimizer_kwargs.pop(
             "device_mesh", None
         )  # ignored by the single-device variant
@@ -615,7 +656,7 @@ class SinkGDOptimizerFactory(BaseOptimizerFactory):
         cls = SinkGDMD if md_sphere else SinkGD
 
         return cls(
-            _sinkgd_param_groups(opt_model, weight_decay),
+            _sinkgd_param_groups(opt_model, weight_decay, fallback_lr),
             lr=lr,
             betas=betas,
             eps=eps,
@@ -1057,12 +1098,14 @@ class DistSinkGDOptimizerFactory(BaseOptimizerFactory):
     def __call__(
         self, opt_model, training_args=None, **optimizer_kwargs
     ) -> "DistSinkGD":
+        _validate_sinkgd_training_args(training_args)
         lr = optimizer_kwargs.pop("lr")
         weight_decay = optimizer_kwargs.pop("weight_decay", 0.0)
         betas = optimizer_kwargs.pop("betas", (0.9, 0.999))
         eps = optimizer_kwargs.pop("eps", 1e-8)
         sinkhorn_iters = int(optimizer_kwargs.pop("sinkhorn_iters", 5))
         sinkgd_lr_scale = float(optimizer_kwargs.pop("sinkgd_lr_scale", 0.05))
+        fallback_lr = _pop_sinkgd_fallback_lr(optimizer_kwargs)
 
         device_mesh = optimizer_kwargs.pop("device_mesh", None)
         process_group = None
@@ -1076,7 +1119,7 @@ class DistSinkGDOptimizerFactory(BaseOptimizerFactory):
         cls = DistSinkGDMD if md_sphere else DistSinkGD
 
         return cls(
-            _sinkgd_param_groups(opt_model, weight_decay),
+            _sinkgd_param_groups(opt_model, weight_decay, fallback_lr),
             lr=lr,
             betas=betas,
             eps=eps,
