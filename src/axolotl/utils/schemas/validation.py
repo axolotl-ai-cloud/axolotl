@@ -2048,6 +2048,24 @@ class ModelCompatibilityValidationMixin:
                 gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
                 gc_kwargs.setdefault("use_reentrant", False)
                 self.gradient_checkpointing_kwargs = gc_kwargs
+        elif self.process_reward_model or self.rl in (
+            RLType.GRPO,
+            RLType.GDPO,
+            RLType.ORPO,
+            RLType.SIMPO,
+            RLType.EBFT,
+        ):
+            # These trainers have no offload context, so nothing would be offloaded.
+            trainer = (
+                "process_reward_model"
+                if self.process_reward_model
+                else f"rl: {self.rl.value}"
+            )
+            raise ValueError(
+                f"activation_offloading: {self.activation_offloading} without "
+                f"gradient_checkpointing is not supported for {trainer}; set "
+                "gradient_checkpointing: true"
+            )
         else:
             LOG.warning(
                 f"activation_offloading: {self.activation_offloading} without "
