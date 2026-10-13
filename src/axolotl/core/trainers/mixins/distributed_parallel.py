@@ -110,19 +110,20 @@ class DistributedParallelMixin(Trainer):
             has_cpu_offloaded_dtensor_gradients,
         )
 
-        parameters = list(model.parameters())
         if self._expert_parallel_enabled():
             # experts live on their own mesh: one ownership-filtered global norm
             self.accelerator.unscale_gradients()
             return clip_grad_norm_ep_local_shards_(
-                parameters,
+                list(model.parameters()),
                 self.args.max_grad_norm,
                 ep_local_parameters=ep_local_parameter_ids(model),
                 global_mesh=self._global_mesh(),
             )
-        if self._cpu_offloaded() and has_cpu_offloaded_dtensor_gradients(parameters):
-            self.accelerator.unscale_gradients()
-            return clip_grad_norm_local_shards_(parameters, self.args.max_grad_norm)
+        if self._cpu_offloaded():
+            parameters = list(model.parameters())
+            if has_cpu_offloaded_dtensor_gradients(parameters):
+                self.accelerator.unscale_gradients()
+                return clip_grad_norm_local_shards_(parameters, self.args.max_grad_norm)
         return super()._clip_grad_norm(model)
 
     def _get_grad_norm(self, model, grad_norm=None):
@@ -135,17 +136,18 @@ class DistributedParallelMixin(Trainer):
             has_cpu_offloaded_dtensor_parameters,
         )
 
-        parameters = list(model.parameters())
         if self._expert_parallel_enabled():
             self.accelerator.unscale_gradients()
             return get_grad_norm_ep_local_shards_(
-                parameters,
+                list(model.parameters()),
                 ep_local_parameters=ep_local_parameter_ids(model),
                 global_mesh=self._global_mesh(),
             )
-        if self._cpu_offloaded() and has_cpu_offloaded_dtensor_parameters(parameters):
-            self.accelerator.unscale_gradients()
-            return get_grad_norm_local_shards_(parameters)
+        if self._cpu_offloaded():
+            parameters = list(model.parameters())
+            if has_cpu_offloaded_dtensor_parameters(parameters):
+                self.accelerator.unscale_gradients()
+                return get_grad_norm_local_shards_(parameters)
         return super()._get_grad_norm(model, grad_norm)
 
     def _save_model_native(
