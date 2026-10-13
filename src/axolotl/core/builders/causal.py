@@ -476,6 +476,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         return trainer
 
+    def _uses_deepspeed_sequence_parallel(self) -> bool:
+        # DeepSpeed's Ulysses dataloader adapter gathers and slices every batch tensor as
+        # [batch, seq]; the 1-D cu_seq_lens metadata has no sequence dim to slice.
+        return bool(self.cfg.deepspeed) and (self.cfg.context_parallel_size or 1) > 1
+
     def build_collator(
         self,
         training_args,  # type: "AxolotlTrainingArguments"  # type: ignore
@@ -637,6 +642,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and is_packed_mode
             and self.cfg.fa_varlen_kwargs_in_collator is not False
             and self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+            and not self._uses_deepspeed_sequence_parallel()
         ):
             # transformers consumes these FlashAttentionKwargs for any in-tree model and skips its per-layer
             # varlen derivation, which syncs the host several times per layer (and graph-breaks under compile).

@@ -600,21 +600,33 @@ def test_packed_collator_flash_attention_metadata(
 
 @pytest.mark.parametrize("is_eval", [False, True])
 @pytest.mark.parametrize(
-    ("fa_varlen_kwargs_in_collator", "packing", "model_type", "collator_cls"),
+    ("fa_varlen_kwargs_in_collator", "packing", "model_type", "collator_cls", "extra"),
     [
-        (False, True, "llama", V2BatchSamplerDataCollatorForSeq2Seq),
-        (True, False, "llama", DataCollatorForSeq2Seq),
-        (True, True, "gpt2", BatchSamplerDataCollatorForSeq2Seq),
+        (False, True, "llama", V2BatchSamplerDataCollatorForSeq2Seq, {}),
+        (True, False, "llama", DataCollatorForSeq2Seq, {}),
+        (True, True, "gpt2", BatchSamplerDataCollatorForSeq2Seq, {}),
+        # DeepSpeed Ulysses slices every batch tensor as [batch, seq]
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {
+                "deepspeed": "deepspeed_configs/zero3_bf16.json",
+                "context_parallel_size": 2,
+            },
+        ),
     ],
 )
 def test_collator_flash_attention_metadata_requires_supported_packed(
-    fa_varlen_kwargs_in_collator, packing, model_type, collator_cls, is_eval
+    fa_varlen_kwargs_in_collator, packing, model_type, collator_cls, extra, is_eval
 ):
     builder = HFCausalTrainerBuilder(
         DictDefault(
             attn_implementation="flash_attention_2",
             model_config_type=model_type,
             fa_varlen_kwargs_in_collator=fa_varlen_kwargs_in_collator,
+            **extra,
         ),
         model=None,
         tokenizer=MagicMock(),
