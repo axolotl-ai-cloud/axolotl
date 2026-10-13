@@ -24,7 +24,7 @@ pytestmark = requires_flash_attn
 MAX_SYNCS_PER_MICROSTEP = 1
 
 
-class TestSyncCensus(unittest.TestCase):
+class TestSyncProfiler(unittest.TestCase):
     """Count syncing CUDA ops over a few non-logging micro-steps."""
 
     @with_temp_dir
@@ -60,12 +60,12 @@ class TestSyncCensus(unittest.TestCase):
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "constant",
                 "max_steps": 5,
-                # keep logging out of the census window: it syncs by design
+                # keep logging out of the profiler window: it syncs by design
                 "logging_steps": 10,
                 "save_first_step": False,
                 "save_strategy": "no",
-                "sync_census_start_step": 2,
-                "sync_census_steps": 2,
+                "sync_profiler_start_step": 2,
+                "sync_profiler_steps": 2,
             }
         )
         if is_torch_bf16_gpu_available():
@@ -79,16 +79,16 @@ class TestSyncCensus(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
 
-        with open(os.path.join(temp_dir, "sync_census.json"), encoding="utf-8") as f:
-            census = json.load(f)
+        with open(os.path.join(temp_dir, "sync_profile.json"), encoding="utf-8") as f:
+            profile = json.load(f)
 
-        sites = census["sites_per_microstep"]
-        assert census["microsteps"] == 4, census
-        assert census["syncs_per_microstep"]["max"] <= MAX_SYNCS_PER_MICROSTEP, (
-            f"syncs per micro-step grew: {census['syncs_per_microstep']} from {sites}"
+        sites = profile["sites_per_microstep"]
+        assert profile["microsteps"] == 4, profile
+        assert profile["syncs_per_microstep"]["max"] <= MAX_SYNCS_PER_MICROSTEP, (
+            f"syncs per micro-step grew: {profile['syncs_per_microstep']} from {sites}"
         )
         assert not any("modeling_flash_attention_utils" in site for site in sites), (
             f"attention path is deriving varlen metadata per layer again: {sites}"
         )
-        assert census["other_buckets"]["between_steps"] == 0, census["buckets"]
-        assert census["other_buckets"]["log"] == 0, census["buckets"]
+        assert profile["other_buckets"]["between_steps"] == 0, profile["buckets"]
+        assert profile["other_buckets"]["log"] == 0, profile["buckets"]

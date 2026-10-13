@@ -135,13 +135,13 @@ class TrainerBuilderBase(abc.ABC):
         if gc_collect_steps:
             callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
 
-        if self.cfg.sync_census_steps:
-            from axolotl.utils.callbacks.sync_census import SyncCensusCallback
+        if self.cfg.sync_profiler_steps:
+            from axolotl.utils.callbacks.sync_profiler import SyncProfilerCallback
 
             callbacks.append(
-                SyncCensusCallback(
-                    start_step=self.cfg.sync_census_start_step or 2,
-                    num_steps=self.cfg.sync_census_steps,
+                SyncProfilerCallback(
+                    start_step=self.cfg.sync_profiler_start_step or 2,
+                    num_steps=self.cfg.sync_profiler_steps,
                 )
             )
 

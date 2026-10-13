@@ -3161,16 +3161,16 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use tensorboard for logging",
     ),
     (
-        ("--sync-census-steps",),
+        ("--sync-profiler-steps",),
         None,
         None,
-        "Debugging aid: count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the sites and write sync_census.json to output_dir.",
+        "Debugging aid, separate from profiler_steps (the torch profiler timeline): count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the call sites and write sync_profile.json to output_dir.",
     ),
     (
-        ("--sync-census-start-step",),
+        ("--sync-profiler-start-step",),
         None,
         None,
-        "Optimizer step at which the sync census starts (after warm-up).",
+        "Optimizer step at which the sync profiler starts (after warm-up).",
     ),
     (
         ("--profiler-steps",),

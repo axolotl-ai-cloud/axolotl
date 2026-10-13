@@ -1,4 +1,4 @@
-"""Tests for the sync census callback bucketing (no CUDA needed)."""
+"""Tests for the sync profiler callback bucketing (no CUDA needed)."""
 
 import json
 import warnings
@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from axolotl.utils.callbacks import sync_census
-from axolotl.utils.callbacks.sync_census import SyncCensusCallback, _site_of
+from axolotl.utils.callbacks import sync_profiler
+from axolotl.utils.callbacks.sync_profiler import SyncProfilerCallback, _site_of
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def _run(callback, tmp_path, syncs_per_microstep, ga=2, steps=2, start=1):
 
 
 def test_counts_syncs_per_microstep_and_logging_separately(fake_cuda, tmp_path):
-    callback = SyncCensusCallback(start_step=1, num_steps=2)
+    callback = SyncProfilerCallback(start_step=1, num_steps=2)
 
     _run(callback, tmp_path, syncs_per_microstep=3)
 
@@ -51,12 +51,12 @@ def test_counts_syncs_per_microstep_and_logging_separately(fake_cuda, tmp_path):
     assert callback.result["microsteps"] == 4
     assert callback.result["syncs_per_microstep"] == {"min": 3, "median": 3, "max": 3}
     assert callback.result["other_buckets"]["log"] == 1
-    written = json.loads((tmp_path / "sync_census.json").read_text())
+    written = json.loads((tmp_path / "sync_profile.json").read_text())
     assert written["microsteps"] == 4
 
 
 def test_only_counts_sync_warnings(fake_cuda, tmp_path):
-    callback = SyncCensusCallback(start_step=1, num_steps=1)
+    callback = SyncProfilerCallback(start_step=1, num_steps=1)
     args = SimpleNamespace(output_dir=str(tmp_path), process_index=0)
     control = SimpleNamespace(should_log=False)
     callback.on_step_begin(args, _state(1), control)
@@ -71,7 +71,7 @@ def test_only_counts_sync_warnings(fake_cuda, tmp_path):
 
 def test_restores_warning_hooks(fake_cuda, tmp_path):
     before = warnings.showwarning
-    callback = SyncCensusCallback(start_step=1, num_steps=1)
+    callback = SyncProfilerCallback(start_step=1, num_steps=1)
 
     _run(callback, tmp_path, syncs_per_microstep=1, steps=1)
 
@@ -80,7 +80,7 @@ def test_restores_warning_hooks(fake_cuda, tmp_path):
 
 
 def test_inactive_before_start_step(fake_cuda, tmp_path):
-    callback = SyncCensusCallback(start_step=5, num_steps=1)
+    callback = SyncProfilerCallback(start_step=5, num_steps=1)
     args = SimpleNamespace(output_dir=str(tmp_path), process_index=0)
     control = SimpleNamespace(should_log=False)
 
@@ -94,7 +94,7 @@ def test_inactive_before_start_step(fake_cuda, tmp_path):
 
 def test_skips_without_cuda(monkeypatch, tmp_path):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    callback = SyncCensusCallback(start_step=1, num_steps=1)
+    callback = SyncProfilerCallback(start_step=1, num_steps=1)
     args = SimpleNamespace(output_dir=str(tmp_path), process_index=0)
     control = SimpleNamespace(should_log=False)
 
@@ -118,4 +118,4 @@ def test_site_prefers_library_frame_over_torch():
 def test_site_falls_back_to_user_code():
     stack = [SimpleNamespace(filename="/home/u/script.py", lineno=3, name="main")]
     assert _site_of(stack) == "script.py:3 main"
-    assert sync_census._SYNC_MARKER in "called a synchronizing CUDA operation"
+    assert sync_profiler._SYNC_MARKER in "called a synchronizing CUDA operation"

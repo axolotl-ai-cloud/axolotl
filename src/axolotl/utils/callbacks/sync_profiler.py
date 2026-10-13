@@ -20,7 +20,7 @@ LOG = get_logger(__name__)
 
 _SYNC_MARKER = "synchroniz"
 _LIBRARY_ROOTS = ("/axolotl/", "/transformers/", "/trl/", "/accelerate/", "/peft/")
-_SKIP_ROOTS = ("/torch/", "/warnings.py", "sync_census.py")
+_SKIP_ROOTS = ("/torch/", "/warnings.py", "sync_profiler.py")
 
 
 def _site_of(stack: list[traceback.FrameSummary]) -> str:
@@ -39,7 +39,7 @@ def _site_of(stack: list[traceback.FrameSummary]) -> str:
     return fallback or "<torch-internal>"
 
 
-class SyncCensusCallback(TrainerCallback):
+class SyncProfilerCallback(TrainerCallback):
     """Count syncing CUDA ops per micro-step for a window of optimizer steps.
 
     Uses ``torch.cuda.set_sync_debug_mode("warn")`` and buckets the resulting
@@ -146,7 +146,7 @@ class SyncCensusCallback(TrainerCallback):
 
     def _enable(self):
         if not torch.cuda.is_available():
-            LOG.warning("sync census needs CUDA; skipping")
+            LOG.warning("sync profiler needs CUDA; skipping")
             return
         torch.cuda.set_sync_debug_mode("warn")
         self._prev_showwarning = warnings.showwarning
@@ -154,7 +154,9 @@ class SyncCensusCallback(TrainerCallback):
         warnings.simplefilter("always")
         warnings.showwarning = self._showwarning
         self._active = True
-        LOG.info(f"sync census: counting syncing CUDA ops for {self.num_steps} step(s)")
+        LOG.info(
+            f"sync profiler: counting syncing CUDA ops for {self.num_steps} step(s)"
+        )
 
     def _disable(self):
         if not self._active:
@@ -220,7 +222,7 @@ class SyncCensusCallback(TrainerCallback):
             "samples": self._samples,
         }
         lines = [
-            f"sync census: {len(microsteps)} micro-steps, syncs per micro-step "
+            f"sync profiler: {len(microsteps)} micro-steps, syncs per micro-step "
             f"min/median/max = {self.result['syncs_per_microstep']['min']}/"
             f"{self.result['syncs_per_microstep']['median']}/"
             f"{self.result['syncs_per_microstep']['max']}; "
@@ -231,7 +233,7 @@ class SyncCensusCallback(TrainerCallback):
         LOG.info("\n".join(lines))
         if getattr(args, "output_dir", None) and getattr(args, "process_index", 0) == 0:
             os.makedirs(args.output_dir, exist_ok=True)
-            path = os.path.join(args.output_dir, "sync_census.json")
+            path = os.path.join(args.output_dir, "sync_profile.json")
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump(self.result, handle, indent=2)
-            LOG.info(f"sync census written to {path}")
+            LOG.info(f"sync profiler written to {path}")

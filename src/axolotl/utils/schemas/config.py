@@ -1337,16 +1337,16 @@ class AxolotlInputConfig(
     use_tensorboard: bool | None = Field(
         default=None, json_schema_extra={"description": "Use tensorboard for logging"}
     )
-    sync_census_steps: int | None = Field(
+    sync_profiler_steps: int | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Debugging aid: count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the sites and write sync_census.json to output_dir."
+            "description": "Debugging aid, separate from profiler_steps (the torch profiler timeline): count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the call sites and write sync_profile.json to output_dir."
         },
     )
-    sync_census_start_step: int = Field(
+    sync_profiler_start_step: int = Field(
         default=2,
         json_schema_extra={
-            "description": "Optimizer step at which the sync census starts (after warm-up)."
+            "description": "Optimizer step at which the sync profiler starts (after warm-up)."
         },
     )
     profiler_steps: int | None = Field(
