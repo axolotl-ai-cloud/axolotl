@@ -14,19 +14,19 @@ def _clean_env(monkeypatch):
     monkeypatch.delenv("ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION", raising=False)
 
 
-def test_regional_compilation_defaults_on():
+def test_regional_compilation_defaults_off():
     setup_torch_compile_env(DictDefault(torch_compile=True))
 
     assert os.environ["ACCELERATE_DYNAMO_BACKEND"] == "INDUCTOR"
-    assert os.environ["ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION"] == "1"
+    assert os.environ["ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION"] == "0"
 
 
-def test_regional_compilation_can_be_disabled():
+def test_regional_compilation_can_be_enabled():
     setup_torch_compile_env(
-        DictDefault(torch_compile=True, torch_compile_regional=False)
+        DictDefault(torch_compile=True, torch_compile_regional=True)
     )
 
-    assert os.environ["ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION"] == "0"
+    assert os.environ["ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION"] == "1"
 
 
 def test_no_env_without_torch_compile():

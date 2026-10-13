@@ -3050,7 +3050,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--torch-compile-regional/--no-torch-compile-regional",),
         None,
         None,
-        "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time since identical blocks hit the compiler cache. Set to 'false' to compile the whole model.",
+        "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks gradient_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without gradient checkpointing.",
     ),
     (
         ("--torch-compile-options",),
