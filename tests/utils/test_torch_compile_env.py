@@ -23,7 +23,7 @@ def test_regional_compilation_defaults_off():
     setup_torch_compile_env(DictDefault(torch_compile=True))
 
     assert os.environ["ACCELERATE_DYNAMO_BACKEND"] == "INDUCTOR"
-    assert os.environ["ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION"] == "0"
+    assert "ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION" not in os.environ
 
 
 def test_regional_compilation_can_be_enabled():
