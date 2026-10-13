@@ -632,7 +632,7 @@ class ModelLoader:
 
         # Apply gradient checkpointing if needed
         if (
-            PLUGIN_MANAGER.is_lora_like(self.cfg.adapter)
+            self.plugin_manager.is_lora_like(self.cfg.adapter)
             and self.cfg.gradient_checkpointing
         ):
             self.model.gradient_checkpointing_enable(
@@ -1038,7 +1038,7 @@ class ModelLoader:
                     **self.model_config.quantization_config
                 )
         if (
-            PLUGIN_MANAGER.is_lora_like(self.cfg.adapter)
+            self.plugin_manager.is_lora_like(self.cfg.adapter)
             and hasattr(self.model_config, "quantization_config")
             and self.model_config.quantization_config["quant_method"]
             in ["gptq", "awq", "bitsandbytes"]
@@ -1059,7 +1059,7 @@ class ModelLoader:
                 )
         elif (
             self.cfg.adapter != "lora"
-            and PLUGIN_MANAGER.is_lora_like(self.cfg.adapter)
+            and self.plugin_manager.is_lora_like(self.cfg.adapter)
             and self.cfg.load_in_4bit
         ):
             bnb_config = {
@@ -1439,7 +1439,7 @@ class ModelLoader:
 
         if (
             not skip_prepare_model_for_kbit_training
-            and PLUGIN_MANAGER.is_lora_like(self.cfg.adapter)
+            and self.plugin_manager.is_lora_like(self.cfg.adapter)
             and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
