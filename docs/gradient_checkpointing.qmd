@@ -12,8 +12,9 @@ gradient_checkpointing: true
 ```
 
 Unless `gradient_checkpointing_kwargs.use_reentrant` is set, Axolotl uses PyTorch's recommended
-non-reentrant checkpointing (`use_reentrant: false`). DeepSpeed ZeRO-3 runs default to
-`use_reentrant: true`, since non-reentrant recompute raises a `CheckpointError` there.
+non-reentrant checkpointing (`use_reentrant: false`). SFT runs on DeepSpeed ZeRO-3 default to
+`use_reentrant: true`, since non-reentrant recompute raises a `CheckpointError` there; `rl:` runs
+on ZeRO-3 need it set explicitly.
 
 ### Enabling Activation Offloading
 

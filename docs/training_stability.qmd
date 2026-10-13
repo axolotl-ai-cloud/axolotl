@@ -210,10 +210,10 @@ Non-reentrant checkpointing (`gradient_checkpointing_kwargs.use_reentrant: false
 
 ::: {.callout-warning}
 ## Reentrant Checkpointing Exceptions
-Axolotl keeps `use_reentrant: true` by default for these, and you can set it explicitly for any other case:
+These need `use_reentrant: true`:
 
-- DeepSpeed ZeRO-3 (non-reentrant causes `CheckpointError`)
-- EBFT strided mode with flex_attention
+- DeepSpeed ZeRO-3 (non-reentrant causes `CheckpointError`): the default for SFT; set it explicitly for `rl:` methods
+- EBFT strided mode with flex_attention: set automatically
 :::
 
 ### Step 3: Use Quantization
