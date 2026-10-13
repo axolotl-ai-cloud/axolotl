@@ -4,6 +4,7 @@ import math
 import os
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
@@ -2579,6 +2580,7 @@ def merge_lora_sharded_efficient(
     dequant: bool = False,
     override_quantizer: bool = False,
     revision: Optional[str] = None,
+    shard_sink: Optional[Callable[[dict[str, torch.Tensor], Path, dict], None]] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -2592,6 +2594,8 @@ def merge_lora_sharded_efficient(
         adapter (encoder version drift); see ``_resolve_nvfp4_scale_mode``.
 
     Args:
+        shard_sink: Optional writer receiving each merged CPU shard, its destination,
+            and safetensors metadata. Replaces the default shard write.
         nf4_backend: NF4 implementation used for the training base.
         nf4_skips: Resolved module exclusions from ``nf4_skip_modules``. When provided,
             weights are selected the way the staged loader selected them (Linear
@@ -3092,7 +3096,9 @@ def merge_lora_sharded_efficient(
             gc.collect()
             continue
 
-        if safe_tensors:
+        if shard_sink is not None:
+            shard_sink(merged_tensors, output_shard_path, metadata)
+        elif safe_tensors:
             if not str(output_shard_path).endswith(".safetensors"):
                 output_shard_path = output_path / (shard_path.stem + ".safetensors")
             safetensors.torch.save_file(
@@ -3161,6 +3167,8 @@ def merge_lora_sharded_efficient(
         _update_config_vocab_size(output_path, resized_vocab)
 
     if merged_count == 0:
+        if shard_sink is not None:
+            raise ValueError("No LoRA weights matched the base model")
         LOG.warning(
             "No LoRA weights were matched to base model tensors. "
             "This may indicate a key name mismatch between the checkpoint format "

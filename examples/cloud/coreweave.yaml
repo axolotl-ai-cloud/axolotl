@@ -1,0 +1,27 @@
+provider: coreweave
+backend: sunk
+
+# An existing SUNK login node configured in ~/.ssh/config.
+# Omit ssh_host when running axolotl on the login node itself.
+ssh_host: sunk
+shared_dir: /mnt/shared/axolotl-jobs
+image: /mnt/shared/images/axolotl.sqsh
+
+partition: h100
+nodes: 1
+gpus_per_node: 8
+cpus_per_task: 64
+memory: "0"
+time_limit: "24:00:00"
+
+# Shared paths must exist on every allocated node.
+# mounts:
+#   - /mnt/data
+# env_file: /mnt/shared/secrets/training.env
+# account: your-slurm-account
+# qos: your-qos
+
+# Registry images and image_build are also supported.
+# The image must include this Axolotl version and axolotl[coreweave]
+# when publishing checkpoints or using Dedicated Inference rollouts.
+# dry_run: true
