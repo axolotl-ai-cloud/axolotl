@@ -3131,6 +3131,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Logging frequency",
     ),
     (
+        ("--logging-nan-inf-filter/--no-logging-nan-inf-filter",),
+        None,
+        None,
+        "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss. It checks the loss on the host every micro-step, which is a device sync, so Axolotl turns it off; loss blow-ups are still caught by loss_watchdog_threshold.",
+    ),
+    (
         ("--early-stopping-patience",),
         None,
         None,

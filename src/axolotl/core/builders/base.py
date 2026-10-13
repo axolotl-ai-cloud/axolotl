@@ -678,6 +678,7 @@ class TrainerBuilderBase(abc.ABC):
             "optim_target_modules",
             # trainer
             "max_grad_norm",
+            "logging_nan_inf_filter",
             "dataloader_num_workers",
             "dataloader_pin_memory",
             "dataloader_prefetch_factor",
