@@ -106,7 +106,7 @@ def _train_step(base_model_path, min_base_cfg, **overrides):
         )
     else:
         offload = get_act_offloading_ctx_manager(
-            model, use_streams=False, min_offload_size=0
+            model, use_pin_memory=False, use_streams=False, min_offload_size=0
         )
 
     mlp_calls = []
