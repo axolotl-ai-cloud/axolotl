@@ -2522,7 +2522,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--fa-varlen-kwargs-in-collator/--no-fa-varlen-kwargs-in-collator",),
         None,
         None,
-        "With sample_packing and flash attention, precompute the varlen metadata (cu_seq_lens, max_length) once per batch in the collator instead of letting transformers derive it in every attention layer, which costs several host-device syncs per layer. Set to 'false' to restore the per-layer derivation.",
+        "With sample_packing and flash attention, precompute the varlen metadata (cu_seq_lens, max_length) once per batch in the collator instead of letting transformers derive it in every attention layer, which costs several host-device syncs per layer. Not used when batches are dispatched (streaming or pretraining datasets unless accelerator_config.dispatch_batches is false) or under DeepSpeed sequence parallel, since both slice every batch tensor per rank. Set to 'false' to restore the per-layer derivation.",
     ),
     (
         ("--pad-to-sequence-len/--no-pad-to-sequence-len",),

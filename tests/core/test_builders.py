@@ -599,6 +599,27 @@ def test_packed_collator_flash_attention_metadata(
 
 
 @pytest.mark.parametrize("is_eval", [False, True])
+def test_packed_collator_flash_attention_metadata_streaming_without_dispatch(is_eval):
+    builder = HFCausalTrainerBuilder(
+        DictDefault(
+            attn_implementation="flash_attention_2",
+            model_config_type="llama",
+            streaming=True,
+            accelerator_config={"dispatch_batches": False},
+        ),
+        model=None,
+        tokenizer=MagicMock(),
+    )
+    training_args = SimpleNamespace(
+        pretraining=False, sample_packing=not is_eval, eval_sample_packing=is_eval
+    )
+
+    collator = builder.build_collator(training_args, is_eval=is_eval)
+
+    assert collator.emit_fa_varlen_kwargs is True
+
+
+@pytest.mark.parametrize("is_eval", [False, True])
 @pytest.mark.parametrize(
     ("fa_varlen_kwargs_in_collator", "packing", "model_type", "collator_cls", "extra"),
     [
@@ -615,6 +636,14 @@ def test_packed_collator_flash_attention_metadata(
                 "deepspeed": "deepspeed_configs/zero3_bf16.json",
                 "context_parallel_size": 2,
             },
+        ),
+        # accelerate dispatches iterable-dataset batches by slicing every tensor on dim 0
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {"streaming": True},
         ),
     ],
 )
