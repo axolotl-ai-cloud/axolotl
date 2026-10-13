@@ -285,6 +285,8 @@ def get_lora_act_offloading_ctx_manager(
         min_offload_size=min_offload_size,
         max_fwd_stash_size=max_fwd_stash_size,
     )
+    # Frozen base weights are saved as non-Parameter views (e.g. weight.t()).
+    activations_handling_ctx.update_model_params(model)
 
     # Below is our hack to disable offloading the last output Linear in every
     # step, as the cost for offloading the activation and then soon after bringing
