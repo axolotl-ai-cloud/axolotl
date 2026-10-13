@@ -32,6 +32,7 @@ from transformers import (
     DataCollatorWithFlattening,
     PreTrainedModel,
     Trainer,
+    TrainerState,
 )
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
@@ -185,6 +186,7 @@ class AxolotlTrainer(
         self._tkps_trainable_acc: torch.Tensor | None = None
         self._tkps_total_acc: int = 0
         self._tkps_restored: tuple[int, int] = (0, 0)
+        self._tkps_state: TrainerState | None = None
         self._stored_metrics = defaultdict(
             lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
         )
@@ -717,8 +719,8 @@ class AxolotlTrainer(
 
     def _accumulate_token_counts(self, inputs):
         tokens = inputs["labels"] if "labels" in inputs else inputs["input_ids"]
-        if self._tkps_trainable_acc is None:
-            # Counters restored from a checkpoint are already summed across ranks.
+        if self._tkps_trainable_acc is None or self._tkps_state is not self.state:
+            # auto_find_batch_size retries with a fresh state; restored counts are cross-rank sums.
             restored = getattr(self.state, "tokens", None) or {}
             self._tkps_restored = (
                 int(torch.as_tensor(restored.get("trainable", 0)).item()),
@@ -727,6 +729,8 @@ class AxolotlTrainer(
             self._tkps_trainable_acc = torch.zeros(
                 (), dtype=torch.int64, device=tokens.device
             )
+            self._tkps_total_acc = 0
+            self._tkps_state = self.state
         self._tkps_trainable_acc += (tokens != -100).sum()
         self._tkps_total_acc += tokens.numel()
 

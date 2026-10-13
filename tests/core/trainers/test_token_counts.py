@@ -17,6 +17,7 @@ def _trainer(restored=None) -> AxolotlTrainer:
     trainer._tkps_trainable_acc = None
     trainer._tkps_total_acc = 0
     trainer._tkps_restored = (0, 0)
+    trainer._tkps_state = None
     return trainer
 
 
