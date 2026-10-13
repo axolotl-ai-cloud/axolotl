@@ -2213,3 +2213,142 @@ def test_free_slot_updates_never_commit_image_markers_with_media(with_media, exp
 
     assert len(model.forward_states) == 2
     assert torch.all(model.forward_states[1][slots] == expected)
+
+
+_LABEL_METRICS = ("label_mass", "label_mass_nll", "excess_full_vocab_loss")
+
+
+@pytest.mark.parametrize("train_eval", ["train", "eval"])
+def test_label_metrics_are_logged_per_source_with_the_loss_weighting(
+    monkeypatch, train_eval
+):
+    trainer = _harness()
+    decision = trainer._decision_config()
+    selected = torch.tensor(
+        [
+            [[0.0, 0.5, 1.0, -0.5]],
+            [[0.3, -0.2, 0.7, -0.1]],
+            [[-0.4, 0.6, 0.1, 0.2]],
+        ],
+        requires_grad=True,
+    )
+    examples = (
+        _example(1, weight=1.0),
+        DecisionLabelExample(
+            questions=(
+                DecisionLabelQuestion(
+                    0, (1, 2, 3), DistributionLabel((0.2, 0.5, 0.3)), weight=2.0
+                ),
+            ),
+            source_weight=2.0,
+        ),
+        _example(1),
+    )
+    supervision = torch.ones((3, 1), dtype=torch.bool)
+    result = decision_label_loss(selected, examples, supervision)
+    trainer._store_decision_metrics(
+        result,
+        selected,
+        examples,
+        supervision,
+        decision,
+        ("alpha", "alpha", "beta"),
+        train_eval=train_eval,
+    )
+    captured: dict[str, float] = {}
+    monkeypatch.setattr(
+        AxolotlDiffusionTrainer,
+        "log",
+        lambda _self, logs, start_time=None: captured.update(logs),
+    )
+    trainer.log({"eval_loss": 1.0} if train_eval == "eval" else {"loss": 1.0})
+
+    prefix = "eval_decision" if train_eval == "eval" else "decision"
+    alpha = decision_label_loss(selected[:2], examples[:2], supervision[:2])
+    beta = decision_label_loss(selected[2:], examples[2:], supervision[2:])
+    for name in _LABEL_METRICS:
+        for source, expected in (("all", result), ("alpha", alpha), ("beta", beta)):
+            torch.testing.assert_close(
+                torch.tensor(captured[f"{prefix}/{source}/{name}"]),
+                getattr(expected, name).detach(),
+            )
+    # Same per-example weighting as full_vocab_loss: one-hot rows line up exactly.
+    torch.testing.assert_close(
+        torch.tensor(captured[f"{prefix}/beta/excess_full_vocab_loss"]),
+        torch.tensor(captured[f"{prefix}/beta/full_vocab_loss"]),
+    )
+    assert (
+        captured[f"{prefix}/alpha/excess_full_vocab_loss"]
+        < (captured[f"{prefix}/alpha/full_vocab_loss"])
+    )
+    assert selected.grad is None
+
+
+def test_restricted_softmax_logs_no_label_metrics(monkeypatch):
+    trainer = _harness()
+    decision = trainer._decision_config()
+    selected = torch.tensor([[[0.0, 0.5, 1.0, -0.5]], [[0.3, -0.2, 0.7, -0.1]]])
+    examples = (_example(1), _example(1))
+    supervision = torch.ones((2, 1), dtype=torch.bool)
+    result = decision_label_loss(
+        selected, examples, supervision, label_softmax="restricted"
+    )
+    trainer._store_decision_metrics(
+        result,
+        selected,
+        examples,
+        supervision,
+        decision,
+        ("alpha", "beta"),
+        train_eval="train",
+    )
+    captured: dict[str, float] = {}
+    monkeypatch.setattr(
+        AxolotlDiffusionTrainer,
+        "log",
+        lambda _self, logs, start_time=None: captured.update(logs),
+    )
+    trainer.log({"loss": 1.0})
+    assert "decision/alpha/restricted_loss" in captured
+    assert not [key for key in captured if key.rsplit("/", 1)[-1] in _LABEL_METRICS]
+
+
+def test_label_metric_totals_merge_across_ranks(monkeypatch):
+    local = {
+        "decision/alpha": {
+            **_totals(2.0, 1.0, 1.0, 0.0, 2.0),
+            "label_mass": 1.2,
+            "label_mass_nll": 1.4,
+            "excess_full_vocab_loss": 0.6,
+            "label_metric_examples": 2.0,
+        }
+    }
+    other = {
+        "decision/alpha": {
+            **_totals(1.0, 1.0, 1.0, 0.0, 1.0),
+            "label_mass": 0.9,
+            "label_mass_nll": 0.1,
+            "excess_full_vocab_loss": 0.3,
+            "label_metric_examples": 1.0,
+        }
+    }
+    monkeypatch.setattr(torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_initialized", lambda: True)
+    monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2)
+    monkeypatch.setattr(
+        torch.distributed,
+        "all_gather_object",
+        lambda output, value: output.__setitem__(slice(None), [value, other]),
+    )
+    trainer = _harness()
+    trainer._decision_metrics = {"train": local, "eval": {}}
+    captured: dict[str, float] = {}
+    monkeypatch.setattr(
+        AxolotlDiffusionTrainer,
+        "log",
+        lambda _self, logs, start_time=None: captured.update(logs),
+    )
+    trainer.log({"loss": 1.0})
+    assert captured["decision/alpha/label_mass"] == pytest.approx(0.7)
+    assert captured["decision/alpha/label_mass_nll"] == pytest.approx(0.5)
+    assert captured["decision/alpha/excess_full_vocab_loss"] == pytest.approx(0.3)

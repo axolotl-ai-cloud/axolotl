@@ -499,6 +499,12 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     else 0.0
                 )
                 logs[f"{key_prefix}{prefix}/examples"] = count
+            # Logging-only label-set diagnostics; absent with label_softmax:
+            # restricted (no full-vocabulary term), so nothing is emitted then.
+            label_count = values.get("label_metric_examples", 0.0)
+            if label_count:
+                for name in _LABEL_METRIC_NAMES:
+                    logs[f"{key_prefix}{prefix}/{name}"] = values[name] / label_count
         self._decision_metric_totals(train_eval).clear()
         return super().log(logs, start_time)
 
@@ -1411,22 +1417,19 @@ def _empty_decision_metric_totals() -> dict[str, float]:
         "full_vocab_dft_hard_count": 0.0,
         "brier_loss": 0.0,
         "examples": 0.0,
+        "label_mass": 0.0,
+        "label_mass_nll": 0.0,
+        "excess_full_vocab_loss": 0.0,
+        "label_metric_examples": 0.0,
     }
+
+
+_LABEL_METRIC_NAMES = ("label_mass", "label_mass_nll", "excess_full_vocab_loss")
 
 
 def _per_example_decision_results(
     result: DecisionLossResult, examples: int
-) -> (
-    tuple[
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-    ]
-    | None
-):
+) -> tuple[tuple[torch.Tensor, ...] | None, ...] | None:
     values = (
         result.per_example_loss,
         result.per_example_restricted_loss,
@@ -1435,6 +1438,11 @@ def _per_example_decision_results(
         result.per_example_full_vocab_dft_hard_weight_sum,
         result.per_example_full_vocab_dft_hard_count,
         result.per_example_brier_loss,
+    )
+    label_values = (
+        result.per_example_label_mass,
+        result.per_example_label_mass_nll,
+        result.per_example_excess_full_vocab_loss,
     )
     if all(value is None for value in (values[0], values[1], values[2], values[6])):
         return None
@@ -1456,7 +1464,11 @@ def _per_example_decision_results(
         if values[5] is not None
         else tuple(value.new_zeros(()) for value in full)
     )
-    return (  # type: ignore[return-value]
+    if any(value is not None and len(value) != examples for value in label_values):
+        raise ValueError("decision loss result has invalid per-example label metrics")
+    if any(value is None for value in label_values):
+        label_values = (None, None, None)
+    return (
         values[0],
         values[1],
         values[2],
@@ -1464,26 +1476,24 @@ def _per_example_decision_results(
         dft_hard_weight_sum,
         dft_hard_count,
         values[6],
+        *label_values,
     )
 
 
 def _subset_decision_result(
-    values: tuple[
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-    ],
+    values: tuple[tuple[torch.Tensor, ...] | None, ...],
     indices: Sequence[int],
 ) -> DecisionLossResult:
     if not indices:
         raise ValueError("source metric group must not be empty")
     selected = tuple(
-        tuple(component[index] for index in indices) for component in values
+        None if component is None else tuple(component[index] for index in indices)
+        for component in values
     )
-    means = tuple(torch.stack(component).mean() for component in selected)
+    means = tuple(
+        None if component is None else torch.stack(component).mean()
+        for component in selected
+    )
     return DecisionLossResult(
         loss=means[0],
         restricted_loss=means[1],
@@ -1499,6 +1509,12 @@ def _subset_decision_result(
         per_example_full_vocab_dft_hard_weight_sum=selected[4],
         per_example_full_vocab_dft_hard_count=selected[5],
         per_example_brier_loss=selected[6],
+        label_mass=means[7],
+        label_mass_nll=means[8],
+        excess_full_vocab_loss=means[9],
+        per_example_label_mass=selected[7],
+        per_example_label_mass_nll=selected[8],
+        per_example_excess_full_vocab_loss=selected[9],
     )
 
 
@@ -1524,6 +1540,13 @@ def _accumulate_decision_metrics(
     if hard_count is not None:
         totals["full_vocab_dft_hard_count"] += float(hard_count.detach())
     totals["examples"] += examples
+    label_values = [getattr(result, name) for name in _LABEL_METRIC_NAMES]
+    if all(value is not None for value in label_values):
+        for name, value in zip(_LABEL_METRIC_NAMES, label_values, strict=True):
+            totals[name] = totals.get(name, 0.0) + float(value.detach()) * examples
+        totals["label_metric_examples"] = (
+            totals.get("label_metric_examples", 0.0) + examples
+        )
 
 
 def _reduce_decision_metric_totals(
