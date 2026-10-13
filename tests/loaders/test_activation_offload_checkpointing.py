@@ -183,6 +183,10 @@ def test_offload_without_gc_offloads_everything(
     assert step.offload.tensor_id == _saved_tensors_without_checkpointing(
         base_model_path, adapter
     )
+    # Weight views saved for backward must be filtered, not offloaded.
+    assert {
+        p.untyped_storage().data_ptr() for p in step.model.parameters()
+    } <= step.offload.param_storages
 
 
 @pytest.mark.parametrize("mode", [True, "disk"])
