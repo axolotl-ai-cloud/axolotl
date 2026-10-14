@@ -83,7 +83,7 @@ def test_measured_entries_and_other_gpus_are_left_alone(kernel_module, tmp_path)
     applied, skipped = autotune_cache.seed_autotune_caches(
         autotune_cache.read_autotune_cache(str(path))["records"]
     )
-    assert applied == 0 and skipped["already measured"] == 1
+    assert applied == 0 and skipped["already in cache"] == 1
     assert tuner.cache[_measured_key()] is tuner.configs[0]
 
     tuner.cache.clear()

@@ -149,7 +149,7 @@ def seed_autotune_caches(records: list[dict[str, Any]]) -> tuple[int, Counter]:
                 skipped["malformed key"] += 1
                 continue
             if key in autotuner.cache:
-                skipped["already measured"] += 1
+                skipped["already in cache"] += 1
                 continue
             try:
                 autotuner.cache[key] = _make_config(autotuner, record["config"])
@@ -178,13 +178,18 @@ def load_autotune_cache(path: str) -> int:
         )
         return 0
     applied, skipped = seed_autotune_caches(data.get("records", []))
-    LOG.info(
-        "Seeded %d autotune winner(s) from %s (%d in file%s)",
+    message = "Seeded %d autotune winner(s) from %s (%d in file%s)"
+    args = (
         applied,
         path,
         len(data.get("records", [])),
         "".join(f"; skipped {n} {why}" for why, n in skipped.items()),
     )
+    # a second pass (train start) finds the first pass's entries: not worth a line
+    if applied == 0 and set(skipped) <= {"already in cache"}:
+        LOG.debug(message, *args)
+    else:
+        LOG.info(message, *args)
     return applied
 
 

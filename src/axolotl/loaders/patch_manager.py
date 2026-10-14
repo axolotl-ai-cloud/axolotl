@@ -122,6 +122,7 @@ class PatchManager:
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
         self._deactivate_hf_async_load()
+        self._apply_parallel_weight_conversion()
         self._apply_torchao_patches()
         self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
@@ -1144,6 +1145,16 @@ class PatchManager:
             )
 
             patch_voxtral_conditional_generation_forward()
+
+    def _apply_parallel_weight_conversion(self):
+        """Parallel stack/cat in transformers' expert-fusing converters; off with AXOLOTL_PARALLEL_CONVERT=0."""
+        if os.environ.get("AXOLOTL_PARALLEL_CONVERT", "1") == "0":
+            return
+        from axolotl.monkeypatch.parallel_weight_conversion import (
+            patch_parallel_weight_conversion,
+        )
+
+        patch_parallel_weight_conversion()
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
