@@ -37,6 +37,35 @@ def _register_cce_patch(_context: ModelHookContext) -> None:
     )
 
 
+def _cast_fp32_strict_params(context: ModelHookContext) -> None:
+    """Keep the router (`mlp.gate.weight`, `e_score_correction_bias`) in fp32 on every rank.
+
+    The modeling code lists them in ``_keep_in_fp32_modules_strict``, which only applies while real
+    weights load (rank zero of the CPU-staged NF4 path). Ranks built on meta keep bf16, and the staged
+    distribution plan then raises "rank zero has float32, this rank has bfloat16". Casting here, after
+    the adapter wrap and before FSDP, makes the dtypes agree without touching the loaded values.
+    """
+    import torch
+
+    model = context.model
+    if model is None:
+        return
+    import os
+
+    base = getattr(model, "get_base_model", lambda: model)()
+    strict = tuple(getattr(type(base), "_keep_in_fp32_modules_strict", None) or ()) or ("mlp.gate.weight", "e_score_correction_bias")
+    strict += tuple(x for x in os.environ.get("BEAM_FP32_EXTRA", "").split(",") if x)
+    n = 0
+    for name, tensor in list(model.named_parameters()) + list(model.named_buffers()):
+        if any(s in name for s in strict) and tensor.dtype != torch.float32:
+            tensor.data = tensor.data.to(torch.float32)
+            n += 1
+    if n:
+        from axolotl.utils.logging import get_logger
+
+        get_logger(__name__).info(f"beam: cast {n} router parameters to fp32 to match rank zero")
+
+
 @register_model_support
 class BeamSupport(ModelSupport):
     """Descriptor for Beam (`reflection` / `beam`) (ReflectionForCausalLM): hybrid
@@ -72,6 +101,9 @@ class BeamSupport(ModelSupport):
             ),
         },
         hooks=ModelHooks(
-            by_phase={ModelHookPhase.BEFORE_MODEL_BUILD: (_register_cce_patch,)}
+            by_phase={
+                ModelHookPhase.BEFORE_MODEL_BUILD: (_register_cce_patch,),
+                ModelHookPhase.AFTER_ADAPTER_LOAD: (_cast_fp32_strict_params,),
+            }
         ),
     )
