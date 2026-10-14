@@ -1,9 +1,9 @@
 # Beam QLoRA via device_map model parallelism (no FSDP).
 #
-# Chosen over the CPU-staged FSDP2 loader because that path serializes shard
-# distribution on rank 0 and does not complete at this model size. Here layers
-# are placed across the 8 GPUs at load time and each is quantized in place.
-# No data parallelism, so throughput is low -- this is the path that trains.
+# Alternative to the CPU-staged FSDP2 loader (beam-qlora-fsdp-staged.yaml, the
+# preferred path now that upstream scatters shards). Here layers are placed
+# across the 8 GPUs at load time and each is quantized in place. No data
+# parallelism, so throughput is low; launch with --num-processes 1.
 #
 # Needs infer_auto_device_map to receive no_split_module_classes, otherwise a
 # decoder layer can straddle two GPUs and its residual add raises.
@@ -19,16 +19,16 @@
 #
 # Sized for one 8x H200 node (143 GiB/GPU, ~1 TB host RAM). Rank 0 needs host RAM
 # for the packed model (~250 GB) plus conversion temporaries.
-base_model: /data/hamid/T6_Kaleidoscope_HF_bf16
+base_model: ./beam
 
 chat_template: tokenizer_default
 datasets:
-  - path: /data/hamid/smoke_data.jsonl
+  - path: ./smoke_data.jsonl
     type: chat_template
     ds_type: json
 
 val_set_size: 0.0
-output_dir: /data/hamid/outputs/beam-real-mp
+output_dir: ./outputs/beam-real-mp
 
 sequence_len: 2048
 # ssmax scales attention off position_ids and packing rewrites them per document;

@@ -1,7 +1,6 @@
 # Beam (ReflectionForCausalLM) -- QLoRA via the CPU-staged FSDP2 loader.
 #
-# Requires axolotl PR #4003 (features/nf4-fsdp2), which adds both pieces this
-# model needs:
+# Relies on upstream #4003 (merged), which adds both pieces this model needs:
 #   * chunked bnb NF4 quant/dequant, so fused expert tensors past the 2**31
 #     element ceiling can be quantized at all
 #   * qlora_sharded_model_loading: rank 0 quantizes the bf16 checkpoint in
@@ -10,16 +9,16 @@
 #
 # Sized for one 8x H200 node (143 GiB/GPU, ~1 TB host RAM). Rank 0 needs host RAM
 # for the packed model (~250 GB) plus conversion temporaries.
-base_model: /data/hamid/T6_Kaleidoscope_HF_bf16
+base_model: ./beam
 
 chat_template: tokenizer_default
 datasets:
-  - path: /data/hamid/smoke_data.jsonl
+  - path: ./smoke_data.jsonl
     type: chat_template
     ds_type: json
 
 val_set_size: 0.0
-output_dir: /data/hamid/outputs/beam-qlora-cpustaged
+output_dir: ./outputs/beam-qlora-cpustaged
 
 sequence_len: 2048
 # ssmax scales attention off position_ids and packing rewrites them per document;

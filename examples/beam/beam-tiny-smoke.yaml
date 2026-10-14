@@ -10,16 +10,16 @@
 #
 # Sized for one 8x H200 node (143 GiB/GPU, ~1 TB host RAM). Rank 0 needs host RAM
 # for the packed model (~250 GB) plus conversion temporaries.
-base_model: /data/hamid/T6_tiny
+base_model: ./beam-tiny
 
 chat_template: tokenizer_default
 datasets:
-  - path: /data/hamid/smoke_data.jsonl
+  - path: ./smoke_data.jsonl
     type: chat_template
     ds_type: json
 
 val_set_size: 0.0
-output_dir: /data/hamid/outputs/beam-tiny-mp
+output_dir: ./outputs/beam-tiny-mp
 
 sequence_len: 512
 # ssmax scales attention off position_ids and packing rewrites them per document;

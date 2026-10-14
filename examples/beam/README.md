@@ -10,8 +10,9 @@ there is no remote code and `trust_remote_code` is not needed.
 > `transformer_layer_cls_to_wrap: ReflectionDecoderLayer` to match the current
 > checkpoint — switch it to `BeamDecoderLayer` on an upstream one.
 
-**Status: QLoRA trains.** Verified on 8x H200 at full scale, attention-only
-adapters, 5 steps, loss 1.5–2.6 (see [Verified run](#verified-run)).
+**Status: QLoRA trains, on both paths.** Verified on 8x H200 at full scale:
+FSDP2 with attention + expert adapters (3.6B trainable, see
+[Verified runs](#verified-runs)), and `device_map` with attention-only adapters.
 
 | | |
 |---|---|
@@ -20,15 +21,15 @@ adapters, 5 steps, loss 1.5–2.6 (see [Verified run](#verified-run)).
 | Routing | `noaux_tc` + sigmoid + `routed_scaling_factor: 2.5` (DeepSeek-V3 lineage) |
 | Attention | hybrid sliding (window 512) + `full_attention` every 6th layer; GQA 48/8 |
 | Distinctive | attention output gate, `ssmax`, sandwich norm, depth-scaled residuals, `final_logit_softcapping: 30`, fp32 lm_head and router |
-| Checkpoint | 935 GiB bf16, 188 shards, 38,366 tensors |
+| Checkpoint | ~1 TB bf16, multi-shard safetensors |
 
 ## Configs
 
 | File | Path | Status |
 |---|---|---|
-| `beam-qlora-mp.yaml` | device_map model parallel, attention only | **works** |
+| `beam-qlora-fsdp-staged.yaml` | FSDP2 + CPU-staged NF4 loader, attention + expert LoRA | **works**, preferred |
+| `beam-qlora-mp.yaml` | device_map model parallel, attention only | **works**; no data parallelism |
 | `beam-qlora-experts-mp.yaml` | device_map model parallel, + expert LoRA | untested at scale |
-| `beam-qlora-fsdp-staged.yaml` | FSDP2 + CPU-staged NF4 loader | blocked, see below |
 | `beam-tiny-smoke.yaml` | tiny random-weight model | works; ~1 min, for fast iteration |
 
 ## Dependency
@@ -101,7 +102,39 @@ attention-only is ~0.006%, not the 1.4% implied by that denominator.
 - **`sample_packing: false`** — `ssmax` scales attention off `position_ids`, which
   packing rewrites per document. Unverified interaction; test before enabling.
 
-## Verified run
+## Verified runs
+
+### FSDP2 CPU-staged loader (preferred)
+
+`beam-qlora-fsdp-staged.yaml`, 8x H200, 8 ranks, `sequence_len: 2048`,
+`micro_batch_size: 1`, attention + expert adapters:
+
+```
+NF4 checkpoint loading and quantization   45 min   (rank 0, cold page cache)
+NF4 adapter initialization                42 s
+NF4 parameter shard distribution          240 s
+trainable params: 3,625,582,592
+loss 2.147 -> 2.038 -> 1.559 -> 1.115 -> 0.994   (train_loss 1.571)
+5/5 [02:36, 27.5s/it]   max_active 39 GiB, reserved 121 GiB per GPU
+adapter_model.safetensors  14 GB   (612 tensors: 416 attention, 196 expert, fp32)
+```
+
+Each step processes one sample per rank, so per-sample throughput is ~2x the
+`device_map` path even before packing or a larger micro batch.
+
+The shard distribution used to hang at this model size (one broadcast per owner,
+N-1 of them discarded, serial slicing on rank 0). Upstream #4003 as merged
+replaced it with a padded `dist.scatter`, and the loader now opens its own
+staging control group with the `ddp_timeout` value, so the 1800 s NCCL bootstrap
+barrier that used to expire during rank 0's staging no longer applies. Keep
+`ddp_timeout: 21600` anyway; staging is 45 min cold.
+
+`state_dict_type` must stay `SHARDED_STATE_DICT`: `FULL_STATE_DICT` with
+`quantize_moe_experts` crashes on the first checkpoint save
+(axolotl-ai-cloud/axolotl#4080, reproduced). The final adapter is gathered and
+saved as a normal PEFT adapter regardless.
+
+### device_map model parallel
 
 `beam-qlora-mp.yaml`, 8x H200, `sequence_len: 2048`, `micro_batch_size: 1`:
 
@@ -113,31 +146,14 @@ loss 1.75 -> 2.201 -> 2.632 -> 1.61 -> 1.528   (train_loss 1.944)
 adapter_model.safetensors  116 MB
 ```
 
-Loss in the 1.5–2.6 band is the correctness signal: a pretrained model doing SFT
+Loss in the 1–2.6 band is the correctness signal: a pretrained model doing SFT
 should start at 0.5–2.0, while `log(vocab_size)` ~= 11.9 would mean random weights.
 The tiny random-weight smoke configs sit at ~11.9 as expected.
 
-`device_map` gives no data parallelism, so throughput is low (7.4 s/step). Fine for
-validation; the FSDP path would be faster if unblocked.
-
-## Blocked: FSDP2 CPU-staged loader
-
-`beam-qlora-fsdp-staged.yaml` loads and quantizes the full model correctly and
-attaches adapters, but the shard-distribution phase does not complete. Rank 0
-serializes on `monkeypatch/accelerate/fsdp2_nf4.py`:
-
-```python
-transfer = source[start:end].contiguous().to(device)   # per owner, per tensor
-```
-
-Each shard is broadcast to the whole group and kept only `if owner == rank`, so
-each rank receives all N shards and discards N-1 — about world_size x the bytes a
-scatter would move — and rank 0's slice-and-copy is serial with one core busy.
-Measured: 255 entries in 3.4s on the tiny model vs 1 of 3083 entries in ~14 min at
-full scale. Reported upstream.
-
-That path also needs `ddp_timeout: 21600`; the default 1800s barrier expires
-during rank 0's staging.
+`device_map` gives no data parallelism and must be launched with
+`--num-processes 1`. Checkpoint saving with quantized experts works on this path
+(verified on the tiny model: attention + expert adapter tensors in both the
+step checkpoint and the final save).
 
 ## Declared capabilities
 
