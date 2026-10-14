@@ -1,10 +1,10 @@
-"""Reflection (Beam) model support.
+"""Beam model support.
 
-The architecture ships in Reflection's transformers fork, so config, tokenizer
-and modeling code all load natively -- nothing here redirects dynamic modules.
-What this descriptor carries is the set of features whose generic fallbacks are
-wrong for this arch, so enabling one fails loudly instead of training quietly on
-a different objective.
+The architecture loads natively through transformers, so config, tokenizer and
+modeling code all resolve without redirecting dynamic modules. What this
+descriptor carries is the set of features whose generic fallbacks are wrong for
+this arch, so enabling one fails loudly instead of training quietly on a
+different objective.
 """
 
 from axolotl.model_support.base import Experimental, ModelSupport, Unsupported
@@ -29,11 +29,8 @@ def _register_cce_patch(_context: ModelHookContext) -> None:
     except ImportError:
         return
 
-    spec = ("axolotl.model_support.beam.cut_cross_entropy", "patch_beam")
-    PATCH_FNS.setdefault("beam", spec)
     PATCH_FNS.setdefault(
-        "reflection",
-        ("axolotl.model_support.beam.cut_cross_entropy", "patch_reflection"),
+        "beam", ("axolotl.model_support.beam.cut_cross_entropy", "patch_beam")
     )
 
 
@@ -53,7 +50,10 @@ def _cast_fp32_strict_params(context: ModelHookContext) -> None:
     import os
 
     base = getattr(model, "get_base_model", lambda: model)()
-    strict = tuple(getattr(type(base), "_keep_in_fp32_modules_strict", None) or ()) or ("mlp.gate.weight", "e_score_correction_bias")
+    strict = tuple(getattr(type(base), "_keep_in_fp32_modules_strict", None) or ()) or (
+        "mlp.gate.weight",
+        "e_score_correction_bias",
+    )
     strict += tuple(x for x in os.environ.get("BEAM_FP32_EXTRA", "").split(",") if x)
     n = 0
     for name, tensor in list(model.named_parameters()) + list(model.named_buffers()):
@@ -63,17 +63,18 @@ def _cast_fp32_strict_params(context: ModelHookContext) -> None:
     if n:
         from axolotl.utils.logging import get_logger
 
-        get_logger(__name__).info(f"beam: cast {n} router parameters to fp32 to match rank zero")
+        get_logger(__name__).info(
+            f"beam: cast {n} router parameters to fp32 to match rank zero"
+        )
 
 
 @register_model_support
 class BeamSupport(ModelSupport):
-    """Descriptor for Beam (`reflection` / `beam`) (ReflectionForCausalLM): hybrid
-    sliding/full attention with gated output, DeepSeek-V3-style MoE routing,
-    and experts fused into 3D ``nn.Parameter`` tensors."""
+    """Descriptor for Beam (`BeamForCausalLM`): hybrid sliding/full attention
+    with gated output, DeepSeek-V3-style MoE routing, and experts fused into 3D
+    ``nn.Parameter`` tensors."""
 
-    # "reflection" in Reflection's transformers fork, "beam" upstream
-    model_types = ("reflection", "beam")
+    model_types = ("beam",)
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
         capabilities={
@@ -82,7 +83,7 @@ class BeamSupport(ModelSupport):
                 "takes the logit softcap, but the fp32 lm_head path is unverified."
             ),
             "lora_kernels": Unsupported(
-                "ReflectionAttention adds an output gate (self_attn.gate_proj plus "
+                "Beam's attention adds an output gate (self_attn.gate_proj plus "
                 "gate_bias) and q_norm/k_norm on top of q/k/v/o. The fused QKV/O "
                 "kernels match the llama-like projection set by name and would "
                 "bypass the gate entirely."

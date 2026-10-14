@@ -1,4 +1,4 @@
-"""Beam (reflection) CCE patch. Adapted from cut_cross_entropy's gemma3 patch."""
+"""Beam CCE patch. Adapted from cut_cross_entropy's gemma3 patch."""
 
 # Copyright 2024 Axolotl AI. All rights reserved.
 #
@@ -155,6 +155,3 @@ def _patch(module_name: str, class_name: str):
 
 
 patch_beam = _patch("transformers.models.beam.modeling_beam", "BeamForCausalLM")
-patch_reflection = _patch(
-    "transformers.models.reflection.modeling_reflection", "ReflectionForCausalLM"
-)

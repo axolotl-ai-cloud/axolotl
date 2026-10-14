@@ -11,7 +11,6 @@ from axolotl.monkeypatch.utils import get_unpad_data
 
 SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "beam",
-    "reflection",
     "apertus",
     "mllama_text_model",
     "llama",
