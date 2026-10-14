@@ -53,7 +53,6 @@ class DynamicCheckpointCallback(TrainerCallback):
 
         check_interval = self._get_config_value(dc_config, "check_interval")
         self.check_interval = check_interval if check_interval is not None else 100
-        self.should_save_checkpoint = False
 
         LOG.info(
             f"Dynamic checkpoint enabled. To trigger checkpoint save:\n"
@@ -93,10 +92,6 @@ class DynamicCheckpointCallback(TrainerCallback):
                         LOG.warning(
                             f"Failed to delete trigger file: {exc}",
                         )
-
-                if self.should_save_checkpoint:
-                    trigger_detected = True
-                    self.should_save_checkpoint = False  # Reset flag
 
             if is_distributed():
                 import torch

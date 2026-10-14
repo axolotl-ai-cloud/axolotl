@@ -295,54 +295,6 @@ class TestDynamicCheckpointMultiGPU:
             assert result.should_save is True
 
 
-class TestDynamicCheckpointSignalHandling:
-    """Test signal-based checkpoint triggering"""
-
-    def test_signal_trigger_via_callback(self):
-        """Test that signal flag triggers checkpoint save"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfg = DictDefault(
-                {
-                    "dynamic_checkpoint": {
-                        "enabled": True,
-                        "check_interval": 1,
-                        "enable_signal": True,
-                    },
-                    "output_dir": tmpdir,
-                }
-            )
-
-            with patch("signal.signal"):
-                with patch(
-                    "axolotl.utils.callbacks.dynamic_checkpoint.is_main_process",
-                    return_value=True,
-                ):
-                    with patch(
-                        "axolotl.utils.callbacks.dynamic_checkpoint.hasattr",
-                        return_value=True,
-                    ):
-                        callback = DynamicCheckpointCallback(cfg)
-
-            callback.should_save_checkpoint = True
-
-            args = Mock(output_dir=tmpdir)
-            state = Mock(global_step=1)
-            control = Mock(should_save=False)
-
-            with patch(
-                "axolotl.utils.callbacks.dynamic_checkpoint.is_main_process",
-                return_value=True,
-            ):
-                with patch(
-                    "axolotl.utils.callbacks.dynamic_checkpoint.is_distributed",
-                    return_value=False,
-                ):
-                    result = callback.on_step_end(args, state, control)
-
-            assert result.should_save is True
-            assert callback.should_save_checkpoint is False
-
-
 class TestDynamicCheckpointDisabled:
     """Test behavior when callback is disabled"""
 
