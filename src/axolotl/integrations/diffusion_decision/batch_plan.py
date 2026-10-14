@@ -148,7 +148,9 @@ class DecisionBatchPlan:
             raise ValueError("no decision training rows fit the token budget")
         self._usable = usable
         if isinstance(weights, Mapping):
-            weights = {source: weights[source] for source in usable if source in weights}
+            weights = {
+                source: weights[source] for source in usable if source in weights
+            }
         first = DeterministicMixtureSampler(
             usable, weights=weights, temperature=temperature, seed=self.seed
         )
@@ -193,7 +195,11 @@ class DecisionBatchPlan:
         return _EpochDraws(source_codes, indices, numbers)
 
     def epoch_seed(self, epoch: int) -> int:
-        return self.seed if epoch == 0 else stable_seed(self.seed, f"decision-epoch:{epoch}")
+        return (
+            self.seed
+            if epoch == 0
+            else stable_seed(self.seed, f"decision-epoch:{epoch}")
+        )
 
     def epoch_draws(self, epoch: int) -> _EpochDraws:
         plan = self._epochs.get(epoch)
@@ -305,7 +311,10 @@ class DecisionBatchPlan:
                     if isinstance(entry, dict)
                     else None,
                 )
-            if row is not None and budget_reason(row, self.limits, self._layout) is None:
+            if (
+                row is not None
+                and budget_reason(row, self.limits, self._layout) is None
+            ):
                 return row
             if candidate == index:
                 LOG.debug(

@@ -70,7 +70,11 @@ def _progress(rank, message):
     import sys
     import time
 
-    print(f"[rank {rank} {time.strftime('%H:%M:%S')}] {message}", file=sys.stderr, flush=True)
+    print(
+        f"[rank {rank} {time.strftime('%H:%M:%S')}] {message}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def _rel(a, b):
@@ -394,7 +398,9 @@ def _ep_checks(dtype, rank):
         "loss": loss.item(),
     }
     out["context_trainable"] = [
-        n for n, p in peft_model.named_parameters() if p.requires_grad and "context_tower" in n
+        n
+        for n, p in peft_model.named_parameters()
+        if p.requires_grad and "context_tower" in n
     ]
     out["context_grads"] = [
         n
@@ -412,10 +418,7 @@ def _ep_checks(dtype, rank):
     grads = _synced_grads(peft_model, reference["grads"])
     out["parity"] = {
         "logits_rel": _rel(logits, reference["logits"][rank]),
-        "logits_abs": (logits.float() - reference["logits"][rank])
-        .abs()
-        .max()
-        .item(),
+        "logits_abs": (logits.float() - reference["logits"][rank]).abs().max().item(),
         "loss": loss.item(),
         "grads": _grad_report(grads, reference["grads"]),
         "grad_names": sorted(grads),

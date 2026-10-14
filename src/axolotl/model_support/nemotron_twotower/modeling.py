@@ -338,8 +338,7 @@ class NemotronHTwoTowerForDiffusion(NemotronHPreTrainedModel, GenerationMixin):
     def _context_experts_parallel(self) -> bool:
         """True when the context tower's routed experts are expert-parallel sharded."""
         return any(
-            getattr(module, "num_experts_global", 0)
-            > getattr(module, "num_experts", 0)
+            getattr(module, "num_experts_global", 0) > getattr(module, "num_experts", 0)
             for module in self.context_tower.modules()
         )
 

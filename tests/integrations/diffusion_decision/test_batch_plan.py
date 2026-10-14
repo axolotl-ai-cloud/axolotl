@@ -48,7 +48,9 @@ def _row(source: str, identifier: str, prompt: int = 1) -> dict[str, Any]:
     }
 
 
-def _pool(source: str, count: int, cap: int | None, seed: int, *, long=()) -> SourcePool:
+def _pool(
+    source: str, count: int, cap: int | None, seed: int, *, long=()
+) -> SourcePool:
     """A source whose epoch-0 window is prepared and the rest held in reserve."""
     entries: list[Any] = []
     records: list[Any] = []
@@ -68,7 +70,7 @@ def _pool(source: str, count: int, cap: int | None, seed: int, *, long=()) -> So
 class _Builder:
     """Stands in for _canvas_row: records every lazy build and its draw identity."""
 
-    def __init__(self, long: set[str] = frozenset()) -> None:
+    def __init__(self, long: frozenset[str] | set[str] = frozenset()) -> None:
         self.calls: list[tuple[str, str, tuple[int, int]]] = []
         self.long = long
 
@@ -79,13 +81,16 @@ class _Builder:
         return row
 
 
+_NO_LIMITS = BudgetLimits(logical=None, physical=None)
+
+
 def _plan(
     *,
     seed: int = 7,
     micro: int = 2,
     stratified: bool = True,
     pools=None,
-    limits: BudgetLimits = BudgetLimits(logical=None, physical=None),
+    limits: BudgetLimits = _NO_LIMITS,
     builder: _Builder | None = None,
     weights=None,
     temperature=None,
@@ -225,7 +230,8 @@ def test_budget_filter_uses_cached_lengths_and_replaces_unfit_lazy_draws():
     )
     assert plan.budget_drops == {"logical": 1, "physical": 0}
     assert all(
-        plan.row(0, position)["length"] <= 16 for position in range(plan.draws_per_epoch)
+        plan.row(0, position)["length"] <= 16
+        for position in range(plan.draws_per_epoch)
     )
     rows = [plan.row(1, position) for position in range(plan.draws_per_epoch)]
     assert all(row["length"] <= 16 for row in rows)
@@ -338,7 +344,10 @@ def local_loader(tmp_path, monkeypatch):
     records = [
         _record("alpha", f"a{index}", f"state a{index}", f"a{index}")
         for index in range(9)
-    ] + [_record("beta", f"b{index}", f"state b{index}", f"b{index}") for index in range(3)]
+    ] + [
+        _record("beta", f"b{index}", f"state b{index}", f"b{index}")
+        for index in range(3)
+    ]
     return _local_cfg(tmp_path, records), built
 
 
@@ -359,7 +368,9 @@ def test_batch_settings_reuse_the_canvas_layer(local_loader):
         assert len(built) == prepared, change
         micro = change.get("micro_batch_size", cfg["micro_batch_size"])
         assert result.train_dataset.batch_plan.micro_batch_size == micro
-    mixture = dict(cfg["diffusion_decision"]["mixture"], weights={"alpha": 0.25, "beta": 0.75})
+    mixture = dict(
+        cfg["diffusion_decision"]["mixture"], weights={"alpha": 0.25, "beta": 0.75}
+    )
     reweighted = datasets.load_decision_datasets(
         {**cfg, "diffusion_decision": {**cfg["diffusion_decision"], "mixture": mixture}}
     )

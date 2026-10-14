@@ -141,9 +141,7 @@ def _free_slot_inputs():
 
 @pytest.mark.parametrize("model_kind", ["bias", "nemotron"])
 @pytest.mark.parametrize("steps", [2, 3])
-def test_free_slot_passes_use_selected_logits_with_identical_commits(
-    model_kind, steps
-):
+def test_free_slot_passes_use_selected_logits_with_identical_commits(model_kind, steps):
     def make(selected: bool):
         if model_kind == "nemotron":
             model = _tiny_nemotron()
@@ -164,7 +162,8 @@ def test_free_slot_passes_use_selected_logits_with_identical_commits(
         if model_kind == "nemotron":
             calls = _recording(model)
         trainer = _multistep(
-            steps, decision={**_DECISION, **_latent("free", free_update_policy="argmax")}
+            steps,
+            decision={**_DECISION, **_latent("free", free_update_policy="argmax")},
         )
         loss, grads = _train_step(model, trainer, _free_slot_inputs())
         states = (

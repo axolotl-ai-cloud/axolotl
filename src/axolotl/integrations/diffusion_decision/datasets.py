@@ -742,7 +742,6 @@ def load_decision_datasets(
 ) -> TrainDatasetMeta:
     """Load, normalize, decontaminate, canvasize, and return plugin-owned splits."""
     del preprocess
-    decision = _value(cfg, "diffusion_decision")
     spec = require_diffusion_spec(cfg)
     train_entries = [
         entry

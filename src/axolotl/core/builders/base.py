@@ -53,11 +53,11 @@ with suppress(ImportError):
     import torch._dynamo
 
 
-
 def _eval_on_start(cfg) -> bool:
     """An explicit `eval_on_start` wins; unset keeps the step-0 eval."""
     eval_on_start = getattr(cfg, "eval_on_start", None)
     return True if eval_on_start is None else bool(eval_on_start)
+
 
 class TrainerBuilderBase(abc.ABC):
     """Base class for trainer builder."""
