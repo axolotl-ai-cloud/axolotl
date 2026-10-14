@@ -7,7 +7,7 @@
 The ScatterMoE LoRA kernels key their autotune on the routed-row bucket, so every new bucket
 re-benchmarks the full tile grid (over a hundred configs for the NVFP4 variant), one rank at a
 time while its expert-parallel peers wait. Winners barely move between buckets of the same
-``(N, K)``: the real-width Beam run picked the same tile for every bucket it saw. So once an
+``(N, K)``: a real-width profiling run picked the same tile for every bucket it saw. So once an
 autotuner holds a winner for a key that differs only in the bucketed arguments, a new key only
 benchmarks configs within ``distance`` parameter changes of that winner (distance 1 = vary one
 of BLOCK_M/BLOCK_N/BLOCK_K/num_warps/num_stages; 2 = pairs).

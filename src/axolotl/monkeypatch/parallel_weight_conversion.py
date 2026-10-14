@@ -3,8 +3,8 @@
 transformers fuses per-expert checkpoint tensors into the runtime 3D parameters with
 ``MergeModulelist`` (``torch.stack``) and ``Concatenate`` (``torch.cat``), serially on the
 loading thread. Each call allocates a fresh destination and copies on one core, so a
-large MoE (Beam-501B: 38k expert tensors, 1 TB) loads at the page-fault rate of a single
-thread. Copying into a preallocated destination from a thread pool keeps the same result
+large MoE (tens of thousands of expert tensors, around a terabyte) loads at the page-fault
+rate of a single thread. Copying into a preallocated destination from a thread pool keeps the same result
 and runs at memory bandwidth.
 """
 
