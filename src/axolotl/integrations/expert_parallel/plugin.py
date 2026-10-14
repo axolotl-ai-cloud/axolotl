@@ -827,7 +827,7 @@ class ExpertParallelPlugin(BasePlugin):
         if find_spec("deep_ep") is not None:
             return True
         msg = (
-            "expert_parallel_enabled=true but `deep_ep` is not importable. "
+            "expert_parallel_backend=deep_ep but `deep_ep` is not importable. "
             "See the integration README for install instructions."
         )
         if cfg.expert_parallel_fallback_on_unsupported:
