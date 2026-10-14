@@ -255,9 +255,11 @@ class AutotuneCacheCallback(TrainerCallback):
         path: str | None,
         profiles: list[dict[str, Any]] | None = None,
         early_steps: int = 20,
+        neighborhood: int | None = None,
     ):
         self.path = path
         self.profiles = profiles
+        self.neighborhood = neighborhood
         self.early_steps = early_steps
         self._last_count = -1
 
@@ -270,6 +272,12 @@ class AutotuneCacheCallback(TrainerCallback):
             )
 
             apply_autotune_profiles(self.profiles)
+        if self.neighborhood:
+            from axolotl.integrations.kernels.autotune_neighborhood import (
+                install_neighborhood_search,
+            )
+
+            install_neighborhood_search(self.neighborhood)
 
     def _local_count(self) -> int:
         return len(collect_autotune_configs())
