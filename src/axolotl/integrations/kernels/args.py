@@ -126,6 +126,12 @@ class KernelsArgs(BaseModel):
             )
             data["nvfp4_merge_aware_start_step"] = None
             return data
+        if data.get("nvfp4_merge_aware") and data.get("use_scattermoe"):
+            raise ValueError(
+                "nvfp4_merge_aware requires the SonicMoE expert backend (use_sonicmoe: "
+                "true); ScatterMoE has no merge-aware forward and would silently train "
+                "ordinary LoRA that the NVFP4 merge then rounds away."
+            )
         if data.get("nvfp4_merge_aware") and data.get("adapter") not in (
             "lora",
             "multilora",
