@@ -2099,6 +2099,20 @@ class ModelCompatibilityValidationMixin:
         return backend
 
     @model_validator(mode="after")
+    def check_torch_compile_regional_with_gradient_checkpointing(self):
+        if (
+            self.torch_compile
+            and self.torch_compile_regional
+            and self.gradient_checkpointing
+        ):
+            raise ValueError(
+                "torch_compile_regional cannot be combined with gradient_checkpointing: "
+                "the checkpoint recompute can run a different Dynamo cache entry than "
+                "the forward (pytorch/pytorch#166926). Use whole-model compile."
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_torch_expert_parallel_checkpointing(self):
         if (getattr(self, "expert_parallel_size", 1) or 1) <= 1:
             return self

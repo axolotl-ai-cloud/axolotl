@@ -120,6 +120,7 @@ Setup, CI matrix, GPU e2e, skip-CI keywords: [.github/CONTRIBUTING.md](.github/C
 - Trainer mixins: `core/trainers/mixins/` for composable trainer behaviors
 - Schemas: all config validation via Pydantic in `utils/schemas/`
 - HF Hub kernels live at `huggingface.co/kernels/<org>/<name>` (API `/api/kernels/...`); the bare `huggingface.co/<org>/<name>` path is a different namespace that silently serves a stale mirror
+- Flash attention does not need the `flash_attn` package. `attn_implementation: flash_attention_2` (or `flash_attention: true`) resolves through transformers to the `kernels-community/flash-attn2` hub kernel when the package is absent; the config validator and `tests/e2e/utils.py::flash_attn_available` both accept that. `import flash_attn` failing does not mean flash attention is unavailable.
 
 ## Comment Style
 

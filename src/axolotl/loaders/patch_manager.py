@@ -168,9 +168,13 @@ class PatchManager:
             patch_evaluation_loop,
             patch_maybe_log_save_evaluate,
         )
+        from axolotl.monkeypatch.transformers_num_parameters import (
+            patch_num_parameters,
+        )
 
         patch_evaluation_loop()
         patch_maybe_log_save_evaluate()
+        patch_num_parameters()
 
     def apply_post_model_build_patches(self, model: PreTrainedModel):
         """Apply patches right after model build, before post-load setup."""

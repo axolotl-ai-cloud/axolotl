@@ -59,8 +59,11 @@ def test_parametrization_state_and_gradients(backend):
     meta.load_state_dict(model.state_dict(), assign=True)
     torch.testing.assert_close(meta.weight, expected, rtol=0, atol=0)
     x = torch.randn(2, 128, requires_grad=True)
+    reference_x = x.detach().clone().requires_grad_(True)
+    reference = torch.nn.functional.linear(reference_x, expected.detach())
+    reference.sum().backward()
     meta(x).sum().backward()
-    torch.testing.assert_close(x.grad, expected.sum(0).expand_as(x))
+    torch.testing.assert_close(x.grad, reference_x.grad)
 
 
 def test_torchao_chunk_parity_and_expert_selection():
@@ -724,10 +727,12 @@ def test_sharded_nf4_loading_default_outside_fsdp2_qlora(setting, overrides):
 
 @pytest.mark.parametrize("backend", ["bitsandbytes", "torchao"])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-def test_linear_backward_does_not_retain_dense_weights(backend, dtype):
+@pytest.mark.parametrize("seed", [0, 42, 1234])
+def test_linear_backward_does_not_retain_dense_weights(backend, dtype, seed):
     from axolotl.utils.nf4 import checkpoint_nf4_linear
 
-    value = torch.randn(128, 128, dtype=dtype)
+    generator = torch.Generator().manual_seed(seed)
+    value = torch.randn(128, 128, dtype=dtype, generator=generator)
     if backend == "torchao":
         data, transform = quantize_torchao_nf4(value)
     else:
@@ -738,7 +743,11 @@ def test_linear_backward_does_not_retain_dense_weights(backend, dtype):
     checkpoint_nf4_linear(model)
     parametrize.register_parametrization(model, "weight", transform, unsafe=True)
     dense = model.weight.detach()
-    x = torch.randn(2, 128, dtype=dtype, requires_grad=True)
+    x = torch.randn(2, 128, dtype=dtype, generator=generator, requires_grad=True)
+    reference_x = x.detach().clone().requires_grad_(True)
+    # Match linear backward's accumulation order rather than a separate sum reduction.
+    reference = torch.nn.functional.linear(reference_x, dense)
+    reference.sum().backward()
     saved = []
 
     def pack(tensor):
@@ -748,8 +757,8 @@ def test_linear_backward_does_not_retain_dense_weights(backend, dtype):
     with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
         result = model(x)
         result.sum().backward()
-    torch.testing.assert_close(result, torch.nn.functional.linear(x, dense))
-    torch.testing.assert_close(x.grad, dense.sum(0).expand_as(x))
+    torch.testing.assert_close(result, reference)
+    torch.testing.assert_close(x.grad, reference_x.grad)
     assert all(tensor.numel() < value.numel() for tensor in saved)
 
 
