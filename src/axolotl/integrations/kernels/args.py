@@ -63,6 +63,10 @@ class KernelsArgs(BaseModel):
     # {kernel, gpu?, match?, configs} entries (see integrations/kernels/autotune_profiles.py).
     # One config = no benchmarking for any unseen key; several = a short search.
     autotune_profiles: list[dict] | None = None
+    # Narrow a kernel's autotune search for a new size bucket to configs within this many
+    # parameter changes of its winner for the same shape (1 = one of BLOCK_M/N/K, warps, stages;
+    # 2 = pairs). Only applies once that kernel has a measured or seeded winner.
+    autotune_neighborhood: int | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None

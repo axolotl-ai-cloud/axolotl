@@ -238,6 +238,12 @@ class KernelsPlugin(BasePlugin):
             )
 
             apply_autotune_profiles(cfg.autotune_profiles)
+        if cfg.autotune_neighborhood:
+            from axolotl.integrations.kernels.autotune_neighborhood import (
+                install_neighborhood_search,
+            )
+
+            install_neighborhood_search(cfg.autotune_neighborhood)
         if cfg.use_sonicmoe:
             from axolotl.integrations.kernels.libs.sonicmoe.epilogue import (
                 check_model_epilogues,
@@ -263,13 +269,21 @@ class KernelsPlugin(BasePlugin):
 
     def add_callbacks_pre_trainer(self, cfg, model):
         callbacks = []
-        if cfg.autotune_cache_path or cfg.autotune_profiles:
+        if (
+            cfg.autotune_cache_path
+            or cfg.autotune_profiles
+            or cfg.autotune_neighborhood
+        ):
             from axolotl.integrations.kernels.autotune_cache import (
                 AutotuneCacheCallback,
             )
 
             callbacks.append(
-                AutotuneCacheCallback(cfg.autotune_cache_path, cfg.autotune_profiles)
+                AutotuneCacheCallback(
+                    cfg.autotune_cache_path,
+                    cfg.autotune_profiles,
+                    neighborhood=cfg.autotune_neighborhood,
+                )
             )
         if cfg.use_sonicmoe and cfg.nvfp4_merge_aware:
             from axolotl.integrations.kernels.merge_aware_callback import (
