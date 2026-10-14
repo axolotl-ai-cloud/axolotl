@@ -1,4 +1,4 @@
-"""Run one Axolotl launcher per Slurm node inside the training container."""
+"""Run one Axolotl launcher per node inside the training container (SUNK or CKS)."""
 
 import json
 import os
@@ -9,8 +9,8 @@ from pathlib import Path
 def launch_command(launch, environment):
     """Derive process topology from the allocation, not from local hardware."""
     launcher = launch["launcher"]
-    nodes = int(environment["SLURM_NNODES"])
-    rank = int(environment["SLURM_PROCID"])
+    nodes = int(environment.get("AXOLOTL_NNODES") or environment["SLURM_NNODES"])
+    rank = int(environment.get("AXOLOTL_NODE_RANK") or environment["SLURM_PROCID"])
     gpus = launch["gpus_per_node"]
     command = ["axolotl", "train", "train.yaml", "--launcher", launcher]
     args = list(launch["launcher_args"])
