@@ -307,7 +307,7 @@ class AxolotlInputConfig(
     dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Configuration for dynamic checkpointing (trigger by file or signal). "
+            "description": "Configuration for dynamic checkpointing (trigger by file). "
             "Set 'enabled: true' to activate this feature."
         },
     )
