@@ -23,7 +23,7 @@ def provider(**kwargs):
             "namespace": "tenant-a",
             "pvc": "shared",
             "nodes": 2,
-            "job_name": "beam-test",
+            "job_name": "cks-test",
             "secret_env": {"HF_TOKEN": "hf-token/token"},
             "object_storage": {"org_id": "org1", "region": "US-EAST-15A"},
             **kwargs,
@@ -50,7 +50,7 @@ def test_dry_run_renders_service_configmap_and_indexed_job(capsys):
     container = pod["containers"][0]
     assert container["resources"]["requests"]["rdma/ib"] == "1"
     assert container["resources"]["limits"]["nvidia.com/gpu"] == "8"
-    assert pod["subdomain"] == "beam-test"
+    assert pod["subdomain"] == "cks-test"
     assert "podAntiAffinity" in pod["affinity"]
     env = {e["name"]: e for e in container["env"]}
     assert env["HF_TOKEN"]["valueFrom"]["secretKeyRef"] == {
@@ -61,9 +61,9 @@ def test_dry_run_renders_service_configmap_and_indexed_job(capsys):
     assert {"data", "job", "shm", "scratch", "caios-token"} <= names
     training = yaml.safe_load(configmap["data"]["train.yaml"])
     assert training["learning_rate"] == 0.001
-    assert training["output_dir"] == "/data/axolotl-jobs/beam-test/outputs"
+    assert training["output_dir"] == "/data/axolotl-jobs/cks-test/outputs"
     entry = configmap["data"]["entrypoint.sh"]
-    assert "MASTER_ADDR=beam-test-0.beam-test.tenant-a.svc.cluster.local" in entry
+    assert "MASTER_ADDR=cks-test-0.cks-test.tenant-a.svc.cluster.local" in entry
     assert "NCCL_IB_HCA=ibp" in entry
     assert "temporary-credentials/oidc/org1" in entry
     assert "---" in capsys.readouterr().out
@@ -74,7 +74,7 @@ def test_runner_derives_topology_from_pod_env():
     env = {
         "AXOLOTL_NNODES": "2",
         "AXOLOTL_NODE_RANK": "1",
-        "MASTER_ADDR": "beam-test-0.beam-test.tenant-a.svc.cluster.local",
+        "MASTER_ADDR": "cks-test-0.cks-test.tenant-a.svc.cluster.local",
         "MASTER_PORT": "29400",
     }
     command = launch_command(launch, env)
@@ -101,7 +101,7 @@ def test_submit_applies_through_kubectl(monkeypatch):
     ]
     assert command[7:] == ["apply", "-f", "-"]
     assert "kind: Job" in run.call_args.kwargs["input"]
-    assert result["logs_command"].endswith("logs -f job/beam-test")
+    assert result["logs_command"].endswith("logs -f job/cks-test")
 
 
 def test_cks_rejects_outputs_off_the_volume_and_topology_args():
