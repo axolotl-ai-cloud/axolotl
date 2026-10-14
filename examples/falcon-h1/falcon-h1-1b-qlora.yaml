@@ -1,4 +1,4 @@
-base_model: tiiuae/Falcon-H1-1.5B-Base
+base_model: tiiuae/Falcon-H1-1.5B-Instruct
 # optionally might have model_type or tokenizer_type
 model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
@@ -10,6 +10,8 @@ load_in_4bit: true
 
 # huggingface repo
 chat_template: falcon_h1
+eot_tokens:
+  - "<|im_end|>"
 datasets:
   - path: cgato/SlimOrcaDedupCleaned
     type: chat_template
