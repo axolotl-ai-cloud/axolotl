@@ -163,51 +163,8 @@ class Llama2ChatTokenizationTest:
             assert len(example[fields]) == len(tokenized_conversation[fields])
             assert example[fields] == tokenized_conversation[fields]
 
-    def compare_with_transformers_integration(self, tokenizer_llama2_7b):
-        # this needs transformers >= v4.31.0
-        from transformers.models.llama.tokenization_llama import B_SYS, E_SYS
-        from transformers.pipelines.conversational import Conversation
 
-        # from transformers.models.llama.tokenization_llama import DEFAULT_SYSTEM_PROMPT
-        # broken as of 23/7/20
-        # see https://github.com/huggingface/transformers/pull/24935
-
-        DEFAULT_SYSTEM_PROMPT = """\
-You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.
-
-If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information."""
-        with open(
-            Path(__file__).parent / "fixtures/conversation.json", encoding="utf-8"
-        ) as fin:
-            data = fin.read()
-            conversation = json.loads(data)
-        with open(
-            Path(__file__).parent / "fixtures/conversation.tokenized_llama2chat.json",
-            encoding="utf-8",
-        ) as fin:
-            data = fin.read()
-            tokenized_conversation = json.loads(data)
-
-        user_input = []
-        answers = []
-        for msg in conversation["conversations"]:
-            if msg["from"] == "human":
-                user_input.append(msg["value"])
-            else:
-                answers.append(msg["value"])
-        hf_conf = Conversation(
-            text=user_input[-1],
-            past_user_inputs=[B_SYS + DEFAULT_SYSTEM_PROMPT + E_SYS + user_input[0]]
-            + user_input[1:-1],
-            generated_responses=answers,
-        )
-
-        hf_tokens = tokenizer_llama2_7b._build_conversation_input_ids(hf_conf)
-
-        assert hf_tokens == tokenized_conversation["input_ids"][: len(hf_tokens)]
-
-
-class OrpoTokenizationTest:
+class TestOrpoTokenization:
     """test case for the ORPO tokenization"""
 
     @enable_hf_offline

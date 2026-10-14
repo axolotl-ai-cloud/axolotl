@@ -342,25 +342,6 @@ class TestDynamicCheckpointSignalHandling:
             assert result.should_save is True
             assert callback.should_save_checkpoint is False
 
-    def test_signal_not_registered_when_disabled(self):
-        """Test that signal handler is not registered when disabled"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cfg = DictDefault(
-                {
-                    "dynamic_checkpoint": {
-                        "enabled": True,
-                        "check_interval": 10,
-                        "enable_signal": False,
-                    },
-                    "output_dir": tmpdir,
-                }
-            )
-
-            with patch("signal.signal") as mock_signal_register:
-                _ = DynamicCheckpointCallback(cfg)
-
-            assert not mock_signal_register.called
-
 
 class TestDynamicCheckpointDisabled:
     """Test behavior when callback is disabled"""

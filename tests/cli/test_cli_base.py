@@ -76,18 +76,14 @@ class BaseCliTest:
             assert result.exit_code == 0
 
     def _test_cli_overrides(self, tmp_path: Path, valid_test_config: str):
-        """Test CLI argument overrides.
+        """Write a config for CLI override tests with `output_dir` under `tmp_path`.
 
         Args:
             tmp_path: Temporary path fixture
             valid_test_config: Valid config fixture
-            command: Command to test (train/evaluate)
         """
         config_path = tmp_path / "config.yml"
         output_dir = tmp_path / "model-out"
 
-        test_config = valid_test_config.replace(
-            "output_dir: model-out", f"output_dir: {output_dir}"
-        )
-        config_path.write_text(test_config)
+        config_path.write_text(valid_test_config + f"output_dir: {output_dir}\n")
         return config_path

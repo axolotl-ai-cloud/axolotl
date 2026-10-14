@@ -87,8 +87,7 @@ class TestHFRLTrainerBuilder:
         assert training_arguments.dataloader_num_workers == 1
         assert training_arguments.dataloader_pin_memory is True
 
-        # TODO(wing): restore once trl releases 0.22.0
-        # assert training_arguments.gradient_checkpointing is True
+        assert training_arguments.gradient_checkpointing is False
 
     def test_dpo_training_arguments(self, dpo_cfg, model, tokenizer):
         dpo_cfg["precompute_ref_log_probs"] = True

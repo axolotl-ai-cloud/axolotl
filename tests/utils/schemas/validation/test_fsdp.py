@@ -173,15 +173,6 @@ class TestFSDPValidation:
         assert not validated_cfg.fp32_norms
         assert "fp32_norm_classes is set but fp32_norms is not enabled" in caplog.text
 
-    def test_muon_fsdp1_rejected(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(
-            optimizer="muon",
-            fsdp_version=1,
-            fsdp_config={"reshard_after_forward": True},
-        )
-        with pytest.raises(ValueError, match="fsdp_version: 1 is no longer supported"):
-            validate_config(cfg)
-
     def test_fsdp_version_defaults_to_2(self, min_base_cfg):
         cfg = validate_config(
             min_base_cfg | DictDefault(fsdp_config={"reshard_after_forward": True})

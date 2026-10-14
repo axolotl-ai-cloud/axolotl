@@ -256,12 +256,6 @@ def download_smollm2_135m_instruct_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_smollm2_135m_gptq_model():
-    # download the model
-    snapshot_download_w_retry("lilmeaty/SmolLM2-135M-Instruct-GPTQ", repo_type="model")
-
-
-@pytest.fixture(scope="session", autouse=True)
 def download_qwen3_half_billion_model():
     # download the model (still used as the KD teacher in tests/e2e/integrations/test_kd.py)
     snapshot_download_w_retry("Qwen/Qwen3-0.6B", repo_type="model")
@@ -419,14 +413,6 @@ def download_tiny_shakespeare_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_evolkit_kd_sample_dataset():
-    # download the dataset
-    snapshot_download_w_retry(
-        "axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample", repo_type="dataset"
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
 def download_deepseek_model_fixture():
     snapshot_download_w_retry("axolotl-ai-co/DeepSeek-V3-11M", repo_type="model")
 
@@ -436,16 +422,6 @@ def download_huggyllama_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
         "huggyllama/llama-7b",
-        repo_type="model",
-        allow_patterns=["*token*", "config.json"],
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
-def download_llama33_70b_model_fixture():
-    # download the tokenizer only
-    snapshot_download_w_retry(
-        "axolotl-ai-co/Llama-3.3-70B-Instruct-tokenizer",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
     )
@@ -608,14 +584,6 @@ def download_llama2_model_fixture():
         "NousResearch/Llama-2-7b-hf",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
-def download_llama32_1b_model_fixture():
-    snapshot_download_w_retry(
-        "osllmai-community/Llama-3.2-1B",
-        repo_type="model",
     )
 
 
@@ -807,26 +775,6 @@ def dataset_winglian_tiny_shakespeare(
 
 
 @pytest.fixture
-def dataset_tatsu_lab_alpaca(
-    download_ds_fixture_bundle: Path,
-):
-    from datasets import load_from_disk
-
-    ds_path = download_ds_fixture_bundle / "tatsu-lab__alpaca"
-    return load_from_disk(ds_path)["train"]
-
-
-@pytest.fixture
-def dataset_mhenrichsen_alpaca_2k_test(
-    download_ds_fixture_bundle: Path,
-):
-    from datasets import load_from_disk
-
-    ds_path = download_ds_fixture_bundle / "mhenrichsen__alpaca_2k_test"
-    return load_from_disk(ds_path)["train"]
-
-
-@pytest.fixture
 def dataset_argilla_ultrafeedback_binarized_preferences_cleaned(
     download_ds_fixture_bundle: Path,
 ):
@@ -835,29 +783,6 @@ def dataset_argilla_ultrafeedback_binarized_preferences_cleaned(
     ds_path = (
         download_ds_fixture_bundle
         / "argilla__ultrafeedback-binarized-preferences-cleaned"
-    )
-    return load_from_disk(ds_path)["train"]
-
-
-@pytest.fixture
-def dataset_fozziethebeat_alpaca_messages_2k_dpo_test(
-    download_ds_fixture_bundle: Path,
-):
-    from datasets import load_from_disk
-
-    ds_path = download_ds_fixture_bundle / "fozziethebeat__alpaca_messages_2k_dpo_test"
-    return load_from_disk(ds_path)["train"]
-
-
-@pytest.fixture
-def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
-    download_ds_fixture_bundle: Path,
-):
-    from datasets import load_from_disk
-
-    ds_path = (
-        download_ds_fixture_bundle
-        / "fozziethebeat__alpaca_messages_2k_dpo_test__rev_ea82cff"
     )
     return load_from_disk(ds_path)["train"]
 
@@ -876,49 +801,6 @@ def fixture_min_base_cfg():
         micro_batch_size=1,
         gradient_accumulation_steps=1,
     )
-
-
-#
-@pytest.mark.skipif(
-    os.environ.get("AXOLOTL_IS_CI_CACHE_PRELOAD", "-1") != "1",
-    reason="Not running in CI cache preload",
-)
-def test_load_fixtures(
-    download_smollm2_135m_model,
-    download_qwen3_half_billion_model,
-    download_tiny_llama_model,
-    download_tiny_mistral_model,
-    download_tiny_mixtral_model,
-    download_tiny_phi_model,
-    download_tiny_falcon_model,
-    download_tiny_qwen2_model,
-    download_tiny_qwen3_model,
-    download_tiny_gemma2_model,
-    download_tatsu_lab_alpaca_dataset,
-    download_mhenrichsen_alpaca_2k_dataset,
-    download_mhenrichsen_alpaca_2k_w_revision_dataset,
-    download_mlabonne_finetome_100k_dataset,
-    download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset,
-    download_argilla_ultrafeedback_binarized_preferences_cleaned_kto_dataset,
-    download_argilla_distilabel_capybara_dpo_7k_binarized_dataset,
-    download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset,
-    download_argilla_dpo_pairs_dataset,
-    download_tiny_shakespeare_dataset,
-    download_deepseek_model_fixture,
-    download_huggyllama_model_fixture,
-    download_llama_1b_model_fixture,
-    download_llama3_8b_model_fixture,
-    download_llama3_8b_instruct_model_fixture,
-    download_phi_35_mini_model_fixture,
-    download_phi_3_medium_model_fixture,
-    download_phi_4_reasoning_model_fixture,
-    download_mistral_7b_model_fixture,
-    download_gemma_2b_model_fixture,
-    download_gemma2_9b_model_fixture,
-    download_mlx_mistral_7b_model_fixture,
-    download_llama2_model_fixture,
-):
-    pass
 
 
 @pytest.fixture(autouse=True)

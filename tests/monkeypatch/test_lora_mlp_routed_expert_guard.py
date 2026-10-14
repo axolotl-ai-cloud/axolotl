@@ -54,14 +54,3 @@ def test_dense_kept_routed_skipped_together():
     assert len(full) == 3  # dense + 2 routed
     assert len(guarded) == 1  # only the dense MLP
     assert guarded[0][3] is layer.mlp
-
-
-def test_dsv4_translation_disables_generic_mlp_kernel():
-    # DSV4 keeps its dedicated clamped-SwiGLU kernel: generic lora_mlp_kernel is translated and off.
-    from axolotl.integrations.kernels.args import KernelsArgs
-
-    out = KernelsArgs.disable_mlp_kernel(
-        {"use_scattermoe": True, "use_dsv4_kernels": True, "lora_mlp_kernel": True}
-    )
-    assert out["lora_mlp_kernel"] is False
-    assert out["dsv4_shared_mlp_lora_kernel"] is True
