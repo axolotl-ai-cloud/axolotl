@@ -96,11 +96,16 @@ attention-only is ~0.006%, not the 1.4% implied by that denominator.
   **bf16** canvas (~1004 GB), not the ~254 GB nf4 reality. The limit must be large
   enough for the *estimate* to fit across the GPUs or accelerate spills layers to
   CPU and bitsandbytes refuses to load.
-- **`attn_implementation: sdpa`** — no flash-attn build exists for
-  torch 2.13.0+cu130 in the current image and the validator rejects
-  `flash_attention_2` up front.
-- **`sample_packing: false`** — `ssmax` scales attention off `position_ids`, which
-  packing rewrites per document. Unverified interaction; test before enabling.
+- **`attn_implementation: flash_attention_2`** — transformers >= 5.18.0 fixed the
+  FA2 version mapping for this arch, and FA2 gives the varlen path the hybrid
+  sliding-window attention needs. (The `beam-tiny-smoke` config keeps `sdpa` so it
+  runs without a flash-attn build.)
+- **`sample_packing: true`** — the model is registered in
+  `SUPPORTED_MULTIPACK_MODEL_TYPES`, and FA2 varlen resets `position_ids` per
+  document, which is what `ssmax` needs. **Pending verification:** loss parity with
+  the unpacked path has not yet been confirmed in a flash-attn + transformers>=5.18
+  env. On `sdpa`, packing mis-scales `ssmax` (tiny model: ~2x loss, vs ~11.9
+  unpacked), so packing requires the FA2 varlen path.
 
 ## Verified runs
 
@@ -170,4 +175,5 @@ their generic fallbacks run silently:
 - **`liger`** — its RMSNorm/SwiGLU replacements carry neither the sandwich norms
   nor the depth-scaled residuals, and expect per-expert `nn.Linear`.
 - **`sdpa_varlen`** (experimental, warns) — sliding window needs a torch build with
-  `varlen_attn(window_size=...)`, and `ssmax` reads `position_ids`.
+  `varlen_attn(window_size=...)`, and `ssmax` reads `position_ids`. Prefer
+  `flash_attention_2`, which handles the window natively.

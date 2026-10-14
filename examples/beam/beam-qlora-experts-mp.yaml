@@ -34,9 +34,10 @@ val_set_size: 0.0
 output_dir: ./outputs/beam-qlora-experts-mp
 
 sequence_len: 2048
-# ssmax scales attention off position_ids and packing rewrites them per document;
-# leave off until that interaction is measured.
-sample_packing: false
+# flash_attention_2 varlen resets position_ids per document, which is what ssmax
+# needs. Enabled per maintainer request; verify loss parity in a fresh env with
+# flash-attn + transformers>=5.18 (sdpa packing mis-scales ssmax: ~2x loss measured).
+sample_packing: true
 pad_to_sequence_len: true
 
 adapter: qlora
@@ -87,8 +88,9 @@ gradient_checkpointing_kwargs:
 # ranks abort with "TCPStore doWait ... timeout after 1800000ms". Give it hours.
 ddp_timeout: 21600
 
-# no flash-attn build for torch 2.13+cu130; sample_packing is off so varlen is moot
-attn_implementation: sdpa
+# flash_attention_2: transformers>=5.18.0 fixed the FA2 version mapping for this
+# arch; FA2 gives the varlen path the hybrid sliding-window attention wants.
+attn_implementation: flash_attention_2
 logging_steps: 1
 max_steps: 5
 save_strategy: "no"
