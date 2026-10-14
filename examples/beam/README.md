@@ -155,3 +155,15 @@ their generic fallbacks run silently:
   nor the depth-scaled residuals, and expect per-expert `nn.Linear`.
 - **`sdpa_varlen`** (experimental, warns) — sliding window needs a torch build with
   `varlen_attn(window_size=...)`, and `ssmax` reads `position_ids`.
+
+## Expert-parallel LoRA on B200 (bf16 and NVFP4)
+
+| File | Path | Notes |
+|---|---|---|
+| `beam-lora-ep-b200.yaml` | 2 nodes x 8 B200: EP=8 inside each node, dense weights FSDP-sharded over the same ranks, HSDP replication across nodes | bf16 base, LoRA on attention + fused experts, DeepEP + ScatterMoE, FA4, cut cross entropy |
+| `beam-nvfp4-lora-b200.yaml` | 1 node x 8 B200 | ModelOpt NVFP4 checkpoint, routed experts stay packed (W4A16 ScatterMoE) |
+| `autotune/b200.json` | measured Triton autotune winners for both paths | `autotune_cache_path` seeds the kernels from a copy and keeps recording |
+
+Both configs pin the ScatterMoE LoRA tiles with `autotune_profiles` (measured on B200, identical
+across every routed-row bucket) and enable `autotune_neighborhood: 1`, so no training or eval
+step benchmarks kernel configs while expert-parallel peers wait.
