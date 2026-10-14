@@ -117,3 +117,23 @@ def test_write_merges_with_existing_file(kernel_module, tmp_path):
     assert (
         autotune_cache.write_autotune_cache(str(path), collect_autotune_configs()) == 2
     )
+
+
+def test_timing_capture_records_every_benchmarked_config(kernel_module, tmp_path):
+    tuner = kernel_module._scatter2scatter_lora
+    tuner.nargs = {}
+    tuner.prune_configs = lambda kwargs: list(tuner.configs)
+    tuner._bench = lambda *args, config=None, **kwargs: (
+        1.0 + tuner.configs.index(config)
+    )
+    assert autotune_cache.install_timing_capture() == 1
+    key = {"M_BUCKET": 131072, "N": 5120, "K": 2560, "BLOCK_R": 32}
+    tuner.prune_configs(key)
+    for config in tuner.configs:
+        tuner._bench(config=config)
+    tuner.cache[_measured_key()] = tuner.configs[0]
+    records = autotune_cache._with_timings(collect_autotune_configs())
+    assert list(records[0]["timings_ms"].values()) == [1.0, 2.0]
+    path = tmp_path / "b200.json"
+    autotune_cache.write_autotune_cache(str(path), records)
+    assert "timings_ms" in json.loads(path.read_text())["records"][0]

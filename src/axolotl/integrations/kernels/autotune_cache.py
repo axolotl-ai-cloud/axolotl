@@ -98,6 +98,65 @@ def _autotuners() -> list[tuple[str, Any, Any]]:
     return found
 
 
+def install_timing_capture() -> int:
+    """Record every benchmarked config's time per key on each loaded autotuner. Idempotent.
+
+    Triton keeps only the last benchmark's table (``configs_timings``); wrapping ``prune_configs``
+    (which runs right before a key is benchmarked) and ``_bench`` keeps a table per key in
+    ``autotuner._axolotl_timings`` so the cache file can carry the full distribution, not just
+    the winner. That is what an empirical narrowing of the search space is derived from.
+    """
+    installed = 0
+    for _modname, _module, autotuner in _autotuners():
+        if getattr(autotuner, "_axolotl_timings", None) is not None:
+            continue
+        if not hasattr(autotuner, "_bench") or not getattr(autotuner, "keys", None):
+            continue
+        autotuner._axolotl_timings = {}
+        autotuner._axolotl_pending_key = None
+        orig_prune = autotuner.prune_configs
+        orig_bench = autotuner._bench
+
+        def prune_configs(kwargs, _tuner=autotuner, _orig=orig_prune):
+            args = {**(getattr(_tuner, "nargs", None) or {}), **kwargs}
+            try:
+                _tuner._axolotl_pending_key = tuple(
+                    args[name] for name in _tuner.keys if name in args
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                _tuner._axolotl_pending_key = None
+            return _orig(kwargs)
+
+        def _bench(*args, _tuner=autotuner, _orig=orig_bench, config=None, **kwargs):
+            result = _orig(*args, config=config, **kwargs)
+            key = _tuner._axolotl_pending_key
+            if key is not None and config is not None:
+                value = result[0] if isinstance(result, (list, tuple)) else result
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    return result
+                table = _tuner._axolotl_timings.setdefault(key, {})
+                table[json.dumps(_config_to_dict(config), sort_keys=True)] = value
+            return result
+
+        autotuner.prune_configs = prune_configs
+        autotuner._bench = _bench
+        installed += 1
+    return installed
+
+
+def _timings_for(autotuner: Any, key_tuple: tuple) -> dict[str, float] | None:
+    """The benchmark table recorded for ``key_tuple`` (declared-argument prefix match)."""
+    tables = getattr(autotuner, "_axolotl_timings", None)
+    if not tables:
+        return None
+    for pending, table in tables.items():
+        if tuple(key_tuple[: len(pending)]) == tuple(pending):
+            return dict(sorted(table.items(), key=lambda kv: kv[1]))
+    return None
+
+
 def _kernel_name(autotuner: Any) -> str:
     base = getattr(autotuner, "base_fn", None) or getattr(autotuner, "fn", None)
     return getattr(base, "__name__", "")
@@ -162,6 +221,7 @@ def seed_autotune_caches(records: list[dict[str, Any]]) -> tuple[int, Counter]:
 
 def load_autotune_cache(path: str) -> int:
     """Seed the loaded kernels from ``path`` when it was measured on this GPU."""
+    install_timing_capture()
     data = read_autotune_cache(path)
     if data is None:
         LOG.info(
@@ -193,9 +253,27 @@ def load_autotune_cache(path: str) -> int:
     return applied
 
 
+def _with_timings(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    index: dict[tuple[Any, Any], Any] = {}
+    for modname, _module, autotuner in _autotuners():
+        index[(modname, _kernel_name(autotuner))] = autotuner
+    for record in records:
+        autotuner = index.get((record.get("module_fqn"), record.get("kernel")))
+        if autotuner is None:
+            continue
+        try:
+            key = _key_tuple(autotuner, record["key"])
+        except (KeyError, TypeError):
+            continue
+        timings = _timings_for(autotuner, key)
+        if timings:
+            record["timings_ms"] = timings
+    return records
+
+
 def gather_autotune_records() -> list[dict[str, Any]]:
     """This rank's winners, merged with every other rank's when distributed."""
-    local = collect_autotune_configs()
+    local = _with_timings(collect_autotune_configs())
     if torch.distributed.is_available() and torch.distributed.is_initialized():
         world: list[list[dict[str, Any]] | None] = [
             None
