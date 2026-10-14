@@ -1,15 +1,7 @@
-# Beam (ReflectionForCausalLM) -- QLoRA via the CPU-staged FSDP2 loader.
-#
-# Relies on upstream #4003 (merged), which adds both pieces this model needs:
-#   * chunked bnb NF4 quant/dequant, so fused expert tensors past the 2**31
-#     element ceiling can be quantized at all
-#   * qlora_sharded_model_loading: rank 0 quantizes the bf16 checkpoint in
-#     bounded GPU chunks into CPU RAM, other ranks build on meta, and parameter
-#     shards transfer after FSDP wrapping -- so no rank ever holds a full replica
-#
-# Sized for one 8x H200 node (143 GiB/GPU, ~1 TB host RAM). Rank 0 needs host RAM
-# for the packed model (~250 GB) plus conversion temporaries.
-base_model: ./beam
+# Beam QLoRA, FSDP2 with the CPU-staged NF4 loader (data-parallel; preferred).
+# The loader quantizes the checkpoint on rank 0 and transfers parameter shards
+# after FSDP wrapping, so no rank holds a full replica. Sized for one 8xH200 node.
+base_model: reflectionai/beam
 
 chat_template: tokenizer_default
 datasets:
@@ -74,7 +66,7 @@ fsdp_config:
   cpu_ram_efficient_loading: true
   state_dict_type: SHARDED_STATE_DICT
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  transformer_layer_cls_to_wrap: ReflectionDecoderLayer
+  transformer_layer_cls_to_wrap: BeamDecoderLayer
   reshard_after_forward: true
   offload_params: false
 
