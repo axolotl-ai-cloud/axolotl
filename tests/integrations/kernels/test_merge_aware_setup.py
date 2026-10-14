@@ -340,3 +340,11 @@ def test_fsdp_native_setup_keeps_support_status_when_no_projection_installs(
         )
     assert model._axolotl_merge_aware_unsupported is already_unsupported
     assert "leaving merge-aware support status unchanged" in info.call_args.args[0]
+
+
+def test_merge_aware_rejects_scattermoe_backend():
+    from axolotl.integrations.kernels.args import KernelsArgs
+
+    with pytest.raises(ValueError, match="use_sonicmoe"):
+        KernelsArgs(nvfp4_merge_aware=True, use_scattermoe=True, adapter="lora")
+    assert KernelsArgs(nvfp4_merge_aware=True, use_sonicmoe=True, adapter="lora")
