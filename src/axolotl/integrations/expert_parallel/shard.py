@@ -82,12 +82,14 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, ep_rank_of):
         out = torch.empty((e_local, *like.shape[1:]), dtype=like.dtype, device=dev)
         chunks = None
         if is_src:
-            chunks = [
-                full_comp[ep_rank_of[r] * e_local : (ep_rank_of[r] + 1) * e_local]
-                .contiguous()
-                .to(dev)
-                for r in range(world)
-            ]
+            # ranks that share an ep-rank (replicas, dp_shard peers) get the same slice:
+            # copy each distinct slice to the device once instead of once per rank
+            by_ep: dict[int, torch.Tensor] = {}
+            for ep in sorted(set(ep_rank_of)):
+                by_ep[ep] = (
+                    full_comp[ep * e_local : (ep + 1) * e_local].contiguous().to(dev)
+                )
+            chunks = [by_ep[ep_rank_of[r]] for r in range(world)]
         dist.scatter(out, scatter_list=chunks, src=0)
         return out
 
