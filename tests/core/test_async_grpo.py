@@ -203,44 +203,6 @@ class TestLoraFP8Guard(unittest.TestCase):
         self.assertIs(quant_state, scale_inv)
 
 
-class TestValidateQuantPatchRestore(unittest.TestCase):
-    """Test that validate_quantization_for_training is restored after trainer creation."""
-
-    def test_patch_restored_on_success(self):
-        """Monkeypatch should be restored even after successful trainer creation."""
-        import transformers.trainer as _trainer_module
-
-        original = _trainer_module.validate_quantization_for_training
-
-        # After the build() method runs, original should be restored.
-        # We can't easily test the full build(), but we can test the pattern.
-        _orig = _trainer_module.validate_quantization_for_training
-        _trainer_module.validate_quantization_for_training = lambda model: None
-        try:
-            pass  # simulate trainer_cls() succeeding
-        finally:
-            _trainer_module.validate_quantization_for_training = _orig
-
-        self.assertIs(_trainer_module.validate_quantization_for_training, original)
-
-    def test_patch_restored_on_error(self):
-        """Monkeypatch should be restored even if trainer creation raises."""
-        import transformers.trainer as _trainer_module
-
-        original = _trainer_module.validate_quantization_for_training
-
-        _orig = _trainer_module.validate_quantization_for_training
-        _trainer_module.validate_quantization_for_training = lambda model: None
-        try:
-            raise ValueError("test error")
-        except ValueError:
-            pass
-        finally:
-            _trainer_module.validate_quantization_for_training = _orig
-
-        self.assertIs(_trainer_module.validate_quantization_for_training, original)
-
-
 class TestVllmLoraSyncPatch(unittest.TestCase):
     """The ``_generate_single_turn`` patch wires sync_weights to the right place.
 
@@ -297,30 +259,17 @@ class TestVllmLoraSyncPatch(unittest.TestCase):
         return trainer
 
     @staticmethod
-    def _run_patch_branch(trainer):
-        """Execute just the sync_weights-patching branch in isolation.
+    def _call_generate_single_turn(trainer):
+        from trl.trainer import GRPOTrainer
 
-        We can't easily call the real ``_generate_single_turn`` because it
-        does a full vLLM generate. Instead we copy the exact branch out of
-        the source so the test verifies the same logic the trainer runs.
-        """
-        if not getattr(trainer, "_patched_sync_weights", False):
-            if trainer.use_vllm and hasattr(trainer, "vllm_generation"):
-                if getattr(trainer.args, "vllm_lora_sync", False):
-                    if getattr(trainer.args, "async_prefetch", False):
-                        trainer.vllm_generation.sync_weights = lambda: None
-                    else:
-                        sync_helper = trainer._sync_lora_adapter
+        from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
 
-                        def _lora_filesystem_sync():
-                            sync_helper()
-
-                        trainer.vllm_generation.sync_weights = _lora_filesystem_sync
-                    trainer._patched_sync_weights = True
+        with patch.object(GRPOTrainer, "_generate_single_turn", return_value=None):
+            AsyncGRPOTrainer._generate_single_turn(trainer, [])
 
     def test_sync_mode_with_lora_sync_wires_to_sync_lora_adapter(self):
         trainer = self._make_stub_trainer(vllm_lora_sync=True, async_prefetch=False)
-        self._run_patch_branch(trainer)
+        self._call_generate_single_turn(trainer)
 
         assert trainer._patched_sync_weights is True
         # Trigger the patched hook — it must call _sync_lora_adapter.
@@ -329,7 +278,7 @@ class TestVllmLoraSyncPatch(unittest.TestCase):
 
     def test_async_mode_with_lora_sync_installs_noop_hook(self):
         trainer = self._make_stub_trainer(vllm_lora_sync=True, async_prefetch=True)
-        self._run_patch_branch(trainer)
+        self._call_generate_single_turn(trainer)
 
         assert trainer._patched_sync_weights is True
         # Hook must be a no-op so BG-thread generation doesn't fight the
@@ -340,17 +289,17 @@ class TestVllmLoraSyncPatch(unittest.TestCase):
     def test_sync_mode_with_lora_sync_does_not_call_during_install(self):
         """Installing the patch should not pre-emptively sync."""
         trainer = self._make_stub_trainer(vllm_lora_sync=True, async_prefetch=False)
-        self._run_patch_branch(trainer)
+        self._call_generate_single_turn(trainer)
         # _sync_lora_adapter should only be called when the patched hook
         # itself is invoked (e.g., from TRL's _generate_single_turn).
         trainer._sync_lora_adapter.assert_not_called()
 
     def test_patch_is_idempotent(self):
         trainer = self._make_stub_trainer(vllm_lora_sync=True, async_prefetch=False)
-        self._run_patch_branch(trainer)
+        self._call_generate_single_turn(trainer)
         first_hook = trainer.vllm_generation.sync_weights
         # Second call must not re-patch (otherwise we'd lose the original).
-        self._run_patch_branch(trainer)
+        self._call_generate_single_turn(trainer)
         assert trainer.vllm_generation.sync_weights is first_hook
 
 

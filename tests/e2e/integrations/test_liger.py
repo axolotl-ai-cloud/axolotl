@@ -9,15 +9,14 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_model_output_exists, require_torch_2_4_1
+from tests.e2e.utils import check_model_output_exists
 
 
-class LigerIntegrationTestCase:
+class TestLigerIntegration:
     """
     e2e tests for liger integration with Axolotl
     """
 
-    @require_torch_2_4_1
     def test_llama_wo_flce(self, temp_dir):
         cfg = DictDefault(
             {
@@ -62,7 +61,6 @@ class LigerIntegrationTestCase:
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
 
-    @require_torch_2_4_1
     @pytest.mark.parametrize(
         "liger_use_token_scaling",
         [True, False],

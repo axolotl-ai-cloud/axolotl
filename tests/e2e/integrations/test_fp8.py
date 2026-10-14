@@ -7,15 +7,14 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_model_output_exists, require_torch_2_7_0
+from tests.e2e.utils import check_model_output_exists
 
 
-class FP8IntegrationTestCase:
+class TestFP8Integration:
     """
     e2e smoke tests for FP8 mixed precision training with Axolotl
     """
 
-    @require_torch_2_7_0
     def test_fp8_single_gpu_smoke(self, temp_dir):
         """Smoke test for single GPU FP8 + torch.compile training"""
 
@@ -44,7 +43,7 @@ class FP8IntegrationTestCase:
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "sdp_attention": True,
-                "pad_to_seq_len": True,
+                "pad_to_sequence_len": True,
                 "sample_packing": True,
                 "fp8": True,
                 "torch_compile": True,

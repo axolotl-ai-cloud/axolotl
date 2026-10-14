@@ -37,18 +37,18 @@ class TestDPOChatml:
     Test loading DPO preference datasets with chatml formatting
     """
 
-    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     @enable_hf_offline
-    def test_default(self, minimal_dpo_cfg):
+    def test_default(self, minimal_dpo_cfg, tmp_path):
         cfg = DictDefault(
             {
+                "dataset_prepared_path": str(tmp_path),
                 "datasets": [
                     {
                         "path": "argilla/distilabel-intel-orca-dpo-pairs",
                         "type": "chatml",
                         "split": "train[:1%]",
                     }
-                ]
+                ],
             }
             | minimal_dpo_cfg
         )

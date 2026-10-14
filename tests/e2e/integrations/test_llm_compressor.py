@@ -14,7 +14,6 @@ from axolotl.utils.dict import DictDefault
 from tests.e2e.utils import (
     check_model_output_exists,
     require_llmcompressor,
-    require_torch_2_4_1,
 )
 
 MODELS = [
@@ -35,7 +34,6 @@ class TestLLMCompressorIntegration:
     """
 
     @require_llmcompressor
-    @require_torch_2_4_1
     def test_llmcompressor_plugin(
         self, temp_dir, base_model: str, save_compressed: bool
     ):

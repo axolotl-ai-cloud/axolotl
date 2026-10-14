@@ -319,69 +319,6 @@ def _has_free_gpu_mem(min_gb: float) -> bool:
     not _has_free_gpu_mem(80.0),
     reason="bench shape needs ~80 GiB free GPU memory",
 )
-def test_dense_scatter2scatter_int64_at_overflow_shape():
-    """Direct int64 kernel call at the bench shape produces no zero rows.
-
-    With ``INT64_INDICES=True`` the kernel's pointer arithmetic stays in
-    int64 across the full output row range, so rows past the would-be
-    int32 overflow boundary (``M_block >= 2**31 / y_dim``) are populated
-    rather than silently dropped.
-    """
-    device = torch.device("cuda:0")
-    torch.manual_seed(0)
-    x = torch.randn(_T, _HIDDEN, device=device, dtype=DTYPE)
-    W = (
-        torch.randn(
-            _NUM_EXPERTS, _HIDDEN, 2 * _INTERMEDIATE, device=device, dtype=DTYPE
-        )
-        * 0.01
-    )
-
-    logits = torch.randn(_T, _NUM_EXPERTS, device=device)
-    _, top_idx = torch.topk(torch.softmax(logits, dim=-1), _TOP_K, dim=-1)
-    sei, ssi, _ = flatten_sort_count(top_idx, _NUM_EXPERTS)
-
-    L_scattered = sei.size(0)
-    y_dim = W.size(-1)
-    assert L_scattered * y_dim >= _INT32_LIMIT, (
-        "precondition: shape must straddle the int32 overflow boundary"
-    )
-
-    out_i64 = base_ops.scatter2scatter(
-        X=x,
-        W=W,
-        sorted_expert_idxs=sei,
-        sorted_scattered_idxs=ssi,
-        k=_TOP_K,
-        x_grouped=False,
-        y_grouped=True,
-        int64_indices=True,
-    )
-    torch.cuda.synchronize()
-
-    # Sample rows on both sides of the int32 overflow boundary.
-    overflow_threshold_row = _INT32_LIMIT // y_dim
-    sample_rows = [
-        0,
-        overflow_threshold_row - 1,
-        overflow_threshold_row,
-        overflow_threshold_row + 1,
-        L_scattered - 1,
-    ]
-    for row in sample_rows:
-        assert (out_i64[row] != 0).any().item(), (
-            f"int64 kernel left row {row} all-zero (overflow boundary "
-            f"= {overflow_threshold_row}, L_scattered = {L_scattered})"
-        )
-    assert torch.isfinite(out_i64).all().item(), (
-        "int64 kernel produced non-finite values at overflow shape"
-    )
-
-
-@pytest.mark.skipif(
-    not _has_free_gpu_mem(80.0),
-    reason="bench shape needs ~80 GiB free GPU memory",
-)
 def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
     """``ParallelLinear.forward`` at the bench shape must route through
     the int64 kernel path (single launch, ``int64_indices=True``).

@@ -102,6 +102,9 @@ class TestActivationOffloading:
 
         def capture_step(self, *args, **kwargs):
             captured["ctx"] = self.activation_offload_context
+            captured["wrapped"] = any(
+                "_checkpoint_wrapped_module" in n for n, _ in self.model.named_modules()
+            )
             return original_step(self, *args, **kwargs)
 
         monkeypatch.setattr(ActivationOffloadingMixin, "training_step", capture_step)
@@ -146,15 +149,11 @@ class TestActivationOffloading:
             f"through to plain gradient checkpointing"
         )
         assert ctx.use_streams is expect_streams
+        if offload_mode is True:
+            assert captured.get("wrapped") is False
 
     @requires_flash_attn
-    @pytest.mark.parametrize(
-        "adapter,expect_recompute_wrap",
-        [("lora", False), (None, True)],
-    )
-    def test_offload_is_adapter_aware(
-        self, temp_dir, monkeypatch, adapter, expect_recompute_wrap
-    ):
+    def test_offload_is_adapter_aware(self, temp_dir, monkeypatch):
         """activation_offloading is adapter-aware: LoRA offloads *instead of*
         recomputing (no checkpoint wrap — pure offload is leaner/faster), while
         full finetune keeps recompute and offloads the checkpoint boundaries
@@ -194,18 +193,12 @@ class TestActivationOffloading:
                 "save_first_step": False,
             }
         )
-        if adapter:
-            cfg["adapter"] = adapter
-            cfg["lora_r"] = 8
-            cfg["lora_alpha"] = 16
-            cfg["lora_target_linear"] = True
-
         cfg = validate_config(cfg)
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
         train(cfg=cfg, dataset_meta=dataset_meta)
 
-        assert captured.get("wrapped") is expect_recompute_wrap
+        assert captured.get("wrapped") is True
 
     @requires_flash_attn
     @pytest.mark.parametrize("use_reentrant", [False, True])
