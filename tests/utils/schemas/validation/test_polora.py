@@ -78,6 +78,6 @@ class TestPoloraValidation:
             validate_config(_polora_cfg(min_base_cfg, **overrides))
 
     def test_relora_rejected(self, min_base_cfg):
-        cfg = _polora_cfg(min_base_cfg, relora_steps=100, relora_warmup_steps=10)
+        cfg = _polora_cfg(min_base_cfg, relora=True, jagged_restart_steps=100)
         with pytest.raises(ValueError, match="relora resets optimizer state"):
             validate_config(cfg)
