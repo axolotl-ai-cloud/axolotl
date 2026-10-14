@@ -250,18 +250,33 @@ class AutotuneCacheCallback(TrainerCallback):
     ``early_steps`` steps, then at every save and at train end.
     """
 
-    def __init__(self, path: str, early_steps: int = 20):
+    def __init__(
+        self,
+        path: str | None,
+        profiles: list[dict[str, Any]] | None = None,
+        early_steps: int = 20,
+    ):
         self.path = path
+        self.profiles = profiles
         self.early_steps = early_steps
         self._last_count = -1
 
     def on_train_begin(self, args, state, control, **kwargs):
-        load_autotune_cache(self.path)
+        if self.path:
+            load_autotune_cache(self.path)
+        if self.profiles:
+            from axolotl.integrations.kernels.autotune_profiles import (
+                apply_autotune_profiles,
+            )
+
+            apply_autotune_profiles(self.profiles)
 
     def _local_count(self) -> int:
         return len(collect_autotune_configs())
 
     def _persist(self):
+        if not self.path:
+            return
         records = gather_autotune_records()
         if _is_main_process() and records:
             count = write_autotune_cache(self.path, records)
