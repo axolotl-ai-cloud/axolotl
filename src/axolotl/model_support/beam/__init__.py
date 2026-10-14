@@ -52,11 +52,11 @@ class BeamSupport(ModelSupport):
                 "Needs the beam patch registered in ml-cross-entropy; apply_lce "
                 "takes the logit softcap, but the fp32 lm_head path is unverified."
             ),
-            "lora_kernels": Unsupported(
-                "ReflectionAttention adds an output gate (self_attn.gate_proj plus "
-                "gate_bias) and q_norm/k_norm on top of q/k/v/o. The fused QKV/O "
-                "kernels match the llama-like projection set by name and would "
-                "bypass the gate entirely."
+            "lora_kernels": Experimental(
+                "The fused QKV/O patch rewrites only the q/k/v projection lines "
+                "(the q_norm/k_norm variant) and the o_proj call; the attention output "
+                "gate, query scaling and sandwich norms stay in the surrounding forward. "
+                "Loss parity was checked on a random real-width Beam, not on the 501B."
             ),
             "liger": Unsupported(
                 "enable_sandwich_norm adds attn_output_layernorm/mlp_output_layernorm "
