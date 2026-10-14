@@ -138,6 +138,9 @@ def is_main_process() -> bool:
         return os.environ.get("LOCAL_RANK", "0") == "0"
     if not is_distributed():
         return True
+    # the state outlives the process group: post-training hooks log after teardown
+    if not dist.is_initialized():
+        return os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")) == "0"
     return dist.get_rank() == 0
 
 
