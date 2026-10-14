@@ -152,3 +152,22 @@ Axolotl now probes each model's declared `_apply_gate` numerically at load and r
 ## Note on MegaBlocks
 
 We tested [MegaBlocks](https://huggingface.co/kernels-community/megablocks) but were unable to ensure numerical accuracy, so we did not integrate it. It was also incompatible with many newer model architectures in transformers.
+
+## Autotune warm-start cache
+
+Triton keeps each `@triton.autotune` winner only in the process, so every run re-benchmarks every
+(shape, dtype) key. Under expert parallelism that benchmark lands at different moments on different
+ranks, which DeepEP's combine barrier reads as a straggler. `autotune_cache_path` persists the winners:
+
+```yaml
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+use_scattermoe: true
+autotune_cache_path: /shared/cache/autotune/b200.json
+```
+
+After the kernels load, the file is read and every record whose kernel is loaded, whose candidate
+config matrix still matches, and whose key is not yet measured is inserted into that autotuner's
+cache. The file is rewritten at every checkpoint and at train end with the union of all ranks'
+winners. Files record the GPU they were measured on and are ignored on a different GPU model, since
+the winners are device-specific.

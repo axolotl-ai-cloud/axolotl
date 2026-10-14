@@ -54,6 +54,12 @@ class KernelsArgs(BaseModel):
     # False to force the chunked path (bounds the per-pass transient for large-expert MoEs / tiny GPUs).
     moe_bnb_fast: bool | None = None
 
+    # JSON file of Triton autotune winners (kernel, shape key, chosen tile). When it exists and
+    # was measured on this GPU model, the kernels' autotune caches are seeded from it before the
+    # first forward, so no training step benchmarks configs (and EP ranks stay in lockstep). It is
+    # rewritten at every checkpoint and at train end with the merged winners of all ranks.
+    autotune_cache_path: str | None = None
+
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
     use_sonicmoe: bool | None = None
