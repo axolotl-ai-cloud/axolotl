@@ -243,19 +243,44 @@ def _is_main_process() -> bool:
 
 
 class AutotuneCacheCallback(TrainerCallback):
-    """Seed again at train start (kernels imported lazily) and persist at each save and at the end."""
+    """Seed again at train start (kernels imported lazily) and persist new winners early.
 
-    def __init__(self, path: str):
+    Winners appear during the first steps (and whenever a new routing-imbalanced bucket shows
+    up), so the file is written as soon as this rank's cache grows during the first
+    ``early_steps`` steps, then at every save and at train end.
+    """
+
+    def __init__(self, path: str, early_steps: int = 20):
         self.path = path
+        self.early_steps = early_steps
+        self._last_count = -1
 
     def on_train_begin(self, args, state, control, **kwargs):
         load_autotune_cache(self.path)
+
+    def _local_count(self) -> int:
+        return len(collect_autotune_configs())
 
     def _persist(self):
         records = gather_autotune_records()
         if _is_main_process() and records:
             count = write_autotune_cache(self.path, records)
             LOG.info("Wrote %d autotune winner(s) to %s", count, self.path)
+        self._last_count = self._local_count()
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step > self.early_steps:
+            return
+        # every rank must agree on whether to run the collective gather
+        grew = self._local_count() != self._last_count
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            flag = torch.tensor(
+                [int(grew)], device="cuda" if torch.cuda.is_available() else "cpu"
+            )
+            torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.MAX)
+            grew = bool(flag.item())
+        if grew:
+            self._persist()
 
     def on_save(self, args, state, control, **kwargs):
         self._persist()
