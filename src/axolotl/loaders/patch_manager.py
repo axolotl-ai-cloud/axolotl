@@ -156,7 +156,6 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
-        self._apply_voxtral_patches()
         self._apply_apertus_patches()
         self._apply_trl_vllm_patches()
 
@@ -1154,15 +1153,6 @@ class PatchManager:
             self.cfg.model_config_type,
             cfg_num_shards=self.cfg.tiled_mlp_num_shards,
         )
-
-    def _apply_voxtral_patches(self):
-        """Apply patches for Voxtral model."""
-        if self.cfg.model_config_type == "voxtral":
-            from axolotl.monkeypatch.models.voxtral.modeling import (
-                patch_voxtral_conditional_generation_forward,
-            )
-
-            patch_voxtral_conditional_generation_forward()
 
     def _apply_parallel_weight_conversion(self):
         """Parallel stack/cat in transformers' expert-fusing converters; off with AXOLOTL_PARALLEL_CONVERT=0."""
