@@ -491,6 +491,18 @@ def _process_lora_module_for_fsdp(module):
     return False
 
 
+def _expert_param_leaf(name: str) -> str:
+    """The expert attribute a parameter name ends in, seen through a parametrization.
+
+    Quantized experts live at ``...parametrizations.gate_up_proj.original``; the move to
+    meta re-creates the parameter objects, so identity cannot be relied on and the name
+    must be read as the attribute it parametrizes.
+    """
+    if name.endswith(".original") and ".parametrizations." in name:
+        return name.rsplit(".parametrizations.", 1)[1][: -len(".original")]
+    return name.rsplit(".", 1)[-1]
+
+
 def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool:
     """Staged NF4 holds the real weights on rank zero only; a peer's state dict would materialize meta."""
     return not staged_nf4 or is_main_process
@@ -704,6 +716,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model_has_params4bit = True
             break
 
+    ep_local_state: dict = {}
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # Context: `fully_shard` moves the model to GPU if it was on CPU, however it can also be on `meta` and then it stays there even after `fully_shard`
         # For this reason, we need to move the model to `meta` device, as then sharding happens on `meta` device
@@ -723,6 +736,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 if k in non_persistent_buffer_fqns
             }
         )
+        # expert-parallel expert slices are rank-local and never in rank zero's state dict
+        if staged_nf4:
+            from axolotl.monkeypatch.accelerate.fsdp2_nf4 import (
+                expert_parallel_local_state,
+            )
+
+            ep_local_state = expert_parallel_local_state(model)
         # We move the model to meta device, as then sharding happens on meta device
         model = model.to(torch.device("meta"))
         # We need to re-tie the weights, not exactly sure why, but if we don't do this, reference to `lm_head/embed_tokens` stay hanging -> more VRAM usage
@@ -799,7 +819,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             or (
                 ".experts." in n
                 and ".shared_experts." not in n
-                and n.rsplit(".", 1)[-1]
+                and _expert_param_leaf(n)
                 in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
             )
         }
@@ -914,12 +934,20 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        load_state = fsdp2_load_full_state_dict
         if staged_nf4:
             from axolotl.monkeypatch.accelerate.fsdp2_nf4 import load_staged_nf4_state
 
-            load_state = load_staged_nf4_state
-        load_state(accelerator, model, original_sd, offload_to_cpu=offload_to_cpu)
+            load_staged_nf4_state(
+                accelerator,
+                model,
+                original_sd,
+                offload_to_cpu=offload_to_cpu,
+                local_state=ep_local_state,
+            )
+        else:
+            fsdp2_load_full_state_dict(
+                accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
+            )
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict

@@ -10,18 +10,33 @@ import torch
 import torch.distributed as dist
 import torch.nn.utils.parametrize as P
 
+# bitsandbytes' own parametrization and the CPU-staged loader's buffer-backed one
+_BNB_4BIT = ("Bnb4bitParametrization", "BnbNF4Parametrization")
+
 
 def expert_storage(module, name):
     parametrizations = getattr(module, "parametrizations", {})
     if name in parametrizations:
         stack = parametrizations[name]
         for entry in stack:
-            if type(entry).__name__ == "Bnb4bitParametrization":
+            if type(entry).__name__ in _BNB_4BIT:
                 return stack.original, tuple(entry.quant_state.shape), entry
             if type(entry).__name__ == "Bnb8bitParametrization":
                 return stack.original, tuple(stack.original.shape), entry
     parameter = getattr(module, name, None)
     return parameter, tuple(parameter.shape) if torch.is_tensor(parameter) else (), None
+
+
+def _adopt_staged_quant_state(parametrization, state) -> None:
+    """Point a buffer-backed staged parametrization at a sliced quant state."""
+    parametrization.shape = tuple(state.shape)
+    parametrization.absmax = state.absmax
+    parametrization.nested = bool(state.nested)
+    if state.nested:
+        parametrization.nested_absmax = state.state2.absmax
+    else:
+        for buffer in ("nested_absmax", "nested_code"):
+            parametrization._buffers.pop(buffer, None)
 
 
 def scatter_quantized_expert(module, name, e_local, ep_rank_of):
@@ -30,7 +45,7 @@ def scatter_quantized_expert(module, name, e_local, ep_rank_of):
     header, error, scales = None, None, None
     if rank == 0 and parametrization is not None:
         try:
-            if type(parametrization).__name__ == "Bnb4bitParametrization":
+            if type(parametrization).__name__ in _BNB_4BIT:
                 import bitsandbytes.functional as F
 
                 state = parametrization.quant_state
@@ -96,17 +111,24 @@ def scatter_quantized_expert(module, name, e_local, ep_rank_of):
         )
     shape = (e_local, *header["shape"][1:])
 
+    # the collective runs on the accelerator even when the storage lives on the host
+    transfer_device = (
+        device
+        if device.type == "cuda"
+        else torch.device("cuda", torch.cuda.current_device())
+    )
+
     def scatter(component, count, dtype):
-        output = torch.empty(count, dtype=dtype, device=device)
+        output = torch.empty(count, dtype=dtype, device=transfer_device)
         chunks = None
         if rank == 0:
             flat = component.reshape(-1)
             chunks = [
-                flat[ep * count : (ep + 1) * count].contiguous().to(device)
+                flat[ep * count : (ep + 1) * count].contiguous().to(transfer_device)
                 for ep in ep_rank_of
             ]
         dist.scatter(output, scatter_list=chunks, src=0)
-        return output
+        return output.to(device)
 
     if header["mode"] == "4bit":
         import bitsandbytes.functional as F
@@ -149,7 +171,9 @@ def scatter_quantized_expert(module, name, e_local, ep_rank_of):
     new_parameter = torch.nn.Parameter(packed, requires_grad=False)
     if parametrization is not None:
         module.parametrizations[name].original = new_parameter
-        if header["mode"] == "4bit":
+        if type(parametrization).__name__ == "BnbNF4Parametrization":
+            _adopt_staged_quant_state(parametrization, new_parametrization.quant_state)
+        elif header["mode"] == "4bit":
             parametrization.quant_state = new_parametrization.quant_state
         else:
             parametrization.row_stats = new_parametrization.row_stats
