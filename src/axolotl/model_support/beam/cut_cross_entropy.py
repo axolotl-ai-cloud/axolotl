@@ -71,6 +71,7 @@ def cce_forward(
     hidden_states = outputs.last_hidden_state
     loss = None
     logits = None
+    softcap = self.config.final_logit_softcapping
 
     slice_indices = (
         slice(-logits_to_keep, None)
@@ -85,28 +86,36 @@ def cce_forward(
             self.lm_head.weight,
             labels,
             _PATCH_OPTS,
-            softcap=self.final_logit_softcapping,
+            softcap=softcap,
             **loss_kwargs,
         )
     else:
         logits = self.lm_head(hidden_states[:, slice_indices, :])
-        if self.final_logit_softcapping is not None:
-            cap = self.final_logit_softcapping
-            logits = (logits.float() / cap).tanh() * cap
+        if softcap is not None:
+            # Softcap in float32, as bf16 tanh quantizes badly near saturation.
+            logits = (logits.float() / softcap).tanh() * softcap
 
         if labels is not None:
-            loss = self.loss_function(logits, labels, self.vocab_size, **loss_kwargs)
+            loss = self.loss_function(
+                logits=logits,
+                labels=labels,
+                vocab_size=self.config.vocab_size,
+                **loss_kwargs,
+            )
 
+    # Upstream Beam balances load with the router's e_score_correction_bias and
+    # carries no aux-loss coefficient; only Reflection's fork does.
     aux_loss = None
-    if output_router_logits:
+    aux_loss_coef = getattr(self, "router_aux_loss_coef", None)
+    if output_router_logits and aux_loss_coef is not None:
         aux_loss = load_balancing_loss_func(
             outputs.router_logits,
-            self.num_experts,
-            self.num_experts_per_tok,
+            self.config.num_experts,
+            self.config.num_experts_per_tok,
             attention_mask,
         )
-        if labels is not None:
-            loss = loss + self.router_aux_loss_coef * aux_loss.to(loss.device)
+        if loss is not None:
+            loss = loss + aux_loss_coef * aux_loss.to(loss.device)
 
     return MoeCausalLMOutputWithPast(
         loss=loss,
