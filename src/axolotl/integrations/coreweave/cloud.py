@@ -121,6 +121,8 @@ class CoreWeaveCloud(CloudLauncher):
         if launcher == "python" and (cfg.nodes != 1 or cfg.gpus_per_node != 1):
             raise ValueError("The python launcher requires one node and one GPU")
         launcher_args = launcher_args or []
+        if cfg.backend == "cks":
+            return self._train_cks(training, launcher, launcher_args)
         reserved = {
             "nnodes",
             "nproc_per_node",
@@ -236,3 +238,43 @@ class CoreWeaveCloud(CloudLauncher):
             job_id,
         )
         return {"job_id": job_id, "directory": str(directory)}
+
+    def _train_cks(self, training, launcher, launcher_args):
+        from . import cks
+
+        cfg = self.image_config
+        if launcher not in {"accelerate", "torchrun"}:
+            raise ValueError("CKS supports the accelerate and torchrun launchers")
+        reserved = {
+            "nnodes",
+            "nproc_per_node",
+            "node_rank",
+            "master_addr",
+            "master_port",
+            "num_machines",
+            "num_processes",
+            "machine_rank",
+            "main_process_ip",
+            "main_process_port",
+            "rdzv_backend",
+            "rdzv_endpoint",
+            "rdzv_id",
+            "standalone",
+        }
+        if any(
+            not isinstance(arg, str)
+            or arg.split("=", 1)[0].lstrip("-").replace("-", "_") in reserved
+            for arg in launcher_args
+        ):
+            raise ValueError(
+                "CKS controls distributed topology; remove conflicting launcher arguments"
+            )
+        job_name = cks.new_job_name(cfg)
+        training = cks.place_output_dir(cfg, training, job_name)
+        image = cfg.image or cfg.image_build.tag
+        if cfg.image_build and not cfg.dry_run:
+            image = build_and_push_image(cfg.image_build)
+        manifests = cks.render_manifests(
+            cfg, training, launcher, launcher_args, image, job_name
+        )
+        return cks.submit(cfg, manifests, job_name)

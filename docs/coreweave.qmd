@@ -60,6 +60,49 @@ allocating resources.
   NCCL) under `env` in the cloud YAML.
 :::
 
+## Train on CKS
+
+The same provider submits to a CoreWeave Kubernetes Service cluster with `backend: cks`:
+one indexed Job with a pod per node, a headless Service for the rendezvous address, and a
+ConfigMap carrying the training YAML and the launcher. Pods request `rdma/ib` and carry
+CoreWeave's InfiniBand NCCL settings; a ReadWriteMany PVC (storage class `shared-vast`)
+holds datasets, the Hugging Face cache and outputs; AI Object Storage is reached through
+workload identity (a projected service-account token), so no access keys are stored.
+
+1. Copy [`examples/cloud/coreweave-cks.yaml`](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/cloud/coreweave-cks.yaml) and set the namespace, PVC, node count and secrets:
+
+    ```yaml
+    provider: coreweave
+    backend: cks
+    image: axolotlai/axolotl-cloud:main-latest
+    namespace: my-tenant-namespace
+    nodes: 2
+    gpus_per_node: 8
+    pvc: training-shared          # mounted at /data; relative output_dir lands under /data/axolotl-jobs/<job>/
+    memory_request: 1600Gi
+    secret_env:
+      HF_TOKEN: hf-token/token    # kubectl create secret generic hf-token --from-literal=token=...
+    object_storage:
+      org_id: my-org-id
+      region: US-EAST-15A
+    ```
+
+2. Submit with the ambient `kubectl` context (or `kubeconfig` / `context` in the YAML):
+
+    ```bash
+    axolotl train train.yaml --cloud coreweave-cks.yaml --launcher torchrun
+    ```
+
+   The command prints the job name, a `kubectl logs -f job/<name>` line, and the delete
+   command. `dry_run: true` prints the manifests instead of applying them.
+
+::: {.callout-note}
+- Topology comes from `nodes` and `gpus_per_node`; pod 0 is the rendezvous host.
+- `setup_commands` run in the container before the launcher (extra wheels from the PVC, for example).
+- The Hugging Face cache is pointed at `<pvc_mount>/hf` because the image pins `HF_HUB_CACHE` to the container's overlay disk; the Triton cache stays on node-local scratch, which must not be shared over NFS.
+- `memory_request` has to hold the whole checkpoint in host RAM on rank 0 when `cpu_ram_efficient_loading` is on.
+:::
+
 ## Publish checkpoints to Dedicated Inference
 
 Requires an existing Dedicated Inference deployment with hot-loading enabled.
