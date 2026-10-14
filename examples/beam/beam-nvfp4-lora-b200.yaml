@@ -9,11 +9,11 @@ plugins:
   - axolotl.integrations.kernels.KernelsPlugin
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
 
-# ScatterMoE grouped GEMM for the routed experts (Triton, any sm80+). Swap to
-# use_sonicmoe: true once the baseline runs; it is the faster B200 path.
-# ModelOpt NVFP4: routed experts stay packed (W4A16 ScatterMoE); other quantized linears
-# dequantize to bf16 at load. Attention + expert LoRA as in the bf16 config.
-use_scattermoe: true
+# SonicMoE keeps the ModelOpt NVFP4 experts packed and is the expert backend with a
+# merge-aware LoRA forward; ScatterMoE would train ordinary LoRA that the NVFP4
+# merge rounds away. Other quantized linears dequantize to bf16 at load.
+# Attention + expert LoRA as in the bf16 config.
+use_sonicmoe: true
 nvfp4_merge_aware: true
 strict: false
 cut_cross_entropy: true
@@ -98,7 +98,9 @@ tf32: true
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-attn_implementation: flash_attention_4
+# SonicMoE pins nvidia-cutlass-dsl 4.6.0, which the flash-attn-4 package replaces;
+# the hub flash-attn2 kernel (sm_100 cubin) needs no CuTe DSL
+attn_implementation: flash_attention_2
 # fused LoRA kernels: the QKV/O patch keeps Beam's gate and norms in place (A/B: identical losses)
 lora_qkv_kernel: true
 lora_o_kernel: true
