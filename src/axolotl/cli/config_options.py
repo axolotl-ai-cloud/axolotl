@@ -1974,7 +1974,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--dynamic-checkpoint.check-interval",),
         "dynamic_checkpoint__check_interval",
         "int",
-        "Check for trigger file every N steps (reduces I/O overhead). Default: 100",
+        "Check for trigger file every N steps (reduces I/O overhead). Default: 10",
     ),
     (
         ("--dynamic-checkpoint.trigger-file-path",),
