@@ -9,7 +9,6 @@ nvfp4_merge_aware: true
 strict: false
 
 chat_template: tokenizer_default
-# this checkpoint's eos is <|endoftext|>, but turns end with <|im_end|>
 eot_tokens:
   - "<|im_end|>"
 datasets:
