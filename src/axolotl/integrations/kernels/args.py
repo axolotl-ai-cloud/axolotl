@@ -59,6 +59,10 @@ class KernelsArgs(BaseModel):
     # first forward, so no training step benchmarks configs (and EP ranks stay in lockstep). It is
     # rewritten at every checkpoint and at train end with the merged winners of all ranks.
     autotune_cache_path: str | None = None
+    # Pin or narrow Triton autotune search spaces per kernel: a list of
+    # {kernel, gpu?, match?, configs} entries (see integrations/kernels/autotune_profiles.py).
+    # One config = no benchmarking for any unseen key; several = a short search.
+    autotune_profiles: list[dict] | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
