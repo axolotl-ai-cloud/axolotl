@@ -131,7 +131,7 @@ class TestInstructionWSystemPromptTokenizingStrategy:
         assert example["input_ids"][8] == 11889  # USER
 
 
-class Llama2ChatTokenizationTest:
+class TestLlama2ChatTokenization:
     """
     Test class for prompt tokenization strategies with sys prompt from the dataset
     """
