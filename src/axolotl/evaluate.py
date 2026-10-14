@@ -64,6 +64,28 @@ def evaluate_dataset(
     return metrics
 
 
+def prepare_fsdp2_model_for_eval(trainer: Trainer) -> None:
+    """Prepare the model and optimizer together under FSDP2 before a train-less evaluate.
+
+    `Trainer.evaluation_loop` prepares a not-yet-prepared model on its own, which
+    accelerate rejects for FSDP2 since the optimizer's parameters must be swapped
+    for the sharded ones in the same `prepare()` call.
+    """
+    accelerator = trainer.accelerator
+    plugin = getattr(getattr(accelerator, "state", None), "fsdp_plugin", None)
+    if not (
+        getattr(trainer, "is_fsdp_enabled", False)
+        and getattr(plugin, "fsdp_version", None) == 2
+    ):
+        return
+    if accelerator._models:
+        return
+
+    trainer.create_optimizer()
+    model, trainer.optimizer = accelerator.prepare(trainer.model, trainer.optimizer)
+    trainer.model = trainer.model_wrapped = model
+
+
 @send_errors
 def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, float]:
     """
@@ -96,6 +118,8 @@ def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, f
         processor=processor,
         total_num_steps=total_num_steps,
     )
+
+    prepare_fsdp2_model_for_eval(trainer)
 
     # Evaluate datasets
     all_metrics = {}
