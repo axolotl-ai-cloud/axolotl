@@ -89,6 +89,8 @@ def test_submit_applies_through_kubectl(monkeypatch):
     )
     monkeypatch.setattr(subprocess, "run", run)
     result = provider(kubeconfig="/tmp/kc", context="use15a").train("base_model: test")
+    lookup = run.call_args_list[0].args[0]
+    assert lookup[7:] == ["get", "job", "cks-test", "--ignore-not-found", "-o", "name"]
     command = run.call_args.args[0]
     assert command[:7] == [
         "kubectl",
@@ -102,6 +104,35 @@ def test_submit_applies_through_kubectl(monkeypatch):
     assert command[7:] == ["apply", "-f", "-"]
     assert "kind: Job" in run.call_args.kwargs["input"]
     assert result["logs_command"].endswith("logs -f job/cks-test")
+
+
+def test_existing_job_name_is_rejected_before_apply(monkeypatch):
+    run = MagicMock(
+        return_value=subprocess.CompletedProcess(
+            [], 0, stdout="job.batch/cks-test\n", stderr=""
+        )
+    )
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="already exists") as error:
+        provider().train("base_model: test")
+    assert "delete job,service,configmap cks-test" in str(error.value)
+    assert run.call_count == 1
+
+
+def test_generated_job_name_skips_existence_check(monkeypatch):
+    run = MagicMock(
+        return_value=subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    )
+    monkeypatch.setattr(subprocess, "run", run)
+    result = provider(job_name=None).train("base_model: test")
+    assert run.call_count == 1
+    assert run.call_args.args[0][-3:] == ["apply", "-f", "-"]
+    assert result["job_name"].startswith("axolotl-")
+
+
+def test_job_name_length_is_capped():
+    with pytest.raises(ValueError, match="52"):
+        provider(job_name="a" * 53, dry_run=True)
 
 
 def test_cks_rejects_outputs_off_the_volume_and_topology_args():

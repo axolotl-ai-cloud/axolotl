@@ -239,6 +239,31 @@ def place_output_dir(cfg: CoreWeaveCloudConfig, training: dict, job_name: str) -
     return training
 
 
+def _require_unused_job_name(cfg: CoreWeaveCloudConfig, job_name: str) -> None:
+    # kubectl apply would update the existing Job in place instead of starting a run.
+    command = _kubectl(cfg) + [
+        "get",
+        "job",
+        job_name,
+        "--ignore-not-found",
+        "-o",
+        "name",
+    ]
+    result = subprocess.run(  # nosec B603
+        command, text=True, capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"kubectl get job failed ({result.returncode}): {result.stderr.strip()}"
+        )
+    if result.stdout.strip():
+        raise RuntimeError(
+            f"CKS job {job_name} already exists in {cfg.namespace}. Choose another "
+            "job_name, omit it for a generated one, or delete the old job: "
+            + shlex.join(_kubectl(cfg) + ["delete", "job,service,configmap", job_name])
+        )
+
+
 def submit(cfg: CoreWeaveCloudConfig, manifests: list[dict], job_name: str) -> dict:
     documents = yaml.safe_dump_all(manifests, sort_keys=False)
     if cfg.dry_run:
@@ -248,6 +273,8 @@ def submit(cfg: CoreWeaveCloudConfig, manifests: list[dict], job_name: str) -> d
             "namespace": cfg.namespace,
             "manifests": manifests,
         }
+    if cfg.job_name:
+        _require_unused_job_name(cfg, job_name)
     command = _kubectl(cfg) + ["apply", "-f", "-"]
     result = subprocess.run(  # nosec B603
         command, input=documents, text=True, capture_output=True, check=False

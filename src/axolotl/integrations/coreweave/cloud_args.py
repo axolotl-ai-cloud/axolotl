@@ -54,7 +54,14 @@ class CoreWeaveCloudConfig(CloudImageConfig):
         default=None, pattern=r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
     )
     job_name: str | None = Field(
-        default=None, pattern=r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+        default=None,
+        pattern=r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+        max_length=52,
+        description=(
+            "Name for the Job, Service and ConfigMap; must not already exist. Capped "
+            "at 52 characters because Job pod names (<job_name>-<index>-<suffix>) "
+            "and Service names are limited to 63."
+        ),
     )
     # ReadWriteMany volume for datasets, caches and outputs, mounted at pvc_mount
     pvc: str | None = Field(default=None, pattern=r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
