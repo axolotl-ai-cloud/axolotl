@@ -126,6 +126,11 @@ class KernelsArgs(BaseModel):
             )
             data["nvfp4_merge_aware_start_step"] = None
             return data
+        if data.get("use_sonicmoe") and data.get("quantize_moe_experts"):
+            raise ValueError(
+                "use_sonicmoe has no bitsandbytes expert path: quantize_moe_experts "
+                "(NF4/int8 experts) needs the ScatterMoE backend (use_scattermoe: true)."
+            )
         if data.get("nvfp4_merge_aware") and data.get("use_scattermoe"):
             raise ValueError(
                 "nvfp4_merge_aware requires the SonicMoE expert backend (use_sonicmoe: "

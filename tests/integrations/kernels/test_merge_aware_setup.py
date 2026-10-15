@@ -348,3 +348,15 @@ def test_merge_aware_rejects_scattermoe_backend():
     with pytest.raises(ValueError, match="use_sonicmoe"):
         KernelsArgs(nvfp4_merge_aware=True, use_scattermoe=True, adapter="lora")
     assert KernelsArgs(nvfp4_merge_aware=True, use_sonicmoe=True, adapter="lora")
+
+
+def test_sonicmoe_rejects_bitsandbytes_experts():
+    from axolotl.integrations.kernels.args import KernelsArgs
+
+    with pytest.raises(ValueError, match="use_scattermoe"):
+        KernelsArgs(use_sonicmoe=True, quantize_moe_experts=True, load_in_4bit=True)
+    with pytest.raises(ValueError, match="use_scattermoe"):
+        KernelsArgs(expert_backend="sonicmoe", quantize_moe_experts=True)
+    assert KernelsArgs(
+        use_scattermoe=True, quantize_moe_experts=True, load_in_4bit=True
+    )
