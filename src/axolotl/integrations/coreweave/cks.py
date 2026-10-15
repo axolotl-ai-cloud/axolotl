@@ -49,8 +49,9 @@ def _entrypoint(cfg: CoreWeaveCloudConfig, job_name: str) -> str:
         f"export MASTER_PORT={cfg.rdzv_port}",
         f"export AXOLOTL_NNODES={cfg.nodes}",
         'export AXOLOTL_NODE_RANK="${JOB_COMPLETION_INDEX:-0}"',
-        f"export HF_HOME={cfg.pvc_mount}/hf HF_HUB_CACHE={cfg.pvc_mount}/hf/hub "
-        f"HF_DATASETS_CACHE={cfg.pvc_mount}/hf/datasets",
+        f"export HF_HOME={shlex.quote(cfg.pvc_mount + '/hf')} "
+        f"HF_HUB_CACHE={shlex.quote(cfg.pvc_mount + '/hf/hub')} "
+        f"HF_DATASETS_CACHE={shlex.quote(cfg.pvc_mount + '/hf/datasets')}",
         "export TRITON_CACHE_DIR=/scratch/triton TORCHINDUCTOR_CACHE_DIR=/scratch/inductor",
         "mkdir -p /scratch/triton /scratch/inductor",
     ]
@@ -65,7 +66,6 @@ def _entrypoint(cfg: CoreWeaveCloudConfig, job_name: str) -> str:
             f"export AWS_REGION={cfg.object_storage.region}",
             "export AWS_REQUEST_CHECKSUM_CALCULATION=when_required",
         ]
-    lines += [f"export {k}={shlex.quote(v)}" for k, v in cfg.env.items()]
     lines += list(cfg.setup_commands)
     lines.append(f"exec python3 {CONFIG_MOUNT}/runner.py")
     return "\n".join(lines) + "\n"
@@ -239,6 +239,18 @@ def place_output_dir(cfg: CoreWeaveCloudConfig, training: dict, job_name: str) -
     return training
 
 
+def _run_kubectl(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(  # nosec B603
+            command, text=True, capture_output=True, check=False, **kwargs
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            f"kubectl not found or not executable ({exc}); install kubectl and make "
+            "sure it is on PATH"
+        ) from exc
+
+
 def _require_unused_job_name(cfg: CoreWeaveCloudConfig, job_name: str) -> None:
     # kubectl apply would update the existing Job in place instead of starting a run.
     command = _kubectl(cfg) + [
@@ -249,9 +261,7 @@ def _require_unused_job_name(cfg: CoreWeaveCloudConfig, job_name: str) -> None:
         "-o",
         "name",
     ]
-    result = subprocess.run(  # nosec B603
-        command, text=True, capture_output=True, check=False
-    )
+    result = _run_kubectl(command)
     if result.returncode != 0:
         raise RuntimeError(
             f"kubectl get job failed ({result.returncode}): {result.stderr.strip()}"
@@ -275,13 +285,12 @@ def submit(cfg: CoreWeaveCloudConfig, manifests: list[dict], job_name: str) -> d
         }
     if cfg.job_name:
         _require_unused_job_name(cfg, job_name)
-    command = _kubectl(cfg) + ["apply", "-f", "-"]
-    result = subprocess.run(  # nosec B603
-        command, input=documents, text=True, capture_output=True, check=False
-    )
+    cleanup = shlex.join(_kubectl(cfg) + ["delete", "job,service,configmap", job_name])
+    result = _run_kubectl(_kubectl(cfg) + ["apply", "-f", "-"], input=documents)
     if result.returncode != 0:
         raise RuntimeError(
-            f"kubectl apply failed ({result.returncode}): {result.stderr.strip()}"
+            f"kubectl apply failed ({result.returncode}): {result.stderr.strip()}. "
+            f"Some objects may already exist; remove them with: {cleanup}"
         )
     follow = shlex.join(_kubectl(cfg) + ["logs", "-f", f"job/{job_name}"])
     LOG.info(
@@ -291,7 +300,7 @@ def submit(cfg: CoreWeaveCloudConfig, manifests: list[dict], job_name: str) -> d
         cfg.nodes,
         cfg.gpus_per_node,
         follow,
-        shlex.join(_kubectl(cfg) + ["delete", "job,service,configmap", job_name]),
+        cleanup,
     )
     return {
         "job_name": job_name,

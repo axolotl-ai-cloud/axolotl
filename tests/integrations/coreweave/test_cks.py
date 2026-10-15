@@ -130,6 +130,36 @@ def test_generated_job_name_skips_existence_check(monkeypatch):
     assert result["job_name"].startswith("axolotl-")
 
 
+def test_missing_kubectl_is_a_clear_error(monkeypatch):
+    monkeypatch.setattr(
+        subprocess, "run", MagicMock(side_effect=FileNotFoundError("kubectl"))
+    )
+    with pytest.raises(RuntimeError, match="kubectl not found"):
+        provider(job_name=None).train("base_model: test")
+
+
+def test_failed_apply_names_cleanup_command(monkeypatch):
+    run = MagicMock(
+        return_value=subprocess.CompletedProcess([], 1, stdout="", stderr="denied")
+    )
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="denied") as error:
+        provider(job_name=None).train("base_model: test")
+    assert "delete job,service,configmap axolotl-" in str(error.value)
+
+
+def test_entrypoint_quotes_mount_and_leaves_env_to_the_container(capsys):
+    result = provider(
+        dry_run=True, pvc_mount="/mnt/a$b", env={"WANDB_PROJECT": "demo"}
+    ).train("base_model: test")
+    _, configmap, job = result["manifests"]
+    entry = configmap["data"]["entrypoint.sh"]
+    assert "HF_HOME='/mnt/a$b/hf'" in entry
+    assert "WANDB_PROJECT" not in entry
+    env = job["spec"]["template"]["spec"]["containers"][0]["env"]
+    assert {"name": "WANDB_PROJECT", "value": "demo"} in env
+
+
 def test_job_name_length_is_capped():
     with pytest.raises(ValueError, match="52"):
         provider(job_name="a" * 53, dry_run=True)
