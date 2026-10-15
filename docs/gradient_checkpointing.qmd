@@ -30,7 +30,7 @@ With `activation_offloading: true` or `disk`, `gradient_checkpointing` controls 
   PCIe bandwidth. Can be faster for LoRA/QLoRA, whose activations are small. Not supported for
   GRPO, GDPO, ORPO, SimPO, EBFT or process reward models.
 
-LoRA/QLoRA default `gradient_checkpointing_kwargs.use_reentrant` to `false` (SFT on DeepSpeed ZeRO-3
+With an adapter, the non-reentrant default above applies to `rl:` runs as well (DeepSpeed ZeRO-3
 stays reentrant); full finetunes always recompute non-reentrant. `legacy` and `hidden_states` require
 `gradient_checkpointing: true`.
 
