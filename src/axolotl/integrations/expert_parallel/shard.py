@@ -545,6 +545,20 @@ def _gather_adapter_tensor(parameter: torch.Tensor) -> torch.Tensor:
         del temporary
 
 
+_PEFT_KEY_PREFIX = "base_model.model."
+
+
+def _canonical_adapter_keys(adapter_sd: dict) -> dict:
+    """Prefix adapter keys with ``base_model.model.`` when the LoRA was saved from the
+    bare injected model (TRL builds its own ``PeftModel`` around it, so the final save
+    only sees the inner module). PEFT's loader expects the ``PeftModel``-rooted names."""
+    if all(k.startswith(_PEFT_KEY_PREFIX) for k in adapter_sd):
+        return adapter_sd
+    if any(k.startswith(_PEFT_KEY_PREFIX) for k in adapter_sd):
+        raise ValueError("adapter state dict mixes PeftModel-rooted and bare keys")
+    return {f"{_PEFT_KEY_PREFIX}{k}": v for k, v in adapter_sd.items()}
+
+
 def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     """Write a complete LoRA adapter when experts are EP-sharded.
 
@@ -617,7 +631,9 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
 
     add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
-    adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
+    adapter_sd = _canonical_adapter_keys(
+        get_peft_model_state_dict(model, state_dict=sd)
+    )
 
     # Expert LoRA: gather each wrapper's adapter across FSDP (dp_shard) + EP, key by module name.
     gathered = 0
@@ -709,7 +725,9 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
 
     add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
-    adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
+    adapter_sd = _canonical_adapter_keys(
+        get_peft_model_state_dict(model, state_dict=sd)
+    )
 
     gathered = 0
     for wname, wrapper in model.named_modules():
