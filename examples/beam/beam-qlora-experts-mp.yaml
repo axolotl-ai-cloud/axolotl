@@ -5,9 +5,8 @@ base_model: reflectionai/beam
 
 chat_template: tokenizer_default
 datasets:
-  - path: ./smoke_data.jsonl
+  - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
-    ds_type: json
 
 val_set_size: 0.0
 output_dir: ./outputs/beam-qlora-experts-mp
@@ -61,18 +60,11 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
 
-
-# Rank 0 alone reads and quantizes the whole checkpoint while ranks 1-7 wait at a
-# collective. That staging takes well over the default 1800s barrier, so the other
-# ranks abort with "TCPStore doWait ... timeout after 1800000ms". Give it hours.
-ddp_timeout: 21600
-
 # flash_attention_2: transformers>=5.18.0 fixed the FA2 version mapping for this
 # arch; FA2 gives the varlen path the hybrid sliding-window attention wants.
 attn_implementation: flash_attention_2
 logging_steps: 1
 max_steps: 5
-save_strategy: "no"
 
 special_tokens:
   eos_token: "<|return|>"

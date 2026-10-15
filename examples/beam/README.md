@@ -28,6 +28,39 @@ Available configs:
 | `beam-qlora-experts-mp.yaml` | QLoRA, `device_map` model parallel, + expert LoRA |
 | `beam-tiny-smoke.yaml` | Tiny random-weight model for fast iteration |
 
+## Smoke test on a tiny model
+
+`beam-tiny-smoke.yaml` points at a local `./beam-tiny` — a tiny, random-weight
+model built from Beam's own config, so the full pipeline (loader, NF4 quant, LoRA
+targeting) runs end to end in about a minute without the 501B download. Build it
+once:
+
+```python
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+src = "reflectionai/beam"
+cfg = AutoConfig.from_pretrained(src)
+# Shrink every size knob the config exposes; unknown fields are skipped.
+for field, value in {
+    "num_hidden_layers": 2,
+    "hidden_size": 256,
+    "intermediate_size": 512,
+    "moe_intermediate_size": 512,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "n_routed_experts": 8,
+    "num_experts_per_tok": 2,
+    "first_k_dense_replace": 1,
+}.items():
+    if hasattr(cfg, field):
+        setattr(cfg, field, value)
+
+AutoModelForCausalLM.from_config(cfg).save_pretrained("./beam-tiny")
+AutoTokenizer.from_pretrained(src).save_pretrained("./beam-tiny")
+```
+
+Then `axolotl train examples/beam/beam-tiny-smoke.yaml`.
+
 ## LoRA targeting (experts)
 
 Experts are ~98% of the weights, so `quantize_moe_experts: true` (NF4) is what
@@ -57,7 +90,9 @@ Set `transformer_layer_cls_to_wrap: BeamDecoderLayer` to match the checkpoint.
   `--num-processes 1`.
 - **Sample packing** is supported, but the model's `ssmax` reads `position_ids`,
   so it needs the `flash_attention_2` varlen path (which resets positions per
-  document). Verify loss parity before relying on it; on `sdpa`, packing is wrong.
+  document). On `sdpa` the packed batch keeps running positions across the packed
+  samples, so `ssmax` mis-scales and the packed loss diverges from the unpacked
+  run — use `flash_attention_2` when packing.
 - Run a full finetune by removing `adapter: qlora`, `load_in_4bit: true`, and
   `quantize_moe_experts: true`.
 - Read more on loading your own dataset in the [docs](https://docs.axolotl.ai/docs/dataset_loading.html).

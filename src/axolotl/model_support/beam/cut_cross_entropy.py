@@ -48,6 +48,12 @@ def cce_forward(
     logits_to_keep: Union[int, torch.Tensor] = 0,
     **loss_kwargs,
 ) -> MoeCausalLMOutputWithPast:
+    """CCE-enabled forward for ``BeamForCausalLM``.
+
+    Mirrors the stock MoE forward but routes the loss through ``apply_lce`` on a
+    labelled training batch, so logits are never materialized at full vocab width.
+    Falls back to the standard lm_head + softcap path otherwise.
+    """
     # Strip PEFT-injected return_dict so it can't leak into self.model and force a tuple return.
     loss_kwargs.pop("return_dict", None)
 
@@ -85,13 +91,13 @@ def cce_forward(
             self.lm_head.weight,
             labels,
             _PATCH_OPTS,
-            softcap=self.final_logit_softcapping,
+            softcap=self.config.final_logit_softcapping,
             **loss_kwargs,
         )
     else:
         logits = self.lm_head(hidden_states[:, slice_indices, :])
-        if self.final_logit_softcapping is not None:
-            cap = self.final_logit_softcapping
+        if self.config.final_logit_softcapping is not None:
+            cap = self.config.final_logit_softcapping
             logits = (logits.float() / cap).tanh() * cap
 
         if labels is not None:
@@ -120,6 +126,8 @@ def cce_forward(
 
 
 def _patch(module_name: str, class_name: str):
+    """Build a cut_cross_entropy patch_fn that installs ``cce_forward`` on the class."""
+
     def patch_fn(
         maybe_model: TransformersModelT | str | transformers.PretrainedConfig,
         patch_options: PatchOptions,

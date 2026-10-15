@@ -5,9 +5,8 @@ base_model: reflectionai/beam
 
 chat_template: tokenizer_default
 datasets:
-  - path: ./smoke_data.jsonl
+  - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
-    ds_type: json
 
 val_set_size: 0.0
 output_dir: ./outputs/beam-qlora-cpustaged
@@ -80,7 +79,6 @@ ddp_timeout: 21600
 attn_implementation: flash_attention_2
 logging_steps: 1
 max_steps: 5
-save_strategy: "no"
 
 special_tokens:
   eos_token: "<|return|>"

@@ -47,17 +47,19 @@ def _cast_fp32_strict_params(context: ModelHookContext) -> None:
     model = context.model
     if model is None:
         return
-    import os
 
     base = getattr(model, "get_base_model", lambda: model)()
     strict = tuple(getattr(type(base), "_keep_in_fp32_modules_strict", None) or ()) or (
         "mlp.gate.weight",
         "e_score_correction_bias",
     )
-    strict += tuple(x for x in os.environ.get("BEAM_FP32_EXTRA", "").split(",") if x)
     n = 0
     for name, tensor in list(model.named_parameters()) + list(model.named_buffers()):
-        if any(s in name for s in strict) and tensor.dtype != torch.float32:
+        if tensor.dtype == torch.float32:
+            continue
+        # Match whole dotted segments, not substrings: a PEFT adapter tensor whose
+        # path merely contains a router name must stay in its training dtype.
+        if any(name == s or name.endswith("." + s) for s in strict):
             tensor.data = tensor.data.to(torch.float32)
             n += 1
     if n:

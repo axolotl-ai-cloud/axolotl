@@ -4,9 +4,8 @@ base_model: ./beam-tiny  # tiny random-weight model, built locally (see README)
 
 chat_template: tokenizer_default
 datasets:
-  - path: ./smoke_data.jsonl
+  - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
-    ds_type: json
 
 val_set_size: 0.0
 output_dir: ./outputs/beam-tiny-mp
@@ -44,7 +43,8 @@ lora_target_parameters:
 micro_batch_size: 1
 gradient_accumulation_steps: 2
 num_epochs: 1
-optimizer: adamw_torch_4bit
+# adamw_torch_4bit raises once device_map spreads adapters across GPUs
+optimizer: adamw_torch
 lr_scheduler: cosine
 learning_rate: 0.0002
 warmup_ratio: 0.1
@@ -57,12 +57,6 @@ tf32: true
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-
-
-# Rank 0 alone reads and quantizes the whole checkpoint while ranks 1-7 wait at a
-# collective. That staging takes well over the default 1800s barrier, so the other
-# ranks abort with "TCPStore doWait ... timeout after 1800000ms". Give it hours.
-ddp_timeout: 21600
 
 # no flash-attn build for torch 2.13+cu130; sample_packing is off so varlen is moot
 attn_implementation: sdpa
