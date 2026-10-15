@@ -198,16 +198,10 @@ Now that you have the basics, explore these guides based on what you want to do:
 
 When fine-tuning on rented GPU instances, configuration mistakes can silently waste compute budget before training produces anything useful. Common failure modes include HuggingFace weights caching to ephemeral storage that is wiped on pod stop, checkpoint output directories on non-persistent volumes, and insufficient disk headroom for checkpoints mid-run.
 
-[ComputeFence](https://github.com/Francisco-Booth/ComputeFence) is a free open-source CLI pre-flight checker that catches these issues before your job starts billing.
+[ComputeFence](https://github.com/Francisco-Booth/ComputeFence) is a free open-source CLI pre-flight checker that catches these issues before your job starts billing. By default it sends anonymous run statistics to the tool's telemetry endpoint. To opt out before running: `touch ~/.computefence_no_telemetry`
 
 ```bash
-pip install computefence && computefence doctor
+pip install computefence && computefence doctor --output-dir ./outputs
 ```
 
-On a RunPod pod with Axolotl installed, ComputeFence checks GPU and CUDA visibility, HuggingFace cache persistence, persistent volume detection, disk space headroom, and checkpoint output directory persistence. Run it before `axolotl train` to confirm your pod is configured correctly.
-
-To check your checkpoint output directory specifically:
-
-```bash
-computefence doctor --output-dir ./outputs
-```
+On a RunPod pod with Axolotl installed, ComputeFence checks GPU and CUDA visibility, HuggingFace cache persistence, persistent volume detection, and disk space headroom. The `--output-dir` flag is required to check checkpoint path persistence — without it that check is skipped and checkpoints may land on ephemeral storage.
