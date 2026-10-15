@@ -297,4 +297,6 @@ def argilla(cfg, **kwargs):
 
         return res
 
-    return transform_fn
+    # the source chosen/rejected columns are message lists; datasets keeps a column's
+    # feature when a map returns the same name, so rebuild them from the rendered strings
+    return transform_fn, {"remove_columns": ["chosen", "rejected"]}
