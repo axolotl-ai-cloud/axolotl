@@ -180,6 +180,24 @@ def _ep_factor_access_reason(experts):
 
 def _ep_local_peft_lora(experts):
     """Return this rank's PEFT-layout LoRA factors for both expert projections."""
+    # the SonicMoE ParamWrapper fast path hands the factors to the raw base module
+    handed = getattr(experts, "_sonicmoe_lora", None)
+    if handed is not None:
+        factors = []
+        for name in (_w1_name(experts), "down_proj"):
+            entry = handed.get(name)
+            if entry is None:
+                factors.append(None)
+                continue
+            lora_A, lora_B, scaling = entry
+            wrapper = (getattr(experts, "_sonicmoe_lora_wrappers", None) or {}).get(
+                name
+            )
+            local_A, local_B, _, _ = _ep_local_expert_lora(
+                lora_A, lora_B, experts, wrapper
+            )
+            factors.append((local_A, local_B, scaling))
+        return factors[0], factors[1]
     try:
         from peft.tuners.param_wrapper import ParamWrapper
     except ImportError:
@@ -200,6 +218,30 @@ def _ep_local_peft_lora(experts):
         local_A, local_B, _, _ = _ep_local_expert_lora(lora_A, lora_B, experts, param)
         factors.append((local_A, local_B, scaling))
     return factors[0], factors[1]
+
+
+def _handed_lora_as_scattermoe(experts):
+    """ScatterMoE-layout factors from the SonicMoE fast path's PEFT-layout handoff, if any.
+
+    The SonicMoE EP forward delegates NVFP4 experts to the ScatterMoE EP forward with the raw
+    base module, whose only LoRA is the ``_sonicmoe_lora`` dict the ParamWrapper fast path set.
+    """
+    handed = getattr(experts, "_sonicmoe_lora", None)
+    if not handed:
+        return None
+    from .layers import peft_lora_to_scattermoe
+
+    converted = {}
+    for name in (_w1_name(experts), "down_proj"):
+        entry = handed.get(name)
+        if entry is None:
+            continue
+        lora_A, lora_B, scaling = entry
+        wrapper = (getattr(experts, "_sonicmoe_lora_wrappers", None) or {}).get(name)
+        a, b, n_local, rank = _ep_local_expert_lora(lora_A, lora_B, experts, wrapper)
+        sm_A, sm_B = peft_lora_to_scattermoe(a, b, n_local, rank)
+        converted[name] = (sm_A, sm_B, scaling)
+    return converted or None
 
 
 def _warn_merge_aware_ep_unsupported(experts, reason: str) -> None:
@@ -916,7 +958,9 @@ def scattermoe_experts_forward_ep(
     _has_gate = getattr(self, "has_gate", True)
     _w1_attr = _w1_name(self)
     _gup_lora_g, _down_lora_g = None, None
-    _sm_lora_g = getattr(self, "_scattermoe_lora", None)
+    _sm_lora_g = getattr(self, "_scattermoe_lora", None) or _handed_lora_as_scattermoe(
+        self
+    )
     if _sm_lora_g:
         _gup_lora_g = _sm_lora_g.get(_w1_attr)
         _down_lora_g = _sm_lora_g.get("down_proj")
@@ -1005,7 +1049,9 @@ def scattermoe_experts_forward_ep(
     ss = torch.arange(M, device=hidden_states.device, dtype=torch.int32)
 
     gup_lora, down_lora = None, None
-    sm_lora = getattr(self, "_scattermoe_lora", None)
+    sm_lora = getattr(self, "_scattermoe_lora", None) or _handed_lora_as_scattermoe(
+        self
+    )
     if sm_lora:
         gup_lora = sm_lora.get(_w1_attr)
         down_lora = sm_lora.get("down_proj")
