@@ -43,6 +43,13 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
+def rl_trainer_builds_adapter(cfg) -> bool:
+    """DPO, IPO and KTO hand TRL the LoRA config and TRL builds the PeftModel in the trainer."""
+    from axolotl.utils.schemas.enums import RLType
+
+    return bool(cfg.adapter) and cfg.rl in (RLType.DPO, RLType.IPO, RLType.KTO)
+
+
 class PatchManager:
     """Manages the application of patches during the model loading process."""
 
@@ -1250,8 +1257,16 @@ class PatchManager:
             or self.cfg.lora_qkv_kernel
             or self.cfg.lora_o_kernel
         ):
+            from peft import PeftModel
+
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
+            if not isinstance(model, PeftModel) and rl_trainer_builds_adapter(self.cfg):
+                # TRL wraps the adapter inside the trainer; the builder patches it then
+                LOG.info(
+                    "Deferring the fused LoRA kernel patch to the RL trainer build"
+                )
+                return
             apply_lora_kernel_patches(model=model, cfg=self.cfg)
 
     def _apply_patch_deepspeed_zero3(self):
