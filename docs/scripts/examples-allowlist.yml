@@ -1,4 +1,8 @@
 examples:
+  # October 2026
+  - name: kolibri
+    title: Kolibri-1
+
   # September 2026
   - name: k2-horizon
     title: K2-Horizon
