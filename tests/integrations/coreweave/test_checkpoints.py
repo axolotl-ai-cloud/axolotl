@@ -121,6 +121,7 @@ def test_publisher_chain_rollover_and_upload_order(tmp_path):
         call.kwargs["base_identity"] for call in client.hot_load.call_args_list
     ] == [None, first, None]
     assert publisher.identity == third and publisher.delta_count == 0
+    assert list(tmp_path.iterdir()) == []
     keys = [call.args[2] for call in s3.upload_file.call_args_list]
     for identity in (first, second, third):
         assert [key for key in keys if identity in key][-1].endswith(
@@ -136,6 +137,7 @@ def test_unchanged_weights_do_not_submit_empty_delta(tmp_path):
     s3.upload_file.reset_mock()
     assert publisher.publish(weights, {}, 1) == identity
     s3.upload_file.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
     client.hot_load.assert_called_once()
     assert publisher.delta_count == 0
 
@@ -155,8 +157,10 @@ def test_failure_does_not_advance_base_or_allow_more_publications(tmp_path, fail
     assert torch.equal(publisher.base["a"], torch.ones(2))
     with pytest.raises(RuntimeError, match="recover"):
         publisher.publish({"a": torch.zeros(2)}, {}, 2)
+    assert (tmp_path / publisher.pending[0]).is_dir()
     publisher.recover("confirmed-operation")
     assert torch.equal(publisher.base["a"], torch.zeros(2))
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize("identity", ["../bad", "a/b", "", ".", ".."])

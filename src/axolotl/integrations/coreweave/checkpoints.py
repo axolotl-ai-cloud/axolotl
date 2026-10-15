@@ -1,6 +1,7 @@
 """Publish immutable checkpoint artifacts before requesting a hot-load."""
 
 import json
+import shutil
 import uuid
 from pathlib import Path
 
@@ -52,6 +53,7 @@ class CheckpointPublisher:
                 (path / "model.safetensors.index.json").read_text(encoding="utf-8")
             )
             if not index["weight_map"]:
+                shutil.rmtree(path)
                 return self.identity
         self.pending = (identity, snapshot, full)
         self.client.ready_identity = None
@@ -71,6 +73,7 @@ class CheckpointPublisher:
         self.identity, self.base, full = self.pending
         self.delta_count = 0 if full else self.delta_count + 1
         self.pending = None
+        shutil.rmtree(self.directory / self.identity, ignore_errors=True)
 
     def upload(self, directory, identity):
         """Upload referenced shards first and the checkpoint index last."""

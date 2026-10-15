@@ -74,18 +74,27 @@ def decode(path, previous):
 
 def test_sharded_delta_chain_matches_fresh_merges(tmp_path, model_and_adapter):
     base, save = model_and_adapter
+    bucket = tmp_path / "bucket"
+
+    def upload(source, _bucket, key):
+        (bucket / key).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, bucket / key)
+
+    s3 = MagicMock()
+    s3.upload_file.side_effect = upload
     publisher = LoRACheckpointPublisher(
         config(max_deltas=2),
         MagicMock(),
         tmp_path / "publish",
-        s3=MagicMock(),
+        s3=s3,
         base_model=str(base),
     )
     previous = None
     for step in range(1, 5):
         adapter = save(step)
         identity = publisher.publish(adapter, None, step)
-        artifact = publisher.directory / identity
+        assert not (publisher.directory / identity).exists()
+        artifact = bucket / "weights" / identity
         if step in (1, 4):
             actual, _ = load_weights(artifact)
         else:
@@ -124,11 +133,13 @@ def test_failed_upload_keeps_baseline_until_recovery(tmp_path, model_and_adapter
     assert publisher.identity == identity
     assert publisher.base == old and old.exists()
     assert publisher.pending[1].exists()
+    assert (publisher.directory / publisher.pending[0]).is_dir()
     with pytest.raises(RuntimeError, match="pending"):
         publisher.publish(save(3), None, 3)
     publisher.recover("retried-operation")
     assert publisher.identity != identity
     assert publisher.base.exists() and not old.exists()
+    assert not (publisher.directory / publisher.identity).exists()
 
 
 def test_adapter_rotation_and_background_merge(tmp_path, model_and_adapter):
