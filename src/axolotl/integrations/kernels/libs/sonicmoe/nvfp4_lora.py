@@ -875,8 +875,10 @@ def grouped_moe_merge_aware_ep_forward(
             dtype=sorted_experts.dtype,
         ),
     )
-    merge_aware1 = lora1 is not None
-    merge_aware2 = lora2 is not None
+    # before the schedule's start step the same grouped path runs un-snapped (base + delta)
+    merge_aware = merge_aware_enabled()
+    merge_aware1 = merge_aware and lora1 is not None
+    merge_aware2 = merge_aware and lora2 is not None
 
     y_grouped = grouped_expert_mlp_lora(
         x_grouped,
