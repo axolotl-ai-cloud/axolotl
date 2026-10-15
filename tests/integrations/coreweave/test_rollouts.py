@@ -59,6 +59,36 @@ def test_sync_precedes_sampling_once_per_step(tmp_path, monkeypatch):
     assert client.sample.call_args.args[0] == [1, 2]
 
 
+def test_parallel_sampling_keeps_prompt_order(tmp_path, monkeypatch):
+    import threading
+    import time
+
+    barrier = threading.Barrier(4)
+
+    def sample(tokens, **kwargs):
+        barrier.wait(timeout=5)
+        time.sleep(0.01 * (4 - tokens[0]))
+        return [{"tokens": [tokens[0] * 10], "logprobs": [-float(tokens[0])]}]
+
+    client = MagicMock()
+    client.sample.side_effect = sample
+    monkeypatch.setattr(rollouts, "CoreWeaveClient", lambda cfg: client)
+    monkeypatch.setattr(
+        rollouts, "CheckpointPublisher", lambda *a: MagicMock(identity="identity")
+    )
+    tr = trainer(tmp_path)
+    tr._tokenize_prompts = lambda prompts: (
+        [[i] for i in range(len(prompts))],
+        None,
+        {},
+    )
+    output = rollouts.CoreWeaveRollouts(config(rollouts=True))(
+        [[{"role": "user", "content": "test"}]] * 4, tr
+    )
+    assert output["completion_ids"] == [[0], [10], [20], [30]]
+    assert output["logprobs"] == [[-0.0], [-1.0], [-2.0], [-3.0]]
+
+
 def test_sync_failure_blocks_sampling(tmp_path, monkeypatch):
     client = MagicMock()
     publisher = MagicMock()

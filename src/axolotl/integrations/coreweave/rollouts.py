@@ -1,5 +1,6 @@
 """Synchronous GRPO generation using CoreWeave Dedicated Inference."""
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import torch.distributed as dist
@@ -17,6 +18,9 @@ def check_rank_errors(error):
     for message in errors:
         if message is not None:
             raise RuntimeError(f"CoreWeave rollout failed: {message}")
+
+
+MAX_CONCURRENT_SAMPLES = 8
 
 
 class CoreWeaveRollouts:
@@ -83,19 +87,25 @@ class CoreWeaveRollouts:
             self.client.ready_identity = identity[0]
             self.step = trainer.state.global_step
 
+        def sample(tokens):
+            return self.client.sample(
+                tokens,
+                n=1,
+                max_tokens=trainer.max_completion_length,
+                temperature=trainer.temperature,
+                top_p=trainer.top_p,
+            )[0]
+
         completions, logprobs = [], []
         error = None
         try:
-            for tokens in prompt_ids:
-                sample = self.client.sample(
-                    tokens,
-                    n=1,
-                    max_tokens=trainer.max_completion_length,
-                    temperature=trainer.temperature,
-                    top_p=trainer.top_p,
-                )[0]
-                completions.append(sample["tokens"])
-                logprobs.append(sample["logprobs"])
+            workers = max(1, min(MAX_CONCURRENT_SAMPLES, len(prompt_ids)))
+            with ThreadPoolExecutor(
+                max_workers=workers, thread_name_prefix="coreweave-sample"
+            ) as executor:
+                for result in executor.map(sample, prompt_ids):
+                    completions.append(result["tokens"])
+                    logprobs.append(result["logprobs"])
         except Exception as exc:  # pylint: disable=broad-exception-caught
             error = str(exc)
         check_rank_errors(error)
