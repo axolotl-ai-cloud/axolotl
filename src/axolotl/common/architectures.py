@@ -27,4 +27,5 @@ MOE_ARCH_BLOCK = {
     "nemotron_h": "NemotronHMoE",
     "minimax_m2": "MiniMaxM2SparseMoeBlock",
     "bailing_hybrid": "BailingMoeV3SparseMoeBlock",
+    "kolibri1": "Kolibri1SparseMoeBlock",
 }
