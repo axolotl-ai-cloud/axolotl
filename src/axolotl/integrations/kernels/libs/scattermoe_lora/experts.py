@@ -923,6 +923,32 @@ def scattermoe_experts_forward_ep(
     elif _has_peft_wrapper(self):
         _, _gup_lora_g, _down_lora_g = _unwrap_experts_lora(self)
 
+    # bnb-4bit experts: reading the parametrized attribute dequantizes every local expert to
+    # bf16 and autograd would hold that copy per layer, so take the chunked-dequant path on the
+    # routed rows (DeepEP's -1 sentinels are dropped there); checked before any weight access
+    if (
+        hasattr(self, "parametrizations")
+        and _w1_attr in self.parametrizations
+        and "down_proj" in self.parametrizations
+    ):
+        if not _has_gate:
+            raise NotImplementedError(
+                "bnb-4bit non-gated experts are not supported by the chunked-bnb MoE path"
+            )
+        from .chunked_bnb import chunked_bnb_moe
+
+        return chunked_bnb_moe(
+            hidden_states,
+            top_k_index,
+            top_k_weights.to(hidden_states.dtype),
+            self,
+            _gup_lora_g,
+            _down_lora_g,
+            self.num_experts,
+            act_type=_detect_act_type(self),
+            limit=getattr(self, "limit", None),
+        )
+
     _fp4_grouped_mode_g = RUNTIME.fp4_grouped_mode
     if (
         _fp4_grouped_mode_g is not None
