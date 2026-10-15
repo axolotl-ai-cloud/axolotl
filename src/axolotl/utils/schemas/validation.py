@@ -1248,6 +1248,15 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_adam_mini(cls, data):
+        # adam-mini routes params by name, so LoRA factors under q_proj/k_proj
+        # get reshaped into attention heads they don't have
+        if data.get("optimizer") == "adam_mini" and data.get("adapter"):
+            raise ValueError("adam_mini only supports full fine-tuning (no adapter).")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_polora(cls, data):
         if data.get("optimizer") != "polora":
             return data
