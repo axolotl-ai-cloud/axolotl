@@ -112,10 +112,11 @@ def scatter_quantized_expert(module, name, e_local, ep_rank_of):
     shape = (e_local, *header["shape"][1:])
 
     # the collective runs on the accelerator even when the storage lives on the host
+    # (NCCL); a CPU-only process group (gloo) scatters on the host
     transfer_device = (
-        device
-        if device.type == "cuda"
-        else torch.device("cuda", torch.cuda.current_device())
+        torch.device("cuda", torch.cuda.current_device())
+        if device.type != "cuda" and torch.cuda.is_available()
+        else device
     )
 
     def scatter(component, count, dtype):
