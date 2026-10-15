@@ -35,7 +35,7 @@ def _autotuner(name, configs, keys):
 
 
 @pytest.fixture
-def kernel_module(monkeypatch):
+def kernel_module(monkeypatch, isolated_kernel_modules):
     configs = [
         FakeConfig({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 64}, 4, 4),
         FakeConfig({"BLOCK_M": 128, "BLOCK_N": 64, "BLOCK_K": 64}, 4, 4),

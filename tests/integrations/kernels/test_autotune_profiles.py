@@ -37,7 +37,7 @@ def _autotuner(name, configs, keys):
 
 
 @pytest.fixture
-def module(monkeypatch):
+def module(monkeypatch, isolated_kernel_modules):
     if "triton" not in sys.modules:
         fake = ModuleType("triton")
         fake.Config = FakeConfig  # type: ignore[attr-defined]

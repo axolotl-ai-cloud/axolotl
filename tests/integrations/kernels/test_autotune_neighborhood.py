@@ -39,7 +39,7 @@ def _kernel(name):
 
 
 @pytest.fixture
-def tuner(monkeypatch):
+def tuner(monkeypatch, isolated_kernel_modules):
     configs = _grid()
     tuner = SimpleNamespace(
         cache={},
