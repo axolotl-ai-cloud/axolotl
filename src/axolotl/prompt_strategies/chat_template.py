@@ -7,6 +7,7 @@ from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
+from jinja2.exceptions import TemplateError
 from pydantic import BaseModel
 from transformers import ProcessorMixin
 
@@ -787,8 +788,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             dummy_turn = self._build_dummy_turn(
                 turns[turn_idx], content_only, reasoning_only, sentinel
             )
-            dummy_text = self.prompter.build_prompt_text(  # type: ignore
-                turns[:turn_idx] + [dummy_turn] + turns[turn_idx + 1 :], tools=tools
+            dummy_text = self._render_dummy(
+                lambda dummy: self.prompter.build_prompt_text(  # type: ignore
+                    turns[:turn_idx] + [dummy] + turns[turn_idx + 1 :], tools=tools
+                ),
+                turns[turn_idx],
+                dummy_turn,
+                sentinel,
             )
             if not dummy_text:
                 return None
@@ -815,6 +821,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turns: list[dict],
         turn_idx: int,
         dummy_turn: dict,
+        sentinel: str,
         tools: list[dict] | None,
     ) -> tuple[int, int] | None:
         """Locate a turn by re-tokenizing the conversation prefix twice.
@@ -826,10 +833,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         real_last_index = len(turns) - 1
 
         dummy_ids = _extract_input_ids(
-            self.prompter.build_prompt(  # type: ignore
-                turns[:turn_idx] + [dummy_turn],
-                tools=tools,
-                real_last_index=real_last_index,
+            self._render_dummy(
+                lambda dummy: self.prompter.build_prompt(  # type: ignore
+                    turns[:turn_idx] + [dummy],
+                    tools=tools,
+                    real_last_index=real_last_index,
+                ),
+                turns[turn_idx],
+                dummy_turn,
+                sentinel,
             )
         )
         full_ids = _extract_input_ids(
@@ -884,6 +896,20 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             dummy_turn[thinking_key] = turn[thinking_key]
         return dummy_turn
 
+    def _render_dummy(self, render, turn: dict, dummy_turn: dict, sentinel: str):
+        try:
+            return render(dummy_turn)
+        except TemplateError:
+            # Some templates reject assistant turns that lack a thinking field.
+            thinking_key = self.prompter.template_thinking_key
+            if (
+                not thinking_key
+                or thinking_key not in turn
+                or thinking_key in dummy_turn
+            ):
+                raise
+            return render({**dummy_turn, thinking_key: sentinel})
+
     def find_turn(
         self,
         turns: list[dict],
@@ -925,10 +951,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 turns, turn_idx, content_only, reasoning_only, tools, locator
             )
         if span is None:
+            sentinel = self._SENTINELS[0]
             dummy_turn = self._build_dummy_turn(
-                turns[turn_idx], content_only, reasoning_only, self._SENTINELS[0]
+                turns[turn_idx], content_only, reasoning_only, sentinel
             )
-            span = self._find_turn_from_tokens(turns, turn_idx, dummy_turn, tools)
+            span = self._find_turn_from_tokens(
+                turns, turn_idx, dummy_turn, sentinel, tools
+            )
         if span is None:
             return -1, -1
 

@@ -122,3 +122,48 @@ class TestSplitThinking:
             assert input_ids == expected_input_ids, (
                 f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
             )
+
+
+def test_template_requiring_thinking_field_trains_reasoning(qwen3_tokenizer):
+    chat_template_jinja = (
+        "{%- for message in messages -%}"
+        "{%- if message.role == 'assistant' -%}"
+        "{%- if message.reasoning_content is not defined -%}"
+        "{{ raise_exception('Assistant message is missing a thinking field.') }}"
+        "{%- endif -%}"
+        "{{ '<|im_start|>assistant\\n<think>' + message.reasoning_content + '</think>'"
+        " + message.content + '<|im_end|>\\n' }}"
+        "{%- else -%}"
+        "{{ '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>\\n' }}"
+        "{%- endif -%}"
+        "{%- endfor -%}"
+    )
+    strategy = load(
+        qwen3_tokenizer,
+        DictDefault({"train_on_inputs": False, "sequence_len": 512}),
+        DictDefault(
+            {
+                "chat_template": "jinja",
+                "chat_template_jinja": chat_template_jinja,
+                "field_messages": "messages",
+            }
+        ),
+    )
+    res = strategy.tokenize_prompt(
+        {
+            "messages": [
+                {"role": "user", "content": "q0"},
+                {"role": "assistant", "reasoning_content": "r0", "content": "a0"},
+                {"role": "user", "content": "q1"},
+                {"role": "assistant", "reasoning_content": "r1", "content": "a1"},
+            ]
+        }
+    )
+    trained = qwen3_tokenizer.decode(
+        [
+            i
+            for i, label in zip(res["input_ids"], res["labels"], strict=True)
+            if label != -100
+        ]
+    )
+    assert trained == "r0</think>a0<|im_end|>r1</think>a1<|im_end|>"
