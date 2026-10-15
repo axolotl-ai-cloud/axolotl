@@ -63,7 +63,9 @@ def neighborhood_configs(
 ) -> list:
     center = _config_fields(winner)
     near = [c for c in configs if _distance(_config_fields(c), center) <= distance]
-    if winner not in near and _distance(center, center) == 0:
+    # the winner may be a config rebuilt from the cache file rather than a member of
+    # the kernel's list; it was measured for this kernel, so it is always a candidate
+    if winner not in near:
         near.insert(0, winner)
     return near
 

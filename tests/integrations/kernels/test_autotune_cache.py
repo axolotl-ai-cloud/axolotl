@@ -137,3 +137,16 @@ def test_timing_capture_records_every_benchmarked_config(kernel_module, tmp_path
     path = tmp_path / "b200.json"
     autotune_cache.write_autotune_cache(str(path), records)
     assert "timings_ms" in json.loads(path.read_text())["records"][0]
+
+
+def test_corrupt_cache_is_ignored_and_rewritten(tmp_path, kernel_module):
+    path = tmp_path / "b200.json"
+    path.write_text('{"version": 1, "records": [')
+    assert autotune_cache.read_autotune_cache(str(path)) is None
+    assert autotune_cache.load_autotune_cache(str(path)) == 0
+    path.write_text("[]")
+    assert autotune_cache.read_autotune_cache(str(path)) is None
+    tuner = kernel_module._scatter2scatter_lora
+    tuner.cache[_measured_key()] = tuner.configs[0]
+    autotune_cache.write_autotune_cache(str(path), collect_autotune_configs())
+    assert autotune_cache.read_autotune_cache(str(path))["records"]
