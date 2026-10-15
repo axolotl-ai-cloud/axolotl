@@ -26,5 +26,6 @@ MOE_ARCH_BLOCK = {
     "glm_moe_dsa": "GlmMoeDsaDecoderLayer",
     "nemotron_h": "NemotronHMoE",
     "minimax_m2": "MiniMaxM2SparseMoeBlock",
+    "mimo_v2": "MiMoV2FlashMoE",
     "bailing_hybrid": "BailingMoeV3SparseMoeBlock",
 }

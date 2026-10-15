@@ -50,6 +50,22 @@ def _rebuild_nvfp4_like(
     )
 
 
+def _state_dict_param_info(model):
+    """``requires_grad`` per parameter and the buffer names, keyed like ``state_dict()``.
+
+    State-dict keys drop the activation-checkpoint wrapper segment; module names keep it.
+    """
+    parameter_requires_grad = {
+        name.replace("_checkpoint_wrapped_module.", ""): parameter.requires_grad
+        for name, parameter in model.named_parameters(remove_duplicate=False)
+    }
+    buffer_names = {
+        name.replace("_checkpoint_wrapped_module.", "")
+        for name, _ in model.named_buffers(remove_duplicate=False)
+    }
+    return parameter_requires_grad, buffer_names
+
+
 def _state_dict_entry(value, name, parameter_requires_grad, buffer_names):
     if name in parameter_requires_grad:
         return nn.Parameter(value, requires_grad=parameter_requires_grad[name])
@@ -224,11 +240,7 @@ def fsdp2_load_full_state_dict(
         return bool(_ep_tails) and ".experts." in name and name.endswith(_ep_tails)
 
     meta_sharded_sd = model.state_dict()
-    parameter_requires_grad = {
-        name: parameter.requires_grad
-        for name, parameter in model.named_parameters(remove_duplicate=False)
-    }
-    buffer_names = {name for name, _ in model.named_buffers(remove_duplicate=False)}
+    parameter_requires_grad, buffer_names = _state_dict_param_info(model)
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():

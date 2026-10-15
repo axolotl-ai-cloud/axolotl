@@ -16,6 +16,18 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 This config uses about 17.2 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀
 
+### MiMo-V2.6-Flash
+
+[MiMo-V2.6-Flash-RL](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL) is a 309B-A15B MoE model. Axolotl loads its text decoder into the native MiMo-V2-Flash modules and dequantizes the FP8/MXFP4 checkpoint to bf16 on load, so plan for ~620 GB of weights across the FSDP group (e.g. 8x H200).
+
+```bash
+axolotl train examples/mimo/mimo-v2.6-flash-lora-fsdp.yaml
+```
+
+- Text only: the vision, audio and MTP weights are not loaded.
+- Requires `flash_attention_4` (or `eager`); SDPA and Flash Attention 2 cannot handle its attention sinks and head dims.
+- Saved checkpoints use the bf16 native layout and reload in Axolotl as-is.
+
 ### Tips
 
 - You can run a full finetuning by removing the `adapter: qlora` and `load_in_4bit: true` from the config.
@@ -29,6 +41,8 @@ Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.
 ## Limitations
 
 **Cut Cross Entropy (CCE)**: Currently not supported. We plan to include CCE support for MiMo in the near future.
+
+**LoRA kernels**: Not supported for MiMo-V2.6.
 
 ## Related Resources
 
