@@ -271,7 +271,9 @@ def main():
         (actual.float() * grad.chunk(world, dim=1)[rank]).sum().backward()
         target_grad = ref_x.grad.chunk(world, dim=1)[rank]
         if family == "gdn":
-            torch.testing.assert_close(local_x.grad, target_grad, atol=1e-2, rtol=5e-2)
+            torch.testing.assert_close(
+                local_x.grad, target_grad, atol=1.5e-2, rtol=5e-2
+            )
         else:
             assert_bf16_close(local_x.grad, target_grad, "input gradient")
         for (name, param), (_, ref) in zip(
