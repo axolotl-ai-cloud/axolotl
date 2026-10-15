@@ -3,8 +3,9 @@ trust_remote_code: true
 
 chat_template: tokenizer_default
 datasets:
-  - path: fozziethebeat/alpaca_messages_2k_test
+  - path: HuggingFaceH4/Multilingual-Thinking
     type: chat_template
+    field_thinking: thinking
     split: train
 
 val_set_size: 0.05
