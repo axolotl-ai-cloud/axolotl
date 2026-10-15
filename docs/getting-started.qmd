@@ -193,3 +193,21 @@ Now that you have the basics, explore these guides based on what you want to do:
 
 - [Multi-GPU Training](multi-gpu.qmd) — DeepSpeed, FSDP, DDP
 - [Multi-Node Training](multi-node.qmd) — Distributed training across machines
+
+## Running on Rented GPU Compute (RunPod, Vast.ai) {#sec-cloud-gpu}
+
+When fine-tuning on rented GPU instances, configuration mistakes can silently waste compute budget before training produces anything useful. Common failure modes include HuggingFace weights caching to ephemeral storage that is wiped on pod stop, checkpoint output directories on non-persistent volumes, and insufficient disk headroom for checkpoints mid-run.
+
+[ComputeFence](https://github.com/Francisco-Booth/ComputeFence) is a free open-source CLI pre-flight checker that catches these issues before your job starts billing.
+
+```bash
+pip install computefence && computefence doctor
+```
+
+On a RunPod pod with Axolotl installed, ComputeFence checks GPU and CUDA visibility, HuggingFace cache persistence, persistent volume detection, disk space headroom, and checkpoint output directory persistence. Run it before `axolotl train` to confirm your pod is configured correctly.
+
+To check your checkpoint output directory specifically:
+
+```bash
+computefence doctor --output-dir ./outputs
+```
