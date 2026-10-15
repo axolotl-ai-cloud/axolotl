@@ -85,6 +85,19 @@ def prepare_preference_datasets(
     return train_dataset, eval_dataset
 
 
+def _with_source_columns(transform: Callable[..., Any], sources: dict[str, str]):
+    """Hand ``transform`` the sample with the renamed source columns under their original names."""
+
+    def wrapped(sample, **kwargs):
+        restored = dict(sample)
+        for name, renamed in sources.items():
+            if renamed in restored:
+                restored[name] = restored.pop(renamed)
+        return transform(restored, **kwargs)
+
+    return wrapped
+
+
 def _map_dataset(
     cfg: DictDefault,
     dataset: Dataset | DatasetDict,
@@ -112,6 +125,20 @@ def _map_dataset(
 
     if isinstance(dataset, DatasetDict):
         dataset = dataset["train"]
+
+    # a transform that re-emits a column it also removes must get a fresh column:
+    # datasets keeps the input feature for a same-named output (a message list typed
+    # List(Json) turns the rendered string into a list of characters), so the sources
+    # are renamed out of the way and dropped after the map
+    sources = {
+        name: f"_axolotl_source_{name}"
+        for name in map_kwargs.get("remove_columns") or []
+        if name in dataset.column_names
+    }
+    if sources:
+        dataset = dataset.rename_columns(sources)
+        ds_transform_fn = _with_source_columns(ds_transform_fn, sources)
+        map_kwargs["remove_columns"] = list(sources.values())
 
     dataset = dataset.map(
         ds_transform_fn,
