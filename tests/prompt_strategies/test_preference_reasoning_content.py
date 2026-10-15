@@ -83,3 +83,30 @@ def test_orpo_message_keeps_reasoning_and_drops_label():
         "role": "user",
         "content": "q",
     }
+
+
+def test_orpo_argilla_rebuilds_the_rendered_columns():
+    from axolotl.prompt_strategies.orpo.chat_template import argilla
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault(
+        {"chat_template": "tokenizer_default", "datasets": [{"path": "x"}]}
+    )
+    transform, map_kwargs = argilla(cfg)
+    assert map_kwargs == {"remove_columns": ["chosen", "rejected"]}
+    sample = {
+        "system": "s",
+        "chosen": [
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": "good", "reasoning_content": "why"},
+        ],
+        "rejected": [
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": "bad"},
+        ],
+    }
+    out = transform(sample, tokenizer=_Tokenizer())
+    assert out["prompt"].endswith("<assistant>")
+    assert out["chosen"].startswith("[think:why]good") and out["rejected"].startswith(
+        "bad"
+    )
