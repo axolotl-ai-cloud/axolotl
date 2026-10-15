@@ -162,6 +162,29 @@ class TestPeftPatchIdempotency:
             patch_peft_target_parameters_matching._axolotl_patched = False
 
 
+@pytest.mark.parametrize(
+    "kwargs, expected", [({}, True), ({"bnb_4bit_use_double_quant": False}, False)]
+)
+def test_expert_double_quant_follows_bnb_config_kwargs(monkeypatch, kwargs, expected):
+    import transformers.core_model_loading
+    import transformers.modeling_utils
+
+    from axolotl.monkeypatch import moe_quant
+
+    monkeypatch.setattr(
+        moe_quant, "_moe_load_state", {**moe_quant._moe_load_state, "patched": False}
+    )
+    for module, name in [
+        (transformers.core_model_loading, "set_param_for_module"),
+        (transformers.modeling_utils, "caching_allocator_warmup"),
+    ]:
+        monkeypatch.setattr(module, name, getattr(module, name))
+
+    moe_quant.patch_moe_quantization_on_load(DictDefault(bnb_config_kwargs=kwargs))
+    assert moe_quant._moe_load_state["compress_statistics"] is expected
+
+
+@pytest.mark.gpu
 class TestMoeAdapterTrainMergeRoundtrip:
     """E2E: train adapter on quantized MoE experts, then merge onto plain model.
 
@@ -280,3 +303,55 @@ class TestMoeAdapterTrainMergeRoundtrip:
         loaded = PeftModel.from_pretrained(self._make_plain_model(), str(adapter_dir))
         merged = loaded.merge_and_unload()
         assert merged is not None
+
+
+class TestNestedParamWrapperGradients:
+    """Two target_parameters on one module nest the ParamWrappers.
+
+    On a parametrized (quantized) parameter the inner wrapper is silently dead without
+    the parametrize cache eviction: it trains nothing but is still saved to the adapter.
+    """
+
+    def test_both_nested_wrappers_receive_gradients(self):
+        import torch
+        from peft import LoraConfig, get_peft_model
+        from peft.tuners.lora.layer import ParamWrapper
+        from peft.tuners.tuners_utils import BaseTuner
+
+        from axolotl.monkeypatch.moe_quant import (
+            _moe_load_state,
+            patch_peft_target_parameters_matching,
+        )
+
+        lora_cfg = LoraConfig(
+            r=4,
+            lora_alpha=8,
+            target_modules=[],
+            target_parameters=["experts.gate_up_proj", "experts.down_proj"],
+            lora_dropout=0.0,
+            bias="none",
+        )
+        original_inject = BaseTuner._inject_parameters
+        original_activate = ParamWrapper._activate_lora
+
+        _moe_load_state["expert_param_order"] = {}
+        patch_peft_target_parameters_matching()
+        try:
+            peft_model = get_peft_model(
+                TestMoeAdapterTrainMergeRoundtrip._make_quantized_model(), lora_cfg
+            )
+            peft_model(torch.randn(2, 8)).sum().backward()
+            grads = {
+                name: param.grad
+                for name, param in peft_model.named_parameters()
+                if "lora_B" in name and param.requires_grad
+            }
+        finally:
+            BaseTuner._inject_parameters = original_inject
+            ParamWrapper._activate_lora = original_activate
+            patch_peft_target_parameters_matching._axolotl_patched = False
+
+        assert len(grads) == 2
+        for name, grad in grads.items():
+            assert grad is not None, f"{name} received no gradient"
+            assert grad.abs().max() > 0, f"{name} received a zero gradient"

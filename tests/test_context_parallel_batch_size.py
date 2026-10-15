@@ -1,12 +1,25 @@
 """Tests for batch_size calculation with context parallelism."""
 
-import sys
-import types
-
 import pytest
 
-from axolotl.utils.config import normalize_config, validate_config
+from axolotl.utils.config import (
+    normalize_config,
+    validate_config,
+)
 from axolotl.utils.dict import DictDefault
+
+
+@pytest.fixture(autouse=True)
+def _stub_flash_attn_available(monkeypatch):
+    # These tests exercise batch-size math, not whether this box has flash-attn.
+    import transformers.utils
+
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_2_available", lambda **_: True
+    )
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_3_available", lambda **_: True
+    )
 
 
 @pytest.fixture(name="cp_base_cfg")
@@ -44,12 +57,6 @@ class TestContextParallelBatchSize:
         expected_batch_size,
     ):
         monkeypatch.setenv("WORLD_SIZE", str(world_size))
-        # Mock ring_flash_attn since it's not installable on CPU,
-        # but required by schema validation when context_parallel_size > 1.
-        if "ring_flash_attn" not in sys.modules:
-            monkeypatch.setitem(
-                sys.modules, "ring_flash_attn", types.ModuleType("ring_flash_attn")
-            )
         cp_base_cfg["context_parallel_size"] = context_parallel_size
         cfg = validate_config(cp_base_cfg)
         normalize_config(cfg)

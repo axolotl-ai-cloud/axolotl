@@ -1,0 +1,67 @@
+base_model: inclusionAI/Ling-3.0-flash
+
+trust_remote_code: true
+
+chat_template: tokenizer_default
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
+    split: train
+
+val_set_size: 0.05
+output_dir: ./outputs/ling-3.0-flash-qlora
+
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+
+load_in_4bit: true
+quantize_moe_experts: true
+adapter: qlora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - kv_a_proj_with_mqa
+  - kv_b_proj
+  - dense
+# experts are fused 3D tensors, reachable only as parameters
+lora_target_parameters:
+  - gate_up_proj
+  - down_proj
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 2
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_4bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+logging_steps: 1
+attn_implementation: flash_attention_2
+
+warmup_ratio: 0.1
+evals_per_epoch: 2
+saves_per_epoch: 1
+weight_decay: 0.0
+
+special_tokens:

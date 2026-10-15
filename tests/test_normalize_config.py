@@ -3,9 +3,11 @@ Test classes for checking functionality of the cfg normalization
 """
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from axolotl.utils.config import (
+    MULTIMODAL_AUTO_MODEL_MAPPING,
     normalize_cfg_datasets,
     normalize_config,
     validate_config,
@@ -37,12 +39,268 @@ class NormalizeConfigTestCase(unittest.TestCase):
             }
         )
 
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_defaults_to_non_reentrant(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        cfg = self._get_base_cfg()
+        cfg.gradient_checkpointing = True
+        with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
+            normalize_config(cfg)
+
+        assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": False}
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_zero3_keeps_reentrant(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        for deepspeed, stage in (
+            ({"zero_optimization": {"stage": 3}}, ""),
+            (None, "3"),
+        ):
+            cfg = self._get_base_cfg()
+            cfg.gradient_checkpointing = True
+            cfg.deepspeed = deepspeed
+            with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": stage}):
+                normalize_config(cfg)
+
+            assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": True}
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_zero3_detected_from_config_file(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        for deepspeed, expected in (
+            ("deepspeed_configs/zero3_bf16.json", True),
+            ("deepspeed_configs/zero2.json", False),
+            ("/nonexistent/my_zero3.json", True),
+        ):
+            cfg = self._get_base_cfg()
+            cfg.gradient_checkpointing = True
+            cfg.deepspeed = deepspeed
+            with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
+                normalize_config(cfg)
+
+            assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": expected}
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_kwargs_without_use_reentrant_get_default(
+        self, load_config
+    ):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        for kwargs in ({}, {"determinism_check": "none"}):
+            cfg = self._get_base_cfg()
+            cfg.gradient_checkpointing = True
+            cfg.gradient_checkpointing_kwargs = dict(kwargs)
+            with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
+                normalize_config(cfg)
+
+            assert cfg.gradient_checkpointing_kwargs == {
+                **kwargs,
+                "use_reentrant": False,
+            }
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_kwargs_kept_when_set(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        cfg = self._get_base_cfg()
+        cfg.gradient_checkpointing = True
+        cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
+        normalize_config(cfg)
+
+        assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": True}
+
     def test_base_model_config_set_when_empty(self):
         cfg = self._get_base_cfg()
         del cfg.base_model_config
         normalize_config(cfg)
 
         assert cfg.base_model_config == cfg.base_model
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_diffusion_gemma_uses_text_only_processing(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.adapter = "lora"
+        cfg.lora_target_modules = [
+            r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+            r"\.0\.self_attn\.q_proj$"
+        ]
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        normalize_config(cfg)
+
+        assert cfg.is_multimodal is False
+        assert cfg.processor_config is None
+        assert cfg.attn_implementation == "flex_attention"
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_diffusion_preserves_explicit_attention_fallbacks(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+        for attn_implementation in ("eager", "sdpa"):
+            cfg = self._get_base_cfg()
+            cfg.base_model = "local/diffusion-gemma"
+            cfg.diffusion_lm = {"from_causal_lm": False}
+            cfg.adapter = "lora"
+            cfg.attn_implementation = attn_implementation
+            cfg.lora_target_modules = [
+                r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+                r"\.0\.self_attn\.q_proj$"
+            ]
+
+            normalize_config(cfg)
+
+            assert cfg.attn_implementation == attn_implementation
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_diffusion_descriptor_rejects_unsupported_attention(
+        self, load_config
+    ):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.adapter = "lora"
+        cfg.attn_implementation = "flash_attention_2"
+        cfg.lora_target_modules = [
+            r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+            r"\.0\.self_attn\.q_proj$"
+        ]
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        with self.assertRaisesRegex(ValueError, "attn_implementation values"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_nemotron_varlen_preserves_config_intent(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/nemotron-diffusion"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.adapter = "lora"
+        cfg.trust_remote_code = True
+        cfg.attn_implementation = "varlen"
+        cfg.lora_target_modules = ["q_proj"]
+        cfg.env_capabilities = {"torch_version": "2.14.0"}
+        load_config.return_value = SimpleNamespace(
+            model_type="nemotron_labs_diffusion", dlm_paradigm="bidirectional"
+        )
+
+        normalize_config(cfg)
+
+        assert cfg.attn_implementation == "varlen"
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_varlen_rejects_unsupported_native_layout(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.attn_implementation = "varlen"
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        with self.assertRaisesRegex(ValueError, "full-sequence diffusion"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_varlen_rejects_dream_legacy_and_ar_paths(self, load_config):
+        cases = (
+            ("Dream", {"from_causal_lm": False}),
+            ("nemotron_labs_diffusion", {"from_causal_lm": True}),
+            ("nemotron_labs_diffusion", None),
+        )
+        for model_type, diffusion_lm in cases:
+            with self.subTest(model_type=model_type, diffusion_lm=diffusion_lm):
+                cfg = self._get_base_cfg()
+                cfg.base_model = f"local/{model_type}"
+                cfg.attn_implementation = "varlen"
+                cfg.diffusion_lm = diffusion_lm
+                load_config.return_value = SimpleNamespace(model_type=model_type)
+
+                with self.assertRaisesRegex(ValueError, "full-sequence diffusion"):
+                    normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_varlen_requires_torch_214_public_gqa_api(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/nemotron-diffusion"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.adapter = "lora"
+        cfg.trust_remote_code = True
+        cfg.attn_implementation = "varlen"
+        cfg.lora_target_modules = ["q_proj"]
+        cfg.env_capabilities = {"torch_version": "2.13.0"}
+        load_config.return_value = SimpleNamespace(
+            model_type="nemotron_labs_diffusion", dlm_paradigm="bidirectional"
+        )
+
+        with self.assertRaisesRegex(ValueError, "torch >= 2.14"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_legacy_diffusion_conversion_keeps_attention_unspecified(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": True}
+        cfg.plugins = ["axolotl.integrations.diffusion.DiffusionPlugin"]
+        cfg.adapter = "lora"
+        cfg.lora_target_modules = [
+            r"^(model\.encoder\.language_model\.layers|model\.decoder\.layers)"
+            r"\.0\.self_attn\.q_proj$"
+        ]
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        normalize_config(cfg)
+
+        assert cfg.attn_implementation is None
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_diffusion_lm_rejects_model_without_diffusion_profile(self, load_config):
+        for model_type in ("llama", "qwen2"):
+            with self.subTest(model_type=model_type):
+                cfg = self._get_base_cfg()
+                cfg.diffusion_lm = {"from_causal_lm": False}
+                load_config.return_value = SimpleNamespace(model_type=model_type)
+
+                with self.assertRaisesRegex(ValueError, "no native diffusion profile"):
+                    normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_from_causal_lm_requires_legacy_diffusion_plugin(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.diffusion_lm = {"from_causal_lm": True}
+        load_config.return_value = SimpleNamespace(model_type="llama")
+
+        with self.assertRaisesRegex(ValueError, "DiffusionPlugin"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_from_causal_lm_with_legacy_diffusion_plugin_is_accepted(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.diffusion_lm = {"from_causal_lm": True}
+        cfg.plugins = ["axolotl.integrations.diffusion:DiffusionPlugin"]
+        load_config.return_value = SimpleNamespace(model_type="llama")
+
+        normalize_config(cfg)
+
+        assert cfg.model_config_type == "llama"
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_native_diffusion_gemma_rejects_explicit_multimodal(self, load_config):
+        cfg = self._get_base_cfg()
+        cfg.base_model = "local/diffusion-gemma"
+        cfg.diffusion_lm = {"from_causal_lm": False}
+        cfg.is_multimodal = True
+        load_config.return_value = SimpleNamespace(model_type="diffusion_gemma")
+
+        with self.assertRaisesRegex(ValueError, "text-only diffusion"):
+            normalize_config(cfg)
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_legacy_multimodal_auto_detection_is_unchanged(self, load_config):
+        cfg = self._get_base_cfg()
+        load_config.return_value = SimpleNamespace(
+            model_type=next(iter(MULTIMODAL_AUTO_MODEL_MAPPING))
+        )
+
+        normalize_config(cfg)
+
+        assert cfg.is_multimodal is True
 
     def test_chat_template_chatml(self):
         cfg = DictDefault(
@@ -141,8 +399,8 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         cfg_without_version = validate_config(cfg_without_version)
 
-        self.assertEqual(cfg_without_version.fsdp_version, 1)
-        self.assertEqual(cfg_without_version.fsdp_config.fsdp_version, 1)
+        self.assertEqual(cfg_without_version.fsdp_version, 2)
+        self.assertEqual(cfg_without_version.fsdp_config.fsdp_version, 2)
         self.assertEqual(
             cfg_without_version.fsdp_config.auto_wrap_policy, "SIZE_BASED_WRAP"
         )
@@ -160,7 +418,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
         cfg = validate_config(cfg)
 
         self.assertNotIn("fsdp_config", cfg)
-        self.assertNotIn("fsdp_version", cfg)
+        self.assertEqual(cfg.fsdp_version, 2)
 
     def test_migrate_fsdp_config_empty_fsdp_config(self):
         """Test migration with empty fsdp_config"""
@@ -168,7 +426,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         cfg = validate_config(cfg)
 
-        self.assertNotIn("fsdp_version", cfg)
+        self.assertEqual(cfg.fsdp_version, 2)
         self.assertEqual(cfg.fsdp_config, {})
 
     def test_migrate_fsdp_config_mixed_keys(self):
@@ -176,7 +434,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
         cfg = self._get_base_cfg() | DictDefault(
             {
                 "fsdp_config": {
-                    "fsdp_version": 1,
+                    "fsdp_version": 2,
                     "fsdp_state_dict_type": "FULL_STATE_DICT",
                     "mixed_precision_policy": "fp16",
                     "activation_checkpointing": True,
@@ -187,7 +445,7 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         cfg = validate_config(cfg)
 
-        self.assertEqual(cfg.fsdp_version, 1)
+        self.assertEqual(cfg.fsdp_version, 2)
         self.assertEqual(cfg.fsdp_config.state_dict_type, "FULL_STATE_DICT")
         self.assertEqual(cfg.fsdp_config.reshard_after_forward, False)
         self.assertEqual(cfg.fsdp_config.mixed_precision_policy, "fp16")

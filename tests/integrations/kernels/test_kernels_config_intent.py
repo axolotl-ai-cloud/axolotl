@@ -214,3 +214,20 @@ def test_merged_dsv4_lora_target_linear_rejected():
     Merged = _merged_cls()
     with pytest.raises(pydantic.ValidationError, match="lora_target_linear"):
         Merged.model_validate(_minimal(use_dsv4_kernels=True, lora_target_linear=True))
+
+
+def test_merged_use_kernels_explicit_false_is_honored():
+    # An explicit opt-out must survive: it is the only way to get the experts backend
+    # without kernelize, whose hub-kernel swap shadows it on some archs.
+    Merged = _merged_cls()
+    m = Merged.model_validate(_minimal(use_kernels=False, expert_backend="scattermoe"))
+    assert m.use_kernels is False
+    assert m.use_scattermoe is True
+    assert m.experts_implementation == "scattermoe"
+
+
+def test_merged_use_kernels_unset_defaults_on():
+    Merged = _merged_cls()
+    cfg = _minimal(expert_backend="scattermoe")
+    del cfg["use_kernels"]
+    assert Merged.model_validate(cfg).use_kernels is True

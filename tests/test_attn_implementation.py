@@ -21,6 +21,19 @@ from axolotl.utils.schemas.enums import (
 from tests.conftest import capture_axolotl_warnings as _capture_axolotl_warnings
 
 
+@pytest.fixture(autouse=True)
+def _stub_flash_attn_available(monkeypatch):
+    # These tests exercise attn config semantics, not whether this box has flash-attn.
+    import transformers.utils
+
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_2_available", lambda **_: True
+    )
+    monkeypatch.setattr(
+        transformers.utils, "is_flash_attn_3_available", lambda **_: True
+    )
+
+
 @lru_cache(maxsize=1)
 def _xformers_available():
     try:
@@ -463,6 +476,30 @@ class TestSamplePackingValidation:
 
     def test_non_decontaminating_backend_warns(self, min_base_cfg, caplog):
         cfg = min_base_cfg | DictDefault(attn_implementation="fp8", sample_packing=True)
+        with _capture_axolotl_warnings(caplog):
+            validate_config(cfg)
+        assert any(
+            "does not handle cross-sample decontamination" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_native_diffusion_default_does_not_warn(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | DictDefault(
+            sample_packing=True,
+            diffusion_lm={"from_causal_lm": False},
+        )
+        with _capture_axolotl_warnings(caplog):
+            validate_config(cfg)
+        assert not any(
+            "does not handle cross-sample decontamination" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_legacy_diffusion_conversion_still_warns(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | DictDefault(
+            sample_packing=True,
+            diffusion_lm={"from_causal_lm": True},
+        )
         with _capture_axolotl_warnings(caplog):
             validate_config(cfg)
         assert any(

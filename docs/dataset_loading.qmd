@@ -204,6 +204,14 @@ We assume you have credentials setup and not using anonymous access. If you want
 
 Other environment variables that can be set can be found in [boto3 docs](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#using-environment-variables)
 
+#### S3-compatible endpoints
+
+```bash
+export AWS_ENDPOINT_URL=
+export AWS_ACCESS_KEY_ID=
+export AWS_SECRET_ACCESS_KEY=
+```
+
 #### GCS
 
 Prepend the path with `gs://` or `gcs://`.

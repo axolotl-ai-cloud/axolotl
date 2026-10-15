@@ -24,6 +24,7 @@ backends, axolotl-registered backends, or a hub-kernel path.
 | `flash_attention_4` | Dao-AILab Flash Attention 4 (Hopper+, `flash_attn.cute`). |
 | `flash_attention_torch` | Torch in-tree varlen attention (`torch.nn.attention.varlen`, torch ≥ 2.11, CUDA only). No `flash_attn` dependency. No dropout, attention sinks, or softcap. |
 | `flex_attention` | Torch Flex Attention (requires torch ≥ 2.6). |
+| `varlen` | Torch public varlen attention for native full-sequence diffusion models (Nemotron diffusion) only; requires torch ≥ 2.14. See [diffusion_lm](diffusion_lm.qmd#attention-backends). |
 | `xformers` | xFormers memory-efficient attention. |
 | `sage` | SageAttention (QK int8 / PV fp16). |
 | `s2` | Shifted-Sparse Attention (LLaMA only, FA2 under the hood). |

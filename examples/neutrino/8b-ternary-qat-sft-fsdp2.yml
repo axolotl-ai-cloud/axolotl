@@ -1,0 +1,70 @@
+# Stage 2: instruction tuning on top of the ternary continued pretraining run.
+# Keep the exact same `qat` block as stage 1 — changing the quantization between
+# stages throws away what the weights already adapted to.
+base_model: ./outputs/qwen3-8b-ternary-cpt
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_fused_linear_cross_entropy: true
+
+qat:
+  weight_dtype: ternary
+  activation_dtype: int8
+  quantize_embedding: true
+
+datasets:
+  - path: HuggingFaceH4/ultrachat_200k
+    type: chat_template
+    split: train_sft
+  - path: allenai/tulu-3-sft-personas-math
+    type: chat_template
+
+chat_template: qwen3
+
+output_dir: ./outputs/qwen3-8b-ternary-sft
+
+sequence_len: 4096
+sample_packing: true
+attn_implementation: flash_attention_2
+
+# 2 GPUs x 1 x 8 = 16 packed sequences per step.
+micro_batch_size: 1
+gradient_accumulation_steps: 8
+num_epochs: 3
+
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 2e-5
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+bf16: true
+tf32: true
+
+logging_steps: 1
+saves_per_epoch: 2
+val_set_size: 0.005
+evals_per_epoch: 2
+
+fsdp_version: 2
+fsdp_config:
+  # Full finetune of 8B sharded over 2 GPUs is ~48GB each before activations.
+  # Set this to true if you have less than 80GB per GPU.
+  offload_params: false
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3DecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  activation_checkpointing: true
+
+special_tokens:

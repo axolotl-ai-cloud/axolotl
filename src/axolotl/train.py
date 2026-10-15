@@ -24,6 +24,7 @@ from peft import PeftConfig, PeftModel
 from transformers import PreTrainedModel, PreTrainedTokenizer, ProcessorMixin
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.trainer import Trainer
+from transformers.trainer_utils import enable_full_determinism, set_seed
 
 from axolotl.common.datasets import TrainDatasetMeta
 from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
@@ -31,9 +32,9 @@ from axolotl.contribs.lgpl import (  # pylint: disable = no-name-in-module
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders import ModelLoader, load_processor, load_tokenizer
+from axolotl.loaders.utils import materialize_trainable_meta_params
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
-from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except, freeze_mm_modules
@@ -48,7 +49,6 @@ if typing.TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 TELEMETRY_MANAGER = TelemetryManager.get_instance()
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_model_and_tokenizer(
@@ -108,6 +108,8 @@ def setup_model_and_tokenizer(
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
         freeze_layers_except(model, cfg.unfrozen_parameters)
+        # unfreezing can promote base params the loader left on meta (non-rank-0) to trainable
+        materialize_trainable_meta_params(model)
         if any(
             any(embed in param for embed in ["lm_head", "embed_tokens"])
             for param in cfg.unfrozen_parameters
@@ -210,31 +212,41 @@ def execute_training(
                 )
             )
 
-        if cfg.context_parallel_size > 1:
-            models = [trainer.model]
-            if hasattr(trainer, "ref_model") and trainer.ref_model:
-                models.append(trainer.ref_model)
-
-            stack.enter_context(
-                SequenceParallelContextManager(
-                    models=models,
-                    context_parallel_size=cfg.context_parallel_size,
-                    gradient_accumulation_steps=cfg.gradient_accumulation_steps,
-                    ring_attn_func=cfg.ring_attn_func,
-                    heads_k_stride=cfg.heads_k_stride,
-                    gather_outputs=cfg.rl in {RLType.GRPO, RLType.EBFT},
-                    device_mesh=trainer.accelerator.torch_device_mesh,
-                )
-            )
-
         # TODO: disabling for now as not compatible with FSDP2 + torchao low bit optimizers
         # if cfg.bf16:
         #     torch.set_default_dtype(torch.bfloat16)
 
+        if cfg.adapter == "mixlora" and resume_from_checkpoint:
+            # HF Trainer's own checkpoint restore doesn't know about MixLoRA's
+            # router/expert sidecar file, so it never gets loaded on resume.
+            # Load it explicitly before training resumes.
+            import safetensors.torch
+
+            from axolotl.integrations.mixlora.constants import MIXLORA_WEIGHTS_NAME
+            from axolotl.integrations.mixlora.model import load_mixlora_state_dict
+
+            mixlora_weights_path = os.path.join(
+                resume_from_checkpoint, MIXLORA_WEIGHTS_NAME
+            )
+            if os.path.exists(mixlora_weights_path):
+                load_mixlora_state_dict(
+                    trainer.model,
+                    safetensors.torch.load_file(mixlora_weights_path),
+                    strict=True,
+                )
+                LOG.info(
+                    "Loaded MixLoRA router/expert weights from checkpoint for resume"
+                )
+            else:
+                LOG.warning(
+                    "Resuming MixLoRA training but checkpoint is missing "
+                    f"{MIXLORA_WEIGHTS_NAME}; router/expert weights were not restored."
+                )
+
         LOG.info("Starting trainer...")
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-        PLUGIN_MANAGER.post_train(cfg, trainer.model)
+        PluginManager.get_instance().post_train(cfg, trainer.model)
 
 
 def _rename_fsdp_merged_to_adapter(merged_dir: Path):
@@ -312,16 +324,22 @@ def save_trained_model(
         if save_ep_lora_adapter(model, cfg.output_dir, ep_group):
             return
 
+    # TP-local NVFP4 LoRA factors: only the trainer's save gathers them across the TP group
+    if cfg.adapter and (cfg.tensor_parallel_size or 1) > 1:
+        trainer.save_model(cfg.output_dir)
+        return
+
     # FSDP2 (no EP) LoRA: the DCP sharded save fails ("Failed to validate global plan") on the
     # frozen NVFP4 base DTensors, so gather just the adapter and write it directly.
-    if (
-        cfg.adapter
-        and (trainer.is_fsdp_enabled or cfg.fsdp_config)
-        and str(cfg.fsdp_version) == "2"
-    ):
+    if cfg.adapter and (trainer.is_fsdp_enabled or cfg.fsdp_config):
         from axolotl.integrations.expert_parallel.shard import save_fsdp2_lora_adapter
 
         if save_fsdp2_lora_adapter(model, cfg.output_dir):
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                persist_native_metadata_after_save,
+            )
+
+            persist_native_metadata_after_save(model, cfg.output_dir)
             return
 
     if trainer.is_fsdp_enabled or cfg.fsdp_config:
@@ -374,7 +392,7 @@ def save_trained_model(
                 config = json.load(config_file_io, object_pairs_hook=OrderedDict)
                 if config.get("architectures"):
                     config["architectures"] = [
-                        name.lstrip("FSDP") for name in config["architectures"]
+                        name.removeprefix("FSDP") for name in config["architectures"]
                     ]
             # write the updated model config back
             with open(
@@ -400,11 +418,58 @@ def save_trained_model(
                 os.remove(os.path.join(cfg.output_dir, "model.safetensors"))
             except FileNotFoundError:
                 pass
+    elif (cfg.tensor_parallel_size or 1) > 1 and not cfg.adapter:
+        # every TP rank must join the DTensor gather inside save_pretrained; one rank writes
+        model.save_pretrained(
+            cfg.output_dir, is_main_process=trainer.accelerator.is_main_process
+        )
     elif cfg.local_rank == 0:
         if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
             trainer.model.save_pretrained(cfg.output_dir)
 
         model.save_pretrained(cfg.output_dir)
+        metadata = getattr(model, "_axolotl_native_nvfp4_metadata", None)
+        if metadata:
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                clear_native_metadata,
+                native_metadata_valid_for_save,
+                write_native_metadata,
+            )
+
+            if native_metadata_valid_for_save(model):
+                write_native_metadata(cfg.output_dir, metadata)
+            else:
+                clear_native_metadata(cfg.output_dir)
+
+        if cfg.adapter == "mixlora":
+            # PEFT's save_pretrained above doesn't know about MixLoRA's
+            # router/expert weights, so MixLoraTrainer._save is the only place
+            # that normally writes the sidecar file. That method only runs for
+            # trainer-driven checkpoint saves, not this final save, so write
+            # the sidecar explicitly here too.
+            #
+            # Scoped to this plain (non-FSDP, non-deepspeed-zero3) branch only:
+            # `model` here is a fully materialized single-process copy, so
+            # mixlora_state_dict(model) is safe to call directly. Under FSDP,
+            # model on each rank only holds its local shard, so calling this
+            # there would silently write a corrupted, partial sidecar instead
+            # of correctly doing nothing — final MixLoRA save isn't supported
+            # for FSDP/deepspeed-zero3 yet.
+            import safetensors.torch
+
+            from axolotl.integrations.mixlora.constants import MIXLORA_WEIGHTS_NAME
+            from axolotl.integrations.mixlora.model import mixlora_state_dict
+
+            mixlora_state = mixlora_state_dict(model)
+            if mixlora_state:
+                cpu_state = {
+                    key: value.detach().cpu() for key, value in mixlora_state.items()
+                }
+                safetensors.torch.save_file(
+                    cpu_state,
+                    os.path.join(cfg.output_dir, MIXLORA_WEIGHTS_NAME),
+                    metadata={"format": "pt"},
+                )
 
     if not cfg.adapter and cfg.local_rank == 0:
         from axolotl.utils.mtp import copy_mtp_weights
@@ -558,6 +623,17 @@ def handle_untrained_tokens_fix(
         model.save_pretrained(str(Path(cfg.output_dir)))
 
 
+def seed_model_initialization(cfg: DictDefault) -> None:
+    """Seed all model and adapter initialization before the model loader runs."""
+    seed = cfg.seed
+    if seed is None:
+        return
+    if cfg.full_determinism:
+        enable_full_determinism(seed)
+    else:
+        set_seed(seed)
+
+
 def setup_model_and_trainer(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> tuple[
@@ -583,7 +659,7 @@ def setup_model_and_trainer(
             - PEFT config
             - Processor
     """
-    # Load tokenizer, processor and model
+    seed_model_initialization(cfg)
     model, tokenizer, peft_config, processor = setup_model_and_tokenizer(cfg)
 
     # Set up reference model for RL if needed
@@ -606,7 +682,7 @@ def setup_model_and_trainer(
         model_ref=model_ref,
         peft_config=peft_config,
     )
-    PLUGIN_MANAGER.post_trainer_create(cfg, trainer)
+    PluginManager.get_instance().post_trainer_create(cfg, trainer)
 
     if cfg.use_ray:
         try:
@@ -676,6 +752,6 @@ def train(
     create_model_card(cfg, trainer)
     if not cfg.use_ray:
         cleanup_distributed()
-    PLUGIN_MANAGER.post_train(cfg, model)
+    PluginManager.get_instance().post_train(cfg, model)
 
     return model, tokenizer, trainer

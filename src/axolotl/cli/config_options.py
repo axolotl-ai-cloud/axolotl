@@ -673,6 +673,54 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "True to perform lora weight merges on cpu during restarts, for modest gpu memory savings",
     ),
     (
+        ("--mixlora-num-experts",),
+        None,
+        None,
+        "Number of LoRA experts per FFN layer for MixLoRA (default 8)",
+    ),
+    (
+        ("--mixlora-top-k",),
+        None,
+        None,
+        "Number of experts to route each token to (default 2)",
+    ),
+    (
+        ("--mixlora-router-aux-loss-coef",),
+        None,
+        None,
+        "Coefficient for the auxiliary load balance loss (default 0.01)",
+    ),
+    (
+        ("--mixlora-router-init-range",),
+        None,
+        None,
+        "Initialization range for router weights (default 0.02)",
+    ),
+    (
+        ("--mixlora-jitter-noise",),
+        None,
+        None,
+        "Noise added to router inputs during training for exploration (default 0.0)",
+    ),
+    (
+        ("--mixlora-expert-lora-r",),
+        None,
+        None,
+        "Separate LoRA rank for MixLoRA experts. Defaults to lora_r if not set.",
+    ),
+    (
+        ("--mixlora-expert-lora-alpha",),
+        None,
+        None,
+        "Separate LoRA alpha for MixLoRA experts. Defaults to lora_alpha if not set.",
+    ),
+    (
+        ("--mixlora-expert-lora-dropout",),
+        None,
+        None,
+        "Separate LoRA dropout for MixLoRA experts. Defaults to lora_dropout if not set.",
+    ),
+    (
         ("--load-in-8bit/--no-load-in-8bit",),
         None,
         None,
@@ -685,6 +733,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use bitsandbytes 4 bit",
     ),
     (
+        ("--nf4-backend",),
+        None,
+        None,
+        "NF4 weight backend. torchao uses chunked NF4Tensor double quantization.",
+    ),
+    (
         ("--adapter",),
         None,
         None,
@@ -695,6 +749,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "If you already have a lora model trained that you want to load, put that here. This means after training, if you want to test the model, you should set this to the value of `output_dir`. Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`.",
+    ),
+    (
+        ("--nvfp4-merge-aware/--no-nvfp4-merge-aware",),
+        None,
+        None,
+        "Train supported NVFP4 LoRA targets against their merged quantized weights. Defaults to enabled for supported backends; false opts out with a warning.",
     ),
     (
         ("--lora-r",),
@@ -811,6 +871,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Whether to tie adapter weights for tied model weights. See https://github.com/huggingface/peft/issues/2864",
     ),
     (
+        ("--lora-fp32-gradients/--no-lora-fp32-gradients",),
+        None,
+        None,
+        "Accumulate LoRA gradients in FP32. Keeps LoRA parameters in FP32 on single-device/DDP/FSDP2; DeepSpeed uses native FP32 gradient buffers. Fused reductions follow parameter precision. Frozen base weights are not promoted.",
+    ),
+    (
         ("--peft-autocast-adapter-dtype/--no-peft-autocast-adapter-dtype",),
         None,
         None,
@@ -820,7 +886,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--qlora-sharded-model-loading/--no-qlora-sharded-model-loading",),
         None,
         None,
-        "load qlora model in sharded format for FSDP using answer.ai technique.",
+        "Load QLoRA weights in sharded format for FSDP. Defaults to true for FSDP2 QLoRA with load_in_4bit and cpu_ram_efficient_loading, and false otherwise.",
     ),
     (
         ("--lora-on-cpu/--no-lora-on-cpu",),
@@ -862,7 +928,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--merge-method",),
         None,
         None,
-        "Method to use for LoRA merging. 'memory_efficient' (default) processes shards individually to reduce memory usage, 'legacy' loads the full model into memory.",
+        "Optional LoRA merge method. The generic default is 'memory_efficient'; model profiles can select a verified method when omitted.",
     ),
     (
         ("--output-dir",),
@@ -995,6 +1061,192 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Whether to use `onebitllms` for 1.58bit training (only for bitnet models).",
+    ),
+    (
+        ("--diffusion-lm.noise-schedule",),
+        "diffusion_lm__noise_schedule",
+        None,
+        "Type of noise schedule for diffusion training",
+    ),
+    (
+        ("--diffusion-lm.min-mask-ratio",),
+        "diffusion_lm__min_mask_ratio",
+        "float",
+        "Minimum masking ratio for diffusion noise schedule",
+    ),
+    (
+        ("--diffusion-lm.max-mask-ratio",),
+        "diffusion_lm__max_mask_ratio",
+        "float",
+        "Maximum masking ratio for diffusion noise schedule",
+    ),
+    (
+        ("--diffusion-lm.num-diffusion-steps",),
+        "diffusion_lm__num_diffusion_steps",
+        "int",
+        "Number of diffusion timesteps",
+    ),
+    (
+        ("--diffusion-lm.eps",),
+        "diffusion_lm__eps",
+        "float",
+        "Epsilon value for minimum masking probability in forward process",
+    ),
+    (
+        ("--diffusion-lm.importance-weighting/--no-diffusion-lm.importance-weighting",),
+        "diffusion_lm__importance_weighting",
+        None,
+        "Apply importance weighting to loss based on masking probability",
+    ),
+    (
+        ("--diffusion-lm.mask-token-id",),
+        "diffusion_lm__mask_token_id",
+        "int",
+        "Token ID to use for masking. Unset by default; can use one of the tokenizer's special tokens here.",
+    ),
+    (
+        ("--diffusion-lm.mask-token-str",),
+        "diffusion_lm__mask_token_str",
+        "str",
+        "Token string to use as a mask. If `mask_token_id` is invalid or unset, this token will be ensured to exist as an additional special token and used. If absent, a default '<|diffusion_mask|>' will be added.",
+    ),
+    (
+        ("--diffusion-lm.generate-samples/--no-diffusion-lm.generate-samples",),
+        "diffusion_lm__generate_samples",
+        None,
+        "Enable sample generation during training; defaults on only with from_causal_lm.",
+    ),
+    (
+        ("--diffusion-lm.generation-interval",),
+        "diffusion_lm__generation_interval",
+        "int",
+        "Generate samples every N steps",
+    ),
+    (
+        ("--diffusion-lm.num-generation-samples",),
+        "diffusion_lm__num_generation_samples",
+        "int",
+        "Number of samples to generate each time",
+    ),
+    (
+        ("--diffusion-lm.generation-steps",),
+        "diffusion_lm__generation_steps",
+        "int",
+        "Number of diffusion steps for generation",
+    ),
+    (
+        ("--diffusion-lm.generation-temperature",),
+        "diffusion_lm__generation_temperature",
+        "float",
+        "Temperature for generation sampling (0.0 = deterministic)",
+    ),
+    (
+        ("--diffusion-lm.generation-max-length",),
+        "diffusion_lm__generation_max_length",
+        "int",
+        "Maximum sequence length for generation",
+    ),
+    (
+        ("--diffusion-lm.from-causal-lm/--no-diffusion-lm.from-causal-lm",),
+        "diffusion_lm__from_causal_lm",
+        None,
+        "Use the causal-LM compatibility backend for legacy diffusion runs.",
+    ),
+    (
+        ("--diffusion-lm.canvas-width",),
+        "diffusion_lm__canvas_width",
+        "int",
+        "Canvas width override; unset resolves from the model diffusion spec.",
+    ),
+    (
+        ("--diffusion-lm.t-eps",),
+        "diffusion_lm__t_eps",
+        "float",
+        "Native diffusion-time lower bound; unset resolves from the model spec.",
+    ),
+    (
+        ("--diffusion-lm.time-weighting",),
+        "diffusion_lm__time_weighting",
+        None,
+        "Named native objective weighting override.",
+    ),
+    (
+        ("--diffusion-lm.objective-reduction",),
+        "diffusion_lm__objective_reduction",
+        None,
+        "Objective reduction override; unset keeps the model spec's reference reduction.",
+    ),
+    (
+        ("--diffusion-lm.cart-p",),
+        "diffusion_lm__cart_p",
+        "float",
+        "CART context-reweighting probability when time_weighting=cart.",
+    ),
+    (
+        ("--diffusion-lm.token-reweighting/--no-diffusion-lm.token-reweighting",),
+        "diffusion_lm__token_reweighting",
+        None,
+        "Apply Dream's source focal token reweighting.",
+    ),
+    (
+        ("--diffusion-lm.alpha",),
+        "diffusion_lm__alpha",
+        "float",
+        "Dream focal token-reweighting scale.",
+    ),
+    (
+        ("--diffusion-lm.gamma",),
+        "diffusion_lm__gamma",
+        "float",
+        "Dream focal token-reweighting exponent.",
+    ),
+    (
+        ("--diffusion-lm.rhine-weight-clip",),
+        "diffusion_lm__rhine_weight_clip",
+        "float",
+        "Optional maximum for Rhine 1 / (1 - t) token weights.",
+    ),
+    (
+        ("--diffusion-lm.treat-eos-as-one/--no-diffusion-lm.treat-eos-as-one",),
+        "diffusion_lm__treat_eos_as_one",
+        None,
+        "Group a trailing EOS run into one absorbing-noise draw.",
+    ),
+    (
+        ("--diffusion-lm.eos-tail",),
+        "diffusion_lm__eos_tail",
+        None,
+        "Logical EOS-tail layout policy, independent of EOS corruption.",
+    ),
+    (
+        ("--diffusion-lm.overflow-policy",),
+        "diffusion_lm__overflow_policy",
+        None,
+        "Handling for an example that exceeds its logical layout budget.",
+    ),
+    (
+        ("--diffusion-lm.allow-native-vocab-resize",),
+        "diffusion_lm__allow_native_vocab_resize",
+        None,
+        "Native diffusion vocab resizing is disabled until explicitly validated.",
+    ),
+    (
+        ("--diffusion-lm.self-conditioning",),
+        "diffusion_lm__self_conditioning",
+        None,
+        "Native self-conditioning options; unset resolves from the model spec.",
+    ),
+    (
+        ("--diffusion-lm.unroll",),
+        "diffusion_lm__unroll",
+        None,
+        "K-step denoising and gradient-through-step policy.",
+    ),
+    (
+        ("--diffusion-lm.encoder-ar-weight",),
+        "diffusion_lm__encoder_ar_weight",
+        "float",
+        "Clean encoder autoregressive-loss coefficient.",
     ),
     (
         ("--strict/--no-strict",),
@@ -1165,10 +1417,10 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Sync steps for the reference model.",
     ),
     (
-        ("--trl.scale-rewards/--no-trl.scale-rewards",),
+        ("--trl.scale-rewards",),
         "trl__scale_rewards",
         None,
-        "Whether to scale rewards by their standard deviation.",
+        "How to scale rewards by their standard deviation. One of 'group' (per prompt-group, GRPO default), 'batch' (whole batch), or 'none'. Booleans are accepted for back-compat (True->'group', False->'none').",
     ),
     (
         ("--trl.temperature",),
@@ -1247,6 +1499,60 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "trl__mask_truncated_completions",
         None,
         "Whether to exclude truncated completions from loss calculation.",
+    ),
+    (
+        ("--trl.entropy-coef",),
+        "trl__entropy_coef",
+        "float",
+        "Static entropy regularization coefficient for GRPO, adding an entropy bonus to encourage exploration.",
+    ),
+    (
+        ("--trl.use-adaptive-entropy/--no-trl.use-adaptive-entropy",),
+        "trl__use_adaptive_entropy",
+        None,
+        "Enable adaptive entropy regularization (Skywork-OR1 style), adjusting entropy_coef toward entropy_target.",
+    ),
+    (
+        ("--trl.entropy-target",),
+        "trl__entropy_target",
+        "float",
+        "Target entropy when use_adaptive_entropy is enabled.",
+    ),
+    (
+        ("--trl.entropy-coef-delta",),
+        "trl__entropy_coef_delta",
+        "float",
+        "Step size for adjusting entropy_coef toward entropy_target.",
+    ),
+    (
+        ("--trl.entropy-coef-min",),
+        "trl__entropy_coef_min",
+        "float",
+        "Lower bound for the adaptive entropy_coef.",
+    ),
+    (
+        ("--trl.entropy-coef-max",),
+        "trl__entropy_coef_max",
+        "float",
+        "Upper bound for the adaptive entropy_coef.",
+    ),
+    (
+        ("--trl.vllm-importance-sampling-clip-min",),
+        "trl__vllm_importance_sampling_clip_min",
+        "float",
+        "Lower clip bound for the vLLM/training importance-sampling ratio.",
+    ),
+    (
+        ("--trl.vllm-importance-sampling-clip-max",),
+        "trl__vllm_importance_sampling_clip_max",
+        "float",
+        "Upper clip bound for the vLLM/training importance-sampling ratio.",
+    ),
+    (
+        ("--trl.log-multimodal/--no-trl.log-multimodal",),
+        "trl__log_multimodal",
+        None,
+        "Whether to log multimodal content (images, videos) alongside completions. Disable to reduce log size.",
     ),
     (
         ("--trl.vllm-enable-sleep-mode/--no-trl.vllm-enable-sleep-mode",),
@@ -1374,7 +1680,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.vllm-lora-sync/--no-trl.vllm-lora-sync",),
         "trl__vllm_lora_sync",
         None,
-        "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. Auto-selects vllm_serve_lora serve module. Syncs only LoRA adapter weights vs full merged model.",
+        "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. Enables LoRA on the native vLLM server and registers each synced adapter under a versioned name via /v1/load_lora_adapter. Syncs only LoRA adapter weights vs full merged model.",
     ),
     (
         ("--vllm.device",),
@@ -1398,7 +1704,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.gpu-memory-utilization",),
         "vllm__gpu_memory_utilization",
         "float",
-        "GPU memory utilization for VLLM",
+        "GPU memory utilization for VLLM. Defaults to 0.9 for `vllm-serve` and to TRL's 0.3 in colocate mode, leaving the rest of the GPU for training.",
     ),
     (
         ("--vllm.dtype",),
@@ -1452,13 +1758,13 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.serve-module",),
         "vllm__serve_module",
         "str",
-        "Python module for vLLM serve script. Set to 'axolotl.scripts.vllm_serve_lora' for native LoRA support, or leave None for default TRL serve.",
+        "Custom Python module exposing main(script_args) to run instead of vLLM's native server. Leave None to launch the native server; the legacy values 'axolotl.scripts.vllm_serve_lora' and 'trl.scripts.vllm_serve' are ignored.",
     ),
     (
         ("--vllm.worker-extension-cls",),
         "vllm__worker_extension_cls",
         "str",
-        "vLLM worker extension class for weight synchronization. Defaults to 'trl.scripts.vllm_serve.WeightSyncWorkerExtension'.",
+        "Optional vLLM worker extension class passed to the native server via --worker-extension-cls. Not needed for TRL weight sync.",
     ),
     (
         ("--ebft.feature-layers",),
@@ -1621,6 +1927,36 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "quantization__group_size",
         "int",
         "The number of elements in each group for per-group fake quantization",
+    ),
+    (
+        ("--export.format",),
+        "export__format",
+        None,
+        "Deployment format to export to.",
+    ),
+    (
+        ("--export.outtype",),
+        "export__outtype",
+        None,
+        "Weight type of the GGUF conversion.",
+    ),
+    (
+        ("--export.quantize",),
+        "export__quantize",
+        None,
+        "llama.cpp quant types to additionally emit, e.g. ['Q4_K_M', 'Q8_0'].",
+    ),
+    (
+        ("--export.outfile",),
+        "export__outfile",
+        "str",
+        "Output path; `{ftype}` is replaced by each weight type. Default: {output_dir}/gguf/{run}-{ftype}.gguf",
+    ),
+    (
+        ("--export.llama-cpp-dir",),
+        "export__llama_cpp_dir",
+        "str",
+        "Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
     ),
     (
         ("--reward-model/--no-reward-model",),
@@ -1875,6 +2211,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Seed for reproducibility",
     ),
     (
+        ("--full-determinism/--no-full-determinism",),
+        None,
+        None,
+        "Seed with transformers' enable_full_determinism (deterministic torch algorithms and CUBLAS workspace config) instead of set_seed. Slower.",
+    ),
+    (
         ("--ddp-timeout",),
         None,
         None,
@@ -1989,6 +2331,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Enable FP8 mixed precision training using TorchAO. Best used in combination with torch.compile.",
     ),
     (
+        ("--fp8-config.recipe",),
+        "fp8_config__recipe",
+        None,
+        "TorchAO FP8 scaling recipe: 'tensorwise' (default), 'rowwise', or 'rowwise_with_gw_hp'.",
+    ),
+    (
         ("--fp8-enable-fsdp-float8-all-gather/--no-fp8-enable-fsdp-float8-all-gather",),
         None,
         None,
@@ -2057,6 +2405,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Offload saved tensors to pinned CPU memory (side-stream copies with backward prefetch) instead of keeping them on GPU.",
     ),
     (
+        ("--selective-checkpointing.save-modules",),
+        "selective_checkpointing__save_modules",
+        None,
+        "Module names whose base matmul outputs are saved (module scope). Each entry matches model.named_modules() of the model before the adapter is applied: exact name, a trailing dotted suffix (e.g. 'down_proj', 'self_attn.o_proj'), or a glob when it contains *, ? or [. A PEFT-wrapped match resolves to its base_layer, so LoRA A/B matmuls are not saved. Incompatible with the fused LoRA kernels covering those modules.",
+    ),
+    (
+        ("--selective-checkpointing.save-matmul-min-k",),
+        "selective_checkpointing__save_matmul_min_k",
+        "int",
+        "Save every matmul whose contraction dim K (a linear's in_features) is >= this value. Also matches MoE expert projections (aten::_grouped_mm) and bnb 4-bit gemms. A layer's last projection (e.g. down_proj feeding only a residual add) is never replayed by recompute, so saving it costs memory for no speedup. Incompatible with the fused LoRA kernels.",
+    ),
+    (
         ("--activation-offloading",),
         None,
         None,
@@ -2117,6 +2477,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'",
     ),
     (
+        ("--balance-labels/--no-balance-labels",),
+        None,
+        None,
+        "Balance supervised tokens across causal LM packed, flattened, or padded batches. Supports streaming with sample packing.",
+    ),
+    (
+        ("--label-balance-window-optim-steps",),
+        None,
+        None,
+        "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only.",
+    ),
+    (
         ("--sample-packing-group-size",),
         None,
         None,
@@ -2145,6 +2517,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Set to 'false' if getting errors during eval with sample_packing on",
+    ),
+    (
+        ("--fa-varlen-kwargs-in-collator/--no-fa-varlen-kwargs-in-collator",),
+        None,
+        None,
+        "With sample_packing and flash attention, precompute the varlen metadata (cu_seq_lens, max_length) once per batch in the collator instead of letting transformers derive it in every attention layer, which costs several host-device syncs per layer. Not used when batches are dispatched (streaming or pretraining datasets unless accelerator_config.dispatch_batches is false) or under DeepSpeed sequence parallel, since both slice every batch tensor per rank. Set to 'false' to restore the per-layer derivation.",
     ),
     (
         ("--pad-to-sequence-len/--no-pad-to-sequence-len",),
@@ -2294,7 +2672,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--attn-implementation",),
         None,
         None,
-        "Attention backend. Canonical values: eager, sdpa, flash_attention_2, flash_attention_3, flash_attention_4, flash_attention_torch, flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. kernels-community/flash-attn3) are also accepted and passed through to transformers.",
+        "Attention backend. Canonical values: eager, sdpa, flash_attention_2, flash_attention_3, flash_attention_4, flash_attention_torch, flex_attention, varlen, xformers, sage, fp8. `varlen` is native full-sequence diffusion only. Hub-kernel paths (e.g. kernels-community/flash-attn3) are also accepted and passed through to transformers.",
     ),
     (
         ("--gemma4-hybrid-attn-impl/--no-gemma4-hybrid-attn-impl",),
@@ -2324,13 +2702,19 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--fused-attn-kernel/--no-fused-attn-kernel",),
         None,
         None,
-        "Replace ``q_norm + apply_rotary_pos_emb`` (and the matching k path) with a single fused RMSNorm+RoPE Triton kernel launch. Currently implemented for Qwen3, Qwen3-MoE, Qwen3.5, and Qwen3.5-MoE full-attention layers; Gemma 4 always uses the fused path. Disabled (None/False) falls back to the eager transformers implementation. Compile-safe via torch.library.triton_op \u2014 traces under torch.compile(fullgraph=True). Per-step wins are arch-dependent: ~+7-12% across sm_86 and sm_120. Combining with torch_compile=true is a clear win on sm_120 (+9% extra) but currently regresses on sm_86 due to Inductor autotune biases \u2014 flip them on independently and benchmark.",
+        "Replace ``q_norm + apply_rotary_pos_emb`` (and the matching k path) with a single fused RMSNorm+RoPE Triton kernel launch. Currently implemented for Qwen3, Qwen3-MoE, Qwen3.5, and Qwen3.5-MoE full-attention layers; Gemma 4 always uses the fused path. GLM-4.7-Flash (glm4_moe_lite) fuses partial RoPE and MLA Q/K/V assembly instead; latent RMSNorms remain separate and cached decoding uses the original path. Disabled (None/False) falls back to the eager transformers implementation. Compile-safe via torch.library.triton_op \u2014 traces under torch.compile(fullgraph=True). Per-step wins are arch-dependent: ~+7-12% across sm_86 and sm_120. Combining with torch_compile=true is a clear win on sm_120 (+9% extra) but currently regresses on sm_86 due to Inductor autotune biases \u2014 flip them on independently and benchmark.",
     ),
     (
         ("--experts-implementation",),
         None,
         None,
         "Which experts implementation to use for MoE models,",
+    ),
+    (
+        ("--ple-cpu-offload/--no-ple-cpu-offload",),
+        None,
+        None,
+        "Keep parameters the model declares in `_no_placement_params` in host RAM instead of VRAM (e.g. Qwen3.8-Flash-Next's 51.2B n-gram PLE embedding, 95.4 GiB in bf16, which its forward already gathers on whatever device the weight lives on). Each token reads only a handful of rows, so the per-step transfer is tens of MB. Requires qlora with load_in_4bit or lora with load_in_8bit, and enough host RAM to hold the table.",
     ),
     (
         ("--quantize-moe-experts/--no-quantize-moe-experts",),
@@ -2411,6 +2795,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Number of top logits for entropy approximation (default: 20)",
     ),
     (
+        ("--use-dft/--no-use-dft",),
+        None,
+        None,
+        "Enable Dynamic Fine-Tuning loss (DFT): per-token cross entropy weighted by its own detached probability",
+    ),
+    (
         ("--tiled-mlp/--no-tiled-mlp",),
         None,
         None,
@@ -2447,12 +2837,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Whether to use deepcompile for faster training with deepspeed",
     ),
     (
-        ("--fsdp",),
-        None,
-        None,
-        "FSDP configuration",
-    ),
-    (
         ("--fsdp-config.fsdp-version",),
         "fsdp_config__fsdp_version",
         "int",
@@ -2473,12 +2857,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Offload parameters to CPU to reduce GPU memory usage",
     ),
     (
-        ("--fsdp-config.sync-module-states/--no-fsdp-config.sync-module-states",),
-        "fsdp_config__sync_module_states",
-        None,
-        "Synchronize module states across all processes",
-    ),
-    (
         (
             "--fsdp-config.cpu-ram-efficient-loading/--no-fsdp-config.cpu-ram-efficient-loading",
         ),
@@ -2493,12 +2871,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "fsdp_config__cpu_offload_pin_memory",
         None,
         "Disabling this enables swap memory usage for resource-constrained setups when offload_params is enabled.",
-    ),
-    (
-        ("--fsdp-config.use-orig-params/--no-fsdp-config.use-orig-params",),
-        "fsdp_config__use_orig_params",
-        None,
-        "Use original parameters instead of flattened parameters",
     ),
     (
         ("--fsdp-config.state-dict-type",),
@@ -2552,7 +2924,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--fp32-norms/--no-fp32-norms",),
         None,
         None,
-        "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_version: 2.",
+        "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_config.",
     ),
     (
         ("--fp32-norm-classes",),
@@ -2675,6 +3047,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--torch-compile-regional/--no-torch-compile-regional",),
+        None,
+        None,
+        "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks gradient_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without gradient checkpointing.",
+    ),
+    (
         ("--torch-compile-options",),
         None,
         None,
@@ -2753,6 +3131,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Logging frequency",
     ),
     (
+        ("--logging-nan-inf-filter/--no-logging-nan-inf-filter",),
+        None,
+        None,
+        "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss (HF default). The check reads the loss on the host every micro-step, one device sync; set to 'false' to remove it.",
+    ),
+    (
         ("--early-stopping-patience",),
         None,
         None,
@@ -2775,6 +3159,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Use tensorboard for logging",
+    ),
+    (
+        ("--sync-profiler-steps",),
+        None,
+        None,
+        "Debugging aid, separate from profiler_steps (the torch profiler timeline): count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the call sites and write sync_profile.json to output_dir.",
+    ),
+    (
+        ("--sync-profiler-start-step",),
+        None,
+        None,
+        "Optimizer step at which the sync profiler starts (after warm-up).",
     ),
     (
         ("--profiler-steps",),

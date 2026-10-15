@@ -1,0 +1,96 @@
+base_model: Qwen/Qwen3.8-Flash-Next
+processor_type: AutoProcessor
+
+# Automatically upload checkpoint and final model to HF
+# hub_model_id: username/custom_model_name
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+load_in_8bit: false
+load_in_4bit: true
+
+# Required: the experts are fused 3D nn.Parameters, which the stock bitsandbytes
+# integration cannot reach. Without this ~96% of the model stays in bf16.
+quantize_moe_experts: true
+
+# keeps the 51.2B n-gram table (95.4 GiB) in host RAM; needs ~100 GB free system RAM
+ple_cpu_offload: true
+
+# These 3 lines are required for vision/multimodal training
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+datasets:
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:1%]
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.0
+output_dir: ./outputs/qwen3.8-flash-next-vision-lora
+
+adapter: qlora
+lora_model_dir:
+
+sequence_len: 2048
+pad_to_sequence_len: false
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# the vision tower names its projections qkv/proj/linear_fc*, so it stays frozen
+lora_target_modules:
+  - linear_attn.in_proj_qkv
+  - linear_attn.in_proj_z
+  - linear_attn.in_proj_b
+  - linear_attn.in_proj_a
+  - linear_attn.out_proj
+  - shared_expert.up_proj
+  - shared_expert.down_proj
+  - shared_expert.gate_proj
+  # never lora_target_linear: the QSA indexer's index_qk_proj is gradientless
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+lora_mlp_kernel: false
+lora_qkv_kernel: false
+lora_o_kernel: false
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_bnb_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+resume_from_checkpoint:
+logging_steps: 1
+
+# the QSA indexer's 4D selection mask only reaches sdpa or eager, not flash or flex
+attn_implementation: sdpa
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0
+
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config

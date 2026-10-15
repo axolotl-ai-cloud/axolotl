@@ -27,6 +27,7 @@ _BNB_TYPED_CAPI = getattr(cdequantize_blockwise_fp32, "argtypes", None) is not N
 
 _ptr: Callable[..., object]
 _int: Callable[..., object]
+_stream: Callable[..., object]
 if _BNB_TYPED_CAPI:
 
     def _ptr(tensor):
@@ -35,12 +36,17 @@ if _BNB_TYPED_CAPI:
     def _int(value):
         return value
 
+    # bnb calls this itself under the hood; prefer it over the bnb-internal
+    # _get_tensor_stream, which upstream may remove.
+    def _stream(index):
+        return torch._C._cuda_getCurrentRawStream(index)
+
 else:
     _ptr = get_ptr
     _int = ctypes.c_int
 
-# Cached per-device: per-call current_stream() measurably slows this hot path.
-CUDA_STREAM: dict[torch.device, torch.cuda.Stream] = {}
+    def _stream(index):
+        return ctypes.c_void_p(torch._C._cuda_getCurrentRawStream(index))
 
 
 def _ctypes_nf4_dequant(
@@ -62,11 +68,8 @@ def _ctypes_nf4_dequant(
         n_elements_absmax, dtype=torch.float32, device=target_device
     )
 
-    stream = CUDA_STREAM.get(target_device)
-    if stream is None:
-        stream = CUDA_STREAM.setdefault(
-            target_device, torch.cuda.current_stream(target_device)
-        )
+    # resolved per call: the current stream belongs to the caller's context, not the device
+    stream = _stream(W.device.index)
 
     cdequantize_blockwise_fp32(
         _ptr(code2),
@@ -230,3 +233,31 @@ def dequantize(
         quant_state.shape,
         quant_state.dtype,
     )
+
+
+def quantize_fp8(
+    W: torch.Tensor, scale_inv_like: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Inverse of ``dequantize_fp8``: fresh scales in the layout of ``scale_inv_like``."""
+    fp8_max = torch.finfo(torch.float8_e4m3fn).max
+    W = W.float()
+    if scale_inv_like.numel() == 1:
+        scale_inv = W.abs().amax().clamp(min=1e-12) / fp8_max
+        quantized = W / scale_inv
+        scale_inv = scale_inv.reshape(scale_inv_like.shape)
+    elif scale_inv_like.dim() == 2 and W.dim() == 2:
+        sr, sc = scale_inv_like.shape
+        rows, cols = W.shape
+        br, bc = -(-rows // sr), -(-cols // sc)
+        padded = torch.nn.functional.pad(W, (0, sc * bc - cols, 0, sr * br - rows))
+        blocks = padded.reshape(sr, br, sc, bc)
+        scale_inv = blocks.abs().amax(dim=(1, 3)).clamp(min=1e-12) / fp8_max
+        quantized = (blocks / scale_inv[:, None, :, None]).reshape(padded.shape)
+        quantized = quantized[:rows, :cols]
+    else:
+        raise NotImplementedError(
+            f"Unsupported FP8 scale layout {tuple(scale_inv_like.shape)} "
+            f"for weight {tuple(W.shape)}"
+        )
+    quantized = quantized.clamp(-fp8_max, fp8_max).to(torch.float8_e4m3fn)
+    return quantized, scale_inv.to(scale_inv_like.dtype)

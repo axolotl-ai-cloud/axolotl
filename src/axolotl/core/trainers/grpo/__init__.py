@@ -3,16 +3,18 @@
 import importlib
 import inspect
 import os
+import warnings
 from typing import Any
 
 from huggingface_hub import snapshot_download
-from requests import HTTPError
+from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
 from trl.trainer.grpo_trainer import RewardFunc
 
 from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOConfig
 from axolotl.core.trainers.grpo.trainer import (
     AxolotlAsyncGRPOTrainer,
-    AxolotlGRPOSequenceParallelTrainer,
+    AxolotlGRPOContextParallelTrainer,
+    AxolotlGRPOSequenceParallelTrainer,  # noqa: F401  deprecated alias, kept importable
     AxolotlGRPOTrainer,
 )
 from axolotl.utils.dict import DictDefault
@@ -29,20 +31,28 @@ class GRPOStrategy:
     @classmethod
     def get_trainer_class(
         cls,
-        sequence_parallel: bool = False,
+        context_parallel: bool = False,
         async_grpo: bool = False,
+        sequence_parallel: bool | None = None,
     ) -> (
         type[AxolotlGRPOTrainer]
-        | type[AxolotlGRPOSequenceParallelTrainer]
+        | type[AxolotlGRPOContextParallelTrainer]
         | type[AxolotlAsyncGRPOTrainer]
     ):
-        if sequence_parallel and async_grpo:
+        if sequence_parallel is not None:
+            warnings.warn(
+                "`sequence_parallel` is deprecated; use `context_parallel`",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            context_parallel = context_parallel or sequence_parallel
+        if context_parallel and async_grpo:
             raise ValueError(
-                "sequence_parallel and async_grpo cannot both be enabled. "
+                "context_parallel and async_grpo cannot both be enabled. "
                 "Disable one of context_parallel_size > 1 or async_prefetch/use_data_producer."
             )
-        if sequence_parallel:
-            return AxolotlGRPOSequenceParallelTrainer
+        if context_parallel:
+            return AxolotlGRPOContextParallelTrainer
         if async_grpo:
             return AxolotlAsyncGRPOTrainer
         return AxolotlGRPOTrainer
@@ -55,6 +65,36 @@ class GRPOStrategy:
             return AxolotlAsyncGRPOConfig
         return AxolotlGRPOConfig
 
+    @staticmethod
+    def get_vllm_kwargs(trl: TRLConfig, vllm_cfg: VllmConfig | None) -> dict[str, Any]:
+        """Map `trl.vllm_*` and the `vllm:` block onto TRL's vLLM training args.
+
+        Unset values are omitted so TRL's defaults apply (notably colocate's 0.3 GPU
+        memory utilization, which leaves room for training on the shared GPU).
+        """
+        kwargs: dict[str, Any] = {"use_vllm": True}
+        if trl.vllm_mode:
+            kwargs["vllm_mode"] = trl.vllm_mode
+        if trl.vllm_mode == "colocate":
+            if trl.vllm_enable_sleep_mode is not None:
+                kwargs["vllm_enable_sleep_mode"] = trl.vllm_enable_sleep_mode
+            if vllm_cfg:
+                engine_kwargs = {
+                    "vllm_gpu_memory_utilization": vllm_cfg.gpu_memory_utilization,
+                    "vllm_tensor_parallel_size": vllm_cfg.tensor_parallel_size,
+                    "vllm_max_model_length": vllm_cfg.max_model_len,
+                }
+                kwargs.update({k: v for k, v in engine_kwargs.items() if v is not None})
+        server_host = trl.vllm_server_host or (vllm_cfg.host if vllm_cfg else None)
+        if server_host:
+            kwargs["vllm_server_host"] = server_host
+        server_port = trl.vllm_server_port or (vllm_cfg.port if vllm_cfg else None)
+        if server_port:
+            kwargs["vllm_server_port"] = server_port
+        if trl.vllm_server_timeout:
+            kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
+        return kwargs
+
     @classmethod
     def set_training_args_kwargs(cls, cfg: DictDefault) -> dict[str, Any]:
         grpo_args_kwargs: dict[str, Any] = {}
@@ -63,26 +103,12 @@ class GRPOStrategy:
             return grpo_args_kwargs
 
         trl: TRLConfig = cfg.trl  # type: ignore
-        vllm_cfg: VllmConfig = cfg.vllm  # type: ignore
 
         if trl.use_vllm:
-            grpo_args_kwargs["use_vllm"] = trl.use_vllm
-            if trl.vllm_mode:
-                grpo_args_kwargs["vllm_mode"] = trl.vllm_mode
-            if trl.vllm_mode == "colocate":
-                grpo_args_kwargs["vllm_enable_sleep_mode"] = trl.vllm_enable_sleep_mode  # type: ignore[attr-defined]
-                grpo_args_kwargs["vllm_gpu_memory_utilization"] = (
-                    vllm_cfg.gpu_memory_utilization
-                )
-                grpo_args_kwargs["vllm_tensor_parallel_size"] = (
-                    vllm_cfg.tensor_parallel_size
-                )
-            grpo_args_kwargs["vllm_server_host"] = trl.vllm_server_host or trl.vllm.host  # type: ignore[attr-defined]
-            grpo_args_kwargs["vllm_server_port"] = trl.vllm_server_port or trl.vllm.port  # type: ignore[attr-defined]
-            if trl.vllm_server_timeout:
-                grpo_args_kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
+            grpo_args_kwargs.update(cls.get_vllm_kwargs(trl, cfg.vllm))
             if trl.vllm_guided_decoding_regex:
-                grpo_args_kwargs["vllm_guided_decoding_regex"] = (
+                # TRL >=1.7 renamed guided decoding to structured outputs.
+                grpo_args_kwargs["vllm_structured_outputs_regex"] = (
                     trl.vllm_guided_decoding_regex
                 )
 
@@ -150,6 +176,33 @@ class GRPOStrategy:
             grpo_args_kwargs["multi_objective_aggregation"] = (
                 trl.multi_objective_aggregation
             )
+
+        # Entropy regularization (TRL >= 1.8)
+        if trl.entropy_coef is not None:
+            grpo_args_kwargs["entropy_coef"] = trl.entropy_coef
+        if trl.use_adaptive_entropy is not None:
+            grpo_args_kwargs["use_adaptive_entropy"] = trl.use_adaptive_entropy
+        if trl.entropy_target is not None:
+            grpo_args_kwargs["entropy_target"] = trl.entropy_target
+        if trl.entropy_coef_delta is not None:
+            grpo_args_kwargs["entropy_coef_delta"] = trl.entropy_coef_delta
+        if trl.entropy_coef_min is not None:
+            grpo_args_kwargs["entropy_coef_min"] = trl.entropy_coef_min
+        if trl.entropy_coef_max is not None:
+            grpo_args_kwargs["entropy_coef_max"] = trl.entropy_coef_max
+
+        # Bidirectional vLLM importance-sampling clip (TRL >= 1.6)
+        if trl.vllm_importance_sampling_clip_min is not None:
+            grpo_args_kwargs["vllm_importance_sampling_clip_min"] = (
+                trl.vllm_importance_sampling_clip_min
+            )
+        if trl.vllm_importance_sampling_clip_max is not None:
+            grpo_args_kwargs["vllm_importance_sampling_clip_max"] = (
+                trl.vllm_importance_sampling_clip_max
+            )
+
+        if trl.log_multimodal is not None:
+            grpo_args_kwargs["log_multimodal"] = trl.log_multimodal
 
         # Async GRPO fields
         if getattr(trl, "use_data_producer", None) is not None:
@@ -283,7 +336,7 @@ class GRPOStrategy:
                 snapshot_download(reward_func_fqn, repo_type="model")
                 LOG.info(pretrained_log_msg)
                 return reward_func_fqn
-            except HTTPError:
+            except (HfHubHTTPError, LocalEntryNotFoundError):
                 raise ValueError(
                     f"Reward function {reward_func_fqn} not found."
                 ) from exc

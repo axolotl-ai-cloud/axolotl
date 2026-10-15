@@ -380,7 +380,7 @@ class TestDiffusionChat:
     def test_diffusion_turn_cuts_at_eos(self, monkeypatch):
         from types import SimpleNamespace
 
-        import axolotl.integrations.diffusion as diffusion_module
+        import axolotl.core.trainers.diffusion_lm.generation as diffusion_module
         from axolotl.cli.chat import (
             DIFFUSION_GEN_PARAMS,
             DiffusionTurnGenerator,

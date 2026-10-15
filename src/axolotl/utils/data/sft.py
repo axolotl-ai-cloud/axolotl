@@ -38,6 +38,7 @@ from axolotl.utils.distributed import is_local_main_process
 from axolotl.utils.logging import get_logger
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
+    deepspeed_context_parallel,
     process_datasets_for_packing,
 )
 
@@ -98,6 +99,13 @@ def _prepare_standard_dataset(
         train_dataset, eval_dataset, prompters = loader.load(_load_datasets)
     finally:
         loader.cleanup()
+
+    from axolotl.core.trainers.diffusion_lm.sampling import (
+        filter_native_diffusion_dataset,
+    )
+
+    train_dataset = filter_native_diffusion_dataset(cfg, train_dataset, split="train")
+    eval_dataset = filter_native_diffusion_dataset(cfg, eval_dataset, split="eval")
 
     if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
         return train_dataset, eval_dataset, -1, prompters
@@ -348,8 +356,10 @@ def _load_raw_datasets(
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:
             dataset = handle_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
-        if (split == "train" and cfg.sample_packing) or (
-            split == "test" and cfg.eval_sample_packing
+        if (
+            (split == "train" and cfg.sample_packing)
+            or (split == "test" and cfg.eval_sample_packing)
+            or deepspeed_context_parallel(cfg)
         ):
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
@@ -406,6 +416,29 @@ def _load_and_process_single_dataset(
         dataset = dataset.shuffle(seed=seed).shard(
             num_shards=dataset_config.shards, index=shards_idx
         )
+
+    # Apply weight-based subsampling before tokenization to save compute
+    if (
+        dataset_config.weight is not None
+        and dataset_config.weight < 1.0
+        and not streaming
+    ):
+        original_len = len(dataset)
+        if original_len == 0:
+            LOG.warning(
+                f"Skipping weight subsampling for dataset "
+                f"'{dataset_config.path}' because it is empty."
+            )
+        else:
+            num_samples = min(
+                original_len,
+                max(1, int(original_len * dataset_config.weight)),
+            )
+            dataset = dataset.shuffle(seed=seed).select(range(num_samples))
+            LOG.info(
+                f"Applied weight={dataset_config.weight} to dataset "
+                f"'{dataset_config.path}': {original_len} -> {num_samples} samples"
+            )
 
     # Apply dataset wrapper
     dataset_wrapper, dataset_prompter = get_dataset_wrapper(

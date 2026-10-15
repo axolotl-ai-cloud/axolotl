@@ -1,6 +1,8 @@
 default_language_version:
     python: python3
 
+exclude: ^src/axolotl/core/trainers/prm/
+
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

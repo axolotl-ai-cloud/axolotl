@@ -11,6 +11,7 @@ class TorchAOQuantDType(Enum):
     float8_e4m3fn = torch.float8_e4m3fn
     nvfp4 = "nvfp4"
     mxfp4 = "mxfp4"
+    ternary = "ternary"
 
     def from_string(str):
         if str == "int4":
@@ -23,6 +24,8 @@ class TorchAOQuantDType(Enum):
             return TorchAOQuantDType.nvfp4
         if str == "mxfp4":
             return TorchAOQuantDType.mxfp4
+        if str == "ternary":
+            return TorchAOQuantDType.ternary
 
 
 class RLType(str, Enum):
@@ -88,15 +91,18 @@ class CustomSupportedOptimizers(str, Enum):
     ao_adamw_8bit = "ao_adamw_8bit"
     ao_adamw_fp8 = "ao_adamw_fp8"
     adopt_adamw = "adopt_adamw"
+    adamc = "adamc"
     came_pytorch = "came_pytorch"
     muon = "muon"
     dion = "dion"
     sinkgd = "sinkgd"
+    polora = "polora"
     flash_adamw = "flash_adamw"
     flash_adam = "flash_adam"
     flash_sgd = "flash_sgd"
     flash_sgdw = "flash_sgdw"
     flash_lion = "flash_lion"
+    scao = "scao"
     q_galore_adamw8bit = "q_galore_adamw8bit"
 
 
@@ -110,6 +116,7 @@ CANONICAL_ATTN_IMPLS = frozenset(
         "flash_attention_4",
         "flash_attention_torch",
         "flex_attention",
+        "varlen",
         "xformers",
         "sage",
         "fp8",

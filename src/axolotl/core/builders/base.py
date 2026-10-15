@@ -119,12 +119,35 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
+        if getattr(self.model, "_axolotl_native_nvfp4_metadata", None) or getattr(
+            self.model, "_axolotl_native_nvfp4_metadata_requested", False
+        ):
+            from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
+                NativeNVFP4MergeMetadataCallback,
+            )
+
+            callbacks.append(NativeNVFP4MergeMetadataCallback())
+
         if self.cfg.resume_from_checkpoint:
             callbacks.append(SkipEvalOnResumeCallback())
 
         gc_collect_steps = self.cfg.gc_collect_steps or self.cfg.gc_steps
         if gc_collect_steps:
             callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
+
+        if self.cfg.sync_profiler_steps:
+            from axolotl.utils.callbacks.sync_profiler import SyncProfilerCallback
+
+            callbacks.append(
+                SyncProfilerCallback(
+                    start_step=(
+                        2
+                        if self.cfg.sync_profiler_start_step is None
+                        else self.cfg.sync_profiler_start_step
+                    ),
+                    num_steps=self.cfg.sync_profiler_steps,
+                )
+            )
 
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
@@ -182,19 +205,23 @@ class TrainerBuilderBase(abc.ABC):
         if telemetry_manager.enabled:
             callbacks.append(TelemetryCallback())
 
-            # Report the fused RMSNorm+RoPE autotune selection + GPU identity so
-            # per-hardware tuning can be aggregated (mirrors scattermoe-lora).
-            if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
-                "gemma4",
-                "gemma4_text",
-                "gemma4_unified",
-                "gemma4_unified_text",
-            ):
-                from axolotl.kernels.autotune_telemetry import (
-                    FusedRopeAutotuneReportCallback,
-                )
+            from axolotl.integrations.kernels.autotune_callback import (
+                AutotuneReportCallback,
+            )
+            from axolotl.integrations.kernels.sonicmoe_autotune import (
+                SonicMoEAutotuneReportCallback,
+            )
+            from axolotl.kernels.autotune_telemetry import (
+                FusedRopeAutotuneReportCallback,
+            )
 
-                callbacks.append(FusedRopeAutotuneReportCallback())
+            callbacks.extend(
+                [
+                    AutotuneReportCallback(),
+                    FusedRopeAutotuneReportCallback(),
+                    SonicMoEAutotuneReportCallback(),
+                ]
+            )
 
         return callbacks
 
@@ -203,17 +230,32 @@ class TrainerBuilderBase(abc.ABC):
         Callbacks added after the trainer is created, usually b/c these need access to the trainer
         """
         callbacks = []
-        if self.cfg.plugins:
-            plugin_manager = PluginManager.get_instance()
-            callbacks.extend(
-                [
-                    cb
-                    for cb in plugin_manager.add_callbacks_post_trainer(
-                        self.cfg, trainer
-                    )
-                    if cb
-                ]
+        if (
+            getattr(
+                self.model,
+                "_axolotl_native_nvfp4_deepspeed_merge_aware_requested",
+                False,
             )
+            or getattr(
+                self.model,
+                "_axolotl_native_nvfp4_dynamic_input_gradients_requested",
+                None,
+            )
+            == "DeepSpeed"
+        ):
+            from axolotl.monkeypatch.torchao_nvfp4_deepspeed_lora import (
+                DeepSpeedNativeNVFP4MergeAwareCallback,
+            )
+
+            callbacks.append(DeepSpeedNativeNVFP4MergeAwareCallback(trainer))
+        plugin_manager = PluginManager.get_instance()
+        callbacks.extend(
+            [
+                cb
+                for cb in plugin_manager.add_callbacks_post_trainer(self.cfg, trainer)
+                if cb
+            ]
+        )
         return callbacks
 
     def hook_pre_create_training_args(self, training_arguments_kwargs):
@@ -356,6 +398,10 @@ class TrainerBuilderBase(abc.ABC):
 
                     optimizer_cls = SinkGDOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "polora":
+                from axolotl.utils.optimizers.polora import PoloraOptimizerFactory
+
+                optimizer_cls = PoloraOptimizerFactory
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
 
@@ -372,6 +418,11 @@ class TrainerBuilderBase(abc.ABC):
 
                 optimizer_cls = ADOPT
                 adam_kwargs["decouple"] = True
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "adamc":
+                from axolotl.utils.optimizers.adamc import AdamC
+
+                optimizer_cls = AdamC
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "came_pytorch":
                 from came_pytorch import CAME
@@ -437,6 +488,11 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls = FlashLion
                 if "betas" in adam_kwargs:
                     optimizer_kwargs["betas"] = adam_kwargs["betas"]
+            elif self.cfg.optimizer == "scao":
+                from scao import SCAO
+
+                optimizer_cls = SCAO
+                optimizer_kwargs.update(adam_kwargs)
             else:
                 raise ValueError(
                     f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
@@ -515,6 +571,9 @@ class TrainerBuilderBase(abc.ABC):
         if not self.eval_dataset and self.cfg.val_set_size == 0:
             # do not eval if no eval_dataset and val_set_size=0
             training_args_kwargs["eval_strategy"] = "no"
+        elif self.cfg.eval_strategy == "no":
+            training_args_kwargs["eval_strategy"] = "no"
+            training_args_kwargs["eval_on_start"] = False
         elif self.cfg.eval_steps:
             training_args_kwargs["eval_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
@@ -551,6 +610,21 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
             torch._dynamo.config.suppress_errors = True
             torch._dynamo.config.accumulated_cache_size_limit = 256
+            if self.cfg.gradient_checkpointing:
+                # pytorch/pytorch#166926: the checkpoint recompute must run the same Dynamo
+                # cache entry as the forward, which the LRU reordering does not guarantee.
+                eval_frame = getattr(
+                    getattr(torch._C, "_dynamo", None), "eval_frame", None
+                )
+                set_lru_cache = getattr(eval_frame, "_set_lru_cache", None)
+                if callable(set_lru_cache):
+                    set_lru_cache(False)
+            if self.cfg.torch_compile_regional:
+                # In-place regional compile sends every module through the one shared
+                # nn.Module._call_impl frame, so each module class is a recompile.
+                torch._dynamo.config.recompile_limit = max(
+                    torch._dynamo.config.recompile_limit, 64
+                )
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (
@@ -571,12 +645,15 @@ class TrainerBuilderBase(abc.ABC):
             setattr(inductor_cfg, key, value)
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
-        if self.cfg.accelerator_config:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                **self.cfg.accelerator_config
-            )
-        else:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig()
+        accelerator_config = dict(self.cfg.accelerator_config or {})
+        # Pinned host-to-device copies are stream-ordered, so non-blocking only stops the CPU
+        # from draining the previous step at every batch boundary. HF pins memory by default.
+        accelerator_config.setdefault(
+            "non_blocking", self.cfg.dataloader_pin_memory is not False
+        )
+        training_args_kwargs["accelerator_config"] = AcceleratorConfig(
+            **accelerator_config
+        )
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.layer_offloading:
@@ -633,6 +710,7 @@ class TrainerBuilderBase(abc.ABC):
             "optim_target_modules",
             # trainer
             "max_grad_norm",
+            "logging_nan_inf_filter",
             "dataloader_num_workers",
             "dataloader_pin_memory",
             "dataloader_prefetch_factor",
@@ -647,6 +725,7 @@ class TrainerBuilderBase(abc.ABC):
             "save_only_model",
             "weight_decay",
             "seed",
+            "full_determinism",
             "dion_momentum",
             "dion_rank_fraction",
             "dion_rank_multiple_of",
@@ -681,9 +760,9 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.reward_model or self.cfg.rl:
             training_args_kwargs["max_length"] = self.cfg.sequence_len
 
-        if self.cfg.fsdp_config or self.cfg.fsdp:
+        if self.cfg.fsdp_config:
             training_args_kwargs["fsdp_config"] = self.cfg.fsdp_config
-            training_args_kwargs["fsdp"] = self.cfg.fsdp if self.cfg.fsdp else True
+            training_args_kwargs["fsdp"] = True
 
         self._configure_reporting(training_args_kwargs)
         self._configure_hub_parameters(training_args_kwargs)

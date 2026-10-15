@@ -25,6 +25,8 @@ Dataset format: `{"system": "...", "input": "...", "chosen": "...", "rejected": 
 
 Train a token classifier to score each reasoning step. Uses `AutoModelForTokenClassification`.
 
+Uses the vendored Hugging Face TRL v1.13.0 PRM trainer in `src/axolotl/core/trainers/prm/` (Apache 2.0). No TRL downgrade is required.
+
 ```yaml
 base_model: Qwen/Qwen2.5-3B
 model_type: AutoModelForTokenClassification

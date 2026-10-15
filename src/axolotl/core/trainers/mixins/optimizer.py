@@ -7,6 +7,7 @@ from transformers.trainer_optimizer import is_optimizer_factory
 from transformers.utils import is_sagemaker_mp_enabled
 
 from axolotl.utils.logging import get_logger
+from axolotl.utils.optimizers.loraplus import apply_loraplus_lr_groups
 
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
@@ -42,8 +43,10 @@ class OptimizerMixin(Trainer):
         for name, param in opt_model.named_parameters():
             if not param.requires_grad:
                 continue
-            if name.endswith("modules_to_save.default.weight") or any(
-                embed_name in name for embed_name in ["embed_tokens", "lm_head"]
+            if (
+                "lora_embedding_" in name
+                or name.endswith("modules_to_save.default.weight")
+                or any(embed_name in name for embed_name in ["embed_tokens", "lm_head"])
             ):
                 params["embeddings"][name] = param
             elif name in decay_parameters:
@@ -139,7 +142,11 @@ class OptimizerMixin(Trainer):
                 opt_model, optimizer_kwargs
             )
 
-            if self.args.loraplus_lr_ratio is not None:
+            if (
+                self.args.loraplus_lr_ratio is not None
+                and self.args.embedding_lr_scale is None
+                and self.args.embedding_lr is None
+            ):
                 loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
                 loraplus_lr_embedding = getattr(
                     self.args, "loraplus_lr_embedding", 1e-6
@@ -149,9 +156,27 @@ class OptimizerMixin(Trainer):
                     optimizer_cls,
                     loraplus_lr_ratio=loraplus_lr_ratio,
                     loraplus_lr_embedding=loraplus_lr_embedding,
+                    loraplus_weight_decay=self.args.weight_decay,
                     **optimizer_kwargs,
                 )
             else:
+                if self.args.loraplus_lr_ratio is not None:
+                    if getattr(
+                        self.args, "loraplus_lr_embedding", None
+                    ) is not None and any(
+                        "lora_embedding_" in name
+                        for name, _ in opt_model.named_parameters()
+                    ):
+                        LOG.warning(
+                            "loraplus_lr_embedding is ignored when embedding_lr or embedding_lr_scale is set; LoRA embedding factors use those learning rates instead."
+                        )
+                    optimizer_grouped_parameters = apply_loraplus_lr_groups(
+                        optimizer_grouped_parameters,
+                        opt_model.named_parameters(),
+                        default_lr=optimizer_kwargs["lr"],
+                        loraplus_lr_ratio=self.args.loraplus_lr_ratio,
+                        eligible=lambda _name, _param, _group: True,
+                    )
                 # Overwrite `params` in case it's created by `get_optimizer_cls_and_kwargs`
                 # e.g. for GaLore optimizer.
                 if "params" in optimizer_kwargs:
@@ -197,6 +222,24 @@ class OptimizerMixin(Trainer):
             self.optimizer = smp.DistributedOptimizer(self.optimizer)
 
         return self.optimizer
+
+    def _load_optimizer_and_scheduler(self, checkpoint):
+        # torch's load_state_dict takes every hyperparameter from the checkpoint, and
+        # nothing re-applies weight_decay afterwards the way the scheduler re-applies lr,
+        # so a resumed run would silently keep the decay it was checkpointed with.
+        restore_weight_decay = (
+            [group["weight_decay"] for group in self.optimizer.param_groups]
+            if self.optimizer is not None and not self.is_deepspeed_enabled
+            else None
+        )
+
+        super()._load_optimizer_and_scheduler(checkpoint)
+
+        if restore_weight_decay is not None:
+            for group, weight_decay in zip(
+                self.optimizer.param_groups, restore_weight_decay, strict=True
+            ):
+                group["weight_decay"] = weight_decay
 
 
 class OptimizerInitMixin:

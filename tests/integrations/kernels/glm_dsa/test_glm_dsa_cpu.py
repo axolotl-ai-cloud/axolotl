@@ -194,14 +194,68 @@ def test_deep_ep_forward_applies_token_capacity():
             mock.patch.object(E, "_get_valid_token_mask", return_value=None),
         ):
             with pytest.raises(RuntimeError, match="stop"):
-                E._deep_ep_forward(
-                    self_mod, torch.zeros(ntok, 16), topk, w, kernel_name="eager"
+                E._ep_forward(
+                    self_mod,
+                    torch.zeros(ntok, 16),
+                    topk,
+                    w,
+                    local="eager",
+                    backend="deep_ep",
                 )
     finally:
         E.set_token_capacity(None)
 
     # expert 0 was requested by all 64 tokens; the cap must hold it to <= 4
     assert int((captured["topk"] == 0).sum()) <= 4
+
+
+def test_deep_ep_forward_caps_after_padding_sentinel():
+    """Padding rows are sentinelled before the capacity cap, so identical high-weight pad rows can't
+    fill an expert's capacity and evict real tokens (regression: the cap ran first and dropped
+    every real assignment to the expert the pads shared)."""
+    from axolotl.integrations.expert_parallel import experts_fn as E
+
+    captured = {}
+
+    class _FakeBuf:
+        def get_dispatch_layout(self, topk_idx, e_global):
+            captured["topk"] = topk_idx.clone()
+            raise RuntimeError("stop")
+
+    n_real, n_pad, K, e_global, cap = 4, 4, 2, 8, 2
+    ntok = n_real + n_pad
+    topk = torch.zeros(ntok, K, dtype=torch.int64)
+    topk[:, 1] = 1
+    w = torch.full((ntok, K), 0.5)
+    w[n_real:, 0] = 0.9  # pads outrank every real token on expert 0
+    valid = torch.zeros(ntok, dtype=torch.bool)
+    valid[:n_real] = True
+    self_mod = SimpleNamespace(num_experts=e_global, num_experts_global=e_global)
+
+    E.set_token_capacity(cap)
+    try:
+        with (
+            mock.patch.object(E, "get_buffer", return_value=_FakeBuf()),
+            mock.patch.object(E, "_get_valid_token_mask", return_value=valid),
+        ):
+            with pytest.raises(RuntimeError, match="stop"):
+                E._ep_forward(
+                    self_mod,
+                    torch.zeros(ntok, 16),
+                    topk,
+                    w,
+                    local="eager",
+                    backend="deep_ep",
+                )
+    finally:
+        E.set_token_capacity(None)
+
+    out = captured["topk"]
+    assert bool((out[n_real:] == -1).all()), "pad rows must be fully sentinelled"
+    real_on_e0 = int((out[:n_real, 0] == 0).sum())
+    assert real_on_e0 == cap, (
+        f"expected {cap} real tokens kept on expert 0, got {real_on_e0}"
+    )
 
 
 def test_mla_attn_skips_calibration_when_gather_unsupported():
@@ -251,3 +305,22 @@ def test_cp_doc_ids_must_be_global_not_per_chunk():
     assert (
         old_r1[0, 2].item() == old_r0[0, 0].item()
     )  # doc C (rank1) collides with doc A (rank0)
+
+
+@pytest.mark.parametrize("mask_dtype", [torch.bool, torch.float32])
+def test_indexer_topk_excludes_masked_high_scores(monkeypatch, mask_dtype):
+    from axolotl.integrations.kernels.libs.glm_dsa import indexer
+
+    scores = torch.tensor([0.0, 10.0, 20.0, 30.0]).expand(1, 4, 4)
+    monkeypatch.setattr(indexer, "indexer_scores", lambda *_args: scores)
+    allowed = torch.ones(1, 4, 4, dtype=torch.bool).tril()
+    mask = allowed
+    if mask_dtype != torch.bool:
+        mask = torch.zeros_like(allowed, dtype=mask_dtype).masked_fill(
+            ~allowed, float("-inf")
+        )
+    placeholder = torch.empty(0)
+    indices = indexer.indexer_topk(
+        placeholder, placeholder, placeholder, 1.0, 1, attention_mask=mask
+    )
+    assert torch.equal(indices.squeeze(-1), torch.arange(4).unsqueeze(0))

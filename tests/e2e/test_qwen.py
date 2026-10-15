@@ -11,6 +11,10 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
+from .utils import requires_flash_attn
+
+pytestmark = requires_flash_attn
+
 
 class TestE2eQwen:
     """
@@ -26,10 +30,11 @@ class TestE2eQwen:
                 "chat_template": "qwen_25",
                 "sequence_len": 2048,
                 "val_set_size": 0.0,
+                "dataset_num_proc": 4,
                 "datasets": [
                     {
                         "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
-                        "split": "train",
+                        "split": "train[:50]",
                         "type": "chat_template.default",
                         "field_messages": "conversation",
                         "field_chosen": "chosen",

@@ -63,13 +63,12 @@ warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
   offload_params: false
   cpu_ram_efficient_loading: false
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Glm4MoeLiteDecoderLayer
   state_dict_type: FULL_STATE_DICT
-  sharding_strategy: FULL_SHARD
   reshard_after_forward: true
   activation_checkpointing: true

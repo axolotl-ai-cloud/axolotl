@@ -31,11 +31,10 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
-  # Add gate_up_proj and down_proj to also target shared experts (nn.Linear):
-  # - gate_up_proj
+  # - gate_proj
+  # - up_proj
   # - down_proj
 
-# Target routed experts (3D nn.Parameter tensors, not nn.Linear — use lora_target_parameters):
 # lora_target_parameters:
 #   - mlp.experts.gate_up_proj
 #   - mlp.experts.down_proj
@@ -73,13 +72,12 @@ saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
 
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
   offload_params: true
   cpu_ram_efficient_loading: false
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Qwen3_5MoeDecoderLayer
   state_dict_type: FULL_STATE_DICT
-  sharding_strategy: FULL_SHARD
   reshard_after_forward: true
   activation_checkpointing: true

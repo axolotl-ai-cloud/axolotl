@@ -4,12 +4,16 @@ test module for the axolotl.utils.data module
 
 import unittest
 
+from datasets import Dataset
 from transformers import LlamaTokenizer
 
 from axolotl.prompt_strategies.pretrain import load as load_pretrain
 from axolotl.utils.data import encode_streaming, md5
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.trainer import filter_sequences_by_length
+from axolotl.utils.trainer import (
+    filter_sequences_by_length,
+    process_datasets_for_packing,
+)
 
 from tests.hf_offline_utils import enable_hf_offline
 
@@ -162,5 +166,77 @@ class TestEncodePretraining(unittest.TestCase):
         self.assertEqual(dropped, [True, False])
 
 
+class TestDropNoTrainableTokens(unittest.TestCase):
+    """
+    test that process_datasets_for_packing drops samples with no trainable tokens
+    """
+
+    def _process(self, labels):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        return process_datasets_for_packing(
+            cfg,
+            Dataset.from_dict({"labels": labels}),
+            Dataset.from_dict({"labels": labels}),
+        )
+
+    def test_fully_masked_sample_is_dropped(self):
+        train_dataset, eval_dataset = self._process(
+            [[-100, -100, -100], [-100, 7, -100]]
+        )
+        self.assertEqual(train_dataset["labels"], [[-100, 7, -100]])
+        self.assertEqual(eval_dataset["labels"], [[-100, 7, -100]])
+
+    def test_all_samples_masked_raises(self):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        with self.assertRaisesRegex(ValueError, "dataset has no samples left"):
+            process_datasets_for_packing(
+                cfg,
+                Dataset.from_dict({"labels": [[-100, -100], [-100, -100, -100]]}),
+                None,
+            )
+
+    def test_all_eval_samples_masked_raises(self):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True})
+        with self.assertRaisesRegex(ValueError, "dataset has no samples left"):
+            process_datasets_for_packing(
+                cfg,
+                Dataset.from_dict({"labels": [[1, 2, 3]]}),
+                Dataset.from_dict({"labels": [[-100, -100]]}),
+            )
+
+    def test_already_empty_dataset_does_not_raise(self):
+        # nothing was dropped here, so the all-masked error would misreport the cause
+        train_dataset, _ = self._process([])
+        self.assertEqual(len(train_dataset), 0)
+
+    def test_samples_with_trainable_tokens_are_kept(self):
+        labels = [[1, 2, 3], [-100, 4, -100]]
+        train_dataset, eval_dataset = self._process(labels)
+        self.assertEqual(train_dataset["labels"], labels)
+        self.assertEqual(eval_dataset["labels"], labels)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDeepSpeedContextParallelPositionIds(unittest.TestCase):
+    """DeepSpeed Ulysses needs global positions in every batch, packed or not."""
+
+    def _process(self, **cfg):
+        cfg = DictDefault({"dataset_num_proc": 1, "is_preprocess": True, **cfg})
+        data = {"input_ids": [[5, 6, 7], [8, 9]], "labels": [[5, 6, 7], [8, 9]]}
+        return process_datasets_for_packing(
+            cfg, Dataset.from_dict(data), Dataset.from_dict(data)
+        )
+
+    def test_deepspeed_context_parallel_adds_position_ids(self):
+        train_dataset, eval_dataset = self._process(
+            deepspeed="zero2.json", context_parallel_size=2
+        )
+        self.assertEqual(train_dataset["position_ids"], [[0, 1, 2], [0, 1]])
+        self.assertEqual(eval_dataset["position_ids"], [[0, 1, 2], [0, 1]])
+
+    def test_unpacked_without_deepspeed_has_no_position_ids(self):
+        train_dataset, _ = self._process(context_parallel_size=2)
+        self.assertNotIn("position_ids", train_dataset.column_names)

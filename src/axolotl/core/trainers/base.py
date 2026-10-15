@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import hashlib
+import inspect
 import json
 import math
 import os
@@ -25,7 +27,13 @@ from torch.utils.data import (
     Sampler,
     SequentialSampler,
 )
-from transformers import PreTrainedModel, Trainer
+from transformers import (
+    DataCollatorForSeq2Seq as HFDataCollatorForSeq2Seq,
+    DataCollatorWithFlattening,
+    PreTrainedModel,
+    Trainer,
+    TrainerState,
+)
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
 from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
@@ -50,6 +58,7 @@ from axolotl.core.trainers.utils import (
 )
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_world_size,
@@ -57,9 +66,42 @@ from axolotl.utils.distributed import (
     is_main_process,
 )
 from axolotl.utils.logging import get_logger
-from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+from axolotl.utils.samplers import (
+    LabelBalancedRandomSampler,
+    MultipackBatchSampler,
+    get_dataset_lengths,
+)
+from axolotl.utils.samplers.utils import get_dataset_label_counts
+from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
 
 LOG = get_logger(__name__)
+
+
+def model_loss_accepts_num_items_in_batch(model) -> bool:
+    """Whether ``model``'s loss function consumes ``num_items_in_batch``.
+
+    The kwarg is a parameter of ``loss_function``, not of ``forward()``, which only
+    receives it through ``**kwargs``, so inspecting ``forward()`` never finds it.
+    PEFT wrappers are unwrapped via ``get_base_model()`` rather than by walking
+    ``.base_model``, which is a property on every ``PreTrainedModel`` and would
+    descend from e.g. ``LlamaForCausalLM`` into the ``LlamaModel`` that computes no
+    loss at all.
+    """
+    if hasattr(model, "get_base_model"):
+        model = model.get_base_model()
+
+    loss_fn = getattr(model, "loss_function", None)
+    if loss_fn is None:
+        return True
+
+    try:
+        params = inspect.signature(loss_fn).parameters
+    except (TypeError, ValueError):
+        # Un-introspectable callable: leave the transformers default alone.
+        return True
+
+    return "num_items_in_batch" in params
+
 
 REDUCTION_FNS = {
     "mean": torch.mean,
@@ -84,6 +126,7 @@ class AxolotlTrainer(
 
     args = None  # type: "AxolotlTrainingArguments"  # type: ignore[name-defined]
     tag_names = ["axolotl"]
+    reports_token_perplexity = True
     _axolotl_cfg: DictDefault | None = None
 
     @property
@@ -93,6 +136,14 @@ class AxolotlTrainer(
     @axolotl_cfg.setter
     def axolotl_cfg(self, cfg):
         self._axolotl_cfg = cfg
+
+    @classmethod
+    def requires_all_columns(cls, cfg: DictDefault) -> bool:
+        """Whether the collator needs dataset columns the model forward does not take."""
+        return False
+
+    def post_set_axolotl_cfg(self):
+        """Finish configuration that depends on ``axolotl_cfg``."""
 
     def __init__(
         self,
@@ -109,37 +160,208 @@ class AxolotlTrainer(
 
         super().__init__(*_args, **kwargs)
 
-        # Gemma4 (and similar multimodal models) declare **kwargs in forward() for
-        # extra inputs like mm_token_type_ids.  HF Trainer interprets VAR_KEYWORD as
-        # "the model handles num_items_in_batch internally" and skips the loss ÷
-        # gradient_accumulation_steps normalisation, which inflates the *logged* loss
-        # (the gradient itself is still correct). Override to False when the model
-        # doesn't actually consume num_items_in_batch.
-        if self.model_accepts_loss_kwargs:
-            model_to_check = self.accelerator.unwrap_model(self.model)
-            if hasattr(model_to_check, "base_model"):  # PEFT wrapper
-                model_to_check = model_to_check.base_model
-            if hasattr(model_to_check, "model"):
-                model_to_check = model_to_check.model
-            fwd = getattr(model_to_check, "forward", None)
-            if fwd is not None:
-                import inspect
+        # Resolved once: accelerate's unwrap_model walks every module, and
+        # DDP/FSDP wrappers don't proxy .config.
+        unwrapped_model = self.accelerator.unwrap_model(self.model)
+        self._model_type = getattr(
+            getattr(unwrapped_model, "config", None), "model_type", None
+        )
+        self._inject_mm_token_type_ids = self._model_type in (
+            "gemma4",
+            "gemma4_unified",
+        )
 
-                params = inspect.signature(fwd).parameters
-                if "num_items_in_batch" not in params:
-                    self.model_accepts_loss_kwargs = False
+        # Gemma4-style models declare **kwargs in forward(), which HF Trainer reads as
+        # "handles num_items_in_batch internally". Only override when the loss really
+        # does not take it: a wrong False mis-normalises the loss under gradient
+        # accumulation and moves the gradient, not just the logged value.
+        if self.model_accepts_loss_kwargs:
+            if not model_loss_accepts_num_items_in_batch(unwrapped_model):
+                self.model_accepts_loss_kwargs = False
 
         self.train_data_collator = self.data_collator
         self._tkps_prev_trainable: float | None = None
         self._tkps_prev_time: float | None = None
+        # Per-rank token counters stay on device between logs; see _sync_token_counts.
+        self._tkps_trainable_acc: torch.Tensor | None = None
+        self._tkps_total_acc: int = 0
+        self._tkps_restored: tuple[int, int] = (0, 0)
+        self._tkps_state: TrainerState | None = None
         self._stored_metrics = defaultdict(
             lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
         )
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
 
+    def _init_training_state(
+        self,
+        max_steps,
+        num_update_steps_per_epoch,
+        num_train_epochs,
+        resume_from_checkpoint,
+        trial,
+    ):
+        epochs, steps = super()._init_training_state(
+            max_steps,
+            num_update_steps_per_epoch,
+            num_train_epochs,
+            resume_from_checkpoint,
+            trial,
+        )
+        if (
+            getattr(self.args, "balance_labels", False)
+            and not self.args.pretraining
+            and resume_from_checkpoint is not None
+            and self.state.epoch is not None
+        ):
+            # Packing is repeatable within an epoch, but its length can differ across epochs.
+            epochs = int(self.state.epoch)
+        return epochs, steps
+
+    def _run_epoch(self, model, epoch, train_dataloader, **kwargs):
+        if getattr(self.args, "balance_labels", False) and not self.args.pretraining:
+            # Resume's SkipBatchSampler hides samplers from Accelerate's epoch forwarding.
+            pending = [train_dataloader]
+            visited = set()
+            samplers = []
+            while pending:
+                current = pending.pop()
+                if id(current) in visited:
+                    continue
+                visited.add(id(current))
+                if isinstance(
+                    current, (MultipackBatchSampler, LabelBalancedRandomSampler)
+                ):
+                    current.set_epoch(epoch)
+                    samplers.append(current)
+                for attribute in ("batch_sampler", "sampler"):
+                    child = getattr(current, attribute, None)
+                    if child is not None:
+                        pending.append(child)
+            if "steps_in_epoch" in kwargs:
+                self._balanced_sampler_state = {
+                    "version": 1,
+                    "settings": [self._balanced_sampler_settings(s) for s in samplers],
+                    "dataset_fingerprint": getattr(
+                        self.train_dataset, "_fingerprint", None
+                    ),
+                    "steps_in_epoch": kwargs["steps_in_epoch"],
+                    "epoch": epoch,
+                }
+            if (
+                kwargs.get("resume_from_checkpoint") is not None
+                and epoch == kwargs["epochs_trained"]
+                and not self.args.ignore_data_skip
+                and self.state.epoch is not None
+            ):
+                manifest = os.path.join(
+                    kwargs["resume_from_checkpoint"], "balanced_sampler.json"
+                )
+                if os.path.isfile(manifest):
+                    with open(manifest, encoding="utf-8") as stream:
+                        saved = json.load(stream)
+                    current = self._balanced_sampler_state
+                    if saved.get("replay_error"):
+                        raise ValueError(
+                            "Balanced sampler checkpoint cannot restore exact data replay: "
+                            f"{saved['replay_error']}. Set ignore_data_skip: true to resume "
+                            "without restoring the previous data position."
+                        )
+                    for key in ("version", "settings"):
+                        if saved[key] != current[key]:
+                            raise ValueError(
+                                f"Balanced sampler resume changed {key}; exact data replay is not possible. "
+                                "Settings include data-parallel size, batch size, and accumulation steps. "
+                                "Set ignore_data_skip: true to resume without restoring the previous data position."
+                            )
+                    if (
+                        saved.get("dataset_fingerprint")
+                        != current["dataset_fingerprint"]
+                    ):
+                        LOG.warning(
+                            "Balanced sampler dataset fingerprint changed, but sampler settings "
+                            "and length/label metadata match. Replaying the same index order; "
+                            "this does not verify identical dataset contents."
+                        )
+                    if saved["resume_epoch"] != epoch or (
+                        saved["consumed_batches"]
+                        and saved["steps_in_epoch"] != current["steps_in_epoch"]
+                    ):
+                        raise ValueError(
+                            "Balanced sampler resume changed epoch length or position. "
+                            "Set ignore_data_skip: true to resume without restoring the previous data position."
+                        )
+                    skipped = saved["consumed_batches"]
+                else:
+                    skipped = (self.state.epoch - epoch) * kwargs["steps_in_epoch"]
+                kwargs["steps_trained_in_current_epoch"] = (
+                    self._validated_balanced_offset(skipped, kwargs["steps_in_epoch"])
+                )
+        return super()._run_epoch(
+            model=model, epoch=epoch, train_dataloader=train_dataloader, **kwargs
+        )
+
+    @staticmethod
+    def _balanced_sampler_settings(sampler):
+        names = (
+            "seed",
+            "batch_size",
+            "batch_max_len",
+            "bin_size",
+            "group_size",
+            "sequential",
+            "padding_multiple",
+            "dp_count",
+            "batches_per_optimizer_step",
+            "length_mode",
+            "drop_last",
+        )
+        settings = {name: getattr(sampler, name, None) for name in names}
+        window = getattr(sampler, "label_balance_window_optim_steps", 1)
+        if window != 1:
+            settings["label_balance_window_optim_steps"] = window
+        settings["type"] = type(sampler).__name__
+        digest = hashlib.sha256()
+        for name in ("lengths", "label_counts", "label_start_counts"):
+            values = getattr(sampler, name, None)
+            if values is not None:
+                digest.update(name.encode("ascii"))
+                digest.update(values.astype("<i8").tobytes())
+        settings["metadata_sha256"] = digest.hexdigest()
+        return settings
+
+    def _validated_balanced_offset(self, offset, steps_in_epoch):
+        rounded = round(offset)
+        if (
+            not math.isclose(offset, rounded, abs_tol=1e-6, rel_tol=0)
+            or not 0 <= rounded <= steps_in_epoch
+            or (
+                rounded != steps_in_epoch
+                and rounded % self.args.gradient_accumulation_steps
+            )
+        ):
+            raise ValueError(
+                "Balanced sampler resume must land on an optimizer-step boundary. "
+                "Set ignore_data_skip: true to resume without restoring the previous data position."
+            )
+        return rounded
+
+    def _data_parallel_size(self) -> int:
+        replicas = getattr(self.args, "world_size", 1)
+        parallelism = getattr(
+            getattr(self, "accelerator", None), "parallelism_config", None
+        )
+        if parallelism is not None:
+            replicas = parallelism.dp_replicate_size * parallelism.dp_shard_size
+        return replicas
+
+    def _batches_per_optimizer_step(self) -> int:
+        return self._data_parallel_size() * getattr(
+            self.args, "gradient_accumulation_steps", 1
+        )
+
     def _create_multipack_sampler(
-        self, base_sampler: Sampler, dataset: Dataset
+        self, base_sampler: Sampler, dataset: Dataset, *, is_training: bool = True
     ) -> MultipackBatchSampler:
         """
         Helper method to create a `MultipackBatchSampler` for multipacking sequences
@@ -152,19 +374,41 @@ class AxolotlTrainer(
         Returns:
             Multipack (sample packing) batch sampler.
         """
+        payload_batch_size = (
+            self._train_batch_size if is_training else self.args.eval_batch_size
+        )
         if self.args.multipack_real_batches:
-            batch_size = self.args.per_device_train_batch_size
+            batch_size = payload_batch_size
             batch_max_len = self.args.max_seq_length
         else:
             batch_size = 1
-            train_batch_size = (
-                self.state.train_batch_size or self.args.per_device_train_batch_size
-            )
-            batch_max_len = train_batch_size * self.args.max_seq_length
+            batch_max_len = payload_batch_size * self.args.max_seq_length
 
+        label_counts = label_start_counts = None
+        if is_training and getattr(self.args, "balance_labels", False):
+            tokenizer = getattr(getattr(self, "data_collator", None), "tokenizer", None)
+            if getattr(tokenizer, "padding_side", "right") != "right":
+                raise ValueError("Label-balanced packing requires right padding")
+            label_counts, label_start_counts = get_dataset_label_counts(
+                dataset, shift_labels=getattr(self, "_loss_shifts_labels", True)
+            )
         sampler = MultipackBatchSampler(
             base_sampler,
             lengths=get_dataset_lengths(dataset),
+            label_counts=label_counts,
+            label_start_counts=label_start_counts,
+            seed=self.args.data_seed
+            if getattr(self.args, "data_seed", None) is not None
+            else self.args.seed,
+            dp_count=self._data_parallel_size() if is_training else 1,
+            batches_per_optimizer_step=self._batches_per_optimizer_step(),
+            label_balance_window_optim_steps=getattr(
+                self.args, "label_balance_window_optim_steps", 1
+            ),
+            padding_multiple=getattr(
+                getattr(self, "data_collator", None), "pad_to_multiple_of", None
+            )
+            or 1,
             packing_efficiency_estimate=self.args.sample_packing_efficiency,
             batch_max_len=batch_max_len,
             batch_size=batch_size,
@@ -197,6 +441,55 @@ class AxolotlTrainer(
             return None
 
         use_sample_packing = self.args.sample_packing and not self.args.pretraining
+
+        if getattr(self.args, "balance_labels", False) and not use_sample_packing:
+            flattened = getattr(self.args, "batch_flattening", False)
+            collator = self.data_collator
+            if flattened:
+                if (
+                    not isinstance(collator, DataCollatorWithFlattening)
+                    or collator.separator_id != -100
+                ):
+                    raise ValueError(
+                        "Label balancing requires the standard flattening collator with separator_id=-100"
+                    )
+            elif (
+                type(collator) not in (DataCollatorForSeq2Seq, HFDataCollatorForSeq2Seq)
+                or collator.label_pad_token_id != -100
+                or collator.tokenizer.padding_side != "right"
+                or collator.padding not in (True, "longest")
+            ):
+                raise ValueError(
+                    "Padded label balancing requires a standard right-padding seq2seq collator "
+                    "with longest padding and label_pad_token_id=-100"
+                )
+            lengths = get_dataset_lengths(train_dataset)
+            if "labels" in train_dataset.column_names:
+                counts, starts = get_dataset_label_counts(
+                    train_dataset.select_columns(["labels"]),
+                    shift_labels=flattened
+                    or getattr(self, "_loss_shifts_labels", True),
+                )
+                counts = counts - starts
+            elif flattened:
+                counts = lengths - 1
+            else:
+                raise ValueError("Padded label balancing requires tokenized labels")
+            return LabelBalancedRandomSampler(
+                lengths,
+                counts,
+                batch_size=self._train_batch_size,
+                dp_count=self._data_parallel_size(),
+                seed=self.args.data_seed
+                if self.args.data_seed is not None
+                else self.args.seed,
+                batches_per_optimizer_step=self._batches_per_optimizer_step(),
+                label_balance_window_optim_steps=getattr(
+                    self.args, "label_balance_window_optim_steps", 1
+                ),
+                length_mode="flattened" if flattened else "padded",
+                padding_multiple=getattr(collator, "pad_to_multiple_of", None) or 1,
+            )
 
         # Determine the base sampler first
         if self.args.curriculum_sampling:
@@ -244,6 +537,7 @@ class AxolotlTrainer(
             return self._create_multipack_sampler(
                 base_sampler=base_sampler,
                 dataset=eval_dataset,
+                is_training=False,
             )
 
         return base_sampler
@@ -258,6 +552,14 @@ class AxolotlTrainer(
         dataloader_key: Optional[str] = None,
     ) -> DataLoader:
         """Create a [`~torch.utils.data.DataLoader`] from the given dataset."""
+
+        if (
+            getattr(self.args, "balance_labels", False)
+            and is_training
+            and not self.args.sample_packing
+            and isinstance(dataset, torch.utils.data.IterableDataset)
+        ):
+            raise ValueError("Fixed-count label balancing requires a map-style dataset")
 
         data_collator = self.data_collator if is_training else self.eval_data_collator
 
@@ -372,7 +674,100 @@ class AxolotlTrainer(
         return DataLoader(bench_dataset, **dataloader_params)
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
+    def _deepspeed_sequence_parallel_group(self):
+        """DeepSpeed Ulysses (ALST) SP group, or ``None`` when CP is not mapped onto it."""
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if (
+            pc is None
+            or getattr(pc, "sp_backend", None) != "deepspeed"
+            or (getattr(pc, "sp_size", 1) or 1) <= 1
+        ):
+            return None
+        from deepspeed.utils import groups
+
+        return groups._get_sequence_parallel_group()
+
     @override
+    def _get_num_items_in_batch(self, batch_samples, device):
+        count = super()._get_num_items_in_batch(batch_samples, device)
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if self._deepspeed_sequence_parallel_group() is not None:
+            return None  # transformers' Ulysses loss already weights by valid tokens
+        if (
+            count is None
+            or pc is None
+            or getattr(pc, "tp_size", 1) <= 1
+            or self.args.average_tokens_across_devices
+        ):
+            return count
+        # transformers floors the count by tp*cp expecting a gradient all-reduce over the TP
+        # ranks; here TP ranks never reduce with each other (FSDP shards on the data axes
+        # only), so recount and keep only the CP share
+        labels_for_count = [
+            batch["shift_labels"]
+            if "shift_labels" in batch
+            else batch["labels"][..., 1:]
+            if getattr(self, "_loss_shifts_labels", False)
+            else batch["labels"]
+            for batch in batch_samples
+        ]
+        count = sum(labels.ne(-100).sum() for labels in labels_for_count)
+        if torch.is_tensor(count):
+            count = count.to(device)
+        cp_size = pc.non_data_parallel_size // pc.tp_size
+        return count // cp_size if cp_size > 1 else count
+
+    def _accumulate_token_counts(self, inputs):
+        tokens = inputs["labels"] if "labels" in inputs else inputs["input_ids"]
+        if self._tkps_trainable_acc is None or self._tkps_state is not self.state:
+            # auto_find_batch_size retries with a fresh state; restored counts are cross-rank sums.
+            restored = getattr(self.state, "tokens", None) or {}
+            self._tkps_restored = (
+                int(torch.as_tensor(restored.get("trainable", 0)).item()),
+                int(torch.as_tensor(restored.get("total", 0)).item()),
+            )
+            self._tkps_trainable_acc = torch.zeros(
+                (), dtype=torch.int64, device=tokens.device
+            )
+            self._tkps_total_acc = 0
+            self._tkps_state = self.state
+        self._tkps_trainable_acc += (tokens != -100).sum()
+        self._tkps_total_acc += tokens.numel()
+
+    def _sync_token_counts(self):
+        """Reduce the per-rank token counters into state.tokens; one sync per call.
+
+        Collective: every rank must call it (log and checkpoint save both do).
+        """
+        if getattr(self, "_tkps_trainable_acc", None) is None:
+            return
+        counts = torch.stack(
+            [
+                self._tkps_trainable_acc,
+                torch.tensor(
+                    self._tkps_total_acc,
+                    dtype=torch.int64,
+                    device=self._tkps_trainable_acc.device,
+                ),
+            ]
+        )
+        if is_distributed():
+            torch.distributed.all_reduce(counts, op=torch.distributed.ReduceOp.SUM)
+        trainable, total = counts.tolist()
+        self.state.tokens = {
+            "trainable": torch.tensor(self._tkps_restored[0] + trainable),
+            "total": torch.tensor(self._tkps_restored[1] + total),
+        }
+
+    def _maybe_inject_mm_token_type_ids(self, inputs):
+        # Gemma4 requires mm_token_type_ids even for text-only batches.
+        if (
+            self._inject_mm_token_type_ids
+            and "mm_token_type_ids" not in inputs
+            and "input_ids" in inputs
+        ):
+            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
@@ -383,44 +778,10 @@ class AxolotlTrainer(
         #     loss = trainer_weighted_loss(outputs, labels, shift_labels=True)
         #     return (loss, outputs) if return_outputs else loss
 
-        # track number of tokens for tokens per second calculation
         if self.args.include_tkps and model.training:
-            inputs_key = "labels" if "labels" in inputs else "input_ids"
-            trainable_tokens = (inputs[inputs_key] != -100).sum()
-            total_tokens = inputs[inputs_key].numel()
-            total_tokens = torch.tensor(total_tokens, device=inputs[inputs_key].device)
+            self._accumulate_token_counts(inputs)
 
-            if is_distributed():
-                torch.distributed.all_reduce(
-                    trainable_tokens, op=torch.distributed.ReduceOp.SUM
-                )
-                torch.distributed.all_reduce(
-                    total_tokens, op=torch.distributed.ReduceOp.SUM
-                )
-
-            if not hasattr(self.state, "tokens"):
-                self.state.tokens = {
-                    "trainable": torch.zeros(1),
-                    "total": torch.zeros(1),
-                }
-
-            # trainable tokens for throughput and total token slots for summaries
-            self.state.tokens["trainable"] = (
-                self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
-            )
-            self.state.tokens["total"] = self.state.tokens["total"] + total_tokens.cpu()
-
-        # Gemma4 requires mm_token_type_ids during training (even for text-only).
-        # Inject zeros (= text token type) when not provided by the data collator.
-        # Use unwrap_model to handle DDP/FSDP wrappers that don't proxy .config.
-        _unwrapped = self.accelerator.unwrap_model(model)
-        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
-        if (
-            "mm_token_type_ids" not in inputs
-            and "input_ids" in inputs
-            and _model_type in ("gemma4", "gemma4_unified")
-        ):
-            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+        self._maybe_inject_mm_token_type_ids(inputs)
 
         # Gemma4 (and Gemma3): transformers' masking_utils detects packed sequences
         # from position_ids, but only when attention_mask is None.  When sample
@@ -429,7 +790,7 @@ class AxolotlTrainer(
         # per-sequence causal masks.
         if (
             self.args.sample_packing
-            and _model_type in ("gemma4", "gemma3", "gemma4_unified")
+            and self._model_type in ("gemma4", "gemma3", "gemma4_unified")
             and "attention_mask" in inputs
             and "position_ids" in inputs
         ):
@@ -443,12 +804,31 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
-        return super().compute_loss(
-            model,
-            inputs,
-            return_outputs=return_outputs,
-            num_items_in_batch=num_items_in_batch,
+        sp_group = self._deepspeed_sequence_parallel_group()
+        if sp_group is None or not model.training:
+            return super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+            )
+        # transformers' Ulysses loss assumes gradients are averaged over SP ranks; ZeRO sums them
+        result = super().compute_loss(
+            model, inputs, return_outputs=return_outputs, num_items_in_batch=None
         )
+        loss, outputs = result if return_outputs else (result, None)
+        loss = loss / self.accelerator.parallelism_config.sp_size
+        return (loss, outputs) if return_outputs else loss
+
+    @override
+    def training_step(self, *args, **kwargs):
+        loss = super().training_step(*args, **kwargs)
+        pc = getattr(self.accelerator, "parallelism_config", None)
+        if self._deepspeed_sequence_parallel_group() is not None and torch.is_tensor(
+            loss
+        ):
+            loss = loss * pc.sp_size  # undo compute_loss's gradient scaling for logging
+        return loss
 
     @override
     def _prepare_context_parallel_inputs(self, model, inputs):
@@ -466,15 +846,7 @@ class AxolotlTrainer(
 
     @override
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-        # Gemma4 requires mm_token_type_ids even during evaluation.
-        _unwrapped = self.accelerator.unwrap_model(model)
-        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
-        if (
-            "mm_token_type_ids" not in inputs
-            and "input_ids" in inputs
-            and _model_type in ("gemma4", "gemma4_unified")
-        ):
-            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+        self._maybe_inject_mm_token_type_ids(inputs)
         return super().prediction_step(
             model, inputs, prediction_loss_only, ignore_keys=ignore_keys
         )
@@ -591,22 +963,10 @@ class AxolotlTrainer(
             "attention_mask": concat_inputs["attention_mask"],
             "labels": concat_inputs["labels"],
         }
-        # Gemma4 requires mm_token_type_ids during training (even for text-only).
-        # Unwrap to read .config (DDP/DeepSpeed wrappers don't proxy it).
-        _orpo_model_type = getattr(
-            getattr(self.accelerator.unwrap_model(model), "config", None),
-            "model_type",
-            None,
-        )
-        if (
-            _orpo_model_type in ("gemma4", "gemma4_unified")
-            and "mm_token_type_ids" not in concat_inputs
-        ):
-            forward_kwargs["mm_token_type_ids"] = torch.zeros_like(
-                concat_inputs["input_ids"]
-            )
-        elif "mm_token_type_ids" in concat_inputs:
+        if "mm_token_type_ids" in concat_inputs:
             forward_kwargs["mm_token_type_ids"] = concat_inputs["mm_token_type_ids"]
+        else:
+            self._maybe_inject_mm_token_type_ids(forward_kwargs)
 
         outputs = model(
             **forward_kwargs,
@@ -680,23 +1040,29 @@ class AxolotlTrainer(
         super().create_accelerator_and_postprocess()
 
     def additional_accelerator_args(
-        self, fp8: bool = False, enable_fsdp_float8_all_gather: bool = False, **kwargs
+        self,
+        fp8: bool = False,
+        fp8_recipe: str = DEFAULT_FP8_RECIPE,
+        enable_fsdp_float8_all_gather: bool = False,
+        **kwargs,
     ) -> dict[str, Any]:
-        ret_kwargs = {}
+        ret_kwargs: dict[str, Any] = {}
         if fp8:
             from accelerate.utils import AORecipeKwargs
-            from torchao.float8 import Float8LinearConfig
 
-            # By default, Float8LinearConfig is instantiated using the "tensorwise"
-            # scaling strategy. See more details here:
-            # https://github.com/pytorch/ao/tree/main/torchao/float8.
-            config = Float8LinearConfig(
+            from axolotl.core.fp8 import build_fp8_linear_config
+
+            config = build_fp8_linear_config(
+                fp8_recipe=fp8_recipe,
                 enable_fsdp_float8_all_gather=enable_fsdp_float8_all_gather,
-                force_recompute_fp8_weight_in_bwd=enable_fsdp_float8_all_gather is True,
             )
 
+            # Trainer already set kwargs_handlers; overwriting drops every ddp_* setting.
+            handlers = list(kwargs.get("kwargs_handlers") or [])
+            handlers.append(AORecipeKwargs(config=config))  # type: ignore
+
             ret_kwargs["mixed_precision"] = "fp8"
-            ret_kwargs["kwargs_handlers"] = [AORecipeKwargs(config=config)]  # type: ignore
+            ret_kwargs["kwargs_handlers"] = handlers
             os.environ["ACCELERATE_MIXED_PRECISION"] = "fp8"
 
         return ret_kwargs
@@ -724,12 +1090,12 @@ class AxolotlTrainer(
                 )
             logs[key] = round(fn(values).item(), metric_ndigits)
 
-        if "loss" in logs:
+        if self.reports_token_perplexity and "loss" in logs:
             try:
                 logs["ppl"] = round(math.exp(logs["loss"]), metric_ndigits)
             except OverflowError:
                 logs["ppl"] = float("inf")
-        if "eval_loss" in logs:
+        if self.reports_token_perplexity and "eval_loss" in logs:
             try:
                 logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), metric_ndigits)
             except OverflowError:
@@ -745,6 +1111,8 @@ class AxolotlTrainer(
             except (ValueError, TypeError, FileNotFoundError):
                 pass
 
+        if self.args.include_tkps and train_eval == "train":
+            self._sync_token_counts()
         if (
             self.args.include_tkps
             and train_eval == "train"
@@ -802,9 +1170,7 @@ class AxolotlTrainer(
     def _is_fsdp2_checkpoint_save_enabled(self) -> bool:
         cfg = getattr(self, "axolotl_cfg", None)
         cfg_fsdp2 = bool(
-            cfg
-            and str(getattr(cfg, "fsdp_version", "")) == "2"
-            and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
+            cfg and (getattr(cfg, "fsdp_config", None) or getattr(cfg, "fsdp", None))
         )
         return bool(getattr(self, "is_fsdp_enabled", False) or cfg_fsdp2)
 
@@ -817,19 +1183,43 @@ class AxolotlTrainer(
             or type(getattr(tensor, "data", None)).__name__ in quant_names
         )
 
-    def _save_fsdp2_quantized_lora_adapter(self, model, output_dir) -> bool:
-        """Save just the LoRA adapter (gathered via DTensor.full_tensor) when the run is FSDP2 + a
-        quantized (NVFP4/Float8) frozen base — the case where the DCP sharded save raises
+    def _save_gathered_lora_adapter(self, model, output_dir) -> bool:
+        """Save just the LoRA adapter (gathered via DTensor.full_tensor) when the default
+        checkpoint would not carry it whole: the experts are EP-sharded (neither the FSDP
+        full-state-dict gather nor the DCP sharded save gathers across the EP axis), or the
+        run is FSDP2 + a quantized (NVFP4/Float8) frozen base, where the DCP sharded save raises
         "Failed to validate global plan". Returns True if it handled the save, else False (caller
-        falls back to the normal checkpoint path). No-op for non-PEFT / non-FSDP2 / non-quantized runs.
+        falls back to the normal checkpoint path).
         """
-        if not self._is_fsdp2_checkpoint_save_enabled():
+        cfg = getattr(self, "axolotl_cfg", None)
+        ep_size = (getattr(cfg, "expert_parallel_size", 1) or 1) if cfg else 1
+        plugin = getattr(getattr(self.accelerator, "state", None), "fsdp_plugin", None)
+        if (
+            ep_size > 1
+            and getattr(plugin, "fsdp_version", None) == 2
+            and "FULL_STATE_DICT" in str(getattr(plugin, "state_dict_type", ""))
+        ):
+            return False
+        if ep_size <= 1 and not self._is_fsdp2_checkpoint_save_enabled():
             return False
         try:
             from peft import PeftModel
 
             unwrapped = self.accelerator.unwrap_model(model)
             if not isinstance(unwrapped, PeftModel):
+                return False
+            if ep_size > 1:
+                from axolotl.integrations.expert_parallel.plugin import (
+                    ExpertParallelPlugin,
+                )
+                from axolotl.integrations.expert_parallel.shard import (
+                    save_ep_lora_adapter,
+                )
+
+                ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
+                if save_ep_lora_adapter(unwrapped, output_dir, ep_group):
+                    return True
+            if not self._is_fsdp2_checkpoint_save_enabled():
                 return False
             # quantized base? (torchao tensor-subclass DTensors — what breaks DCP). Handle DTensor
             # by inspecting the local tensor.
@@ -842,23 +1232,10 @@ class AxolotlTrainer(
                 save_fsdp2_lora_adapter,
             )
 
-            cfg = getattr(self, "axolotl_cfg", None)
-            if cfg and (getattr(cfg, "expert_parallel_size", 1) or 1) > 1:
-                from axolotl.integrations.expert_parallel.plugin import (
-                    ExpertParallelPlugin,
-                )
-                from axolotl.integrations.expert_parallel.shard import (
-                    save_ep_lora_adapter,
-                )
-
-                ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
-                if save_ep_lora_adapter(unwrapped, output_dir, ep_group):
-                    return True
-
             return bool(save_fsdp2_lora_adapter(unwrapped, output_dir))
         except Exception as exc:  # pylint: disable=broad-except
             LOG.warning(
-                "FSDP2 quantized-LoRA adapter save failed (%s); falling back to default save.",
+                "Gathered LoRA adapter save failed (%s); falling back to default save.",
                 exc,
             )
             return False
@@ -870,10 +1247,37 @@ class AxolotlTrainer(
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
 
-        # FSDP2 + a quantized (NVFP4/Float8) frozen base breaks the DCP sharded save
-        # ("Failed to validate global plan" — the torchao tensor-subclass DTensors are unvalidatable).
+        if getattr(self.args, "include_tkps", False):
+            self._sync_token_counts()
+
+        if getattr(self, "_balanced_sampler_state", None) and self.args.should_save:
+            saved = dict(self._balanced_sampler_state)
+            try:
+                saved["resume_epoch"] = int(self.state.epoch)
+                offset = (
+                    (self.state.epoch - saved["epoch"]) * saved["steps_in_epoch"]
+                    if saved["resume_epoch"] == saved["epoch"]
+                    else 0
+                )
+                saved["consumed_batches"] = self._validated_balanced_offset(
+                    offset, saved["steps_in_epoch"]
+                )
+            except (ValueError, TypeError, OverflowError) as exc:
+                saved["replay_error"] = str(exc)
+                LOG.warning(
+                    "Saving checkpoint without exact balanced-sampler replay metadata: %s. "
+                    "Resume requires ignore_data_skip: true, which does not restore the previous data position.",
+                    exc,
+                )
+            with open(
+                os.path.join(output_dir, "balanced_sampler.json"), "w", encoding="utf-8"
+            ) as stream:
+                json.dump(saved, stream, indent=2)
+
+        # EP-sharded expert LoRA is never gathered by the FSDP/DCP saves, and FSDP2 + a quantized
+        # (NVFP4/Float8) frozen base breaks the DCP sharded save ("Failed to validate global plan").
         # For a PEFT (LoRA) run we only need the adapter, so gather it directly and skip the DCP save.
-        if self._save_fsdp2_quantized_lora_adapter(model, output_dir):
+        if self._save_gathered_lora_adapter(model, output_dir):
             # The adapter is written above in place of the DCP model state. Still persist the
             # optimizer/scheduler/scaler/RNG and trainer state so the checkpoint stays RESUMABLE —
             # only the trainable adapter carries optimizer state (the quantized base is frozen), so
@@ -911,7 +1315,38 @@ class AxolotlTrainer(
             with open(tokens_state_path, "w", encoding="utf-8") as f:
                 json.dump(tokens_state, f)
 
-        result = super()._save_checkpoint(model, trial, **kwargs)
+        engine = getattr(self, "model_wrapped", None)
+        save_checkpoint = getattr(engine, "save_checkpoint", None)
+        has_quantized_frozen_base = any(
+            not parameter.requires_grad and self._is_fsdp2_quantized_param(parameter)
+            for parameter in model.parameters()
+        ) or bool(getattr(model, "_axolotl_native_nvfp4_zero3_components", ()))
+        exclude_frozen = (
+            self.is_deepspeed_enabled
+            and getattr(model, "_axolotl_native_nvfp4_deepspeed_prepared", False)
+            and has_quantized_frozen_base
+            and any(parameter.requires_grad for parameter in model.parameters())
+            and save_checkpoint is not None
+            and "exclude_frozen_parameters"
+            in inspect.signature(save_checkpoint).parameters
+        )
+        missing = object()
+        previous = getattr(engine, "__dict__", {}).get("save_checkpoint", missing)
+        if exclude_frozen:
+
+            def save_without_frozen(*args, **checkpoint_kwargs):
+                checkpoint_kwargs.setdefault("exclude_frozen_parameters", True)
+                return save_checkpoint(*args, **checkpoint_kwargs)
+
+            engine.save_checkpoint = save_without_frozen
+        try:
+            result = super()._save_checkpoint(model, trial, **kwargs)
+        finally:
+            if exclude_frozen:
+                if previous is missing:
+                    del engine.save_checkpoint
+                else:
+                    engine.save_checkpoint = previous
 
         # Reclaim VRAM held by the FSDP full-state-dict gather.
         gc.collect()
@@ -926,6 +1361,7 @@ class AxolotlTrainer(
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
+        self._save_fsdp2_model_only_checkpoint(output_dir, state_dict)
 
         # fix for Context Parallel save: CP eval invalidates tensor storage
         # pointers, so clone to CPU to get fresh valid storage for safetensors

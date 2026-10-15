@@ -1,0 +1,40 @@
+base_model: baidu/ERNIE-4.5-0.3B-PT
+# Dense ERNIE 4.5 (model_type ernie4_5, Llama-style decoder).
+
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:20%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.02
+output_dir: ./outputs/ernie4_5-0.3b-sft
+
+sequence_len: 4096
+sample_packing: true
+eval_sample_packing: true
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 2e-5
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 2
+saves_per_epoch: 1
+weight_decay: 0.0
