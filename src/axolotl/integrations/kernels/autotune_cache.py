@@ -163,10 +163,23 @@ def _kernel_name(autotuner: Any) -> str:
 
 
 def read_autotune_cache(path: str) -> dict[str, Any] | None:
+    """The cache file's contents, or None when absent, unreadable, or of another version.
+
+    The cache is an optimization: a truncated file (a run killed mid-write before the
+    atomic rename, or a copy that was cut short) must not abort a run, and the next
+    write repairs it.
+    """
     if not os.path.exists(path):
         return None
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        LOG.warning("Ignoring unreadable autotune cache %s: %s", path, exc)
+        return None
+    if not isinstance(data, dict):
+        LOG.warning("Ignoring autotune cache %s: not a JSON object", path)
+        return None
     if data.get("version") != FILE_VERSION:
         LOG.warning(
             "Ignoring autotune cache %s: unknown version %s", path, data.get("version")
