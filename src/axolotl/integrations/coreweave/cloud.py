@@ -108,13 +108,16 @@ class CoreWeaveCloud(CloudLauncher):
         if not isinstance(training, dict):
             raise ValueError("The training config must be a YAML mapping")
         training.update(kwargs)
+        backend = cfg.backend.upper()
         if local_dirs:
             raise ValueError(
-                "SUNK needs shared storage mounts; local directory uploads are not supported"
+                f"CoreWeave {backend} needs shared storage; local directory uploads "
+                "are not supported"
             )
         if training.get("use_ray"):
             raise ValueError(
-                "SUNK provider launches Accelerate/torchrun directly; set use_ray: false"
+                f"CoreWeave {backend} launches Accelerate/torchrun directly; set "
+                "use_ray: false"
             )
         if launcher not in {"accelerate", "torchrun", "python"}:
             raise ValueError(f"Unsupported launcher: {launcher}")

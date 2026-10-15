@@ -176,3 +176,10 @@ def test_cks_rejects_outputs_off_the_volume_and_topology_args():
         CoreWeaveCloud(
             {"provider": "coreweave", "backend": "cks", "image": "x", "namespace": "n"}
         )
+
+
+def test_shared_validation_names_the_cks_backend():
+    with pytest.raises(ValueError, match="CoreWeave CKS"):
+        provider(dry_run=True).train("base_model: test\nuse_ray: true")
+    with pytest.raises(ValueError, match="CoreWeave CKS"):
+        provider(dry_run=True).train("base_model: test", local_dirs={"a": "b"})
