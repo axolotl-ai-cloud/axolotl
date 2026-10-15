@@ -1026,6 +1026,24 @@ def scattermoe_experts_forward_ep(
                     RUNTIME.fp4_dx_prefer_fp8,
                 )
 
+    # same guard as the non-EP forward: on Blackwell the legacy fused-MX kernel is the wrong
+    # path for NVFP4 + LoRA (SIGSEGV on some layouts, 10x slower on others); the supported
+    # routes are the merge-aware grouped GEMM or dsv4_fp4_grouped_mode
+    if (
+        _fp4_grouped_mode_g is None
+        and _gup_lora_g is not None
+        and _down_lora_g is not None
+        and torch.cuda.is_available()
+        and torch.cuda.get_device_capability()[0] >= 10
+        and is_nvfp4_param(_get_base_param(getattr(self, _w1_attr)))
+    ):
+        raise RuntimeError(
+            "NVFP4 experts with LoRA under expert parallelism need the grouped fp4 MoE path on "
+            "Blackwell (sm100/sm120): the legacy fused-MX kernel (scatter2scatter_lora_mx) is "
+            "unsafe and an order of magnitude slower on this arch. Set nvfp4_merge_aware: true "
+            "(SonicMoE) or dsv4_fp4_grouped_mode: nvfp4."
+        )
+
     N = hidden_states.size(0)
     K = top_k_index.shape[1]
     E_local = self.num_experts
