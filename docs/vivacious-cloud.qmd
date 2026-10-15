@@ -1,0 +1,76 @@
+---
+title: Vivacious Cloud
+description: How to launch Axolotl model training across multi-cloud GPU instances with Vivacious Cloud
+---
+
+[Vivacious Cloud](https://vivaciouscloud.com) is a multi-cloud GPU orchestration platform designed to provision compute and manage training workloads across heterogeneous providers (including AWS, RunPod, Lambda Labs, and GCP). 
+
+Developers can manage and deploy training jobs using the official open-source companion CLI [`vivacious-cli`](https://github.com/Viavcious-cloud/vivacious-cli).
+
+## Vivacious CLI Setup
+
+Install the CLI globally via npm or clone from GitHub:
+
+```bash
+npm install -g vivacious-cli
+```
+
+Authenticate with your Vivacious Cloud account token:
+
+```bash
+vivacious login --token <YOUR_VIVACIOUS_TOKEN>
+```
+
+## Preparing and Deploying Workloads
+
+### 1. Validate Dataset Structure
+
+Before deploying compute, validate your training dataset format:
+
+```bash
+vivacious prepare --data ./dataset.jsonl
+```
+
+### 2. Request Hardware Permit
+
+Vivacious Cloud manages server-authoritative GPU sizing and workload scheduling. Request a permit for your target GPU architecture:
+
+```bash
+vivacious permit --gpu-type A100 --hours 4
+```
+
+### 3. Deploy Training Job
+
+Launch the provisioned workload using your issued permit:
+
+```bash
+vivacious deploy --name axolotl-llama3-job --permit-id <PERMIT_ID>
+```
+
+## Running Axolotl Training
+
+On your provisioned GPU instance, clone Axolotl and install dependencies:
+
+```bash
+git clone https://github.com/axolotl-ai-cloud/axolotl.git
+cd axolotl
+pip install -e .
+```
+
+Launch fine-tuning using an existing configuration from the checkout:
+
+```bash
+accelerate launch -m axolotl.cli.train examples/llama-3/lora-8b.yml
+```
+
+Alternatively, fetch community examples using the Axolotl CLI:
+
+```bash
+axolotl fetch examples
+```
+
+## Resources
+
+- [Vivacious Cloud Official Platform](https://vivaciouscloud.com)
+- [vivacious-cli GitHub Repository](https://github.com/Viavcious-cloud/vivacious-cli)
+- [Axolotl GitHub Repository](https://github.com/axolotl-ai-cloud/axolotl)

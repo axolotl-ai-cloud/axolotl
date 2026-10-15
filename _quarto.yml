@@ -510,6 +510,7 @@ website:
             - docs/skypilot.qmd
             - docs/hf-jobs.qmd
             - docs/nebius-serverless.qmd
+            - docs/vivacious-cloud.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 
