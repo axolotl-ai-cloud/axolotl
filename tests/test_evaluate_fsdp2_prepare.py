@@ -72,3 +72,35 @@ def test_no_fsdp_is_untouched():
     trainer.create_optimizer.assert_not_called()
     trainer.accelerator.prepare.assert_not_called()
     assert trainer.model is original_model
+
+
+def test_callbacks_can_switch_on_their_forward_for_evaluation():
+    from types import SimpleNamespace
+
+    from axolotl.evaluate import enable_callbacks_for_evaluation
+
+    class Gated:
+        enabled = False
+
+        def enable_for_evaluation(self):
+            self.enabled = True
+
+    gated = Gated()
+    trainer = SimpleNamespace(
+        callback_handler=SimpleNamespace(callbacks=[object(), gated])
+    )
+    assert enable_callbacks_for_evaluation(trainer) == ["Gated"]
+    assert gated.enabled
+    assert enable_callbacks_for_evaluation(SimpleNamespace()) == []
+
+
+def test_merge_aware_schedule_enables_for_evaluation(monkeypatch):
+    from axolotl.integrations.kernels import merge_aware_callback as mac
+    from axolotl.integrations.kernels.libs import sonicmoe
+
+    calls = []
+    monkeypatch.setattr(sonicmoe, "set_merge_aware_enabled", calls.append)
+    callback = mac.MergeAwareScheduleCallback(start_step=0.5)
+    callback.enable_for_evaluation()
+    callback.enable_for_evaluation()
+    assert calls == [True]
