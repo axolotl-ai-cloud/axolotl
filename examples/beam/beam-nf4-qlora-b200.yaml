@@ -27,10 +27,13 @@ autotune_profiles:
     configs:
       - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
 
-# every rank holds a 1/8 FSDP shard of the packed model (~32 GB) and dequantizes
-# the experts its tokens hit; expert_parallel_size: 8 with dp_shard_size: 1 cuts the
-# packed experts per rank instead (the staged loader slices rank 0's packed weights)
-dp_shard_size: 8
+# EP=8 node-local: each GPU owns 32 of the 256 packed NF4 experts per layer, sliced
+# from rank 0's packed weights without requantizing, and the dense weights FSDP-shard
+# over the same axis. dp_shard_size: 8 without expert parallelism also works and is
+# ~40% slower here, since every rank then dequantizes every expert its tokens hit.
+expert_parallel_size: 8
+dp_shard_size: 1
+expert_parallel_backend: deep_ep
 # chunked-dequant grouped_mm experts (64 of the 256 experts dequantized per chunk); the
 # selective-dequant scatter2scatter default (moe_bnb_fast) faults on these experts
 moe_bnb_fast: false
