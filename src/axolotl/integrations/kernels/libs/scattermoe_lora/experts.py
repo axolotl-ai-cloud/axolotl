@@ -244,6 +244,32 @@ def _handed_lora_as_scattermoe(experts):
     return converted or None
 
 
+def _legacy_mx_kernel_selected(experts, w1_attr, fp4_grouped_mode, gup_lora, down_lora):
+    """True when NVFP4 experts with LoRA are about to run on the legacy fused-MX Triton kernel."""
+    return (
+        fp4_grouped_mode is None
+        and gup_lora is not None
+        and down_lora is not None
+        and torch.cuda.is_available()
+        and is_nvfp4_param(_get_base_param(getattr(experts, w1_attr)))
+    )
+
+
+def _warn_legacy_mx_kernel(experts) -> None:
+    """Once per module: the fused-MX kernel is the fallback, not the fast NVFP4 LoRA path."""
+    if getattr(experts, "_axolotl_legacy_mx_warning_emitted", False):
+        return
+    experts._axolotl_legacy_mx_warning_emitted = True
+    warnings.warn(
+        "NVFP4 experts with LoRA are running on the legacy fused-MX Triton kernel "
+        "(scatter2scatter_lora_mx). It is the slowest NVFP4 LoRA path; prefer "
+        "nvfp4_merge_aware: true (SonicMoE) or dsv4_fp4_grouped_mode: nvfp4 where the "
+        "grouped fp4 GEMM is available for this GPU.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
 def _warn_merge_aware_ep_unsupported(experts, reason: str) -> None:
     if getattr(experts, "_axolotl_merge_aware_ep_warning_emitted", False):
         return
@@ -709,19 +735,16 @@ def scattermoe_experts_forward(
     # _prepare_weights_and_lora -> selective_nvfp4_weights_fwd -> scatter2scatter_lora_mx, which
     # SIGSEGVs on Blackwell. Turn that silent crash into an actionable error (the grouped path is the
     # supported route for NVFP4+LoRA); non-Blackwell archs keep the legacy path.
-    if (
-        _fp4_grouped_mode is None
-        and gup_lora is not None
-        and down_lora is not None
-        and torch.cuda.is_available()
-        and torch.cuda.get_device_capability()[0] >= 10
-        and is_nvfp4_param(_get_base_param(getattr(self, w1_attr)))
+    if _legacy_mx_kernel_selected(
+        self, w1_attr, _fp4_grouped_mode, gup_lora, down_lora
     ):
-        raise RuntimeError(
-            "NVFP4 experts with LoRA require the grouped fp4 MoE path on Blackwell (sm100/sm120): "
-            "the legacy fused-MX kernel (scatter2scatter_lora_mx) SIGSEGVs on this arch. Set "
-            "dsv4_fp4_grouped_mode: nvfp4 in your config to enable the supported grouped GEMM path."
-        )
+        if torch.cuda.get_device_capability()[0] >= 10:
+            raise RuntimeError(
+                "NVFP4 experts with LoRA require the grouped fp4 MoE path on Blackwell (sm100/sm120): "
+                "the legacy fused-MX kernel (scatter2scatter_lora_mx) SIGSEGVs on this arch. Set "
+                "dsv4_fp4_grouped_mode: nvfp4 in your config to enable the supported grouped GEMM path."
+            )
+        _warn_legacy_mx_kernel(self)
 
     # BnB-4bit experts have no 4-bit-read kernel; the naive path full-dequants all E experts every
     # forward (~2.7x VRAM). Route to the chunked-dequant grouped MoE (bounded transient). Detect
@@ -1029,20 +1052,17 @@ def scattermoe_experts_forward_ep(
     # same guard as the non-EP forward: on Blackwell the legacy fused-MX kernel is the wrong
     # path for NVFP4 + LoRA (SIGSEGV on some layouts, 10x slower on others); the supported
     # routes are the merge-aware grouped GEMM or dsv4_fp4_grouped_mode
-    if (
-        _fp4_grouped_mode_g is None
-        and _gup_lora_g is not None
-        and _down_lora_g is not None
-        and torch.cuda.is_available()
-        and torch.cuda.get_device_capability()[0] >= 10
-        and is_nvfp4_param(_get_base_param(getattr(self, _w1_attr)))
+    if _legacy_mx_kernel_selected(
+        self, _w1_attr, _fp4_grouped_mode_g, _gup_lora_g, _down_lora_g
     ):
-        raise RuntimeError(
-            "NVFP4 experts with LoRA under expert parallelism need the grouped fp4 MoE path on "
-            "Blackwell (sm100/sm120): the legacy fused-MX kernel (scatter2scatter_lora_mx) is "
-            "unsafe and an order of magnitude slower on this arch. Set nvfp4_merge_aware: true "
-            "(SonicMoE) or dsv4_fp4_grouped_mode: nvfp4."
-        )
+        if torch.cuda.get_device_capability()[0] >= 10:
+            raise RuntimeError(
+                "NVFP4 experts with LoRA under expert parallelism need the grouped fp4 MoE path on "
+                "Blackwell (sm100/sm120): the legacy fused-MX kernel (scatter2scatter_lora_mx) is "
+                "unsafe and an order of magnitude slower on this arch. Set nvfp4_merge_aware: true "
+                "(SonicMoE) or dsv4_fp4_grouped_mode: nvfp4."
+            )
+        _warn_legacy_mx_kernel(self)
 
     N = hidden_states.size(0)
     K = top_k_index.shape[1]
