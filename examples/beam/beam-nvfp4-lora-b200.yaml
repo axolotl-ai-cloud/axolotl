@@ -98,9 +98,8 @@ tf32: true
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-# SonicMoE pins nvidia-cutlass-dsl 4.6.0, which the flash-attn-4 package replaces;
-# the hub flash-attn2 kernel (sm_100 cubin) needs no CuTe DSL
-attn_implementation: flash_attention_2
+# Flash Attention 4 (CuTe DSL) shares the image's cutlass-dsl 4.8 with quack-kernels 0.6.5
+attn_implementation: flash_attention_4
 # fused LoRA kernels: the QKV/O patch keeps Beam's gate and norms in place (A/B: identical losses)
 lora_qkv_kernel: true
 lora_o_kernel: true
