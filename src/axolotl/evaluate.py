@@ -87,6 +87,19 @@ def prepare_fsdp2_model_for_eval(trainer: Trainer) -> None:
 
 
 @send_errors
+def enable_callbacks_for_evaluation(trainer: Trainer) -> list[str]:
+    """Give trainer callbacks that gate a forward path on training state their chance to
+    switch it on, since no ``on_train_begin`` fires in a standalone evaluation."""
+    enabled = []
+    handler = getattr(trainer, "callback_handler", None)
+    for callback in getattr(handler, "callbacks", []):
+        enable = getattr(callback, "enable_for_evaluation", None)
+        if callable(enable):
+            enable()
+            enabled.append(type(callback).__name__)
+    return enabled
+
+
 def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, float]:
     """
     Evaluate a model on training and validation datasets.
@@ -120,6 +133,7 @@ def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, f
     )
 
     prepare_fsdp2_model_for_eval(trainer)
+    enable_callbacks_for_evaluation(trainer)
 
     # Evaluate datasets
     all_metrics = {}

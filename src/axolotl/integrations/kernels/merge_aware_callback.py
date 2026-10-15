@@ -88,6 +88,17 @@ class MergeAwareScheduleCallback(TrainerCallback):
     def on_train_begin(self, args, state, control, **kwargs):
         self._maybe_enable(state)
 
+    def enable_for_evaluation(self) -> None:
+        """A standalone evaluation never reaches ``on_train_begin``; the adapter (or the
+        merged checkpoint) was trained through the fake-quant forward, so evaluate through it."""
+        if self._enabled:
+            return
+        from axolotl.integrations.kernels.libs.sonicmoe import set_merge_aware_enabled
+
+        set_merge_aware_enabled(True)
+        self._enabled = True
+        LOG.info("merge-aware NVFP4 fake-quant enabled for evaluation")
+
     def on_step_begin(self, args, state, control, **kwargs):
         self._maybe_enable(state)
 
