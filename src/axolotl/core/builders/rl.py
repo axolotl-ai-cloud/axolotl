@@ -40,6 +40,28 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
         return callbacks
 
+    def hook_post_create_trainer(self, trainer):
+        """Attach the fused LoRA kernels to the adapter TRL built inside the trainer."""
+        from peft import PeftModel
+
+        from axolotl.loaders.patch_manager import rl_trainer_builds_adapter
+
+        if (
+            (
+                self.cfg.lora_mlp_kernel
+                or self.cfg.lora_qkv_kernel
+                or self.cfg.lora_o_kernel
+            )
+            and rl_trainer_builds_adapter(self.cfg)
+            and isinstance(trainer.model, PeftModel)
+        ):
+            from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
+
+            # the kernels fall back to the plain forward while adapters are disabled, so
+            # the reference-model pass through the same module stays unpatched
+            apply_lora_kernel_patches(model=trainer.model, cfg=self.cfg)
+        return trainer
+
     def _get_trainer_cls(self, trainer_kwargs: dict):
         """
         Returns trainer_cls and trainer_cls_args

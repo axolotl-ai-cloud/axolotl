@@ -602,24 +602,3 @@ class TestTrainableTokenWarning:
             AxolotlInputConfig.warn_peft_trainable_token_to_fix_untrained(data)
         warning.assert_called_once()
         assert "Token 201" in warning.call_args.args[0]
-
-
-class TestLoraKernelsWithRL:
-    """The RL trainers attach the adapter themselves, so explicit fused kernels cannot patch it."""
-
-    def test_explicit_kernels_rejected_with_rl(self, min_base_cfg):
-        cfg = DictDefault(
-            min_base_cfg
-            | dict(
-                rl="dpo", adapter="lora", lora_r=8, lora_alpha=16, lora_qkv_kernel=True
-            )
-        )
-        with pytest.raises(ValueError, match="lora_qkv_kernel cannot be used with rl"):
-            validate_config(cfg)
-
-    def test_unset_kernels_stay_off_with_rl(self, min_base_cfg):
-        cfg = DictDefault(
-            min_base_cfg | dict(rl="dpo", adapter="lora", lora_r=8, lora_alpha=16)
-        )
-        out = validate_config(cfg)
-        assert not out.lora_qkv_kernel and not out.lora_mlp_kernel

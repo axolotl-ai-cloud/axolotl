@@ -955,20 +955,6 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_lora_kernels_with_rl(cls, data):
-        if not data.get("rl"):
-            return data
-        explicit = [flag for flag in _LORA_KERNEL_FLAGS if data.get(flag)]
-        if explicit:
-            raise ValueError(
-                f"{', '.join(explicit)} cannot be used with rl: {data['rl']}; the RL "
-                "trainer attaches the adapter itself, after the fused LoRA kernels "
-                "would be patched in. Remove the lora_*_kernel flags."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_kto_config(cls, data):
         if data.get("rl") == "kto":
             if data.get("sample_packing") or data.get("eval_sample_packing"):
