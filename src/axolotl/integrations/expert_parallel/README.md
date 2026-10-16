@@ -171,7 +171,7 @@ python -c "import deep_ep; print(deep_ep.Buffer)"
 
 **Blackwell (sm_100, B200), node-local EP on CUDA 13.0:**
 
-DeepEP `main` requires CUDA 13.1 and gcc 13; `v1.2.1` builds against the CUDA 13.0 toolkit and gcc 11
+DeepEP `main` requires CUDA 13.1; `v1.2.1` builds against the CUDA 13.0 toolkit
 that the Axolotl images ship once CUDA 13's relocated `cuda/std/*` headers (`include/cccl`) are on the
 include path. It links the `nvidia-nvshmem-cu13` wheel that torch already depends on, so no OFED headers
 or system NVSHMEM are needed. No GPU is needed for the build; the wheel can be built once and installed

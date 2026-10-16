@@ -8,7 +8,7 @@ ARG DEEP_EP_REF=v1.2.1
 ARG TORCH_CUDA_ARCH_LIST="10.0"
 ARG MAX_JOBS=16
 
-# DeepEP main needs CUDA 13.1 and gcc 13; v1.2.1 builds on this image's CUDA 13.0 / gcc 11 once
+# DeepEP main needs CUDA 13.1; v1.2.1 builds on this image's CUDA 13.0 once
 # CUDA 13's relocated cuda/std headers are on the include path. It links torch's
 # nvidia-nvshmem-cu13 wheel, which setup.py finds on its own. The tag's build backend fails
 # under `pip install .`, so build the wheel with setuptools directly.
