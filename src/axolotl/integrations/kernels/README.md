@@ -7,7 +7,7 @@ class ExpertsInterface(GeneralInterface):
     _global_mapping = {
         "batched_mm": batched_mm_experts_forward,
         "grouped_mm": grouped_mm_experts_forward,
-        "sonicmoe":   sonicmoe_experts_forward,   # upstream HF integration
+        "sonicmoe": sonicmoe_experts_forward,  # upstream HF integration
     }
 ```
 
