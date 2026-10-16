@@ -1,0 +1,62 @@
+base_model: Hcompany/Holo4-35B-A3B
+processor_type: AutoProcessor
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+# These 3 lines are required for vision/multimodal training
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+chat_template: qwen3_5
+datasets:
+  # screenshot + instruction -> click point; first of 162 shards (500 rows)
+  - path: mlfoundations-cua-dev/agentnet-clicks
+    type: chat_template
+    data_files: data/train-00000-of-00162.parquet
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.0
+output_dir: ./outputs/holo4-35b-a3b-lora
+
+adapter: lora
+sequence_len: 4096
+pad_to_sequence_len: false
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - down_proj
+  - up_proj
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+logging_steps: 1
+attn_implementation: flash_attention_2
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0
