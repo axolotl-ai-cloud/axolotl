@@ -41,9 +41,10 @@ def _weight_conversions():
     from transformers.core_model_loading import WeightRenaming
 
     # the fused-expert layout and router come from deepseek_v3; only the router
-    # bias is spelled differently in a Bailing checkpoint
+    # bias is spelled differently in a Bailing checkpoint. Keyed by class so
+    # transformers' native `bailing_hybrid` renames never reach this vendored layout.
     return {
-        "bailing_hybrid": get_checkpoint_conversion_mapping("deepseek_v3")
+        "BailingMoeV3ForCausalLM": get_checkpoint_conversion_mapping("deepseek_v3")
         + [WeightRenaming("mlp.gate.expert_bias", "mlp.gate.e_score_correction_bias")]
     }
 

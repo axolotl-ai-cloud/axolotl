@@ -511,7 +511,7 @@ class TestBailingHybridSupport:
         """``save_pretrained`` reverses these to re-emit the published layout."""
         from axolotl.model_support.bailing_hybrid import _weight_conversions
 
-        transforms = _weight_conversions()["bailing_hybrid"]
+        transforms = _weight_conversions()["BailingMoeV3ForCausalLM"]
         assert transforms
         for transform in transforms:
             for operation in getattr(transform, "operations", None) or []:
