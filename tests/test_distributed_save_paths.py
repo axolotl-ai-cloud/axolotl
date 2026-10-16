@@ -142,6 +142,8 @@ def test_non_ep_bf16_lora_checkpoint_uses_default_save(monkeypatch, tmp_path):
 
 def _count_trainer(*, tp_size, cp_size, average_tokens_across_devices=False):
     trainer = object.__new__(AxolotlTrainer)
+    trainer.model = SimpleNamespace(_tp_size=tp_size)
+    trainer.is_deepspeed_enabled = False
     trainer.model_accepts_loss_kwargs = True
     trainer.compute_loss_func = None
     trainer._loss_shifts_labels = True
@@ -152,7 +154,10 @@ def _count_trainer(*, tp_size, cp_size, average_tokens_across_devices=False):
     )
     trainer.accelerator = SimpleNamespace(
         parallelism_config=SimpleNamespace(
-            tp_size=tp_size, non_data_parallel_size=tp_size * cp_size
+            tp_size=tp_size,
+            cp_size=cp_size,
+            sp_size=1,
+            non_data_parallel_size=tp_size * cp_size,
         )
     )
     return trainer
