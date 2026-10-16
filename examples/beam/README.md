@@ -10,15 +10,9 @@ Thanks to the team at Reflection for giving us early access to prepare for this 
 
 1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
 
-2. Upgrade Transformers to v5.20.1 or later, which adds Beam:
+2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
 
-    ```bash
-    uv pip install "transformers>=5.20.1"
-    ```
-
-3. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage.
-
-4. Pick a config and run (sized for one 8xH200 node):
+3. Pick a config and run (sized for one 8xH200 node):
 
     ```bash
     axolotl train examples/beam/beam-qlora-fsdp-staged.yaml
