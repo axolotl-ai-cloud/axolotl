@@ -333,6 +333,16 @@ class AxolotlInputConfig(
         },
     )
     dpo_label_smoothing: float | None = None
+    dpo_ld_alpha: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        json_schema_extra={
+            "description": "LD-DPO length desensitization: weight on the log-probabilities of the tokens a "
+            "response has beyond the shorter response of its pair (1.0 = unweighted, 0.0 = ignore them). "
+            "Applies to every DPO loss type, including apo_zero."
+        },
+    )
     precompute_ref_log_probs: bool | None = Field(
         default=None,
         json_schema_extra={
