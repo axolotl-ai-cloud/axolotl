@@ -1085,10 +1085,32 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
             turns.append(turn)
 
+        self._name_tool_results(turns)
+
         if self.prompter.drop_system_message and turns[0]["role"] == "system":
             turns = turns[1:]
 
         return turns
+
+    @staticmethod
+    def _name_tool_results(turns: list[dict]) -> None:
+        """Give every tool result the name of the call it answers.
+
+        Templates that resolve a tool result's sender from a registry of earlier
+        ``tool_calls`` ids see an empty registry when a turn is located by rendering
+        with a placeholder assistant turn, so the name has to travel on the message.
+        """
+        call_names: dict[str, str] = {}
+        for turn in turns:
+            for call in turn.get("tool_calls") or []:
+                function = call.get("function") or {}
+                name = function.get("name") or call.get("name")
+                if call.get("id") and name:
+                    call_names[call["id"]] = name
+            if turn.get("role") == "tool" and not turn.get("name"):
+                tool_call_id = turn.get("tool_call_id")
+                if tool_call_id and tool_call_id in call_names:
+                    turn["name"] = call_names[tool_call_id]
 
     def transform_message(self, message: dict) -> dict:
         # Build the initial transformed message from the mappings
