@@ -32,11 +32,11 @@ class TestTensorParallel:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_torch",
                 "tensor_parallel_size": 2,
                 "lr_scheduler": "cosine",
@@ -64,5 +64,9 @@ class TestTensorParallel:
         )
 
         check_tensorboard_loss_decreased(
-            temp_dir + "/runs", max_initial=5.0, max_final=4.7
+            temp_dir + "/runs",
+            initial_window=10,
+            final_window=10,
+            max_initial=5.0,
+            max_final=4.7,
         )
