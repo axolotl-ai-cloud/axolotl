@@ -85,12 +85,6 @@ class BeamSupport(ModelSupport):
                 "Liger's RMSNorm and SwiGLU replacements carry neither, and its SwiGLU "
                 "patch expects per-expert nn.Linear rather than fused 3D parameters."
             ),
-            "sdpa_varlen": Experimental(
-                "Unverified for this arch: sliding_window=512 needs a torch build with "
-                "varlen_attn(window_size=...), and ssmax scales attention off "
-                "position_ids -- which sample packing rewrites per document. Prefer "
-                "attn_implementation: flash_attention_2 until this is measured."
-            ),
         },
         hooks=ModelHooks(
             by_phase={

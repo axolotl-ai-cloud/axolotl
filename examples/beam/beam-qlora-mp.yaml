@@ -15,9 +15,6 @@ val_set_size: 0.0
 output_dir: ./outputs/beam-real-mp
 
 sequence_len: 2048
-# flash_attention_2 varlen resets position_ids per document, which is what ssmax
-# needs. Enabled per maintainer request; verify loss parity in a fresh env with
-# flash-attn + transformers>=5.18 (sdpa packing mis-scales ssmax: ~2x loss measured).
 sample_packing: true
 pad_to_sequence_len: true
 

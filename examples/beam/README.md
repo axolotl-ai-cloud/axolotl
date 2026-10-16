@@ -88,11 +88,6 @@ Set `transformer_layer_cls_to_wrap: BeamDecoderLayer` to match the checkpoint.
   the final adapter is gathered and saved normally regardless.
 - **`device_map` configs** have no data parallelism and must launch with
   `--num-processes 1`.
-- **Sample packing** is supported, but the model's `ssmax` reads `position_ids`,
-  so it needs the `flash_attention_2` varlen path (which resets positions per
-  document). On `sdpa` the packed batch keeps running positions across the packed
-  samples, so `ssmax` mis-scales and the packed loss diverges from the unpacked
-  run — use `flash_attention_2` when packing.
 - Run a full finetune by removing `adapter: qlora`, `load_in_4bit: true`, and
   `quantize_moe_experts: true`.
 - Read more on loading your own dataset in the [docs](https://docs.axolotl.ai/docs/dataset_loading.html).

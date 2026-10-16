@@ -14,8 +14,6 @@ val_set_size: 0.0
 output_dir: ./outputs/beam-tiny-mp
 
 sequence_len: 512
-# ssmax scales attention off position_ids and packing rewrites them per document;
-# leave off until that interaction is measured.
 sample_packing: false
 pad_to_sequence_len: true
 
