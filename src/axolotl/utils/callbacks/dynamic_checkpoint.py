@@ -52,7 +52,7 @@ class DynamicCheckpointCallback(TrainerCallback):
         )
 
         check_interval = self._get_config_value(dc_config, "check_interval")
-        self.check_interval = check_interval if check_interval is not None else 100
+        self.check_interval = check_interval if check_interval is not None else 10
 
         LOG.info(
             f"Dynamic checkpoint enabled. To trigger checkpoint save:\n"
