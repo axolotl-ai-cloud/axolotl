@@ -14,6 +14,22 @@ import torch.nn.utils.parametrize as P
 _BNB_4BIT = ("Bnb4bitParametrization", "BnbNF4Parametrization")
 
 
+def has_expert_member(module, name) -> bool:
+    """Whether ``module`` has ``name``, without evaluating a parametrization.
+
+    ``hasattr`` on a parametrized (e.g. bitsandbytes-quantized) weight runs the
+    parametrization and dequantizes it; look in the module's storage instead.
+    """
+    return (
+        P.is_parametrized(module, name)
+        or name in module._parameters
+        or name in module._buffers
+        or name in module._modules
+        or name in vars(module)
+        or hasattr(type(module), name)
+    )
+
+
 def expert_storage(module, name):
     parametrizations = getattr(module, "parametrizations", {})
     if name in parametrizations:

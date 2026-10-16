@@ -137,7 +137,9 @@ def expert_input_proj_name(module) -> str:
     """The experts' first projection: ``gate_up_proj`` (gated), or ``up_proj`` on a
     non-gated module (``@use_experts_implementation(has_gate=False)``, e.g. Nemotron-H's
     relu² experts)."""
-    if hasattr(module, "gate_up_proj") or getattr(module, "has_gate", True):
+    from .bnb import has_expert_member
+
+    if has_expert_member(module, "gate_up_proj") or getattr(module, "has_gate", True):
         return "gate_up_proj"
     return "up_proj"
 

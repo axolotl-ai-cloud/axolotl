@@ -170,12 +170,14 @@ def _maybe_install_decorator_attrs(experts):
     """`@use_experts_implementation` injects has_gate/has_bias/is_transposed/has_post_expert_norm.
     For models loaded outside the decorator path (or in tests), patch them in.
     """
+    from .bnb import has_expert_member
+
     if not hasattr(experts, "has_gate"):
-        experts.has_gate = hasattr(experts, "gate_up_proj") or not hasattr(
-            experts, "up_proj"
-        )
+        experts.has_gate = has_expert_member(
+            experts, "gate_up_proj"
+        ) or not has_expert_member(experts, "up_proj")
     if not hasattr(experts, "has_bias"):
-        experts.has_bias = hasattr(experts, "gate_up_proj_bias")
+        experts.has_bias = has_expert_member(experts, "gate_up_proj_bias")
     if not hasattr(experts, "is_transposed"):
         experts.is_transposed = False
     if not hasattr(experts, "has_post_expert_norm"):
