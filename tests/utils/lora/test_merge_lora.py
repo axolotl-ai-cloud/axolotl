@@ -504,6 +504,68 @@ class TestEfficientMerge:
             base_weights["model.embed_tokens.weight"],
         )
 
+    def _make_multi_shard_merge(self, tmp_path, n_shards=3, hidden=16, r=4):
+        model_dir = tmp_path / "base_model"
+        model_dir.mkdir()
+        base, lora_state, weight_map = {}, {}, {}
+        for i in range(n_shards):
+            name = f"model-{i + 1:05d}-of-{n_shards:05d}.safetensors"
+            key = f"model.layers.{i}.self_attn.q_proj.weight"
+            shard = {key: torch.randn(hidden, hidden)}
+            if i == 0:
+                shard["model.embed_tokens.weight"] = torch.randn(10, hidden)
+            safetensors.torch.save_file(shard, model_dir / name)
+            base.update(shard)
+            weight_map.update(dict.fromkeys(shard, name))
+            module = f"base_model.model.{key.removesuffix('.weight')}"
+            lora_state[f"{module}.lora_A.weight"] = torch.randn(r, hidden)
+            lora_state[f"{module}.lora_B.weight"] = torch.randn(hidden, r)
+        (model_dir / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {}, "weight_map": weight_map})
+        )
+        (model_dir / "config.json").write_text("{}")
+        adapter_dir, _ = self._make_adapter(tmp_path, r=r, alpha=2 * r)
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+        return model_dir, adapter_dir, base, lora_state, weight_map
+
+    def test_sharded_merge_overlaps_io_without_reordering(self, tmp_path):
+        """Shards are read ahead and written behind the merge; every shard must still
+        land in its own file with its own merged tensors."""
+        model_dir, adapter_dir, base, lora_state, weight_map = (
+            self._make_multi_shard_merge(tmp_path)
+        )
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(model_dir, adapter_dir, output_dir, device="cpu")
+
+        index = json.loads((output_dir / "model.safetensors.index.json").read_text())
+        assert index["weight_map"] == weight_map
+        for key, tensor in base.items():
+            merged = safetensors.torch.load_file(output_dir / weight_map[key])[key]
+            module = f"base_model.model.{key.removesuffix('.weight')}"
+            if f"{module}.lora_A.weight" not in lora_state:
+                assert torch.equal(merged, tensor)
+                continue
+            expected = tensor + 2.0 * (
+                lora_state[f"{module}.lora_B.weight"]
+                @ lora_state[f"{module}.lora_A.weight"]
+            )
+            assert torch.allclose(merged, expected, atol=1e-5)
+
+    def test_sharded_merge_surfaces_background_write_failure(self, tmp_path):
+        model_dir, adapter_dir, *_ = self._make_multi_shard_merge(tmp_path)
+
+        def fail(*_args):
+            raise OSError("disk full")
+
+        with patch("axolotl.cli.utils.lora_merge._write_shard", side_effect=fail):
+            with pytest.raises(OSError, match="disk full"):
+                merge_lora_sharded_efficient(
+                    model_dir, adapter_dir, tmp_path / "output", device="cpu"
+                )
+        assert not (tmp_path / "output" / "model.safetensors.index.json").exists()
+
     def test_nf4_gate_follows_prefixed_layer_type_map(self, tmp_path):
         """The exclusion gate must use the same prefix fallback as the layer lookup."""
         hidden, r = 64, 8
@@ -3221,6 +3283,56 @@ class TestQuantizedBaseMerge:
         with patch.object(lm.LOG, "warning") as mock_warn:
             writer.assert_drained()
         assert any("NEAR-NO-OP" in str(c.args[0]) for c in mock_warn.call_args_list)
+
+    @pytest.mark.parametrize(
+        "scale_mode,dequant", [("fresh", False), ("reuse", False), ("reuse", True)]
+    )
+    def test_nvfp4_expert_writer_chunking_is_bitwise_invariant(
+        self, tmp_path, scale_mode, dequant
+    ):
+        """The expert writer merges in expert chunks to bound its working set; the
+        written bytes must not depend on the chunk size, and the per-expert views it
+        emits must round-trip through safetensors."""
+        pytest.importorskip("torchao")
+        from axolotl.cli.utils.lora_merge import _Nvfp4ExpertMergeWriter
+
+        torch.manual_seed(5)
+        E, H, I, r, alpha = 5, 64, 32, 4, 8  # noqa: E741
+        shard = self._make_expert_shard(E, H, I, gate_mult=3.0)
+        adapter = self._make_fused_expert_adapter(E, H, I, r)
+
+        outputs = []
+        for chunk in (E, 1, 2):
+            writer = _Nvfp4ExpertMergeWriter(
+                adapter,
+                {"r": r, "lora_alpha": alpha},
+                E,
+                "cpu",
+                dequant=dequant,
+                scale_mode=scale_mode,
+                expert_chunk=chunk,
+            )
+            remaining, emitted, merged = writer.consume(dict(shard))
+            writer.assert_drained()
+            assert merged == 2 and not remaining
+            outputs.append(emitted)
+
+        def raw(t):
+            return t.contiguous().reshape(-1).view(torch.uint8)
+
+        ref = outputs[0]
+        for emitted in outputs[1:]:
+            assert emitted.keys() == ref.keys()
+            for key, t in ref.items():
+                assert emitted[key].dtype == t.dtype
+                assert emitted[key].shape == t.shape
+                assert torch.equal(raw(emitted[key]), raw(t)), key
+
+        path = tmp_path / "chunked.safetensors"
+        safetensors.torch.save_file(outputs[-1], path)
+        reloaded = safetensors.torch.load_file(path)
+        for key, t in outputs[-1].items():
+            assert torch.equal(raw(reloaded[key]), raw(t)), key
 
     def test_fused_expert_base_no_false_positive(self, tmp_path):
         """A FUSED expert base (Mistral-Large-4 style) + fused adapter must NOT trigger the per-expert
