@@ -105,6 +105,24 @@ class TestHFRLTrainerBuilder:
         assert training_arguments.loss_type == ["sigmoid", "sft"]
         assert training_arguments.loss_weights == [1.0, 0.5]
 
+    def test_dpo_ld_alpha_and_liger_reach_trl_config(self, dpo_cfg, model, tokenizer):
+        """ld_alpha rides the same strategy hook as the loss list into TRL's DPOConfig, and
+        liger leaves the loss list intact."""
+        dpo_cfg["dpo_loss_type"] = ["apo_zero", "hinge"]
+        dpo_cfg["dpo_loss_weights"] = [1.0, 0.5]
+        dpo_cfg["dpo_ld_alpha"] = 0.3
+        dpo_cfg["dpo_use_liger_kernel"] = True
+        dpo_cfg["dpo_use_weighting"] = (
+            False  # TRL rejects weighting together with liger
+        )
+        builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer)
+        training_arguments, _ = builder._build_training_arguments(100)
+
+        assert training_arguments.ld_alpha == 0.3
+        assert training_arguments.use_liger_kernel is True
+        assert training_arguments.loss_type == ["apo_zero", "hinge"]
+        assert training_arguments.loss_weights == [1.0, 0.5]
+
     def test_orpo_training_arguments(self, orpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer)
         training_arguments, _ = builder._build_training_arguments(100)
