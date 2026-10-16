@@ -63,16 +63,35 @@ attn_implementation: sdpa
 
 ### Flash Attention
 
-Axolotl supports FA2, FA3, and FA4. The best available version is used
-automatically based on your installed packages and GPU.
+Axolotl supports FA2, FA3, and FA4. None of them needs a `flash_attn` package any
+more: when the Dao-AILab package is absent, `transformers` resolves the backend to
+a prebuilt kernel from the Hugging Face Hub through the `kernels` library, matched
+to your torch, CUDA and GPU. `import flash_attn` failing therefore does not mean
+flash attention is unavailable.
 
 ```yaml
-attn_implementation: flash_attention_2  # or flash_attention_3
+attn_implementation: flash_attention_2  # or flash_attention_3 / flash_attention_4
 ```
 
-#### Flash Attention 2
+| Backend | Hub kernel used when the package is absent | Notes |
+|---|---|---|
+| `flash_attention_2` | `kernels-community/flash-attn2` | Ampere, Ada, Hopper and Blackwell builds (the Blackwell build ships an `sm_100` cubin). |
+| `flash_attention_3` | `kernels-community/flash-attn3` | Hopper only. |
+| `flash_attention_4` | `kernels-community/flash-attn4` | Hopper and Blackwell; `transformers` pins an older hub revision that can fail against a newer `nvidia-cutlass-dsl` with `cutlass.cute.core has no attribute ThrMma`. Pin the revision yourself (below) or install the PyPI pre-release. |
 
-Requirements: Ampere, Ada, or Hopper GPUs (Turing or lower not supported)
+To pin a hub revision, pass the kernel path with an `@` suffix; it is forwarded to
+`transformers` unchanged:
+
+```yaml
+attn_implementation: kernels-community/flash-attn4@main
+```
+
+The hub kernels are cached under `HF_HUB_CACHE` on first use, so an offline or
+air-gapped job needs them downloaded ahead of time (or the package installed).
+
+#### Installing the packages instead
+
+The Dao-AILab packages still work and take precedence when importable. FA2:
 
 ```bash
 pip install flash-attn --no-build-isolation
@@ -85,9 +104,7 @@ Alternatively, try reinstall or downgrade a version.
 
 :::
 
-#### Flash Attention 3
-
-Requirements: Hopper only and CUDA 12.8 (recommended)
+FA3 (Hopper only, CUDA 12.8 recommended):
 
 ```bash
 git clone https://github.com/Dao-AILab/flash-attention.git
@@ -104,6 +121,10 @@ native `flash_attention_4`. You can also request it explicitly:
 ```yaml
 attn_implementation: flash_attention_4
 ```
+
+Measured on one B200 for an 8,192-token packed row with 48 query / 8 KV heads of dim 128
+(forward and backward): FA4 0.93 ms with a 512-token sliding window and 1.12 ms for full
+attention, against 1.79 ms and 2.81 ms for the FA2 hub kernel.
 
 FA4 is still a pre-release on PyPI, so `--pre` is required:
 
