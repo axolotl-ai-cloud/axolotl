@@ -23,7 +23,7 @@ class SchemaError(ValueError):
 
 # Local: alphabets (tuples) already validated; checking a 255-label alphabet on
 # every parse dominated re-permuted canvas assembly.
-_CHECKED_ALPHABETS = set()
+_CHECKED_ALPHABETS: set[tuple[str, ...]] = set()
 
 
 def _checked(alphabet):
