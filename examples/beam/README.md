@@ -46,9 +46,6 @@ axolotl train examples/beam/beam-tiny-smoke.yaml
   spreads adapters across GPUs; for the expert config, `adamw_bnb_8bit` cuts
   optimizer-state VRAM if you are tight.
 - Leave the router out of `target_parameters`; adapting it destabilizes routing.
-- **FSDP2 staged loader:** keep `state_dict_type: SHARDED_STATE_DICT`. With
-  `quantize_moe_experts`, `FULL_STATE_DICT` crashes on the first checkpoint save;
-  the final adapter is gathered and saved normally regardless.
 - **`device_map` configs** have no data parallelism and must launch with
   `--num-processes 1`.
 - Run a full finetune by removing `adapter: qlora`, `load_in_4bit: true`, and
