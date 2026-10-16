@@ -2013,6 +2013,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--dpo-ld-alpha",),
+        None,
+        None,
+        "LD-DPO length desensitization: weight on the log-probabilities of the tokens a response has beyond the shorter response of its pair (1.0 = unweighted, 0.0 = ignore them). Applies to every DPO loss type, including apo_zero.",
+    ),
+    (
         ("--precompute-ref-log-probs/--no-precompute-ref-log-probs",),
         None,
         None,
