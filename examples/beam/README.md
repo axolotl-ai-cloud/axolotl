@@ -39,21 +39,23 @@ once:
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 src = "reflectionai/beam"
-cfg = AutoConfig.from_pretrained(src)
-# Shrink every size knob the config exposes; unknown fields are skipped.
-for field, value in {
-    "num_hidden_layers": 2,
-    "hidden_size": 256,
-    "intermediate_size": 512,
-    "moe_intermediate_size": 512,
-    "num_attention_heads": 4,
-    "num_key_value_heads": 2,
-    "n_routed_experts": 8,
-    "num_experts_per_tok": 2,
-    "first_k_dense_replace": 1,
-}.items():
-    if hasattr(cfg, field):
-        setattr(cfg, field, value)
+cfg = AutoConfig.from_pretrained(
+    src,
+    num_hidden_layers=2,
+    # one entry per layer: a sliding layer, then the full-attention layer
+    layer_types=["sliding_attention", "full_attention"],
+    mlp_layer_types=["dense", "sparse"],
+    hidden_size=256,
+    intermediate_size=512,
+    moe_intermediate_size=256,
+    num_attention_heads=4,
+    num_key_value_heads=2,
+    head_dim=64,
+    num_experts=8,
+    num_experts_per_tok=2,
+    n_group=1,
+    topk_group=1,
+)
 
 AutoModelForCausalLM.from_config(cfg).save_pretrained("./beam-tiny")
 AutoTokenizer.from_pretrained(src).save_pretrained("./beam-tiny")
