@@ -99,6 +99,23 @@ Set `transformer_layer_cls_to_wrap: BeamDecoderLayer` to match the checkpoint.
 
 ## Expert-parallel LoRA on B200 (bf16, NVFP4 and NF4)
 
+### Prerequisites
+
+The H200 configs above need only Axolotl and Cut Cross Entropy. The B200 configs assume the
+Blackwell kernel stack below; the `axolotlai/axolotl-cloud` `-blackwell` image tags ship all of
+it (see the [Docker docs](https://docs.axolotl.ai/docs/docker.html)), or install it into an
+existing CUDA 13 environment:
+
+| Config key | Package | Install |
+|---|---|---|
+| `expert_parallel_backend: deep_ep` | [DeepEP](https://github.com/deepseek-ai/DeepEP) v1.2.1 built for sm_100 | build per the [expert-parallel integration README](../../src/axolotl/integrations/expert_parallel/README.md#installation) (Blackwell section). Without it, set `expert_parallel_backend: torch`; the all-to-all dispatch needs nothing extra and ran about 25% slower on our smoke test |
+| `use_sonicmoe: true` / `nvfp4_merge_aware: true` | [quack-kernels](https://pypi.org/project/quack-kernels/) ≥ 0.6.5 on nvidia-cutlass-dsl ≥ 4.7 | `uv pip install "quack-kernels[cu13]"` |
+| `attn_implementation: flash_attention_4` | [flash-attn-4](https://pypi.org/project/flash-attn-4/) (pre-release; pulls quack-kernels and the cutlass DSL) | `uv pip install --pre "flash-attn-4[cu13]"`. Or keep `flash_attention_2`, which resolves to the `kernels-community/flash-attn2` hub kernel (has an sm_100 build) and is ~2x slower at Beam's shape |
+| `base_model: reflectionai/beam*` | transformers ≥ 5.20.1 (`BeamForCausalLM`) | newer than Axolotl's pin while it catches up: `uv pip install "transformers>=5.20.1"` |
+
+The kernels plugin checks the installed cutlass DSL against quack's declared range at startup and
+fails fast with the fix if they disagree.
+
 | File | Layout | Notes |
 |---|---|---|
 | `beam-lora-ep-b200.yaml` | 2 nodes x 8 B200: EP=8 inside each node, dense weights FSDP-sharded over the same ranks, HSDP replication across nodes | bf16 base, LoRA on attention + fused experts, DeepEP + ScatterMoE, flash attention 4, cut cross entropy |
