@@ -3,6 +3,9 @@
 # after FSDP wrapping, so no rank holds a full replica. Sized for one 8xH200 node.
 base_model: reflectionai/beam
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 chat_template: tokenizer_default
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test

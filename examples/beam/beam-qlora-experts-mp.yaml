@@ -3,6 +3,9 @@
 # No data parallelism, so launch with --num-processes 1.
 base_model: reflectionai/beam
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 chat_template: tokenizer_default
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test

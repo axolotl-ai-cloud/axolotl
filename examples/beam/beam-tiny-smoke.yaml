@@ -2,6 +2,9 @@
 # iteration. Build the tiny model from the full model's config (see README).
 base_model: ./beam-tiny  # tiny random-weight model, built locally (see README)
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 chat_template: tokenizer_default
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
