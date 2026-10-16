@@ -156,18 +156,16 @@ warns and keeps your requested backend when the installed quack is too old.
 
 ::: {.callout-important}
 
-## Blackwell (B200, GB200) needs a patched FA4
+## Blackwell (B200, GB200): avoid `nvidia-cutlass-dsl` 4.6.0 and 4.6.1
 
-On Blackwell the FA4 backward hangs with `nvidia-cutlass-dsl>=4.6.0`. Install the fix
-([Dao-AILab/flash-attention#2689](https://github.com/Dao-AILab/flash-attention/pull/2689))
-over your existing FA4:
+On those two releases `cute.copy` elects internally for bulk copies, so the FA4 backward nests
+elections and hangs. `nvidia-cutlass-dsl` 4.6.2 reverted the change, so stock FA4 works on
+4.6.2 and later. Do not install the
+[Dao-AILab/flash-attention#2689](https://github.com/Dao-AILab/flash-attention/pull/2689) patch
+there: it removes elections that are needed again. Hopper (H100, H200) is unaffected.
 
-```bash
-pip install --no-deps --force-reinstall \
-  'git+https://github.com/dongxiao92/flash-attention@fix/sm100-elect-one-and-div-alignment#subdirectory=flash_attn/cute'
-```
-
-`--no-deps` keeps your existing cutlass and quack pins. Hopper (H100, H200) is unaffected.
+Axolotl still warns about this hang on Blackwell with any `nvidia-cutlass-dsl>=4.6.0` and skips
+the automatic upgrade to FA4; set `attn_implementation: flash_attention_4` explicitly.
 
 :::
 
