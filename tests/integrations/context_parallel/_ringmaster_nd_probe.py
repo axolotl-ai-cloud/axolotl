@@ -145,14 +145,15 @@ def check(hsdp):
             ),
         )
         model = fsdp2_prepare_model(accelerator, model)
-        trainer = SimpleNamespace(
-            accelerator=accelerator,
-            model_accepts_loss_kwargs=True,
-            compute_loss_func=None,
-            label_smoother=None,
-            _loss_shifts_labels=False,
-            args=SimpleNamespace(average_tokens_across_devices=average, n_gpu=0),
-        )
+        trainer = object.__new__(Trainer)
+        trainer.model = model
+        trainer.is_deepspeed_enabled = False
+        trainer.accelerator = accelerator
+        trainer.model_accepts_loss_kwargs = True
+        trainer.compute_loss_func = None
+        trainer.label_smoother = None
+        trainer._loss_shifts_labels = False
+        trainer.args = SimpleNamespace(average_tokens_across_devices=average, n_gpu=0)
         restore = configure_trainer(trainer)
         expected_optimizer = torch.optim.SGD(reference.parameters(), lr=0.03)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.03)
