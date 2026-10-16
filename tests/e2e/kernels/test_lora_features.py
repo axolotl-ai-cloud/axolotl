@@ -270,9 +270,9 @@ class TestQKVKernel:
             peft_Q, peft_K, peft_V = _run_peft_qkv(layer, X)
             kern_Q, kern_K, kern_V = _run_kernel_qkv(layer, X)
 
-        _compare_tensors(kern_Q, peft_Q, f"QKV Q (bias={bias})")
-        _compare_tensors(kern_K, peft_K, f"QKV K (bias={bias})")
-        _compare_tensors(kern_V, peft_V, f"QKV V (bias={bias})")
+        _compare_tensors(kern_Q, peft_Q, "QKV Q")
+        _compare_tensors(kern_K, peft_K, "QKV K")
+        _compare_tensors(kern_V, peft_V, "QKV V")
         del model
 
     def test_forward_dropout_eval(self):
@@ -342,7 +342,7 @@ class TestQKVKernel:
                 _compare_tensors(
                     kern_grads.get(name),
                     peft_grads[name],
-                    f"grad {name} (bias={bias})",
+                    f"grad {name}",
                     atol=5e-2,
                     rtol=5e-2,
                 )
@@ -408,7 +408,7 @@ class TestOKernel:
             peft_out = _run_peft_o(layer, X)
             kern_out = _run_kernel_o(layer, X)
 
-        _compare_tensors(kern_out, peft_out, f"O (bias={bias})")
+        _compare_tensors(kern_out, peft_out, "O")
         del model
 
     def test_forward_dora(self):
@@ -454,7 +454,7 @@ class TestOKernel:
                 _compare_tensors(
                     kern_grads.get(name),
                     peft_grads[name],
-                    f"O grad {name} (bias={bias})",
+                    f"O grad {name}",
                     atol=5e-2,
                     rtol=5e-2,
                 )
@@ -474,7 +474,7 @@ class TestMLPKernel:
             peft_out = _run_peft_mlp(layer, X)
             kern_out = _run_kernel_mlp(layer, X)
 
-        _compare_tensors(kern_out, peft_out, f"MLP (bias={bias})")
+        _compare_tensors(kern_out, peft_out, "MLP")
         del model
 
     def test_forward_dropout_eval(self):
@@ -537,7 +537,7 @@ class TestMLPKernel:
                 _compare_tensors(
                     kern_grads.get(name),
                     peft_grads[name],
-                    f"MLP grad {name} (bias={bias})",
+                    f"MLP grad {name}",
                     atol=0.5,
                     rtol=0.1,
                 )
