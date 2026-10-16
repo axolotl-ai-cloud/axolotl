@@ -1,6 +1,6 @@
 # Beam QLoRA smoke test on a tiny random-weight model (~1 min), for fast
-# iteration. Build the tiny model from the full model's config (see README).
-base_model: ./beam-tiny  # tiny random-weight model, built locally (see README)
+# iteration. Build it first: uv run examples/beam/build_tiny_model.py
+base_model: ./beam-tiny
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
