@@ -764,6 +764,13 @@ class PatchManager:
                 torch_compile=bool(self.cfg.torch_compile),
             )
 
+        if model_type in ("inkling_mm_model", "inkling_text"):
+            from axolotl.monkeypatch.models.inkling.modeling import (
+                patch_inkling_modeling_packing,
+            )
+
+            patch_inkling_modeling_packing()
+
         if model_type in self._SEQ_IDX_INJECTED_MODELS:
             import importlib
 
