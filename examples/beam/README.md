@@ -50,6 +50,7 @@ axolotl train examples/beam/beam-tiny-smoke.yaml
   `--num-processes 1`.
 - Run a full finetune by removing `adapter: qlora`, `load_in_4bit: true`, and
   `quantize_moe_experts: true`.
+- **Tool-calling data:** every `tool` message needs a `name` (the called function); `tool_call_id` alone fails to render.
 - Read more on loading your own dataset in the [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 
 ## Expert-parallel LoRA on B200 (bf16, NVFP4 and NF4)
