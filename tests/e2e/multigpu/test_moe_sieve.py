@@ -28,6 +28,10 @@ pytestmark = [pytest.mark.gpu, pytest.mark.slow]
 def test_compact_expert_distributed_resume(tmp_path, case, devices, kernel):
     if torch.cuda.device_count() < devices:
         pytest.skip(f"requires {devices} CUDA GPUs")
+    if kernel == "sonicmoe" and any(
+        torch.cuda.get_device_capability(device)[0] < 9 for device in range(devices)
+    ):
+        pytest.skip("SonicMoE requires Hopper (SM90+) or newer on every rank")
     visible = os.environ.get(
         "CUDA_VISIBLE_DEVICES", ",".join(map(str, range(torch.cuda.device_count())))
     ).split(",")

@@ -22,6 +22,8 @@ pytestmark = pytest.mark.gpu
 def test_fused_compact_experts_match_eager(kernel, selected, monkeypatch):
     if not torch.cuda.is_available():
         pytest.skip("CUDA required")
+    if kernel == "sonicmoe" and torch.cuda.get_device_capability()[0] < 9:
+        pytest.skip("SonicMoE requires Hopper (SM90+) or newer")
     torch.manual_seed(123)
     base = Qwen3MoeForCausalLM(
         Qwen3MoeConfig(
