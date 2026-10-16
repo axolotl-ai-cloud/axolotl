@@ -77,8 +77,6 @@ class TestKnowledgeDistillation:
     Test case for Knowledge Distillation
     """
 
-    # While this will run on torch 2.4.x without torch_compile enabled
-    # the VRAM requirement is higher than what is available in CI
     def test_llama_kd(self, temp_dir, kd_min_cfg):
         cfg = DictDefault(kd_min_cfg)
 
