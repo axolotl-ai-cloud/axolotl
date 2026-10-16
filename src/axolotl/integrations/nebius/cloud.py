@@ -67,7 +67,7 @@ class NebiusCloud(CloudLauncher):
         executable = shutil.which("nebius")
         if not executable:
             raise RuntimeError(
-                "Install the Nebius CLI (with 'ai job run') and run 'nebius auth login'"
+                "Install the Nebius CLI (with 'ai job run') and run 'nebius profile create'"
             )
         image = self.image_config.image
         if build := self.image_config.image_build:
