@@ -160,8 +160,8 @@ It is built for `linux/amd64` only, from the Python 3.12 / CUDA 13.0 / PyTorch 2
 axolotlai/axolotl-cloud:{tag}-blackwell
 ```
 
-Tags example: `main-py3.12-cu130-2.14.1-blackwell`. Otherwise this uses the same tags as the
-[`cloud` image](#sec-cloud-tags).
+Tags: `main-py3.12-cu130-2.14.1-blackwell` on push to main and
+`{version}-py3.12-cu130-2.14.1-blackwell` for a tagged release. There are no `-latest` or nightly tags.
 
 ## Cloud-no-tmux
 
