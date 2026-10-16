@@ -43,6 +43,13 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
+def rl_trainer_builds_adapter(cfg) -> bool:
+    """DPO, IPO and KTO hand TRL the LoRA config and TRL builds the PeftModel in the trainer."""
+    from axolotl.utils.schemas.enums import RLType
+
+    return bool(cfg.adapter) and cfg.rl in (RLType.DPO, RLType.IPO, RLType.KTO)
+
+
 class PatchManager:
     """Manages the application of patches during the model loading process."""
 
@@ -122,6 +129,7 @@ class PatchManager:
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
         self._deactivate_hf_async_load()
+        self._apply_parallel_weight_conversion()
         self._apply_torchao_patches()
         self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
@@ -1145,6 +1153,16 @@ class PatchManager:
 
             patch_voxtral_conditional_generation_forward()
 
+    def _apply_parallel_weight_conversion(self):
+        """Parallel stack/cat in transformers' expert-fusing converters; off with AXOLOTL_PARALLEL_CONVERT=0."""
+        if os.environ.get("AXOLOTL_PARALLEL_CONVERT", "1") == "0":
+            return
+        from axolotl.monkeypatch.parallel_weight_conversion import (
+            patch_parallel_weight_conversion,
+        )
+
+        patch_parallel_weight_conversion()
+
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
         if not (
@@ -1239,8 +1257,16 @@ class PatchManager:
             or self.cfg.lora_qkv_kernel
             or self.cfg.lora_o_kernel
         ):
+            from peft import PeftModel
+
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
+            if not isinstance(model, PeftModel) and rl_trainer_builds_adapter(self.cfg):
+                # TRL wraps the adapter inside the trainer; the builder patches it then
+                LOG.info(
+                    "Deferring the fused LoRA kernel patch to the RL trainer build"
+                )
+                return
             apply_lora_kernel_patches(model=model, cfg=self.cfg)
 
     def _apply_patch_deepspeed_zero3(self):

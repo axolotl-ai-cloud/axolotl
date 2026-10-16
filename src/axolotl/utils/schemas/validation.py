@@ -1180,9 +1180,8 @@ STAGED_NF4_CONSTRAINTS = [
             bool(self.deepspeed)
             or (self.tensor_parallel_size or 1) > 1
             or (self.context_parallel_size or 1) > 1
-            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
         ),
-        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+        "CPU-staged NF4 does not support DeepSpeed, tensor or context parallelism",
     ),
     (
         lambda self: (self.dp_replicate_size or 1) > 1,
@@ -1239,7 +1238,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon":
+        if data.get("optimizer") in ("muon", "muon_8bit"):
             if data.get("deepspeed"):
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"

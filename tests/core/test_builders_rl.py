@@ -371,3 +371,28 @@ def rand_reward_func(prompts, completions) -> list[float]:
             # remove imported module from path
             if cfg_string == "grpo_cfg" and str(rewards_dir) in sys.path:
                 sys.path.remove(str(rewards_dir))
+
+
+def test_dpo_builder_attaches_fused_lora_kernels_after_trl_wraps(
+    dpo_cfg, model, tokenizer
+):
+    """DPO hands TRL the LoRA config, so the kernels are patched onto trainer.model."""
+    from types import SimpleNamespace
+
+    from peft import LoraConfig, get_peft_model
+
+    cfg = dpo_cfg.copy()
+    cfg.update(
+        {"adapter": "lora", "lora_r": 4, "lora_alpha": 8, "lora_qkv_kernel": True}
+    )
+    builder = HFRLTrainerBuilder(cfg, model, tokenizer)
+    peft_model = get_peft_model(
+        model, LoraConfig(r=4, lora_alpha=8, target_modules=["q_proj", "v_proj"])
+    )
+    with patch("axolotl.monkeypatch.lora_kernels.apply_lora_kernel_patches") as patched:
+        builder.hook_post_create_trainer(SimpleNamespace(model=peft_model))
+        patched.assert_called_once()
+        assert patched.call_args.kwargs["model"] is peft_model
+    with patch("axolotl.monkeypatch.lora_kernels.apply_lora_kernel_patches") as patched:
+        builder.hook_post_create_trainer(SimpleNamespace(model=model))
+        patched.assert_not_called()
