@@ -42,12 +42,8 @@ axolotl train examples/beam/beam-tiny-smoke.yaml
 
 ## Tips
 
-- **Optimizer:** use `adamw_torch`. `adamw_torch_4bit` raises once `device_map`
-  spreads adapters across GPUs; for the expert config, `adamw_bnb_8bit` cuts
-  optimizer-state VRAM if you are tight.
-- Leave the router out of `target_parameters`; adapting it destabilizes routing.
-- **`device_map` configs** have no data parallelism and must launch with
-  `--num-processes 1`.
+- **`device_map` configs** run as one process (`--num-processes 1`) and need `gpu_memory_limit` set to spread layers across GPUs. Use `adamw_torch`: `adamw_torch_4bit` fails once adapters span GPUs.
+- Keep the router (`mlp.gate`) out of `lora_target_parameters`; adapting it destabilizes routing.
 - Run a full finetune by removing `adapter: qlora`, `load_in_4bit: true`, and
   `quantize_moe_experts: true`.
 - **Tool-calling data:** every `tool` message needs a `name` (the called function); `tool_call_id` alone fails to render.
