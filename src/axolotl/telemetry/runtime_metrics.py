@@ -162,7 +162,8 @@ class RuntimeMetricsTracker:
         backend = self._get_memory_backend()
         if backend is None:
             return {}
-        if backend is getattr(torch, "mps", None):
+        mps = getattr(torch, "mps", None)
+        if mps is not None and backend is mps:
             if hasattr(backend, "current_allocated_memory"):
                 return {0: backend.current_allocated_memory()}
             return {}
