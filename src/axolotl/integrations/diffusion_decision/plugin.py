@@ -24,6 +24,8 @@ from .manifest import (
 
 def _carries_images(*datasets: Any) -> bool:
     for dataset in datasets:
+        if getattr(dataset, "carries_images", False):
+            return True
         for row in getattr(dataset, "_rows", ()):
             for item in (row,) if isinstance(row, Mapping) else row:
                 if getattr(item.get("canvas"), "image_refs", ()):

@@ -516,6 +516,11 @@ class DecisionPlanDataset(Dataset):
         self.manifest = dict(manifest)
         self.column_names = ("length",) if expose_lengths else ()
 
+    @property
+    def carries_images(self) -> bool:
+        """Whether any training record (prepared or reserve) has images."""
+        return bool(self.manifest.get("train_has_images", False))
+
     def __len__(self) -> int:
         return self.batch_plan.draws_per_epoch
 
@@ -1004,6 +1009,7 @@ def _build_canvas_layer(
             "eval": eval_canvas_too_long,
         },
         "premixed": premixed,
+        "train_has_images": any(record.get("images") for record in train),
     }
     if not premixed:
         manifest["segments"] = segment_counts

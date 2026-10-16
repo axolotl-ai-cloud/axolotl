@@ -34,9 +34,13 @@ FLEX_KERNEL_OPTIONS = {
     "BLOCK_N2": 16,
 }
 
-requires_gpu = pytest.mark.skipif(
+_cuda_skip = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="Triton segment kernel needs CUDA"
 )
+
+
+def requires_gpu(fn):
+    return pytest.mark.gpu(_cuda_skip(fn))
 
 
 def _packed_layout(

@@ -48,10 +48,13 @@ import torch
 import torch.distributed as dist
 from torch.utils._python_dispatch import TorchDispatchMode
 
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available() or torch.cuda.device_count() < 2,
-    reason="needs two CUDA GPUs",
-)
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(
+        not torch.cuda.is_available() or torch.cuda.device_count() < 2,
+        reason="needs two CUDA GPUs",
+    ),
+]
 
 WORLD = 2
 PG_TIMEOUT_S = 90

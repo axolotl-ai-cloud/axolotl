@@ -524,3 +524,12 @@ def test_manifest_records_image_inputs_only_for_image_canvases():
     image = DecisionDataset([[{"canvas": _image_canvas(("a.png",), ((28, 28),))}]], {})
     assert not _carries_images(text, None)
     assert _carries_images(text, image)
+
+
+def test_plan_dataset_reports_training_images_from_the_manifest():
+    from axolotl.integrations.diffusion_decision.datasets import DecisionPlanDataset
+    from axolotl.integrations.diffusion_decision.plugin import _carries_images
+
+    plan = SimpleNamespace(draws_per_epoch=0)
+    assert not _carries_images(DecisionPlanDataset(plan, {}), None)
+    assert _carries_images(DecisionPlanDataset(plan, {"train_has_images": True}), None)

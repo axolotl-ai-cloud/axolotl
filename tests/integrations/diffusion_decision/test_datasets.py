@@ -250,11 +250,29 @@ def test_loader_realizes_each_capped_record_once_in_stratified_batches(monkeypat
     assert {row["source"] for row in retained} == {"alpha", "beta"}
     assert manifest["dropped"]["capped"] == 2
     assert manifest["mixture_probabilities"] == {"alpha": 0.8, "beta": 0.2}
+    assert manifest["train_has_images"] is False
     assert manifest["stratified_epoch_batches"]
     assert all(
         len(batch) <= manifest["stratified_micro_batch_size"]
         for batch in manifest["stratified_epoch_batches"]
     )
+
+
+def test_loader_flags_training_images_in_the_manifest(monkeypatch):
+    image_record = {**_record("alpha", "a", "sa", "a"), "images": ["a.png"]}
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [image_record, _record("beta", "b", "sb", "b")],
+            "dev": [_record("gamma", "g", "sg", "g")],
+        },
+    )
+    cfg = _cfg(_entry("train", "train"), test_datasets=(DEV_ENTRY,))
+
+    result = datasets.load_decision_datasets(cfg)
+
+    assert result.train_dataset.manifest["train_has_images"] is True
+    assert result.train_dataset.carries_images
 
 
 def test_loader_preserves_premixed_draw_multiplicity_without_mixture_expansion(
