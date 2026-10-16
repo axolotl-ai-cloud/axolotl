@@ -18,20 +18,6 @@ use_scattermoe: true
 cut_cross_entropy: true
 autotune_cache_path: ./outputs/autotune-b200.json
 autotune_neighborhood: 1
-# pin the ScatterMoE LoRA forward tile measured on B200 and H100 at the shape it runs here
-# (the down projection; with EP=8 the gate_up GEMM takes the split base+LoRA path), so no
-# routed-row bucket (train or eval) ever benchmarks; the cache still records keys
-autotune_profiles:
-  - kernel: _scatter2scatter_lora
-    gpu: B200
-    match: { N: 5120, K: 2560 }
-    configs:
-      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
-  - kernel: _scatter2scatter_lora
-    gpu: H100
-    match: { N: 5120, K: 2560 }
-    configs:
-      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
 
 # EP=8 node-local: each GPU owns 32 of the 256 packed NF4 experts per layer, sliced
 # from rank 0's packed weights without requantizing, and the dense weights FSDP-shard
