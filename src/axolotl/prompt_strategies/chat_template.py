@@ -876,12 +876,17 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             dummy_turn = {"role": turn.get("role"), "content": turn.get("content", "")}
             if thinking_key and thinking_key in turn:
                 dummy_turn[thinking_key] = sentinel
-            return dummy_turn
+        else:
+            dummy_turn = {"role": turn.get("role"), "content": sentinel}
+            # Keep reasoning under content_only so the diff excludes it.
+            if content_only and thinking_key and thinking_key in turn:
+                dummy_turn[thinking_key] = turn[thinking_key]
 
-        # Keep reasoning under content_only so the diff excludes it.
-        dummy_turn = {"role": turn.get("role"), "content": sentinel}
-        if content_only and thinking_key and thinking_key in turn:
-            dummy_turn[thinking_key] = turn[thinking_key]
+        # Registry templates resolve a tool result's sender from these and raise without them.
+        if turn.get("role") == "tool":
+            for key in ("name", "tool_call_id"):
+                if key in turn:
+                    dummy_turn[key] = turn[key]
         return dummy_turn
 
     def find_turn(

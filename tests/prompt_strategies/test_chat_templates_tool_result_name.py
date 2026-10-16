@@ -41,9 +41,7 @@ REGISTRY_TEMPLATE = """{%- set registry = namespace(entries=[]) -%}
 """
 
 
-@pytest.fixture(name="registry_strategy")
-def fixture_registry_strategy(smollm2_tokenizer):
-    tokenizer = smollm2_tokenizer
+def _registry_strategy(tokenizer, roles_to_train):
     tokenizer.add_special_tokens(
         {
             "additional_special_tokens": [
@@ -67,10 +65,15 @@ def fixture_registry_strategy(smollm2_tokenizer):
                 "chat_template_jinja": REGISTRY_TEMPLATE,
                 "eot_tokens": ["<|end|>", "<|call|>", "<|return|>"],
                 "field_messages": "messages",
-                "roles_to_train": ["assistant"],
+                "roles_to_train": roles_to_train,
             }
         ),
     )
+
+
+@pytest.fixture(name="registry_strategy")
+def fixture_registry_strategy(smollm2_tokenizer):
+    return _registry_strategy(smollm2_tokenizer, ["assistant"])
 
 
 @pytest.fixture(name="tool_result_by_id_dataset")
@@ -138,6 +141,28 @@ def test_tool_result_named_from_call_id(
     assert "Alert A1 came from ws-101.<|return|>" in trained
     assert '{"host": "ws-101"}' in masked and "Which host raised alert A1?" in masked
     assert '{"host": "ws-101"}' not in trained
+
+
+def test_trainable_tool_result_keeps_sender_in_placeholder(
+    smollm2_tokenizer, tool_result_by_id_dataset
+):
+    tokenizer = smollm2_tokenizer
+    # a trainable tool result is located through a placeholder of itself
+    strategy = _registry_strategy(tokenizer, ["assistant", "tool"])
+    processed = tool_result_by_id_dataset.map(
+        strategy.tokenize_prompt, remove_columns=["messages"]
+    )
+    ids, labels = processed[0]["input_ids"], processed[0]["labels"]
+
+    trained = tokenizer.decode(
+        [t for t, l in zip(ids, labels, strict=True) if l != -100]
+    )
+    masked = tokenizer.decode(
+        [t for t, l in zip(ids, labels, strict=True) if l == -100]
+    )
+    assert '{"host": "ws-101"}' in trained
+    assert "Which host raised alert A1?" in masked
+    assert "Which host raised alert A1?" not in trained
 
 
 def test_tool_result_without_any_resolution_still_raises(
