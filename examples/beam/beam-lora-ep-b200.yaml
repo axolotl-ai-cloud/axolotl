@@ -27,6 +27,11 @@ autotune_profiles:
     match: { N: 5120 }
     configs:
       - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
+  - kernel: _scatter2scatter_lora          # bf16 experts, forward
+    gpu: H100
+    match: { N: 5120 }
+    configs:
+      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
   - kernel: _scatter2scatter_lora_mx       # NVFP4 experts, forward
     gpu: B200
     match: { N: 5120 }

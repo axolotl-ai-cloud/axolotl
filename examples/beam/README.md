@@ -105,7 +105,8 @@ Set `transformer_layer_cls_to_wrap: BeamDecoderLayer` to match the checkpoint.
 | `beam-nvfp4-lora-b200.yaml` | 1 node x 8 B200, EP=8 | ModelOpt NVFP4 checkpoint, SonicMoE experts with merge-aware LoRA (`nvfp4_merge_aware`), so `merge-lora` reproduces the trained model |
 | `beam-nf4-qlora-b200.yaml` | 1 node x 8 B200, EP=8 | bf16 checkpoint quantized to bitsandbytes NF4 at load by the CPU-staged loader (attention, dense MLP and the fused experts); ScatterMoE chunked-dequant experts |
 | `autotune/b200.json` | measured Triton autotune winners for both paths | `autotune_cache_path` seeds the kernels from a copy and keeps recording |
+| `autotune/h100.json` | H100 winners for the bf16 ScatterMoE forward at Beam's width (EP=2 and EP=4 on a random real-width model) | same tile as B200: `BLOCK_M 128, BLOCK_N 64, BLOCK_K 64`, 3 or 4 stages within 5% of each other |
 
-The bf16 and NF4 configs pin the ScatterMoE LoRA tiles with `autotune_profiles` (measured on B200, identical
-across every routed-row bucket) and enable `autotune_neighborhood: 1`, so no training or eval
+The bf16 and NF4 configs pin the ScatterMoE LoRA tiles with `autotune_profiles` (measured on B200 and H100,
+identical across every routed-row bucket) and enable `autotune_neighborhood: 1`, so no training or eval
 step benchmarks kernel configs while expert-parallel peers wait.

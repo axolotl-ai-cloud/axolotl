@@ -26,6 +26,11 @@ autotune_profiles:
     match: { N: 5120 }
     configs:
       - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
+  - kernel: _scatter2scatter_lora
+    gpu: H100
+    match: { N: 5120 }
+    configs:
+      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
 
 # EP=8 node-local: each GPU owns 32 of the 256 packed NF4 experts per layer, sliced
 # from rank 0's packed weights without requantizing, and the dense weights FSDP-shard
