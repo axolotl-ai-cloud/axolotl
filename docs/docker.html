@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -449,6 +455,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -963,9 +975,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#environment-variables" id="toc-environment-variables" class="nav-link" data-scroll-target="#environment-variables">Environment variables</a></li>
   <li><a href="#volume-mounts" id="toc-volume-mounts" class="nav-link" data-scroll-target="#volume-mounts">Volume mounts</a></li>
   </ul></li>
-  <li><a href="#cloud-no-tmux" id="toc-cloud-no-tmux" class="nav-link" data-scroll-target="#cloud-no-tmux">Cloud-no-tmux</a>
+  <li><a href="#cloud-blackwell" id="toc-cloud-blackwell" class="nav-link" data-scroll-target="#cloud-blackwell">Cloud-blackwell</a>
   <ul>
   <li><a href="#image-3" id="toc-image-3" class="nav-link" data-scroll-target="#image-3">Image</a></li>
+  </ul></li>
+  <li><a href="#cloud-no-tmux" id="toc-cloud-no-tmux" class="nav-link" data-scroll-target="#cloud-no-tmux">Cloud-no-tmux</a>
+  <ul>
+  <li><a href="#image-4" id="toc-image-4" class="nav-link" data-scroll-target="#image-4">Image</a></li>
   <li><a href="#tags-format-1" id="toc-tags-format-1" class="nav-link" data-scroll-target="#tags-format-1">Tags format</a></li>
   </ul></li>
   </ul>
@@ -1195,11 +1211,28 @@ contains the source code and is ephemeral.</p>
 </ul>
 </section>
 </section>
+<section id="cloud-blackwell" class="level2">
+<h2 class="anchored" data-anchor-id="cloud-blackwell">Cloud-blackwell</h2>
+<p>The cloud image plus the Blackwell (sm_100) kernel stack that the expert-parallel MoE recipes use,
+for example the <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/beam">Beam B200 configs</a>:</p>
+<ul>
+<li><a href="https://github.com/deepseek-ai/DeepEP">DeepEP</a> v1.2.1 compiled for sm_100 (<code>expert_parallel_backend: deep_ep</code>)</li>
+<li><code>flash-attn-4</code> (<code>attn_implementation: flash_attention_4</code>)</li>
+<li><code>quack-kernels</code> and the <code>nvidia-cutlass-dsl</code> CUDA 13 runtime behind SonicMoE (<code>use_sonicmoe: true</code>)</li>
+</ul>
+<p>It is built for <code>linux/amd64</code> only, from the Python 3.12 / CUDA 13.0 / PyTorch 2.14.1 cloud image.</p>
+<section id="image-3" class="level4">
+<h4 class="anchored" data-anchor-id="image-3">Image</h4>
+<pre><code>axolotlai/axolotl-cloud:{tag}-blackwell</code></pre>
+<p>Tags: <code>main-py3.12-cu130-2.14.1-blackwell</code> on push to main and
+<code>{version}-py3.12-cu130-2.14.1-blackwell</code> for a tagged release. There are no <code>-latest</code> or nightly tags.</p>
+</section>
+</section>
 <section id="cloud-no-tmux" class="level2">
 <h2 class="anchored" data-anchor-id="cloud-no-tmux">Cloud-no-tmux</h2>
 <p>This is the same as the <a href="#sec-cloud"><code>cloud</code> image</a> but without tmux.</p>
-<section id="image-3" class="level4">
-<h4 class="anchored" data-anchor-id="image-3">Image</h4>
+<section id="image-4" class="level4">
+<h4 class="anchored" data-anchor-id="image-4">Image</h4>
 <pre><code>axolotlai/axolotl-cloud-term</code></pre>
 <p>Link: <a href="https://hub.docker.com/r/axolotlai/axolotl-cloud-term">Docker Hub</a></p>
 <div class="callout callout-style-default callout-note callout-titled">

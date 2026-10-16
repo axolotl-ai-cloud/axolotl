@@ -181,6 +181,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -415,6 +421,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1613,26 +1625,30 @@ Warning
 <td>DSA sparse-attention kernels, NVFP4 grouped experts (LoRA)</td>
 </tr>
 <tr class="even">
+<td>GLM-5.3-Flash (<code>glm5_next</code>)</td>
+<td>KDA + DSA packing patch; sdpa only</td>
+</tr>
+<tr class="odd">
 <td>Hybrid SSM (Mamba, Nemotron-H, Falcon-H1, GraniteMoE-Hybrid)</td>
 <td>packing + CP for Mamba2 layers</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>OLMo 2/3, Cohere, Phi, Hunyuan, Jamba, Kimi-Linear, K2-Horizon, Apertus, SEED-OSS</td>
 <td>packing / tokenizer / activation patches</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Multimodal 🟡 (Qwen-VL, Pixtral, Llama-Vision, LLaVA, InternVL, SmolVLM2, Voxtral, LFM2-VL)</td>
 <td>processor + VL attention support (no full feature parity)</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>BitNet (1.58-bit) ⚪</td>
 <td>full fine-tune only, <strong>LoRA not supported</strong> (see <a href="../docs/1_58bit_finetuning.html">1_58bit_finetuning</a>)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Diffusion LMs 🟡 (Nemotron-Labs-Diffusion, Dream v0, DiffusionGemma)</td>
 <td>native <code>diffusion_lm:</code> training, packing, CCE (Nemotron); LoRA only (no DoRA); Nemotron adds QLoRA, FSDP2 and fused LoRA kernels (see <a href="../docs/diffusion_lm.html">diffusion_lm</a>)</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>Nemotron-Labs-Diffusion-VLM 🟡</td>
 <td>LoRA/QLoRA with a frozen vision tower, varlen, FSDP2 and fused LoRA kernels (text-only batches measured); images only via the <code>diffusion_decision</code> plugin; no CCE (see <a href="../docs/diffusion_lm.html#nemotron-diffusion-vlm">diffusion_lm</a>)</td>
 </tr>
@@ -1700,7 +1716,7 @@ Warning
 </section>
 <section id="optimizers-schedulers" class="level2">
 <h2 class="anchored" data-anchor-id="optimizers-schedulers">Optimizers &amp; schedulers</h2>
-<p><strong>Optimizers:</strong> all HuggingFace / <code>bitsandbytes</code> optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon, Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)</p>
+<p><strong>Optimizers:</strong> all HuggingFace / <code>bitsandbytes</code> optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon (32/8-bit), Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)</p>
 <p><strong>Schedulers:</strong> cosine (+min-lr, +constant-ratio, +quadratic warmup), REX, one-cycle, linear warmup, jagged-restart (ReLoRA).</p>
 <p><strong>Also:</strong> gradient checkpointing (+CPU/disk offload), gradient accumulation, NEFTune, LR groups / embedding LR, loss watchdog, early stopping, <code>torch_compile</code>.</p>
 </section>
@@ -1845,7 +1861,7 @@ Warning
 </tr>
 <tr class="even">
 <td>Expert Parallel</td>
-<td>FSDP2 (<code>fsdp_version: 2</code> + <code>fsdp_config</code>, not DDP/DeepSpeed) with <code>fsdp_config.state_dict_type: FULL_STATE_DICT</code>; <code>deep_ep</code> backend (Ampere/Hopper, NVLink) or <code>torch</code> backend (any NCCL/gloo fabric)</td>
+<td>FSDP2 (<code>fsdp_version: 2</code> + <code>fsdp_config</code>, not DDP/DeepSpeed) with <code>fsdp_config.state_dict_type: FULL_STATE_DICT</code>; <code>deep_ep</code> backend (Ampere/Hopper/Blackwell, NVLink) or <code>torch</code> backend (any NCCL/gloo fabric)</td>
 </tr>
 <tr class="odd">
 <td>Context parallel</td>

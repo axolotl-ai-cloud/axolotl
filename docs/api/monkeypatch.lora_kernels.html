@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -449,6 +455,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1436,9 +1448,9 @@ original implementation is preserved and can be restored if needed.</p>
 <h4 class="doc-section doc-section-raises anchored" data-anchor-id="raises-2">Raises</h4>
 <table class="caption-top table">
 <colgroup>
+<col style="width: 5%">
 <col style="width: 8%">
-<col style="width: 16%">
-<col style="width: 76%">
+<col style="width: 85%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1450,8 +1462,8 @@ original implementation is preserved and can be restored if needed.</p>
 <tbody>
 <tr class="odd">
 <td></td>
-<td>AssertionError</td>
-<td>If the required code blocks are not found in the attention implementation.</td>
+<td>ValueError</td>
+<td>If the attention forward doesn’t use a supported q/k/v/o projection layout (e.g.&nbsp;MLA’s q_a_proj/kv_a_proj_with_mqa).</td>
 </tr>
 </tbody>
 </table>

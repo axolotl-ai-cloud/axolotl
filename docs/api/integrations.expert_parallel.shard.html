@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -449,6 +455,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -951,6 +963,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.integrations.expert_parallel.shard.ep_adapter_load_local_shard" id="toc-axolotl.integrations.expert_parallel.shard.ep_adapter_load_local_shard" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.shard.ep_adapter_load_local_shard">ep_adapter_load_local_shard</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.shard.ep_local_adapter_dir" id="toc-axolotl.integrations.expert_parallel.shard.ep_local_adapter_dir" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.shard.ep_local_adapter_dir">ep_local_adapter_dir</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.shard.expert_input_proj_name" id="toc-axolotl.integrations.expert_parallel.shard.expert_input_proj_name" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.shard.expert_input_proj_name">expert_input_proj_name</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.shard.gather_expert_lora_full" id="toc-axolotl.integrations.expert_parallel.shard.gather_expert_lora_full" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.shard.gather_expert_lora_full">gather_expert_lora_full</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.shard.save_ep_lora_adapter" id="toc-axolotl.integrations.expert_parallel.shard.save_ep_lora_adapter" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.shard.save_ep_lora_adapter">save_ep_lora_adapter</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.shard.save_fsdp2_lora_adapter" id="toc-axolotl.integrations.expert_parallel.shard.save_fsdp2_lora_adapter" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.shard.save_fsdp2_lora_adapter">save_fsdp2_lora_adapter</a></li>
@@ -993,22 +1006,26 @@ modules hold only their local slice of the experts dim. The registered
 <td>Resume a routed-expert LoRA on an EP-sliced model.</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.shard.expert_input_proj_name">expert_input_proj_name</a></td>
+<td>The experts’ first projection: <code>gate_up_proj</code> (gated), or <code>up_proj</code> on a</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.shard.gather_expert_lora_full">gather_expert_lora_full</a></td>
 <td>Inverse of the EP LoRA slice: all-gather a local-experts LoRA tensor across the</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.integrations.expert_parallel.shard.save_ep_lora_adapter">save_ep_lora_adapter</a></td>
 <td>Write a complete LoRA adapter when experts are EP-sharded.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.shard.save_fsdp2_lora_adapter">save_fsdp2_lora_adapter</a></td>
 <td>Write a complete LoRA adapter under FSDP2 WITHOUT expert parallelism.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.integrations.expert_parallel.shard.shard_expert_lora">shard_expert_lora</a></td>
 <td>Slice PEFT <code>target_parameters</code> expert LoRA to each rank’s local experts.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.shard.shard_expert_weights">shard_expert_weights</a></td>
 <td>Slice expert weights along dim 0 per the EP rank.</td>
 </tr>
@@ -1045,14 +1062,21 @@ fails on the shape mismatch. Returns <code>adapter_dir</code> untouched when not
 otherwise a temporary adapter directory whose expert-LoRA tensors are cut to this rank’s
 experts (attention/router LoRA is copied as-is; already-local tensors are left alone).</p>
 </section>
+<section id="axolotl.integrations.expert_parallel.shard.expert_input_proj_name" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.shard.expert_input_proj_name">expert_input_proj_name</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.expert_input_proj_name(module)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The experts’ first projection: <code>gate_up_proj</code> (gated), or <code>up_proj</code> on a
+non-gated module (<code>@use_experts_implementation(has_gate=False)</code>, e.g.&nbsp;Nemotron-H’s
+relu² experts).</p>
+</section>
 <section id="axolotl.integrations.expert_parallel.shard.gather_expert_lora_full" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.shard.gather_expert_lora_full">gather_expert_lora_full</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.gather_expert_lora_full(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    local,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    kind,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    e_global,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    ep_group,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.gather_expert_lora_full(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    local,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    kind,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    e_global,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    ep_group,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Inverse of the EP LoRA slice: all-gather a local-experts LoRA tensor across the
 EP group and reassemble the full <code>e_global</code>-expert tensor in the PEFT layout.</p>
 <ul>
@@ -1063,11 +1087,11 @@ EP group and reassemble the full <code>e_global</code>-expert tensor in the PEFT
 </section>
 <section id="axolotl.integrations.expert_parallel.shard.save_ep_lora_adapter" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.shard.save_ep_lora_adapter">save_ep_lora_adapter</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.save_ep_lora_adapter(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    output_dir,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    ep_group,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.save_ep_lora_adapter(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    output_dir,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    ep_group,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Write a complete LoRA adapter when experts are EP-sharded.</p>
 <p>The attention/router LoRA is replicated across EP, but <code>target_parameters</code> expert
 LoRA is EP-sharded (each rank holds <code>[offset:offset+E_local]</code>). A plain save would
@@ -1078,7 +1102,7 @@ to PEFT adapter keys, and writes <code>adapter_model.safetensors</code> on rank 
 </section>
 <section id="axolotl.integrations.expert_parallel.shard.save_fsdp2_lora_adapter" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.shard.save_fsdp2_lora_adapter">save_fsdp2_lora_adapter</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.save_fsdp2_lora_adapter(model, output_dir)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.save_fsdp2_lora_adapter(model, output_dir)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Write a complete LoRA adapter under FSDP2 WITHOUT expert parallelism.</p>
 <p>The DCP <code>SHARDED_STATE_DICT</code> save fails (“Failed to validate global plan”) on the frozen NVFP4
 base params (torchao tensor-subclass DTensors the planner can’t validate). For a LoRA run we only
@@ -1090,7 +1114,7 @@ key by module name (no EP axis to gather here, unlike :func:<code>save_ep_lora_a
 </section>
 <section id="axolotl.integrations.expert_parallel.shard.shard_expert_lora" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.shard.shard_expert_lora">shard_expert_lora</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.shard_expert_lora(model, ep_size)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.shard_expert_lora(model, ep_size)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Slice PEFT <code>target_parameters</code> expert LoRA to each rank’s local experts.</p>
 <p>PEFT sizes the LoRA for a 3D <code>experts.{gate_up,down}_proj</code> from the parameter’s
 own dim-0 at adapter-application time. When the adapter was applied after the EP
@@ -1104,7 +1128,7 @@ LoRA params handled.</p>
 </section>
 <section id="axolotl.integrations.expert_parallel.shard.shard_expert_weights" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.shard.shard_expert_weights">shard_expert_weights</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.shard_expert_weights(model, ep_group)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.shard_expert_weights(model, ep_group)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Slice expert weights along dim 0 per the EP rank.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>

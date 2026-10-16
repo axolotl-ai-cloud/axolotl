@@ -216,6 +216,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -450,6 +456,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -998,9 +1010,15 @@ For multi-node training or SkyPilot-managed clusters, see the <a href="../docs/s
 <h2 class="anchored" data-anchor-id="prerequisites">Setup</h2>
 <p>Install <a href="../docs/installation.html">Axolotl</a> with the Nebius provider and the
 <a href="https://docs.nebius.com/cli/install">Nebius CLI</a> on the machine you submit from.
-Authenticate and check that your CLI includes <code>ai job run</code> (tested with 0.12.265):</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> auth login</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job run <span class="at">--help</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+If you do not already have a configured CLI profile, create one interactively:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> profile create</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Follow the prompts to authenticate in your browser and select your tenant and
+project. For CI/CD and containers without a browser, use a service account as
+described in <a href="https://docs.nebius.com/cli/no-browser">Authentication without a browser</a>.
+That guide also covers user authentication with <code>--no-browser</code> when a browser on
+another machine can reach the CLI’s callback; this still requires user interaction.</p>
+<p>Check that your CLI includes <code>ai job run</code> (tested with 0.12.265):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job run <span class="at">--help</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Your Nebius project needs GPU quota, available capacity and a subnet for the
 selected GPU. See the <a href="https://docs.nebius.com/serverless/jobs/manage">Jobs prerequisites</a>.
 Training runs in the remote container; local Nebius credentials are not uploaded.</p>
@@ -1009,21 +1027,21 @@ Training runs in the remote container; local Nebius credentials are not uploaded
 <h2 class="anchored" data-anchor-id="launch-training">Launch training</h2>
 <p>Create <code>nebius.yaml</code> to describe where the job runs. Replace <code>project-YOUR_PROJECT_ID</code>
 with your project ID and choose a platform/preset available there:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> nebius</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">parent_id</span><span class="kw">:</span><span class="at"> project-YOUR_PROJECT_ID</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">platform</span><span class="kw">:</span><span class="at"> gpu-h100-sxm</span></span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">preset</span><span class="kw">:</span><span class="at"> 1gpu-16vcpu-200gb</span></span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">3600</span></span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="fu">output</span><span class="kw">:</span><span class="at"> auto</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">provider</span><span class="kw">:</span><span class="at"> nebius</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">parent_id</span><span class="kw">:</span><span class="at"> project-YOUR_PROJECT_ID</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">image</span><span class="kw">:</span><span class="at"> axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">platform</span><span class="kw">:</span><span class="at"> gpu-h100-sxm</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">preset</span><span class="kw">:</span><span class="at"> 1gpu-16vcpu-200gb</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">3600</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="fu">output</span><span class="kw">:</span><span class="at"> auto</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This image was validated on H100; see <a href="#tested-configuration">tested configuration</a>
 for its runtime versions. Add <code>subnet_id</code> if you need a specific subnet, or <code>profile</code>
 to use a different CLI profile. The timeout is in seconds and includes provisioning
 and image startup. <code>output: auto</code> selects the CLI’s managed project bucket.</p>
 <p>Download the <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/nebius-serverless/lora-1b.yml">example training config</a>
 as <code>train.yml</code>, then launch it:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-fsSL</span> https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/nebius-serverless/lora-1b.yml <span class="at">-o</span> train.yml</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yml <span class="at">--cloud</span> nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-fsSL</span> https://raw.githubusercontent.com/axolotl-ai-cloud/axolotl/main/examples/nebius-serverless/lora-1b.yml <span class="at">-o</span> train.yml</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yml <span class="at">--cloud</span> nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The training config selects the model, dataset and LoRA settings; <code>nebius.yaml</code>
 selects the cloud resources. You can replace <code>train.yml</code> with your own Axolotl
 config. Training overrides and <code>--launcher</code> options are forwarded to the remote run.</p>
@@ -1037,10 +1055,10 @@ Local datasets, Python modules and config includes are not copied. Use Hub data 
 <section id="status-cancellation-and-cleanup" class="level2">
 <h2 class="anchored" data-anchor-id="status-cancellation-and-cleanup">Logs and cancellation</h2>
 <p>Replace <code>JOB_ID</code> with the ID printed at launch. Use the same CLI profile as submission:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job get JOB_ID <span class="at">--format</span> json</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job logs JOB_ID <span class="at">--follow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job get JOB_ID <span class="at">--format</span> json</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job logs JOB_ID <span class="at">--follow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>To stop training:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job cancel JOB_ID</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job cancel JOB_ID</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Nebius manages VM and boot-disk cleanup. Output buckets and mounted data remain
 until you remove them. Confirm compute cleanup through the Nebius Console or API;
 a terminal job state alone does not prove deletion has finished. See the
@@ -1053,8 +1071,8 @@ usually <code>runs/JOB_NAME/training/</code> in the selected bucket. Use the loc
 by the CLI to find the actual bucket and prefix.</p>
 <p>After <a href="https://docs.nebius.com/object-storage/interfaces/aws-cli">configuring S3 credentials and the AWS CLI</a>,
 download the outputs:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> <span class="at">--endpoint-url</span> https://storage.REGION.nebius.cloud <span class="dt">\</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  s3 cp s3://BUCKET/runs/JOB_NAME/training/ ./downloaded-training/ <span class="at">--recursive</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> <span class="at">--endpoint-url</span> https://storage.REGION.nebius.cloud <span class="dt">\</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  s3 cp s3://BUCKET/runs/JOB_NAME/training/ ./downloaded-training/ <span class="at">--recursive</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Replace <code>REGION</code>, <code>BUCKET</code> and <code>JOB_NAME</code> with your output location. S3 credentials
 are separate from your Nebius CLI login. For LoRA, load the downloaded adapter
 with the same base model and tokenizer revisions used for training.</p>
@@ -1071,17 +1089,17 @@ checkpoint. Export failures stop training rather than continue without that chec
 <h2 class="anchored" data-anchor-id="resume-explicitly">Resume training</h2>
 <p>To resume a checkpoint in a new Job, add the previous output bucket to <code>nebius.yaml</code>
 at a separate read-only mount:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_OUTPUT_BUCKET</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /previous</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_OUTPUT_BUCKET</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /previous</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Update <code>train.yml</code> with the chosen checkpoint path:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resume_from_checkpoint</span><span class="kw">:</span><span class="at"> /previous/runs/PREVIOUS_JOB_NAME/training/checkpoint-10</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_resume_from_checkpoints</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">resume_from_checkpoint</span><span class="kw">:</span><span class="at"> /previous/runs/PREVIOUS_JOB_NAME/training/checkpoint-10</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">auto_resume_from_checkpoints</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">save_only_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Keep the same model/tokenizer revisions, dataset order, adapter settings and training
 schedule, then submit again:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yml <span class="at">--cloud</span> nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train train.yml <span class="at">--cloud</span> nebius.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The new Job writes to its own output prefix. Before training, it copies the checkpoint
 to local disk, verifies the manifest’s sizes/hashes and checks for weights, Trainer,
 optimizer, scheduler and RNG state. These checks do not establish compatibility
@@ -1095,27 +1113,27 @@ outside the current resume support.</p>
 <h2 class="anchored" data-anchor-id="dataset-inputs-and-secrets">Datasets and secrets</h2>
 <p>Public Hub datasets work with the ordinary Axolotl dataset loader. For files in a
 Nebius bucket, add a mount to <code>nebius.yaml</code>:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_INPUT_BUCKET</span></span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /data</span></span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">volumes</span><span class="kw">:</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">source</span><span class="kw">:</span><span class="at"> storagebucket-YOUR_INPUT_BUCKET</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mount</span><span class="kw">:</span><span class="at"> /data</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> ro</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Reference the mounted path in <code>train.yml</code>:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /data/train.jsonl</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> /data/train.jsonl</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> alpaca</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Mounts must use absolute container paths and cannot overlap each other or <code>/outputs</code>.
 The provider uses existing volumes; it does not create custom volumes or their IAM credentials.</p>
 <p>For gated models or private Hub datasets, create a Nebius secret with a payload
 entry named <code>HF_TOKEN</code>, then reference its ID in <code>nebius.yaml</code>:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">env_secret</span><span class="kw">:</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_TOKEN</span><span class="kw">:</span><span class="at"> mbsec-YOUR_SECRET_ID</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">env_secret</span><span class="kw">:</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_TOKEN</span><span class="kw">:</span><span class="at"> mbsec-YOUR_SECRET_ID</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Use the secret ID, not the token value. With CLI 0.12.265, the environment variable
 name selects the payload key; the advertised <code>secret-id/key</code> form was rejected in
 validation. Local environment variables are not automatically passed to the job.
 Nonsecret variables can be set through <code>env</code>, for example:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_HOME</span><span class="kw">:</span><span class="at"> /tmp/huggingface</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">env</span><span class="kw">:</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">HF_HOME</span><span class="kw">:</span><span class="at"> /tmp/huggingface</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>See the <a href="../docs/dataset_loading.html">dataset loading guide</a> for other formats. Direct S3
 dataset access requires its own credentials and endpoint configuration.</p>
 </section>
@@ -1124,11 +1142,11 @@ dataset access requires its own credentials and endpoint configuration.</p>
 <p>Use a <a href="../docs/docker.html">plain Axolotl image</a> compatible with your GPU driver and pin its
 digest for repeatable runs. To include a local fork or plugins, replace <code>image</code> in
 <code>nebius.yaml</code> with a build configuration:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">image_build</span><span class="kw">:</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context</span><span class="kw">:</span><span class="at"> ../my-axolotl-fork</span></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dockerfile</span><span class="kw">:</span><span class="at"> Dockerfile</span></span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tag</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">platform</span><span class="kw">:</span><span class="at"> linux/amd64</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">image_build</span><span class="kw">:</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context</span><span class="kw">:</span><span class="at"> ../my-axolotl-fork</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dockerfile</span><span class="kw">:</span><span class="at"> Dockerfile</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tag</span><span class="kw">:</span><span class="at"> registry.example.com/team/axolotl:my-fork</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">platform</span><span class="kw">:</span><span class="at"> linux/amd64</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The context is relative to the cloud YAML. Docker builds and pushes the tagged image
 before submission; the Dockerfile must install your fork and plugins. Configure
 registry access so Nebius can pull the image: your local Docker push credentials
@@ -1180,10 +1198,10 @@ The CLI limits the compressed upload context to 64 KiB.</p>
 <p>On a CLI failure, Axolotl attempts one read-only status lookup and reports guidance
 for the returned state. It never automatically resubmits or cancels the job.
 If you lost the job ID, look it up by the name printed at launch:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job get-by-name <span class="dt">\</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--name</span> JOB_NAME <span class="dt">\</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--parent-id</span> project-YOUR_PROJECT_ID <span class="dt">\</span></span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--format</span> json</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ex">nebius</span> ai job get-by-name <span class="dt">\</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--name</span> JOB_NAME <span class="dt">\</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--parent-id</span> project-YOUR_PROJECT_ID <span class="dt">\</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--format</span> json</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Use the <code>parent_id</code> from <code>nebius.yaml</code> and read the job ID from <code>metadata.id</code>.
 If the cloud YAML sets <code>profile</code>, also pass <code>--profile PROFILE_NAME</code> with that
 value. Otherwise, use the same active CLI profile as submission. If you omitted
@@ -1275,7 +1293,7 @@ Job; separate remote preprocessing and lm-eval are not supported.</p>
 3.12.13, Torch 2.12.1+cu130, CUDA 13.0, Transformers 5.16.1 and PEFT 0.20.0;
 the host driver was 580.173.02. The base model was <code>NousResearch/Llama-3.2-1B</code>,
 with this revision pinned for validation:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> a9745ffc3556f145a830ac0c203509ba860582a3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> a9745ffc3556f145a830ac0c203509ba860582a3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The 30-step LoRA run, independent export size/hash checks, adapter loading and
 fresh-Job resume with optimizer/scheduler/RNG restoration passed. A separate CPU
 probe verified a one-hour timeout including provisioning and image startup.</p>

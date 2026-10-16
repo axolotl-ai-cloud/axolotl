@@ -216,6 +216,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -450,6 +456,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1105,7 +1117,7 @@ Note
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="ex">uvx</span> pip download <span class="at">--no-deps</span> <span class="at">--only-binary</span><span class="op">=</span>:all: <span class="at">--platform</span> ... <span class="at">-r</span> requirements.binary.txt <span class="at">-d</span> wheelhouse</span>
 <span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="ex">uvx</span> <span class="at">--python</span> 3.14 pip wheel <span class="at">--no-deps</span> <span class="at">-w</span> wheelhouse <span class="op">&lt;</span>pure-python sdists<span class="op">&gt;</span>     <span class="co"># plus zstandard and deepspeed on a target-arch builder</span></span>
 <span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> build <span class="at">--wheel</span> <span class="at">--python</span> 3.14 <span class="at">--out-dir</span> wheelhouse                           <span class="co"># axolotl itself</span></span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="ex">uvx</span> <span class="at">--python</span> 3.14 pip wheel <span class="at">--no-deps</span> <span class="at">-w</span> wheelhouse <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.0-rc0"</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="ex">uvx</span> <span class="at">--python</span> 3.14 pip wheel <span class="at">--no-deps</span> <span class="at">-w</span> wheelhouse <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.1"</span></span>
 <span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co"># HF cache (HF_HOME=$BUNDLE/hf)</span></span>
 <span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> download NousResearch/Llama-3.2-1B <span class="at">--exclude</span> <span class="st">'original/*'</span></span>
 <span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> download teknium/GPT4-LLM-Cleaned <span class="at">--repo-type</span> dataset</span>
@@ -1468,7 +1480,7 @@ Warning
 <h3 data-number="3.8" class="anchored" data-anchor-id="sec-wheelhouse-cce"><span class="header-section-number">3.8</span> Build the cut-cross-entropy wheel</h3>
 <p>The Docker image installs the <code>cut_cross_entropy</code> plugin’s backend from a git tag (<code>scripts/cutcrossentropy_install.py</code> prints the exact requirement for the installed torch). It is not a pyproject extra, so build it separately:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uvx</span> <span class="at">--python</span> 3.14 pip wheel <span class="at">--no-deps</span> <span class="at">-w</span> <span class="st">"</span><span class="va">$BUNDLE</span><span class="st">/wheelhouse"</span> <span class="dt">\</span></span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.0-rc0"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.1"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This produces <code>cut_cross_entropy-25.5.2-py3-none-any.whl</code>. Its dependencies (<code>torch</code>, <code>triton</code>, <code>transformers</code>) are already pinned in the wheelhouse, so the target installs it with <code>--no-deps</code>. Check the tag in <code>scripts/cutcrossentropy_install.py</code> at your <code>AXOLOTL_REF</code>, because it moves with torch support.</p>
 </section>
 <section id="sec-wheelhouse-check" class="level3" data-number="3.9">

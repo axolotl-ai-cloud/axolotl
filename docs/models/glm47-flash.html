@@ -147,7 +147,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/k2-horizon.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/glm47-flash.html">GLM-4.7-Flash</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/beam.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/glm47-flash.html">GLM-4.7-Flash</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -213,6 +213,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           </a> 
       </div>
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
@@ -449,6 +455,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -961,7 +973,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/k2-horizon.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/glm47-flash.html">GLM-4.7-Flash</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/beam.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/glm47-flash.html">GLM-4.7-Flash</a></li></ol></nav>
 <div class="quarto-title">
 <h1 class="title">GLM-4.7-Flash</h1>
 </div>
@@ -1012,7 +1024,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h2 class="anchored" data-anchor-id="limitations">Limitations</h2>
 <ul>
 <li><strong>lora_target_linear</strong>: Incompatible for this model.</li>
-<li><strong>LoRA kernels</strong>: Incompatible with this model due to non-standard attention projections (DSA). Must be explicitly disabled (<code>lora_*_kernel: false</code>).</li>
+<li><strong>LoRA kernels</strong>: The q/k/v/o kernels don’t apply to this model’s MLA attention, and enabling <code>lora_qkv_kernel</code>/<code>lora_o_kernel</code> raises an error. The example configs set <code>lora_*_kernel: false</code>.</li>
+<li><strong>LoRA targets</strong>: The attention projections are <code>q_a_proj</code>, <code>q_b_proj</code>, <code>kv_a_proj_with_mqa</code>, <code>kv_b_proj</code> and <code>o_proj</code>. The usual <code>q_proj</code>/<code>k_proj</code>/<code>v_proj</code> don’t exist here, so targeting them silently adapts only <code>o_proj</code>.</li>
 </ul>
 <section id="tips" class="level3">
 <h3 class="anchored" data-anchor-id="tips">TIPS</h3>

@@ -216,6 +216,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -450,6 +456,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1190,7 +1202,8 @@ Important
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>FA4 training requires <code>quack-kernels&gt;=0.6.0</code> on <code>nvidia-cutlass-dsl==4.6.0</code>. With an older
+<p>FA4 training requires <code>quack-kernels&gt;=0.6.0</code> on an <code>nvidia-cutlass-dsl</code> within that quack
+release’s declared range (0.6.5 needs <code>&gt;=4.7</code>). With an older
 quack (0.5.x targets the <code>4.6.0.dev0</code> prerelease) the FA4 backward raises
 <code>cudaErrorIllegalInstruction</code>. Upgrade with <code>pip install 'quack-kernels&gt;=0.6.0'</code>; Axolotl
 warns and keeps your requested backend when the installed quack is too old.</p>
@@ -1202,16 +1215,17 @@ warns and keeps your requested backend when the installed quack is too old.</p>
 <i class="callout-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Important</span>Blackwell (B200, GB200) needs a patched FA4
+<span class="screen-reader-only">Important</span>Blackwell (B200, GB200): avoid <code>nvidia-cutlass-dsl</code> 4.6.0 and 4.6.1
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>On Blackwell the FA4 backward hangs with <code>nvidia-cutlass-dsl&gt;=4.6.0</code>. Install the fix
-(<a href="https://github.com/Dao-AILab/flash-attention/pull/2689">Dao-AILab/flash-attention#2689</a>)
-over your existing FA4:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">--no-deps</span> <span class="at">--force-reinstall</span> <span class="dt">\</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">'git+https://github.com/dongxiao92/flash-attention@fix/sm100-elect-one-and-div-alignment#subdirectory=flash_attn/cute'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><code>--no-deps</code> keeps your existing cutlass and quack pins. Hopper (H100, H200) is unaffected.</p>
+<p>On those two releases <code>cute.copy</code> elects internally for bulk copies, so the FA4 backward nests
+elections and hangs. <code>nvidia-cutlass-dsl</code> 4.6.2 reverted the change, so stock FA4 works on
+4.6.2 and later. Do not install the
+<a href="https://github.com/Dao-AILab/flash-attention/pull/2689">Dao-AILab/flash-attention#2689</a> patch
+there: it removes elections that are needed again. Hopper (H100, H200) is unaffected.</p>
+<p>Axolotl still warns about this hang on Blackwell with any <code>nvidia-cutlass-dsl&gt;=4.6.0</code> and skips
+the automatic upgrade to FA4; set <code>attn_implementation: flash_attention_4</code> explicitly.</p>
 </div>
 </div>
 <div class="callout callout-style-default callout-warning callout-titled">
@@ -1238,15 +1252,15 @@ and falls back to FA2/3.</p>
 </section>
 <section id="flex-attention" class="level3">
 <h3 class="anchored" data-anchor-id="flex-attention">Flex Attention</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> flex_attention</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">  # recommended</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> flex_attention</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">  # recommended</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Requires torch ≥ 2.6. See <a href="https://pytorch.org/blog/flexattention/">PyTorch docs</a>.</p>
 </section>
 <section id="sageattention" class="level3">
 <h3 class="anchored" data-anchor-id="sageattention">SageAttention</h3>
 <p>Requirements: Ampere, Ada, or Hopper GPUs.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> sage</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install sageattention==2.2.0 <span class="at">--no-build-isolation</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> sage</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install sageattention==2.2.0 <span class="at">--no-build-isolation</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -1265,7 +1279,7 @@ Warning
 </section>
 <section id="xformers" class="level3">
 <h3 class="anchored" data-anchor-id="xformers">xFormers</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> xformers</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> xformers</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -1285,11 +1299,11 @@ Tip
 <p>torchao low-precision attention. Loaded as SDPA and patched post-load.</p>
 <p>Requirements: SM90+ (Hopper/Blackwell), PyTorch ≥ 2.11, torchao ≥ 0.17,
 flash-attn with FA3. KV caching must be disabled.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> fp8</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> fp8</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="hub-kernels" class="level3">
 <h3 class="anchored" data-anchor-id="hub-kernels">Hub kernels</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> kernels-community/flash-attn3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> kernels-community/flash-attn3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Passed through to <code>transformers</code>; axolotl does not install the kernel itself.
 For recognized hub paths the capability flags are set automatically; for
 arbitrary paths axolotl uses conservative defaults (<code>attn_supports_packing=False</code>,

@@ -216,6 +216,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -450,6 +456,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1012,7 +1024,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="sec-overview" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="sec-overview"><span class="header-section-number">1</span> Overview</h2>
 <p>GRPO (Group Relative Policy Optimization) trains a language model by generating completions, scoring them with reward functions, and updating the policy to favor higher-reward outputs. The generation step is the bottleneck: producing thousands of tokens per training step with the policy model is slow using standard HuggingFace generation.</p>
-<p>Axolotl uses <a href="https://github.com/vllm-project/vllm">vLLM</a> as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM’s native OpenAI-compatible HTTP API. In <a href="#sec-colocate-mode">colocate mode</a>, the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. Axolotl requires <code>vllm&gt;=0.30.0</code>. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.</p>
+<p>Axolotl uses <a href="https://github.com/vllm-project/vllm">vLLM</a> as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM’s native OpenAI-compatible HTTP API. In <a href="#sec-colocate-mode">colocate mode</a>, the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. Axolotl requires <code>vllm&gt;=0.30.0</code>. vLLM 0.31.0 caps <code>transformers&lt;5.18</code>, so with Axolotl’s transformers 5.20 pin the <code>vllm</code> extra resolves to vLLM 0.30.0. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.</p>
 <pre><code>┌──────────────────────┐       HTTP        ┌──────────────────────┐
 │   Trainer (GPU 1)    │ ───────────────── │   vLLM Server (GPU 0)│
 │                      │  prompts/compls   │                      │

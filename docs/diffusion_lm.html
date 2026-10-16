@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -449,6 +455,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -960,6 +972,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#splits-and-provenance" id="toc-splits-and-provenance" class="nav-link" data-scroll-target="#splits-and-provenance">Splits and provenance</a></li>
   <li><a href="#mixture-and-weighting" id="toc-mixture-and-weighting" class="nav-link" data-scroll-target="#mixture-and-weighting">Mixture and weighting</a></li>
   <li><a href="#batching" id="toc-batching" class="nav-link" data-scroll-target="#batching">Batching</a></li>
+  <li><a href="#prepared-row-cache" id="toc-prepared-row-cache" class="nav-link" data-scroll-target="#prepared-row-cache">Prepared-row cache</a></li>
   <li><a href="#outputs" id="toc-outputs" class="nav-link" data-scroll-target="#outputs">Outputs</a></li>
   <li><a href="#public-procedural-decision-mix" id="toc-public-procedural-decision-mix" class="nav-link" data-scroll-target="#public-procedural-decision-mix">Public procedural decision mix</a></li>
   <li><a href="#public-image-decision-mix" id="toc-public-image-decision-mix" class="nav-link" data-scroll-target="#public-image-decision-mix">Public image decision mix</a></li>
@@ -1150,11 +1163,13 @@ the saved adapter.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">diffusion_lm</span><span class="kw">:</span></span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unroll</span><span class="kw">:</span></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">k_max</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">grad_through_steps</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">grad_through_steps</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">eval_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>With <code>unroll.k_max</code> above 1, each step draws a read count uniformly from 1 to
 <code>k_max</code>. Earlier reads run without retained gradients and the final read
 supplies the loss. <code>grad_through_steps: true</code> is available only for models with
-self-conditioning.</p>
+self-conditioning. <code>eval_steps</code> (1 to <code>k_max</code>) fixes the read count for
+evaluation and prediction instead of drawing it; unset, they draw like training.</p>
 </section>
 <section id="adapters-merging-and-inference" class="level2">
 <h2 class="anchored" data-anchor-id="adapters-merging-and-inference">Adapters, merging and inference</h2>
@@ -1363,6 +1378,28 @@ weights, each source is sampled in proportion to its row count raised to
 source. <code>loss_weight</code> multiplies each source’s loss. Loss is averaged over the
 questions on a canvas and then over canvases, so a canvas with many questions
 does not outweigh a single-question canvas.</p>
+<p>Every epoch is drawn afresh with the same number of microbatches as the first:
+each capped source contributes its next <code>max_examples_per_source</code> window of
+one seeded shuffle (so later epochs see records the first did not, before any
+repeat), the mixture draw and the stratified microbatches are redrawn, and
+question and option order is seeded by the record, the epoch and how many
+times the epoch has already drawn that record. A record’s first draw in epoch 0
+uses the order prepared at startup; any other draw builds its canvas when the
+batch is loaded by concatenating the record’s token spans pre-tokenized at
+startup (prompt preamble, each question’s header and option lines, the format
+instruction, the chat turn around them, and each question’s answer piece), so
+re-ordering questions and options or reassigning labels needs no tokenizer
+(a few milliseconds per canvas, most of it seeding the permutation and
+validating the canvas, against about 25 ms to re-tokenize one on a 16k-token
+context). This is exact only where no pre-token crosses a span boundary; the
+plugin proves that for the Nemotron-Labs-Diffusion tokenizers, checks each
+record’s first draw against full tokenization when the spans are built, and
+re-tokenizes records or tokenizers it cannot prove. A drawn record that was not
+prepared at startup and does not fit the token budget is replaced by a prepared
+record of the same source. Epochs are a
+function of the seed, the batch settings and the epoch number, so ranks agree
+and a resumed run replays the same batches. With training <code>sample_packing</code>
+(core multipack) or <code>premixed</code> rows, every epoch reuses the first epoch’s draws.</p>
 <p>To train on a prebuilt draw sequence, set <code>mixture.premixed: true</code> and
 <code>per_batch_stratified: false</code>. Each training row then needs a unique draw ID
 and an origin matching its own identity; copies of one origin must be identical
@@ -1384,6 +1421,53 @@ per-decision limit and <code>sequence_len * micro_batch_size</code> as the physi
 budget. It requires <code>mixture.per_batch_stratified: false</code> and does not support
 sampled latent-slot counts. Reduce <code>micro_batch_size</code> and raise
 <code>gradient_accumulation_steps</code> if the effective batch does not fit.</p>
+<p>Evaluation batches hold a fixed <code>eval_batch_size</code> rows by default. With
+<code>sample_packing: false</code>, set <code>eval_sample_packing: true</code> to pack evaluation
+instead: consecutive rows are concatenated, in dataset order, into one varlen
+row of at most <code>sequence_len * eval_batch_size</code> tokens, so short rows share a
+forward and a micro-batch never exceeds the fixed-batch worst case. This works
+with or without <code>batch_flattening</code> for training, applies to full-sequence
+layouts (encoder/canvas layouts keep fixed batches), and repeats no row across
+ranks. <code>eval_loss</code> and the <code>eval_decision/*</code> metrics remain per-example means,
+equal to the fixed-batch values. With <code>sample_packing: true</code>, evaluation is
+packed by the same multipack sampler as training unless
+<code>eval_sample_packing: false</code>; only one packing mechanism applies.</p>
+<p>On a full-sequence layout without free latent slots, training and evaluation
+run only the final pass of a <code>k_max</code> unroll: label slots keep their noisy
+tokens between passes, nothing self-conditions and no gradient flows through
+earlier passes, so those passes would re-read the same canvas and their logits
+would be discarded. Loss and gradients are identical to running them, and the
+read count is still drawn so the random stream is unchanged. The trainer logs
+this once. Earlier passes only feed forward through <code>latent.mode: free</code>
+slots, which commit their argmax predictions between passes. The final pass
+computes logits only at label slots, so it never materializes
+full-vocabulary logits over the sequence.</p>
+</section>
+<section id="prepared-row-cache" class="level3">
+<h3 class="anchored" data-anchor-id="prepared-row-cache">Prepared-row cache</h3>
+<p>With <code>dataset_prepared_path</code> set and local JSONL sources, prepared canvases are
+cached under <code>&lt;dataset_prepared_path&gt;/diffusion_decision_cache/</code> and reused when
+the cache identity matches: the decision config and the other preparation
+fields (seed, <code>sequence_len</code>, model config), the tokenizer files and
+vocabulary, the plugin’s code, and the source files. A source file is matched
+by its resolved path, size and modification time, so touching it without
+changing its content still re-prepares once.</p>
+<p>The cache holds the canvas layer only: every decontaminated, grouped training
+record per source, with canvases built for the first epoch’s capped subset
+(the rest of a capped source is kept compressed for later epochs), the
+pre-tokenized canvas spans of every training record, and the evaluation
+canvases. Batch settings are not part of its identity:
+<code>micro_batch_size</code>, <code>gradient_accumulation_steps</code>, <code>eval_batch_size</code>,
+<code>sample_packing</code>, <code>eval_sample_packing</code>, <code>batch_flattening</code> and the mixture’s
+<code>weights</code>, <code>temperature</code> and <code>per_batch_stratified</code> only shape the batch plan
+(token-budget filter over the cached lengths, mixture draws and microbatch
+grouping), which is rebuilt at startup in seconds.</p>
+<p><code>diffusion_decision.prepared_cache_verify: true</code> trades load time for stronger
+checks: sources are matched by content sha256 instead, and a cache hit hashes
+the stored rows against the hash recorded when they were written. Without it a
+damaged or truncated cache file is still rejected when its framing or contents
+do not decode, and the rows are prepared again. The two modes key sources
+differently, so switching the option prepares and caches once more.</p>
 </section>
 <section id="outputs" class="level3">
 <h3 class="anchored" data-anchor-id="outputs">Outputs</h3>
@@ -1397,6 +1481,32 @@ images it also records <code>image_inputs</code>: <code>max_image_size</code> an
 the recorded value. Axolotl does not ship a decision-serving
 endpoint. Use a separate config for a frozen test split, and do not use test
 data for checkpoint selection.</p>
+<p>The manifest also records <code>max_questions_per_canvas</code>, <code>canvas_prefix_ids</code> and,
+under <code>noise_read_protocol</code>:</p>
+<ul>
+<li><code>read_passes</code>: model forward passes a decision read depends on. Reads mask
+every label slot in one pass; on a full-sequence layout without free latent
+slots the later steps of a <code>k_max</code> unroll re-read the same canvas, so this is
+<code>1</code>. <code>null</code> means the count is drawn per batch and changes the result.</li>
+<li><code>unroll_k_max</code> and <code>unroll_eval_steps</code>: the configured unroll.</li>
+<li><code>generation_diffusion_steps</code>: <code>diffusion_lm.num_diffusion_steps</code>, used only by
+free-text generation, never by decision training or reads. Older manifests
+call this field <code>diffusion_steps</code>; it is read as <code>generation_diffusion_steps</code>.</li>
+</ul>
+<p>Loading weights through <code>lora_model_dir</code>, or a merged checkpoint directory
+(<code>base_model</code> pointing at a local directory with the manifest), refuses a
+config whose codebook, canvas width, canvas prefix, decision layout, questions
+per canvas, latent slots, read passes or mask token disagree with the manifest.
+Fields an older manifest does not record are not compared. To continue
+training an adapter under a deliberately different canvas or codebook, set
+<code>diffusion_decision.allow_manifest_mismatch: true</code>; the mismatch is then logged
+as a warning. Reads should leave it off.</p>
+<p><code>diffusion_decision.read_overflow_canvas_width</code> is a read-time option for
+full-sequence layouts: a read canvas whose answer template does not fit
+<code>canvas_width</code> is rebuilt at this wider width instead of being dropped. Canvases
+that fit are unchanged, and training rows never widen. The wider canvases are
+outside the training distribution, so validate their accuracy before relying on
+them.</p>
 </section>
 <section id="public-procedural-decision-mix" class="level3">
 <h3 class="anchored" data-anchor-id="public-procedural-decision-mix">Public procedural decision mix</h3>

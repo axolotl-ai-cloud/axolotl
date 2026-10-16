@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Beam</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/k2-horizon.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">K2-Horizon</span></a>
   </div>
@@ -449,6 +455,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <div class="sidebar-item-container"> 
   <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/glm53-flash.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GLM-5.3-Flash</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1077,7 +1089,7 @@ Important
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>For Blackwell GPUs, please use <code>axolotlai/axolotl-uv:main-py3.12-cu130-2.13.0</code> or the cloud variant <code>axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.13.0</code>.</p>
+<p>For Blackwell GPUs, please use <code>axolotlai/axolotl-uv:main-py3.12-cu130-2.13.0</code> or the cloud variant <code>axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.13.0</code>. For expert-parallel MoE training on B200 (DeepEP, flash-attn-4, SonicMoE), use <code>axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.14.1-blackwell</code>, which ships those kernels prebuilt; see the <a href="../docs/docker.html#cloud-blackwell">Docker documentation</a>.</p>
 </div>
 </div>
 <p>Please refer to the <a href="../docs/docker.html">Docker documentation</a> for more information on the different Docker images that are available.</p>
