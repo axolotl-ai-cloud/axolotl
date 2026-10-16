@@ -73,7 +73,7 @@ class TestDynamicCheckpointCallbackInit:
                 }
             )
             callback = DynamicCheckpointCallback(cfg)
-            assert callback.check_interval == 100  # Default from schema
+            assert callback.check_interval == 10  # Default from schema
 
 
 class TestDynamicCheckpointFileDetection:
