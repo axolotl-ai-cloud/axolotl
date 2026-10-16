@@ -349,6 +349,13 @@ class SinkGD(_AdamBase):
         )
 
     def _sinkgd_update(self, p: Tensor, grad: Tensor, group: dict, lr: Tensor) -> None:
+        if isinstance(p, DTensor):
+            # a DTensor has no storage of its own; the fused kernel would read a dangling
+            # pointer and the compiled path would skip the cross-rank norm reduction
+            raise TypeError(
+                "SinkGD received a sharded (DTensor) parameter; sharded training needs "
+                "DistSinkGD, which the trainer builder selects when FSDP is configured"
+            )
         alpha = self._alpha_eff(p)
         if self._fused_ok(p, epilogue=self.sinkgd_spectral_norm):
             if self.sinkgd_spectral_norm:
@@ -645,6 +652,26 @@ def _matrix_shard_dim(p: Tensor):
     return None
 
 
+def _matrix_shard_group(p: Tensor):
+    """The process group of the mesh axis that shards a matrix dim of ``p``, else None.
+
+    FSDP2 shards the dense weights over whichever mesh axis the parallelism composes them
+    on (``dp_shard``, or the ``ep`` axis under pure expert parallelism), so the reduce
+    group is read off the parameter rather than fixed at construction.
+    """
+    if not isinstance(p, DTensor):
+        return None
+    matrix_dims = {p.ndim - 1, p.ndim - 2}
+    for i, placement in enumerate(p.placements):
+        if (
+            placement.is_shard()
+            and placement.dim in matrix_dims
+            and p.device_mesh.size(i) > 1
+        ):
+            return p.device_mesh.get_group(mesh_dim=i)
+    return None
+
+
 # Compiled local pieces of one SR-Sinkhorn iteration; the only thing kept eager and
 # uncompiled between them is the tiny norm-vector all-reduce (a collective would graph
 # break fullgraph anyway). This recovers the fusion the single-device path enjoys.
@@ -760,6 +787,12 @@ class DistSinkGD(SinkGD):
         self._c_specnorm_gram_cols = c(_specnorm_gram_cols)
         self._c_apply_update_scaled = c(_sinkgd_apply_update_scaled)
 
+    def _group_for(self, p: Tensor):
+        """Reduce group for ``p``'s sharded matrix dim: read off its mesh, else the
+        constructor's ``process_group``."""
+        grp = _matrix_shard_group(p)
+        return self._process_group if grp is None else grp
+
     def _dist_specnorm_vec(self, p, device, lead, vec_len) -> Tensor:
         """Replicated warm-start vector for the sharded power iteration, living on the
         UNSHARDED matrix axis (length ``vec_len``). Deterministic init (fixed-seed philox)
@@ -797,7 +830,7 @@ class DistSinkGD(SinkGD):
                 up = self._c_specnorm_gram_rows(x, ud)
             else:
                 up = self._c_specnorm_gram_cols(x, ud)
-            dist.all_reduce(up, group=self._process_group)
+            dist.all_reduce(up, group=self._group_for(p))
             nrm = torch.linalg.vector_norm(up, dim=-1, keepdim=True).clamp_min(eps)
             u = up / nrm
         self.state[p]["specnorm_u"] = u
@@ -827,7 +860,7 @@ class DistSinkGD(SinkGD):
             p_local, epilogue=self.sinkgd_spectral_norm and shard_dim is None
         ) and shard_dim in (None, -2):
             lr_f = float(lr) * self._alpha_eff(p)
-            grp = self._process_group if shard_dim == -2 else None
+            grp = self._group_for(p) if shard_dim == -2 else None
             m_glob = global_M if shard_dim == -2 else None
             if self.sinkgd_spectral_norm:
                 if shard_dim == -2:
@@ -903,11 +936,11 @@ class DistSinkGD(SinkGD):
         for _ in range(self.sinkhorn_iters):
             if shard_dim == -2:  # rows sharded -> column norm needs a reduction
                 x, csq = self._c_row_scale_col_partial(x, sqrt_n, eps)
-                dist.all_reduce(csq, group=self._process_group)
+                dist.all_reduce(csq, group=self._group_for(p))
                 x = self._c_apply_col_scale(x, csq, sqrt_m, eps)
             else:  # columns sharded (-1) -> row norm needs a reduction (row first)
                 rsq = self._c_row_partial(x)
-                dist.all_reduce(rsq, group=self._process_group)
+                dist.all_reduce(rsq, group=self._group_for(p))
                 x = self._c_row_scale_then_col_scale(x, rsq, sqrt_n, sqrt_m, eps)
         if self.sinkgd_spectral_norm:
             # one extra small vector all-reduce (size d_in/d_out) per power-iteration step,
@@ -972,7 +1005,7 @@ class DistSinkGDMD(DistSinkGD):
         if tn is None:
             sq = (p_local.float() ** 2).sum(dim=(-2, -1))  # [*lead] local partial
             if shard_dim is not None:
-                dist.all_reduce(sq, group=self._process_group)
+                dist.all_reduce(sq, group=self._group_for(p))
             tn = sq.sqrt()
             state["md_target_norm"] = tn
         return tn
@@ -1007,7 +1040,7 @@ class DistSinkGDMD(DistSinkGD):
                 target_norm=tn,
                 sn_iters=self.sinkgd_spectral_norm_iters,
                 m_global=global_M if shard_dim == -2 else None,
-                process_group=self._process_group if shard_dim == -2 else None,
+                process_group=self._group_for(p) if shard_dim == -2 else None,
             )
             return
         lr = lr * self._alpha_eff(p)
@@ -1033,11 +1066,11 @@ class DistSinkGDMD(DistSinkGD):
         for _ in range(self.sinkhorn_iters):
             if shard_dim == -2:
                 x, csq = self._c_row_scale_col_partial(x, sqrt_n, eps)
-                dist.all_reduce(csq, group=self._process_group)
+                dist.all_reduce(csq, group=self._group_for(p))
                 x = self._c_apply_col_scale(x, csq, sqrt_m, eps)
             else:
                 rsq = self._c_row_partial(x)
-                dist.all_reduce(rsq, group=self._process_group)
+                dist.all_reduce(rsq, group=self._group_for(p))
                 x = self._c_row_scale_then_col_scale(x, rsq, sqrt_n, sqrt_m, eps)
         # spectral scale for operator norm == sphere radius tn (folded into the apply)
         scale = self._dist_spectral_scale(
@@ -1047,7 +1080,7 @@ class DistSinkGDMD(DistSinkGD):
         # analytic sphere projection: one packed all-reduce of the three Frobenius partials
         # replaces materializing the fp32 W' shard (see single_param_sinkgd_md).
         sums = self._c_md_local_partials(p_local, x)
-        dist.all_reduce(sums, group=self._process_group)
+        dist.all_reduce(sums, group=self._group_for(p))
         self._c_md_apply_analytic(p_local, x, sums, a, tn, eps, sr)
 
 
