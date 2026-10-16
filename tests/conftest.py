@@ -803,6 +803,48 @@ def fixture_min_base_cfg():
     )
 
 
+#
+@pytest.mark.skipif(
+    os.environ.get("AXOLOTL_IS_CI_CACHE_PRELOAD", "-1") != "1",
+    reason="Not running in CI cache preload",
+)
+def test_load_fixtures(
+    download_smollm2_135m_model,
+    download_qwen3_half_billion_model,
+    download_tiny_llama_model,
+    download_tiny_mistral_model,
+    download_tiny_mixtral_model,
+    download_tiny_phi_model,
+    download_tiny_falcon_model,
+    download_tiny_qwen2_model,
+    download_tiny_qwen3_model,
+    download_tiny_gemma2_model,
+    download_tatsu_lab_alpaca_dataset,
+    download_mhenrichsen_alpaca_2k_dataset,
+    download_mhenrichsen_alpaca_2k_w_revision_dataset,
+    download_mlabonne_finetome_100k_dataset,
+    download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset,
+    download_argilla_ultrafeedback_binarized_preferences_cleaned_kto_dataset,
+    download_argilla_distilabel_capybara_dpo_7k_binarized_dataset,
+    download_arcee_ai_distilabel_intel_orca_dpo_pairs_dataset,
+    download_argilla_dpo_pairs_dataset,
+    download_tiny_shakespeare_dataset,
+    download_deepseek_model_fixture,
+    download_huggyllama_model_fixture,
+    download_llama_1b_model_fixture,
+    download_llama3_8b_model_fixture,
+    download_llama3_8b_instruct_model_fixture,
+    download_phi_35_mini_model_fixture,
+    download_phi_4_reasoning_model_fixture,
+    download_mistral_7b_model_fixture,
+    download_gemma_2b_model_fixture,
+    download_gemma2_9b_model_fixture,
+    download_mlx_mistral_7b_model_fixture,
+    download_llama2_model_fixture,
+):
+    pass
+
+
 @pytest.fixture(autouse=True)
 def disable_telemetry(monkeypatch):
     monkeypatch.setenv("AXOLOTL_DO_NOT_TRACK", "1")
