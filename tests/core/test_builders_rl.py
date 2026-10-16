@@ -200,6 +200,8 @@ def rand_reward_func(prompts, completions) -> list[float]:
     ):
         from axolotl.utils.collators.mm_rl import MultimodalRLExampleNormalizer
 
+        model.config.image_token_id = 0
+
         rewards_dir = tmp_path / "rewards_test"
         self._write_rewards_file(rewards_dir)
         sys.path.insert(0, str(rewards_dir))
