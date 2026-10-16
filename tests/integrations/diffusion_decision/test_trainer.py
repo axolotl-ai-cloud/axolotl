@@ -555,9 +555,10 @@ def test_full_sequence_multistep_holds_noisy_labels_and_pinned_slots(steps):
     )
 
     expected_state = torch.tensor([[1, 10, 5, 2, 6, 7]])
-    assert len(model.forward_states) == steps
+    # Pinned slots commit nothing between passes, so only the loss pass runs.
+    assert len(model.forward_states) == 1
     assert all(torch.equal(state, expected_state) for state in model.forward_states)
-    assert model.forward_grad_enabled == _final_only(steps)
+    assert model.forward_grad_enabled == [True]
     logits.sum().backward()
     assert model.logit_bias.grad is not None
     assert torch.count_nonzero(model.logit_bias.grad)
@@ -576,7 +577,7 @@ def test_packed_multistep_noise_is_per_document_and_holds_each_canvas_state():
     )
 
     expected_state = torch.tensor([[1, 4, 5, 2, 6, 10]])
-    assert len(model.forward_states) == 2
+    assert len(model.forward_states) == 1
     assert all(torch.equal(state, expected_state) for state in model.forward_states)
 
 
@@ -682,7 +683,8 @@ def test_native_nemotron_peft_learned_slot_rows_receive_final_step_gradients(
     loss = trainer.compute_loss(model, inputs)
     loss.backward()
 
-    assert calls == _final_only(steps)
+    # Learned slots are input-pinned and commit nothing: only the loss pass runs.
+    assert calls == [True]
     _assert_peft_grads(model)
 
 
@@ -1674,22 +1676,27 @@ def test_sampled_prompt_slots_validate_positions_and_train(tmp_path, layout):
         assert torch.all(prompt_slots <= batch["canvas_input_pinned_mask"])
     else:
         logical = batch["diffusion_batch"]
-        positions = torch.arange(prompt_slots.shape[1])[None]
+        slots_cpu = prompt_slots.cpu()
+        positions = torch.arange(slots_cpu.shape[1])[None]
         assert torch.equal(
-            prompt_slots, logical.encoder_validity & (positions < counts[:, None])
+            slots_cpu,
+            logical.encoder_validity.cpu() & (positions < counts.cpu()[:, None]),
         )
-        assert not torch.any(prompt_slots & logical.encoder_ar_valid_mask)
-        assert torch.all(prompt_slots <= batch["decision_prompt_input_pinned_mask"])
+        assert not torch.any(slots_cpu & logical.encoder_ar_valid_mask.cpu())
+        assert torch.all(slots_cpu <= batch["decision_prompt_input_pinned_mask"].cpu())
     assert not torch.any(batch["decision_slot_mask"])
 
     _loop_loss(trainer, batch).backward()
     assert trainer.model.logit_bias.grad is not None
     assert torch.count_nonzero(trainer.model.logit_bias.grad)
 
-    malformed = dict(batch)
-    malformed["decision_prompt_slot_mask"] = prompt_slots.roll(1, dims=1)
-    with pytest.raises(RuntimeError, match="logical prompt prefix"):
-        _loop_loss(trainer, malformed)
+    # torch._assert_async only raises on CPU; on CUDA it is a device-side assert that
+    # aborts the CUDA context, so the malformed-mask check runs on CPU only.
+    if trainer.args.device.type == "cpu":
+        malformed = dict(batch)
+        malformed["decision_prompt_slot_mask"] = prompt_slots.roll(1, dims=1)
+        with pytest.raises(RuntimeError, match="logical prompt prefix"):
+            _loop_loss(trainer, malformed)
 
     missing = dict(batch)
     missing.pop("decision_prompt_slot_mask")
@@ -1705,6 +1712,10 @@ def test_sampled_prompt_slots_validate_positions_and_train(tmp_path, layout):
 def test_sampled_slot_runtime_rejects_descriptor_mask_mismatch(tmp_path):
     dataset = DecisionDataset(_sampled_rows(4), {})
     trainer = _sampled_loop_trainer(tmp_path, dataset, stratified=False)
+    if trainer.args.device.type != "cpu":
+        # torch._assert_async only raises on CPU; on CUDA it is a device-side assert
+        # that aborts the CUDA context.
+        pytest.skip("device-side asserts cannot be caught on CUDA")
     batch = next(iter(trainer.get_train_dataloader()))
     malformed = dict(batch)
     malformed["decision_slot_counts"] = batch["decision_slot_counts"] + 1
@@ -1865,11 +1876,11 @@ def test_actual_trainer_loop_matches_manual_typed_labels_under_gradient_accumula
 
     expected = _manual_sgd(rows, window_sizes)
 
-    torch.testing.assert_close(accumulated.logit_bias, expected, rtol=1e-5, atol=1e-6)
-    torch.testing.assert_close(full.logit_bias, expected, rtol=1e-5, atol=1e-6)
-    torch.testing.assert_close(
-        accumulated.logit_bias, full.logit_bias, rtol=1e-5, atol=1e-6
-    )
+    accumulated_bias = accumulated.logit_bias.detach().cpu()
+    full_bias = full.logit_bias.detach().cpu()
+    torch.testing.assert_close(accumulated_bias, expected, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(full_bias, expected, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(accumulated_bias, full_bias, rtol=1e-5, atol=1e-6)
     assert len(accumulated.forward_states) == forward_counts[0]
     assert len(full.forward_states) == forward_counts[1]
     assert all(torch.any(ids.eq(10)) for ids in accumulated.forward_states)
@@ -2021,7 +2032,7 @@ def test_fractional_reads_hold_actual_label_states_across_full_sequence_unroll(
     model = _TinyNativeModel()
     loss, _ = trainer.compute_loss(model, _full_sequence_inputs(), return_outputs=True)
     expected = torch.tensor([[1, 10, 5, 2, 6, 7]])
-    assert len(model.forward_states) == steps
+    assert len(model.forward_states) == 1
     assert all(torch.equal(state, expected) for state in model.forward_states)
     loss.backward()
     final_grad = model.forward_logits[-1].grad
@@ -2158,8 +2169,11 @@ def test_full_sequence_forwards_reach_the_model_with_media_kwargs(
         model, inputs, trainer._native_spec, trainer._decision_config()
     )
 
-    assert len(model.calls) == steps
-    assert _media_calls(model) == [(True, True)] * steps
+    # Without free latent slots the non-final unroll passes commit nothing and
+    # are skipped, so k_max > 1 runs one (media-carrying) forward as well.
+    assert steps >= 1
+    assert len(model.calls) == 1
+    assert _media_calls(model) == [(True, True)]
     if selected:
         assert model.selected_shapes
 
@@ -2208,3 +2222,142 @@ def test_free_slot_updates_never_commit_image_markers_with_media(with_media, exp
 
     assert len(model.forward_states) == 2
     assert torch.all(model.forward_states[1][slots] == expected)
+
+
+_LABEL_METRICS = ("label_mass", "label_mass_nll", "excess_full_vocab_loss")
+
+
+@pytest.mark.parametrize("train_eval", ["train", "eval"])
+def test_label_metrics_are_logged_per_source_with_the_loss_weighting(
+    monkeypatch, train_eval
+):
+    trainer = _harness()
+    decision = trainer._decision_config()
+    selected = torch.tensor(
+        [
+            [[0.0, 0.5, 1.0, -0.5]],
+            [[0.3, -0.2, 0.7, -0.1]],
+            [[-0.4, 0.6, 0.1, 0.2]],
+        ],
+        requires_grad=True,
+    )
+    examples = (
+        _example(1, weight=1.0),
+        DecisionLabelExample(
+            questions=(
+                DecisionLabelQuestion(
+                    0, (1, 2, 3), DistributionLabel((0.2, 0.5, 0.3)), weight=2.0
+                ),
+            ),
+            source_weight=2.0,
+        ),
+        _example(1),
+    )
+    supervision = torch.ones((3, 1), dtype=torch.bool)
+    result = decision_label_loss(selected, examples, supervision)
+    trainer._store_decision_metrics(
+        result,
+        selected,
+        examples,
+        supervision,
+        decision,
+        ("alpha", "alpha", "beta"),
+        train_eval=train_eval,
+    )
+    captured: dict[str, float] = {}
+    monkeypatch.setattr(
+        AxolotlDiffusionTrainer,
+        "log",
+        lambda _self, logs, start_time=None: captured.update(logs),
+    )
+    trainer.log({"eval_loss": 1.0} if train_eval == "eval" else {"loss": 1.0})
+
+    prefix = "eval_decision" if train_eval == "eval" else "decision"
+    alpha = decision_label_loss(selected[:2], examples[:2], supervision[:2])
+    beta = decision_label_loss(selected[2:], examples[2:], supervision[2:])
+    for name in _LABEL_METRICS:
+        for source, expected in (("all", result), ("alpha", alpha), ("beta", beta)):
+            torch.testing.assert_close(
+                torch.tensor(captured[f"{prefix}/{source}/{name}"]),
+                getattr(expected, name).detach(),
+            )
+    # Same per-example weighting as full_vocab_loss: one-hot rows line up exactly.
+    torch.testing.assert_close(
+        torch.tensor(captured[f"{prefix}/beta/excess_full_vocab_loss"]),
+        torch.tensor(captured[f"{prefix}/beta/full_vocab_loss"]),
+    )
+    assert (
+        captured[f"{prefix}/alpha/excess_full_vocab_loss"]
+        < (captured[f"{prefix}/alpha/full_vocab_loss"])
+    )
+    assert selected.grad is None
+
+
+def test_restricted_softmax_logs_no_label_metrics(monkeypatch):
+    trainer = _harness()
+    decision = trainer._decision_config()
+    selected = torch.tensor([[[0.0, 0.5, 1.0, -0.5]], [[0.3, -0.2, 0.7, -0.1]]])
+    examples = (_example(1), _example(1))
+    supervision = torch.ones((2, 1), dtype=torch.bool)
+    result = decision_label_loss(
+        selected, examples, supervision, label_softmax="restricted"
+    )
+    trainer._store_decision_metrics(
+        result,
+        selected,
+        examples,
+        supervision,
+        decision,
+        ("alpha", "beta"),
+        train_eval="train",
+    )
+    captured: dict[str, float] = {}
+    monkeypatch.setattr(
+        AxolotlDiffusionTrainer,
+        "log",
+        lambda _self, logs, start_time=None: captured.update(logs),
+    )
+    trainer.log({"loss": 1.0})
+    assert "decision/alpha/restricted_loss" in captured
+    assert not [key for key in captured if key.rsplit("/", 1)[-1] in _LABEL_METRICS]
+
+
+def test_label_metric_totals_merge_across_ranks(monkeypatch):
+    local = {
+        "decision/alpha": {
+            **_totals(2.0, 1.0, 1.0, 0.0, 2.0),
+            "label_mass": 1.2,
+            "label_mass_nll": 1.4,
+            "excess_full_vocab_loss": 0.6,
+            "label_metric_examples": 2.0,
+        }
+    }
+    other = {
+        "decision/alpha": {
+            **_totals(1.0, 1.0, 1.0, 0.0, 1.0),
+            "label_mass": 0.9,
+            "label_mass_nll": 0.1,
+            "excess_full_vocab_loss": 0.3,
+            "label_metric_examples": 1.0,
+        }
+    }
+    monkeypatch.setattr(torch.distributed, "is_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_initialized", lambda: True)
+    monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2)
+    monkeypatch.setattr(
+        torch.distributed,
+        "all_gather_object",
+        lambda output, value: output.__setitem__(slice(None), [value, other]),
+    )
+    trainer = _harness()
+    trainer._decision_metrics = {"train": local, "eval": {}}
+    captured: dict[str, float] = {}
+    monkeypatch.setattr(
+        AxolotlDiffusionTrainer,
+        "log",
+        lambda _self, logs, start_time=None: captured.update(logs),
+    )
+    trainer.log({"loss": 1.0})
+    assert captured["decision/alpha/label_mass"] == pytest.approx(0.7)
+    assert captured["decision/alpha/label_mass_nll"] == pytest.approx(0.5)
+    assert captured["decision/alpha/excess_full_vocab_loss"] == pytest.approx(0.3)

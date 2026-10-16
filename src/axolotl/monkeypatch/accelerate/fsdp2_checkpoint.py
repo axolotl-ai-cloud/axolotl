@@ -52,7 +52,7 @@ def expert_ownership(model):
         else:
             for parameter in module.parameters(recurse=False):
                 by_id[id(parameter)] = dict(owner, kind="expert")
-            for name in ("gate_up_proj", "down_proj"):
+            for name in ("gate_up_proj", "up_proj", "down_proj"):
                 parametrizations = getattr(module, "parametrizations", {})
                 if name in parametrizations:
                     by_id[id(parametrizations[name].original)] = dict(

@@ -369,6 +369,28 @@ def _get_base_param(param):
     return param
 
 
+def _fp4_weight_cache(module, gate_up_base) -> dict:
+    """Persistent grouped-fp4 weight cache for ``module``, shared by tied experts.
+
+    The cache outlives FSDP re-gathers by living on the module. Single-GPU, the marlin
+    backend frees the NVFP4 ``qdata`` after repacking and keeps the repacked weight in this
+    cache, so modules that hold the *same* expert tensor (DiffusionGemma ties its encoder
+    and decoder experts) must share one cache or the second module finds ``qdata`` gone.
+    The first module stashes its cache on the weight tensor; a tied module adopts it.
+    """
+    cache = module.__dict__.get("_dg_mxfp4_cache")
+    if cache is None:
+        cache = getattr(gate_up_base, "_dg_mxfp4_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            try:
+                gate_up_base._dg_mxfp4_cache = cache
+            except (AttributeError, RuntimeError):
+                pass
+        module.__dict__["_dg_mxfp4_cache"] = cache
+    return cache
+
+
 def _parallel_linear_maybe_lora(
     x,
     weight,
@@ -714,7 +736,7 @@ def scattermoe_experts_forward(
             )
             # persistent per-module cache so the backend requantizes the frozen weight to mxfp4
             # once, surviving FSDP re-gathers (the gathered param is fresh each step).
-            cache = self.__dict__.setdefault("_dg_mxfp4_cache", {})
+            cache = _fp4_weight_cache(self, gu_base)
             return grouped_fp4_moe_train(
                 hidden_states,
                 top_k_index,
@@ -1032,7 +1054,7 @@ def scattermoe_experts_forward_ep(
                     _get_base_param(getattr(self, p)),
                     _get_base_param(self.down_proj),
                 )
-                _cache_g = self.__dict__.setdefault("_dg_mxfp4_cache", {})
+                _cache_g = _fp4_weight_cache(self, _gu_base_g)
                 return _grouped_fp4_ep_maybe_tiled(
                     hidden_states,
                     top_k_index,

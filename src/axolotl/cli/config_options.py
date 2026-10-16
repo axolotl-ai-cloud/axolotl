@@ -976,7 +976,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--cls-model-config",),
         None,
         None,
-        "transformers config class (e.g., 'LlamaConfig', 'MistralConfig'). Defaults to AutoConfig.",
+        "transformers config class (e.g., 'LlamaConfig', 'MistralConfig') or a dotted import path to a config class. Defaults to AutoConfig.",
     ),
     (
         ("--tokenizer-config",),
@@ -3093,6 +3093,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`",
+    ),
+    (
+        ("--eval-on-start/--no-eval-on-start",),
+        None,
+        None,
+        "Run an evaluation before the first training step. Leave empty to keep the default (on whenever evaluation is enabled); set to false to skip the step-0 eval",
     ),
     (
         ("--save-steps",),

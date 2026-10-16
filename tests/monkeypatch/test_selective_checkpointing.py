@@ -1616,3 +1616,11 @@ class TestHigherOrderOps:
         ):
             assert cls.supports_higher_order_operators is True
             assert cls.ignore_compile_internals() is True
+
+
+def test_attention_group_includes_torch_varlen_custom_op():
+    """varlen_attn is a custom op opaque to dispatch modes; the attention group must name it."""
+    pytest.importorskip("torch.nn.attention.varlen")
+    from axolotl.monkeypatch.selective_checkpointing import _aten_attention_ops
+
+    assert torch.ops.torch_attn._varlen_attn.default in _aten_attention_ops()

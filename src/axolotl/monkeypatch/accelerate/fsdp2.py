@@ -811,7 +811,14 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 ".experts." in n
                 and ".shared_experts." not in n
                 and _expert_param_leaf(n)
-                in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
+                in (
+                    "gate_up_proj",
+                    "up_proj",
+                    "down_proj",
+                    "gate_up_proj_bias",
+                    "up_proj_bias",
+                    "down_proj_bias",
+                )
             )
         }
         if ep_ignored:

@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from axolotl.integrations.diffusion_decision import datasets
+from axolotl.integrations.diffusion_decision import canvas, datasets
 
 
 def test_canvas_row_uses_model_vocabulary_without_counting_tokenizer(monkeypatch):
@@ -19,22 +19,22 @@ def test_canvas_row_uses_model_vocabulary_without_counting_tokenizer(monkeypatch
         captured.update(kwargs)
         return SimpleNamespace(prompt_ids=(1,), canvas_ids=(100,) * 128)
 
-    monkeypatch.setattr(datasets, "build_decision_canvas", build)
-    monkeypatch.setattr(datasets, "permute_record", lambda record, **kwargs: record)
+    monkeypatch.setattr(canvas, "build_decision_canvas", build)
+    monkeypatch.setattr(canvas, "permute_record", lambda record, **kwargs: record)
     monkeypatch.setattr(
-        datasets, "decision_example_from_canvas", lambda *args, **kwargs: None
+        canvas, "decision_example_from_canvas", lambda *args, **kwargs: None
     )
     cfg = {
         "model_config": {"vocab_size": 131072},
         "diffusion_lm": {"mask_token_id": 100},
         "diffusion_decision": {},
     }
-    row = datasets._canvas_row(
+    row = canvas._canvas_row(
         Tokenizer(),
         {"source": "test"},
         cfg,
         1.0,
-        spec=SimpleNamespace(max_canvas=128, noise=datasets.DiffusionNoise.ABSORBING),
+        spec=SimpleNamespace(max_canvas=128, noise=canvas.DiffusionNoise.ABSORBING),
     )
     assert captured["vocab_size"] == 131072
     assert row["length"] == 129
