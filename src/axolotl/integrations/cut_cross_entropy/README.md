@@ -19,7 +19,7 @@ python scripts/cutcrossentropy_install.py | sh
 
 - If you are installing from pip
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@856a16d"
+pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@3dd4bf1"
 ```
 
 ## Usage
@@ -48,6 +48,7 @@ LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_
 - afmoe
 - apertus
 - arcee
+- beam
 - cohere
 - cohere2
 - cohere2_moe

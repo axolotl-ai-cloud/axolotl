@@ -146,5 +146,5 @@ class TestCutCrossEntropyPluginPatchKwargs:
             cut_cross_entropy_accum_c_fp32=True,
             cut_cross_entropy_c_grad_chunk_size=256,
         )
-        with pytest.raises(ImportError, match="ml-cross-entropy.git@856a16d"):
+        with pytest.raises(ImportError, match="ml-cross-entropy.git@3dd4bf1"):
             self._run(cfg, _cce_patch_stub(with_chunk=False))
