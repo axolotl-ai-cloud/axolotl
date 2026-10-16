@@ -663,6 +663,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/coreweave.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CoreWeave</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -1077,7 +1083,8 @@ runtime model key names used by the LoRA adapter.</p>
 <span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>    dequant<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>    override_quantizer<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>    revision<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    shard_sink<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Memory-efficient LoRA merging that processes shards individually
 without loading the full model into memory.</p>
 <section id="if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips" class="level4 doc-section doc-section-if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips">
@@ -1092,10 +1099,10 @@ adapter (encoder version drift); see <code>_resolve_nvfp4_scale_mode</code>.</p>
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 6%">
-<col style="width: 7%">
-<col style="width: 80%">
 <col style="width: 5%">
+<col style="width: 19%">
+<col style="width: 70%">
+<col style="width: 4%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1107,48 +1114,54 @@ adapter (encoder version drift); see <code>_resolve_nvfp4_scale_mode</code>.</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td>shard_sink</td>
+<td>Optional[Callable[[dict[str, torch.Tensor], Path, dict], None]]</td>
+<td>Optional writer receiving each merged CPU shard, its destination, and safetensors metadata. Replaces the default shard write.</td>
+<td><code>None</code></td>
+</tr>
+<tr class="even">
 <td>nf4_backend</td>
 <td>str</td>
 <td>NF4 implementation used for the training base.</td>
 <td><code>'bitsandbytes'</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>nf4_skips</td>
 <td>Optional[set[str]]</td>
 <td>Resolved module exclusions from <code>nf4_skip_modules</code>. When provided, weights are selected the way the staged loader selected them (Linear weights and fused experts outside the exclusions); when None on bitsandbytes, transformers’ own Linear4bit selection is reproduced.</td>
 <td><code>None</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>nf4_dtype</td>
 <td>Optional[torch.dtype]</td>
 <td>Training weight dtype used before quantization.</td>
 <td><code>None</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>bnb_skip_modules</td>
 <td>Optional[list[str]]</td>
 <td><code>llm_int8_skip_modules</code> the bitsandbytes training load used; None means transformers’ default skips.</td>
 <td><code>None</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>staged_nf4</td>
 <td>bool</td>
 <td>Training used CPU-staged NF4, which has no legacy merge fallback.</td>
 <td><code>False</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>simulate_nf4</td>
 <td>bool</td>
 <td>Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)</td>
 <td><code>False</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>simulate_nf4_experts</td>
 <td>bool</td>
 <td>Apply NF4 roundtrip only to MoE expert tensors (for quantize_moe_experts). Expert tensors are identified by having “expert” in the key name and ndim &gt;= 3.</td>
 <td><code>False</code></td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>trust_remote_code</td>
 <td>bool</td>
 <td>Whether to trust remote code when loading model config for layer-type introspection. Defaults to False for safety.</td>

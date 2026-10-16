@@ -663,6 +663,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/coreweave.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CoreWeave</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -1135,6 +1141,7 @@ Tip
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Qwen3MoeDecoderLayer</span></span>
 <span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> FULL_STATE_DICT</span></span>
 <span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>With EP active, <code>dp_shard_size</code> is only the extra FSDP split applied to the expert modules inside an EP group; the dense (non-expert) weights always shard over the flattened <code>dp_shard x cp x ep</code> axes. On a node of 8 GPUs, <code>expert_parallel_size: 8, dp_shard_size: 1</code> therefore means dense weights sharded 8 ways within the node and each rank keeping its experts whole, and adding <code>dp_replicate_size: 2</code> replicates that layout on a second node (HSDP) so only gradients cross the inter-node fabric. The startup log prints this effective layout.</p>
 <p><code>expert_parallel_backend</code> defaults to <code>auto</code> (DeepEP when installed, else the torch all-to-all backend); LoRA on the experts works with <code>lora_target_parameters</code> in either layout. A fresh LoRA adapter is drawn per module from <code>seed</code>, so the init (and a one-step gradient check) is identical whether or not the experts are sharded.</p>
 </section>
 <section id="support-matrix" class="level2">

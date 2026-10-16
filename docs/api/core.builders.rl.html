@@ -663,6 +663,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/coreweave.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CoreWeave</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -993,6 +999,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.core.builders.rl.HFRLTrainerBuilder.build_collator">build_collator</a></td>
 <td>Build a data collator for preference-tuning trainers.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.core.builders.rl.HFRLTrainerBuilder.hook_post_create_trainer">hook_post_create_trainer</a></td>
+<td>Attach the fused LoRA kernels to the adapter TRL built inside the trainer.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.core.builders.rl.HFRLTrainerBuilder.build_collator" class="level5">
@@ -1004,6 +1014,11 @@ KTO), letting the trainer construct its default. For DPO/IPO/ORPO/SIMPO
 returns an <code>AxolotlDPODataCollatorWithPadding</code> when
 <code>pad_to_multiple_of</code> is set, otherwise None (so the trainer
 falls back to the TRL default).</p>
+</section>
+<section id="axolotl.core.builders.rl.HFRLTrainerBuilder.hook_post_create_trainer" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.builders.rl.HFRLTrainerBuilder.hook_post_create_trainer">hook_post_create_trainer</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.builders.rl.HFRLTrainerBuilder.hook_post_create_trainer(trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Attach the fused LoRA kernels to the adapter TRL built inside the trainer.</p>
 
 
 </section>

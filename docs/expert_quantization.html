@@ -664,6 +664,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/coreweave.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CoreWeave</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -1087,7 +1093,9 @@ distributed, rank zero also briefly holds one full packed tensor on its accelera
 by the largest quantized tensor; this peak is smaller than the wrapped-layer requirement
 above.</p>
 <p><code>offload_params</code> controls FSDP parameter offloading after loading. This path supports
-a single FSDP2 data-parallel mesh; DeepSpeed, tensor/context/expert parallelism,
+a single FSDP2 data-parallel mesh, optionally combined with expert parallelism
+(<code>expert_parallel_size</code>, whose expert slices are cut from rank zero’s packed weights
+without requantizing); DeepSpeed, tensor/context parallelism,
 DoRA, <code>modules_to_save</code> and value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
 olora remains available on the non-staged bitsandbytes loader with
 <code>cpu_ram_efficient_loading: false</code> (the torchao backend is always staged); pissa and

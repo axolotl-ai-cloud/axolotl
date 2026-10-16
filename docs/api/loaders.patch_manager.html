@@ -663,6 +663,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/coreweave.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CoreWeave</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -945,6 +951,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.loaders.patch_manager.PatchManager" id="toc-axolotl.loaders.patch_manager.PatchManager" class="nav-link" data-scroll-target="#axolotl.loaders.patch_manager.PatchManager">PatchManager</a></li>
   </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.loaders.patch_manager.rl_trainer_builds_adapter" id="toc-axolotl.loaders.patch_manager.rl_trainer_builds_adapter" class="nav-link" data-scroll-target="#axolotl.loaders.patch_manager.rl_trainer_builds_adapter">rl_trainer_builds_adapter</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -1126,11 +1136,33 @@ which needs to be in place before AutoTokenizer.from_pretrained() is called.</p>
 </tr>
 </tbody>
 </table>
+</section>
+</section>
+</section>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.loaders.patch_manager.rl_trainer_builds_adapter">rl_trainer_builds_adapter</a></td>
+<td>DPO, IPO and KTO hand TRL the LoRA config and TRL builds the PeftModel in the trainer.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.loaders.patch_manager.rl_trainer_builds_adapter" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.loaders.patch_manager.rl_trainer_builds_adapter">rl_trainer_builds_adapter</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>loaders.patch_manager.rl_trainer_builds_adapter(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>DPO, IPO and KTO hand TRL the LoRA config and TRL builds the PeftModel in the trainer.</p>
 
 
-</section>
-</section>
-</section>
 </section>
 </section>
 </section>

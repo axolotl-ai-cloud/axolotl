@@ -663,6 +663,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/coreweave.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">CoreWeave</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -943,8 +949,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.evaluate.enable_callbacks_for_evaluation" id="toc-axolotl.evaluate.enable_callbacks_for_evaluation" class="nav-link" data-scroll-target="#axolotl.evaluate.enable_callbacks_for_evaluation">enable_callbacks_for_evaluation</a></li>
   <li><a href="#axolotl.evaluate.evaluate" id="toc-axolotl.evaluate.evaluate" class="nav-link" data-scroll-target="#axolotl.evaluate.evaluate">evaluate</a></li>
   <li><a href="#axolotl.evaluate.evaluate_dataset" id="toc-axolotl.evaluate.evaluate_dataset" class="nav-link" data-scroll-target="#axolotl.evaluate.evaluate_dataset">evaluate_dataset</a></li>
+  <li><a href="#axolotl.evaluate.prepare_fsdp2_model_for_eval" id="toc-axolotl.evaluate.prepare_fsdp2_model_for_eval" class="nav-link" data-scroll-target="#axolotl.evaluate.prepare_fsdp2_model_for_eval">prepare_fsdp2_model_for_eval</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -971,18 +979,32 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.evaluate.enable_callbacks_for_evaluation">enable_callbacks_for_evaluation</a></td>
+<td>Give trainer callbacks that gate a forward path on training state their chance to</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.evaluate.evaluate">evaluate</a></td>
 <td>Evaluate a model on training and validation datasets.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.evaluate.evaluate_dataset">evaluate_dataset</a></td>
 <td>Helper function to evaluate a single dataset.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.evaluate.prepare_fsdp2_model_for_eval">prepare_fsdp2_model_for_eval</a></td>
+<td>Prepare the model and optimizer together under FSDP2 before a train-less evaluate.</td>
+</tr>
 </tbody>
 </table>
+<section id="axolotl.evaluate.enable_callbacks_for_evaluation" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.evaluate.enable_callbacks_for_evaluation">enable_callbacks_for_evaluation</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>evaluate.enable_callbacks_for_evaluation(trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Give trainer callbacks that gate a forward path on training state their chance to
+switch it on, since no <code>on_train_begin</code> fires in a standalone evaluation.</p>
+</section>
 <section id="axolotl.evaluate.evaluate" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.evaluate.evaluate">evaluate</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>evaluate.evaluate(cfg, dataset_meta)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>evaluate.evaluate(cfg, dataset_meta)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Evaluate a model on training and validation datasets.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
@@ -1044,7 +1066,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.evaluate.evaluate_dataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.evaluate.evaluate_dataset">evaluate_dataset</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>evaluate.evaluate_dataset(trainer, dataset, dataset_type, flash_optimum<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>evaluate.evaluate_dataset(trainer, dataset, dataset_type, flash_optimum<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Helper function to evaluate a single dataset.</p>
 <section id="parameters-1" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
@@ -1114,9 +1136,17 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 </tbody>
 </table>
-
-
 </section>
+</section>
+<section id="axolotl.evaluate.prepare_fsdp2_model_for_eval" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.evaluate.prepare_fsdp2_model_for_eval">prepare_fsdp2_model_for_eval</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>evaluate.prepare_fsdp2_model_for_eval(trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Prepare the model and optimizer together under FSDP2 before a train-less evaluate.</p>
+<p><code>Trainer.evaluation_loop</code> prepares a not-yet-prepared model on its own, which
+accelerate rejects for FSDP2 since the optimizer’s parameters must be swapped
+for the sharded ones in the same <code>prepare()</code> call.</p>
+
+
 </section>
 </section>
 </section>
