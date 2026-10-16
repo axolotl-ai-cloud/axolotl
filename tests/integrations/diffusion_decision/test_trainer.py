@@ -1676,22 +1676,27 @@ def test_sampled_prompt_slots_validate_positions_and_train(tmp_path, layout):
         assert torch.all(prompt_slots <= batch["canvas_input_pinned_mask"])
     else:
         logical = batch["diffusion_batch"]
-        positions = torch.arange(prompt_slots.shape[1])[None]
+        slots_cpu = prompt_slots.cpu()
+        positions = torch.arange(slots_cpu.shape[1])[None]
         assert torch.equal(
-            prompt_slots, logical.encoder_validity & (positions < counts[:, None])
+            slots_cpu,
+            logical.encoder_validity.cpu() & (positions < counts.cpu()[:, None]),
         )
-        assert not torch.any(prompt_slots & logical.encoder_ar_valid_mask)
-        assert torch.all(prompt_slots <= batch["decision_prompt_input_pinned_mask"])
+        assert not torch.any(slots_cpu & logical.encoder_ar_valid_mask.cpu())
+        assert torch.all(slots_cpu <= batch["decision_prompt_input_pinned_mask"].cpu())
     assert not torch.any(batch["decision_slot_mask"])
 
     _loop_loss(trainer, batch).backward()
     assert trainer.model.logit_bias.grad is not None
     assert torch.count_nonzero(trainer.model.logit_bias.grad)
 
-    malformed = dict(batch)
-    malformed["decision_prompt_slot_mask"] = prompt_slots.roll(1, dims=1)
-    with pytest.raises(RuntimeError, match="logical prompt prefix"):
-        _loop_loss(trainer, malformed)
+    # torch._assert_async only raises on CPU; on CUDA it is a device-side assert that
+    # aborts the CUDA context, so the malformed-mask check runs on CPU only.
+    if trainer.args.device.type == "cpu":
+        malformed = dict(batch)
+        malformed["decision_prompt_slot_mask"] = prompt_slots.roll(1, dims=1)
+        with pytest.raises(RuntimeError, match="logical prompt prefix"):
+            _loop_loss(trainer, malformed)
 
     missing = dict(batch)
     missing.pop("decision_prompt_slot_mask")
@@ -1707,6 +1712,10 @@ def test_sampled_prompt_slots_validate_positions_and_train(tmp_path, layout):
 def test_sampled_slot_runtime_rejects_descriptor_mask_mismatch(tmp_path):
     dataset = DecisionDataset(_sampled_rows(4), {})
     trainer = _sampled_loop_trainer(tmp_path, dataset, stratified=False)
+    if trainer.args.device.type != "cpu":
+        # torch._assert_async only raises on CPU; on CUDA it is a device-side assert
+        # that aborts the CUDA context.
+        pytest.skip("device-side asserts cannot be caught on CUDA")
     batch = next(iter(trainer.get_train_dataloader()))
     malformed = dict(batch)
     malformed["decision_slot_counts"] = batch["decision_slot_counts"] + 1
@@ -1867,11 +1876,11 @@ def test_actual_trainer_loop_matches_manual_typed_labels_under_gradient_accumula
 
     expected = _manual_sgd(rows, window_sizes)
 
-    torch.testing.assert_close(accumulated.logit_bias, expected, rtol=1e-5, atol=1e-6)
-    torch.testing.assert_close(full.logit_bias, expected, rtol=1e-5, atol=1e-6)
-    torch.testing.assert_close(
-        accumulated.logit_bias, full.logit_bias, rtol=1e-5, atol=1e-6
-    )
+    accumulated_bias = accumulated.logit_bias.detach().cpu()
+    full_bias = full.logit_bias.detach().cpu()
+    torch.testing.assert_close(accumulated_bias, expected, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(full_bias, expected, rtol=1e-5, atol=1e-6)
+    torch.testing.assert_close(accumulated_bias, full_bias, rtol=1e-5, atol=1e-6)
     assert len(accumulated.forward_states) == forward_counts[0]
     assert len(full.forward_states) == forward_counts[1]
     assert all(torch.any(ids.eq(10)) for ids in accumulated.forward_states)
