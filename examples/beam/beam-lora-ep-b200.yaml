@@ -16,30 +16,32 @@ plugins:
 use_scattermoe: true
 cut_cross_entropy: true
 autotune_cache_path: ./outputs/autotune-b200.json
-# Triton autotune winners measured on B200 (sm_100) for this architecture's expert GEMMs
-# (gate_up N=5120 K=5120, down N=5120 K=2560, LoRA rank 32); identical across every routed-row
-# bucket we saw, so pin them: no step benchmarks configs and EP ranks stay in lockstep.
-# The full measured cache (bf16 and NVFP4 paths) is in autotune/b200.json; point
-# autotune_cache_path at a copy to keep recording new keys.
+# Triton autotune winners measured on B200 (sm_100) and H100 for this architecture's expert
+# GEMMs (LoRA rank 32); identical across every routed-row bucket we saw, so pin them: no step
+# benchmarks configs and EP ranks stay in lockstep. Each profile is keyed to the shapes it was
+# measured at: with EP=8 the bf16 gate_up GEMM (K=5120) takes the split base+LoRA path, so the
+# fused LoRA kernel only ever runs the down projection (K=2560); the NVFP4 kernels saw both.
+# Any other shape falls back to the normal autotune. The full measured cache (bf16 and NVFP4
+# paths) is in autotune/b200.json; point autotune_cache_path at a copy to keep recording new keys.
 autotune_profiles:
   - kernel: _scatter2scatter_lora          # bf16 experts, forward
     gpu: B200
-    match: { N: 5120 }
+    match: { N: 5120, K: 2560 }
     configs:
       - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
   - kernel: _scatter2scatter_lora          # bf16 experts, forward
     gpu: H100
-    match: { N: 5120 }
+    match: { N: 5120, K: 2560 }
     configs:
       - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
   - kernel: _scatter2scatter_lora_mx       # NVFP4 experts, forward
     gpu: B200
-    match: { N: 5120 }
+    match: { N: 5120, K: [2560, 5120] }
     configs:
       - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 32, num_stages: 3, num_warps: 4 }
   - kernel: _scatter2scatter_lora_dX_mx    # NVFP4 experts, input gradient
     gpu: B200
-    match: { N: 5120 }
+    match: { N: 5120, K: [2560, 5120] }
     configs:
       - { BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 64, num_stages: 2, num_warps: 4 }
 autotune_neighborhood: 1
