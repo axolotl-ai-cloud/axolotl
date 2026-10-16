@@ -1,5 +1,4 @@
 """pytest tests for GGUF export helpers."""
-
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -8,7 +7,10 @@ import pytest
 
 from axolotl.utils.gguf import (
     export_gguf,
+    export_lora_gguf,
+    is_adapter_dir,
     preflight,
+    preflight_lora,
     resolve_llama_cpp,
     resolve_quantize_bin,
 )
@@ -41,8 +43,28 @@ def llama_cpp_dir(tmp_path) -> Path:
     path = tmp_path / "llama.cpp"
     (path / "build" / "bin").mkdir(parents=True)
     (path / "convert_hf_to_gguf.py").touch()
+    (path / "convert_lora_to_gguf.py").touch()
     (path / "build" / "bin" / "llama-quantize").touch()
 
+    return path
+
+
+@pytest.fixture
+def adapter_dir(tmp_path) -> Path:
+    """A minimal PEFT adapter directory."""
+    path = tmp_path / "adapter"
+    path.mkdir()
+    (path / "adapter_config.json").write_text(
+        json.dumps(
+            {
+                "base_model_name_or_path": "HuggingFaceTB/SmolLM2-135M",
+                "lora_alpha": 16,
+                "lora_rank": 8,
+                "peft_type": "LORA",
+            }
+        )
+    )
+    (path / "adapter_model.safetensors").write_bytes(b"\0" * 512)
     return path
 
 
@@ -218,6 +240,173 @@ class TestExportGGUF:
                 )
 
         mock_run.assert_not_called()
+
+
+class TestIsAdapterDir:
+    """Tests for adapter directory detection."""
+
+    def test_adapter_with_config(self, adapter_dir):
+        assert is_adapter_dir(adapter_dir) is True
+
+    def test_non_adapter_dir(self, tmp_path):
+        assert is_adapter_dir(tmp_path) is False
+
+    def test_full_model_dir(self, model_dir):
+        assert is_adapter_dir(model_dir) is False
+
+
+class TestPreflightLora:
+    """Tests for LoRA adapter preflight checks."""
+
+    def test_valid_adapter(self, adapter_dir):
+        preflight_lora(adapter_dir)
+
+    def test_missing_adapter_config(self, tmp_path):
+        with pytest.raises(ValueError, match="not a PEFT adapter directory"):
+            preflight_lora(tmp_path)
+
+    def test_forbidden_tensors_detected(self, adapter_dir, tmp_path):
+        """Simulate embed_tokens tensors in the adapter weights."""
+        import torch
+        from safetensors.torch import save_file
+
+        tensors = {
+            "base_model.model.model.embed_tokens.lora_A.weight": torch.zeros(8, 8),
+        }
+        save_file(tensors, str(adapter_dir / "adapter_model.safetensors"))
+
+        with pytest.raises(ValueError, match="embed_tokens"):
+            preflight_lora(adapter_dir)
+
+    def test_lm_head_tensors_detected(self, adapter_dir, tmp_path):
+        """Simulate lm_head tensors in the adapter weights."""
+        import torch
+        from safetensors.torch import save_file
+
+        tensors = {
+            "base_model.model.lm_head.lora_B.weight": torch.zeros(8, 8),
+        }
+        save_file(tensors, str(adapter_dir / "adapter_model.safetensors"))
+
+        with pytest.raises(ValueError, match="lm_head"):
+            preflight_lora(adapter_dir)
+
+    def test_dora_detected(self, adapter_dir, tmp_path):
+        """Simulate DoRA (lora_magnitude_vector) tensors in the adapter."""
+        import torch
+        from safetensors.torch import save_file
+
+        tensors = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_magnitude_vector": torch.zeros(8),
+        }
+        save_file(tensors, str(adapter_dir / "adapter_model.safetensors"))
+
+        with pytest.raises(ValueError, match="DoRA"):
+            preflight_lora(adapter_dir)
+
+
+class TestExportLoraGGUF:
+    """Tests for LoRA adapter to GGUF conversion."""
+
+    def test_basic_export(self, adapter_dir, llama_cpp_dir, tmp_path):
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            output = export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out" / "adapter.gguf"),
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+        assert output == tmp_path / "out" / "adapter.gguf"
+        assert mock_run.call_count == 1
+        cmd = mock_run.call_args.args[0]
+        assert cmd[1] == str(llama_cpp_dir / "convert_lora_to_gguf.py")
+        assert cmd[2:] == [
+            str(adapter_dir),
+            "--outfile",
+            str(output),
+            "--outtype",
+            "f32",
+        ]
+
+    def test_export_with_base_model(self, adapter_dir, llama_cpp_dir, tmp_path):
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            output = export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out" / "adapter.gguf"),
+                outtype="f16",
+                base_model="/path/to/base",
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+        cmd = mock_run.call_args.args[0]
+        assert "--base" in cmd
+        assert "/path/to/base" in cmd
+        assert cmd[cmd.index("--outtype") + 1] == "f16"
+
+    def test_export_f16_outtype(self, adapter_dir, llama_cpp_dir, tmp_path):
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out" / "adapter.gguf"),
+                outtype="f16",
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[cmd.index("--outtype") + 1] == "f16"
+
+    def test_missing_adapter_dir(self, llama_cpp_dir, tmp_path):
+        with pytest.raises(ValueError, match="Adapter directory does not exist"):
+            export_lora_gguf(
+                tmp_path / "nope",
+                str(tmp_path / "out.gguf"),
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+    def test_missing_convert_script(self, adapter_dir, tmp_path):
+        """Fail if llama.cpp checkout lacks convert_lora_to_gguf.py."""
+        fake_llama_cpp = tmp_path / "llama.cpp"
+        fake_llama_cpp.mkdir()
+        (fake_llama_cpp / "convert_hf_to_gguf.py").touch()
+
+        with pytest.raises(ValueError, match="convert_lora_to_gguf.py"):
+            export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out.gguf"),
+                llama_cpp_dir=fake_llama_cpp,
+            )
+
+    def test_preflight_runs_before_converting(self, adapter_dir, llama_cpp_dir, tmp_path):
+        """Forbidden tensors should cause failure before _run is called."""
+        import torch
+        from safetensors.torch import save_file
+
+        tensors = {
+            "base_model.model.model.embed_tokens.lora_A.weight": torch.zeros(8, 8),
+        }
+        save_file(tensors, str(adapter_dir / "adapter_model.safetensors"))
+
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            with pytest.raises(ValueError, match="embed_tokens"):
+                export_lora_gguf(
+                    adapter_dir,
+                    str(tmp_path / "out.gguf"),
+                    llama_cpp_dir=llama_cpp_dir,
+                )
+
+        mock_run.assert_not_called()
+
+    def test_no_base_flag_when_base_model_is_none(self, adapter_dir, llama_cpp_dir, tmp_path):
+        """Don't pass --base when base_model is not provided."""
+        with patch("axolotl.utils.gguf._run") as mock_run:
+            export_lora_gguf(
+                adapter_dir,
+                str(tmp_path / "out.gguf"),
+                llama_cpp_dir=llama_cpp_dir,
+            )
+
+        cmd = mock_run.call_args.args[0]
+        assert "--base" not in cmd
 
 
 def _patch_config(model_dir: Path, **updates) -> None:
