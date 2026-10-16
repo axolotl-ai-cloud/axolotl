@@ -146,7 +146,8 @@ rm -r $(python -c "import flash_attn; print(flash_attn.__path__[0])")/cute
 
 ::: {.callout-important}
 
-FA4 training requires `quack-kernels>=0.6.0` on `nvidia-cutlass-dsl==4.6.0`. With an older
+FA4 training requires `quack-kernels>=0.6.0` on an `nvidia-cutlass-dsl` within that quack
+release's declared range (0.6.5 needs `>=4.7`). With an older
 quack (0.5.x targets the `4.6.0.dev0` prerelease) the FA4 backward raises
 `cudaErrorIllegalInstruction`. Upgrade with `pip install 'quack-kernels>=0.6.0'`; Axolotl
 warns and keeps your requested backend when the installed quack is too old.
