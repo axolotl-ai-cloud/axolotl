@@ -101,20 +101,20 @@ Set `transformer_layer_cls_to_wrap: BeamDecoderLayer` to match the checkpoint.
 
 ### Prerequisites
 
-The H200 configs above need only Axolotl and Cut Cross Entropy. The B200 configs assume the
-Blackwell kernel stack below; the `axolotlai/axolotl-cloud` `-blackwell` image tags ship all of
-it (see the [Docker docs](https://docs.axolotl.ai/docs/docker.html)), or install it into an
-existing CUDA 13 environment:
+The B200 configs assume the Blackwell kernel stack below; the `axolotlai/axolotl-cloud`
+`-blackwell` image tags ship these kernels (see the [Docker docs](https://docs.axolotl.ai/docs/docker.html)),
+or install them into an existing CUDA 13 environment:
 
 | Config key | Package | Install |
 |---|---|---|
-| `expert_parallel_backend: deep_ep` | [DeepEP](https://github.com/deepseek-ai/DeepEP) v1.2.1 built for sm_100 | build per the [expert-parallel integration README](../../src/axolotl/integrations/expert_parallel/README.md#installation) (Blackwell section). Without it, set `expert_parallel_backend: torch`; the all-to-all dispatch needs nothing extra and ran about 25% slower on our smoke test |
+| `expert_parallel_backend: deep_ep` | [DeepEP](https://github.com/deepseek-ai/DeepEP) v1.2.1 built for sm_100 | build per the [expert-parallel integration README](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/expert_parallel/README.md#installation) (Blackwell section). Without it, set `expert_parallel_backend: torch`; the all-to-all dispatch needs nothing extra and ran about 25% slower on our smoke test |
 | `use_sonicmoe: true` / `nvfp4_merge_aware: true` | [quack-kernels](https://pypi.org/project/quack-kernels/) ≥ 0.6.5 on nvidia-cutlass-dsl ≥ 4.7 | `uv pip install "quack-kernels[cu13]"` |
 | `attn_implementation: flash_attention_4` | [flash-attn-4](https://pypi.org/project/flash-attn-4/) (pre-release; pulls quack-kernels and the cutlass DSL) | `uv pip install --pre "flash-attn-4[cu13]"`. Or keep `flash_attention_2`, which resolves to the `kernels-community/flash-attn2` hub kernel (has an sm_100 build) and is ~2x slower at Beam's shape |
-| `base_model: reflectionai/beam*` | transformers ≥ 5.20.1 (`BeamForCausalLM`) | newer than Axolotl's pin while it catches up: `uv pip install "transformers>=5.20.1"` |
 
 The kernels plugin checks the installed cutlass DSL against quack's declared range at startup and
 fails fast with the fix if they disagree.
+
+### Configs
 
 | File | Layout | Notes |
 |---|---|---|
@@ -124,6 +124,6 @@ fails fast with the fix if they disagree.
 | `autotune/b200.json` | measured Triton autotune winners for both paths | `autotune_cache_path` seeds the kernels from a copy and keeps recording |
 | `autotune/h100.json` | H100 winners for the bf16 ScatterMoE forward at Beam's width (EP=2 and EP=4 on a random real-width model) | same tile as B200: `BLOCK_M 128, BLOCK_N 64, BLOCK_K 64`, 3 or 4 stages within 5% of each other |
 
-The bf16 and NF4 configs pin the ScatterMoE LoRA tiles with `autotune_profiles` (measured on B200 and H100,
-identical across every routed-row bucket) and enable `autotune_neighborhood: 1`, so no training or eval
+The bf16 config pins the ScatterMoE LoRA tiles with `autotune_profiles` (measured on B200 and H100,
+identical across every routed-row bucket) and enables `autotune_neighborhood: 1`, so no training or eval
 step benchmarks kernel configs while expert-parallel peers wait.
