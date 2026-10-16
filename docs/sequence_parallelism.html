@@ -994,7 +994,7 @@ sequences (DeepSpeed &gt;= 0.18.2).</p>
 <section id="configuration" class="level2">
 <h2 class="anchored" data-anchor-id="configuration">Configuration</h2>
 <p>Install <code>pip install 'axolotl[ringmaster]'</code> and use torch &gt;= 2.13. The integration
-targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.4.</p>
+targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.6.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> flash_attention_2</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -1032,8 +1032,14 @@ an architecture allowlist entry. ModelSupport descriptors can mark
 <code>context_parallel</code> as verified, experimental, or unsupported. Missing capability
 metadata uses generic handling; it does not imply tested accuracy for every
 architecture. Kernel and configuration prerequisites still apply.</p>
-<p>The plugin shards input IDs, labels, masks, and positions using model hooks.
-Accelerate replicates each batch within its CP group. Trainer’s supervised-token
+<p>Accelerate replicates each batch within its CP group, and the sequence collator
+cuts each rank’s shard of input IDs, labels, masks, and positions in the
+dataloader worker (<code>shard_in_collator: true</code>, the default), together with the
+packed-document boundaries the Ulysses varlen path needs, so the forward pre-hook
+has nothing to broadcast or scan on the device. Runs whose batches Accelerate
+dispatches (streaming or pretraining datasets), collators other than Axolotl’s
+sequence collators, and older ringmaster releases shard in the forward pre-hook
+instead, which <code>shard_in_collator: false</code> also selects. Trainer’s supervised-token
 count is preserved across the full accumulation window, including unequal
 microbatches and partial final windows.</p>
 </section>

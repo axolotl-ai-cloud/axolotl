@@ -1014,10 +1014,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Ring degree. None = auto-select. ulysses_size * ring_size must == size.</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.integrations.context_parallel.args.ContextParallelConfig.shard_in_collator">shard_in_collator</a></td>
+<td>Cut each rank’s shard in the dataloader collator instead of the forward pre-hook, which also moves the packed-document boundary scan off the device.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.integrations.context_parallel.args.ContextParallelConfig.size">size</a></td>
 <td>Total context-parallel degree. 1 = disabled.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.integrations.context_parallel.args.ContextParallelConfig.ulysses_size">ulysses_size</a></td>
 <td>All-to-all (head) degree. None = auto-select.</td>
 </tr>
