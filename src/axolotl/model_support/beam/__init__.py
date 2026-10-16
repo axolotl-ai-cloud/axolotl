@@ -7,7 +7,12 @@ this arch, so enabling one fails loudly instead of training quietly on a
 different objective.
 """
 
-from axolotl.model_support.base import Experimental, ModelSupport, Unsupported
+from axolotl.model_support.base import (
+    Experimental,
+    ModelSupport,
+    Supported,
+    Unsupported,
+)
 from axolotl.model_support.profile import (
     ModelHookContext,
     ModelHookPhase,
@@ -16,22 +21,6 @@ from axolotl.model_support.profile import (
 )
 from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import VANILLA_CAUSAL_LM
-
-
-def _register_cce_patch(_context: ModelHookContext) -> None:
-    """Point cut_cross_entropy's registry at the patch in this package.
-
-    Runs before the CCE plugin's pre_model_load, which resolves PATCH_FNS by
-    string import, so the entry only has to exist by then.
-    """
-    try:
-        from cut_cross_entropy.transformers.patch import PATCH_FNS
-    except ImportError:
-        return
-
-    PATCH_FNS.setdefault(
-        "beam", ("axolotl.model_support.beam.cut_cross_entropy", "patch_beam")
-    )
 
 
 def _cast_fp32_strict_params(context: ModelHookContext) -> None:
@@ -80,9 +69,9 @@ class BeamSupport(ModelSupport):
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
         capabilities={
-            "cut_cross_entropy": Experimental(
-                "Needs the beam patch registered in ml-cross-entropy; apply_lce "
-                "takes the logit softcap, but the fp32 lm_head path is unverified."
+            "cut_cross_entropy": Supported(
+                "Patched on BeamForCausalLM in the fork; final_logit_softcapping is "
+                "applied to the fp32 accumulator, as Beam softcaps in fp32."
             ),
             "lora_kernels": Experimental(
                 "The fused QKV/O patch rewrites only the q/k/v projection lines "
@@ -105,7 +94,6 @@ class BeamSupport(ModelSupport):
         },
         hooks=ModelHooks(
             by_phase={
-                ModelHookPhase.BEFORE_MODEL_BUILD: (_register_cce_patch,),
                 ModelHookPhase.AFTER_ADAPTER_LOAD: (_cast_fp32_strict_params,),
             }
         ),
