@@ -2047,7 +2047,7 @@ def _staged_nf4_config(**overrides):
             {"peft": {"loftq_config": {"loftq_bits": 4}}},
             "value-dependent LoRA init",
         ),
-        ({"tensor_parallel_size": 2}, "tensor, expert or context parallelism"),
+        ({"tensor_parallel_size": 2}, "tensor or context parallelism"),
         (
             {"deepspeed": "deepspeed_configs/zero3.json"},
             "deepspeed and fsdp cannot be used together",
@@ -2290,8 +2290,12 @@ def test_staged_nf4_validation_expert_parallel():
 
     config = _staged_nf4_config(nf4_backend="bitsandbytes")
     assert _EPConfig(**config).expert_parallel_size == 1
-    with pytest.raises(ValueError, match="tensor, expert or context parallelism"):
-        _EPConfig(**dict(config, expert_parallel_size=2))
+    # expert slices are cut from rank zero's packed weights, so EP composes with staging
+    config = dict(config, expert_parallel_size=2)
+    config["fsdp_config"] = dict(
+        config["fsdp_config"], state_dict_type="FULL_STATE_DICT"
+    )
+    assert _EPConfig(**config).expert_parallel_size == 2
 
 
 @pytest.mark.slow

@@ -247,3 +247,28 @@ def test_marlin_nonexpert_workspace_not_persistent():
     assert "_workspace" in mod._non_persistent_buffers_set
     # persistent buffers still present
     assert "qweight" in sd and "scales" in sd
+
+
+def test_chunked_bnb_drops_negative_slots(monkeypatch):
+    """Expert-parallel dispatch marks remote slots -1; they must contribute nothing."""
+    from axolotl.integrations.kernels.libs.scattermoe_lora.chunked_bnb import (
+        chunked_bnb_moe,
+    )
+
+    dt = torch.bfloat16
+    g = torch.Generator(device=DEV).manual_seed(5)
+    gu = torch.randn(E, 2 * IM, H, device=DEV, dtype=dt, generator=g) * 0.1
+    dn = torch.randn(E, H, IM, device=DEV, dtype=dt, generator=g) * 0.1
+    bnb_mod = _BnbExperts(gu, dn)
+    x = torch.randn(N, H, device=DEV, dtype=dt, generator=g)
+    idx = torch.randint(0, E, (N, K), device=DEV, generator=g)
+    w = torch.rand(N, K, device=DEV, generator=g).to(dt)
+    drop = torch.rand(N, K, device=DEV, generator=g) < 0.5
+
+    set_layer_gc_active(False)
+    set_chunk_size_override(None)
+    masked = chunked_bnb_moe(x, idx.masked_fill(drop, -1), w, bnb_mod, None, None, E)
+    zeroed = chunked_bnb_moe(x, idx, w.masked_fill(drop, 0), bnb_mod, None, None, E)
+    assert _rel(masked, zeroed) < 1e-2
+    empty = chunked_bnb_moe(x, torch.full_like(idx, -1), w, bnb_mod, None, None, E)
+    assert empty.abs().max().item() == 0
