@@ -12,7 +12,6 @@ from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import (
     check_tensorboard,
-    require_torch_2_7_0,
     requires_flash_attn,
 )
 
@@ -26,7 +25,6 @@ class TestMultiGPURay:
     Test cases for AnyScale Ray post training
     """
 
-    @require_torch_2_7_0
     def test_lora_ddp(self, temp_dir):
         cfg = DictDefault(
             {
@@ -85,7 +83,6 @@ class TestMultiGPURay:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
-    @require_torch_2_7_0
     def test_ds_zero2_packed(self, temp_dir):
         cfg = DictDefault(
             {
@@ -140,7 +137,6 @@ class TestMultiGPURay:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
-    @require_torch_2_7_0
     def test_sft_fsdp2_packed(self, temp_dir):
         cfg = DictDefault(
             {

@@ -307,7 +307,7 @@ class AxolotlInputConfig(
     dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Configuration for dynamic checkpointing (trigger by file or signal). "
+            "description": "Configuration for dynamic checkpointing (trigger by file). "
             "Set 'enabled: true' to activate this feature."
         },
     )
@@ -2101,9 +2101,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_beta_and_trl_beta_match(cls, data):
-        if data.get("beta") and data.get("trl", {}).get("beta"):
-            if data["beta"] != data["trl"]["beta"]:
-                raise ValueError("beta and trl.beta must match or one must be removed")
+        trl_beta = (data.get("trl") or {}).get("beta")
+        if data.get("rl_beta") and trl_beta and data["rl_beta"] != trl_beta:
+            raise ValueError("rl_beta and trl.beta must match or one must be removed")
         return data
 
     @model_validator(mode="after")

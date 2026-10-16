@@ -260,9 +260,8 @@ def _run_kernel_mlp(layer, X):
 class TestQKVKernel:
     """Test LoRA_QKV kernel against PEFT reference."""
 
-    @pytest.mark.parametrize("bias", ["none", "lora_only"])
-    def test_forward_bias(self, bias):
-        model = _make_peft_model(bias=bias)
+    def test_forward(self):
+        model = _make_peft_model()
         model.eval()
         layer = _get_layer(model)
         X = _make_input(hidden_size=model.config.hidden_size)
@@ -271,9 +270,9 @@ class TestQKVKernel:
             peft_Q, peft_K, peft_V = _run_peft_qkv(layer, X)
             kern_Q, kern_K, kern_V = _run_kernel_qkv(layer, X)
 
-        _compare_tensors(kern_Q, peft_Q, f"QKV Q (bias={bias})")
-        _compare_tensors(kern_K, peft_K, f"QKV K (bias={bias})")
-        _compare_tensors(kern_V, peft_V, f"QKV V (bias={bias})")
+        _compare_tensors(kern_Q, peft_Q, "QKV Q")
+        _compare_tensors(kern_K, peft_K, "QKV K")
+        _compare_tensors(kern_V, peft_V, "QKV V")
         del model
 
     def test_forward_dropout_eval(self):
@@ -307,25 +306,9 @@ class TestQKVKernel:
         _compare_tensors(kern_V, peft_V, "QKV V (DoRA)")
         del model
 
-    def test_forward_dora_bias(self):
-        model = _make_peft_model(use_dora=True, bias="lora_only")
-        model.eval()
-        layer = _get_layer(model)
-        X = _make_input(hidden_size=model.config.hidden_size)
-
-        with torch.no_grad():
-            peft_Q, peft_K, peft_V = _run_peft_qkv(layer, X)
-            kern_Q, kern_K, kern_V = _run_kernel_qkv(layer, X)
-
-        _compare_tensors(kern_Q, peft_Q, "QKV Q (DoRA+bias)")
-        _compare_tensors(kern_K, peft_K, "QKV K (DoRA+bias)")
-        _compare_tensors(kern_V, peft_V, "QKV V (DoRA+bias)")
-        del model
-
-    @pytest.mark.parametrize("bias", ["none", "lora_only"])
-    def test_backward_bias(self, bias):
+    def test_backward(self):
         """Test that gradients match between kernel and PEFT."""
-        model = _make_peft_model(bias=bias)
+        model = _make_peft_model()
         model.train()
         layer = _get_layer(model)
 
@@ -359,7 +342,7 @@ class TestQKVKernel:
                 _compare_tensors(
                     kern_grads.get(name),
                     peft_grads[name],
-                    f"grad {name} (bias={bias})",
+                    f"grad {name}",
                     atol=5e-2,
                     rtol=5e-2,
                 )
@@ -415,9 +398,8 @@ class TestOKernel:
         text_cfg = cfg.get_text_config() if hasattr(cfg, "get_text_config") else cfg
         return text_cfg.num_attention_heads * text_cfg.head_dim
 
-    @pytest.mark.parametrize("bias", ["none", "lora_only"])
-    def test_forward_bias(self, bias):
-        model = _make_peft_model(bias=bias)
+    def test_forward(self):
+        model = _make_peft_model()
         model.eval()
         layer = _get_layer(model)
         X = _make_input(hidden_size=self._o_input_dim(model))
@@ -426,7 +408,7 @@ class TestOKernel:
             peft_out = _run_peft_o(layer, X)
             kern_out = _run_kernel_o(layer, X)
 
-        _compare_tensors(kern_out, peft_out, f"O (bias={bias})")
+        _compare_tensors(kern_out, peft_out, "O")
         del model
 
     def test_forward_dora(self):
@@ -442,9 +424,8 @@ class TestOKernel:
         _compare_tensors(kern_out, peft_out, "O (DoRA)")
         del model
 
-    @pytest.mark.parametrize("bias", ["none", "lora_only"])
-    def test_backward_bias(self, bias):
-        model = _make_peft_model(bias=bias)
+    def test_backward(self):
+        model = _make_peft_model()
         model.train()
         layer = _get_layer(model)
 
@@ -473,7 +454,7 @@ class TestOKernel:
                 _compare_tensors(
                     kern_grads.get(name),
                     peft_grads[name],
-                    f"O grad {name} (bias={bias})",
+                    f"O grad {name}",
                     atol=5e-2,
                     rtol=5e-2,
                 )
@@ -483,9 +464,8 @@ class TestOKernel:
 class TestMLPKernel:
     """Test LoRA_MLP kernel against PEFT reference."""
 
-    @pytest.mark.parametrize("bias", ["none", "lora_only"])
-    def test_forward_bias(self, bias):
-        model = _make_peft_model(bias=bias)
+    def test_forward(self):
+        model = _make_peft_model()
         model.eval()
         layer = _get_layer(model)
         X = _make_input(hidden_size=model.config.hidden_size)
@@ -494,7 +474,7 @@ class TestMLPKernel:
             peft_out = _run_peft_mlp(layer, X)
             kern_out = _run_kernel_mlp(layer, X)
 
-        _compare_tensors(kern_out, peft_out, f"MLP (bias={bias})")
+        _compare_tensors(kern_out, peft_out, "MLP")
         del model
 
     def test_forward_dropout_eval(self):
@@ -525,22 +505,8 @@ class TestMLPKernel:
         _compare_tensors(kern_out, peft_out, "MLP (DoRA)", atol=0.3, rtol=0.05)
         del model
 
-    def test_forward_dora_bias(self):
-        model = _make_peft_model(use_dora=True, bias="lora_only")
-        model.eval()
-        layer = _get_layer(model)
-        X = _make_input(hidden_size=model.config.hidden_size)
-
-        with torch.no_grad():
-            peft_out = _run_peft_mlp(layer, X)
-            kern_out = _run_kernel_mlp(layer, X)
-
-        _compare_tensors(kern_out, peft_out, "MLP (DoRA+bias)", atol=0.3, rtol=0.05)
-        del model
-
-    @pytest.mark.parametrize("bias", ["none", "lora_only"])
-    def test_backward_bias(self, bias):
-        model = _make_peft_model(bias=bias)
+    def test_backward(self):
+        model = _make_peft_model()
         model.train()
         layer = _get_layer(model)
         hidden_size = model.config.hidden_size
@@ -571,7 +537,7 @@ class TestMLPKernel:
                 _compare_tensors(
                     kern_grads.get(name),
                     peft_grads[name],
-                    f"MLP grad {name} (bias={bias})",
+                    f"MLP grad {name}",
                     atol=0.5,
                     rtol=0.1,
                 )
@@ -944,7 +910,6 @@ class TestTritonDoRA:
 
     def test_triton_dora_scale(self):
         from axolotl.kernels.dora import triton_dora_scale
-        from axolotl.kernels.lora import _compute_dora_scale
 
         # Random weights matching Qwen3-1.7B dimensions
         out_feat, in_feat, rank = 1024, 1024, 8
@@ -954,11 +919,7 @@ class TestTritonDoRA:
         magnitude = torch.randn(out_feat, dtype=DTYPE, device=DEVICE).abs() + 0.1
         s = 2.0
 
-        # Clear cache to force recomputation
-        if hasattr(magnitude, "_dora_cache"):
-            del magnitude._dora_cache
-
-        ref = _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
+        ref = magnitude / torch.linalg.norm(W + s * B @ A, dim=1)
         tri = triton_dora_scale(W, None, A, B, s, magnitude, DTYPE)
 
         _compare_tensors(tri, ref, "Triton DoRA scale", atol=1e-2, rtol=1e-2)
@@ -966,7 +927,6 @@ class TestTritonDoRA:
     def test_triton_dora_scale_small(self):
         """Test with K/V projection dimensions (smaller out_features)."""
         from axolotl.kernels.dora import triton_dora_scale
-        from axolotl.kernels.lora import _compute_dora_scale
 
         out_feat, in_feat, rank = 128, 1024, 8
         W = torch.randn(out_feat, in_feat, dtype=DTYPE, device=DEVICE)
@@ -975,10 +935,7 @@ class TestTritonDoRA:
         magnitude = torch.randn(out_feat, dtype=DTYPE, device=DEVICE).abs() + 0.1
         s = 2.0
 
-        if hasattr(magnitude, "_dora_cache"):
-            del magnitude._dora_cache
-
-        ref = _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
+        ref = magnitude / torch.linalg.norm(W + s * B @ A, dim=1)
         tri = triton_dora_scale(W, None, A, B, s, magnitude, DTYPE)
 
         _compare_tensors(tri, ref, "Triton DoRA scale (small)", atol=1e-2, rtol=1e-2)

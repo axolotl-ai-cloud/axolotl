@@ -194,6 +194,9 @@ def test_ringmaster_fla_mamba_fsdp2_parity(family, packed, lora):
             "RM_INNER": "sdpa",
             "OMP_NUM_THREADS": "1",
             "RM_PACKED": "1" if packed else "0",
+            "PYTHONPATH": str(Path(__file__).resolve().parents[3])
+            + os.pathsep
+            + os.environ.get("PYTHONPATH", ""),
         },
         capture_output=True,
         text=True,

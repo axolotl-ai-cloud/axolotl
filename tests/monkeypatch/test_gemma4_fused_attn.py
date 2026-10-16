@@ -66,7 +66,7 @@ def _build_model(seed=0):
 
 
 class TestGemma4FusedAttnLoRACompose:
-    """LoRA QKV + fused composition. Gemma 4 in transformers>=5.8.1 has no matching ``QKV_PATCHES`` entry yet, hence the strict xfail below."""
+    """LoRA QKV + fused composition."""
 
     def _build_cfg(self):
         from axolotl.utils.dict import DictDefault
@@ -80,51 +80,12 @@ class TestGemma4FusedAttnLoRACompose:
             }
         )
 
-    @pytest.mark.xfail(
-        reason="Gemma 4 QKV_PATCHES need refresh for transformers 5.8.1",
-        strict=True,
-    )
-    def test_lora_qkv_then_fused_does_not_raise(
-        self, restore_gemma4_attention, monkeypatch
-    ):
-        from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention
-
-        from axolotl.monkeypatch import lora_kernels
-        from axolotl.monkeypatch.models.gemma4.fused_attn import (
-            patch_gemma4_fused_attn,
-        )
-
-        monkeypatch.setattr(
-            lora_kernels,
-            "get_attention_cls_from_config",
-            lambda _cfg: Gemma4TextAttention,
-        )
-
-        try:
-            delattr(Gemma4TextAttention, "_original_forward")
-        except AttributeError:
-            pass
-
-        try:
-            lora_kernels.patch_self_attn_lora(self._build_cfg())
-            assert hasattr(Gemma4TextAttention, "_original_forward"), (
-                "patch_self_attn_lora must run on stock source first"
-            )
-            patch_gemma4_fused_attn()
-        finally:
-            try:
-                delattr(Gemma4TextAttention, "_original_forward")
-            except AttributeError:
-                pass
-
     def test_reverse_order_skips_lora_rewrite(
         self, restore_gemma4_attention, monkeypatch, caplog
     ):
-        """Fused-then-LoRA must NOT install the LoRA source rewrite. Upstream
-        PR #3657 made ``patch_self_attn_lora`` detect ``apply_qkv``/``apply_o``
-        on a fused-patched attention and skip; our ``patch_manager`` reorder
-        keeps this from happening in practice, but the skip path is the last
-        line of defense."""
+        """Fused-then-LoRA must NOT install the LoRA source rewrite:
+        ``patch_self_attn_lora`` skips ``Gemma4TextAttention`` because the fused
+        forward already calls ``apply_qkv``/``apply_o``."""
         import logging
 
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention

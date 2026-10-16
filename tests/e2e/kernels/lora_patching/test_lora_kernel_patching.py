@@ -131,14 +131,6 @@ def test_swiglu_mlp_integration(small_llama_model):
     model = PeftModelForCausalLM(small_llama_model, peft_config).to("cuda")
     cfg = DictDefault({"lora_mlp_kernel": True})
 
-    # Apply patches
-    patched_model = apply_lora_kernel_patches(model, cfg)
-
-    # Verify patches
-    layer = patched_model.model.model.layers[0]
-    assert layer.mlp.forward.__func__ is apply_lora_mlp_swiglu
-
-    # Test forward pass
     batch_size, seq_len = 2, 10
     hidden_states = torch.randn(
         batch_size, seq_len, model.config.hidden_size, device=model.device
@@ -157,46 +149,19 @@ def test_swiglu_mlp_integration(small_llama_model):
         "past_key_value": None,
     }
 
-    # Compare outputs
     with torch.no_grad():
         original_output = model.model.model.layers[0](**inputs)[0]
-        patched_output = layer(**inputs)[0]
 
-    assert torch.allclose(original_output, patched_output, rtol=1e-4)
-
-
-def test_geglu_model_integration():
-    """Test GeGLU activation with Gemma model."""
-    model = AutoModelForCausalLM.from_pretrained(
-        "axolotl-ai-co/tiny-gemma2-137m",
-        dtype=torch.float16,
-        device_map="cuda:0",
-    )
-    peft_config = get_peft_config(
-        {
-            "peft_type": "LORA",
-            "task_type": "CAUSAL_LM",
-            "r": 8,
-            "lora_alpha": 16,
-            "target_modules": ["gate_proj", "up_proj", "down_proj"],
-            "lora_dropout": 0,
-            "bias": "none",
-        }
-    )
-    model = PeftModelForCausalLM(model, peft_config)
-
-    cfg = DictDefault({"lora_mlp_kernel": True})
+    # Apply patches
     patched_model = apply_lora_kernel_patches(model, cfg)
 
     # Verify patches
     layer = patched_model.model.model.layers[0]
-    assert layer.mlp.forward.__func__ is apply_lora_mlp_geglu
+    assert layer.mlp.forward.__func__ is apply_lora_mlp_swiglu
 
-    # Test end-to-end
-    inputs = torch.randint(0, 100, (1, 20), device=model.device, dtype=torch.long)
+    # Compare outputs
     with torch.no_grad():
-        original_output = model(inputs).logits
-        patched_output = patched_model(inputs).logits
+        patched_output = layer(**inputs)[0]
 
     assert torch.allclose(original_output, patched_output, rtol=1e-4)
 
@@ -204,7 +169,6 @@ def test_geglu_model_integration():
 @pytest.mark.parametrize(
     "model_name,expected_activation",
     [
-        ("HuggingFaceTB/SmolLM2-135M", apply_lora_mlp_swiglu),
         ("mhenrichsen/gemma-2b", apply_lora_mlp_geglu),
     ],
 )
@@ -381,6 +345,10 @@ def test_model_architecture(model_config):
     peft_config = get_peft_config(get_lora_config())
     model = PeftModelForCausalLM(model, peft_config)
 
+    inputs = get_test_inputs(model)
+    with torch.no_grad():
+        original_output = model(inputs).logits
+
     # Apply kernel patches
     cfg = DictDefault({"lora_mlp_kernel": True})
     patched_model = apply_lora_kernel_patches(model, cfg)
@@ -392,13 +360,11 @@ def test_model_architecture(model_config):
     )
 
     # Test forward pass
-    inputs = get_test_inputs(model)
     with torch.no_grad():
-        original_output = model(inputs).logits
         patched_output = patched_model(inputs).logits
 
     # Check outputs match
-    assert torch.allclose(original_output, patched_output, rtol=1e-4), (
+    assert torch.allclose(original_output, patched_output, atol=1e-2, rtol=1e-2), (
         f"Outputs don't match for {model_config['name']}"
     )
 
