@@ -139,7 +139,7 @@ The additional CUDA regression matrix is in
 `tests/e2e/multigpu/_moe_sieve.py`. It forces all selected experts onto one EP
 rank, trains, resumes, and compares with uninterrupted training. Direct fused
 kernel output/input-gradient/adapter-gradient comparisons live in
-`tests/integrations/moe_sieve/test_kernels.py`.
+`tests/e2e/kernels/test_moe_sieve.py` and run in the dedicated GPU kernel CI job.
 
 GPU verification uses a synthetic four-layer Qwen3 MoE with eight experts per
 layer and two selected experts, on 2–8 H100s. CP verification uses Ulysses with
