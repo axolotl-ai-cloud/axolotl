@@ -3,6 +3,7 @@ tests for chat_template prompt strategy
 """
 
 from copy import deepcopy
+from unittest.mock import Mock
 
 import pytest
 from datasets import Dataset
@@ -2106,6 +2107,35 @@ class TestTurnSpansLocator:
         )
         assert strategy._build_turn_locator(turns, None, input_ids) is None
         assert _turn_span_trained_text(strategy, llama3_tokenizer, turns) == "pong"
+
+    def test_header_token_with_rstrip_absorbing_whitespace_is_skipped(self):
+        """A header added token with rstrip=True absorbs following whitespace into
+        its offset span. When a turn's content starts with whitespace, the diff
+        starts inside the header token's span; the header token must be skipped
+        so it is not trained."""
+        # pylint: disable=protected-access
+        strategy = ChatTemplateStrategy.__new__(ChatTemplateStrategy)
+        strategy.tokenizer = Mock(
+            added_tokens_decoder={999: AddedToken("HEADER", rstrip=True)}
+        )
+        strategy.prompter = Mock(template_thinking_key=None)
+        strategy.prompter.build_prompt_text = (
+            lambda turns, tools=None: "HEADER\n\n[[dummy_message]]"
+        )
+
+        # "HEADER\n\n hello": the header added token (id 999) absorbs the
+        # trailing whitespace via rstrip, so its span is [0, 9).
+        locator = ("HEADER\n\n hello", [0, 9], [9, 14], [999, 100])
+        turns = [{"role": "user", "content": " hello"}]
+
+        assert strategy._find_turn_from_text(
+            turns=turns,
+            turn_idx=0,
+            content_only=False,
+            reasoning_only=False,
+            tools=None,
+            locator=locator,
+        ) == (1, 2)
 
 
 class TestDiffCharSpan:
