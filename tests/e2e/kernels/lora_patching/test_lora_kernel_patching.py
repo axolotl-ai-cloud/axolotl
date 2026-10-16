@@ -115,6 +115,25 @@ def test_attention_patching_integration(model_name, attention_cls):
     delattr(attention_cls, "_original_forward")
 
 
+def test_attention_patching_rejects_mla():
+    """MLA attention has no q/k/v_proj, so the QKV/O patch raises and leaves it untouched."""
+    cfg = DictDefault(
+        {
+            "base_model": "zai-org/GLM-4.7-Flash",
+            "lora_qkv_kernel": True,
+            "lora_o_kernel": True,
+        }
+    )
+    attention_cls = get_attention_cls_from_config(cfg)
+    original_forward = attention_cls.forward
+
+    with pytest.raises(ValueError, match="lora_qkv_kernel: false"):
+        patch_self_attn_lora(cfg)
+
+    assert attention_cls.forward is original_forward
+    delattr(attention_cls, "_original_forward")
+
+
 def test_swiglu_mlp_integration(small_llama_model):
     """Test SwiGLU activation in LoRA MLP context."""
     peft_config = get_peft_config(
