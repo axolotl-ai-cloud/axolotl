@@ -167,6 +167,29 @@ class ChatTemplatePrompter(Prompter):
             **chat_template_kwargs,
         )
 
+    def build_prompt_with_assistant_mask(
+        self, conversation: list[dict], tools=None
+    ) -> dict:
+        """Render and tokenize, returning HF's ``assistant_masks`` from the template's
+        ``{% generation %}`` markers alongside ``input_ids``."""
+        if self.processor:
+            raise ValueError("generation_tags is not supported with a processor")
+        chat_template_kwargs = {
+            "chat_template": self.chat_template,
+            "add_generation_prompt": False,
+            **self.chat_template_kwargs,
+        }
+        if tools:
+            chat_template_kwargs["tools"] = tools
+        result = self.tokenizer.apply_chat_template(
+            conversation,
+            tokenize=True,
+            return_dict=True,
+            return_assistant_tokens_mask=True,
+            **chat_template_kwargs,
+        )
+        return dict(result)
+
     def build_prompt_text(
         self,
         conversation: list[dict],
@@ -321,9 +344,20 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         train_on_eot: str | None = None,
         eot_tokens: list[str] | None = None,
         split_thinking: bool | None = False,
+        generation_tags: bool | None = None,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.prompter: ChatTemplatePrompter = prompter
+
+        self.generation_tags = bool(generation_tags)
+        if self.generation_tags and "{% generation %}" not in (
+            prompter.chat_template or ""
+        ).replace("{%- generation %}", "{% generation %}").replace(
+            "{% generation -%}", "{% generation %}"
+        ).replace("{%- generation -%}", "{% generation %}"):
+            raise ValueError(
+                "generation_tags requires a chat template with {% generation %} markers"
+            )
 
         self.roles_to_train = []
         if roles_to_train:
@@ -469,6 +503,91 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         return dict(res)
 
+    def _tokenize_with_generation_tags(
+        self, turns: list[dict], tools: list[dict] | None
+    ) -> Dict[str, List[int]] | None:
+        """Label every token inside the template's ``{% generation %}`` blocks.
+
+        The diff locator labels a turn's fields and terminators but not the template
+        structure the model must still produce between them (channel headers, an empty
+        reasoning block and its close). The markers delimit exactly what the model
+        generates per assistant turn, one block per turn, so per-turn train flags map
+        onto the blocks in order. Returns ``None`` when the blocks and the assistant
+        turns disagree or a case needs the diff locator (part-level training detail,
+        training non-assistant roles, ``train_on_inputs``).
+        """
+        if self.train_on_inputs or any(
+            role != "assistant" for role in self.roles_to_train
+        ):
+            LOG.warning_once(
+                "generation_tags only labels assistant turns; falling back to the turn locator"
+            )
+            return None
+        if any(
+            turn.get("training_detail") is not None
+            or turn.get("reasoning_training_detail") is not None
+            for turn in turns
+        ):
+            return None
+
+        result = self.prompter.build_prompt_with_assistant_mask(turns, tools=tools)
+        input_ids = result["input_ids"]
+        mask = result.get("assistant_masks")
+        if not mask:
+            return None
+
+        blocks: list[tuple[int, int]] = []
+        start = None
+        for idx, flag in enumerate(mask):
+            if flag and start is None:
+                start = idx
+            elif not flag and start is not None:
+                blocks.append((start, idx))
+                start = None
+        if start is not None:
+            blocks.append((start, len(mask)))
+
+        assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
+        if len(blocks) != len(assistant_turns):
+            LOG.warning_once(
+                f"generation_tags: {len(blocks)} generation blocks for "
+                f"{len(assistant_turns)} assistant turns; falling back to the turn locator"
+            )
+            return None
+
+        labels = [IGNORE_TOKEN_ID] * len(input_ids)
+        trained_blocks = []
+        for (block_start, block_end), turn in zip(blocks, assistant_turns, strict=True):
+            training = turn.get("training")
+            if training is None:
+                training = "assistant" in self.roles_to_train
+            if not training:
+                continue
+            labels[block_start:block_end] = input_ids[block_start:block_end]
+            trained_blocks.append((block_start, block_end))
+
+        if self.train_on_eot in ("none", "last") and trained_blocks:
+            keep_from = (
+                trained_blocks[-1][0] if self.train_on_eot == "last" else len(labels)
+            )
+            for idx in range(keep_from):
+                if (
+                    labels[idx] != IGNORE_TOKEN_ID
+                    and input_ids[idx] in self._eot_token_ids
+                ):
+                    labels[idx] = IGNORE_TOKEN_ID
+        elif self.train_on_eot == "all":
+            for idx, token in enumerate(input_ids):
+                if token in self._eot_token_ids:
+                    labels[idx] = token
+
+        tokenized = {
+            "input_ids": input_ids,
+            "attention_mask": result.get("attention_mask") or [1] * len(input_ids),
+            "labels": labels,
+        }
+        return tokenized
+
     def _tokenize_single_prompt(self, prompt: dict) -> Dict[str, List[int]]:
         # Old simple legacy behavior that works reliably.
         if (
@@ -510,6 +629,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         turns = self.get_conversation_thread(prompt)
         tools = self._get_tools(prompt)
+        if self.generation_tags:
+            tokenized = self._tokenize_with_generation_tags(turns, tools)
+            if tokenized is not None:
+                return tokenized
         result = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
         if not isinstance(result, dict):
             result = {"input_ids": result}
@@ -1381,6 +1504,7 @@ class StrategyLoader:
             "train_on_eot": ds_cfg.get("train_on_eot", None),
             "eot_tokens": cfg.get("eot_tokens", None),  # loads from cfg, not ds_cfg
             "split_thinking": ds_cfg.get("split_thinking", False),
+            "generation_tags": ds_cfg.get("generation_tags", None),
         }
 
     def __call__(
