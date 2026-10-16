@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 import torch
 import torch.nn.functional as F
+from packaging.version import Version
 from peft import LoraConfig, get_peft_model
 from safetensors.torch import save_file
 
@@ -804,6 +805,10 @@ def _tiny_tokenizer(directory: Path, vocab_size: int):
     ).save_pretrained(directory)
 
 
+@pytest.mark.skipif(
+    Version(torch.__version__.split("+", maxsplit=1)[0]) < Version("2.14.0"),
+    reason="TwoTower trains with attn_implementation: varlen, which needs torch >= 2.14",
+)
 def test_axolotl_loads_released_layout_with_scoped_lora(tmp_path):
     from axolotl.cli.config import prepare_plugins
     from axolotl.loaders import ModelLoader, load_tokenizer
@@ -889,12 +894,20 @@ def test_axolotl_loads_released_layout_with_scoped_lora(tmp_path):
     unwrapped = [name for name in source.state_dict() if name in state]
     assert any(name.startswith("context_tower.layers.1.mixer") for name in unwrapped)
     for name in unwrapped:
-        torch.testing.assert_close(state[name], source.state_dict()[name], msg=name)
+        torch.testing.assert_close(
+            state[name].cpu(), source.state_dict()[name].cpu(), msg=name
+        )
     # zero-initialised LoRA B and token deltas: the adapted model reproduces the source
     ids, positions, canvas, _ = packed_batch()
     model.eval()
+    device = next(base.parameters()).device
+    adapted = model(
+        input_ids=ids.to(device),
+        position_ids=positions.to(device),
+        axolotl_canvas_mask=canvas.to(device),
+    ).logits
     torch.testing.assert_close(
-        model(input_ids=ids, position_ids=positions, axolotl_canvas_mask=canvas).logits,
+        adapted.cpu(),
         source.eval()(ids, position_ids=positions, axolotl_canvas_mask=canvas).logits,
     )
 
