@@ -25,5 +25,5 @@ RUN git clone --depth 1 --branch $DEEP_EP_REF https://github.com/deepseek-ai/Dee
 # flash-attn-4 is still a pre-release; it pulls quack-kernels and the cutlass DSL, which SonicMoE
 # needs too, and the [cu13] extra selects the CUDA 13 cutlass runtime libraries.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --pre "flash-attn-4[cu13]" "quack-kernels[cu13]" && \
+    uv pip install "flash-attn-4[cu13]==4.0.0b35" "quack-kernels[cu13]==0.6.5" && \
     python -c "import importlib.metadata as m; [print(p, m.version(p)) for p in ('flash-attn-4', 'quack-kernels', 'nvidia-cutlass-dsl', 'deep-ep')]"
