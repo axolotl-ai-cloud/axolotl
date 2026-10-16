@@ -271,9 +271,9 @@ def main():
         (actual.float() * grad.chunk(world, dim=1)[rank]).sum().backward()
         target_grad = ref_x.grad.chunk(world, dim=1)[rank]
         if family == "gdn":
-            torch.testing.assert_close(
-                local_x.grad, target_grad, atol=1.5e-2, rtol=5e-2
-            )
+            # The 4-rank packed split leaves one bf16 element at ~0.0117.
+            atol = 1.5e-2 if world == 4 else 1e-2
+            torch.testing.assert_close(local_x.grad, target_grad, atol=atol, rtol=5e-2)
         else:
             assert_bf16_close(local_x.grad, target_grad, "input gradient")
         for (name, param), (_, ref) in zip(
