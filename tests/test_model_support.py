@@ -494,7 +494,9 @@ class TestBailingHybridSupport:
         run_model_support_hooks(
             support,
             ModelHookPhase.CONFIGURE_RUN,
-            ModelHookContext(cfg=DictDefault(context_parallel_size=4)),
+            ModelHookContext(
+                cfg=DictDefault(context_parallel_size=4, trust_remote_code=True)
+            ),
         )
 
     @pytest.mark.parametrize("context_parallel_size", [None, 1])
@@ -503,7 +505,10 @@ class TestBailingHybridSupport:
             get_model_support("bailing_hybrid"),
             ModelHookPhase.CONFIGURE_RUN,
             ModelHookContext(
-                cfg=DictDefault(context_parallel_size=context_parallel_size)
+                cfg=DictDefault(
+                    context_parallel_size=context_parallel_size,
+                    trust_remote_code=True,
+                )
             ),
         )
 
@@ -511,7 +516,7 @@ class TestBailingHybridSupport:
         """``save_pretrained`` reverses these to re-emit the published layout."""
         from axolotl.model_support.bailing_hybrid import _weight_conversions
 
-        transforms = _weight_conversions()["bailing_hybrid"]
+        transforms = _weight_conversions()["BailingMoeV3ForCausalLM"]
         assert transforms
         for transform in transforms:
             for operation in getattr(transform, "operations", None) or []:

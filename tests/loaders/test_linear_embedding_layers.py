@@ -1,4 +1,4 @@
-"""`get_linear_embedding_layers` against the real transformers model classes."""
+"""`get_linear_embedding_layers` against the model classes used for training."""
 
 import pytest
 from transformers import AutoConfig, AutoModelForCausalLM
@@ -29,6 +29,9 @@ MODEL_KWARGS = {
         "hybrid_override_pattern": "M",
     },
     "bailing_hybrid": {
+        "pad_token_id": 0,
+        "eos_token_id": 1,
+        "num_nextn_predict_layers": 0,
         "hidden_size": 32,
         "intermediate_size": 64,
         "num_hidden_layers": 1,
@@ -54,6 +57,16 @@ def _module_path(model, target):
 
 @pytest.fixture(name="model")
 def fixture_model(model_type):
+    if model_type == "bailing_hybrid":
+        pytest.importorskip("fla.ops.kda")
+        from axolotl.model_support.bailing_hybrid.configuration_bailing_moe_v3 import (
+            BailingMoeV3Config,
+        )
+        from axolotl.model_support.bailing_hybrid.modeling_bailing_moe_v3 import (
+            BailingMoeV3ForCausalLM,
+        )
+
+        return BailingMoeV3ForCausalLM(BailingMoeV3Config(**MODEL_KWARGS[model_type]))
     if model_type not in CONFIG_MAPPING_NAMES:
         pytest.skip(f"{model_type} is not available in this transformers")
     config = AutoConfig.for_model(model_type, **MODEL_KWARGS[model_type])

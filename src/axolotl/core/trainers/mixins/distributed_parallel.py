@@ -82,6 +82,17 @@ class DistributedParallelMixin(Trainer):
                     model._axolotl_native_nvfp4_deepspeed_prepared = True
         return super()._wrap_model(model, *args, **kwargs)
 
+    def _prepare_for_training(self, *args, **kwargs):
+        # transformers>=5.20 skips accelerate's FSDP2/DeepSpeed prepare for load-time TP models and
+        # world-averages every non-DTensor grad, which breaks FSDP/DS+TP and mixes TP-local LoRA shards
+        if not getattr(self, "is_distributed_loading_by_transformers", False):
+            return super()._prepare_for_training(*args, **kwargs)
+        self.is_distributed_loading_by_transformers = False
+        try:
+            return super()._prepare_for_training(*args, **kwargs)
+        finally:
+            self.is_distributed_loading_by_transformers = True
+
     def _expert_parallel_enabled(self) -> bool:
         parallelism = getattr(self.accelerator, "parallelism_config", None)
         if parallelism is not None:

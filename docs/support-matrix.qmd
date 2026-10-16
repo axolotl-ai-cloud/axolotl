@@ -253,7 +253,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | Feature | Requires |
 |---|---|
 | QLoRA | `load_in_4bit: true` |
-| Expert Parallel | FSDP2 (`fsdp_version: 2` + `fsdp_config`, not DDP/DeepSpeed) with `fsdp_config.state_dict_type: FULL_STATE_DICT`; `deep_ep` backend (Ampere/Hopper, NVLink) or `torch` backend (any NCCL/gloo fabric) |
+| Expert Parallel | FSDP2 (`fsdp_version: 2` + `fsdp_config`, not DDP/DeepSpeed) with `fsdp_config.state_dict_type: FULL_STATE_DICT`; `deep_ep` backend (Ampere/Hopper/Blackwell, NVLink) or `torch` backend (any NCCL/gloo fabric) |
 | Context parallel | Ulysses: SDPA or Flash Attention; Ring/USP training: Flash Attention |
 | SonicMoE | Hopper/Blackwell + CUDA 12.9 (else auto-falls back to ScatterMoE) |
 | FP8 attention | SM90+ and PyTorch >= 2.11 |

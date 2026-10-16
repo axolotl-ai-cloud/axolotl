@@ -164,7 +164,7 @@ def resolve_local_implementation(name: str | None = None):
 
 
 def _maybe_install_decorator_attrs(experts):
-    """`@use_experts_implementation` injects has_gate/has_bias/is_transposed.
+    """`@use_experts_implementation` injects has_gate/has_bias/is_transposed/has_post_expert_norm.
     For models loaded outside the decorator path (or in tests), patch them in.
     """
     if not hasattr(experts, "has_gate"):
@@ -173,6 +173,8 @@ def _maybe_install_decorator_attrs(experts):
         experts.has_bias = hasattr(experts, "gate_up_proj_bias")
     if not hasattr(experts, "is_transposed"):
         experts.is_transposed = False
+    if not hasattr(experts, "has_post_expert_norm"):
+        experts.has_post_expert_norm = False
 
 
 def _normalize_sentinels(recv_topk_idx, recv_topk_weights, num_local_experts):

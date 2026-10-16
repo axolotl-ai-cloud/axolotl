@@ -161,6 +161,11 @@ class ExpertParallelPlugin(BasePlugin):
         self._reject_transformers_distributed_model(model)
         ep_group = self._resolve_ep_group(cfg)
         ep_world = dist.get_world_size(ep_group) if ep_group is not None else 1
+        # rank zero streams every expert slice to its peers here; on a 500B MoE this
+        # takes one to five minutes with no other output
+        LOG.info(
+            f"Sharding expert weights across {ep_world} expert-parallel rank(s)..."
+        )
         sharded = shard_expert_weights(model, ep_group)
 
         if sharded == 0:

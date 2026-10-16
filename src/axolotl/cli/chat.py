@@ -481,7 +481,7 @@ class CausalTurnGenerator(TurnGenerator):
 
         if keep < len(self._cached_ids):
             try:
-                self._cache.crop(keep)
+                self._cache.crop(keep - len(self._cached_ids))
                 self._cached_ids = self._cached_ids[:keep]
             except Exception:  # pylint: disable=broad-exception-caught
                 # some cache layer types (e.g. sliding window) cannot crop
