@@ -36,6 +36,15 @@ def _redirect_remote_code(_context: ModelHookContext) -> None:
     redirect_dynamic_modules(BAILING_PACKAGE, BAILING_MODULES)
 
 
+def _require_remote_code(context: ModelHookContext) -> None:
+    if not getattr(context.cfg, "trust_remote_code", False):
+        raise ValueError(
+            "Ling 3.0 (bailing_hybrid) requires trust_remote_code: true. Without it, "
+            "transformers>=5.20 loads its native BailingHybrid classes, whose module "
+            "layout axolotl's Ling 3.0 support does not target."
+        )
+
+
 def _weight_conversions():
     from transformers.conversion_mapping import get_checkpoint_conversion_mapping
     from transformers.core_model_loading import WeightRenaming
@@ -67,6 +76,7 @@ class BailingHybridSupport(ModelSupport):
         ),
         hooks=ModelHooks(
             by_phase={
+                ModelHookPhase.CONFIGURE_RUN: (_require_remote_code,),
                 ModelHookPhase.BEFORE_CONFIG_LOAD: (_redirect_remote_code,),
                 ModelHookPhase.BEFORE_TOKENIZER_LOAD: (_redirect_remote_code,),
                 ModelHookPhase.BEFORE_MODEL_BUILD: (_redirect_remote_code,),
