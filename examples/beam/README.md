@@ -78,7 +78,7 @@ step benchmarks kernel configs while expert-parallel peers wait.
 
 ## Related Resources
 
-- [Reflection HF](https://huggingface.co/reflection)
+- [Beam 1.0 on Hugging Face](https://huggingface.co/collections/reflection/beam-10)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl Website](https://axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
