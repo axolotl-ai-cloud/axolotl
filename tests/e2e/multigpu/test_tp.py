@@ -39,6 +39,7 @@ class TestTensorParallel:
                 "learning_rate": 2e-4,
                 "optimizer": "adamw_torch",
                 "tensor_parallel_size": 2,
+                "save_only_model": True,
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "use_tensorboard": True,
