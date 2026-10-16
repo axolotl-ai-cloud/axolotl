@@ -31,6 +31,7 @@
 ## 🎉 Latest Updates
 
 - 2026/10:
+  - Reflection's [Beam](https://docs.axolotl.ai/docs/models/beam.html) is now supported in Axolotl, with QLoRA and expert-parallel LoRA configs including NVFP4.
   - [Distributed training improvements](https://github.com/axolotl-ai-cloud/axolotl/pull/4091) keep EP groups node-local when the topology permits, add DeepSpeed Ulysses support through `context_parallel_size`, and fix expert-LoRA resume and FSDP2 activation checkpointing with LoRA.
 - 2026/09:
   - New model support has been added in Axolotl for [MiniCPM5](https://docs.axolotl.ai/docs/models/minicpm5.html), [Nex-N2.5-mini](https://docs.axolotl.ai/docs/models/nex-n2.5.html), [Qwen3.6](https://docs.axolotl.ai/docs/models/qwen3.5.html), [Qwen3.8-Flash-Next](https://docs.axolotl.ai/docs/models/qwen3.8-flash-next.html), and [K2 Horizon](https://docs.axolotl.ai/docs/models/k2-horizon.html).
