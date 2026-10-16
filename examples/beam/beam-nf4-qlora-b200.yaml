@@ -6,7 +6,7 @@
 # meta, and shards transfer after FSDP wrapping (qlora_sharded_model_loading,
 # on by default for this combination). The ScatterMoE bnb path dequantizes
 # only the routed experts a token hits and recomputes that in backward.
-base_model: reflectionai/beam
+base_model: reflection/Beam-1.0-501B-A23B
 
 plugins:
   - axolotl.integrations.kernels.KernelsPlugin

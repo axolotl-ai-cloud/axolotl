@@ -5,7 +5,7 @@
 # node-local axis; HSDP replicates that across the two nodes, so InfiniBand
 # only carries the LoRA gradient all-reduce. LoRA on attention projections
 # plus the fused 3D expert tensors via lora_target_parameters.
-base_model: reflectionai/beam
+base_model: reflection/Beam-1.0-501B-A23B
 
 plugins:
   - axolotl.integrations.kernels.KernelsPlugin

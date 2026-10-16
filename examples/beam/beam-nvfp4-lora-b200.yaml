@@ -3,7 +3,7 @@
 # EP=8 node-local (each GPU owns 32 of the 256 experts per layer); dense weights
 # FSDP-shard over the same ranks. LoRA on attention projections plus the fused
 # 3D expert tensors via lora_target_parameters.
-base_model: reflectionai/beam-nvfp4
+base_model: reflection/Beam-1.0-501B-A23B-NVFP4
 
 plugins:
   - axolotl.integrations.kernels.KernelsPlugin
