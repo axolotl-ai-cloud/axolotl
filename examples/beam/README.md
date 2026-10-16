@@ -4,6 +4,8 @@
 
 This guide shows how to fine-tune it with Axolotl.
 
+Thanks to the team at Reflection for giving us early access to prepare for this release.
+
 ## Getting started
 
 1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
