@@ -166,6 +166,17 @@ def test_staged_model_still_dequantizes_after_adapter_init(tmp_path, monkeypatch
     torch.testing.assert_close(q_proj.weight, expected, rtol=0, atol=0)
 
 
+def test_non_staged_model_is_untouched(tmp_path, monkeypatch):
+    model_class = _save_llama(tmp_path)
+    loader = _staged_loader(tmp_path, model_class, "bitsandbytes")
+    del loader.model._axolotl_staged_nf4
+
+    counter = _DequantCounter(monkeypatch)
+    loader._load_adapters()
+
+    assert counter.count > 0
+
+
 def test_adapter_init_matches_dequantized_path(tmp_path):
     model_class = _save_llama(tmp_path)
     adapters = []
