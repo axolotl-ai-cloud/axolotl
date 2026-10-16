@@ -871,8 +871,6 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
-                "sample_packing": True,
-                "pad_to_sequence_len": True,
             }
         )
 
@@ -933,8 +931,6 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
-                "sample_packing": True,
-                "pad_to_sequence_len": True,
             }
         )
 
