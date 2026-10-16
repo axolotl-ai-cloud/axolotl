@@ -1,7 +1,7 @@
 # Beam QLoRA via device_map model parallelism (attention-only, no FSDP).
 # Layers are placed across the GPUs and quantized in place. No data parallelism,
 # so launch with --num-processes 1.
-base_model: reflectionai/beam
+base_model: reflection/Beam-1.0-501B-A23B
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin

@@ -2,7 +2,7 @@
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
-SRC = "reflectionai/beam"
+SRC = "reflection/Beam-1.0-501B-A23B"
 OUT = "./beam-tiny"
 
 cfg = AutoConfig.from_pretrained(

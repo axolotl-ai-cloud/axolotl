@@ -1,6 +1,6 @@
 # Finetune Beam with Axolotl
 
-[Beam](https://huggingface.co/reflectionai/beam) is a 501B-parameter mixture-of-experts model (23B active parameters per token) from Reflection, built for software engineering and long-horizon agentic tasks.
+[Beam](https://huggingface.co/reflection/Beam-1.0-501B-A23B) is a 501B-parameter mixture-of-experts model (23B active parameters per token) from Reflection, built for software engineering and long-horizon agentic tasks.
 
 This guide shows how to fine-tune it with Axolotl.
 
