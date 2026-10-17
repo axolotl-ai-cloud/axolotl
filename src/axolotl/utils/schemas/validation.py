@@ -2766,16 +2766,12 @@ class GRPOVllmValidationMixin:
     def check_async_grpo_compat(self):
         """`async_prefetch` with rl: grpo/gdpo runs on TRL's AsyncGRPOTrainer."""
         trl = self.trl
-        if (
-            self.rl not in ("grpo", "gdpo")
-            or not (trl and trl.async_prefetch)
-            or getattr(self, "nemo_gym_enabled", None)
-        ):
+        if self.rl not in ("grpo", "gdpo") or not (trl and trl.async_prefetch):
             return self
 
         def data_producer_only(option: str) -> str:
             return (
-                f"`trl.{option}` belongs to the data producer trainer (EBFT, NeMo Gym) "
+                f"`trl.{option}` belongs to the data producer trainer (EBFT) "
                 "and has no effect on async GRPO; remove it"
             )
 

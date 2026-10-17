@@ -320,6 +320,20 @@ class BasePlugin:
         """
         return []
 
+    def get_reward_funcs(self, cfg: DictDefault) -> list[Callable] | None:
+        """Returns reward functions to add to GRPO training.
+
+        They are passed to the trainer at construction, after those listed in
+        `trl.reward_funcs`. Async GRPO scores in a spawned process, so they must be
+        picklable: module-level functions or instances of module-level classes.
+
+        Args:
+            cfg: The global axolotl configuration.
+
+        Returns:
+            A list of reward functions.
+        """
+
     def on_rollouts_scored(
         self,
         cfg: DictDefault,
@@ -810,6 +824,21 @@ class PluginManager:
         """Calls plugins after a LoRA merge has been saved successfully."""
         for plugin in self.plugins.values():
             plugin.post_lora_merge(cfg, adapter_path, output_path)
+
+    def get_reward_funcs(self, cfg: DictDefault) -> list[Callable]:
+        """Calls the `get_reward_funcs` method of all registered plugins and returns
+        the combined reward functions.
+
+        Args:
+            cfg: The configuration for the plugins.
+
+        Returns:
+            The reward functions, in plugin registration order.
+        """
+        reward_funcs: list[Callable] = []
+        for plugin in self.plugins.values():
+            reward_funcs.extend(plugin.get_reward_funcs(cfg) or [])
+        return reward_funcs
 
     def on_rollouts_scored(
         self,

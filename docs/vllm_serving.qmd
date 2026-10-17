@@ -378,4 +378,4 @@ CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
 | Accuracy stays at zero | Stale vLLM from previous run | Restart vLLM: `pkill -9 -f "vllm\|EngineCore"`, verify with `nvidia-smi`, restart |
 | `ResponseValidationError` from vLLM | Missing logprobs in response | Start the server with `axolotl vllm-serve` (or the raw command above) so `--logprobs-mode processed_logprobs --max-logprobs -1` are set |
 | Weight sync takes 5+ seconds | NCCL contention with vLLM generation | Switch to `vllm_lora_sync: true` to eliminate NCCL |
-| Data producer trainer with `async_prefetch` deadlocks under FSDP | Background threads run unsynchronized FSDP collectives | Set `async_prefetch: false` with the data producer trainer (EBFT, NeMo Gym) under FSDP or DeepSpeed |
+| Data producer trainer with `async_prefetch` deadlocks under FSDP | Background threads run unsynchronized FSDP collectives | Set `async_prefetch: false` with the data producer trainer (EBFT) under FSDP or DeepSpeed |
