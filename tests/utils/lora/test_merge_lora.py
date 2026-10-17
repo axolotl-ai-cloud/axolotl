@@ -1,6 +1,7 @@
 import json
 import math
 from collections import OrderedDict
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -17,6 +18,7 @@ from axolotl.cli.utils.lora_merge import (
     _resolve_lora_alpha_for_key,
     _runtime_key,
     _scope_renaming,
+    _ShardWriteQueue,
     copy_non_model_files,
     find_lora_weights,
     merge_lora_sharded_efficient,
@@ -565,6 +567,60 @@ class TestEfficientMerge:
                     model_dir, adapter_dir, tmp_path / "output", device="cpu"
                 )
         assert not (tmp_path / "output" / "model.safetensors.index.json").exists()
+
+    @pytest.mark.parametrize("write_fails", [False, True])
+    @pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+    def test_sharded_merge_drains_writes_on_processing_failure(
+        self, tmp_path, caplog, write_fails, error_type
+    ):
+        """Cleanup waits for the writer and preserves the original processing error."""
+        model_dir, adapter_dir, *_ = self._make_multi_shard_merge(tmp_path)
+        release_writer = Event()
+        writer_finished = Event()
+        processing_error = error_type("merge failed")
+        queue = _ShardWriteQueue()
+
+        def write(*_args):
+            assert release_writer.wait(timeout=10)
+            writer_finished.set()
+            if write_fails:
+                raise OSError("disk full")
+
+        def merge(weight, key, *args, **kwargs):
+            if key == "model.layers.1.self_attn.q_proj.weight":
+                release_writer.set()
+                raise processing_error
+            return _merge_tensor_with_lora(weight, key, *args, **kwargs)
+
+        try:
+            with (
+                patch(
+                    "axolotl.cli.utils.lora_merge._ShardWriteQueue", return_value=queue
+                ),
+                patch("axolotl.cli.utils.lora_merge._write_shard", side_effect=write),
+                patch(
+                    "axolotl.cli.utils.lora_merge._merge_tensor_with_lora",
+                    side_effect=merge,
+                ),
+                patch.object(
+                    queue._pool, "shutdown", wraps=queue._pool.shutdown
+                ) as shutdown,
+                pytest.raises(error_type, match="merge failed") as caught,
+            ):
+                merge_lora_sharded_efficient(
+                    model_dir, adapter_dir, tmp_path / "output", device="cpu"
+                )
+            assert caught.value is processing_error
+            shutdown.assert_called_once_with(wait=True)
+            assert writer_finished.is_set()
+            assert queue._pending is None
+            if write_fails:
+                assert "Background shard write also failed" in caplog.text
+                assert "disk full" in caplog.text
+            assert not (tmp_path / "output" / "model.safetensors.index.json").exists()
+        finally:
+            release_writer.set()
+            queue._pool.shutdown(wait=True)
 
     def test_nf4_gate_follows_prefixed_layer_type_map(self, tmp_path):
         """The exclusion gate must use the same prefix fallback as the layer lookup."""
