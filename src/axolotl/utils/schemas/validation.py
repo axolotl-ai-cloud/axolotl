@@ -1049,6 +1049,33 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_multiturn_preference(cls, data):
+        def ds_type(ds):
+            return ds.get("type") if isinstance(ds, dict) else getattr(ds, "type", None)
+
+        for key in ("datasets", "test_datasets"):
+            types = [ds_type(ds) for ds in data.get(key) or []]
+            if "chat_template.multiturn" not in types:
+                continue
+            if data.get("rl") not in ("dpo", "ipo"):
+                raise ValueError(
+                    "`type: chat_template.multiturn` is only supported with `rl: dpo` "
+                    f"(including `dpo_loss_type` variants such as apo_zero), got rl={data.get('rl')!r}."
+                )
+            if any(t != "chat_template.multiturn" for t in types):
+                raise ValueError(
+                    f"`type: chat_template.multiturn` produces pre-tokenized pairs and "
+                    f"cannot be mixed with other dataset types in `{key}`."
+                )
+            if data.get("tokenizer_use_mistral_common"):
+                raise ValueError(
+                    "`type: chat_template.multiturn` does not support "
+                    "`tokenizer_use_mistral_common`."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
         """Surface GRPO batch-shape mismatches at config-parse time.
 

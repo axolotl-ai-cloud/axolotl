@@ -1256,6 +1256,54 @@ class TestValidation(BaseValidation):
                 DictDefault({"rl": "dpo", "dpo_ld_alpha": 1.5}) | minimal_cfg
             )
 
+    @staticmethod
+    def _multiturn_cfg(minimal_cfg, **extra):
+        return DictDefault(
+            {
+                **minimal_cfg,
+                "rl": "dpo",
+                "dpo_loss_type": ["apo_zero"],
+                "datasets": [
+                    {
+                        "path": "trajectories",
+                        "type": "chat_template.multiturn",
+                        "field_chosen": "better",
+                        "field_tools": "functions",
+                        "roles_to_train": ["assistant"],
+                        "message_field_training": "train",
+                    }
+                ],
+                **extra,
+            }
+        )
+
+    def test_multiturn_preference_keeps_turn_options(self, minimal_cfg):
+        ds_cfg = validate_config(self._multiturn_cfg(minimal_cfg)).datasets[0]
+        assert ds_cfg["type"] == "chat_template.multiturn"
+        assert ds_cfg["field_chosen"] == "better"
+        assert ds_cfg["field_tools"] == "functions"
+        assert ds_cfg["roles_to_train"] == ["assistant"]
+        assert ds_cfg["message_field_training"] == "train"
+
+    @pytest.mark.parametrize("rl", ["orpo", "simpo", "kto"])
+    def test_multiturn_preference_requires_dpo(self, minimal_cfg, rl):
+        cfg = self._multiturn_cfg(
+            minimal_cfg, rl=rl, dpo_loss_type=None, remove_unused_columns=False
+        )
+        with pytest.raises(ValueError, match="only supported with `rl: dpo`"):
+            validate_config(cfg)
+
+    def test_multiturn_preference_cannot_mix_dataset_types(self, minimal_cfg):
+        cfg = self._multiturn_cfg(minimal_cfg)
+        cfg["datasets"].append({"path": "pairs", "type": "chat_template.default"})
+        with pytest.raises(ValueError, match="cannot be mixed"):
+            validate_config(cfg)
+
+    def test_multiturn_preference_rejects_mistral_common(self, minimal_cfg):
+        cfg = self._multiturn_cfg(minimal_cfg, tokenizer_use_mistral_common=True)
+        with pytest.raises(ValueError, match="tokenizer_use_mistral_common"):
+            validate_config(cfg)
+
     def test_dpo_liger_kernel_quoted_false_not_treated_as_enabled(self, minimal_cfg):
         cfg = (
             DictDefault(

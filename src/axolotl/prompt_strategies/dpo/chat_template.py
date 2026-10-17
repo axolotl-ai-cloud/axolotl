@@ -2,9 +2,14 @@
 DPO prompt strategies for using tokenizer chat templates.
 """
 
+from axolotl.prompters import IGNORE_TOKEN_ID
 from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_template
 from axolotl.utils.data.utils import is_vision_dataset
+from axolotl.utils.dict import DictDefault, remove_none_values
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
+
+LOG = get_logger(__name__)
 
 
 def _completion_after_prompt(
@@ -295,3 +300,156 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
         return result
 
     return transform_fn, {"remove_columns": [field_chosen, field_rejected]}
+
+
+def _common_prefix_length(left: list[int], right: list[int]) -> int:
+    length = min(len(left), len(right))
+    for idx in range(length):
+        if left[idx] != right[idx]:
+            return idx
+    return length
+
+
+def _as_messages(value, mappings: dict[str, str], role: str) -> list[dict]:
+    if isinstance(value, str):
+        return [{mappings["role"]: role, mappings["content"]: value}]
+    if isinstance(value, dict):
+        return [value]
+    return list(value)
+
+
+def _split_shared_prefix(
+    chosen: list[dict], rejected: list[dict], role_key: str, assistant_roles: set
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Split full conversations into the shared prefix before the first assistant turn."""
+    split = next(
+        (i for i, m in enumerate(chosen) if m.get(role_key) in assistant_roles),
+        len(chosen),
+    )
+    if split == 0 or chosen[:split] != rejected[:split]:
+        raise ValueError(
+            "chat_template.multiturn: without a shared prompt field, `chosen` and "
+            "`rejected` must start with the same non-assistant messages."
+        )
+    return chosen[:split], chosen[split:], rejected[split:]
+
+
+def multiturn(cfg, dataset_idx=0, **kwargs):
+    """Trajectory-level preference pairs over multi-turn, tool-using completions.
+
+    ``chosen`` and ``rejected`` are full continuations of the shared prompt
+    (assistant turns with reasoning/tool calls interleaved with tool results). Each
+    side is rendered with the chat template and the SFT turn locator; only tokens of
+    trainable assistant turns enter ``{chosen,rejected}_loss_mask``, so tool results
+    and other roles contribute nothing to the DPO log-prob sums.
+    """
+    from axolotl.prompt_strategies.chat_template import StrategyLoader
+
+    ds_cfg = handle_legacy_message_fields_logic(cfg["datasets"][dataset_idx])
+    field_messages = ds_cfg.get("field_messages") or "messages"
+    field_chosen = ds_cfg.get("field_chosen") or "chosen"
+    field_rejected = ds_cfg.get("field_rejected") or "rejected"
+    field_tools = ds_cfg.get("field_tools") or "tools"
+    field_thinking = ds_cfg.get("field_thinking") or "reasoning_content"
+    template_thinking_key = ds_cfg.get("template_thinking_key") or "reasoning_content"
+    mappings = ds_cfg.get("message_property_mappings") or {}
+    mappings = {
+        "role": "role",
+        "content": "content",
+        template_thinking_key: field_thinking,
+        # some templates read these through `message.get(...)`, which the template
+        # analyzer does not see, so carry them explicitly
+        "tool_calls": "tool_calls",
+        "tool_call_id": "tool_call_id",
+        "name": "name",
+        **mappings,
+    }
+    roles = ds_cfg.get("roles")
+    assistant_roles = set((roles or {}).get("assistant") or []) | {"assistant"}
+
+    turn_cfg = {
+        **ds_cfg,
+        "field_messages": "messages",
+        "field_tools": "tools",
+        "message_property_mappings": mappings,
+        "message_field_training": ds_cfg.get("message_field_training") or "train",
+        "roles_to_train": ds_cfg.get("roles_to_train") or ["assistant"],
+        "train_on_eos": ds_cfg.get("train_on_eos") or "turn",
+    }
+    strategy_cfg = DictDefault({**cfg, "train_on_inputs": False})
+    strategies: dict[int, object] = {}
+    warned: set[str] = set()
+
+    def get_strategy(tokenizer):
+        key = id(tokenizer)
+        if key not in strategies:
+            strategies[key] = StrategyLoader()(tokenizer, strategy_cfg, turn_cfg)
+        return strategies[key]
+
+    def transform_fn(sample, tokenizer=None):
+        if is_vision_dataset(sample.keys()):
+            raise ValueError("chat_template.multiturn does not support image datasets.")
+        strategy = get_strategy(tokenizer)
+
+        if sample.get(field_messages) is not None:
+            prefix = _as_messages(sample[field_messages], mappings, "user")
+            chosen = _as_messages(sample[field_chosen], mappings, "assistant")
+            rejected = _as_messages(sample[field_rejected], mappings, "assistant")
+        else:
+            prefix, chosen, rejected = _split_shared_prefix(
+                list(sample[field_chosen]),
+                list(sample[field_rejected]),
+                mappings["role"],
+                assistant_roles,
+            )
+        if not chosen or not rejected:
+            raise ValueError(
+                "chat_template.multiturn: `chosen` and `rejected` need at least one message."
+            )
+        tools = sample.get(field_tools)
+
+        def render(messages):
+            row = {"messages": messages}
+            if tools is not None:
+                row["tools"] = tools
+            return strategy.tokenize_prompt(row)
+
+        tools_parsed = strategy._get_tools(remove_none_values({"tools": tools}))
+        prompt_turns = strategy.get_conversation_thread(
+            remove_none_values({"messages": prefix})
+        )
+        prompt_ids = strategy.prompter.build_prompt(
+            prompt_turns, add_generation_prompt=True, tools=tools_parsed
+        )
+        sides = {
+            "chosen": render(prefix + chosen),
+            "rejected": render(prefix + rejected),
+        }
+
+        prompt_len = min(
+            _common_prefix_length(prompt_ids, side["input_ids"])
+            for side in sides.values()
+        )
+        if prompt_len < len(prompt_ids) and "prefix" not in warned:
+            warned.add("prefix")
+            LOG.warning(
+                "chat_template.multiturn: the rendered prompt is not a prefix of the "
+                "rendered trajectory; the completion starts where they diverge: "
+                f"{tokenizer.decode(prompt_ids[prompt_len:])!r}"
+            )
+
+        result = {"prompt_ids": prompt_ids[:prompt_len]}
+        for name, side in sides.items():
+            mask = [
+                int(label != IGNORE_TOKEN_ID) for label in side["labels"][prompt_len:]
+            ]
+            if not any(mask):
+                raise ValueError(
+                    f"chat_template.multiturn: `{name}` has no trainable assistant "
+                    "tokens after the shared prompt."
+                )
+            result[f"{name}_ids"] = side["input_ids"][prompt_len:]
+            result[f"{name}_loss_mask"] = mask
+        return result
+
+    return transform_fn, {"remove_columns": "__all__"}
