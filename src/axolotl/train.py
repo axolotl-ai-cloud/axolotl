@@ -471,6 +471,11 @@ def save_trained_model(
                     metadata={"format": "pt"},
                 )
 
+    if not cfg.adapter and cfg.local_rank == 0:
+        from axolotl.utils.mtp import copy_mtp_weights
+
+        copy_mtp_weights(cfg.base_model, cfg.output_dir)
+
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin
         from axolotl.integrations.llm_compressor.utils import save_compressed_model
