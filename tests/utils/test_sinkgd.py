@@ -456,14 +456,14 @@ def test_fused_epilogue_size_gate():
 
 
 @pytest.fixture()
-def cpu_mesh():
+def cpu_mesh(tmp_path):
     import torch.distributed as dist
     from torch.distributed.device_mesh import init_device_mesh
 
     owned = not dist.is_initialized()
     if owned:
         dist.init_process_group(
-            "gloo", init_method="tcp://127.0.0.1:29571", world_size=1, rank=0
+            "gloo", init_method=(tmp_path / "rendezvous").as_uri(), world_size=1, rank=0
         )
     yield init_device_mesh("cpu", (1,), mesh_dim_names=("ep",))
     if owned:
@@ -508,3 +508,17 @@ def test_dist_factory_without_mesh_reads_group_from_param(cpu_mesh):
     w.grad = distribute_tensor(torch.randn(16, 8), cpu_mesh, [Shard(0)])
     opt.step()
     assert not torch.equal(w.detach().full_tensor(), before)
+
+
+@pytest.mark.distributed_cpu
+def test_matrix_shard_groups_and_optimizer_parity(tmp_path, monkeypatch):
+    """Multi-axis reductions match a flat mesh without mixing experts or replicas."""
+    import sys
+
+    import torch.multiprocessing as mp
+
+    from tests.utils._sinkgd_distributed import check_matrix_shards
+
+    if sys.platform == "darwin":
+        monkeypatch.setenv("GLOO_SOCKET_IFNAME", "lo0")
+    mp.spawn(check_matrix_shards, args=((tmp_path / "multi_axis").as_uri(),), nprocs=4)

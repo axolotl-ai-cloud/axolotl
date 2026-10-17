@@ -30,6 +30,7 @@ import torch.distributed as dist
 from torch import Tensor
 from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.tensor import DTensor
+from torch.distributed.tensor.placement_types import _StridedShard
 from torchao.optim.adam import _AdamBase, single_param_adam
 from torchao.optim.quant_utils import _fp32_to_bf16_sr
 from torchao.optim.subclass_8bit import OptimState8bit
@@ -644,7 +645,7 @@ def _matrix_shard_dim(p: Tensor):
     matrix_dims = {p.ndim - 1, p.ndim - 2}
     for i, placement in enumerate(p.placements):
         if (
-            placement.is_shard()
+            (placement.is_shard() or isinstance(placement, _StridedShard))
             and placement.dim in matrix_dims
             and p.device_mesh.size(i) > 1
         ):
@@ -653,23 +654,27 @@ def _matrix_shard_dim(p: Tensor):
 
 
 def _matrix_shard_group(p: Tensor):
-    """The process group of the mesh axis that shards a matrix dim of ``p``, else None.
+    """Return the group spanning all matrix-sharding mesh axes, else None.
 
-    FSDP2 shards the dense weights over whichever mesh axis the parallelism composes them
-    on (``dp_shard``, or the ``ep`` axis under pure expert parallelism), so the reduce
-    group is read off the parameter rather than fixed at construction.
+    FSDP2 and TP can shard the same matrix dimension over multiple mesh axes;
+    reductions must cover their product while excluding expert and replica axes.
     """
     if not isinstance(p, DTensor):
         return None
     matrix_dims = {p.ndim - 1, p.ndim - 2}
-    for i, placement in enumerate(p.placements):
-        if (
-            placement.is_shard()
-            and placement.dim in matrix_dims
-            and p.device_mesh.size(i) > 1
-        ):
-            return p.device_mesh.get_group(mesh_dim=i)
-    return None
+    shard_axes = [
+        i
+        for i, placement in enumerate(p.placements)
+        if (placement.is_shard() or isinstance(placement, _StridedShard))
+        and placement.dim in matrix_dims
+        and p.device_mesh.size(i) > 1
+    ]
+    if not shard_axes:
+        return None
+    if len(shard_axes) == 1:
+        return p.device_mesh.get_group(mesh_dim=shard_axes[0])
+    mesh_names = tuple(p.device_mesh.mesh_dim_names[i] for i in shard_axes)
+    return p.device_mesh[mesh_names]._flatten().get_group()
 
 
 # Compiled local pieces of one SR-Sinkhorn iteration; the only thing kept eager and
