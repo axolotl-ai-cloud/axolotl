@@ -1,124 +1,12 @@
 """Unit tests for NeMo Gym integration.
 
-Tests the core parsing, routing, reward, and plugin wiring logic
-without requiring a running NeMo Gym server or GPU.
+Tests the reward, weight-sync and plugin wiring logic without requiring a running
+NeMo Gym server or GPU. The multi-turn rollout loop is tested in
+test_nemo_gym_rollout.py.
 """
 
 import unittest
 from unittest.mock import MagicMock, patch
-
-
-class TestParseAgentResponse(unittest.TestCase):
-    """Tests for _parse_agent_response in multi_turn.py."""
-
-    def _parse(self, response, eos_token_id=2):
-        from axolotl.integrations.nemo_gym.multi_turn import _parse_agent_response
-
-        return _parse_agent_response(response, eos_token_id)
-
-    def test_empty_response_returns_defaults(self):
-        result = self._parse({})
-        assert result["prompt_ids"] == [2]
-        assert result["completion_ids"] == [2]
-        assert result["env_mask"] == [0]
-        assert result["reward"] == 0.0
-        assert result["num_turns"] == 0
-
-    def test_error_response_returns_defaults(self):
-        result = self._parse({"error": "something broke"})
-        assert result["reward"] == 0.0
-        assert result["num_turns"] == 0
-
-    def test_single_turn_function_call(self):
-        response = {
-            "response": {
-                "output": [
-                    {
-                        "type": "function_call",
-                        "name": "guess_word",
-                        "arguments": '{"guess": "crane"}',
-                        "call_id": "call_1",
-                        "prompt_token_ids": [10, 20, 30],
-                        "generation_token_ids": [40, 50],
-                        "generation_log_probs": [-0.1, -0.2],
-                    }
-                ]
-            },
-            "reward": 0.5,
-        }
-        result = self._parse(response)
-        assert result["prompt_ids"] == [10, 20, 30]
-        assert result["completion_ids"] == [40, 50]
-        assert result["env_mask"] == [1, 1]  # model tokens
-        assert result["logprobs"] == [-0.1, -0.2]
-        assert result["reward"] == 0.5
-        assert result["num_turns"] == 1
-
-    def test_multi_turn_preserves_env_mask(self):
-        """Second turn's prompt tokens (tool results) get env_mask=0."""
-        response = {
-            "response": {
-                "output": [
-                    {
-                        "type": "function_call",
-                        "prompt_token_ids": [10, 20],
-                        "generation_token_ids": [30, 31],
-                        "generation_log_probs": [-0.1, -0.2],
-                    },
-                    {
-                        "type": "function_call_output",
-                        "output": '{"feedback": "XYGXY"}',
-                    },
-                    {
-                        "type": "function_call",
-                        # prompt includes original + gen + tool output
-                        "prompt_token_ids": [10, 20, 30, 31, 100, 101, 102],
-                        "generation_token_ids": [40, 41],
-                        "generation_log_probs": [-0.3, -0.4],
-                    },
-                ]
-            },
-            "reward": 0.3,
-        }
-        result = self._parse(response)
-        assert result["prompt_ids"] == [10, 20]
-        # completion = gen1 + tool_result + gen2
-        assert result["completion_ids"] == [30, 31, 100, 101, 102, 40, 41]
-        # env_mask: gen1=model(1), tool=env(0), gen2=model(1)
-        assert result["env_mask"] == [1, 1, 0, 0, 0, 1, 1]
-        assert result["num_turns"] == 2
-
-    def test_empty_output_preserves_reward(self):
-        response = {
-            "response": {"output": []},
-            "reward": 0.42,
-        }
-        result = self._parse(response)
-        assert result["reward"] == 0.42
-
-    def test_message_only_output(self):
-        """A message with text but no function calls."""
-        response = {
-            "response": {
-                "output": [
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [
-                            {"type": "output_text", "text": "I'll guess crane."}
-                        ],
-                        "prompt_token_ids": [10, 20],
-                        "generation_token_ids": [30, 31, 32],
-                        "generation_log_probs": [-0.1, -0.2, -0.3],
-                    }
-                ]
-            },
-            "reward": 0.1,
-        }
-        result = self._parse(response)
-        assert result["num_turns"] == 1
-        assert result["completion_ids"] == [30, 31, 32]
-        assert result["env_mask"] == [1, 1, 1]
 
 
 class TestRewardEnv(unittest.TestCase):
@@ -403,7 +291,7 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
         cfg.nemo_gym_model_name = None
         cfg.base_model = "test/model"
         cfg.nemo_gym_verify_timeout = 30
-        cfg.nemo_gym_multi_turn = True
+        cfg.nemo_gym_multi_turn = False
         cfg.adapter = adapter
         cfg.trl = trl
         return cfg
@@ -440,16 +328,10 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
         with (
             patch.object(plugin, "_setup_lora_sync") as setup,
             patch.object(plugin, "_check_lora_endpoint") as check,
-            patch.object(plugin, "_wire_multi_turn") as wire,
         ):
             plugin.post_trainer_create(cfg, trainer)
             setup.assert_called_once()
-            self.assertEqual(
-                setup.call_args.kwargs["alias"],
-                cfg.nemo_gym_model_name or cfg.base_model,
-            )
             check.assert_called_once()
-            wire.assert_called_once()
 
     def test_lora_with_no_routes_raises_with_lora_specific_message(self):
         from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
@@ -467,18 +349,16 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
         assert "VLLM_ALLOW_RUNTIME_LORA_UPDATING" in msg
 
     def test_full_finetune_with_nccl_endpoint_uses_nccl(self):
-        from unittest.mock import patch
-
         from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
 
         plugin = NemoGymPlugin()
         plugin._vllm_caps = self._caps(nccl=True)
         cfg = self._fake_cfg(adapter=None, vllm_lora_sync=False)
         trainer = self._fake_trainer()
+        sync_weights = trainer.vllm_generation.sync_weights
 
-        with patch.object(plugin, "_wire_multi_turn") as wire:
-            plugin.post_trainer_create(cfg, trainer)
-            wire.assert_called_once()
+        plugin.post_trainer_create(cfg, trainer)
+        assert trainer.vllm_generation.sync_weights is sync_weights
 
     def test_full_finetune_with_no_routes_raises_with_full_param_message(self):
         from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
@@ -507,198 +387,6 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             plugin.post_trainer_create(cfg, trainer)
         assert "could not probe" in str(ctx.exception)
-
-
-class TestNemoGymE2E(unittest.TestCase):
-    """End-to-end test: data producer → agent (mocked) → parse → tensors → rewards.
-
-    Exercises the full NemoGymDataProducer.produce() pipeline with mocked HTTP
-    responses, verifying that multi-turn Wordle agent responses are correctly
-    parsed into padded tensors with proper env_mask, logprobs, and rewards.
-    No GPU or NeMo Gym server required.
-    """
-
-    # A realistic 2-turn agent /run response (guess + feedback + guess + done)
-    AGENT_RESPONSE = {
-        "response": {
-            "output": [
-                {
-                    "type": "function_call",
-                    "name": "guess_word",
-                    "arguments": '{"guess": "crane"}',
-                    "call_id": "call_1",
-                    "id": "call_1",
-                    "status": "completed",
-                    "prompt_token_ids": [1, 2, 3, 4, 5],
-                    "generation_token_ids": [10, 11, 12, 13],
-                    "generation_log_probs": [-0.1, -0.2, -0.3, -0.4],
-                },
-                {
-                    "type": "function_call_output",
-                    "call_id": "call_1",
-                    "output": '{"feedback":"XYGXY","guesses_remaining":5,"done":false}',
-                },
-                {
-                    "type": "function_call",
-                    "name": "guess_word",
-                    "arguments": '{"guess": "slide"}',
-                    "call_id": "call_2",
-                    "id": "call_2",
-                    "status": "completed",
-                    # prompt = original(5) + gen1(4) + tool_output(3 tokens)
-                    "prompt_token_ids": [1, 2, 3, 4, 5, 10, 11, 12, 13, 50, 51, 52],
-                    "generation_token_ids": [20, 21, 22],
-                    "generation_log_probs": [-0.5, -0.6, -0.7],
-                },
-            ],
-        },
-        "reward": 0.42,
-    }
-
-    def _make_mock_trainer(self):
-        """Create a minimal mock trainer with the attributes produce() needs."""
-        trainer = MagicMock()
-        trainer.accelerator.is_main_process = True
-        trainer.accelerator.device = "cpu"
-        trainer.max_completion_length = 512
-        trainer.temperature = 0.8
-        trainer._tokenizer.pad_token_id = 0
-        trainer._tokenizer.eos_token_id = 2
-        trainer.processing_class.batch_decode.return_value = ["crane slide"]
-        return trainer
-
-    @patch("axolotl.integrations.nemo_gym.data_producer._call_agents")
-    def test_produce_returns_valid_rollout_dataset(self, mock_call_agents):
-        """Full pipeline: produce() → _call_agents (mocked) → parse → RolloutDataset."""
-
-        from axolotl.integrations.nemo_gym.data_producer import NemoGymDataProducer
-
-        # Mock _call_agents — it's async, so return a coroutine
-        async def fake_call_agents(**kwargs):
-            return [self.AGENT_RESPONSE, self.AGENT_RESPONSE]
-
-        mock_call_agents.side_effect = fake_call_agents
-
-        # Build a minimal mock of GRPODataProducer's __init__ dependencies
-        # We can't easily call super().__init__, so we'll set attributes directly
-        producer = NemoGymDataProducer.__new__(NemoGymDataProducer)
-        producer._agent_servers = {"wordle_agent": "http://mock:9999"}
-        producer._dataset_lookup = {
-            "Play Wordle!": {
-                "agent_ref": {"name": "wordle_agent"},
-                "verify_extra": {
-                    "responses_create_params": {
-                        "input": [{"role": "user", "content": "Play Wordle!"}],
-                    }
-                },
-            }
-        }
-        producer._request_timeout = 30
-        producer._num_generations = 2
-
-        # Mock the trainer
-        trainer = self._make_mock_trainer()
-        producer._trainer = trainer
-
-        # Mock the prompt iterator. RepeatSampler(mini_repeat_count=num_generations)
-        # pre-expands prompts, so the iterator yields num_generations=2 consecutive
-        # copies of each unique prompt — one entry per rollout.
-        _prompt_batch = [
-            {"prompt": [{"role": "user", "content": "Play Wordle!"}]},
-            {"prompt": [{"role": "user", "content": "Play Wordle!"}]},
-        ]
-        producer._prompt_iter = iter([_prompt_batch])
-        producer._prompt_dl = [_prompt_batch]
-
-        # Call produce
-        result = producer.produce(model=MagicMock(), global_step=1)
-
-        # Verify result structure
-        assert result is not None
-        data = result._data
-
-        # Check tensor shapes — 2 rollouts (num_generations=2)
-        assert data["prompt_ids"].shape[0] == 2
-        assert data["completion_ids"].shape[0] == 2
-        assert data["completion_mask"].shape[0] == 2
-        assert data["sampling_per_token_logps"].shape[0] == 2
-        assert data["tool_mask"].shape[0] == 2
-
-        # Verify completion content — each rollout should have:
-        # gen1(4) + tool_output(3) + gen2(3) = 10 tokens
-        # (padded to same length across the batch, but both are same here)
-        comp_len = data["completion_mask"][0].sum().item()
-        assert comp_len == 10, f"Expected 10 completion tokens, got {comp_len}"
-
-        # Verify env_mask: gen1=1,1,1,1 tool=0,0,0 gen2=1,1,1
-        tool_mask = data["tool_mask"][0][:comp_len].tolist()
-        assert tool_mask == [1, 1, 1, 1, 0, 0, 0, 1, 1, 1]
-
-        # Verify logprobs are populated (use approx for float32 precision)
-        import pytest
-
-        logps = data["sampling_per_token_logps"][0][:comp_len].tolist()
-        assert logps[:4] == pytest.approx([-0.1, -0.2, -0.3, -0.4], abs=1e-6)
-        assert logps[4:7] == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
-        assert logps[7:10] == pytest.approx([-0.5, -0.6, -0.7], abs=1e-6)
-
-        # Verify rewards were injected into inputs
-        assert data["_deferred_inputs"][0]["env_reward"] == 0.42
-        assert data["_deferred_inputs"][1]["env_reward"] == 0.42
-
-        # Verify deferred scoring markers
-        assert data["_pending_policy_logps"] is True
-
-    @patch("axolotl.integrations.nemo_gym.data_producer._call_agents")
-    def test_produce_handles_failed_agent_response(self, mock_call_agents):
-        """Failed agent responses should produce default (length-1) rollouts."""
-
-        from axolotl.integrations.nemo_gym.data_producer import NemoGymDataProducer
-
-        # One success, one failure — async mock
-        async def fake_call_agents(**kwargs):
-            return [
-                self.AGENT_RESPONSE,
-                {
-                    "error": "Connection timeout",
-                    "response": {"output": []},
-                    "reward": 0.0,
-                },
-            ]
-
-        mock_call_agents.side_effect = fake_call_agents
-
-        producer = NemoGymDataProducer.__new__(NemoGymDataProducer)
-        producer._agent_servers = {"wordle_agent": "http://mock:9999"}
-        producer._dataset_lookup = {}
-        producer._request_timeout = 30
-        producer._num_generations = 2
-        producer._trainer = self._make_mock_trainer()
-        # RepeatSampler pre-expands by num_generations=2.
-        _prompt_batch = [
-            {"prompt": [{"role": "user", "content": "Play!"}]},
-            {"prompt": [{"role": "user", "content": "Play!"}]},
-        ]
-        producer._prompt_iter = iter([_prompt_batch])
-        producer._prompt_dl = [_prompt_batch]
-
-        result = producer.produce(model=MagicMock(), global_step=1)
-
-        assert result is not None
-        data = result._data
-
-        # Both rollouts present
-        assert data["completion_ids"].shape[0] == 2
-
-        # First rollout has real tokens, second has just eos (length 1)
-        mask0 = data["completion_mask"][0].sum().item()
-        mask1 = data["completion_mask"][1].sum().item()
-        assert mask0 == 10  # full response
-        assert mask1 == 1  # default fallback (just eos)
-
-        # Rewards: success=0.42, failure=0.0
-        assert data["_deferred_inputs"][0]["env_reward"] == 0.42
-        assert data["_deferred_inputs"][1]["env_reward"] == 0.0
 
 
 class TestLoRASyncSetup(unittest.TestCase):

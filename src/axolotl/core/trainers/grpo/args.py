@@ -22,6 +22,6 @@ class AxolotlGRPOConfig(AxolotlTrainingMixins, GRPOConfig):
 
 @dataclass
 class AxolotlDataProducerGRPOConfig(AxolotlTrainingMixins, FastAsyncGRPOConfig):
-    """Config for AxolotlDataProducerGRPOTrainer (data producer protocol, EBFT, NeMo Gym)."""
+    """Config for AxolotlDataProducerGRPOTrainer (data producer protocol, EBFT)."""
 
     context_parallel_size: int | None = None

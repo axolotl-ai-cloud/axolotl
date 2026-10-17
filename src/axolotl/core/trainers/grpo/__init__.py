@@ -24,6 +24,7 @@ from axolotl.core.trainers.grpo.trl_async_trainer import (
     AxolotlAsyncGRPOConfig,
     AxolotlAsyncGRPOTrainer,
 )
+from axolotl.integrations.base import PluginManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.trl import TRLConfig
@@ -40,13 +41,12 @@ class GRPOStrategy:
         """Pick the trainer behind `trl.async_prefetch` / `trl.use_data_producer`.
 
         `async_prefetch` runs on TRL's AsyncGRPOTrainer. The data producer trainer
-        stays behind `use_data_producer` alone and behind NeMo Gym, whose reward and
-        multi-turn wiring plug into it.
+        stays behind `use_data_producer` alone.
         """
         trl = cfg.trl
         if not trl or not (trl.async_prefetch or trl.use_data_producer):
             return None
-        if trl.async_prefetch and not cfg.nemo_gym_enabled:
+        if trl.async_prefetch:
             return "trl"
         return "data_producer"
 
@@ -343,10 +343,12 @@ class GRPOStrategy:
     @classmethod
     def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
         trainer_args = []
-        if cfg.trl and cfg.trl.reward_funcs:
-            reward_funcs = []
-            for reward_func_fqn in cfg.trl.reward_funcs:
-                reward_funcs.append(cls.get_reward_func(reward_func_fqn))
+        reward_funcs = [
+            cls.get_reward_func(reward_func_fqn)
+            for reward_func_fqn in (cfg.trl.reward_funcs if cfg.trl else None) or []
+        ]
+        reward_funcs.extend(PluginManager.get_instance().get_reward_funcs(cfg))
+        if reward_funcs:
             trainer_args.append(reward_funcs)
 
         return trainer_args

@@ -228,3 +228,26 @@ def test_reasoning_parser_without_enable_flag(cli_runner, tmp_path, native_serve
     _run(cli_runner, tmp_path)
     cmd = calls[0][1]
     assert cmd[cmd.index("--reasoning-parser") + 1] == "deepseek_r1"
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        ({}, 2),
+        ({"trl": {"async_prefetch": True, "max_staleness": 3}}, 5),
+        (
+            {
+                "trl": {"async_prefetch": True, "max_staleness": 3},
+                "nemo_gym_enabled": True,
+                "nemo_gym_multi_turn": True,
+            },
+            6,
+        ),
+    ],
+)
+def test_max_loras_covers_async_grpo_adapters(overrides, expected):
+    from axolotl.cli.vllm_serve import _max_loras
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault({"rl": "grpo", "trl": {}, **overrides})
+    assert _max_loras(cfg) == expected

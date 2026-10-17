@@ -189,11 +189,7 @@ def _max_lora_rank(cfg) -> int | None:
 
 def _max_loras(cfg) -> int:
     trl = cfg.trl
-    async_grpo = (
-        bool(trl and trl.async_prefetch)
-        and cfg.rl in ("grpo", "gdpo")
-        and not cfg.nemo_gym_enabled
-    )
+    async_grpo = bool(trl and trl.async_prefetch) and cfg.rl in ("grpo", "gdpo")
     if not async_grpo:
         return VllmServeArguments.max_loras
     from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig
@@ -202,8 +198,10 @@ def _max_loras(cfg) -> int:
     if max_staleness is None:
         max_staleness = AsyncGRPOConfig.__dataclass_fields__["max_staleness"].default
     # Async GRPO keeps an adapter per policy version a queued rollout may still name,
-    # and loads the next one before unloading the oldest.
-    return max(VllmServeArguments.max_loras, max_staleness + 2)
+    # and loads the next one before unloading the oldest. NeMo Gym agents address
+    # the policy by a fixed name, an alias that takes one more slot.
+    alias = 1 if cfg.nemo_gym_enabled and cfg.nemo_gym_multi_turn else 0
+    return max(VllmServeArguments.max_loras, max_staleness + 2 + alias)
 
 
 def do_vllm_serve(
