@@ -602,3 +602,14 @@ class TestTrainableTokenWarning:
             AxolotlInputConfig.warn_peft_trainable_token_to_fix_untrained(data)
         warning.assert_called_once()
         assert "Token 201" in warning.call_args.args[0]
+
+
+class TestLoggingNanInfFilter:
+    """The NaN/inf loss filter reads the loss on the host every micro-step, so it is opt-in."""
+
+    def test_defaults_off(self, min_base_cfg):
+        assert validate_config(min_base_cfg).logging_nan_inf_filter is False
+
+    def test_opt_in_is_kept(self, min_base_cfg):
+        cfg = min_base_cfg | {"logging_nan_inf_filter": True}
+        assert validate_config(cfg).logging_nan_inf_filter is True

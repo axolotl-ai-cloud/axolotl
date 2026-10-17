@@ -206,6 +206,14 @@ class TestHFCausalTrainerBuilder:
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
 
+    @pytest.mark.parametrize("nan_inf_filter", [False, True])
+    def test_logging_nan_inf_filter_reaches_training_arguments(
+        self, sft_cfg, model, tokenizer, nan_inf_filter
+    ):
+        sft_cfg["logging_nan_inf_filter"] = nan_inf_filter
+        trainer = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100)
+        assert trainer.args.logging_nan_inf_filter is nan_inf_filter
+
     @pytest.mark.parametrize(
         "cfg_string",
         [

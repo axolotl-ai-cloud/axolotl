@@ -169,6 +169,11 @@ rm -rf ~/.triton/cache
 
 ### General NaN Debugging Steps
 
+Axolotl logs the raw training loss, so a micro-step with a NaN or inf loss shows up as a
+NaN logged loss. `logging_nan_inf_filter: true` restores HF Trainer's default, which replaces
+such a micro-step's loss with the running average in the logged value only; the gradients and
+the optimizer step are unchanged, and the check costs two host syncs per micro-step.
+
 1. **Enable anomaly detection** (slow, but pinpoints the source):
    ```python
    torch.autograd.set_detect_anomaly(True)

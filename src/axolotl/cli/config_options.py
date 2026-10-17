@@ -3146,7 +3146,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--logging-nan-inf-filter/--no-logging-nan-inf-filter",),
         None,
         None,
-        "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss (HF default). The check reads the loss on the host every micro-step, one device sync; set to 'false' to remove it.",
+        "HF Trainer option that replaces a NaN/inf micro-step loss with the running average in the logged loss. It only changes the logged value, not the gradients or the optimizer step. Off by default because the check reads the loss on the host every micro-step (two device syncs); set to 'true' for the HF default.",
     ),
     (
         ("--early-stopping-patience",),
