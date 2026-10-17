@@ -536,3 +536,18 @@ def test_label_metrics_log_zero_spread_and_tail(caplog, size):
         size
     )
     assert "Packed label metrics by stage" not in caplog.text
+
+
+def test_empty_label_metrics_zero_capacity(caplog):
+    sampler = MultipackBatchSampler(
+        sampler=[],
+        lengths=np.array([], dtype=int),
+        label_counts=np.array([], dtype=int),
+        batch_size=1,
+        batch_max_len=0,
+        bin_size=8,
+        num_processes=1,
+    )
+    with caplog.at_level("INFO", logger="axolotl.utils.samplers.multipack"):
+        assert sampler.generate_batches(set_stats=True) == []
+    assert "Mean unpadded row length: 0 / 0 (n/a)" in caplog.text

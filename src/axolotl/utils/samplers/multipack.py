@@ -599,12 +599,15 @@ class MultipackBatchSampler(BatchSampler):
             )
             lines.append(f"{label:<34} {old:>10,.0f} {new:>10,.0f} {change:>10}")
         length = after["mean_packed_length"]
+        utilization = (
+            f"{100 * length / self.batch_max_len:.1f}%" if self.batch_max_len else "n/a"
+        )
         lines.extend(
             [
                 f"Mean labels / global optimizer step: {after['mean_global_update_labels']:,.0f}",
                 f"Mean labels / microbatch: {after['mean_label_count']:,.0f}",
                 f"Mean unpadded row length: {length:,.0f} / {self.batch_max_len:,} "
-                f"({100 * length / self.batch_max_len:.1f}%)",
+                f"({utilization})",
             ]
         )
         excluded = after["batches"] - after["updates"] * self.batches_per_optimizer_step
