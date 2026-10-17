@@ -27,6 +27,7 @@ from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
     KTODataset,
+    MultiTurnDPODataset,
     PretrainingDataset,
     SFTDataset,
     StepwiseSupervisedDataset,
@@ -374,7 +375,8 @@ class AxolotlInputConfig(
     datasets: (
         Annotated[
             list[
-                SFTDataset
+                MultiTurnDPODataset
+                | SFTDataset
                 | DPODataset
                 | KTODataset
                 | StepwiseSupervisedDataset
@@ -393,7 +395,8 @@ class AxolotlInputConfig(
     test_datasets: (
         Annotated[
             list[
-                SFTDataset
+                MultiTurnDPODataset
+                | SFTDataset
                 | DPODataset
                 | KTODataset
                 | StepwiseSupervisedDataset

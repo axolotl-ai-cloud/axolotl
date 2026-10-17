@@ -166,6 +166,36 @@ def _map_dataset(
     return dataset
 
 
+PREFERENCE_RL_TYPES = frozenset({RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO})
+
+
+def _tokenized_preference_fits(sample: dict[str, Any], sequence_len: int) -> bool:
+    """Pre-tokenized pairs (``prompt_ids``/``chosen_ids``/``rejected_ids``) fit, and
+    each side keeps at least one loss-mask token."""
+    prompt_len = len(sample["prompt_ids"])
+    for side in ("chosen", "rejected"):
+        if prompt_len + len(sample[f"{side}_ids"]) > sequence_len:
+            return False
+        loss_mask = sample.get(f"{side}_loss_mask")
+        if loss_mask is not None and not any(loss_mask):
+            return False
+    return True
+
+
+def _truncate_tokenized_preference(
+    sample: dict[str, Any], sequence_len: int
+) -> dict[str, Any]:
+    budget = sequence_len - len(sample["prompt_ids"])
+    if budget <= 0:
+        return sample
+    updates = {}
+    for side in ("chosen", "rejected"):
+        for key in (f"{side}_ids", f"{side}_loss_mask"):
+            if sample.get(key) is not None and len(sample[key]) > budget:
+                updates[key] = sample[key][:budget]
+    return {**sample, **updates}
+
+
 def _drop_long_sequences(
     sample: dict[str, Any], rl: RLType, tokenizer: Any, sequence_len: int
 ) -> bool:
@@ -183,7 +213,9 @@ def _drop_long_sequences(
     Raises:
         ValueError: If required keys are missing or RL type is unknown.
     """
-    if rl in {RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO}:
+    if rl in PREFERENCE_RL_TYPES:
+        if sample.get("prompt_ids") is not None:
+            return _tokenized_preference_fits(sample, sequence_len)
         if not (
             sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
         ):
@@ -279,7 +311,10 @@ def _truncate_long_sequences_rl(
     if _drop_long_sequences(sample, rl, tokenizer, sequence_len):
         return sample
 
-    if rl in {RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO}:
+    if rl in PREFERENCE_RL_TYPES and sample.get("prompt_ids") is not None:
+        return _truncate_tokenized_preference(sample, sequence_len)
+
+    if rl in PREFERENCE_RL_TYPES:
         if not (
             sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
         ):
