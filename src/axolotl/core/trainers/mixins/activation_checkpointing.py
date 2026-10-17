@@ -89,6 +89,8 @@ def _install_live_fsdp_parameter_storage_hooks(context, model) -> None:
         return
     if getattr(context, "_axolotl_live_parameter_storage_hooks", False):
         return
+    # Accelerate has applied FSDP2 by the first training step, so one scan decides.
+    context._axolotl_live_parameter_storage_hooks = True
     if not any(isinstance(parameter, DTensor) for parameter in model.parameters()):
         return
 
@@ -137,7 +139,6 @@ def _install_live_fsdp_parameter_storage_hooks(context, model) -> None:
     for module in owners:
         handles.append(module.register_forward_pre_hook(enter))
         handles.append(module.register_forward_hook(exit, always_call=True))
-    context._axolotl_live_parameter_storage_hooks = True
     context._axolotl_live_parameter_storage_hook_handles = handles
 
 

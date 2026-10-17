@@ -105,8 +105,9 @@ def test_live_fsdp_parameter_storage_is_scoped_to_owner_forward(monkeypatch):
 
     model = Owner()
     monkeypatch.setattr(offload, "DTensor", LocalShardView)
-    offload._install_live_fsdp_parameter_storage_hooks(context, model)
-    assert context.param_storages == {12345}
+    plain = Context()
+    offload._install_live_fsdp_parameter_storage_hooks(plain, model)
+    assert plain.param_storages == {12345}
 
     monkeypatch.setattr(offload, "DTensor", torch.nn.Parameter)
 
@@ -131,3 +132,20 @@ def test_live_fsdp_parameter_storage_is_scoped_to_owner_forward(monkeypatch):
     assert seen == [(True, False), (True, False)]
     assert context.param_storages == set()
     assert not offload._is_offload_parameter_view(torch.randn(2, 4), set())
+
+
+def test_parameter_scan_runs_once_without_fsdp2(monkeypatch):
+    context = SimpleNamespace(param_storages={12345})
+    model = torch.nn.Linear(4, 4)
+    scans = []
+    parameters = model.parameters
+    monkeypatch.setattr(
+        model, "parameters", lambda *a, **k: scans.append(1) or parameters(*a, **k)
+    )
+
+    for _ in range(3):
+        offload._install_live_fsdp_parameter_storage_hooks(context, model)
+
+    assert len(scans) == 1
+    assert context.param_storages == {12345}
+    assert not hasattr(context, "_axolotl_live_parameter_storage_hook_handles")
