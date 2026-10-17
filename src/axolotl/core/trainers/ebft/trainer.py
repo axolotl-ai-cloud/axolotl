@@ -26,7 +26,7 @@ from axolotl.core.trainers.ebft.rewards import (
     whiten_embeddings_batched,
 )
 from axolotl.core.trainers.grpo.trainer import (
-    AxolotlAsyncGRPOTrainer,
+    AxolotlDataProducerGRPOTrainer,
     AxolotlGRPOTrainer,
 )
 from axolotl.utils.logging import get_logger
@@ -525,7 +525,7 @@ class AxolotlEBFTTrainer(EBFTMixin, AxolotlGRPOTrainer):
     pass
 
 
-class AxolotlAsyncEBFTTrainer(EBFTMixin, AxolotlAsyncGRPOTrainer):
+class AxolotlAsyncEBFTTrainer(EBFTMixin, AxolotlDataProducerGRPOTrainer):
     """EBFT trainer using async GRPO (prefetches next batch during training)."""
 
     pass

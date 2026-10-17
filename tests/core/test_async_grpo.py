@@ -1009,9 +1009,9 @@ class TestGetPerTokenLogpsMultimodalTailBatch(unittest.TestCase):
         trainer.is_fsdp_enabled = False
         trainer.accelerator = MagicMock()
         trainer.accelerator.unwrap_model = lambda m, keep_fp32_wrapper=True: m
-        trainer.use_liger_kernel = False
+        trainer.args = types.SimpleNamespace(use_liger_kernel=False)
         trainer.temperature = 1.0
-        trainer.model_kwarg_keys = set()
+        trainer._forward_keys_cache = frozenset()
         return trainer
 
     @staticmethod
@@ -1092,9 +1092,9 @@ class TestGetPerTokenLogpsAuxLossIntFallback(unittest.TestCase):
         trainer.is_fsdp_enabled = False
         trainer.accelerator = MagicMock()
         trainer.accelerator.unwrap_model = lambda m, keep_fp32_wrapper=True: m
-        trainer.use_liger_kernel = False
+        trainer.args = types.SimpleNamespace(use_liger_kernel=False)
         trainer.temperature = 1.0
-        trainer.model_kwarg_keys = set()
+        trainer._forward_keys_cache = frozenset()
         return trainer
 
     def test_int_zero_aux_loss_is_normalized_to_tensor(self):

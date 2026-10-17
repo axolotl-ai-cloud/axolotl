@@ -61,7 +61,7 @@ VLLM_SERVER_DEV_MODE=1 VLLM_WORKER_MULTIPROC_METHOD=spawn VLLM_ALLOW_RUNTIME_LOR
   --enable-lora --max-lora-rank <r> --max-loras 2 --api-server-count 1
 ```
 
-`<r>` is `lora_r` rounded up to a rank vLLM supports (8, 16, 32, 64, ...). Drop `VLLM_ALLOW_RUNTIME_LORA_UPDATING` and the flags after `--enable-scale-out` when not using LoRA sync. `--enable-scale-out` is needed for image prompts.
+`<r>` is `lora_r` rounded up to a rank vLLM supports (8, 16, 32, 64, ...). Async GRPO (`async_prefetch` with `rl: grpo`) keeps one adapter per policy version a queued rollout may name, so `axolotl vllm-serve` raises `--max-loras` to `max_staleness + 2` (6 by default). Drop `VLLM_ALLOW_RUNTIME_LORA_UPDATING` and the flags after `--enable-scale-out` when not using LoRA sync. `--enable-scale-out` is needed for image prompts.
 
 ::: {.callout-tip}
 Use `tmux` or `screen` to manage the vLLM server process. Typical startup time is 30-90 seconds depending on model size and whether CUDA graphs are captured.
@@ -139,7 +139,7 @@ With `vllm_enable_sleep_mode: true`, vLLM offloads its VRAM allocation when not 
 Colocate mode is significantly slower than server mode because generation and training cannot overlap. The GPU alternates between the two workloads. This mode is practical only for smaller models (up to ~3B on a 24 GB GPU).
 :::
 
-Colocate mode cannot be combined with `context_parallel_size > 1`, with `vllm_lora_sync`, or with the async trainer (`async_prefetch` / `use_data_producer`) when training an adapter; config validation rejects those combinations.
+Colocate mode cannot be combined with `context_parallel_size > 1`, with `vllm_lora_sync`, with async GRPO (`async_prefetch`), or with the data producer trainer (`use_data_producer`) when training an adapter; config validation rejects those combinations.
 
 **When to use colocate mode:**
 
@@ -341,4 +341,4 @@ CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
 | Accuracy stays at zero | Stale vLLM from previous run | Restart vLLM: `pkill -9 -f "vllm\|EngineCore"`, verify with `nvidia-smi`, restart |
 | `ResponseValidationError` from vLLM | Missing logprobs in response | Start the server with `axolotl vllm-serve` (or the raw command above) so `--logprobs-mode processed_logprobs --max-logprobs -1` are set |
 | Weight sync takes 5+ seconds | NCCL contention with vLLM generation | Switch to `vllm_lora_sync: true` to eliminate NCCL |
-| `async_prefetch` deadlocks with FSDP | Background threads run unsynchronized FSDP collectives | Set `async_prefetch: false` when using FSDP or DeepSpeed multi-GPU |
+| Data producer trainer with `async_prefetch` deadlocks under FSDP | Background threads run unsynchronized FSDP collectives | Set `async_prefetch: false` with the data producer trainer (EBFT, NeMo Gym) under FSDP or DeepSpeed |

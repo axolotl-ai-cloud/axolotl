@@ -2584,6 +2584,108 @@ class GRPOVllmValidationMixin:
             )
         return self
 
+    @model_validator(mode="after")
+    def check_async_grpo_compat(self):
+        """`async_prefetch` with rl: grpo/gdpo runs on TRL's AsyncGRPOTrainer."""
+        trl = self.trl
+        if (
+            self.rl not in ("grpo", "gdpo")
+            or not (trl and trl.async_prefetch)
+            or getattr(self, "nemo_gym_enabled", None)
+        ):
+            return self
+
+        def data_producer_only(option: str) -> str:
+            return (
+                f"`trl.{option}` belongs to the data producer trainer (EBFT, NeMo Gym) "
+                "and has no effect on async GRPO; remove it"
+            )
+
+        problems = []
+        if not trl.use_vllm:
+            problems.append(
+                "set `trl.use_vllm: true`; generation runs on a vLLM server"
+            )
+        if trl.vllm_mode == "colocate":
+            problems.append("`trl.vllm_mode: colocate` is not supported; use `server`")
+        if self.deepspeed:
+            problems.append("DeepSpeed is not supported; use FSDP2 or DDP")
+        if (self.context_parallel_size or 1) > 1:
+            problems.append("`context_parallel_size > 1` is not supported")
+        if trl.beta or self.rl_beta:
+            problems.append("there is no reference model, so `beta` must be 0")
+        if trl.sync_ref_model:
+            problems.append("there is no reference model to sync")
+        if trl.loss_type not in (None, "dapo"):
+            problems.append(
+                "only the token-level clipped loss (`loss_type: dapo`) is supported"
+            )
+        if trl.importance_sampling_level not in (None, "token"):
+            problems.append("only `importance_sampling_level: token` is supported")
+        if trl.num_iterations not in (None, 1):
+            problems.append(
+                "each rollout is trained on once; `num_iterations` must be 1"
+            )
+        if trl.scale_rewards == "batch":
+            problems.append(
+                "`scale_rewards: batch` is not supported: groups are scored as they "
+                "finish, so use `group` or `none`"
+            )
+        if trl.vllm_importance_sampling_mode in ("sequence_truncate", "sequence_mask"):
+            problems.append(
+                "`vllm_importance_sampling_mode` must be `token_truncate` or `token_mask`"
+            )
+        if (
+            trl.vllm_importance_sampling_clip_min is not None
+            or trl.vllm_importance_sampling_clip_max is not None
+        ):
+            problems.append(
+                "`vllm_importance_sampling_clip_min/max` are not supported; use "
+                "`vllm_importance_sampling_cap`"
+            )
+        if trl.use_liger_loss:
+            problems.append("`use_liger_loss` is not supported")
+        if trl.entropy_coef or trl.use_adaptive_entropy:
+            problems.append("entropy regularization is not supported")
+        if trl.rollout_func:
+            problems.append("`rollout_func` is not supported")
+        if (self.load_in_4bit or self.load_in_8bit) and not trl.vllm_lora_sync:
+            problems.append(
+                "a quantized base model needs adapter-only weight sync: set "
+                "`trl.vllm_lora_sync: true`"
+            )
+        if trl.prefetch_depth is not None:
+            problems.append(
+                "`trl.prefetch_depth` is replaced by `trl.max_staleness` (how many "
+                "weight syncs a rollout may lag)"
+            )
+        for option in (
+            "streaming_partial_batch",
+            "streaming_min_groups",
+            "off_policy_mask_threshold",
+            "use_bias_correction_kl",
+        ):
+            if getattr(trl, option) is not None:
+                problems.append(data_producer_only(option))
+        if trl.replay_buffer_size:
+            problems.append(data_producer_only("replay_buffer_size"))
+        if trl.reroll_start_fraction < 1.0:
+            problems.append(data_producer_only("reroll_start_fraction"))
+        if problems:
+            raise ValueError(
+                "`trl.async_prefetch` with rl: grpo runs on TRL's AsyncGRPOTrainer:\n- "
+                + "\n- ".join(problems)
+            )
+
+        if not self.max_steps and self.lr_scheduler not in (None, "constant"):
+            LOG.warning(
+                "Async GRPO without `max_steps` stops after num_epochs passes over the "
+                "prompts and sets max_steps to a loose upper bound, so "
+                f"`lr_scheduler: {self.lr_scheduler}` will barely decay. Set `max_steps`, "
+                "or use `lr_scheduler: constant`."
+            )
+        return self
+
 
 class ValidationMixin(
     DatasetValidationMixin,
