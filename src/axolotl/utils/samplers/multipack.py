@@ -574,13 +574,47 @@ class MultipackBatchSampler(BatchSampler):
         }
 
     def _log_label_metrics(self):
-        if self.label_metrics is not None and not self._label_metrics_logged:
-            LOG.info(
-                "Packed label metrics (before rank sharding/truncation; labels per "
-                "microbatch, lengths per unpadded row): %s",
-                self.label_metrics,
+        if self.label_metrics is None or self._label_metrics_logged:
+            return
+        before = self.label_metrics["before"]
+        after = self.label_metrics["after"]
+        lines = [
+            f"Packed batch balancing: {self.dp_count} DP ranks x GAS "
+            f"{self.batches_per_optimizer_step // self.dp_count}; "
+            f"refinement window {self.label_balance_window_optim_steps} steps",
+            "Before rank sharding/truncation",
+            f"{after['batches']:,} microbatches ({after['packed_rows']:,} packed rows) "
+            f"-> {after['updates']:,} complete optimizer steps",
+            f"{'Label-count stddev':<34} {'Before':>10} {'After':>10} {'Change':>10}",
+        ]
+        for label, key in (
+            ("Per global optimizer step", "std_global_update_labels"),
+            ("Per microbatch", "std_label_count"),
+        ):
+            old, new = before[key], after[key]
+            change = (
+                f"{100 * (new / old - 1):+.1f}%"
+                if old
+                else ("0.0%" if not new else "n/a")
             )
-            self._label_metrics_logged = True
+            lines.append(f"{label:<34} {old:>10,.0f} {new:>10,.0f} {change:>10}")
+        length = after["mean_packed_length"]
+        lines.extend(
+            [
+                f"Mean labels / global optimizer step: {after['mean_global_update_labels']:,.0f}",
+                f"Mean labels / microbatch: {after['mean_label_count']:,.0f}",
+                f"Mean unpadded row length: {length:,.0f} / {self.batch_max_len:,} "
+                f"({100 * length / self.batch_max_len:.1f}%)",
+            ]
+        )
+        excluded = after["batches"] - after["updates"] * self.batches_per_optimizer_step
+        if excluded:
+            lines.append(
+                f"Microbatches excluded from optimizer-step metrics: {excluded:,}"
+            )
+        LOG.info("%s", "\n".join(lines))
+        LOG.debug("Packed label metrics by stage: %s", self.label_metrics)
+        self._label_metrics_logged = True
 
     def __iter__(self) -> Iterator[list[list[int]]]:
         """Return an iterator over batches.
