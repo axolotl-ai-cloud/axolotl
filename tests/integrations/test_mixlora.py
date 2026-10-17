@@ -169,6 +169,84 @@ class TestMixLora:
 
         assert torch.allclose(source.router.gate.weight, target.router.gate.weight)
 
+    @pytest.mark.parametrize(
+        "base_dtype, expected",
+        [
+            (torch.float16, torch.float32),
+            (torch.bfloat16, torch.float32),
+            (torch.float32, torch.float32),
+        ],
+    )
+    def test_trainable_params_are_fp32_under_amp(
+        self, mock_cfg, mock_swiglu_ffn, base_dtype, expected
+    ):
+        """Router/expert params must not stay fp16: GradScaler rejects fp16 grads."""
+        model = nn.Module()
+        model.layers = nn.ModuleList([nn.Module()])
+        model.layers[0].mlp = mock_swiglu_ffn.to(base_dtype)
+
+        patch_model_with_mixlora(model, mock_cfg)
+        block = model.layers[0].mlp
+
+        assert all(p.dtype == expected for p in block.router.parameters())
+        assert all(p.dtype == expected for p in block.experts.parameters())
+        assert all(p.dtype == base_dtype for p in block.base_ffn.parameters())
+
+    def test_trainable_param_cast_respects_autocast_flag(
+        self, mock_cfg, mock_swiglu_ffn
+    ):
+        """peft_autocast_adapter_dtype=False opts out, as it does for PEFT LoRA."""
+        cfg = DictDefault({**mock_cfg, "peft_autocast_adapter_dtype": False})
+        model = nn.Module()
+        model.layers = nn.ModuleList([nn.Module()])
+        model.layers[0].mlp = mock_swiglu_ffn.to(torch.float16)
+
+        patch_model_with_mixlora(model, cfg)
+
+        assert all(
+            p.dtype == torch.float16 for p in model.layers[0].mlp.router.parameters()
+        )
+
+    @pytest.mark.parametrize("base_dtype", [torch.float16, torch.bfloat16])
+    @pytest.mark.parametrize("training", [True, False])
+    def test_forward_without_autocast_mixed_adapter_dtype(
+        self, mock_cfg, mock_swiglu_ffn, base_dtype, training
+    ):
+        """fp32 router/experts must accept half activations without autocast.
+
+        Covers `bf16: full` and inference/generate, where nothing reconciles the
+        dtype gap the fp32 adapter cast opens up.
+        """
+        model = nn.Module()
+        model.layers = nn.ModuleList([nn.Module()])
+        model.layers[0].mlp = mock_swiglu_ffn.to(base_dtype)
+
+        patch_model_with_mixlora(model, mock_cfg)
+        block = model.layers[0].mlp
+        block.train(training)
+
+        assert block.router.gate.weight.dtype == torch.float32
+
+        x = torch.randn(2, 10, 128, dtype=base_dtype)
+        out = block(x)
+
+        assert out.dtype == base_dtype
+        assert out.shape == x.shape
+        assert torch.isfinite(out.float()).all()
+
+        if training:
+            loss = out.float().pow(2).mean() + collect_mixlora_aux_loss(
+                block, router_aux_loss_coef=mock_cfg.mixlora_router_aux_loss_coef
+            )
+            loss.backward()
+
+            assert block.router.gate.weight.grad is not None
+            assert block.router.gate.weight.grad.dtype == torch.float32
+            assert all(
+                p.grad is not None and p.grad.dtype == torch.float32
+                for p in block.experts.parameters()
+            )
+
     def test_mixlora_plugin_registers_trainer(self, mock_cfg, monkeypatch):
         """Test that the MixLoRA plugin wires up the integration trainer."""
         fake_trainer_module = types.ModuleType("axolotl.integrations.mixlora.trainer")
@@ -197,6 +275,77 @@ class TestMixLora:
             )
         finally:
             plugin_manager.plugins = original_plugins
+
+    def test_mixlora_cpu_load_train_save_cycle(self, mock_cfg, tmp_path):
+        """End-to-end CPU smoke test: load, patch, train one step, save, reload.
+
+        Exercises the full MixLoRA lifecycle on CPU only (no GPU/CUDA
+        required) so it runs in every environment, unlike the `slow`
+        full-model test below which hits the network for model download.
+        """
+        torch.manual_seed(0)
+
+        # Load a tiny base model (forced onto CPU explicitly).
+        model = AutoModelForCausalLM.from_pretrained(mock_cfg.base_model)
+        model = model.to("cpu")
+
+        # Patch with MixLoRA.
+        patched_model = patch_model_with_mixlora(model, mock_cfg)
+        patched_model = patched_model.to("cpu")
+
+        mixlora_blocks = [
+            module
+            for module in patched_model.modules()
+            if isinstance(module, MixLoraFFN)
+        ]
+        assert len(mixlora_blocks) > 0
+
+        router_before = mixlora_blocks[0].router.gate.weight.detach().clone()
+
+        trainable_params = [p for p in patched_model.parameters() if p.requires_grad]
+        assert len(trainable_params) > 0
+        optimizer = torch.optim.AdamW(trainable_params, lr=1e-2)
+
+        # Train for a single step on CPU.
+        input_ids = torch.randint(0, 1000, (1, 8), device="cpu")
+        optimizer.zero_grad()
+        outputs = patched_model(input_ids, labels=input_ids)
+        loss = outputs.loss + collect_mixlora_aux_loss(
+            patched_model, router_aux_loss_coef=mock_cfg.mixlora_router_aux_loss_coef
+        )
+        loss.backward()
+        optimizer.step()
+
+        # Router weights should have moved after the optimizer step.
+        assert not torch.allclose(router_before, mixlora_blocks[0].router.gate.weight)
+
+        # Save MixLoRA-specific weights to disk.
+        state = mixlora_state_dict(patched_model)
+        assert len(state) > 0
+        ckpt_path = tmp_path / MIXLORA_WEIGHTS_NAME
+        safetensors.torch.save_file(state, str(ckpt_path), metadata={"format": "pt"})
+        assert ckpt_path.exists()
+
+        # Reload into a freshly patched model and verify the weights match.
+        fresh_model = AutoModelForCausalLM.from_pretrained(mock_cfg.base_model)
+        fresh_patched = patch_model_with_mixlora(fresh_model, mock_cfg).to("cpu")
+
+        loaded_state = safetensors.torch.load_file(str(ckpt_path))
+        load_mixlora_state_dict(fresh_patched, loaded_state, strict=True)
+
+        fresh_block = next(
+            module
+            for module in fresh_patched.modules()
+            if isinstance(module, MixLoraFFN)
+        )
+        assert torch.allclose(
+            mixlora_blocks[0].router.gate.weight, fresh_block.router.gate.weight
+        )
+
+        # Reloaded model should still produce finite logits on CPU.
+        with torch.no_grad():
+            reloaded_outputs = fresh_patched(input_ids)
+        assert torch.isfinite(reloaded_outputs.logits).all()
 
     @pytest.mark.slow
     def test_patch_model_with_mixlora(self, mock_cfg):
