@@ -1597,7 +1597,10 @@ class TestHigherOrderOps:
             monkeypatch.setattr(cls, "__torch_dispatch__", spy)
 
         state = SacPolicyState()
-        context_fn = build_sac_context_fn(["attention"], state=state)
+        # an inert shape rule keeps the recompute observer installed
+        context_fn = build_sac_context_fn(
+            ["attention"], state=state, save_matmul_min_k=1 << 30
+        )
         inputs = make_inputs()
         checkpoint(
             block, *inputs, use_reentrant=False, context_fn=context_fn
@@ -1608,6 +1611,44 @@ class TestHigherOrderOps:
                 torch.testing.assert_close(t0.grad, t1.grad)
         assert "flex_attention" in seen["recompute"]
         assert ("flex_attention" in seen["forward"]) is mandatory_save
+
+    @pytest.mark.parametrize(
+        "rules, observed",
+        [
+            ({}, False),
+            ({"save_matmul_min_k": 256}, True),
+            ({"save_modules": ["x"]}, True),
+        ],
+    )
+    def test_recompute_observer_only_for_rules(self, rules, observed):
+        policy = build_sac_policy(["attention"], SacPolicyState(), **rules)
+        _, recompute_ctx = selective_checkpointing.wrap_sac_contexts(
+            torch.utils.checkpoint.create_selective_checkpoint_contexts(policy), policy
+        )
+        layers = getattr(recompute_ctx, "_contexts", ())
+        assert (
+            any(
+                isinstance(ctx, selective_checkpointing._RecomputeObserver)
+                for ctx in layers
+            )
+            is observed
+        )
+
+    def test_policy_resolves_each_op_once(self, monkeypatch):
+        calls = []
+        resolve = selective_checkpointing._is_flash_attention_forward
+        monkeypatch.setattr(
+            selective_checkpointing,
+            "_is_flash_attention_forward",
+            lambda name: calls.append(name) or resolve(name),
+        )
+        policy = build_sac_policy(["attention", "aten::addmm"], SacPolicyState())
+        op = _FakeOp("custom::matcher_probe")
+
+        for _ in range(3):
+            assert policy(None, op) == CheckpointPolicy.PREFER_RECOMPUTE
+
+        assert calls == ["custom::matcher_probe"]
 
     def test_modes_opt_into_higher_order_ops(self):
         for cls in (

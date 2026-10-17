@@ -105,7 +105,21 @@ def _aten_attention_ops() -> set:
     return ops | _custom_attention_ops()
 
 
+_op_name_cache: dict[Any, str] = {}
+
+
 def _op_name(op: Any) -> str:
+    try:
+        return _op_name_cache[op]
+    except KeyError:
+        pass
+    except TypeError:  # unhashable op
+        return _resolve_op_name(op)
+    name = _op_name_cache[op] = _resolve_op_name(op)
+    return name
+
+
+def _resolve_op_name(op: Any) -> str:
     try:
         return op.name()
     except (AttributeError, TypeError):
@@ -275,11 +289,20 @@ def registered_save_policy(op: Any, kwargs: dict) -> CheckpointPolicy | None:
     return None
 
 
+_returns_alias_cache: dict[Any, bool] = {}
+
+
 def _returns_alias(op: Any) -> bool:
+    try:
+        return _returns_alias_cache[op]
+    except KeyError:
+        pass
     schema = getattr(op, "_schema", None)
-    if schema is None:
-        return True
-    return any(ret.alias_info is not None for ret in schema.returns)
+    aliases = schema is None or any(
+        ret.alias_info is not None for ret in schema.returns
+    )
+    _returns_alias_cache[op] = aliases
+    return aliases
 
 
 class _MandatorySaveCloner(TorchDispatchMode):
@@ -355,8 +378,10 @@ def wrap_sac_contexts(contexts: tuple[Any, Any], policy_fn=None) -> tuple[Any, A
     forward_ctx, recompute_ctx = contexts
     if _MANDATORY_SAVES:
         forward_ctx = _StackedContext(forward_ctx, _MandatorySaveCloner())
-    if policy_fn is not None and not callable(
-        getattr(recompute_ctx, "policy_fn", None)
+    if (
+        policy_fn is not None
+        and getattr(policy_fn, "observes_recompute", True)
+        and not callable(getattr(recompute_ctx, "policy_fn", None))
     ):
         recompute_ctx = _StackedContext(recompute_ctx, _RecomputeObserver(policy_fn))
     return forward_ctx, recompute_ctx
@@ -692,13 +717,25 @@ def build_sac_policy(
         else:
             substrings.append(spec)
 
-    def _matches(op: Any) -> bool:
+    match_cache: dict[Any, bool] = {}
+
+    def _resolve_match(op: Any) -> bool:
         if op in exact_ops:
             return True
         name = _op_name(op)
         if match_flash_attention and _is_flash_attention_forward(name):
             return True
         return any(sub in name for sub in substrings)
+
+    # SAC calls the policy for every dispatched op, so decide each op once.
+    def _matches(op: Any) -> bool:
+        try:
+            return match_cache[op]
+        except KeyError:
+            matched = match_cache[op] = _resolve_match(op)
+            return matched
+        except TypeError:  # unhashable op
+            return _resolve_match(op)
 
     def policy_fn(ctx, op, *args, **kwargs):  # pylint: disable=unused-argument
         registered = registered_save_policy(op, kwargs)
@@ -794,6 +831,9 @@ def build_sac_policy(
                 return CheckpointPolicy.MUST_SAVE
         return CheckpointPolicy.PREFER_RECOMPUTE
 
+    # Only the module/shape rules keep replay bookkeeping (rule_replays and the
+    # dead-save diagnostic), so without them recompute needs no observer mode.
+    policy_fn.observes_recompute = has_rules  # type: ignore[attr-defined]
     return policy_fn
 
 
