@@ -19,6 +19,7 @@ from pydantic import (
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.checkpoint_mirror import CheckpointMirrorConfig
+from axolotl.utils.schemas.checkpoint_save_retry import CheckpointSaveRetryConfig
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -1321,6 +1322,12 @@ class AxolotlInputConfig(
     )
     save_total_limit: int | None = Field(
         default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
+    )
+    checkpoint_save_retry: CheckpointSaveRetryConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Retry checkpoint file writes that fail with a full disk, exceeded quota or I/O error once, after a pause, before the save fails. See https://docs.axolotl.ai/docs/checkpoint_saving.html"
+        },
     )
     checkpoint_mirror: CheckpointMirrorConfig | None = Field(
         default=None,

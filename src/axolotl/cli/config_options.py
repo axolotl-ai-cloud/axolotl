@@ -3131,6 +3131,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Checkpoints saved at a time",
     ),
     (
+        ("--checkpoint-save-retry.wait-seconds",),
+        "checkpoint_save_retry__wait_seconds",
+        "float",
+        "Seconds to wait before rewriting the file, for example while space is freed. Other ranks wait at their next collective meanwhile, so keep wait_seconds * retries below ddp_timeout.",
+    ),
+    (
+        ("--checkpoint-save-retry.retries",),
+        "checkpoint_save_retry__retries",
+        "int",
+        "Retries per file before the error is raised and the save fails.",
+    ),
+    (
         ("--checkpoint-mirror.dir",),
         "checkpoint_mirror__dir",
         "str",

@@ -206,6 +206,19 @@ class TestHFCausalTrainerBuilder:
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
 
+    def test_checkpoint_save_retry_reaches_training_arguments(
+        self, sft_cfg, model, tokenizer
+    ):
+        args = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100).args
+        assert args.checkpoint_save_retry_wait is None
+
+        sft_cfg["checkpoint_save_retry"] = {"wait_seconds": 120, "retries": 2}
+        args = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100).args
+        assert (args.checkpoint_save_retry_wait, args.checkpoint_save_retries) == (
+            120,
+            2,
+        )
+
     def test_checkpoint_mirror_adds_callback(self, sft_cfg, model, tokenizer, tmp_path):
         from axolotl.core.checkpoint_mirror import CheckpointMirrorCallback
 

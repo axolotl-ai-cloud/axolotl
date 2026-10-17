@@ -642,3 +642,24 @@ class TestCheckpointMirror:
 
         cfg["checkpoint_mirror"]["delete"] = "keep"
         assert validate_config(cfg).checkpoint_mirror["save_total_limit"] == 3
+
+
+class TestCheckpointSaveRetry:
+    def test_defaults(self, min_base_cfg):
+        cfg = min_base_cfg | {"checkpoint_save_retry": {}}
+        retry = validate_config(cfg).checkpoint_save_retry
+        assert (retry["wait_seconds"], retry["retries"]) == (300, 1)
+
+    def test_warns_when_the_wait_reaches_ddp_timeout(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | {
+            "checkpoint_save_retry": {"wait_seconds": 600, "retries": 3},
+            "ddp_timeout": 1800,
+        }
+        with caplog.at_level("WARNING"):
+            validate_config(cfg)
+        assert "Lower wait_seconds or raise ddp_timeout" in caplog.text
+
+    def test_rejects_negative_wait(self, min_base_cfg):
+        cfg = min_base_cfg | {"checkpoint_save_retry": {"wait_seconds": -1}}
+        with pytest.raises(ValueError):
+            validate_config(cfg)

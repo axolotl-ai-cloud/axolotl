@@ -120,6 +120,32 @@ With `auto_resume_from_checkpoints: true`, Axolotl resumes from the newest check
 of a multi-node run, no single node holds a complete checkpoint, so it always resumes from `dir`.
 This also covers a restart on fresh nodes whose local disks are empty.
 
+## Retrying Saves After Disk Errors
+
+A checkpoint write that fails because the disk is full, a quota is exceeded, or the filesystem
+returns an I/O error normally fails the save and ends training. With `checkpoint_save_retry`,
+the write waits and is tried again first:
+
+```yaml
+checkpoint_save_retry:
+  wait_seconds: 300   # pause before rewriting the file
+  retries: 1          # retries per file before the error is raised
+```
+
+The retry applies to the files of each `checkpoint-N`: model weights, optimizer, scheduler and
+RNG states, the trainer state, and the model, adapter, generation and tokenizer configs. The
+failed file is rewritten in place on the rank that hit the error, so no rank skips or reorders a
+collective. The other ranks wait at their next collective,
+so keep `wait_seconds * retries` below `ddp_timeout` (1800 seconds by default); Axolotl warns at
+startup otherwise. Distributed checkpoint saves (FSDP sharded state dicts) report a failure on
+every rank, and every rank retries them together.
+
+Disk errors are recognized by errno (`ENOSPC`, `EDQUOT`, `EIO`, `EFBIG`, `ESTALE`) and by the
+messages that writers without an errno produce, for example
+`I/O error: Disk quota exceeded (os error 122)` from safetensors or `file write failed` from
+`torch.save`. Other errors are raised immediately. When `checkpoint_mirror` is also set, the
+pause gives queued copies time to finish and release the local disk space they hold.
+
 ## Control+C (SIGINT) Checkpoint
 
 Pressing `Ctrl+C` during training saves the model state and exits gracefully. **Note:** This saves only the model weights, not optimizer state. For resumable checkpoints, use the file-based trigger.

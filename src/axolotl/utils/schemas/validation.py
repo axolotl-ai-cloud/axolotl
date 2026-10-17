@@ -548,6 +548,22 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_checkpoint_save_retry_timeout(cls, data):
+        retry = data.get("checkpoint_save_retry")
+        if not isinstance(retry, dict):
+            return data
+        total = float(retry.get("wait_seconds", 300)) * int(retry.get("retries", 1))
+        timeout = data.get("ddp_timeout") or 1800
+        if total >= timeout:
+            LOG.warning(
+                f"checkpoint_save_retry waits up to {total:g}s on the rank whose write "
+                f"failed, while the other ranks wait at a collective that times out after "
+                f"ddp_timeout={timeout}s. Lower wait_seconds or raise ddp_timeout."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_checkpoint_mirror_dir(cls, data):
         mirror = data.get("checkpoint_mirror")
         mirror_dir = mirror.get("dir") if isinstance(mirror, dict) else None

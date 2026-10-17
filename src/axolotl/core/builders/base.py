@@ -781,6 +781,10 @@ class TrainerBuilderBase(abc.ABC):
             )
 
         training_args_kwargs["include_tkps"] = self.cfg.include_tkps
+        if self.cfg.checkpoint_save_retry:
+            retry = self.cfg.checkpoint_save_retry
+            training_args_kwargs["checkpoint_save_retry_wait"] = retry["wait_seconds"]
+            training_args_kwargs["checkpoint_save_retries"] = retry["retries"]
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
 
