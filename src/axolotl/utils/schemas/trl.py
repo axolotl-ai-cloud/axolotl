@@ -276,7 +276,7 @@ class TRLConfig(BaseModel):
         default=False,
         json_schema_extra={
             "description": "Use the GRPODataProducer protocol for online data generation "
-            "(the data producer trainer behind EBFT and NeMo Gym). With rl: grpo and "
+            "(the data producer trainer behind EBFT). With rl: grpo and "
             "async_prefetch, async GRPO runs on TRL's AsyncGRPOTrainer instead."
         },
     )
@@ -286,7 +286,7 @@ class TRLConfig(BaseModel):
             "description": "Overlap generation and training. With rl: grpo/gdpo this runs "
             "on TRL's AsyncGRPOTrainer: a vLLM server generates continuously while the "
             "trainer consumes scored samples up to max_staleness policy versions old. "
-            "With EBFT or NeMo Gym, a background thread prefetches the next rollout."
+            "With EBFT, a background thread prefetches the next rollout."
         },
     )
     prefetch_depth: int | None = Field(

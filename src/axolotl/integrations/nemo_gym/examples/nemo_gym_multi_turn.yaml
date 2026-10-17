@@ -5,12 +5,14 @@
 # executes tool calls against NeMo Gym resource servers, and receives
 # environment feedback across multiple turns.
 #
-# Multi-turn mode uses TRL's rollout_func with env_mask to ensure only
-# model-generated tokens contribute to the training loss.
+# Multi-turn runs on async GRPO: each rollout is one NeMo Gym agent /run, and
+# only model-generated tokens contribute to the training loss.
 #
 # Prerequisites:
 #   - uv (https://github.com/astral-sh/uv) installed
-#   - vLLM must be enabled (required for generate_rollout_completions)
+#   - A NeMo Gym agent config in nemo_gym_config_paths, whose vllm_model server
+#     points at the vLLM server below with return_token_id_information: true
+#     (without an agent, the plugin falls back to single-turn /verify)
 #
 # Usage:
 #   # Terminal 1: Start vLLM server
@@ -29,12 +31,13 @@ load_in_4bit: false
 rl: grpo
 chat_template: tokenizer_default
 
-# GRPO / TRL settings — vLLM required for multi-turn
+# GRPO / TRL settings — multi-turn runs on async GRPO with a vLLM server
 trl:
   use_vllm: true
   vllm_mode: server
   vllm_server_host: localhost
   vllm_server_port: 8000
+  async_prefetch: true
   num_generations: 4
   max_completion_length: 2048
 

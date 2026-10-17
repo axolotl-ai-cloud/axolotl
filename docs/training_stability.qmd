@@ -281,7 +281,7 @@ This generates PyTorch profiler traces you can inspect to see exactly which tens
 | `CheckpointError` (tensor count mismatch) | Non-reentrant checkpointing + ZeRO-3 or flex_attention | Set `use_reentrant: true` in `gradient_checkpointing_kwargs` |
 | `Content end boundary is before start boundary` | Chat template parsing issue | Check `eos_token` matches template; file a GitHub issue if persistent |
 | `CAS service error` during data processing | HuggingFace XET issue | Set `export HF_HUB_DISABLE_XET=1` |
-| Training hangs (multi-GPU) | FSDP + data producer trainer async prefetch deadlock (EBFT, NeMo Gym) | Set `async_prefetch: false` with FSDP |
+| Training hangs (multi-GPU) | FSDP + data producer trainer async prefetch deadlock (EBFT) | Set `async_prefetch: false` with FSDP |
 
 ## Profiling
 

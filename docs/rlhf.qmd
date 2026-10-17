@@ -1093,7 +1093,7 @@ See `examples/ebft/` for complete example configs covering Llama 1B/3B/8B and Qw
 
 #### Single-Turn (Simplest)
 
-For environments that only need answer verification (math, coding challenges). No agent server needed — the reward function calls `/verify` directly on the resource server.
+For environments that only need answer verification (math, coding challenges). No agent server needed — the plugin adds a reward function that calls `/verify` on the resource servers. It works with standard GRPO and with async GRPO (`trl.async_prefetch: true`).
 
 ```yaml
 base_model: Qwen/Qwen2.5-0.5B-Instruct
@@ -1106,8 +1106,6 @@ trl:
   num_generations: 4
   max_completion_length: 128
   temperature: 0.9
-  reward_funcs:
-    - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify
 
 plugins:
   - axolotl.integrations.nemo_gym.NemoGymPlugin
@@ -1144,7 +1142,7 @@ CUDA_VISIBLE_DEVICES=0 axolotl train config.yaml
 
 #### Multi-Turn with Async GRPO (Recommended)
 
-For environments with tool-use (weather, search, databases). An agent server orchestrates multi-turn interactions: generate → parse tool calls → execute tools → feed results back → repeat until done. NeMo Gym runs on the data producer trainer, whose `async_prefetch` prefetches the next rollout in a background thread.
+For environments with tool-use (weather, search, databases). An agent server orchestrates multi-turn interactions: generate → parse tool calls → execute tools → feed results back → repeat until done. Multi-turn runs on [async GRPO](grpo.qmd): its rollout process sends each rollout to an agent's `/run`, builds training rows from the token IDs and logprobs of every model call (tool results are context, not trained), and scores the agent's reward as the `nemo_gym` reward column.
 
 ```yaml
 base_model: Qwen/Qwen3-0.6B
@@ -1164,13 +1162,10 @@ trl:
   vllm_server_port: 8000
   vllm_lora_sync: true
   vllm_sync_interval: 5
-  use_data_producer: true
-  async_prefetch: true                     # 3x speedup
+  async_prefetch: true                     # required for multi-turn
   num_generations: 4
   max_completion_length: 512
   temperature: 0.8
-  reward_funcs:
-    - axolotl.integrations.nemo_gym.rewards.reward_env
 
 plugins:
   - axolotl.integrations.nemo_gym.NemoGymPlugin
@@ -1199,12 +1194,13 @@ vllm:
 Multi-turn requires three services running:
 
 ```bash
-# Terminal 1: vLLM with LoRA + tool calling
-VLLM_ALLOW_RUNTIME_LORA_UPDATING=1 CUDA_VISIBLE_DEVICES=0 \
-    python -m vllm.entrypoints.openai.api_server \
-    --model Qwen/Qwen3-0.6B --max-model-len 2048 \
+# Terminal 1: vLLM with weight sync routes, LoRA + tool calling
+VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True CUDA_VISIBLE_DEVICES=0 \
+    vllm serve Qwen/Qwen3-0.6B --max-model-len 2048 \
     --gpu-memory-utilization 0.85 \
-    --enable-lora --max-lora-rank 64 \
+    --enable-lora --max-lora-rank 16 --max-loras 7 \
+    --weight-transfer-config '{"backend":"nccl"}' \
+    --logprobs-mode processed_logprobs \
     --enable-auto-tool-choice --tool-call-parser hermes
 
 # Terminal 2: NeMo Gym servers (resource + model proxy + agent)
@@ -1217,7 +1213,9 @@ CUDA_VISIBLE_DEVICES=1 axolotl train config.yaml
 ```
 
 ::: {.callout-important}
-Multi-turn requires a NeMo Gym agent config YAML that defines three components: a resource server (tools + `/verify`), a model server proxy (forwards to your vLLM), and an agent server (orchestrates `/run`). See the [NeMo Gym README](https://github.com/NVIDIA-NeMo/Gym) for agent config format.
+Multi-turn requires a NeMo Gym agent config YAML that defines three components: a resource server (tools + `/verify`), a model server proxy (forwards to your vLLM, with `return_token_id_information: true`), and an agent server (orchestrates `/run`). See the [NeMo Gym README](https://github.com/NVIDIA-NeMo/Gym) for agent config format.
+
+The model proxy addresses vLLM by a fixed `model` name, which must equal `nemo_gym_model_name` (default: `base_model`). With a LoRA adapter, every weight sync also loads the adapter under that name, so vLLM needs `--max-loras` of at least `max_staleness + 3` (`axolotl vllm-serve` sizes this itself, but has no tool-call parser option yet).
 :::
 
 #### NeMo Gym Prerequisites
@@ -1240,16 +1238,15 @@ CFLAGS="" uv pip install pycosat --python .venv/bin/python --no-build-isolation
 | `nemo_gym_dir` | str | `~/Gym` | Path to NeMo Gym repo |
 | `nemo_gym_auto_start` | bool | `true` | Auto-start resource servers |
 | `nemo_gym_head_port` | int | `11000` | Head server port |
-| `nemo_gym_multi_turn` | bool | `false` | Enable multi-turn via agent `/run` |
-| `nemo_gym_verify_timeout` | int | `30` | Per-request timeout (seconds) |
+| `nemo_gym_multi_turn` | bool | `false` | Enable multi-turn via agent `/run` (needs `trl.async_prefetch: true`) |
+| `nemo_gym_verify_timeout` | int | `30` | Per `/verify` request timeout (seconds) |
+| `nemo_gym_run_timeout` | int | `300` | Seconds an agent `/run` may go without sending data |
+| `nemo_gym_model_name` | str | `base_model` | Model name the agents' model proxy sends to vLLM |
 | `nemo_gym_datasets` | list | required | Dataset configs with `path` and `server_name` |
 
-#### Reward Functions
+#### Rewards
 
-| Function | Mode | Description |
-|----------|------|-------------|
-| `axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify` | Single-turn | Calls `/verify`, returns binary reward |
-| `axolotl.integrations.nemo_gym.rewards.reward_env` | Multi-turn | Passthrough reward from agent `/run` |
+The plugin adds the NeMo Gym reward as the last reward column, `nemo_gym`: the `/verify` result in single-turn mode, the agent's `/run` reward in multi-turn mode. Rewards listed in `trl.reward_funcs` are scored alongside it, so `trl.reward_weights` takes one more entry. Configs that still list `reward_nemo_gym_verify` or `reward_env` have them dropped with a warning.
 
 ### Multimodal (vision) datasets {#multimodal}
 

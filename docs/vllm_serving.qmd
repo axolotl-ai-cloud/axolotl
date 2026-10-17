@@ -405,4 +405,4 @@ For async pipeline and off-policy correction options, see the [GRPO Configuratio
 | `ResponseValidationError` from vLLM | Missing logprobs in response | Start the server with `axolotl vllm-serve` (or the raw command above) so `--logprobs-mode processed_logprobs --max-logprobs -1` are set |
 | Multi-node training hangs at startup | A vLLM node cannot reach the trainer for the NCCL weight-sync group | Set `VLLM_HOST_IP` on the trainer to an address the vLLM nodes can reach, allow port 51216, and set `NCCL_SOCKET_IFNAME` if needed |
 | Weight sync takes 5+ seconds | NCCL contention with vLLM generation | Switch to `vllm_lora_sync: true` to eliminate NCCL |
-| Data producer trainer with `async_prefetch` deadlocks under FSDP | Background threads run unsynchronized FSDP collectives | Set `async_prefetch: false` with the data producer trainer (EBFT, NeMo Gym) under FSDP or DeepSpeed |
+| Data producer trainer with `async_prefetch` deadlocks under FSDP | Background threads run unsynchronized FSDP collectives | Set `async_prefetch: false` with the data producer trainer (EBFT) under FSDP or DeepSpeed |

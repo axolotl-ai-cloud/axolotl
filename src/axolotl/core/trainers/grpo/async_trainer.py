@@ -841,7 +841,7 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
     instead of ``GRPOTrainer``.
     """
 
-    # Fixed adapter name re-pointed at each LoRA sync; set by the NeMo Gym plugin.
+    # Fixed adapter name re-pointed at each LoRA sync.
     _vllm_lora_alias: str | None = None
 
     def __init__(self, *args, data_collator=None, **kwargs):

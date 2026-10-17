@@ -10,6 +10,16 @@ Input arguments for the NeMo Gym integration plugin.
 
 from pydantic import BaseModel, Field, model_validator
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
+# The plugin supplies the NeMo Gym reward itself.
+SUPERSEDED_REWARD_FUNCS = (
+    "axolotl.integrations.nemo_gym.rewards.reward_env",
+    "axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify",
+)
+
 
 class NemoGymArgs(BaseModel):
     """Configuration args for the NeMo Gym integration."""
@@ -101,8 +111,8 @@ class NemoGymArgs(BaseModel):
         json_schema_extra={
             "description": (
                 "Model name the agent servers use to address vLLM, also reported "
-                "in verify requests. With LoRA sync in multi-turn mode the "
-                "synced adapter is served under this name. "
+                "in verify requests. With adapter-only weight sync in multi-turn "
+                "mode the synced adapter is also served under this name. "
                 "Defaults to the base_model from the main config."
             )
         },
@@ -111,11 +121,11 @@ class NemoGymArgs(BaseModel):
         default=None,
         json_schema_extra={
             "description": (
-                "Enable multi-turn rollouts via NeMo Gym. When True, uses TRL's "
-                "rollout_func to run multi-step interactions with tool execution. "
-                "Requires use_vllm=True in TRL config. The model generates responses, "
-                "tool calls are executed against resource servers, and results are "
-                "fed back for the next turn. Final reward comes from /verify."
+                "Enable multi-turn rollouts via NeMo Gym agent servers. Each rollout "
+                "is one agent /run: the agent generates with the vLLM server, "
+                "executes tool calls against resource servers and feeds the results "
+                "back until done, then verifies. Requires async GRPO "
+                "(trl.async_prefetch: true)."
             )
         },
     )
@@ -145,4 +155,21 @@ class NemoGymArgs(BaseModel):
                     "nemo_gym_datasets is required when nemo_gym_enabled=True. "
                     "Provide at least one dataset with 'path' and 'server_name'."
                 )
+            trl = data.get("trl") or {}
+            if data.get("nemo_gym_multi_turn") and not trl.get("async_prefetch"):
+                raise ValueError(
+                    "nemo_gym_multi_turn runs on async GRPO: set "
+                    "`trl.async_prefetch: true` with a vLLM server "
+                    "(`trl.use_vllm: true`, `trl.vllm_mode: server`)."
+                )
+            reward_funcs = trl.get("reward_funcs") or []
+            superseded = [f for f in reward_funcs if f in SUPERSEDED_REWARD_FUNCS]
+            if superseded:
+                LOG.warning(
+                    f"Dropping {superseded} from trl.reward_funcs: the NeMo Gym "
+                    "plugin adds the NeMo Gym reward itself."
+                )
+                trl["reward_funcs"] = [
+                    f for f in reward_funcs if f not in SUPERSEDED_REWARD_FUNCS
+                ]
         return data
