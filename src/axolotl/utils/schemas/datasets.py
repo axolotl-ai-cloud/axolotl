@@ -261,6 +261,33 @@ class SFTDataset(EvaluationDatasetConfig):
         return data
 
 
+class MultiTurnDPODataset(SFTDataset):
+    """Trajectory-level preference pairs (`type: chat_template.multiturn`)"""
+
+    type: Literal["chat_template.multiturn"]  # type: ignore[assignment]
+    field_chosen: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": 'Key containing the chosen continuation messages (default: "chosen")'
+        },
+    )
+    field_rejected: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": 'Key containing the rejected continuation messages (default: "rejected")'
+        },
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_legacy_message_fields(cls, data):
+        # Every union candidate runs its before-validators; skip so other dataset
+        # types don't log the legacy-field deprecation twice.
+        if isinstance(data, dict) and data.get("type") != "chat_template.multiturn":
+            return data
+        return handle_legacy_message_fields_logic(data)
+
+
 class PretrainingDataset(BaseModel):
     """Pretraining dataset configuration subset"""
 

@@ -34,6 +34,7 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
     DPODataset,
     KTODataset,
+    MultiTurnDPODataset,
     SFTDataset,
     SyntheticDataset,
 )
@@ -561,17 +562,21 @@ def validate_config(
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
         for idx, ds_cfg in enumerate(cfg["datasets"]):
-            if cfg.get("rl") in ["dpo", "ipo", "simpo"] and not isinstance(
+            ds_type = (
+                ds_cfg.get("type")
+                if isinstance(ds_cfg, dict)
+                else getattr(ds_cfg, "type", None)
+            )
+            if ds_type == "chat_template.multiturn":
+                if not isinstance(ds_cfg, MultiTurnDPODataset):
+                    cfg["datasets"][idx] = MultiTurnDPODataset(**dict(ds_cfg))
+            elif cfg.get("rl") in ["dpo", "ipo", "simpo"] and not isinstance(
                 ds_cfg, DPODataset
             ):
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
             elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
                 cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))
-            elif (
-                ds_cfg.get("type")
-                if isinstance(ds_cfg, dict)
-                else getattr(ds_cfg, "type", None)
-            ) == "_synthetic" and not isinstance(ds_cfg, SyntheticDataset):
+            elif ds_type == "_synthetic" and not isinstance(ds_cfg, SyntheticDataset):
                 cfg["datasets"][idx] = SyntheticDataset(
                     **(ds_cfg if isinstance(ds_cfg, dict) else dict(ds_cfg))
                 )

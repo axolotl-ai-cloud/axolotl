@@ -11,6 +11,7 @@ from axolotl.core.trainers import (
 )
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
+from axolotl.core.trainers.dpo.trainer import has_loss_masks
 from axolotl.core.trainers.mixins.named_eval import named_eval_trainer_class
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
@@ -232,6 +233,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
             training_args_kwargs.update(DPOStrategy.set_training_args_kwargs(self.cfg))
+            if self.cfg.pad_to_multiple_of and has_loss_masks(self.train_dataset):
+                training_args_kwargs["pad_to_multiple_of"] = self.cfg.pad_to_multiple_of
 
         elif self.cfg.rl is RLType.EBFT:
             from axolotl.core.trainers.ebft import EBFTStrategy
@@ -367,7 +370,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             return None
 
         pad_to_multiple_of = getattr(self.cfg, "pad_to_multiple_of", None)
-        if not pad_to_multiple_of:
+        # AxolotlDPOTrainer builds the loss-mask-aware collator from the training args
+        if not pad_to_multiple_of or has_loss_masks(self.train_dataset):
             return None
 
         from axolotl.utils.collators.dpo import AxolotlDPODataCollatorWithPadding
