@@ -20,23 +20,19 @@ def dft_loss(outputs, labels, num_items_in_batch=None):
     logits = outputs.logits
     labels = labels.to(logits.device)
 
-    shift_logits = logits[..., :-1, :].contiguous()
-    shift_labels = labels[..., 1:].contiguous()
+    vocab_size = logits.size(-1)
+    shift_logits = logits[..., :-1, :].float().reshape(-1, vocab_size)
+    shift_labels = labels[..., 1:].reshape(-1)
 
-    vocab_size = shift_logits.size(-1)
-    shift_logits_view = shift_logits.view(-1, vocab_size)
-    shift_labels_view = shift_labels.view(-1)
-
-    mask = shift_labels_view != -100
-
-    logprobs = F.log_softmax(shift_logits_view[mask].float(), dim=-1)
-    per_token_logps = logprobs.gather(
-        dim=-1, index=shift_labels_view[mask].unsqueeze(-1)
-    ).squeeze(-1)
+    # ignore_index instead of boolean-mask indexing, whose nonzero syncs with the host;
+    # ignored positions get logp 0 and therefore zero loss and zero gradient.
+    per_token_logps = -F.cross_entropy(
+        shift_logits, shift_labels, ignore_index=-100, reduction="none"
+    )
 
     per_token_loss = -per_token_logps.exp().detach() * per_token_logps
 
     if num_items_in_batch is None:
-        num_items_in_batch = mask.sum().clamp(min=1)
+        num_items_in_batch = (shift_labels != -100).sum().clamp(min=1)
 
     return per_token_loss.sum() / num_items_in_batch

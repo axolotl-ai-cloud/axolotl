@@ -10,6 +10,8 @@ from torch import nn
 
 from axolotl.monkeypatch.loss.dft import dft_loss
 
+from tests.host_sync_utils import HostSyncRecorder
+
 
 @pytest.fixture
 def dft_fixtures():
@@ -67,3 +69,12 @@ def test_dft_all_masked_is_zero():
     assert torch.isfinite(loss)
     loss.backward()
     assert torch.all(logits.grad == 0)
+
+
+def test_dft_does_not_read_device_values_on_the_host(dft_fixtures):
+    logits, labels = dft_fixtures
+
+    with HostSyncRecorder() as recorder:
+        dft_loss(SimpleNamespace(logits=logits), labels).backward()
+
+    assert recorder.ops == []
