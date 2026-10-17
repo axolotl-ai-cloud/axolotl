@@ -15,17 +15,22 @@ On top of TRL, this trainer:
   (``reward_num_workers``);
 - honors ``reward_weights``, ``multi_objective_aggregation`` and ``scale_rewards``;
 - bounds the policy/sampler ratio of each token
-  (``vllm_importance_sampling_cap``).
+  (``vllm_importance_sampling_cap``);
+- runs a custom rollout loop (``rollout_loop``), e.g. one that delegates whole
+  rollouts to an agent server, and serves the synced adapter under a fixed name
+  for clients that cannot follow TRL's versioned one (``vllm_lora_alias``).
 """
 
 from __future__ import annotations
 
 import contextlib
 import functools
+import importlib
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
+import requests
 import torch
 from accelerate.utils import is_peft_model
 from datasets import Dataset
@@ -34,12 +39,14 @@ from trl.experimental.async_grpo import async_grpo_trainer as trl_async_module
 from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig
 from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer
 from trl.experimental.async_grpo.packing import TREE_ATTENTION
+from trl.experimental.async_grpo.vllm_client import VLLMClient
 from trl.trainer.utils import add_fused_lm_head, get_config_model_id, nanmax, nanmin
 
 from axolotl.core.trainers.grpo.trl_async_rollout import (
     AGGREGATIONS,
     REWARD_SCALINGS,
     AxolotlAsyncRolloutWorker,
+    AxolotlRolloutLoop,
 )
 from axolotl.core.trainers.mixins import (
     DistributedParallelMixin,
@@ -53,6 +60,43 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 IMPORTANCE_SAMPLING_MODES = ("token_truncate", "token_mask")
+
+
+def resolve_rollout_loop(fqn: str) -> type[AxolotlRolloutLoop]:
+    module_name, _, attr = fqn.rpartition(".")
+    loop_cls = getattr(importlib.import_module(module_name), attr, None)
+    if not (isinstance(loop_cls, type) and issubclass(loop_cls, AxolotlRolloutLoop)):
+        raise ValueError(f"rollout_loop {fqn!r} is not an AxolotlRolloutLoop subclass")
+    return loop_cls
+
+
+class AliasingVLLMClient(VLLMClient):
+    """TRL's vLLM client that also loads every synced adapter under ``alias``.
+
+    vLLM keys its prefix cache on the adapter name, which the alias keeps across
+    versions, so a sync drains in-flight requests (pausing with ``mode=wait`` also
+    clears the cache) rather than freezing them under the old adapter.
+    """
+
+    def __init__(self, *args, alias: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.alias = alias
+
+    def pause(self, timeout: int = 1800) -> None:
+        response = requests.post(
+            f"{self.server_url}/pause", params={"mode": "wait"}, timeout=timeout
+        )
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Pausing vLLM failed: {response.status_code}, {response.text}"
+            )
+
+    def load_lora_adapter(
+        self, lora_name: str, lora_path: str, timeout: int = 1800
+    ) -> None:
+        super().load_lora_adapter(lora_name, lora_path, timeout)
+        self.unload_lora_adapter(self.alias, timeout)
+        super().load_lora_adapter(self.alias, lora_path, timeout)
 
 
 @dataclass
@@ -117,9 +161,30 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
         default=3.0,
         metadata={"help": "Ratio bound used by vllm_importance_sampling_mode."},
     )
+    rollout_loop: str | None = field(
+        default=None,
+        metadata={
+            "help": "Fully qualified name of an AxolotlRolloutLoop subclass to run in "
+            "the rollout process instead of TRL's generate-and-score loop."
+        },
+    )
+    rollout_loop_kwargs: dict | None = field(
+        default=None,
+        metadata={"help": "Extra keyword arguments for rollout_loop."},
+    )
+    vllm_lora_alias: str | None = field(
+        default=None,
+        metadata={
+            "help": "With adapter-only weight sync, also serve each synced adapter "
+            "under this fixed name, for clients that address vLLM by a fixed model "
+            "name. Syncs then drain in-flight requests before switching."
+        },
+    )
 
     def __post_init__(self):
         super().__post_init__()
+        if self.rollout_loop is not None:
+            resolve_rollout_loop(self.rollout_loop)
         if self.multi_objective_aggregation not in AGGREGATIONS:
             raise ValueError(
                 f"multi_objective_aggregation must be one of {AGGREGATIONS}, got "
@@ -288,8 +353,15 @@ class AxolotlAsyncGRPOTrainer(
             )
         if reward_funcs is not None and not isinstance(reward_funcs, list):
             reward_funcs = [reward_funcs]
+        loop_cls = (
+            resolve_rollout_loop(args.rollout_loop)
+            if args.rollout_loop
+            else AxolotlRolloutLoop
+        )
         if not reward_funcs and not (
-            kwargs.get("rollout_worker") or kwargs.get("environment_factory")
+            kwargs.get("rollout_worker")
+            or kwargs.get("environment_factory")
+            or loop_cls._provides_rollout_reward
         ):
             # TRL would only notice once the rollout process starts.
             raise ValueError("Async GRPO needs reward functions (`trl.reward_funcs`).")
@@ -311,12 +383,18 @@ class AxolotlAsyncGRPOTrainer(
         replacements: dict[str, Any] = {
             "AsyncRolloutWorker": functools.partial(
                 AxolotlAsyncRolloutWorker,
+                loop_cls=loop_cls,
                 reward_weights=args.reward_weights,
                 multi_objective_aggregation=args.multi_objective_aggregation,
                 scale_rewards=args.scale_rewards,
                 reward_num_workers=args.reward_num_workers,
+                **(args.rollout_loop_kwargs or {}),
             )
         }
+        if args.vllm_lora_alias:
+            replacements["VLLMClient"] = functools.partial(
+                AliasingVLLMClient, alias=args.vllm_lora_alias
+            )
         model_id = model
         if not isinstance(model, str):
             replacements["create_model_from_path"] = _use_loaded_model(model)

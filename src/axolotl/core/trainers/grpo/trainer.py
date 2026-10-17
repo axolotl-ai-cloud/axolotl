@@ -84,7 +84,7 @@ class AxolotlDataProducerGRPOTrainer(
     DistributedParallelMixin,
     FastAsyncGRPOTrainer,
 ):
-    """GRPOTrainer driven by axolotl's data producer protocol (EBFT, NeMo Gym)"""
+    """GRPOTrainer driven by axolotl's data producer protocol (EBFT)"""
 
     _tag_names = ["trl", "grpo", "async", "axolotl"]
 

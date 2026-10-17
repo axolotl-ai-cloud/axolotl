@@ -48,7 +48,7 @@ Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also w
 | Reward workers | `reward_num_workers: 4` | Score rewards in processes, several groups at once |
 | Ratio cap | `vllm_importance_sampling_cap: 3.0` | Bound the policy/sampler ratio (dual-clip) |
 
-Streaming scoring, replay buffer, re-rolling and OPSM belong to the data producer trainer (EBFT, NeMo Gym, `use_data_producer` without `async_prefetch`).
+Streaming scoring, replay buffer, re-rolling and OPSM belong to the data producer trainer (EBFT, `use_data_producer` without `async_prefetch`).
 
 ## Health Checks
 
@@ -69,7 +69,7 @@ src/axolotl/
     trainer.py                     # AxolotlGRPOTrainer, data producer trainer
     trl_async_trainer.py           # Async GRPO: TRL's AsyncGRPOTrainer + axolotl extensions
     trl_async_rollout.py           # Async GRPO rollout process: rewards, advantages, reward pool
-    async_trainer.py               # Data producer trainer internals (EBFT, NeMo Gym)
+    async_trainer.py               # Data producer trainer internals (EBFT)
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
   utils/schemas/trl.py             # TRL config schema (all trl: options)

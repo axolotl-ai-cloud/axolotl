@@ -329,7 +329,25 @@ class TestGRPOStrategy:
         )
         cfg = self._cfg(async_prefetch=True)
         cfg.nemo_gym_enabled = True
-        assert GRPOStrategy.get_async_backend(cfg) == "data_producer"
+        assert GRPOStrategy.get_async_backend(cfg) == "trl"
+
+    def test_plugins_add_reward_funcs(self, monkeypatch):
+        from axolotl.integrations.base import BasePlugin, PluginManager
+
+        def plugin_reward(completions, **kwargs):
+            return [0.0] * len(completions)
+
+        class RewardPlugin(BasePlugin):
+            def get_reward_funcs(self, cfg):
+                return [plugin_reward]
+
+        manager = PluginManager.get_instance()
+        monkeypatch.setitem(manager.plugins, "reward_plugin", RewardPlugin())
+        cfg = self._cfg(reward_funcs=["trl_async_grpo_rewards.length_reward"])
+        (reward_funcs,) = GRPOStrategy.set_trainer_args(cfg)
+        assert [f.__name__ for f in reward_funcs] == ["length_reward", "plugin_reward"]
+        (reward_funcs,) = GRPOStrategy.set_trainer_args(self._cfg())
+        assert reward_funcs == [plugin_reward]
 
     def test_trainer_and_args_classes(self):
         from axolotl.core.trainers.grpo import (
@@ -546,3 +564,124 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
     logs = trainer.state.log_history
     assert sum(log.get("sample/dropped_zero_adv_total", 0) for log in logs) >= 8
     assert any(log.get("sampling/capped_token_frac", 0) > 0 for log in logs)
+
+
+class TestAliasingVLLMClient:
+    def test_sync_drains_and_moves_the_alias(self, monkeypatch):
+        from trl.experimental.async_grpo import vllm_client
+
+        from axolotl.core.trainers.grpo import trl_async_trainer
+
+        calls = []
+
+        def post(url, json=None, params=None, timeout=None):
+            calls.append((url.rsplit("/", 1)[-1], json or params))
+            return types.SimpleNamespace(status_code=200, text="")
+
+        monkeypatch.setattr(trl_async_trainer.requests, "post", post)
+        monkeypatch.setattr(vllm_client.requests, "post", post)
+        client = trl_async_trainer.AliasingVLLMClient("http://vllm", alias="policy")
+        client.pause()
+        client.load_lora_adapter("trl-policy-v2", "/adapters/v2")
+        assert calls == [
+            ("pause", {"mode": "wait"}),
+            (
+                "load_lora_adapter",
+                {
+                    "lora_name": "trl-policy-v2",
+                    "lora_path": "/adapters/v2",
+                    "load_inplace": False,
+                },
+            ),
+            ("unload_lora_adapter", {"lora_name": "policy"}),
+            (
+                "load_lora_adapter",
+                {
+                    "lora_name": "policy",
+                    "lora_path": "/adapters/v2",
+                    "load_inplace": False,
+                },
+            ),
+        ]
+
+
+class _RolloutRewardLoop(AxolotlRolloutLoop):
+    _provides_rollout_reward = True
+
+    def __init__(self, *, agent_url, **kwargs):
+        super().__init__(**kwargs)
+        self.agent_url = agent_url
+
+
+def test_custom_rollout_loop_and_alias_wiring(tmp_path, monkeypatch):
+    """`rollout_loop` reaches TRL's rollout worker, `vllm_lora_alias` its client."""
+    from datasets import Dataset
+    from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaConfig
+    from trl.experimental.async_grpo import async_grpo_trainer, async_rollout_worker
+
+    from axolotl.core.trainers.grpo.trl_async_trainer import AliasingVLLMClient
+
+    monkeypatch.setattr(async_rollout_worker, "is_vllm_available", lambda: True)
+    monkeypatch.setattr(
+        async_grpo_trainer, "get_peak_flops_per_device", lambda *a, **k: None
+    )
+    tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
+    model = AutoModelForCausalLM.from_config(
+        LlamaConfig(
+            vocab_size=len(tokenizer),
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+        )
+    )
+    args = AxolotlAsyncGRPOConfig(
+        output_dir=str(tmp_path),
+        max_steps=1,
+        use_cpu=True,
+        bf16=False,
+        report_to=[],
+        rollout_loop=f"{__name__}._RolloutRewardLoop",
+        rollout_loop_kwargs={"agent_url": "http://agent"},
+        vllm_lora_alias="policy",
+        reward_weights=[1.0],
+    )
+    trainer = AxolotlAsyncGRPOTrainer(
+        model,
+        reward_funcs=[],
+        args=args,
+        train_dataset=Dataset.from_dict(
+            {"prompt": [[{"role": "user", "content": "q"}]] * 4}
+        ),
+        processing_class=tokenizer,
+        weight_transfer=_StubTransfer(),
+    )
+    worker = trainer.rollout_worker
+    assert worker._loop_cls is _RolloutRewardLoop
+    assert worker._loop_kwargs["agent_url"] == "http://agent"
+    assert worker._loop_kwargs["reward_weights"] == [1.0]
+    assert isinstance(trainer.vllm_client, AliasingVLLMClient)
+    assert trainer.vllm_client.alias == "policy"
+    # The patch is scoped to construction.
+    assert async_grpo_trainer.VLLMClient is not AliasingVLLMClient
+
+    args.rollout_loop = None
+    with pytest.raises(ValueError, match="needs reward functions"):
+        AxolotlAsyncGRPOTrainer(
+            model,
+            reward_funcs=[],
+            args=args,
+            train_dataset=Dataset.from_dict(
+                {"prompt": [[{"role": "user", "content": "q"}]] * 4}
+            ),
+            processing_class=tokenizer,
+            weight_transfer=_StubTransfer(),
+        )
+
+
+def test_rollout_loop_must_be_an_axolotl_rollout_loop(tmp_path):
+    with pytest.raises(ValueError, match="AxolotlRolloutLoop"):
+        AxolotlAsyncGRPOConfig(
+            output_dir=str(tmp_path), use_cpu=True, rollout_loop="queue.Queue"
+        )

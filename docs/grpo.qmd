@@ -390,7 +390,7 @@ Config validation rejects these combinations with a list of what to change.
 
 ### Data producer trainer
 
-EBFT, NeMo Gym, and `use_data_producer: true` without `async_prefetch` keep running on axolotl's data producer trainer (a `GRPOTrainer` subclass). Its async mode prefetches the next rollout in a background thread and supports these options:
+EBFT and `use_data_producer: true` without `async_prefetch` keep running on axolotl's data producer trainer (a `GRPOTrainer` subclass). Its async mode prefetches the next rollout in a background thread and supports these options:
 
 ```yaml
 trl:
@@ -571,7 +571,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `async_prefetch` | bool | `false` | Async GRPO on TRL's `AsyncGRPOTrainer` (with EBFT/NeMo Gym: background-thread prefetch) |
+| `async_prefetch` | bool | `false` | Async GRPO on TRL's `AsyncGRPOTrainer` (with EBFT: background-thread prefetch) |
 | `vllm_sync_interval` | int | `null` | Sync weights to vLLM every N optimizer steps |
 | `vllm_lora_sync` | bool | `false` | Sync only the LoRA adapter; makes `axolotl vllm-serve` enable LoRA |
 | `max_staleness` | int | `null` (4) | Async GRPO: drop rollouts more than N weight syncs old |
@@ -579,7 +579,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `token_budget` | int | `null` | Async GRPO: max tokens per rank's micro-batch (default: vLLM `max_model_len`; <= 0 packs `micro_batch_size` samples) |
 | `skip_zero_advantage_batches` | bool | `true` | Async GRPO: drop zero-advantage samples; data producer trainer: skip all-zero micro-batches |
 | `reward_num_workers` | int | `1` | Processes for synchronous reward functions |
-| `use_data_producer` | bool | `false` | Data producer trainer (EBFT, NeMo Gym, LoRA sync without async) |
+| `use_data_producer` | bool | `false` | Data producer trainer (EBFT, LoRA sync without async) |
 | `prefetch_depth` | int | `null` | Data producer trainer: batches to prefetch ahead |
 | `streaming_partial_batch` | bool | `null` | Data producer trainer: score prompt groups incrementally |
 | `streaming_min_groups` | int | `null` | Data producer trainer: minimum groups per streaming chunk |

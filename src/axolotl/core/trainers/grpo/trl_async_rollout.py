@@ -150,7 +150,14 @@ class RewardProcessPool:
 
 
 class AxolotlRolloutLoop(_AsyncRolloutLoop):
-    """TRL's rollout loop with GRPOTrainer's reward options and parallel scoring."""
+    """TRL's rollout loop with GRPOTrainer's reward options and parallel scoring.
+
+    Subclasses that score each rollout themselves set ``_provides_rollout_reward``
+    and return the reward from ``_generate_one``; it is scored as one more reward
+    column, named ``_rollout_reward_name``, after the reward functions.
+    """
+
+    _rollout_reward_name = "rollout_reward"
 
     def __init__(
         self,
@@ -162,6 +169,8 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
         **kwargs,
     ):
         super().__init__(**kwargs)
+        if self._provides_rollout_reward:
+            self.reward_func_names.append(self._rollout_reward_name)
         num_columns = len(self.reward_func_names)
         if reward_weights is None:
             reward_weights = [1.0] * num_columns
@@ -381,6 +390,14 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
 
 
 class AxolotlAsyncRolloutWorker(AsyncRolloutWorker):
-    """``AsyncRolloutWorker`` whose child process runs :class:`AxolotlRolloutLoop`."""
+    """``AsyncRolloutWorker`` whose child process runs :class:`AxolotlRolloutLoop`,
+    or the subclass passed as ``loop_cls``."""
 
     _loop_cls = AxolotlRolloutLoop
+
+    def __init__(
+        self, *, loop_cls: type[AxolotlRolloutLoop] | None = None, **kwargs: Any
+    ):
+        super().__init__(**kwargs)
+        if loop_cls is not None:
+            self._loop_cls = loop_cls
