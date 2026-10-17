@@ -76,6 +76,10 @@ from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
 
 LOG = get_logger(__name__)
 
+NAN_INF_DOCS_URL = (
+    "https://docs.axolotl.ai/docs/training_stability.html#nan-and-inf-handling"
+)
+
 
 def model_loss_accepts_num_items_in_batch(model) -> bool:
     """Whether ``model``'s loss function consumes ``num_items_in_batch``.
@@ -1077,6 +1081,9 @@ class AxolotlTrainer(
         """
         # logs either has 'loss' or 'eval_loss'
         train_eval = "train" if "loss" in logs else "eval"
+        loss = logs.get("loss")
+        if isinstance(loss, float) and not math.isfinite(loss):
+            self._warn_non_finite_loss()
         metric_ndigits = int(os.getenv("AXOLOTL_METRIC_NDIGITS", "5"))
 
         for key, metric_data in self._stored_metrics[train_eval].items():
@@ -1143,6 +1150,23 @@ class AxolotlTrainer(
         del self._stored_metrics[train_eval]
 
         return super().log(logs, start_time)
+
+    def _warn_non_finite_loss(self) -> None:
+        # the logged loss is already a host float here, so this check adds no sync
+        if getattr(self.args, "logging_nan_inf_filter", False):
+            LOG.warning_once(
+                "The logged training loss is NaN or inf even with "
+                "logging_nan_inf_filter: true. For causes and fixes see "
+                f"{NAN_INF_DOCS_URL}"
+            )
+            return
+        LOG.warning_once(
+            "The logged training loss is NaN or inf: at least one micro-step since the "
+            "last log had a non-finite loss. Axolotl logs the raw loss; set "
+            "logging_nan_inf_filter: true to log HF's running average for such "
+            "micro-steps instead, which hides them but does not change training. For "
+            f"causes and fixes see {NAN_INF_DOCS_URL}"
+        )
 
     def store_metrics(
         self,
