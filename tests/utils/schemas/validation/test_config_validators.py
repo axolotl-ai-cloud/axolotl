@@ -9,6 +9,7 @@ Covers:
     num_generations >= 2, and effective_gbs >= num_generations * world_size
   - context_parallel_size > 1 requires kernel-backed attention
   - use_dft / use_eaft are SFT-only and reject each other, RL, reward models, CP and fused CE
+  - per-token loss weights need chat_template datasets and reject fused CE, custom losses and CP
   - vllm_mode: colocate rejects CP > 1, vllm_lora_sync, and async GRPO with an adapter
 """
 
@@ -549,6 +550,86 @@ class TestCustomLossConflictsValidator:
     def test_conflict_raises(self, loss, conflict):
         with pytest.raises(ValueError, match="SFT-only"):
             self._check({loss: True, **conflict})
+
+
+class TestLossWeightsConflictsValidator:
+    """Per-token loss weights need chat_template data and the SFT trainer's own loss."""
+
+    @staticmethod
+    def _cfg(min_base_cfg, ds_type="chat_template", **ds_extra):
+        cfg = DictDefault(dict(min_base_cfg))
+        cfg["datasets"] = [
+            {"path": "mhenrichsen/alpaca_2k_test", "type": ds_type, **ds_extra}
+        ]
+        return cfg
+
+    @pytest.mark.parametrize("field", ["message_field_weight", "field_sample_weight"])
+    def test_chat_template_passes(self, min_base_cfg, field):
+        validated = validate_config(self._cfg(min_base_cfg, **{field: "weight"}))
+        assert getattr(validated.datasets[0], field) == "weight"
+
+    def test_other_dataset_type_raises(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, ds_type="alpaca", message_field_weight="weight")
+        with pytest.raises(
+            ValueError, match="only supported with `type: chat_template`"
+        ):
+            validate_config(cfg)
+
+    def test_batch_flattening_auto_is_disabled(self):
+        from axolotl.utils.schemas.validation import OptimizationValidationMixin
+
+        data = OptimizationValidationMixin.check_loss_weights_conflicts(
+            {
+                "batch_flattening": "auto",
+                "datasets": [{"type": "chat_template", "field_sample_weight": "w"}],
+            }
+        )
+        assert data["batch_flattening"] is False
+
+    @pytest.mark.parametrize(
+        "conflict",
+        [
+            {"rl": "dpo"},
+            {"reward_model": True},
+            {"kd_trainer": True},
+            {"diffusion_lm": {"noise_schedule": "linear"}},
+            {"use_dft": True},
+            {"use_eaft": True},
+            {"cut_cross_entropy": True},
+            {"liger_fused_linear_cross_entropy": True},
+            {"liger_cross_entropy": True},
+            {"chunked_cross_entropy": True},
+            {"batch_flattening": True},
+            {"processor_type": "AutoProcessor"},
+            {"context_parallel_size": 2},
+            {"sequence_parallel_degree": 2},
+        ],
+    )
+    def test_conflict_raises(self, conflict):
+        from axolotl.utils.schemas.validation import OptimizationValidationMixin
+
+        with pytest.raises(ValueError, match="Per-token loss weights"):
+            OptimizationValidationMixin.check_loss_weights_conflicts(
+                {
+                    "datasets": [
+                        {"type": "chat_template", "message_field_weight": "w"}
+                    ],
+                    **conflict,
+                }
+            )
+
+    def test_test_datasets_are_checked(self):
+        from axolotl.utils.schemas.validation import OptimizationValidationMixin
+
+        with pytest.raises(ValueError, match="Per-token loss weights"):
+            OptimizationValidationMixin.check_loss_weights_conflicts(
+                {
+                    "test_datasets": [
+                        {"type": "chat_template", "field_sample_weight": "w"}
+                    ],
+                    "cut_cross_entropy": True,
+                }
+            )
 
 
 class TestVllmColocateCompat:

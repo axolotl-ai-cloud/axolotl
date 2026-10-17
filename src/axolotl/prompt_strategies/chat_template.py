@@ -3,6 +3,7 @@ HF Chat Templates prompt strategy
 """
 
 import json
+import math
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
@@ -37,6 +38,19 @@ def _extract_input_ids(result):
     return result["input_ids"] if isinstance(result, dict) else result
 
 
+def _parse_loss_weight(value: Any, field: str) -> float:
+    if value is None:
+        return 1.0
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"`{field}` must be a number, got {value!r}.")
+    weight = float(value)
+    if not math.isfinite(weight) or weight < 0:
+        raise ValueError(
+            f"`{field}` must be a finite, non-negative number, got {value!r}."
+        )
+    return weight
+
+
 class ChatTemplatePrompter(Prompter):
     """Prompter for HF chat templates"""
 
@@ -49,6 +63,8 @@ class ChatTemplatePrompter(Prompter):
         message_property_mappings: dict[str, str] | None = None,
         message_field_training: str | None = None,
         message_field_training_detail: str | None = None,
+        message_field_weight: str | None = None,
+        field_sample_weight: str | None = None,
         field_messages: str = "messages",
         field_system: str = "system",
         field_tools: str = "tools",
@@ -85,6 +101,8 @@ class ChatTemplatePrompter(Prompter):
         self.message_property_mappings = message_property_mappings
         self.message_field_training = message_field_training
         self.message_field_training_detail = message_field_training_detail
+        self.message_field_weight = message_field_weight
+        self.field_sample_weight = field_sample_weight
         self.field_messages = field_messages
         self.field_system = field_system
         self.field_tools = field_tools
@@ -470,6 +488,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         return dict(res)
 
     def _tokenize_single_prompt(self, prompt: dict) -> Dict[str, List[int]]:
+        row_weight = None
+        if self.prompter.field_sample_weight:
+            row_weight = _parse_loss_weight(
+                prompt.get(self.prompter.field_sample_weight),
+                self.prompter.field_sample_weight,
+            )
+
         # Old simple legacy behavior that works reliably.
         if (
             not self.roles_to_train
@@ -477,6 +502,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             and not self.train_on_eot
             and not self.prompter.message_field_training  # type: ignore
             and not self.prompter.message_field_training_detail  # type: ignore
+            and not self.prompter.message_field_weight
         ):
             turns = self.get_conversation_thread(prompt)
             images = self._get_images(prompt)
@@ -505,6 +531,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 labels = input_ids
 
             tokenized_prompt["labels"] = labels
+            if row_weight is not None:
+                self._attach_loss_weights(tokenized_prompt, None, row_weight)
 
             return tokenized_prompt
 
@@ -515,11 +543,16 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             result = {"input_ids": result}
         input_ids = result["input_ids"]
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
+        token_weights = (
+            [1.0] * len(input_ids) if self.prompter.message_field_weight else None
+        )
 
         locator = self._build_turn_locator(turns, tools, input_ids)
 
         last_eos_idx = -1
         last_eot_idx = -1
+        last_eos_weight = 1.0
+        last_eot_weight = 1.0
         for index, turn in enumerate(turns):
             role = turn.get("role")
             content = turn.get("content")
@@ -538,6 +571,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 should_train = bool(train_detail) or bool(reasoning_train_detail)
             else:
                 should_train = self.train_on_inputs or role in self.roles_to_train
+
+            turn_weight = turn.get("loss_weight", 1.0)
+            if turn_weight == 0.0:
+                should_train = False
 
             LOG.debug(f"Should train: {should_train}")
 
@@ -590,6 +627,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                             input_ids
                         ):
                             labels[turn_start_idx + i] = input_ids[turn_start_idx + i]
+                            if token_weights is not None:
+                                token_weights[turn_start_idx + i] = turn_weight
                             LOG.debug(
                                 f"Label set at index {turn_start_idx + i}: {input_ids[turn_start_idx + i]}"
                             )
@@ -598,6 +637,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     labels[turn_start_idx:turn_end_idx] = input_ids[
                         turn_start_idx:turn_end_idx
                     ]
+                    if token_weights is not None:
+                        token_weights[turn_start_idx:turn_end_idx] = [turn_weight] * (
+                            turn_end_idx - turn_start_idx
+                        )
                     LOG.debug(
                         f"Set labels for training from {turn_start_idx} to {turn_end_idx}"
                     )
@@ -628,6 +671,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                             input_ids
                         ):
                             labels[reasoning_start + i] = input_ids[reasoning_start + i]
+                            if token_weights is not None:
+                                token_weights[reasoning_start + i] = turn_weight
 
                 LOG.debug(f"Labels after processing turn {index}: {labels}")
 
@@ -641,17 +686,23 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 if (
                     token_idx != -1 and abs(token_idx - turn_end_idx) <= 3
                 ):  # Allow for some template padding
+                    # An untrained turn's weight is irrelevant to EOT/EOS tokens trained via "all".
+                    special_weight = turn_weight if should_train else 1.0
                     # Update the last token index
                     if token_type == "EOT":  # nosec B105
                         last_eot_idx = token_idx
+                        last_eot_weight = special_weight
                     else:
                         last_eos_idx = token_idx
+                        last_eos_weight = special_weight
 
                     # Set labels if needed for this turn
                     if train_option == "all" or (
                         train_option == "turn" and should_train
                     ):
                         labels[token_idx] = input_ids[token_idx]
+                        if token_weights is not None:
+                            token_weights[token_idx] = special_weight
                         LOG.debug(
                             f"{token_type} token set for training at index {token_idx}"
                         )
@@ -661,12 +712,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     )
 
         # Handle 'last' option for special tokens
-        for token_type, last_idx, train_option in [
-            ("EOT", last_eot_idx, self.train_on_eot),
-            ("EOS", last_eos_idx, self.train_on_eos),
+        for token_type, last_idx, last_weight, train_option in [
+            ("EOT", last_eot_idx, last_eot_weight, self.train_on_eot),
+            ("EOS", last_eos_idx, last_eos_weight, self.train_on_eos),
         ]:
             if train_option == "last" and last_idx != -1:
                 labels[last_idx] = input_ids[last_idx]
+                if token_weights is not None:
+                    token_weights[last_idx] = last_weight
                 LOG.debug(
                     f"Last {token_type} token set for training at index {last_idx}"
                 )
@@ -677,7 +730,30 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         # grid info, etc.); just set the fields we computed locally.
         result["labels"] = labels
         result.setdefault("attention_mask", [1] * len(input_ids))
+        if token_weights is not None or row_weight is not None:
+            self._attach_loss_weights(result, token_weights, row_weight)
         return result
+
+    @staticmethod
+    def _attach_loss_weights(
+        tokenized: dict,
+        token_weights: list[float] | None,
+        row_weight: float | None,
+    ) -> None:
+        """Add ``loss_weights`` aligned with ``labels``; zero-weight tokens are masked."""
+        row_weight = 1.0 if row_weight is None else row_weight
+        labels = list(tokenized["labels"])
+        loss_weights = [0.0] * len(labels)
+        for i, label in enumerate(labels):
+            if label == IGNORE_TOKEN_ID:
+                continue
+            weight = row_weight * (token_weights[i] if token_weights else 1.0)
+            if weight == 0.0:
+                labels[i] = IGNORE_TOKEN_ID
+            else:
+                loss_weights[i] = weight
+        tokenized["labels"] = labels
+        tokenized["loss_weights"] = loss_weights
 
     def find_first_eos_token(self, input_ids, start_idx):
         eos_token_id = self.tokenizer.eos_token_id
@@ -1070,6 +1146,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 turn["training"] = training
             if training_detail is not None:
                 turn["training_detail"] = training_detail
+            if self.prompter.message_field_weight:
+                message_weight = message.get(self.prompter.message_field_weight)
+                if message_weight is not None:
+                    turn["loss_weight"] = _parse_loss_weight(
+                        message_weight, self.prompter.message_field_weight
+                    )
 
             # Convert list content/reasoning_content to string + auto-generated
             # training_detail. See _convert_content_parts for whitespace guidance.
@@ -1421,6 +1503,8 @@ class StrategyLoader:
                 "message_field_training_detail",
                 None,
             ),
+            "message_field_weight": dataset_config.get("message_field_weight", None),
+            "field_sample_weight": dataset_config.get("field_sample_weight", None),
             "field_messages": dataset_config.get("field_messages", "messages"),
             "field_thinking": dataset_config.get("field_thinking", "reasoning_content"),
             "template_thinking_key": dataset_config.get(

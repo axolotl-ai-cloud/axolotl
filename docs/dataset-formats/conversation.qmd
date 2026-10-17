@@ -335,7 +335,7 @@ Each content part supports:
 - `type`: `"text"` (required)
 - `text`: the text value (also accepts `content` or `value` as the key)
 - `train`: `true`/`false` (optional) — whether to train on this part
-- `weight`: `0`/`1` (optional) — alternative to `train`
+- `weight`: `0`/`1` (optional) — alternative to `train`; any non-zero value trains the part at full weight (use [`message_field_weight`](#fractional-loss-weights) for fractional weights)
 
 If a part has no `train` or `weight` flag, it inherits the turn-level training decision (from `roles_to_train`, `message_field_training`, or `train_on_inputs`).
 
@@ -408,6 +408,41 @@ When `reasoning_content` is provided as a separate field, `split_thinking` is no
 
 The same whitespace rules apply to `reasoning_content` parts as to `content` parts — split before spaces, keep newlines with the preceding part.
 
+
+#### Fractional loss weights
+
+Masking is all-or-nothing. To down- or up-weight data instead, give messages and/or rows a non-negative float weight:
+
+```{.json filename="data.jsonl"}
+{
+  "sample_weight": 0.5,
+  "messages": [
+    {"role": "user", "content": "What is 2+2?"},
+    {"role": "assistant", "content": "Maybe 5?", "weight": 0.1},
+    {"role": "user", "content": "Are you sure?"},
+    {"role": "assistant", "content": "Sorry, 2+2 is 4.", "weight": 2.0}
+  ]
+}
+```
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+    message_field_weight: weight        # per-message weight key
+    field_sample_weight: sample_weight  # per-row weight key
+```
+
+- A token's weight is `row weight × message weight`, applied only to tokens the usual rules already train (`roles_to_train`, `train_on_eos`/`train_on_eot`, `message_field_training`, `message_field_training_detail`, content-part `train` flags). A weight never makes an untrained message trainable.
+- Missing values default to `1.0`. A message weight of `0` is the same as `training: false`; a row weight of `0` masks the whole row.
+- The message weight also applies to that message's `reasoning_content`, tool calls, and its EOS/EOT token. An EOS/EOT trained only because of `train_on_eos: all` keeps weight `1.0` when its message is not trained.
+- Either option alone is enough; neither changes tokenization or labels for datasets that don't set them, and datasets with and without weights can be mixed.
+
+The loss is `sum(weight × token CE) / number of trained tokens`, the same denominator as unweighted SFT (counted across gradient accumulation and devices exactly as before). All-`1.0` weights reproduce the unweighted loss, and a weight of `w` scales that token's gradient by `w` no matter what it is batched or packed with. The logged train/eval loss is the weighted loss.
+
+::: {.callout-warning}
+Loss weights need the model's standard cross-entropy, so they cannot be combined with Cut Cross Entropy, Liger (fused or plain) cross entropy, chunked cross entropy, `use_dft` / `use_eaft`, `batch_flattening`, multimodal processors, context/sequence parallelism, `rl:`, reward models, KD, or `diffusion_lm`. Config validation rejects these combinations. Sample packing is supported.
+:::
 
 #### Reasoning split
 

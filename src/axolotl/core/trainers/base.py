@@ -56,6 +56,7 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_tagging,
     trainable_tokens_per_sec_per_gpu,
 )
+from axolotl.monkeypatch.loss.weighted import loss_weights_applied
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
 from axolotl.utils.collators import DataCollatorForSeq2Seq
@@ -768,7 +769,26 @@ class AxolotlTrainer(
         ):
             inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
 
+    @override
+    def _set_signature_columns_if_needed(self):
+        super()._set_signature_columns_if_needed()
+        if self._signature_columns and "loss_weights" not in self._signature_columns:
+            self._signature_columns = [*self._signature_columns, "loss_weights"]
+
     def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
+        loss_weights = inputs.pop("loss_weights", None)
+        if loss_weights is None:
+            return self._compute_sft_loss(
+                model, inputs, return_outputs, num_items_in_batch
+            )
+        with loss_weights_applied(self.accelerator.unwrap_model(model), loss_weights):
+            return self._compute_sft_loss(
+                model, inputs, return_outputs, num_items_in_batch
+            )
+
+    def _compute_sft_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
         # use one's weighted cross entropy loss calc

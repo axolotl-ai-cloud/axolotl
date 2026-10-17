@@ -1403,6 +1403,74 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_loss_weights_conflicts(cls, data):
+        def _get(ds_cfg, key):
+            if isinstance(ds_cfg, dict):
+                return ds_cfg.get(key)
+            return getattr(ds_cfg, key, None)
+
+        weighted = [
+            ds_cfg
+            for ds_cfg in [
+                *(data.get("datasets") or []),
+                *(data.get("test_datasets") or []),
+            ]
+            if ds_cfg is not None
+            and (
+                _get(ds_cfg, "message_field_weight")
+                or _get(ds_cfg, "field_sample_weight")
+            )
+        ]
+        if not weighted:
+            return data
+
+        for ds_cfg in weighted:
+            ds_type = _get(ds_cfg, "type")
+            if not isinstance(ds_type, str) or ds_type.split(".")[0] != "chat_template":
+                raise ValueError(
+                    "`message_field_weight` / `field_sample_weight` are only supported "
+                    f"with `type: chat_template`, got `type: {ds_type}`."
+                )
+
+        if data.get("batch_flattening") == "auto":
+            data["batch_flattening"] = False
+
+        # the weighted loss needs full logits, unsharded labels and the SFT trainer's compute_loss
+        conflicts = [
+            k
+            for k in (
+                "rl",
+                "reward_model",
+                "process_reward_model",
+                "kd_trainer",
+                "diffusion_lm",
+                "use_dft",
+                "use_eaft",
+                "cut_cross_entropy",
+                "liger_fused_linear_cross_entropy",
+                "liger_cross_entropy",
+                "chunked_cross_entropy",
+                "batch_flattening",
+                "processor_type",
+            )
+            if data.get(k)
+        ]
+        cp_size = (
+            data.get("context_parallel_size")
+            or data.get("sequence_parallel_degree")
+            or 1
+        )
+        if cp_size > 1:
+            conflicts.append("context_parallel_size > 1")
+        if conflicts:
+            raise ValueError(
+                "Per-token loss weights (`message_field_weight` / `field_sample_weight`) "
+                f"cannot be combined with: {', '.join(conflicts)}."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_custom_loss_conflicts(cls, data):
         custom_losses = [k for k in ("use_dft", "use_eaft") if data.get(k)]
         if not custom_losses:

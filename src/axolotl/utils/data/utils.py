@@ -193,6 +193,8 @@ def truncate_long_seq(sample, sequence_len=2048):
                 sample["attention_mask"][i] = sample["attention_mask"][i][:sequence_len]
             if "labels" in sample:
                 sample["labels"][i] = sample["labels"][i][:sequence_len]
+            if "loss_weights" in sample:
+                sample["loss_weights"][i] = sample["loss_weights"][i][:sequence_len]
             if "position_ids" in sample:
                 sample["position_ids"][i] = sample["position_ids"][i][:sequence_len]
     return sample

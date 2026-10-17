@@ -12,6 +12,18 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def fill_missing_loss_weights(features: list[dict]) -> None:
+    """Give rows without ``loss_weights`` unit weight on their trained tokens."""
+    if not any("loss_weights" in feature for feature in features):
+        return
+    for feature in features:
+        if "loss_weights" not in feature:
+            weights = (np.asarray(feature["labels"]) != -100).astype(np.float32)
+            feature["loss_weights"] = (
+                weights.tolist() if isinstance(feature["labels"], list) else weights
+            )
+
+
 @dataclass
 class DataCollatorForSeq2Seq:
     """
@@ -68,9 +80,11 @@ class DataCollatorForSeq2Seq:
         if return_tensors is None:
             return_tensors = self.return_tensors
 
+        fill_missing_loss_weights(features)
         for feature_name, pad_token_id in [
             ("labels", self.label_pad_token_id),
             ("position_ids", self.position_pad_token_id),
+            ("loss_weights", 0.0),
         ]:
             feat = (
                 [feature[feature_name] for feature in features]
@@ -90,6 +104,7 @@ class DataCollatorForSeq2Seq:
                     )
 
                 padding_side = self.tokenizer.padding_side
+                dtype = np.float32 if feature_name == "loss_weights" else np.int64
                 for feature in features:
                     remainder_len = max_feature_length - len(feature[feature_name])
                     if feature_name == "position_ids":
@@ -105,11 +120,11 @@ class DataCollatorForSeq2Seq:
                     elif padding_side == "right":
                         feature[feature_name] = np.concatenate(
                             [feature[feature_name], remainder]
-                        ).astype(np.int64)
+                        ).astype(dtype)
                     else:
                         feature[feature_name] = np.concatenate(
                             [remainder, feature[feature_name]]
-                        ).astype(np.int64)
+                        ).astype(dtype)
 
         features = self.tokenizer.pad(
             features,
@@ -120,6 +135,8 @@ class DataCollatorForSeq2Seq:
         )
         if not has_attn_mask and "attention_mask" in features:
             del features["attention_mask"]
+        if return_tensors == "pt" and "loss_weights" in features:
+            features["loss_weights"] = features["loss_weights"].float()
 
         # prepare decoder_input_ids
         if (
@@ -190,6 +207,7 @@ class BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             features = [features]
         out_features = [{} for _ in features]
         for i, features_ in enumerate(features):
+            fill_missing_loss_weights(features_)
             for feature in features_[0].keys():
                 if feature == "length":
                     continue
@@ -222,6 +240,7 @@ class V2BatchSamplerDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             features: List[List[dict]] = [features]
         out_features = [{} for _ in features]
         for i, features_ in enumerate(features):
+            fill_missing_loss_weights(features_)
             for feature in features_[0].keys():
                 if feature == "length":
                     continue

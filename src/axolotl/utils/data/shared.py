@@ -74,6 +74,7 @@ DATASET_HASH_DATASET_EXTRA_FIELDS = (
     "field_messages",
     "field_model",
     "field_rejected",
+    "field_sample_weight",
     "field_thinking",
     "field_tools",
     "input_format",
@@ -83,6 +84,7 @@ DATASET_HASH_DATASET_EXTRA_FIELDS = (
     "message_field_role",
     "message_field_training",
     "message_field_training_detail",
+    "message_field_weight",
     "message_property_mappings",
     "name",
     "preprocess_shards",
@@ -686,6 +688,35 @@ def generate_dataset_hash_from_config(
     return str(md5(config_str))
 
 
+def _unit_loss_weights(batch: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "loss_weights": [
+            [0.0 if label == -100 else 1.0 for label in labels]
+            for labels in batch["labels"]
+        ]
+    }
+
+
+def _align_loss_weights(datasets: list[Dataset]) -> list[Dataset]:
+    """Give datasets without ``loss_weights`` unit weights so they can be concatenated."""
+    has_weights = [
+        "loss_weights" in (getattr(ds, "column_names", None) or []) for ds in datasets
+    ]
+    if all(has_weights) or not any(has_weights):
+        return datasets
+
+    reference = datasets[has_weights.index(True)].features["loss_weights"]
+    LOG.info("Adding unit `loss_weights` to datasets without per-token loss weights")
+    return [
+        ds
+        if has
+        else ds.map(_unit_loss_weights, batched=True).cast_column(
+            "loss_weights", reference
+        )
+        for ds, has in zip(datasets, has_weights, strict=True)
+    ]
+
+
 def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
     """Merge multiple datasets into one with optional shuffling.
 
@@ -711,6 +742,8 @@ def merge_datasets(datasets: list[Dataset], cfg: DictDefault) -> Dataset:
     if cfg.shuffle_before_merging_datasets:
         LOG.info("Shuffling each dataset individually before merging...")
         datasets = [ds.shuffle(seed=cfg.seed) for ds in datasets]
+
+    datasets = _align_loss_weights(datasets)
 
     LOG.info("Merging datasets...")
     merged_dataset = concatenate_datasets(datasets)

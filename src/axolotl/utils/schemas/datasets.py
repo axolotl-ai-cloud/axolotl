@@ -152,6 +152,18 @@ class SFTDataset(BaseModel):
             "description": "The key in the message turn that contains the training details. Useful to selectively train on certain tokens in a turn. The value of the key is a List[Dict] containing `begin_offset` (start character index in content), `end_offset` (end character index in content), and `train` (boolean whether to train)."
         },
     )
+    message_field_weight: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "(chat_template only) The key in the message turn holding a non-negative float loss weight for that turn's trained tokens. Missing values default to 1.0; 0 masks the turn like `training: false`. Does not make untrained turns trainable."
+        },
+    )
+    field_sample_weight: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "(chat_template only) The key in each row holding a non-negative float loss weight applied to all of that row's trained tokens. Missing values default to 1.0. Multiplies with `message_field_weight`."
+        },
+    )
     split_thinking: bool | None = Field(
         default=None,
         json_schema_extra={
