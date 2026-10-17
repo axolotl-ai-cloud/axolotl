@@ -123,6 +123,29 @@ class TestHFRLTrainerBuilder:
         assert training_arguments.loss_type == ["apo_zero", "hinge"]
         assert training_arguments.loss_weights == [1.0, 0.5]
 
+    def test_dpo_loss_mask_dataset_pads_through_trl_args(
+        self, dpo_cfg, model, tokenizer
+    ):
+        """Loss-masked pairs skip the legacy padding collator; the trainer's
+        loss-mask collator gets pad_to_multiple_of from the training args."""
+        dpo_cfg["pad_to_multiple_of"] = 64
+        builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer)
+        builder.train_dataset = Dataset.from_list(
+            [
+                {
+                    "prompt_ids": [1],
+                    "chosen_ids": [2],
+                    "rejected_ids": [3],
+                    "chosen_loss_mask": [1],
+                    "rejected_loss_mask": [1],
+                }
+            ]
+        )
+        training_arguments, _ = builder._build_training_arguments(100)
+
+        assert builder.build_collator() is None
+        assert training_arguments.pad_to_multiple_of == 64
+
     def test_orpo_training_arguments(self, orpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer)
         training_arguments, _ = builder._build_training_arguments(100)

@@ -348,3 +348,40 @@ def test_map_dataset_gives_reemitted_columns_fresh_features():
     assert mapped.column_names == ["prompt", "chosen", "rejected"]
     assert mapped[0]["chosen"] == "good" and mapped[0]["rejected"] == "bad"
     assert str(mapped.features["chosen"]) == "Value('string')"
+
+
+def _tokenized_pair(prompt_len, chosen_mask, rejected_mask):
+    return {
+        "prompt_ids": list(range(prompt_len)),
+        "chosen_ids": list(range(100, 100 + len(chosen_mask))),
+        "rejected_ids": list(range(200, 200 + len(rejected_mask))),
+        "chosen_loss_mask": chosen_mask,
+        "rejected_loss_mask": rejected_mask,
+    }
+
+
+class TestTokenizedPreferenceLengths:
+    """Pre-tokenized pairs (``chat_template.multiturn``) are measured by their ids."""
+
+    def test_drop_keeps_fitting_pair(self):
+        sample = _tokenized_pair(3, [1, 0, 1], [0, 1])
+        assert _drop_long_sequences(sample, RLType.DPO, None, sequence_len=6)
+
+    def test_drop_long_side(self):
+        sample = _tokenized_pair(3, [1, 0, 1, 1], [0, 1])
+        assert not _drop_long_sequences(sample, RLType.DPO, None, sequence_len=6)
+
+    def test_truncate_keeps_ids_and_masks_aligned(self):
+        sample = _tokenized_pair(3, [1, 0, 1, 1, 0], [0, 1])
+        result = _truncate_long_sequences_rl(sample, RLType.DPO, None, sequence_len=6)
+        assert result["chosen_ids"] == sample["chosen_ids"][:3]
+        assert result["chosen_loss_mask"] == [1, 0, 1]
+        assert result["rejected_ids"] == sample["rejected_ids"]
+        assert result["rejected_loss_mask"] == sample["rejected_loss_mask"]
+        assert _drop_long_sequences(result, RLType.DPO, None, sequence_len=6)
+
+    def test_truncation_that_removes_every_trained_token_is_dropped(self):
+        sample = _tokenized_pair(3, [0, 0, 0, 1], [1])
+        result = _truncate_long_sequences_rl(sample, RLType.DPO, None, sequence_len=6)
+        assert result["chosen_loss_mask"] == [0, 0, 0]
+        assert not _drop_long_sequences(result, RLType.DPO, None, sequence_len=6)

@@ -284,6 +284,101 @@ Sample input format:
 }
 ```
 
+#### chat_template.multiturn
+
+Trajectory-level preference pairs for multi-turn, tool-using agents. `chosen` and
+`rejected` are full continuations of a shared prompt: assistant turns (with
+`reasoning_content` and OpenAI-style `tool_calls`) interleaved with `tool` results, ending
+in a final assistant message or a terminal tool call. The two trajectories can differ in
+length and content.
+
+Both sides are rendered with the chat template (including `tools`), and the DPO
+log-probabilities are summed only over tokens of assistant turns: reasoning, content, tool
+calls, and their end-of-turn token. Tool results, user turns, and the template scaffolding
+around them come from the environment, so they are excluded from both the chosen and
+rejected sums. Turns are located with the same logic as SFT `chat_template`, so
+`roles_to_train`, `train_on_eos`/`train_on_eot`, `eot_tokens`, and
+`message_field_training` behave as they do there. An assistant message with `"train": false`
+is rendered but left out of the sum.
+
+Works with every `rl: dpo` loss type, including APO (`dpo_loss_type: ["apo_zero"]` or
+`["apo_down"]`).
+
+```yaml
+rl: dpo
+dpo_loss_type: ["apo_zero"]   # or omit for sigmoid DPO
+chat_template: tokenizer_default
+# templates that end turns with something other than eos (e.g. Harmony-style) need
+# their end-of-turn tokens listed so they are trained
+# eot_tokens: ["<|eot|>", "<|eom|>"]
+datasets:
+  - path: ...
+    split: train
+    type: chat_template.multiturn
+    field_messages: messages     # shared prefix (system + user)
+    field_chosen: chosen
+    field_rejected: rejected
+    field_tools: tools           # list of tool schemas, or a JSON string of one
+    message_field_training: train  # per-message opt-out (default: train)
+```
+
+Sample input format:
+
+```json
+{
+    "tools": [{"type": "function", "function": {"name": "search", "parameters": {...}}}],
+    "messages": [
+        {"role": "system", "content": "..."},
+        {"role": "user", "content": "..."}
+    ],
+    "chosen": [
+        {
+            "role": "assistant",
+            "reasoning_content": "...",
+            "content": "",
+            "tool_calls": [
+                {"id": "call_1", "type": "function",
+                 "function": {"name": "search", "arguments": {"q": "..."}}}
+            ]
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "..."},
+        {"role": "assistant", "reasoning_content": "...", "content": "..."}
+    ],
+    "rejected": [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "call_1", "type": "function",
+                 "function": {"name": "search", "arguments": "{\"q\": \"...\"}"}}
+            ]
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": "..."},
+        {"role": "assistant", "content": "...", "train": false},
+        {"role": "assistant", "content": "..."}
+    ]
+}
+```
+
+If `field_messages` is absent from a row, `chosen` and `rejected` are treated as full
+conversations and the shared prompt is the leading messages before the first assistant
+turn, which must be identical on both sides.
+
+The strategy emits pre-tokenized `prompt_ids`/`chosen_ids`/`rejected_ids` with
+per-token `chosen_loss_mask`/`rejected_loss_mask`; the masks are truncated together with
+the ids under `sequence_len` and `excess_length_strategy`, and pairs left without any
+assistant token on either side are dropped.
+
+::: {.callout-note}
+- Only `rl: dpo` (and `rl: ipo`) is supported, and `chat_template.multiturn` datasets cannot
+  be mixed with other dataset types in the same `datasets` list.
+- The masked tokens still condition later tokens: a tool result changes the log-probs of
+  the assistant turns after it, it just does not contribute its own log-probs.
+- Image datasets and `tokenizer_use_mistral_common` are not supported.
+- Length-normalized losses (`ipo`, `sigmoid_norm`) and `dpo_ld_alpha` count only the
+  assistant tokens.
+:::
+
 #### user_defined.default
 
 For custom behaviors,
