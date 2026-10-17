@@ -535,13 +535,14 @@ class ModelLoader:
 
             patch_hidden_states_offload()
             return
-        # TRL offloader is adapter-aware:
-        #   - LoRA/QLoRA: offload *replaces* recompute (pure offload is leaner/faster;
-        #     recompute would pin the offloaded tensors and balloon memory). No wrap.
-        #   - Full finetune: pure offload of every activation exceeds PCIe bandwidth
-        #     (backlogs on-GPU, OOMs at long seq), so keep recompute and offload only
-        #     the checkpoint boundaries — apply the manual wrap.
-        if ao and not self.cfg.adapter:
+        # TRL offloader offloads whatever autograd saves:
+        #   - gradient_checkpointing on: layers recompute and only the tensors saved
+        #     outside the checkpointed layers are offloaded. Adapters use HF
+        #     checkpointing (enabled with the embedding dtypes and by the Trainer);
+        #     a full finetune gets the manual wrap here.
+        #   - gradient_checkpointing off: nothing is recomputed and every activation
+        #     is offloaded, which is bound by host RAM and PCIe bandwidth.
+        if ao and not self.cfg.adapter and self.cfg.gradient_checkpointing:
             from axolotl.core.trainers.mixins.activation_checkpointing import (
                 ac_wrap_hf_model,
             )

@@ -155,10 +155,9 @@ class TestActivationOffloading:
     def test_offload_is_adapter_aware(
         self, temp_dir, monkeypatch, adapter, expect_recompute_wrap
     ):
-        """activation_offloading is adapter-aware: LoRA offloads *instead of*
-        recomputing (no checkpoint wrap — pure offload is leaner/faster), while
-        full finetune keeps recompute and offloads the checkpoint boundaries
-        (the combo — pure offload is PCIe-bound and OOMs at full-param scale)."""
+        """With gradient_checkpointing, LoRA recomputes through HF checkpointing
+        (no checkpoint wrap) and a full finetune through the loader's wrap; both
+        offload only what is saved outside the checkpointed layers."""
         captured = {}
         original_step = ActivationOffloadingMixin.training_step
 
