@@ -11,7 +11,7 @@ execute:
 
 ## Overview
 
-Axolotl supports on-demand checkpoint saving during training. You can trigger checkpoints via file-based triggers (for programmatic control) or Control+C (for interactive use).
+Axolotl supports on-demand checkpoint saving during training. You can trigger checkpoints via file-based triggers (for programmatic control) or Control+C (for interactive use), and mirror checkpoints from fast local storage to a shared filesystem without blocking training.
 
 ## File-Based Checkpoint Trigger
 
@@ -61,6 +61,64 @@ dynamic_checkpoint:
 ```bash
 touch /path/to/output_dir/my_trigger.save
 ```
+
+## Mirroring Checkpoints to Shared Storage
+
+Writing checkpoints, especially optimizer states, to a network filesystem such as NFS can stall
+training for as long as the write takes. With `checkpoint_mirror`, training saves to a fast local
+`output_dir` (for example node-local NVMe) and keeps going while each checkpoint is copied to a
+shared directory in the background.
+
+```yaml
+output_dir: /mnt/local-nvme/my-run
+save_steps: 500
+save_total_limit: 2
+
+checkpoint_mirror:
+  dir: /mnt/nfs/runs/my-run
+  delete: mirror        # or keep
+  # save_total_limit: 10  # with delete: keep, how many to keep in dir
+  max_pending: 2
+```
+
+**Options:**
+
+- `dir`: Shared directory that receives every checkpoint. It must be outside `output_dir`.
+- `delete`: `mirror` keeps as many checkpoints in `dir` as `save_total_limit` keeps locally. `keep`
+  never deletes from `dir`, or keeps the newest `checkpoint_mirror.save_total_limit` when set.
+  The newest and best checkpoints are never deleted.
+- `max_pending`: Checkpoints waiting to be copied before the next save blocks until the oldest copy
+  finishes. Queued checkpoints are hard links, so this bounds the local disk used when the shared
+  filesystem is slower than the save interval.
+- `copy_threads`: Files copied in parallel per checkpoint. Default: 4.
+- `resume`: Whether `auto_resume_from_checkpoints` may resume from `dir`. Default: `true`.
+
+### How It Works
+
+1. On each save, the checkpoint is hard-linked into a private queue in `output_dir`, which is
+   instant and survives local rotation by `save_total_limit`.
+2. A background thread copies queued checkpoints in order into a hidden staging directory in
+   `dir`, then renames it to `checkpoint-N`. A checkpoint in `dir` is therefore always complete.
+3. After training, the final model, tokenizer and other files in `output_dir` are copied as well,
+   and pending checkpoint copies are drained before the process exits.
+
+A failed copy logs a warning and training continues; the local checkpoint is unaffected. If the
+newest checkpoint failed to copy, it is retried once at the end of training.
+
+### Multi-node Runs
+
+When `output_dir` is local to each node, every node holds only its own ranks' model shards,
+optimizer states and RNG states. Axolotl detects this at startup. Each node then copies its share,
+and `checkpoint-N` appears in `dir` only once every node has finished. Nodes other than the first
+also apply `save_total_limit` to their own `output_dir`, which Hugging Face Trainer only does on
+the main process.
+
+### Resuming
+
+With `auto_resume_from_checkpoints: true`, Axolotl resumes from the newest checkpoint found in
+`output_dir` or `dir`, preferring `output_dir` on a tie. When `output_dir` is local to each node
+of a multi-node run, no single node holds a complete checkpoint, so it always resumes from `dir`.
+This also covers a restart on fresh nodes whose local disks are empty.
 
 ## Control+C (SIGINT) Checkpoint
 

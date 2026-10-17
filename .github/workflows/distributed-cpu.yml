@@ -125,6 +125,7 @@ jobs:
             tests/integrations/test_context_parallel_glm_dsa_cp.py \
             tests/integrations/context_parallel/test_mesh.py \
             tests/core/trainers/diffusion_lm/test_full_sequence.py \
+            tests/core/test_checkpoint_mirror_dist.py \
             --cov=axolotl --cov-append --cov-report=xml:distributed-cpu-coverage.xml
       - name: Run slow CPU integrations
         if: inputs.slow

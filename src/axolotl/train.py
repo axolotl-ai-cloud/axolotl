@@ -745,6 +745,10 @@ def train(
         str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files
     )
     create_model_card(cfg, trainer)
+    if cfg.checkpoint_mirror:
+        from axolotl.core.checkpoint_mirror import finish_checkpoint_mirror
+
+        finish_checkpoint_mirror(trainer)
     if not cfg.use_ray:
         cleanup_distributed()
     PluginManager.get_instance().post_train(cfg, model)

@@ -548,6 +548,21 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_checkpoint_mirror_dir(cls, data):
+        mirror = data.get("checkpoint_mirror")
+        mirror_dir = mirror.get("dir") if isinstance(mirror, dict) else None
+        if mirror_dir and data.get("output_dir"):
+            output_dir = Path(data["output_dir"]).expanduser().resolve()
+            target = Path(mirror_dir).expanduser().resolve()
+            if target == output_dir or target.is_relative_to(output_dir):
+                raise ValueError(
+                    "checkpoint_mirror.dir must be outside output_dir; the final copy "
+                    "would otherwise copy the mirror into itself"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_push_save(cls, data):
         if data.get("hub_model_id") and (
             data.get("save_strategy") not in ["steps", "epoch", None]

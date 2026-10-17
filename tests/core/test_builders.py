@@ -206,6 +206,26 @@ class TestHFCausalTrainerBuilder:
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
 
+    def test_checkpoint_mirror_adds_callback(self, sft_cfg, model, tokenizer, tmp_path):
+        from axolotl.core.checkpoint_mirror import CheckpointMirrorCallback
+
+        sft_cfg["checkpoint_mirror"] = {
+            "dir": str(tmp_path / "nfs"),
+            "delete": "keep",
+            "save_total_limit": 3,
+            "max_pending": 1,
+            "copy_threads": 2,
+        }
+        trainer = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100)
+        (callback,) = [
+            cb
+            for cb in trainer.callback_handler.callbacks
+            if isinstance(cb, CheckpointMirrorCallback)
+        ]
+        assert callback.mirror_dir == str(tmp_path / "nfs")
+        assert (callback.delete, callback.save_total_limit) == ("keep", 3)
+        assert (callback.max_pending, callback.copy_threads) == (1, 2)
+
     @pytest.mark.parametrize(
         "cfg_string",
         [

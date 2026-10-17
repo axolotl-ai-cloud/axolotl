@@ -34,6 +34,20 @@ def determine_last_checkpoint(cfg: DictDefault, update: bool = True) -> str | No
             LOG.info(f"Resuming from last checkpoint at {last_checkpoint}")
             return last_checkpoint
 
+    mirror = cfg.checkpoint_mirror
+    if (
+        update
+        and mirror
+        and mirror.get("resume", True)
+        and cfg.resume_from_checkpoint is None
+        and cfg.auto_resume_from_checkpoints
+    ):
+        from axolotl.core.checkpoint_mirror import resume_checkpoint
+
+        last_checkpoint = resume_checkpoint(
+            cfg.output_dir, mirror["dir"], last_checkpoint
+        )
+
     if (
         cfg.resume_from_checkpoint is None
         and cfg.auto_resume_from_checkpoints

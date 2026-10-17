@@ -18,6 +18,7 @@ from pydantic import (
 
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.checkpoint_mirror import CheckpointMirrorConfig
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -1320,6 +1321,12 @@ class AxolotlInputConfig(
     )
     save_total_limit: int | None = Field(
         default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
+    )
+    checkpoint_mirror: CheckpointMirrorConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Copy each checkpoint from output_dir to a shared directory in the background, so output_dir can be fast local storage. See https://docs.axolotl.ai/docs/checkpoint_saving.html"
+        },
     )
     save_first_step: bool | None = Field(
         default=None,

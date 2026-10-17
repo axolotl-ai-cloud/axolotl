@@ -602,3 +602,43 @@ class TestTrainableTokenWarning:
             AxolotlInputConfig.warn_peft_trainable_token_to_fix_untrained(data)
         warning.assert_called_once()
         assert "Token 201" in warning.call_args.args[0]
+
+
+class TestCheckpointMirror:
+    """checkpoint_mirror copies saves from a local output_dir to a shared directory."""
+
+    def test_defaults(self, min_base_cfg, tmp_path):
+        cfg = min_base_cfg | {
+            "output_dir": str(tmp_path / "nvme"),
+            "checkpoint_mirror": {"dir": str(tmp_path / "nfs")},
+        }
+        mirror = validate_config(cfg).checkpoint_mirror
+        assert mirror["delete"] == "mirror"
+        assert mirror["save_total_limit"] is None
+        assert mirror["max_pending"] == 2
+        assert mirror["resume"] is True
+
+    @pytest.mark.parametrize("inside", ["", "mirror"])
+    def test_rejects_a_mirror_inside_output_dir(self, min_base_cfg, tmp_path, inside):
+        out = tmp_path / "nvme"
+        cfg = min_base_cfg | {
+            "output_dir": str(out),
+            "checkpoint_mirror": {"dir": str(out / inside)},
+        }
+        with pytest.raises(ValueError, match="outside output_dir"):
+            validate_config(cfg)
+
+    def test_mirror_limit_requires_keep(self, min_base_cfg, tmp_path):
+        cfg = min_base_cfg | {
+            "output_dir": str(tmp_path / "nvme"),
+            "checkpoint_mirror": {
+                "dir": str(tmp_path / "nfs"),
+                "delete": "mirror",
+                "save_total_limit": 3,
+            },
+        }
+        with pytest.raises(ValueError, match="only applies with `delete: keep`"):
+            validate_config(cfg)
+
+        cfg["checkpoint_mirror"]["delete"] = "keep"
+        assert validate_config(cfg).checkpoint_mirror["save_total_limit"] == 3
