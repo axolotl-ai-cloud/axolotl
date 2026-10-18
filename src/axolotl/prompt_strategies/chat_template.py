@@ -566,20 +566,26 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             labels[block_start:block_end] = input_ids[block_start:block_end]
             trained_blocks.append((block_start, block_end))
 
-        if self.train_on_eot in ("none", "last") and trained_blocks:
-            keep_from = (
-                trained_blocks[-1][0] if self.train_on_eot == "last" else len(labels)
-            )
-            for idx in range(keep_from):
-                if (
-                    labels[idx] != IGNORE_TOKEN_ID
-                    and input_ids[idx] in self._eot_token_ids
-                ):
-                    labels[idx] = IGNORE_TOKEN_ID
-        elif self.train_on_eot == "all":
-            for idx, token in enumerate(input_ids):
-                if token in self._eot_token_ids:
-                    labels[idx] = token
+        eos_token_ids = (
+            {self.tokenizer.eos_token_id}
+            if self.tokenizer.eos_token_id is not None
+            else set()
+        )
+        for token_ids, train_option in (
+            (self._eot_token_ids, self.train_on_eot),
+            (eos_token_ids, self.train_on_eos),
+        ):
+            if train_option in ("none", "last") and trained_blocks:
+                keep_from = (
+                    trained_blocks[-1][0] if train_option == "last" else len(labels)
+                )
+                for idx in range(keep_from):
+                    if labels[idx] != IGNORE_TOKEN_ID and input_ids[idx] in token_ids:
+                        labels[idx] = IGNORE_TOKEN_ID
+            elif train_option == "all":
+                for idx, token in enumerate(input_ids):
+                    if token in token_ids:
+                        labels[idx] = token
 
         tokenized = {
             "input_ids": input_ids,
@@ -1422,6 +1428,7 @@ class MistralStrategy(ChatTemplateStrategy):
         train_on_eot: str | None = None,
         eot_tokens: list[str] | None = None,
         split_thinking: bool | None = False,
+        generation_tags: bool | None = None,
     ):
         # Call the parent's parent __init__ (PromptTokenizingStrategy) to skip ChatTemplateStrategy's validation
 
@@ -1429,6 +1436,11 @@ class MistralStrategy(ChatTemplateStrategy):
             self, prompter, tokenizer, train_on_inputs, sequence_len
         )
         self.prompter: ChatTemplatePrompter = prompter
+        if generation_tags:
+            raise ValueError(
+                "generation_tags is not supported with mistral-common tokenizers"
+            )
+        self.generation_tags = False
 
         self.roles_to_train = []
         if roles_to_train:

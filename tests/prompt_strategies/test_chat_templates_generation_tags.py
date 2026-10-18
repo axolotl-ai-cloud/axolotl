@@ -1,5 +1,8 @@
 """Labeling assistant turns from a template's ``{% generation %}`` markers."""
 
+import copy
+from unittest.mock import MagicMock
+
 import pytest
 from datasets import Dataset
 
@@ -43,7 +46,18 @@ SPECIALS = [
 ]
 
 
-def _strategy(tokenizer, template=GENERATION_TEMPLATE, **ds_overrides):
+@pytest.fixture(name="smollm2_tokenizer")
+def fixture_smollm2_tokenizer(smollm2_tokenizer):
+    # _strategy adds special tokens and swaps eos_token; keep the session tokenizer clean
+    return copy.deepcopy(smollm2_tokenizer)
+
+
+def _strategy(
+    tokenizer,
+    template=GENERATION_TEMPLATE,
+    eot_tokens=("<|end|>", "<|call|>", "<|return|>"),
+    **ds_overrides,
+):
     tokenizer.add_special_tokens({"additional_special_tokens": SPECIALS})
     tokenizer.eos_token = "<|return|>"
     ds_cfg = {
@@ -61,7 +75,7 @@ def _strategy(tokenizer, template=GENERATION_TEMPLATE, **ds_overrides):
             {
                 "train_on_inputs": False,
                 "sequence_len": 1024,
-                "eot_tokens": ["<|end|>", "<|call|>", "<|return|>"],
+                "eot_tokens": list(eot_tokens),
             }
         ),
         DictDefault(ds_cfg),
@@ -207,3 +221,60 @@ def test_matches_diff_locator_on_field_content(smollm2_tokenizer):
     assert set(smollm2_tokenizer.convert_ids_to_tokens(extra)) <= set(
         SPECIALS + ["analysis", "final", "assistant", "Ġto", "=", "get", "_alert"]
     ) | set(smollm2_tokenizer.tokenize("assistant to=get_alertanalysisfinal"))
+
+
+@pytest.mark.parametrize(
+    "train_on_eos, expect_return",
+    [("turn", True), ("last", True), ("none", False), ("all", True)],
+)
+def test_train_on_eos_applies_when_eos_is_not_an_eot_token(
+    smollm2_tokenizer, train_on_eos, expect_return
+):
+    strategy = _strategy(
+        smollm2_tokenizer,
+        eot_tokens=("<|end|>", "<|call|>"),
+        train_on_eot="turn",
+        train_on_eos=train_on_eos,
+    )
+    row = Dataset.from_list([_conversation()]).map(strategy.tokenize_prompt)[0]
+    labels = row["labels"]
+    call_id = smollm2_tokenizer.convert_tokens_to_ids("<|call|>")
+    return_id = smollm2_tokenizer.convert_tokens_to_ids("<|return|>")
+    assert any(l == return_id for l in labels) is expect_return
+    assert any(l == call_id for l in labels)
+
+
+def test_train_on_eos_last_keeps_only_the_last_blocks_eos(smollm2_tokenizer):
+    conversation = _conversation()
+    # a second final answer before the tool turn puts an EOS in an earlier block
+    conversation["messages"][1:1] = [
+        {"role": "assistant", "content": "Looking it up."},
+        {"role": "user", "content": "Go ahead."},
+    ]
+    strategy = _strategy(
+        smollm2_tokenizer,
+        eot_tokens=("<|end|>", "<|call|>"),
+        train_on_eot="turn",
+        train_on_eos="last",
+    )
+    row = Dataset.from_list([conversation]).map(strategy.tokenize_prompt)[0]
+    return_id = smollm2_tokenizer.convert_tokens_to_ids("<|return|>")
+    assert row["input_ids"].count(return_id) == 2
+    assert row["labels"].count(return_id) == 1
+    assert (
+        row["labels"][len(row["labels"]) - 1 - row["input_ids"][::-1].index(return_id)]
+        == return_id
+    )
+
+
+def test_mistral_strategy_rejects_generation_tags():
+    from axolotl.prompt_strategies.chat_template import MistralStrategy
+
+    with pytest.raises(ValueError, match="generation_tags"):
+        MistralStrategy(
+            MagicMock(),
+            tokenizer=MagicMock(),
+            train_on_inputs=False,
+            sequence_len=512,
+            generation_tags=True,
+        )
