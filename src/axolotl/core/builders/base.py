@@ -400,13 +400,16 @@ class TrainerBuilderBase(abc.ABC):
             elif self.cfg.optimizer == "sinkgd":
                 _, device_mesh = build_parallelism_config(self.cfg)
 
-                if device_mesh is not None:
+                # FSDP shards the weights into DTensors even when the parallelism config
+                # yields no mesh (pure expert parallelism shards over the ep axis)
+                if device_mesh is not None or self.cfg.fsdp_config:
                     from axolotl.utils.optimizers.sinkgd import (
                         DistSinkGDOptimizerFactory,
                     )
 
                     optimizer_cls = DistSinkGDOptimizerFactory
-                    optimizer_kwargs["device_mesh"] = device_mesh
+                    if device_mesh is not None:
+                        optimizer_kwargs["device_mesh"] = device_mesh
                 else:
                     from axolotl.utils.optimizers.sinkgd import SinkGDOptimizerFactory
 
