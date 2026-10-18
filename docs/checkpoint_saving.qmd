@@ -93,6 +93,9 @@ checkpoint_mirror:
 - `copy_threads`: Files copied in parallel per checkpoint. Default: 4.
 - `resume`: Whether `auto_resume_from_checkpoints` may resume from `dir`. Default: `true`.
 
+On CoreWeave CKS, `output_dir` can be under the pod's node-local `/scratch` volume when
+`checkpoint_mirror.dir` is on the PVC (under `pvc_mount`).
+
 ### How It Works
 
 1. On each save, the checkpoint is hard-linked into a private queue in `output_dir`, which is
