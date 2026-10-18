@@ -264,7 +264,7 @@ The agent server orchestrates the entire multi-turn loop:
 ### Data Producer Architecture (Multi-Turn)
 
 When `nemo_gym_multi_turn: true`, the plugin automatically forces `use_data_producer: true`
-which selects the `AxolotlAsyncGRPOTrainer`. The plugin then swaps the trainer's data
+which selects the `AxolotlDataProducerGRPOTrainer`. The plugin then swaps the trainer's data
 producer with `NemoGymDataProducer`, which:
 
 1. Gets a prompt batch from the dataset iterator

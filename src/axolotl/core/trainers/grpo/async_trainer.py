@@ -22,6 +22,7 @@ Classes exported:
 
 import atexit
 import concurrent.futures
+import inspect
 import itertools
 import queue
 import threading
@@ -2898,6 +2899,18 @@ class AsyncGRPOTrainer(GRPOTrainer):
         all_entropies = torch.cat(all_entropy_list, dim=0) if compute_entropy else None
         return all_logps, all_entropies
 
+    def _model_forward_keys(self):
+        # Some models (SmolVLM/Idefics3) reject `logits_to_keep`.
+        keys = getattr(self, "_forward_keys_cache", None)
+        if keys is None:
+            model = self.accelerator.unwrap_model(self.model)
+            if hasattr(model, "get_base_model"):
+                model = model.get_base_model()
+            keys = self._forward_keys_cache = frozenset(
+                inspect.signature(model.forward).parameters
+            )
+        return keys
+
     @profiling_decorator
     def _get_per_token_logps_and_entropies(
         self,
@@ -2943,7 +2956,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         # Use Liger's Triton kernel in scoring path (no grad): fuses
         # temperature + log_softmax + gather into a single kernel pass.
         use_fused = (
-            self.use_liger_kernel
+            self.args.use_liger_kernel
             and _fused_selective_log_softmax is not None
             and not torch.is_grad_enabled()
         )
@@ -3021,7 +3034,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         start : start + batch_size
                     ]
 
-                if "logits_to_keep" in self.model_kwarg_keys:
+                if "logits_to_keep" in self._model_forward_keys():
                     model_inputs["logits_to_keep"] = logits_to_keep + 1
 
                 model_inputs["use_cache"] = False

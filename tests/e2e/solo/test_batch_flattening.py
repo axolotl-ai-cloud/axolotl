@@ -59,15 +59,15 @@ def make_mock_trainer(model):
 
     The three methods we test (_get_per_token_logps_flattened,
     _get_per_token_logps_and_entropies_flattened, _get_per_token_logps_and_entropies)
-    access self.temperature, self.use_liger_kernel, self.is_fsdp_enabled,
-    self.accelerator, and self.model_kwarg_keys.
+    access self.temperature, self.args.use_liger_kernel, self.is_fsdp_enabled,
+    self.accelerator, and self._model_forward_keys().
     """
     trainer = MagicMock(spec=[])
 
     trainer.temperature = 1.0
-    trainer.use_liger_kernel = False
+    trainer.args = types.SimpleNamespace(use_liger_kernel=False)
     trainer.is_fsdp_enabled = False
-    trainer.model_kwarg_keys = set()
+    trainer._forward_keys_cache = frozenset()
 
     # accelerator.unwrap_model should return the model unchanged
     accelerator = MagicMock()
@@ -75,6 +75,9 @@ def make_mock_trainer(model):
     trainer.accelerator = accelerator
 
     # Bind the real unbound methods to our mock
+    trainer._model_forward_keys = types.MethodType(
+        AsyncGRPOTrainer._model_forward_keys, trainer
+    )
     trainer._get_per_token_logps_flattened = types.MethodType(
         AsyncGRPOTrainer._get_per_token_logps_flattened, trainer
     )

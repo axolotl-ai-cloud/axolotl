@@ -37,14 +37,18 @@ Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also w
 
 ## Key Async Features
 
+`async_prefetch: true` with `rl: grpo` runs TRL's `AsyncGRPOTrainer` (vLLM server, FSDP2/DDP, `beta: 0`, conversational prompts, picklable reward functions).
+
 | Feature | Config | Purpose |
 |---------|--------|---------|
-| Async prefetch | `async_prefetch: true` | Overlap generation with training |
+| Async GRPO | `async_prefetch: true` | Generate and score continuously while training |
+| Staleness bound | `max_staleness: 4` | Drop rollouts more than N weight syncs old |
 | LoRA sync | `vllm_lora_sync: true` | Fast adapter sync via filesystem |
-| Streaming scoring | `streaming_partial_batch: true` | Score one group at a time |
-| Zero-adv skip | `skip_zero_advantage_batches: true` | Skip batches with no learning signal |
-| Replay buffer | `replay_buffer_size: 100` | Cache high-signal groups |
-| IS correction | `vllm_importance_sampling_correction: true` | Fix off-policy distribution shift |
+| Zero-adv filter | `skip_zero_advantage_batches: true` | Drop samples with no learning signal before packing |
+| Reward workers | `reward_num_workers: 4` | Score rewards in processes, several groups at once |
+| Ratio cap | `vllm_importance_sampling_cap: 3.0` | Bound the policy/sampler ratio (dual-clip) |
+
+Streaming scoring, replay buffer, re-rolling and OPSM belong to the data producer trainer (EBFT, NeMo Gym, `use_data_producer` without `async_prefetch`).
 
 ## Health Checks
 
@@ -62,7 +66,10 @@ src/axolotl/
   cli/train.py                     # Entry point
   cli/vllm_serve.py                # Launches vLLM's native OpenAI server (dev mode, NCCL weight transfer, optional LoRA)
   core/trainers/grpo/
-    trainer.py                     # AxolotlGRPOTrainer
+    trainer.py                     # AxolotlGRPOTrainer, data producer trainer
+    trl_async_trainer.py           # Async GRPO: TRL's AsyncGRPOTrainer + axolotl extensions
+    trl_async_rollout.py           # Async GRPO rollout process: rewards, advantages, reward pool
+    async_trainer.py               # Data producer trainer internals (EBFT, NeMo Gym)
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
   utils/schemas/trl.py             # TRL config schema (all trl: options)
