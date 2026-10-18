@@ -61,3 +61,31 @@ class TestSchemaUnification:
             tool_call = decoded.split("<tool_call>")[-1].split("</tool_call>")[0]
             assert '"message": null' not in tool_call
             assert '"theta": null' not in tool_call
+
+    @pytest.mark.parametrize("batch_size", [1, 2])
+    def test_nullable_system_column(self, qwen3_prompt_strategy, batch_size):
+        dataset = Dataset.from_dict(
+            {
+                "system": ["Keep answers short.", None, ""],
+                "messages": [
+                    [
+                        {"role": "user", "content": f"Question {index}"},
+                        {"role": "assistant", "content": f"Answer {index}"},
+                    ]
+                    for index in range(3)
+                ],
+            }
+        )
+        tokenize = qwen3_prompt_strategy.tokenize_prompt
+        expected = dataset.map(tokenize, remove_columns=dataset.column_names)
+        without_system = tokenize({"messages": dataset[1]["messages"]})
+        assert expected[1] == without_system
+
+        actual = dataset.map(
+            tokenize,
+            batched=True,
+            batch_size=batch_size,
+            remove_columns=dataset.column_names,
+        )
+
+        assert actual.to_list() == expected.to_list()

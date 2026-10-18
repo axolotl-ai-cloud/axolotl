@@ -447,10 +447,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         Public method that can handle either a single prompt or a batch of prompts.
         """
 
-        prompt = remove_none_values(prompt)
-
         if not self.is_prompt_batched(prompt) or not self.supports_batched:
-            return self._tokenize_single_prompt(prompt)
+            return self._tokenize_single_prompt(remove_none_values(prompt))
 
         res = defaultdict(lambda: [])
         feature_names = list(prompt.keys())
@@ -458,7 +456,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         # Process each prompt individually
         for row in zip(*prompt.values(), strict=False):
             tokenized_prompt = self._tokenize_single_prompt(
-                dict(zip(feature_names, row, strict=False))
+                remove_none_values(dict(zip(feature_names, row, strict=False)))
             )
             for key, val in tokenized_prompt.items():
                 res[key].append(val)
