@@ -234,19 +234,28 @@ class PRMTrainer(_BaseTrainer):
 
                 eval_fn_kwargs = {**fn_kwargs, "is_eval": True}
                 if eval_dataset is not None:
-                    eval_dataset = eval_dataset.map(
-                        self.tokenize_row,
-                        fn_kwargs=eval_fn_kwargs,
-                        num_proc=args.dataset_num_proc,
-                        remove_columns=eval_dataset.features,
-                        desc="Tokenizing eval dataset",
-                        features=features.Features(  # needed to avoid map to cast labels to bool
-                            {
-                                "labels": features.Sequence(features.Value("int64")),
-                                "input_ids": features.Sequence(features.Value("int64")),
-                            }
-                        ),
-                    )
+                    def tokenize_eval(dataset):
+                        return dataset.map(
+                            self.tokenize_row,
+                            fn_kwargs=eval_fn_kwargs,
+                            num_proc=args.dataset_num_proc,
+                            remove_columns=dataset.features,
+                            desc="Tokenizing eval dataset",
+                            features=features.Features(
+                                {
+                                    "labels": features.Sequence(features.Value("int64")),
+                                    "input_ids": features.Sequence(features.Value("int64")),
+                                }
+                            ),
+                        )
+
+                    if isinstance(eval_dataset, dict):
+                        eval_dataset = {
+                            name: tokenize_eval(dataset)
+                            for name, dataset in eval_dataset.items()
+                        }
+                    else:
+                        eval_dataset = tokenize_eval(eval_dataset)
 
         # Transformers explicitly set use_reentrant=True in the past to silence a PyTorch warning, but the default was
         # never updated once PyTorch switched to recommending use_reentrant=False. Until that change lands upstream
