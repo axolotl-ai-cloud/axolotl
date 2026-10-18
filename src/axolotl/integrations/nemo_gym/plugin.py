@@ -313,7 +313,7 @@ class NemoGymPlugin(BasePlugin):
 
         # Force async trainer for multi-turn: NemoGymDataProducer needs the
         # data producer protocol. Setting use_data_producer=True selects
-        # AxolotlAsyncGRPOTrainer which supports _create_data_producer().
+        # AxolotlDataProducerGRPOTrainer which supports _create_data_producer().
         # With async_prefetch=False this runs synchronously — no threading.
         if cfg.nemo_gym_multi_turn and self._agent_servers:
             args["use_data_producer"] = True
@@ -445,7 +445,7 @@ class NemoGymPlugin(BasePlugin):
         """Replace the data producer with NemoGymDataProducer.
 
         The plugin forces use_data_producer=True (in get_training_args) which
-        selects AxolotlAsyncGRPOTrainer. Here we swap its data_producer with
+        selects AxolotlDataProducerGRPOTrainer. Here we swap its data_producer with
         our NemoGymDataProducer that calls agent /run instead of vLLM generate.
         """
         if not self._agent_servers:

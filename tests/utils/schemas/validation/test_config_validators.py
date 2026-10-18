@@ -499,6 +499,74 @@ class TestVllmColocateCompat:
             validate_config(cfg)
 
 
+class TestAsyncGRPOCompat:
+    """async_prefetch with rl: grpo runs on TRL's AsyncGRPOTrainer."""
+
+    @staticmethod
+    def _cfg(min_base_cfg, trl=None, **extra):
+        return min_base_cfg | DictDefault(
+            rl="grpo",
+            max_steps=10,
+            trl={"use_vllm": True, "async_prefetch": True, **(trl or {})},
+            **extra,
+        )
+
+    def test_supported_config_passes(self, min_base_cfg):
+        validated = validate_config(
+            self._cfg(
+                min_base_cfg,
+                trl={
+                    "max_staleness": 2,
+                    "reward_num_workers": 4,
+                    "vllm_importance_sampling_mode": "token_mask",
+                    "scale_rewards": "none",
+                },
+            )
+        )
+        assert validated.trl.max_staleness == 2
+
+    @pytest.mark.parametrize(
+        "trl,extra,match",
+        [
+            ({"beta": 0.04}, {}, "no reference model"),
+            ({"loss_type": "grpo"}, {}, "loss_type: dapo"),
+            ({"num_iterations": 2}, {}, "num_iterations"),
+            ({"scale_rewards": "batch"}, {}, "scale_rewards: batch"),
+            ({"prefetch_depth": 2}, {}, "max_staleness"),
+            ({"streaming_partial_batch": True}, {}, "data producer trainer"),
+            ({"replay_buffer_size": 64}, {}, "replay_buffer_size"),
+            ({"vllm_importance_sampling_mode": "sequence_mask"}, {}, "token_truncate"),
+            ({"use_vllm": False}, {}, "use_vllm: true"),
+            ({}, {"load_in_4bit": True, "adapter": "qlora"}, "vllm_lora_sync"),
+        ],
+    )
+    def test_unsupported_settings_raise(self, min_base_cfg, trl, extra, match):
+        with pytest.raises(ValueError, match=match):
+            validate_config(self._cfg(min_base_cfg, trl=trl, **extra))
+
+    def test_lists_every_problem(self, min_base_cfg):
+        with pytest.raises(ValueError) as error:
+            validate_config(
+                self._cfg(min_base_cfg, trl={"beta": 0.04, "replay_buffer_size": 8})
+            )
+        assert "no reference model" in str(error.value)
+        assert "replay_buffer_size" in str(error.value)
+
+    def test_data_producer_trainer_keeps_its_options(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            trl={"use_vllm": True, "use_data_producer": True, "replay_buffer_size": 8},
+        )
+        assert validate_config(cfg).trl.replay_buffer_size == 8
+
+    def test_decaying_schedule_without_max_steps_warns(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, lr_scheduler="cosine")
+        cfg.max_steps = None
+        with patch("axolotl.utils.schemas.validation.LOG.warning") as warning:
+            validate_config(cfg)
+        assert any("lr_scheduler: cosine" in c.args[0] for c in warning.call_args_list)
+
+
 class TestTrainableTokenWarning:
     def test_mapping_values_satisfy_fixed_token_check(self):
         data = {

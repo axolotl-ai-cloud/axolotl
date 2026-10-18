@@ -275,19 +275,25 @@ class TRLConfig(BaseModel):
     use_data_producer: bool = Field(
         default=False,
         json_schema_extra={
-            "description": "Use the GRPODataProducer protocol for online data generation."
+            "description": "Use the GRPODataProducer protocol for online data generation "
+            "(the data producer trainer behind EBFT and NeMo Gym). With rl: grpo and "
+            "async_prefetch, async GRPO runs on TRL's AsyncGRPOTrainer instead."
         },
     )
     async_prefetch: bool = Field(
         default=False,
         json_schema_extra={
-            "description": "Generate rollouts in a background thread while training on the previous rollout."
+            "description": "Overlap generation and training. With rl: grpo/gdpo this runs "
+            "on TRL's AsyncGRPOTrainer: a vLLM server generates continuously while the "
+            "trainer consumes scored samples up to max_staleness policy versions old. "
+            "With EBFT or NeMo Gym, a background thread prefetches the next rollout."
         },
     )
     prefetch_depth: int | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Number of rollouts to prefetch ahead of training."
+            "description": "Number of rollouts to prefetch ahead of training (data producer "
+            "trainer only)."
         },
     )
     vllm_sync_interval: int | None = Field(
@@ -296,10 +302,33 @@ class TRLConfig(BaseModel):
             "description": "Sync model weights to vLLM every N optimizer steps (async mode only)."
         },
     )
+    max_staleness: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO: drop rollouts generated more than this many weight "
+            "syncs ago. TRL defaults to 4."
+        },
+    )
+    max_inflight_tasks: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO: concurrent generation requests sent to vLLM. "
+            "Defaults to max_staleness x samples per optimizer step."
+        },
+    )
+    token_budget: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO: max unique tokens packed into one rank's "
+            "micro-batch. Defaults to the vLLM server's max_model_len; <= 0 packs "
+            "micro_batch_size samples per rank instead."
+        },
+    )
     streaming_partial_batch: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Score prompt groups incrementally instead of the full batch at once."
+            "description": "Score prompt groups incrementally instead of the full batch at "
+            "once (data producer trainer only; async GRPO always scores per group)."
         },
     )
     streaming_min_groups: int | None = Field(
@@ -311,7 +340,9 @@ class TRLConfig(BaseModel):
     vllm_importance_sampling_correction: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Apply IS correction for distribution mismatch between vLLM and training model."
+            "description": "Apply IS correction for distribution mismatch between vLLM and "
+            "training model. Async GRPO bounds the policy/sampler ratio at "
+            "vllm_importance_sampling_cap (default on)."
         },
     )
     vllm_importance_sampling_mode: (
@@ -320,7 +351,9 @@ class TRLConfig(BaseModel):
     ) = Field(
         default=None,
         json_schema_extra={
-            "description": "IS mode: token_truncate, token_mask, sequence_truncate, or sequence_mask."
+            "description": "IS mode: token_truncate, token_mask, sequence_truncate, or "
+            "sequence_mask. Async GRPO supports the token modes: token_truncate caps "
+            "the ratio (dual-clip), token_mask drops tokens beyond the cap."
         },
     )
     vllm_importance_sampling_cap: float | None = Field(
@@ -330,12 +363,16 @@ class TRLConfig(BaseModel):
     off_policy_mask_threshold: float | None = Field(
         default=None,
         json_schema_extra={
-            "description": "KL threshold for off-policy sequence masking (OPSM). None = disabled."
+            "description": "KL threshold for off-policy sequence masking (OPSM). None = "
+            "disabled. Data producer trainer only."
         },
     )
     use_bias_correction_kl: bool | None = Field(
         default=None,
-        json_schema_extra={"description": "Apply IS correction to KL divergence term."},
+        json_schema_extra={
+            "description": "Apply IS correction to KL divergence term. Data producer "
+            "trainer only."
+        },
     )
 
     reward_num_workers: int = Field(
@@ -343,7 +380,8 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "Number of persistent subprocess workers for parallel reward computation. Each worker has its "
             "own main thread so signal.alarm() (used by math_verify) works correctly. Work is sharded across "
-            "workers by prompt groups. Only used with use_data_producer=True and non-nn.Module reward functions."
+            "workers by prompt groups. Applies to async GRPO and the data producer trainer, for "
+            "synchronous reward functions."
         },
     )
     replay_buffer_size: int = Field(
@@ -351,7 +389,7 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "[Experimental, disabled by default] Size of the replay buffer for storing high-signal rollout "
             "groups. When > 0, groups with reward variance are cached and used to replace zero-signal groups "
-            "(where all rewards are identical). Set to 0 to disable. Only used with use_data_producer=True."
+            "(where all rewards are identical). Set to 0 to disable. Data producer trainer only."
         },
     )
     replay_recompute_logps: bool = Field(
@@ -367,14 +405,14 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "Fraction of total training steps after which deferred re-rolling begins. Zero-signal prompts "
             "(where all rewards in a group are identical) are buffered and re-injected into later batches when the "
-            "model is more likely to solve them. Set to 1.0 to disable. Only used with use_data_producer=True."
+            "model is more likely to solve them. Set to 1.0 to disable. Data producer trainer only."
         },
     )
     reroll_max_groups: int = Field(
         default=1,
         json_schema_extra={
             "description": "Maximum number of prompt groups to replace with re-roll candidates per batch. Higher values "
-            "increase data utilization but reduce prompt diversity. Only used with use_data_producer=True."
+            "increase data utilization but reduce prompt diversity. Data producer trainer only."
         },
     )
     skip_zero_advantage_batches: bool = Field(
@@ -382,7 +420,8 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "When True, skip gradient computation for micro-batches where all advantages are zero (no learning "
             "signal). This avoids the forward/backward pass entirely when no learning signal is present. The step is "
-            "logged with skipped_zero_adv_batches=1 for monitoring."
+            "logged with skipped_zero_adv_batches=1 for monitoring. Async GRPO drops each zero-advantage sample "
+            "before packing instead (logged as sample/dropped_zero_adv_total)."
         },
     )
     vllm_lora_sync: bool = Field(
@@ -390,7 +429,8 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. "
             "Enables LoRA on the native vLLM server and registers each synced adapter under a versioned name via /v1/load_lora_adapter. "
-            "Syncs only LoRA adapter weights vs full merged model."
+            "Syncs only LoRA adapter weights vs full merged model. Async GRPO picks adapter-only sync "
+            "whenever the server has LoRA enabled, which `axolotl vllm-serve` does when this is set."
         },
     )
     vllm_merge_check_interval: int | None = Field(
