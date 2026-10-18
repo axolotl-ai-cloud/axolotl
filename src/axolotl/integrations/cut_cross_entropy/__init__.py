@@ -98,6 +98,7 @@ class CutCrossEntropyPlugin(BasePlugin):
             if getattr(cfg, "adapter", None) == "multilora":
                 LOG.info("Multi-LoRA will apply Cut Cross Entropy per adapter")
                 return
+            self._check_generic_patch_applies(cfg)
             self.patch_llama_like(cfg.model_config_type)
 
             from cut_cross_entropy.transformers.patch import cce_patch
@@ -120,6 +121,41 @@ class CutCrossEntropyPlugin(BasePlugin):
 
             # The patch checks model_type internally
             cce_patch(cfg.model_config_type, **patch_kwargs)
+
+    # config attributes whose logit transform the generic (Llama) CCE forward does not apply
+    _LOGIT_TRANSFORM_ATTRS = (
+        "final_logit_softcapping",
+        "logit_scale",
+        "logits_scaling",
+    )
+
+    def _check_generic_patch_applies(self, cfg) -> None:
+        """Refuse the generic Llama-style patch for a model whose forward transforms the
+        logits: the generic forward drops the transform, so training would optimize a
+        different loss than the model computes at inference."""
+        from cut_cross_entropy.transformers.patch import PATCH_FNS
+
+        if cfg.model_config_type in PATCH_FNS:
+            return
+
+        from axolotl.loaders.utils import load_model_config
+
+        model_config = load_model_config(cfg)
+        if hasattr(model_config, "get_text_config"):
+            model_config = model_config.get_text_config()
+        transforms = {
+            attr: getattr(model_config, attr)
+            for attr in self._LOGIT_TRANSFORM_ATTRS
+            if getattr(model_config, attr, None) not in (None, 1, 1.0)
+        }
+        if transforms:
+            raise ValueError(
+                f"The installed cut_cross_entropy has no patch for model type "
+                f"`{cfg.model_config_type}`, and the generic patch would drop its logit "
+                f"transform ({transforms}), training on the wrong loss. "
+                + _CCE_INSTALL_MESSAGE
+                + " Or disable cut_cross_entropy."
+            )
 
     def _resolve_c_grad_chunk_size(self, cfg) -> int:
         chunk = cfg.cut_cross_entropy_c_grad_chunk_size
