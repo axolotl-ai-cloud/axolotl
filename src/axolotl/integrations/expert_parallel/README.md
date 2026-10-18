@@ -255,12 +255,17 @@ for quantization, memory, and mesh compatibility limits.
 - `pytorch_model_fsdp.bin` is the native model checkpoint used by
   `resume_from_checkpoint` and best-model loading. Trainer LoRA/QLoRA checkpoints
   include PEFT export state, including frozen adapter factors, saved modules, and
-  required embeddings; the frozen base model is loaded separately.
+  required embeddings; the frozen base model is loaded separately. In model-only
+  checkpoints of a single-adapter PEFT model, this file only references the
+  `adapter_model.safetensors` beside it, and restore reads the adapter from there.
+  Full-parameter and multi-adapter checkpoints, and checkpoints from earlier
+  versions, hold the complete state in this file.
 - `optimizer.bin` preserves every expert owner's optimizer state. It is absent
   when `save_only_model: true`.
 - `adapter_model.safetensors` is the ordinary PEFT adapter export used by
   `lora_model_dir`. Model-only intermediate checkpoints also include the native
-  resume file; final exports do not.
+  resume file; final exports do not. Keep it with the native resume file when
+  copying model-only checkpoints, since the resume file may reference it.
 
 Native checkpoints and final exports need not have the same layout. For example,
 Mixtral full-model exports unpack fused expert weights, while native checkpoints

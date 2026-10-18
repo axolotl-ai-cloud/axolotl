@@ -293,6 +293,7 @@ class DistributedParallelMixin(Trainer):
         ):
             from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
                 _model_needs_ownership,
+                adapter_reference,
             )
 
             if _model_needs_ownership(self.model):
@@ -300,7 +301,12 @@ class DistributedParallelMixin(Trainer):
 
                 target = output_dir or self.args.output_dir
                 os.makedirs(target, exist_ok=True)
-                torch.save(state_dict, os.path.join(target, "pytorch_model_fsdp.bin"))
+                # the PEFT adapter file saved beside it already holds this state
+                reference = adapter_reference(self.model)
+                torch.save(
+                    state_dict if reference is None else reference,
+                    os.path.join(target, "pytorch_model_fsdp.bin"),
+                )
 
     def _save(self, output_dir: str | None = None, state_dict=None):
         if (

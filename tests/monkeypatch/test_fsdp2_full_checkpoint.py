@@ -65,8 +65,9 @@ def test_full_checkpoint_ownership_and_next_update(tmp_path):
 @pytest.mark.parametrize("trainer_type", ["sft", "mixin"])
 @pytest.mark.parametrize("save_only_model", [True, False])
 @pytest.mark.parametrize("internal_call", [True, False])
+@pytest.mark.parametrize("adapters", [1, 2])
 def test_full_model_file_written_without_optimizer(
-    tmp_path, trainer_type, save_only_model, internal_call
+    tmp_path, trainer_type, save_only_model, internal_call, adapters
 ):
     from types import SimpleNamespace
 
@@ -93,6 +94,8 @@ def test_full_model_file_written_without_optimizer(
     trainer.model = get_peft_model(
         base_model, LoraConfig(target_modules=["dense"], r=2)
     )
+    if adapters > 1:
+        trainer.model.add_adapter("other", LoraConfig(target_modules=["dense"], r=2))
     trainer.model._moe_experts_quantized = True
     trainer.accelerator = SimpleNamespace(
         parallelism_config=None,
@@ -113,5 +116,8 @@ def test_full_model_file_written_without_optimizer(
         assert not (tmp_path / "pytorch_model_fsdp.bin").exists()
         return
     saved = torch.load(tmp_path / "pytorch_model_fsdp.bin", weights_only=True)
+    if adapters == 1:
+        assert saved == {"_axolotl_adapter_reference": 1}
+        return
     for name, value in state.items():
         torch.testing.assert_close(saved[name], value, rtol=0, atol=0)

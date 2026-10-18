@@ -276,9 +276,7 @@ def _gather_value(value, owner):
     return copy.deepcopy(value) if dist.get_rank() == 0 else None
 
 
-def _adapter_model_state(model):
-    from peft.utils.save_and_load import get_peft_model_state_dict
-
+def _adapter_values(model):
     values = {}
     for prefix, module in model.named_modules(remove_duplicate=False):
         prefix = prefix + "." if prefix else ""
@@ -288,27 +286,39 @@ def _adapter_model_state(model):
         for name, value in module._buffers.items():
             if value is not None and name not in module._non_persistent_buffers_set:
                 values[prefix + name] = value
-    values = fsdp2_canonicalize_names(values)
+    return fsdp2_canonicalize_names(values)
+
+
+def _adapter_export_names(model, values, adapter):
+    """PEFT export key -> canonical parameter/buffer names it holds."""
+    from peft.utils.save_and_load import get_peft_model_state_dict
+
     # PEFT rewrites export keys; string values retain raw names without gathering DTensors.
-    markers = {name: name for name in values}
+    exported = get_peft_model_state_dict(
+        model,
+        state_dict={name: name for name in values},
+        adapter_name=adapter,
+        unwrap_compiled=True,
+    )
+    mapping = {}
+    for key, value in exported.items():
+        if isinstance(value, str):
+            mapping[key] = (value,)
+            continue
+        names = tuple(name for name, parameter in values.items() if parameter is value)
+        if not names:
+            raise ValueError("PEFT export state is not a model parameter or buffer")
+        mapping[key] = names
+    return mapping
+
+
+def _adapter_model_state(model):
+    values = _adapter_values(model)
     selected, error = set(), None
     try:
         for adapter in model.peft_config:
-            exported = get_peft_model_state_dict(
-                model, state_dict=markers, adapter_name=adapter, unwrap_compiled=True
-            )
-            for value in exported.values():
-                if isinstance(value, str):
-                    selected.add(value)
-                else:
-                    names = {
-                        name for name, parameter in values.items() if parameter is value
-                    }
-                    if not names:
-                        raise ValueError(
-                            "PEFT export state is not a model parameter or buffer"
-                        )
-                    selected.update(names)
+            for names in _adapter_export_names(model, values, adapter).values():
+                selected.update(names)
     except Exception as exc:  # pylint: disable=broad-except
         error = f"Adapter checkpoint selection failed: {exc}"
     _check_errors(error)
@@ -317,6 +327,64 @@ def _adapter_model_state(model):
     if any(names != sorted(selected) for names in signatures):
         raise ValueError("Adapter checkpoint keys differ across ranks")
     return {name: values[name] for name in sorted(selected)}
+
+
+_ADAPTER_REFERENCE = "_axolotl_adapter_reference"
+_ADAPTER_FILES = ("adapter_model.safetensors", "adapter_model.bin")
+
+
+def adapter_reference(model):
+    """Model-only ``pytorch_model_fsdp.bin`` payload pointing at the PEFT adapter file saved
+    beside it, or ``None`` when that file cannot stand in for the full state."""
+    if not is_peft_model(model) or len(getattr(model, "peft_config", {})) != 1:
+        return None
+    return {_ADAPTER_REFERENCE: 1}
+
+
+def _load_referenced_adapter(model, directory):
+    """Rank 0: the referenced adapter file keyed by canonical names (other ranks: ``{}``)."""
+    state, error = {}, None
+    if dist.get_rank() == 0:
+        try:
+            if not is_peft_model(model) or len(model.peft_config) != 1:
+                raise ValueError(
+                    "An adapter-reference checkpoint restores a single-adapter PEFT model"
+                )
+            (adapter,) = model.peft_config
+            # PEFT saves a non-default adapter in a subdirectory named after it
+            folders = [directory] + (
+                [directory / adapter] if adapter != "default" else []
+            )
+            path = next(
+                (
+                    folder / name
+                    for folder in folders
+                    for name in _ADAPTER_FILES
+                    if (folder / name).is_file()
+                ),
+                None,
+            )
+            if path is None:
+                raise FileNotFoundError(
+                    f"{directory} references a PEFT adapter but has none of {_ADAPTER_FILES}"
+                )
+            if path.suffix == ".safetensors":
+                from safetensors.torch import load_file
+
+                saved = load_file(str(path), device="cpu")
+            else:
+                saved = torch.load(path, map_location="cpu", weights_only=True)
+            mapping = _adapter_export_names(model, _adapter_values(model), adapter)
+            unknown = sorted(set(saved) - set(mapping))
+            if unknown:
+                raise ValueError(f"Adapter file has unexpected keys: {unknown[:8]}")
+            state = {
+                name: value for key, value in saved.items() for name in mapping[key]
+            }
+        except Exception as exc:  # pylint: disable=broad-except
+            error = f"Referenced adapter load failed: {exc}"
+    _check_errors(error)
+    return state
 
 
 def full_model_state(model, adapter_only=False):
@@ -839,12 +907,26 @@ def patch_fsdp2_full_checkpoint():
                         error = str(exc)
                 _check_errors(error)
                 envelope = [
-                    "_axolotl_full_model_version" in state
+                    (
+                        "_axolotl_full_model_version" in state,
+                        _ADAPTER_REFERENCE in state,
+                    )
                     if accelerator.is_main_process and not optimizer_operation
-                    else False
+                    else (False, False)
                 ]
                 dist.broadcast_object_list(envelope, src=0)
-                if envelope[0] and adapter_only:
+                packed_envelope, referenced = envelope[0]
+                if referenced:
+                    _check_errors(
+                        "Unsupported adapter-reference checkpoint version"
+                        if accelerator.is_main_process
+                        and state.get(_ADAPTER_REFERENCE) != 1
+                        else None
+                    )
+                    result = restore_model_state(
+                        model, _load_referenced_adapter(model, path), adapter_only=True
+                    )
+                elif packed_envelope and adapter_only:
                     error = None
                     if accelerator.is_main_process:
                         if state.get("_axolotl_full_model_version") != 1:
