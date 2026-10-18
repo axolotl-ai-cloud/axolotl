@@ -376,3 +376,57 @@ class TestKernelImplEnv:
         assert "liger_kernel.ops" in sys.modules
 
         LigerPlugin._set_kernel_impl("cutedsl")
+
+
+class TestFusedLinearCrossEntropyUnderTRLFusedHead:
+    @pytest.fixture(name="apply_calls")
+    def fixture_apply_calls(self, monkeypatch):
+        import sys
+        from types import SimpleNamespace
+
+        calls = []
+
+        def apply_liger_to_llama(
+            rope=False,
+            cross_entropy=False,
+            fused_linear_cross_entropy=False,
+            rms_norm=False,
+            swiglu=False,
+        ):
+            calls.append({"fused_linear_cross_entropy": fused_linear_cross_entropy})
+
+        stubs = {
+            "cross_entropy": {"LigerCrossEntropyLoss": None},
+            "functional": {"liger_cross_entropy": None},
+            "layer_norm": {"LigerLayerNorm": None},
+            "monkey_patch": {
+                "MODEL_TYPE_TO_APPLY_LIGER_FN": {"llama": apply_liger_to_llama}
+            },
+            "rms_norm": {"LigerRMSNorm": None},
+            "rope": {"liger_rotary_pos_emb": None},
+            "swiglu": {"LigerSwiGLUMLP": None},
+        }
+        for name, attrs in stubs.items():
+            monkeypatch.setitem(
+                sys.modules,
+                f"liger_kernel.transformers.{name}",
+                SimpleNamespace(**attrs),
+            )
+        return calls
+
+    @pytest.mark.parametrize(
+        ("rl", "expected"),
+        [("dpo", False), ("ipo", False), ("kto", False), (None, True), ("orpo", True)],
+    )
+    def test_flce_patch(self, apply_calls, rl, expected):
+        from axolotl.integrations.liger.plugin import LigerPlugin
+
+        cfg = DictDefault(
+            {
+                "model_config_type": "llama",
+                "liger_fused_linear_cross_entropy": True,
+                "rl": rl,
+            }
+        )
+        LigerPlugin().pre_model_load(cfg)
+        assert apply_calls == [{"fused_linear_cross_entropy": expected}]

@@ -48,7 +48,7 @@ datasets:
     type: chatml
 ```
 
-To run the DPO loss through liger-kernel's fused (chunked) implementation, set `dpo_use_liger_kernel: true`. The fused path supports `dpo_loss_type` values `sigmoid` (default), `hinge`, `exo_pair`, `nca_pair`, `robust`, `bco_pair`, `sppo_hard`, `apo_zero`, `apo_down`, and `discopop` (liger-kernel >= 0.8.1); `ipo` is not supported on the fused path, and only the first entry of `dpo_loss_type` is used.
+DPO, IPO and KTO score tokens with TRL's fused LM head: per-token log-probabilities are computed in chunks straight from the hidden states, so the `[batch, seq, vocab]` logits are never built and every `dpo_loss_type` keeps it. Because the head bypasses the model's own forward, `cut_cross_entropy` and `liger_fused_linear_cross_entropy` are skipped for these trainers (they still apply to SFT), and a LoRA adapter on `lm_head` is rejected: list `lm_head` in `lora_modules_to_save` instead. `dpo_use_liger_kernel` is deprecated by TRL and now only applies Liger's layer kernels. Scoring needs Triton (Linux with CUDA, ROCm or XPU) for the fast path; other devices fall back to a PyTorch implementation.
 
 DPO supports the following types with the following dataset format:
 

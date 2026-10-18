@@ -1,5 +1,6 @@
 """Config validation and cce_patch wiring for the Cut Cross Entropy plugin."""
 
+import sys
 from types import SimpleNamespace
 from unittest.mock import create_autospec, patch
 
@@ -148,3 +149,30 @@ class TestCutCrossEntropyPluginPatchKwargs:
         )
         with pytest.raises(ImportError, match="ml-cross-entropy.git@v0.1.1"):
             self._run(cfg, _cce_patch_stub(with_chunk=False))
+
+
+class TestCutCrossEntropyFusedLMHeadRL:
+    @pytest.fixture(name="cce_patch")
+    def fixture_cce_patch(self):
+        mocked = create_autospec(_new_cce_patch)
+        modules = {
+            "cut_cross_entropy": SimpleNamespace(),
+            "cut_cross_entropy.transformers": SimpleNamespace(),
+            "cut_cross_entropy.transformers.patch": SimpleNamespace(cce_patch=mocked),
+        }
+        with (
+            patch.object(CutCrossEntropyPlugin, "_check_requirements"),
+            patch.object(CutCrossEntropyPlugin, "patch_llama_like"),
+            patch.dict(sys.modules, modules),
+        ):
+            yield mocked
+
+    @pytest.mark.parametrize("rl", ["dpo", "ipo", "kto"])
+    def test_skipped_for_trl_fused_lm_head(self, cce_patch, rl):
+        CutCrossEntropyPlugin().pre_model_load(_cfg(rl=rl))
+        cce_patch.assert_not_called()
+
+    @pytest.mark.parametrize("rl", [None, "orpo", "simpo", "grpo"])
+    def test_applied_otherwise(self, cce_patch, rl):
+        CutCrossEntropyPlugin().pre_model_load(_cfg(rl=rl))
+        cce_patch.assert_called_once()

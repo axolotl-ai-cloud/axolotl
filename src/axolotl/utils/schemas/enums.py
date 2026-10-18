@@ -41,6 +41,18 @@ class RLType(str, Enum):
     EBFT = "ebft"
 
 
+# TRL scores these trainers' tokens with its fused LM head (`add_fused_lm_head`),
+# which runs the backbone and reads `lm_head.weight` without the CausalLM forward.
+FUSED_LM_HEAD_RL_TYPES = frozenset({RLType.DPO, RLType.IPO, RLType.KTO})
+
+
+def rl_uses_fused_lm_head(rl) -> bool:
+    try:
+        return RLType(rl) in FUSED_LM_HEAD_RL_TYPES
+    except ValueError:
+        return False
+
+
 class ChatTemplate(str, Enum):
     """Chat templates configuration subset"""
 

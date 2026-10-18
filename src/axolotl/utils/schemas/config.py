@@ -353,7 +353,11 @@ class AxolotlInputConfig(
 
     dpo_use_liger_kernel: bool | None = Field(
         default=None,
-        json_schema_extra={"description": "Whether to use Liger kernel for DPO loss."},
+        json_schema_extra={
+            "description": "Deprecated by TRL. Apply Liger's layer kernels in DPO; "
+            "TRL's fused LM head scores the tokens and keeps Liger's fused linear "
+            "cross entropy off."
+        },
     )
 
     dpo_padding_free: bool | None = None

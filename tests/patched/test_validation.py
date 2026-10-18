@@ -1256,6 +1256,45 @@ class TestValidation(BaseValidation):
                 DictDefault({"rl": "dpo", "dpo_ld_alpha": 1.5}) | minimal_cfg
             )
 
+    @pytest.mark.parametrize("rl", ["dpo", "ipo", "kto"])
+    @pytest.mark.parametrize("targets", [["q_proj", "lm_head"], "lm_head"])
+    def test_fused_lm_head_rl_rejects_lm_head_lora(self, minimal_cfg, rl, targets):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "rl": rl,
+                "adapter": "lora",
+                "lora_target_modules": targets,
+                "remove_unused_columns": False,
+            }
+        )
+        with pytest.raises(ValueError, match="lora_modules_to_save"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("rl", [None, "orpo"])
+    def test_lm_head_lora_allowed_without_fused_lm_head(self, minimal_cfg, rl):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "rl": rl,
+                "adapter": "lora",
+                "lora_target_modules": ["q_proj", "lm_head"],
+            }
+        )
+        assert "lm_head" in validate_config(cfg).lora_target_modules
+
+    def test_fused_lm_head_rl_allows_lm_head_modules_to_save(self, minimal_cfg):
+        cfg = DictDefault(
+            {
+                **minimal_cfg,
+                "rl": "dpo",
+                "adapter": "lora",
+                "lora_target_modules": ["q_proj"],
+                "lora_modules_to_save": ["lm_head"],
+            }
+        )
+        assert validate_config(cfg).lora_modules_to_save == ["lm_head"]
+
     @staticmethod
     def _multiturn_cfg(minimal_cfg, **extra):
         return DictDefault(

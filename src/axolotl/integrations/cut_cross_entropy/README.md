@@ -43,6 +43,8 @@ cut_cross_entropy_c_grad_chunk_size: auto    # or a positive multiple of 128, e.
 
 LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_head]`) are folded into the loss, so they train under CCE like any other target module.
 
+`rl: dpo`, `ipo` and `kto` skip CCE: TRL scores their tokens with its own fused LM head, which never builds the full logits and bypasses the forward CCE patches. CCE is still applied for SFT and the other RL trainers.
+
 ## Supported Models
 
 - afmoe

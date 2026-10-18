@@ -2046,7 +2046,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--dpo-use-liger-kernel/--no-dpo-use-liger-kernel",),
         None,
         None,
-        "Whether to use Liger kernel for DPO loss.",
+        "Deprecated by TRL. Apply Liger's layer kernels in DPO; TRL's fused LM head scores the tokens and keeps Liger's fused linear cross entropy off.",
     ),
     (
         ("--dpo-padding-free/--no-dpo-padding-free",),

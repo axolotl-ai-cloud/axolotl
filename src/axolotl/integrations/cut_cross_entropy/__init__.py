@@ -30,6 +30,7 @@ from axolotl.model_support import check_capability, get_model_support
 from axolotl.utils import get_pytorch_version
 from axolotl.utils.callbacks.models import get_causal_lm_model_cls_prefix
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.enums import RLType, rl_uses_fused_lm_head
 
 from .args import CutCrossEntropyArgs as CutCrossEntropyArgs
 
@@ -88,6 +89,13 @@ class CutCrossEntropyPlugin(BasePlugin):
     def pre_model_load(self, cfg):
         """Apply cut cross entropy before model loading if enabled."""
         if cfg.cut_cross_entropy:
+            if rl_uses_fused_lm_head(cfg.rl):
+                LOG.info(
+                    "Skipping Cut Cross Entropy for rl: %s: TRL scores tokens with its "
+                    "fused LM head, which bypasses the CausalLM forward CCE patches",
+                    RLType(cfg.rl).value,
+                )
+                return
             check_capability(
                 get_model_support(cfg.model_config_type),
                 "cut_cross_entropy",
