@@ -40,6 +40,18 @@ class AxolotlTrainingMixins:
         default=1,
         metadata={"help": "Optimizer steps per label-balancing refinement window."},
     )
+    label_keep_prob: dict[int, float] | None = field(
+        default=None,
+        metadata={
+            "help": "Per-token-id probability of keeping a trained label; dropped labels become -100 each step."
+        },
+    )
+    label_keep_prob_normalize: str = field(
+        default="dropped",
+        metadata={
+            "help": "Trained-token count used for loss normalization with label_keep_prob: 'dropped' (after masking) or 'original' (before)."
+        },
+    )
     sample_packing_sequentially: bool = field(
         default=False,
         metadata={

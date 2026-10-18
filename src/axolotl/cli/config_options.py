@@ -2495,6 +2495,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only.",
     ),
     (
+        ("--label-keep-prob",),
+        None,
+        None,
+        "Advanced: {token_id: keep_prob}. Each trained label equal to a listed token id is kept with probability keep_prob and otherwise masked to -100, re-drawn independently per position every optimizer step (inputs unchanged; eval is not masked). Ids must be exactly what the chat template emits; find them with `axolotl preprocess --debug` or tokenizer.convert_tokens_to_ids.",
+    ),
+    (
+        ("--label-keep-prob-normalize",),
+        None,
+        None,
+        "Loss normalization with label_keep_prob. 'dropped' (default) divides by the trained-token count after masking, like ordinary label masking. 'original' divides by the count before masking, so each other token's weight is unchanged.",
+    ),
+    (
         ("--sample-packing-group-size",),
         None,
         None,
