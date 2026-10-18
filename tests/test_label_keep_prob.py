@@ -317,3 +317,21 @@ class TestLabelKeepProbConfig:
             validate_config(
                 DictDefault(label_keep_prob={1: 0.5}, **extra) | min_base_cfg
             )
+
+    def test_rejects_tensor_parallel(self, min_base_cfg):
+        with pytest.raises(ValueError, match="tensor_parallel_size > 1"):
+            validate_config(
+                DictDefault(label_keep_prob={1: 0.5}, tensor_parallel_size=2)
+                | min_base_cfg
+            )
+
+    def test_tensor_parallel_without_label_keep_prob(self, min_base_cfg):
+        cfg = validate_config(DictDefault(tensor_parallel_size=2) | min_base_cfg)
+        assert cfg.tensor_parallel_size == 2
+        assert cfg.label_keep_prob is None
+
+    def test_label_keep_prob_without_tensor_parallel(self, min_base_cfg):
+        cfg = validate_config(
+            DictDefault(label_keep_prob={1: 0.5}, tensor_parallel_size=1) | min_base_cfg
+        )
+        assert cfg.label_keep_prob == {1: 0.5}

@@ -1812,6 +1812,12 @@ class AxolotlInputConfig(
                 "label_keep_prob is only supported for SFT / causal LM training, "
                 f"not with: {', '.join(conflicts)}"
             )
+        if (self.tensor_parallel_size or 1) > 1:
+            raise ValueError(
+                "label_keep_prob is not supported with tensor_parallel_size > 1: ranks "
+                "that share a batch draw different masks, so the TP ranks would compute "
+                "a shared loss on different targets"
+            )
         return self
 
     @model_validator(mode="after")
