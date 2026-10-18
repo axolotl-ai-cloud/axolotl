@@ -11,7 +11,7 @@ def test_nested_generation_gate_and_exception_restore():
     trainer = SimpleNamespace(
         use_vllm=False,
         loss_type="grpo",
-        use_liger_kernel=False,
+        args=SimpleNamespace(use_liger_kernel=False),
         vllm_importance_sampling_correction=True,
     )
 

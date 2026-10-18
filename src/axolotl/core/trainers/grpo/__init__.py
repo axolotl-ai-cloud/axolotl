@@ -4,18 +4,25 @@ import importlib
 import inspect
 import os
 import warnings
-from typing import Any
+from typing import Any, Literal
 
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
 from trl.trainer.grpo_trainer import RewardFunc
 
-from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOConfig
+from axolotl.core.trainers.grpo.args import (
+    AxolotlDataProducerGRPOConfig,
+    AxolotlGRPOConfig,
+)
 from axolotl.core.trainers.grpo.trainer import (
-    AxolotlAsyncGRPOTrainer,
+    AxolotlDataProducerGRPOTrainer,
     AxolotlGRPOContextParallelTrainer,
     AxolotlGRPOSequenceParallelTrainer,  # noqa: F401  deprecated alias, kept importable
     AxolotlGRPOTrainer,
+)
+from axolotl.core.trainers.grpo.trl_async_trainer import (
+    AxolotlAsyncGRPOConfig,
+    AxolotlAsyncGRPOTrainer,
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -28,16 +35,33 @@ LOG = get_logger(__name__)
 class GRPOStrategy:
     """Strategy for GRPO training"""
 
+    @staticmethod
+    def get_async_backend(cfg: DictDefault) -> Literal["trl", "data_producer"] | None:
+        """Pick the trainer behind `trl.async_prefetch` / `trl.use_data_producer`.
+
+        `async_prefetch` runs on TRL's AsyncGRPOTrainer. The data producer trainer
+        stays behind `use_data_producer` alone and behind NeMo Gym, whose reward and
+        multi-turn wiring plug into it.
+        """
+        trl = cfg.trl
+        if not trl or not (trl.async_prefetch or trl.use_data_producer):
+            return None
+        if trl.async_prefetch and not cfg.nemo_gym_enabled:
+            return "trl"
+        return "data_producer"
+
     @classmethod
     def get_trainer_class(
         cls,
         context_parallel: bool = False,
         async_grpo: bool = False,
         sequence_parallel: bool | None = None,
+        data_producer: bool = False,
     ) -> (
         type[AxolotlGRPOTrainer]
         | type[AxolotlGRPOContextParallelTrainer]
         | type[AxolotlAsyncGRPOTrainer]
+        | type[AxolotlDataProducerGRPOTrainer]
     ):
         if sequence_parallel is not None:
             warnings.warn(
@@ -46,21 +70,29 @@ class GRPOStrategy:
                 stacklevel=2,
             )
             context_parallel = context_parallel or sequence_parallel
-        if context_parallel and async_grpo:
+        if context_parallel and (async_grpo or data_producer):
             raise ValueError(
                 "context_parallel and async_grpo cannot both be enabled. "
                 "Disable one of context_parallel_size > 1 or async_prefetch/use_data_producer."
             )
         if context_parallel:
             return AxolotlGRPOContextParallelTrainer
+        if data_producer:
+            return AxolotlDataProducerGRPOTrainer
         if async_grpo:
             return AxolotlAsyncGRPOTrainer
         return AxolotlGRPOTrainer
 
     @classmethod
     def get_training_args_class(
-        cls, async_grpo: bool = False
-    ) -> type[AxolotlGRPOConfig] | type[AxolotlAsyncGRPOConfig]:
+        cls, async_grpo: bool = False, data_producer: bool = False
+    ) -> (
+        type[AxolotlGRPOConfig]
+        | type[AxolotlAsyncGRPOConfig]
+        | type[AxolotlDataProducerGRPOConfig]
+    ):
+        if data_producer:
+            return AxolotlDataProducerGRPOConfig
         if async_grpo:
             return AxolotlAsyncGRPOConfig
         return AxolotlGRPOConfig
@@ -263,6 +295,54 @@ class GRPOStrategy:
             grpo_args_kwargs["batch_flattening"] = cfg.batch_flattening
 
         return grpo_args_kwargs
+
+    @classmethod
+    def set_async_training_args_kwargs(cls, cfg: DictDefault) -> dict[str, Any]:
+        """Map the `trl:` block onto AxolotlAsyncGRPOConfig (TRL's AsyncGRPOConfig)."""
+        trl: TRLConfig = cfg.trl  # type: ignore
+        vllm_cfg: VllmConfig | None = cfg.vllm
+        host = trl.vllm_server_host or (vllm_cfg.host if vllm_cfg else None)
+        if not host or host in ("0.0.0.0", "::"):  # nosec B104
+            # A bind-all address is where the server listens, not where to reach it.
+            host = "localhost"
+        port = trl.vllm_server_port or (vllm_cfg.port if vllm_cfg else None) or 8000
+        kwargs: dict[str, Any] = {"vllm_server_base_url": f"http://{host}:{port}"}
+
+        scale_rewards = trl.scale_rewards
+        if isinstance(scale_rewards, bool):
+            scale_rewards = "group" if scale_rewards else "none"
+        optional = {
+            "vllm_server_timeout": trl.vllm_server_timeout,
+            "num_generations": trl.num_generations,
+            "max_completion_length": trl.max_completion_length,
+            "temperature": trl.temperature,
+            "top_p": trl.top_p,
+            "top_k": trl.top_k,
+            "min_p": trl.min_p,
+            "repetition_penalty": trl.repetition_penalty,
+            "chat_template_kwargs": trl.chat_template_kwargs,
+            "epsilon": trl.epsilon,
+            "epsilon_high": trl.epsilon_high,
+            "log_completions": trl.log_completions,
+            "num_completions_to_print": trl.num_completions_to_print,
+            "weight_sync_steps": trl.vllm_sync_interval,
+            "max_staleness": trl.max_staleness,
+            "max_inflight_tasks": trl.max_inflight_tasks,
+            "token_budget": trl.token_budget,
+            "reward_weights": trl.reward_weights,
+            "multi_objective_aggregation": trl.multi_objective_aggregation,
+            "scale_rewards": scale_rewards,
+            "mask_truncated_completions": trl.mask_truncated_completions,
+            "skip_zero_advantage_batches": trl.skip_zero_advantage_batches,
+            "reward_num_workers": trl.reward_num_workers,
+            "vllm_importance_sampling_correction": trl.vllm_importance_sampling_correction,
+            "vllm_importance_sampling_mode": trl.vllm_importance_sampling_mode,
+            "vllm_importance_sampling_cap": trl.vllm_importance_sampling_cap,
+        }
+        kwargs.update(
+            {key: value for key, value in optional.items() if value is not None}
+        )
+        return kwargs
 
     @classmethod
     def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
