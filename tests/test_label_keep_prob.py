@@ -165,6 +165,29 @@ def test_padded_collator_batch():
     assert batch["labels"].tolist() == [[-100, 3, -100], [8, -100, -100]]
 
 
+def _shifted_batch():
+    batch = _batch()
+    shift = torch.full_like(batch["labels"], -100)
+    shift[:, :-1] = batch["labels"][:, 1:]
+    batch["shift_labels"] = shift
+    return batch
+
+
+def test_pre_shifted_batch_masks_shift_labels():
+    batch = _shifted_batch()
+    reference = _clone(batch)
+    LabelDropout({STRUCT_A: 0.0}).apply(batch, torch.Generator().manual_seed(0))
+
+    matched = reference["shift_labels"] == STRUCT_A
+    assert matched.any()
+    assert torch.all(batch["shift_labels"][matched] == -100)
+    assert torch.equal(
+        batch["shift_labels"][~matched], reference["shift_labels"][~matched]
+    )
+    assert torch.equal(batch["labels"], reference["labels"])
+    assert torch.equal(batch["input_ids"], reference["input_ids"])
+
+
 def _trainer(normalize, keep_probs, step=0):
     trainer = object.__new__(AxolotlTrainer)
     trainer.args = SimpleNamespace(
@@ -197,6 +220,20 @@ def test_num_items_in_batch_normalization(normalize, expected):
     assert int(num_items) == expected
     for batch in batches:
         assert not torch.isin(batch["labels"], torch.tensor([STRUCT_A, STRUCT_B])).any()
+
+
+@pytest.mark.parametrize(("normalize", "expected"), [("dropped", 8), ("original", 18)])
+def test_num_items_in_batch_counts_shift_labels(normalize, expected):
+    trainer = _trainer(normalize, {STRUCT_A: 0.0, STRUCT_B: 0.0})
+    batches, num_items = trainer.get_batch_samples(
+        iter([_shifted_batch(), _shifted_batch()]), 2, torch.device("cpu")
+    )
+    # 9 trained shift_labels per batch, 5 of them configured ids
+    assert int(num_items) == expected
+    for batch in batches:
+        assert not torch.isin(
+            batch["shift_labels"], torch.tensor([STRUCT_A, STRUCT_B])
+        ).any()
 
 
 def test_get_batch_samples_stops_at_end_of_epoch():

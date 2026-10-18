@@ -3,7 +3,8 @@
 Each trained label position whose token id is configured keeps its label with
 probability ``keep_prob`` and is otherwise set to -100, drawn independently per
 position on every optimizer step. Inputs are untouched; only the loss target is
-masked, so every loss path that reads ``labels`` (model CE, CCE, Liger) applies it.
+masked (``shift_labels`` when present, else ``labels``), so every loss path that
+reads them (model CE, CCE, Liger) applies it.
 """
 
 from __future__ import annotations
@@ -36,14 +37,16 @@ class LabelDropout:
         return torch.Generator().manual_seed(int(state[0]) << 32 | int(state[1]))
 
     def apply(self, batch: dict, generator: torch.Generator) -> dict:
-        """Mask dropped label positions of ``batch["labels"]`` in place."""
-        labels = batch.get("labels")
+        """Mask dropped positions of the loss target in place.
+
+        The target is ``shift_labels`` when the batch carries it (e.g. context-parallel
+        shards cut in the collator), since loss paths prefer it over ``labels``.
+        """
+        labels = batch.get("shift_labels")
+        if labels is None:
+            labels = batch.get("labels")
         if labels is None:
             return batch
-        if "shift_labels" in batch:
-            raise ValueError(
-                "`label_keep_prob` does not support batches with pre-shifted `shift_labels`."
-            )
         token_ids = self.token_ids.to(labels.device)
         matched = torch.isin(labels, token_ids)
         positions = matched.nonzero(as_tuple=True)
