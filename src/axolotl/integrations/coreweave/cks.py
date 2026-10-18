@@ -129,6 +129,11 @@ def render_manifests(
         {"name": "shm", "mountPath": "/dev/shm"},  # nosec B108
         {"name": "scratch", "mountPath": "/scratch"},
     ]
+    for i, (host_path, mount_path) in enumerate(sorted(cfg.host_paths.items())):
+        volumes.append(
+            {"name": f"host-{i}", "hostPath": {"path": host_path, "type": "Directory"}}
+        )
+        mounts.append({"name": f"host-{i}", "mountPath": mount_path, "readOnly": True})
     if cfg.object_storage:
         volumes.append(
             {

@@ -183,3 +183,28 @@ def test_shared_validation_names_the_cks_backend():
         provider(dry_run=True).train("base_model: test\nuse_ray: true")
     with pytest.raises(ValueError, match="CoreWeave CKS"):
         provider(dry_run=True).train("base_model: test", local_dirs={"a": "b"})
+
+
+def test_host_paths_mount_read_only():
+    result = provider(
+        dry_run=True, host_paths={"/mnt/local/beam-models": "/models"}
+    ).train("base_model: /models/m\noutput_dir: outputs", launcher="torchrun")
+    pod = result["manifests"][2]["spec"]["template"]["spec"]
+    host = [v for v in pod["volumes"] if "hostPath" in v]
+    assert host == [
+        {
+            "name": "host-0",
+            "hostPath": {"path": "/mnt/local/beam-models", "type": "Directory"},
+        }
+    ]
+    mounts = {m["name"]: m for m in pod["containers"][0]["volumeMounts"]}
+    assert mounts["host-0"] == {
+        "name": "host-0",
+        "mountPath": "/models",
+        "readOnly": True,
+    }
+
+
+def test_host_paths_must_be_absolute():
+    with pytest.raises(ValueError):
+        provider(host_paths={"relative/dir": "/models"})
