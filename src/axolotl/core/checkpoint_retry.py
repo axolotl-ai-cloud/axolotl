@@ -46,7 +46,11 @@ _DISK_PHRASES = (
     "input/output error",
     "file too large",
     "stale file handle",
-    # torch.save reports any failed write this way, without an errno
+    # torch.save's C++ writer reports failed writes without an errno: a short write
+    # ("unexpected pos 704 vs 598"), a failed stream ("basic_ios::clear: iostream
+    # error"), or a failed fwrite
+    "unexpected pos",
+    "iostream error",
     "file write failed",
 )
 

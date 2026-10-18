@@ -740,6 +740,12 @@ def train(
         torch.cuda.empty_cache()
 
     # Save the trained model and cleanup
+    if cfg.checkpoint_mirror:
+        from axolotl.core.checkpoint_mirror import drain_checkpoint_mirror
+
+        # a sharded final save merges from the newest checkpoint, which on a
+        # node-local output_dir is only complete in the mirror
+        drain_checkpoint_mirror(trainer)
     save_trained_model(cfg, trainer, model)
     tokenizer.save_pretrained(
         str(Path(cfg.output_dir)), save_jinja_files=cfg.tokenizer_save_jinja_files

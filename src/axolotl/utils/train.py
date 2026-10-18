@@ -31,6 +31,12 @@ def determine_last_checkpoint(cfg: DictDefault, update: bool = True) -> str | No
     if checkpoints:
         last_checkpoint = str(checkpoints[-1])
         if not update:
+            if cfg.checkpoint_mirror:
+                from axolotl.core.checkpoint_mirror import merge_source_checkpoint
+
+                last_checkpoint = merge_source_checkpoint(
+                    cfg.output_dir, cfg.checkpoint_mirror["dir"], last_checkpoint
+                )
             LOG.info(f"Resuming from last checkpoint at {last_checkpoint}")
             return last_checkpoint
 

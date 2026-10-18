@@ -95,7 +95,9 @@ def test_multi_node_checkpoint_appears_only_once_every_node_copied(tmp_path, fir
         local = tmp_path / f"node{node}"
         save(local, 5, files)
         mirrors[node] = CheckpointMirror(
-            local, remote, layout=MirrorLayout(True, node_index=node, num_nodes=2)
+            local,
+            remote,
+            layout=MirrorLayout(True, node_index=node, num_nodes=2, attempt="run1"),
         )
 
     mirrors[first].submit(5)
@@ -128,7 +130,7 @@ def test_mirror_rotation_keeps_newest_and_best(dirs, best, kept):
 
 def test_keep_none_keeps_every_checkpoint(dirs):
     local, remote = dirs
-    mirror = CheckpointMirror(local, remote, keep=None)
+    mirror = CheckpointMirror(local, remote, keep=None, max_pending=10)
     for step in (1, 2, 3):
         save(local, step)
         mirror.submit(step)
@@ -149,7 +151,7 @@ def test_copy_failure_warns_and_later_checkpoints_still_copy(dirs, monkeypatch, 
         return copy_file(source, destination, tag)
 
     monkeypatch.setattr(checkpoint_mirror, "copy_file", flaky)
-    mirror = CheckpointMirror(local, remote, keep=1)
+    mirror = CheckpointMirror(local, remote, keep=1, max_pending=10)
     with caplog.at_level(logging.WARNING):
         for step in (1, 2, 3):
             save(local, step)
@@ -173,7 +175,7 @@ def test_rotation_keeps_the_last_good_copy_when_newer_copies_fail(dirs, monkeypa
         return copy_file(source, destination, tag)
 
     monkeypatch.setattr(checkpoint_mirror, "copy_file", fail_after_first)
-    mirror = CheckpointMirror(local, remote, keep=1)
+    mirror = CheckpointMirror(local, remote, keep=1, max_pending=10)
     for step in (1, 2, 3):
         save(local, step)
         mirror.submit(step)
@@ -218,11 +220,10 @@ def test_finish_retries_a_failed_newest_checkpoint_and_copies_final_outputs(
     assert mirror.worker.closed
 
 
-def test_max_pending_blocks_saves_until_the_oldest_copy_finishes(dirs, monkeypatch):
+def test_full_queue_skips_the_save_and_drain_retries_the_newest(dirs, monkeypatch):
     local, remote = dirs
     entered, release = threading.Event(), threading.Event()
     copy_tree = checkpoint_mirror.copy_tree
-
     calls = []
 
     def gated(source, *args, **kwargs):
@@ -238,16 +239,14 @@ def test_max_pending_blocks_saves_until_the_oldest_copy_finishes(dirs, monkeypat
     save(local, 2)
     mirror.submit(1)
     assert entered.wait(5)
-    second = threading.Thread(target=mirror.submit, args=(2,))
-    second.start()
-    second.join(0.3)
-    assert second.is_alive()
+
+    mirror.submit(2)  # returns at once: training never waits on the mirror
+    assert mirror.failed == {2}
 
     release.set()
-    second.join(5)
-    assert not second.is_alive()
-    mirror.worker.wait()
+    mirror.drain()
     assert sorted(checkpoint_steps(remote)) == [1, 2]
+    assert mirror.failed == set()
     mirror.worker.close()
 
 
@@ -329,7 +328,7 @@ def test_auto_resume_uses_the_mirror(tmp_path):
 )
 def test_callback_mirrors_saves_and_final_outputs(dirs, delete, limit, kept):
     local, remote = dirs
-    callback = CheckpointMirrorCallback(str(remote), delete=delete)
+    callback = CheckpointMirrorCallback(str(remote), delete=delete, max_pending=10)
     args = SimpleNamespace(output_dir=str(local), save_total_limit=limit)
     control = SimpleNamespace()
     callback.on_train_begin(args, SimpleNamespace(), control)
@@ -344,3 +343,125 @@ def test_callback_mirrors_saves_and_final_outputs(dirs, delete, limit, kept):
     assert sorted(checkpoint_steps(remote)) == kept
     assert (remote / "config.json").read_text() == "{}"
     assert callback.mirror is None
+
+
+def _two_node_mirrors(tmp_path, attempt="run2"):
+    remote = tmp_path / "nfs"
+    mirrors = []
+    for node in (0, 1):
+        local = tmp_path / f"node{node}"
+        local.mkdir(exist_ok=True)
+        mirrors.append(
+            CheckpointMirror(
+                local,
+                remote,
+                layout=MirrorLayout(
+                    True, node_index=node, num_nodes=2, attempt=attempt
+                ),
+            )
+        )
+    return remote, mirrors
+
+
+def test_an_earlier_runs_staging_never_completes_a_checkpoint(tmp_path):
+    remote, (node0, node1) = _two_node_mirrors(tmp_path)
+    stale = remote / ".staging-run1-checkpoint-5"
+    (stale / ".mirror-nodes").mkdir(parents=True)
+    (stale / ".mirror-nodes" / "node-0.json").write_text("{}")
+    (stale / "rng_state_0.pth").write_bytes(b"old")
+
+    save(node1.local_dir, 5, {"rng_state_1.pth": b"new"})
+    node1.submit(5)
+    node1.worker.wait()
+    assert checkpoint_steps(remote) == {}
+
+    node0.clear_other_attempts()
+    assert not stale.exists()
+    save(node0.local_dir, 5, {"rng_state_0.pth": b"new"})
+    node0.submit(5)
+    node0.worker.wait()
+    assert tree(remote / "checkpoint-5") == {
+        "rng_state_0.pth": b"new",
+        "rng_state_1.pth": b"new",
+    }
+    for mirror in (node0, node1):
+        mirror.worker.close()
+
+
+def test_a_failed_publish_releases_its_lock_and_drain_retries(dirs, monkeypatch):
+    local, remote = dirs
+    rename = checkpoint_mirror.os.rename
+    failures = []
+
+    def flaky_rename(source, destination):
+        if (
+            str(source).endswith("checkpoint-1")
+            and ".staging-" in str(source)
+            and not failures
+        ):
+            failures.append(source)
+            raise OSError("server busy")
+        return rename(source, destination)
+
+    monkeypatch.setattr(checkpoint_mirror.os, "rename", flaky_rename)
+    mirror = CheckpointMirror(local, remote)
+    save(local, 1)
+    mirror.submit(1)
+    mirror.worker.wait()
+    assert failures and checkpoint_steps(remote) == {}
+
+    mirror.drain()
+
+    assert sorted(checkpoint_steps(remote)) == [1]
+    mirror.worker.close()
+
+
+def test_a_node_with_an_empty_checkpoint_still_records_its_share(tmp_path):
+    remote, (node0, node1) = _two_node_mirrors(tmp_path)
+    save(node0.local_dir, 7, {"model.safetensors": b"w"})
+    (node1.local_dir / "checkpoint-7").mkdir()  # save_only_model: nothing on node 1
+
+    for mirror in (node0, node1):
+        mirror.submit(7)
+        mirror.worker.wait()
+
+    assert tree(remote / "checkpoint-7") == {"model.safetensors": b"w"}
+    assert node1.failed == set()
+    for mirror in (node0, node1):
+        mirror.worker.close()
+
+
+def test_only_node_0_copies_the_final_outputs(tmp_path):
+    remote, (node0, node1) = _two_node_mirrors(tmp_path)
+    (node0.local_dir / "adapter_model.safetensors").write_bytes(b"fresh")
+    (node1.local_dir / "adapter_model.safetensors").write_bytes(b"stale")
+
+    node1.finish()
+    assert not (remote / "adapter_model.safetensors").exists()
+    node0.finish()
+    assert (remote / "adapter_model.safetensors").read_bytes() == b"fresh"
+
+
+@pytest.mark.parametrize(
+    "node_local, mirrored, expected",
+    [
+        (False, True, "nvme"),
+        (True, True, "nfs"),
+        (True, False, "nvme"),
+    ],
+)
+def test_merge_reads_the_mirror_only_for_node_local_output_dirs(
+    tmp_path, monkeypatch, node_local, mirrored, expected
+):
+    local, remote = tmp_path / "nvme", tmp_path / "nfs"
+    save(local, 9)
+    if mirrored:
+        save(remote, 9)
+    layout = MirrorLayout(True, 0, 2 if node_local else 1)
+    monkeypatch.setattr(checkpoint_mirror, "detect_layout", lambda _: layout)
+
+    chosen = checkpoint_mirror.merge_source_checkpoint(
+        local, remote, str(local / "checkpoint-9"), timeout=0
+    )
+
+    assert chosen == str(tmp_path / expected / "checkpoint-9")

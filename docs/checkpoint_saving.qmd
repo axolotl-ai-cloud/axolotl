@@ -87,9 +87,9 @@ checkpoint_mirror:
 - `delete`: `mirror` keeps as many checkpoints in `dir` as `save_total_limit` keeps locally. `keep`
   never deletes from `dir`, or keeps the newest `checkpoint_mirror.save_total_limit` when set.
   The newest and best checkpoints are never deleted.
-- `max_pending`: Checkpoints waiting to be copied before the next save blocks until the oldest copy
-  finishes. Queued checkpoints are hard links, so this bounds the local disk used when the shared
-  filesystem is slower than the save interval.
+- `max_pending`: Checkpoints queued for copying at once. Queued checkpoints are hard links, so this
+  bounds the local disk they hold. A save that finds the queue full is not mirrored and training
+  does not wait; the newest checkpoint is retried at the end of training.
 - `copy_threads`: Files copied in parallel per checkpoint. Default: 4.
 - `resume`: Whether `auto_resume_from_checkpoints` may resume from `dir`. Default: `true`.
 
@@ -99,8 +99,11 @@ checkpoint_mirror:
    instant and survives local rotation by `save_total_limit`.
 2. A background thread copies queued checkpoints in order into a hidden staging directory in
    `dir`, then renames it to `checkpoint-N`. A checkpoint in `dir` is therefore always complete.
-3. After training, the final model, tokenizer and other files in `output_dir` are copied as well,
-   and pending checkpoint copies are drained before the process exits.
+3. Before the final save, pending checkpoint copies are drained. After it, the final model,
+   tokenizer and other files in `output_dir` are copied as well.
+
+Use one `dir` per run: at startup, staging left in `dir` by an earlier run is removed, and a
+checkpoint is only assembled from the current run's copies.
 
 A failed copy logs a warning and training continues; the local checkpoint is unaffected. If the
 newest checkpoint failed to copy, it is retried once at the end of training.
@@ -111,7 +114,8 @@ When `output_dir` is local to each node, every node holds only its own ranks' mo
 optimizer states and RNG states. Axolotl detects this at startup. Each node then copies its share,
 and `checkpoint-N` appears in `dir` only once every node has finished. Nodes other than the first
 also apply `save_total_limit` to their own `output_dir`, which Hugging Face Trainer only does on
-the main process.
+the main process. The final outputs are copied from the first node only, and a sharded final
+save merges its weights from the mirrored checkpoint, since no node holds every shard.
 
 ### Resuming
 

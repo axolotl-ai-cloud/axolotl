@@ -56,6 +56,10 @@ def _chained(outer, inner):
             "writing file data/0: file write failed"
         ),
         RuntimeError("[Errno 116] Stale file handle"),
+        RuntimeError("basic_ios::clear: iostream error"),
+        RuntimeError(
+            "[enforce fail at inline_container.cc:672] . unexpected pos 704 vs 598"
+        ),
         _chained(RuntimeError("save failed"), OSError(errno.ENOSPC, "full")),
         ExceptionGroup("writers", [ValueError("x"), OSError(errno.EDQUOT, "q")]),
         CheckpointException({1: (OSError(errno.ENOSPC, "full"), None)}),
@@ -217,18 +221,16 @@ def test_retry_call_uses_the_active_policy(tmp_path, sleeps):
 
 
 @pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full (Linux)")
-def test_real_full_device_is_detected_and_retried(sleeps):
-    from safetensors.torch import save_file
-
+@pytest.mark.parametrize("payload", [{"step": 1}, {"w": torch.ones(1 << 20)}])
+def test_real_full_device_is_detected_and_retried(sleeps, payload):
+    # safetensors writes a temporary file beside the target, so /dev/full cannot
+    # exercise it; its errors are covered by message in test_recognizes_disk_errors
     with retry_disk_writes(wait_seconds=0):
-        with pytest.raises(BaseException) as torch_error:
-            torch.save({"w": torch.ones(1 << 20)}, "/dev/full")
-        with pytest.raises(BaseException) as safetensors_error:
-            save_file({"w": torch.ones(1 << 20)}, "/dev/full")
+        with pytest.raises(BaseException) as error:
+            torch.save(payload, "/dev/full")
 
-    assert is_disk_error(torch_error.value)
-    assert is_disk_error(safetensors_error.value)
-    assert len(sleeps) == 2
+    assert is_disk_error(error.value)
+    assert sleeps == [0]
 
 
 def test_mixin_scope_follows_training_arguments():

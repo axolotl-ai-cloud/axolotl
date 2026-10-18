@@ -70,6 +70,10 @@ def retain_checkpoint(
     return retained
 
 
+class QueueFull(RuntimeError):
+    """``submit(..., block=False)`` found ``max_pending`` publications unfinished."""
+
+
 class BackgroundCheckpointPublisher:
     """Publish retained directories in order without blocking the training thread.
 
@@ -79,8 +83,9 @@ class BackgroundCheckpointPublisher:
     removed after publication, failure, or cancellation. Call ``check`` at training
     boundaries and ``close`` to drain work, or cancel pending work during teardown.
     Submission and polling belong to a single producer thread. With ``max_pending``,
-    ``submit`` waits while that many publications are unfinished, so a slow
-    destination bounds the retained checkpoints instead of filling the local disk.
+    ``submit`` waits while that many publications are unfinished (or raises
+    ``QueueFull`` with ``block=False``), so a slow destination bounds the retained
+    checkpoints instead of filling the local disk.
     """
 
     def __init__(
@@ -110,11 +115,15 @@ class BackgroundCheckpointPublisher:
             future.result()
             self.futures.popleft()
 
-    def submit(self, directory, step):
+    def submit(self, directory, step, *, block=True):
         if self.closed:
             raise RuntimeError("Checkpoint publisher is closed")
         self.check()
         while self.max_pending is not None and len(self.futures) >= self.max_pending:
+            if not block:
+                raise QueueFull(
+                    f"{len(self.futures)} checkpoint publications are still pending"
+                )
             wait_futures([self.futures[0]], return_when=FIRST_COMPLETED)
             self.check()
         retained = self.retain(Path(directory), self.directory)

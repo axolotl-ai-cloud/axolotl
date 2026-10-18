@@ -8,10 +8,12 @@ partial checkpoint. A failed copy is logged and never stops training.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
 import socket
+import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -20,7 +22,11 @@ from pathlib import Path
 
 from transformers import TrainerCallback
 
-from axolotl.core.checkpoint_publisher import BackgroundCheckpointPublisher
+from axolotl.core.checkpoint_publisher import (
+    BackgroundCheckpointPublisher,
+    QueueFull,
+    retain_checkpoint,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -60,6 +66,9 @@ class MirrorLayout:
     uploader: bool
     node_index: int = 0
     num_nodes: int = 1
+    # shared by every rank of one training run; scopes staging so a restarted run
+    # never completes a checkpoint with another run's shares
+    attempt: str = ""
 
     @property
     def node_local(self) -> bool:
@@ -67,17 +76,18 @@ class MirrorLayout:
 
 
 def layout_from(
-    hostnames: list[str], rank: int, *, shared_output_dir: bool
+    hostnames: list[str], rank: int, *, shared_output_dir: bool, attempt: str = ""
 ) -> MirrorLayout:
     """Layout for ``rank`` given every rank's hostname, indexed by global rank."""
     nodes = list(dict.fromkeys(hostnames))
     if len(nodes) == 1 or shared_output_dir:
-        return MirrorLayout(uploader=rank == 0)
+        return MirrorLayout(uploader=rank == 0, attempt=attempt)
     host = hostnames[rank]
     return MirrorLayout(
         uploader=rank == hostnames.index(host),
         node_index=nodes.index(host),
         num_nodes=len(nodes),
+        attempt=attempt,
     )
 
 
@@ -88,19 +98,21 @@ def detect_layout(output_dir: Path | str) -> MirrorLayout:
     """Find the nodes and whether they share ``output_dir``. Collective: call on every rank."""
     import torch.distributed as dist
 
-    if not (dist.is_available() and dist.is_initialized()):
-        return MirrorLayout(uploader=True)
     key = str(Path(output_dir).resolve())
     if key in _LAYOUTS:
+        return _LAYOUTS[key]
+    if not (dist.is_available() and dist.is_initialized()):
+        _LAYOUTS[key] = MirrorLayout(uploader=True, attempt=uuid.uuid4().hex[:12])
         return _LAYOUTS[key]
     rank, world = dist.get_rank(), dist.get_world_size()
     hostnames: list = [None] * world
     dist.all_gather_object(hostnames, socket.gethostname())
+    run = [uuid.uuid4().hex[:12] if rank == 0 else None]
+    dist.broadcast_object_list(run, src=0)
+    attempt = str(run[0])
     shared = len(set(hostnames)) == 1
     if not shared:
-        probe = [f"{PROBE_PREFIX}{uuid.uuid4().hex}" if rank == 0 else None]
-        dist.broadcast_object_list(probe, src=0)
-        probe_path = Path(output_dir) / str(probe[0])
+        probe_path = Path(output_dir) / f"{PROBE_PREFIX}{attempt}"
         if rank == 0:
             probe_path.parent.mkdir(parents=True, exist_ok=True)
             probe_path.touch()
@@ -111,7 +123,7 @@ def detect_layout(output_dir: Path | str) -> MirrorLayout:
         if rank == 0:
             probe_path.unlink(missing_ok=True)
         shared = all(seen)
-    layout = layout_from(hostnames, rank, shared_output_dir=shared)
+    layout = layout_from(hostnames, rank, shared_output_dir=shared, attempt=attempt)
     _LAYOUTS[key] = layout
     return layout
 
@@ -165,7 +177,8 @@ class CheckpointMirror:
 
     ``keep`` limits the mirror to the newest complete checkpoints (plus the best one);
     ``None`` keeps them all. Any node may publish or rotate: both only act on state that
-    every node agrees on, so concurrent runs are idempotent.
+    every node agrees on, so concurrent runs are idempotent. One training run writes to
+    a mirror directory at a time.
     """
 
     def __init__(
@@ -185,24 +198,43 @@ class CheckpointMirror:
         self.best_checkpoint: str | None = None
         self.failed: set[int] = set()
         self.tag = f"node{self.layout.node_index}"
+        self.staging_prefix = f"{STAGING_PREFIX}{self.layout.attempt or 'local'}-"
         self.worker = BackgroundCheckpointPublisher(
             self._upload,
             self.local_dir / QUEUE_DIRNAME,
+            retain=_retain,
             thread_name_prefix="checkpoint-mirror",
             max_pending=max_pending,
         )
 
     def submit(self, step: int) -> None:
+        """Queue ``checkpoint-<step>``; never blocks the training thread."""
         source = self.local_dir / f"{PREFIX}-{step}"
         try:
-            self.worker.submit(source, step)
+            # only the uploader ranks get here, so waiting could outlast the other
+            # ranks' next collective; skip instead and retry the newest at the end
+            self.worker.submit(source, step, block=False)
+        except QueueFull as exc:
+            self.failed.add(step)
+            LOG.warning(
+                f"Not mirroring {source.name}: {exc}. The newest checkpoint is "
+                "retried at the end of training."
+            )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self.failed.add(step)
             LOG.warning(f"Not mirroring {source}: {exc}")
 
+    def clear_other_attempts(self) -> None:
+        """Remove staging and set-aside copies left by earlier runs. Call before any copy."""
+        for path in self.mirror_dir.glob(f"{STAGING_PREFIX}*"):
+            if not path.name.startswith(self.staging_prefix):
+                shutil.rmtree(path, ignore_errors=True)
+        for path in self.mirror_dir.glob(".replaced-*"):
+            shutil.rmtree(path, ignore_errors=True)
+
     def _upload(self, retained: Path, step: int) -> bool:
         name = f"{PREFIX}-{step}"
-        staging = self.mirror_dir / f"{STAGING_PREFIX}{name}"
+        staging = self.mirror_dir / f"{self.staging_prefix}{name}"
         start = time.monotonic()
         try:
             nbytes = copy_tree(
@@ -233,7 +265,7 @@ class CheckpointMirror:
         """Publish complete checkpoints, rotate the mirror, and drop dead staging."""
         try:
             for staging in sorted(
-                self.mirror_dir.glob(f"{STAGING_PREFIX}{PREFIX}-*"),
+                self.mirror_dir.glob(f"{self.staging_prefix}{PREFIX}-*"),
                 key=lambda path: _step_of(path.name) or -1,
             ):
                 self._finalize(staging)
@@ -255,17 +287,30 @@ class CheckpointMirror:
         markers = staging / MARKERS_DIRNAME
         if len(list(markers.glob("node-*.json"))) < self.layout.num_nodes:
             return False
+        lock = markers / FINALIZE_LOCK
         try:
             # one node wins the exclusive create and publishes; the others leave it be
-            os.close(os.open(markers / FINALIZE_LOCK, os.O_CREAT | os.O_EXCL))
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
         except FileExistsError:
             return False
-        final = self.mirror_dir / staging.name[len(STAGING_PREFIX) :]
+        final = self.mirror_dir / staging.name[len(self.staging_prefix) :]
         replaced = None
-        if final.exists():
-            replaced = self.mirror_dir / f".replaced-{final.name}-{uuid.uuid4().hex}"
-            os.rename(final, replaced)
-        os.rename(staging, final)
+        try:
+            if final.exists():
+                replaced = (
+                    self.mirror_dir / f".replaced-{final.name}-{uuid.uuid4().hex}"
+                )
+                os.rename(final, replaced)
+            os.rename(staging, final)
+        except OSError as exc:
+            if replaced is not None and not final.exists():
+                with contextlib.suppress(OSError):
+                    os.rename(replaced, final)
+            # release the lock so the next settle (or the final drain) retries
+            with contextlib.suppress(OSError):
+                lock.unlink()
+            LOG.warning(f"Publishing {final} failed and will be retried: {exc}")
+            return False
         if replaced is not None:
             shutil.rmtree(replaced, ignore_errors=True)
         LOG.info(f"{final} is complete")
@@ -278,7 +323,7 @@ class CheckpointMirror:
         if not complete:
             return
         newest = max(complete)
-        for staging in self.mirror_dir.glob(f"{STAGING_PREFIX}{PREFIX}-*"):
+        for staging in self.mirror_dir.glob(f"{STAGING_PREFIX}*"):
             step = _step_of(staging.name)
             if step is not None and step < newest:
                 shutil.rmtree(staging, ignore_errors=True)
@@ -294,15 +339,26 @@ class CheckpointMirror:
         ):
             shutil.rmtree(path, ignore_errors=True)
 
-    def finish(self) -> None:
-        """Drain the queue, retry the newest checkpoint if its copy failed, and copy the
-        rest of ``output_dir`` (final weights, tokenizer, configs). Blocks."""
+    def drain(self) -> None:
+        """Wait for queued copies, publish what is complete, and retry the newest
+        checkpoint once if its copy failed or was skipped. Blocks."""
         self.worker.wait()
+        self._settle()
         local = checkpoint_steps(self.local_dir)
         if local and max(local) in self.failed:
             LOG.info(f"Retrying the mirror copy of {local[max(local)]}")
             self.submit(max(local))
             self.worker.wait()
+
+    def finish(self) -> None:
+        """Drain, then (node 0) copy the rest of ``output_dir``: final weights,
+        tokenizer, configs. Other nodes' copies of those files are not authoritative."""
+        self.drain()
+        if self.layout.node_index == 0:
+            self._copy_final_outputs()
+        self.worker.close()
+
+    def _copy_final_outputs(self) -> None:
         try:
             for entry in self.local_dir.iterdir():
                 if entry.name == QUEUE_DIRNAME or entry.name.startswith(PROBE_PREFIX):
@@ -326,7 +382,15 @@ class CheckpointMirror:
             )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             LOG.warning(f"Copying the final outputs to {self.mirror_dir} failed: {exc}")
-        self.worker.close()
+
+
+def _retain(source: Path, root: Path) -> Path:
+    """Retain a checkpoint; an empty one (a node whose ranks wrote nothing, e.g. with
+    save_only_model) still queues, so the node records its share as done."""
+    if source.is_dir() and not any(source.iterdir()):
+        root.mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix="queued-", dir=root))
+    return retain_checkpoint(source, root)
 
 
 def _barrier() -> None:
@@ -341,7 +405,7 @@ class CheckpointMirrorCallback(TrainerCallback):
 
     With ``delete="mirror"`` the mirror keeps as many checkpoints as ``save_total_limit``
     keeps locally; with ``delete="keep"`` it keeps everything, or ``save_total_limit``
-    checkpoints when given. Call ``finish`` after the final model save.
+    checkpoints when given. Call ``drain`` before and ``finish`` after the final save.
     """
 
     def __init__(
@@ -377,10 +441,14 @@ class CheckpointMirrorCallback(TrainerCallback):
                 max_pending=self.max_pending,
                 copy_threads=self.copy_threads,
             )
+            if self.layout.node_index == 0:
+                self.mirror.clear_other_attempts()
             LOG.info(
                 f"Mirroring checkpoints from {args.output_dir} to {self.mirror_dir} "
                 f"(node {self.layout.node_index + 1} of {self.layout.num_nodes})"
             )
+        # no node copies before node 0 has cleared earlier runs' staging
+        _barrier()
         return control
 
     def on_save(self, args, state, control, **kwargs):
@@ -394,6 +462,13 @@ class CheckpointMirrorCallback(TrainerCallback):
         self.mirror.submit(state.global_step)
         return control
 
+    def drain(self) -> None:
+        _barrier()
+        if self.mirror is not None:
+            self.mirror.drain()
+        # every node's share is copied and published once all ranks get past here
+        _barrier()
+
     def finish(self) -> None:
         _barrier()
         if self.mirror is not None:
@@ -401,11 +476,24 @@ class CheckpointMirrorCallback(TrainerCallback):
             self.mirror = None
 
 
+def _mirror_callbacks(trainer) -> list[CheckpointMirrorCallback]:
+    return [
+        callback
+        for callback in trainer.callback_handler.callbacks
+        if isinstance(callback, CheckpointMirrorCallback)
+    ]
+
+
+def drain_checkpoint_mirror(trainer) -> None:
+    """Finish pending checkpoint copies before the final save. Call on every rank."""
+    for callback in _mirror_callbacks(trainer):
+        callback.drain()
+
+
 def finish_checkpoint_mirror(trainer) -> None:
     """Copy the final outputs and drain pending checkpoint copies. Call on every rank."""
-    for callback in trainer.callback_handler.callbacks:
-        if isinstance(callback, CheckpointMirrorCallback):
-            callback.finish()
+    for callback in _mirror_callbacks(trainer):
+        callback.finish()
 
 
 def resume_checkpoint(
@@ -425,3 +513,35 @@ def resume_checkpoint(
     if remote_last is None or local_last is None:
         return local_last or remote_last
     return local_last if (_step_of(local_last) or -1) >= max(remote) else remote_last
+
+
+def merge_source_checkpoint(
+    output_dir: Path | str,
+    mirror_dir: Path | str,
+    local_last: str | None,
+    *,
+    timeout: float = 60.0,
+) -> str | None:
+    """Checkpoint the final sharded-weights merge should read.
+
+    With a node-local output_dir across nodes, the local checkpoint holds only this
+    node's shards, so read the mirrored copy of the same step once it is visible.
+    """
+    layout = detect_layout(output_dir)
+    step = _step_of(local_last)
+    if not layout.node_local or step is None:
+        return local_last
+    deadline = time.monotonic() + timeout
+    while True:
+        # listing the directory refreshes a network filesystem's cached view of it
+        mirrored = checkpoint_steps(mirror_dir).get(step)
+        if mirrored is not None:
+            return str(mirrored)
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(2)
+    LOG.warning(
+        f"{PREFIX}-{step} is not in {mirror_dir}; merging from {local_last}, which "
+        "holds only this node's shards"
+    )
+    return local_last

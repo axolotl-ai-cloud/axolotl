@@ -3164,7 +3164,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--checkpoint-mirror.max-pending",),
         "checkpoint_mirror__max_pending",
         "int",
-        "Checkpoints waiting to be copied before a save blocks until the oldest copy finishes. Bounds the local disk used by queued checkpoints when the shared filesystem is slower than the save interval.",
+        "Checkpoints queued for copying at once. A save that finds the queue full is not mirrored (training never waits); the newest checkpoint is retried at the end of training. Bounds the local disk held by queued checkpoints when the shared filesystem is slower than the save interval.",
     ),
     (
         ("--checkpoint-mirror.copy-threads",),
