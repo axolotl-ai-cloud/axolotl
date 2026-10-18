@@ -156,14 +156,22 @@ def _check_errors(error):
         )
 
 
+def _transfer_device():
+    # FULL_STATE_DICT inits the group as "cuda:nccl,cpu:gloo"; an exact "nccl" match
+    # sends every chunk through gloo over TCP
+    if "nccl" in str(dist.get_backend()):
+        return torch.device("cuda", torch.cuda.current_device())
+    return torch.device("cpu")
+
+
 def _transfer(value, shape, dtype, source, receiver=0):
     count = math.prod(shape)
+    if source == receiver:
+        if dist.get_rank() != receiver:
+            return None
+        return value.detach().reshape(shape).to("cpu", dtype=dtype, copy=True)
     output = torch.empty(shape, dtype=dtype) if dist.get_rank() == receiver else None
-    device = (
-        torch.device("cuda", torch.cuda.current_device())
-        if dist.get_backend() == "nccl"
-        else torch.device("cpu")
-    )
+    device = _transfer_device()
     chunk_size = max(1, _TRANSFER_BYTES // torch.empty((), dtype=dtype).element_size())
     # Keep GPU staging bounded even when the complete checkpoint lives on CPU.
     for start in range(0, count, chunk_size):

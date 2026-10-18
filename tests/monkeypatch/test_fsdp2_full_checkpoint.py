@@ -121,3 +121,49 @@ def test_full_model_file_written_without_optimizer(
         return
     for name, value in state.items():
         torch.testing.assert_close(saved[name], value, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize(
+    "backend, device",
+    [("nccl", "cuda"), ("cuda:nccl,cpu:gloo", "cuda"), ("gloo", "cpu")],
+)
+def test_transfer_stages_on_cuda_whenever_nccl_is_bound(backend, device):
+    from unittest.mock import patch
+
+    import torch
+
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint
+
+    with (
+        patch.object(fsdp2_checkpoint.dist, "get_backend", return_value=backend),
+        patch.object(torch.cuda, "current_device", return_value=0),
+    ):
+        assert fsdp2_checkpoint._transfer_device().type == device
+
+
+@pytest.mark.parametrize("rank", [0, 1])
+def test_transfer_to_self_skips_the_collective(rank):
+    from unittest.mock import patch
+
+    import torch
+
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint
+
+    value = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+    with (
+        patch.object(fsdp2_checkpoint.dist, "get_rank", return_value=rank),
+        patch.object(
+            fsdp2_checkpoint.dist,
+            "broadcast",
+            side_effect=AssertionError("broadcast to self"),
+        ),
+    ):
+        out = fsdp2_checkpoint._transfer(
+            value if rank == 0 else None, [2, 3], torch.bfloat16, source=0
+        )
+    if rank == 0:
+        assert out.device.type == "cpu" and out.dtype == torch.bfloat16
+        torch.testing.assert_close(out, value.to(torch.bfloat16))
+        assert out.data_ptr() != value.data_ptr()
+    else:
+        assert out is None
