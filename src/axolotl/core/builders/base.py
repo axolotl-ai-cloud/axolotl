@@ -273,8 +273,14 @@ class TrainerBuilderBase(abc.ABC):
         return training_arguments
 
     def hook_pre_create_trainer(self, trainer_kwargs, trainer_cls):
-        # TODO
-        return trainer_kwargs, trainer_cls
+        from axolotl.core.trainers.composition import (
+            compose_trainer_cls,
+            trainer_mixins_for,
+        )
+
+        return trainer_kwargs, compose_trainer_cls(
+            trainer_cls, trainer_mixins_for(self.cfg)
+        )
 
     def hook_post_create_trainer(self, trainer):
         # TODO

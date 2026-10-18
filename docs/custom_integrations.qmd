@@ -120,6 +120,42 @@ See this repo for an example: [https://github.com/axolotl-ai-cloud/diff-transfor
 
 :::
 
+### Adding behavior to the trainer with mixins
+
+`get_trainer_cls` replaces the trainer class, and only the first plugin that returns one is
+used. To add behavior to whichever trainer Axolotl selects (SFT, DPO, GRPO, or another plugin's
+trainer), return mixin classes from `get_trainer_mixins` instead. Every plugin's mixins are used:
+
+```python
+import time
+
+from transformers import Trainer
+
+from axolotl.integrations.base import BasePlugin
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
+
+class TimedSaveMixin(Trainer):
+    def _save_checkpoint(self, *args, **kwargs):
+        start = time.monotonic()
+        try:
+            return super()._save_checkpoint(*args, **kwargs)
+        finally:
+            LOG.info(f"checkpoint took {time.monotonic() - start:.1f}s")
+
+
+class TimedSavePlugin(BasePlugin):
+    def get_trainer_mixins(self, cfg):
+        return [TimedSaveMixin]  # or "my_package.mixins.TimedSaveMixin"
+```
+
+Before the trainer is created, Axolotl subclasses the selected trainer class with these mixins
+placed ahead of it in the method resolution order, so their overrides wrap the trainer's own.
+Mixins from core features come first, then plugin mixins in `plugins:` order. A mixin must call
+`super()` for every method it overrides so the others still run.
+
 ### Publishing an always-on training plugin
 
 An installed integration can register itself before configuration validation.

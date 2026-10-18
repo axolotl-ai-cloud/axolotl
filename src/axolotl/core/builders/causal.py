@@ -438,7 +438,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["tokenizer"] = self.tokenizer
 
         if (
-            trainer_cls not in [AxolotlRewardTrainer, AxolotlPRMTrainer]
+            not issubclass(trainer_cls, (AxolotlRewardTrainer, AxolotlPRMTrainer))
             and self.cfg.datasets is not None
         ):
             trainer_kwargs["dataset_tags"] = [

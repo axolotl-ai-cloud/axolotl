@@ -230,6 +230,18 @@ class BasePlugin:
             The first non-`None` trainer class returned by a plugin.
         """
 
+    def get_trainer_mixins(self, cfg: DictDefault) -> list[type | str]:
+        """Returns mixin classes (or dotted paths to them) to compose into the trainer.
+
+        Unlike `get_trainer_cls`, every plugin contributes. The mixins are placed before
+        the selected trainer class in the MRO, in `plugins:` order, so their overrides
+        wrap the trainer's own; they must call `super()` for anything they override.
+
+        Args:
+            cfg: The global axolotl configuration.
+        """
+        return []
+
     def post_trainer_create(self, cfg: DictDefault, trainer: Trainer):
         """Performs actions after the trainer is created.
 
@@ -669,6 +681,13 @@ class PluginManager:
             if trainer_cls is not None:
                 return trainer_cls
         return None
+
+    def get_trainer_mixins(self, cfg: DictDefault) -> list[type | str]:
+        """Collects the trainer mixins of all registered plugins, in registration order."""
+        mixins: list[type | str] = []
+        for plugin in self.plugins.values():
+            mixins.extend(plugin.get_trainer_mixins(cfg) or [])
+        return mixins
 
     def get_training_args(self, cfg):
         """
