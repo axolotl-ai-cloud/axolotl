@@ -139,14 +139,11 @@ class RuntimeMetricsTracker:
         self.metrics.current_step = step
         self.metrics.total_steps += 1
 
-        # Periodically update memory metrics
+        # Peaks are also sampled by the callback right before each logging step.
         if step % self.update_interval == 0:
             self.update_memory_metrics()
-        else:
-            # Trainer logging resets allocator peaks after on_step_end.
-            self.update_gpu_memory_metrics()
 
-    def _get_memory_backend(self):
+    def _get_memory_backend(self) -> Any | None:
         """Select the same accelerator for current and peak allocation queries."""
         for name in ("cuda", "hip"):
             backend = getattr(torch, name, None)
@@ -166,8 +163,11 @@ class RuntimeMetricsTracker:
         if backend is None:
             return {}
         if backend is getattr(torch, "mps", None):
-            if hasattr(backend, "current_allocated_memory"):
-                return {0: backend.current_allocated_memory()}
+            current_allocated_memory = getattr(
+                backend, "current_allocated_memory", None
+            )
+            if current_allocated_memory is not None:
+                return {0: current_allocated_memory()}
             return {}
         if not hasattr(backend, "memory_allocated"):
             return {}

@@ -1,6 +1,7 @@
 """Utilities for axolotl.loaders module"""
 
 import contextlib
+import importlib
 from typing import Type
 
 import torch
@@ -147,6 +148,14 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         )
 
 
+def _resolve_config_class(name: str) -> type:
+    """A transformers config class name, or a dotted ``module.Class`` import path."""
+    if "." not in name:
+        return getattr(transformers, name)
+    module_name, _, class_name = name.rpartition(".")
+    return getattr(importlib.import_module(module_name), class_name)
+
+
 def load_model_config(cfg: DictDefault) -> PretrainedConfig:
     """Loads and configures a model configuration from HuggingFace or local sources.
 
@@ -180,7 +189,7 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig:
 
     config_cls = AutoConfig
     if cfg.cls_model_config:
-        config_cls = getattr(transformers, cfg.cls_model_config)
+        config_cls = _resolve_config_class(cfg.cls_model_config)
 
     model_config = config_cls.from_pretrained(
         model_config_name,

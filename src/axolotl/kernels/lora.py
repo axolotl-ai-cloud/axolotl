@@ -17,10 +17,20 @@ from bitsandbytes.functional import QuantState
 from torch import nn
 from torch.distributed.tensor import DTensor
 
-from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
-from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
+
+
+def _activation_kernels(kind: str) -> tuple[Callable, Callable]:
+    """(forward, backward) Triton kernels for a gated activation, imported on first use so this
+    module (and the patch tables that import it) load where Triton is absent."""
+    if kind == "swiglu":
+        from .swiglu import swiglu_backward, swiglu_forward
+
+        return swiglu_forward, swiglu_backward
+    from .geglu import geglu_backward, geglu_forward
+
+    return geglu_forward, geglu_backward
 
 
 def _parameter_dtypes(*parameters):
@@ -61,7 +71,7 @@ class _GatedActivation(torch.autograd.Function):
     def forward(ctx, gate, up, kind):
         ctx.save_for_backward(gate, up)
         ctx.kind = kind
-        forward = swiglu_forward if kind == "swiglu" else geglu_forward
+        forward, _ = _activation_kernels(kind)
         return forward(
             gate.reshape(1, -1, gate.shape[-1]), up.reshape(1, -1, up.shape[-1])
         ).view_as(gate)
@@ -69,7 +79,7 @@ class _GatedActivation(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad):
         gate, up = ctx.saved_tensors
-        backward = swiglu_backward if ctx.kind == "swiglu" else geglu_backward
+        _, backward = _activation_kernels(ctx.kind)
         # The activation kernels overwrite all three inputs.
         _, dg, du = backward(
             grad.contiguous().clone(),
@@ -152,11 +162,10 @@ def get_lora_parameters(
     linear_A = proj.lora_A[active_adapter]
     linear_B = proj.lora_B[active_adapter]
 
-    # This manual unsharding is needed for FSDP2 + LoRA kernels compatibility.
-    # We fuse linear layers + LoRA adapters calculations into a single
-    # torch.autograd.Function, bypassing the registered unshard / reshard behavior.
-    # Note that we don't apply resharding later in this module (it gets messy quickly),
-    # but LoRA parameters are generally small enough that this is not an issue.
+    # Adapters normally live in the decoder-layer FSDP2 unit, so by the time this runs
+    # the layer's pre-forward has gathered them and these are plain tensors. The
+    # manual unshard only fires when the adapters were carved into their own unit
+    # (mixed trainable dtypes), since this fused path bypasses that unit's hooks.
     if isinstance(linear_A.weight, DTensor):
         linear_A.unshard()
         linear_B.unshard()
@@ -846,8 +855,7 @@ def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.
         downLB,
         downMag,
         # Activation and flags
-        swiglu_forward,
-        swiglu_backward,
+        *_activation_kernels("swiglu"),
         inplace,
     )
 
@@ -907,8 +915,7 @@ def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.T
         downLB,
         downMag,
         # Activation and flags
-        geglu_forward,
-        geglu_backward,
+        *_activation_kernels("geglu"),
         inplace,
     )
 
@@ -2356,7 +2363,9 @@ class LoRA_Embedding(torch.autograd.Function):
 
             # d_A: gradient flows through F.embedding lookup
             # d_after_A = s * grad @ B = [T, hidden] @ [hidden, rank] = [T, rank]
-            d_after_A = s * grad_flat @ B_f
+            # custom_bwd restores autocast, but index_add_ requires fp32 contributions.
+            with torch.autocast(device_type=grad_flat.device.type, enabled=False):
+                d_after_A = s * grad_flat @ B_f
 
             # F.embedding backward: scatter d_after_A into A^T gradient
             x_flat = x.view(-1)

@@ -1,14 +1,18 @@
 """Discover cloud launchers without importing provider or training dependencies."""
 
+import logging
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 
 from axolotl.cli.cloud.base import CloudLauncher
 
+LOG = logging.getLogger(__name__)
+
 ENTRY_POINT_GROUP = "axolotl.cloud_providers"
 
 # Entry-point registrations are authoritative; this fallback covers missing or stale metadata.
 BUILTIN_PROVIDERS = {
+    "coreweave": "axolotl.integrations.coreweave.cloud:CoreWeaveCloud",
     "nebius": "axolotl.integrations.nebius.cloud:NebiusCloud",
     "modal": "axolotl.integrations.modal.cloud:ModalCloud",
     "baseten": "axolotl.integrations.baseten.cloud:BasetenCloud",
@@ -59,7 +63,16 @@ def load_cloud_provider(
                 "or set provider to '<module>:<class>'."
             )
 
-    provider = entry_point.load()
+    try:
+        provider = entry_point.load()
+    except Exception:  # pylint: disable=broad-exception-caught
+        LOG.warning(
+            "Could not import cloud provider '%s' from '%s'",
+            name,
+            entry_point.value,
+            exc_info=True,
+        )
+        raise
     if not isinstance(provider, type) or not issubclass(provider, CloudLauncher):
         raise TypeError(f"Cloud provider {name!r} must be a CloudLauncher subclass")
     return provider.from_config(dict(config), config_dir=config_dir)

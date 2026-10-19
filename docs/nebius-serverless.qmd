@@ -16,10 +16,21 @@ For multi-node training or SkyPilot-managed clusters, see the [SkyPilot guide](s
 
 Install [Axolotl](installation.qmd) with the Nebius provider and the
 [Nebius CLI](https://docs.nebius.com/cli/install) on the machine you submit from.
-Authenticate and check that your CLI includes `ai job run` (tested with 0.12.265):
+If you do not already have a configured CLI profile, create one interactively:
 
 ```bash
-nebius auth login
+nebius profile create
+```
+
+Follow the prompts to authenticate in your browser and select your tenant and
+project. For CI/CD and containers without a browser, use a service account as
+described in [Authentication without a browser](https://docs.nebius.com/cli/no-browser).
+That guide also covers user authentication with `--no-browser` when a browser on
+another machine can reach the CLI's callback; this still requires user interaction.
+
+Check that your CLI includes `ai job run` (tested with 0.12.265):
+
+```bash
 nebius ai job run --help
 ```
 

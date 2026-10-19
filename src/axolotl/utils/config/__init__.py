@@ -6,11 +6,11 @@ import os
 from typing import Optional
 
 import torch
+from packaging.version import Version
 from pydantic import ValidationError
 from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import (
-    is_torch_greater_or_equal,
     is_torch_npu_available,
 )
 
@@ -18,10 +18,13 @@ from axolotl.integrations.config import merge_input_args
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.utils import load_model_config
 from axolotl.model_support import (
+    DiffusionLayout,
     ModelHookContext,
     ModelHookPhase,
+    Supported,
     Unsupported,
     get_model_support,
+    is_native_diffusion,
     resolve_model_support,
     run_model_support_hooks,
 )
@@ -34,6 +37,7 @@ from axolotl.utils.schemas.datasets import (
     SFTDataset,
     SyntheticDataset,
 )
+from axolotl.utils.schemas.utils import is_deepspeed_zero3_config
 
 LOG = get_logger(__name__)
 
@@ -181,13 +185,9 @@ def resolve_dtype(cfg):
     else:
         if cfg.tf32 is True:
             torch.set_float32_matmul_precision("high")
-            if is_torch_greater_or_equal("2.9.0"):
-                torch.backends.fp32_precision = "tf32"
-                torch.backends.cuda.matmul.fp32_precision = "tf32"
-                torch.backends.cudnn.fp32_precision = "tf32"
-            else:
-                torch.backends.cuda.matmul.allow_tf32 = True
-                torch.backends.cudnn.allow_tf32 = True
+            torch.backends.fp32_precision = "tf32"
+            torch.backends.cuda.matmul.fp32_precision = "tf32"
+            torch.backends.cudnn.fp32_precision = "tf32"
         if cfg.bf16:
             cfg.fp16 = False
 
@@ -197,6 +197,36 @@ def resolve_dtype(cfg):
         cfg.torch_dtype = torch.float16
     else:
         cfg.torch_dtype = torch.float32
+
+
+_LEGACY_DIFFUSION_PLUGINS = frozenset(
+    {
+        "axolotl.integrations.diffusion.DiffusionPlugin",
+        "axolotl.integrations.diffusion.plugin.DiffusionPlugin",
+    }
+)
+
+
+def _validate_diffusion_lm_target(cfg, resolved_support) -> None:
+    from axolotl.integrations.base import normalize_plugin_name
+
+    if is_native_diffusion(cfg):
+        if resolved_support is None or resolved_support.diffusion is None:
+            raise ValueError(
+                f"`diffusion_lm` is set but model type {cfg.model_config_type!r} "
+                "has no native diffusion profile, so training would silently fall "
+                "back to causal SFT. Use a native diffusion checkpoint, or convert "
+                "a causal checkpoint with `diffusion_lm.from_causal_lm: true` and "
+                "`plugins: [axolotl.integrations.diffusion.DiffusionPlugin]`."
+            )
+        return
+    plugins = {normalize_plugin_name(name) for name in cfg.plugins or []}
+    if not plugins & _LEGACY_DIFFUSION_PLUGINS:
+        raise ValueError(
+            "`diffusion_lm.from_causal_lm: true` requires "
+            "`plugins: [axolotl.integrations.diffusion.DiffusionPlugin]`; without "
+            "it training would silently fall back to causal SFT."
+        )
 
 
 def normalize_config(cfg):
@@ -284,17 +314,62 @@ def normalize_config(cfg):
     cfg.model_config_type = model_config.model_type
     validate_recurrent_model_config(cfg)
 
-    cfg.is_multimodal = (
-        (resolved_support is not None and resolved_support.is_multimodal)
-        or hasattr(model_config, "model_type")
-        and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
-        or any(
-            multimodal_name in cfg.base_model.lower()
-            for multimodal_name in [
-                "pixtral",
-            ]
+    native_text_diffusion = (
+        resolved_support is not None
+        and resolved_support.family == "diffusion_lm"
+        and not resolved_support.is_multimodal
+    )
+    native_diffusion = native_text_diffusion and is_native_diffusion(cfg)
+    if native_diffusion and cfg.attn_implementation is None:
+        cfg.attn_implementation = "flex_attention"
+    if cfg.attn_implementation == "varlen":
+        varlen_supported = (
+            native_diffusion
+            and resolved_support is not None
+            and resolved_support.diffusion is not None
+            and resolved_support.diffusion.layout is DiffusionLayout.FULL_SEQUENCE
+            and isinstance(
+                resolved_support.capabilities.get("diffusion_varlen"), Supported
+            )
         )
-        or cfg.is_multimodal
+        if not varlen_supported:
+            raise ValueError(
+                "attn_implementation: varlen is supported only for native "
+                "full-sequence diffusion models that declare diffusion_varlen."
+            )
+        env_capabilities = getattr(cfg, "env_capabilities", None)
+        configured_torch_version = (
+            env_capabilities.get("torch_version")
+            if isinstance(env_capabilities, dict)
+            else getattr(env_capabilities, "torch_version", None)
+        )
+        torch_version = configured_torch_version or torch.__version__
+        if Version(str(torch_version).split("+", maxsplit=1)[0]) < Version("2.14.0"):
+            raise ValueError(
+                "attn_implementation: varlen requires torch >= 2.14 for its "
+                "public GQA API."
+            )
+    if cfg.diffusion_lm is not None:
+        _validate_diffusion_lm_target(cfg, resolved_support)
+    if native_text_diffusion and cfg.is_multimodal:
+        raise ValueError(
+            "Native text-only diffusion models do not support multimodal processing"
+        )
+    cfg.is_multimodal = (
+        False
+        if native_text_diffusion
+        else (
+            (resolved_support is not None and resolved_support.is_multimodal)
+            or hasattr(model_config, "model_type")
+            and model_config.model_type in MULTIMODAL_AUTO_MODEL_MAPPING
+            or any(
+                multimodal_name in cfg.base_model.lower()
+                for multimodal_name in [
+                    "pixtral",
+                ]
+            )
+            or cfg.is_multimodal
+        )
     )
     if cfg.is_multimodal:
         cfg.processor_config = (
@@ -395,10 +470,17 @@ def normalize_config(cfg):
     if (
         cfg.gradient_checkpointing
         and cfg.unfrozen_parameters is None
-        and cfg.gradient_checkpointing_kwargs is None
         and cfg.rl is None
+        and "use_reentrant" not in (cfg.gradient_checkpointing_kwargs or {})
     ):
-        cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
+        # Non-reentrant is PyTorch's recommended default. DeepSpeed ZeRO-3 keeps
+        # reentrant: non-reentrant recompute sees the partitioned parameters and
+        # raises a CheckpointError. Other checkpoint kwargs the user set are kept.
+        cfg.gradient_checkpointing_kwargs = {
+            **(cfg.gradient_checkpointing_kwargs or {}),
+            "use_reentrant": is_deepspeed_zero3_config(cfg.deepspeed)
+            or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3",
+        }
 
     # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms /
     # cross-layer shared KV cause "marked ready twice" errors with reentrant
@@ -432,6 +514,14 @@ def normalize_config(cfg):
                 )
                 cfg.ddp_find_unused_parameters = True
 
+    # MixLoRA reads _aux_loss from the module after the forward pass; reentrant
+    # checkpointing recomputes forward under no_grad, dropping the autograd graph.
+    if cfg.adapter == "mixlora" and cfg.gradient_checkpointing:
+        if cfg.gradient_checkpointing_kwargs is None:
+            cfg.gradient_checkpointing_kwargs = {}
+        if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
+            cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
@@ -459,10 +549,10 @@ def validate_config(
     capabilities: Optional[dict] = None,
     env_capabilities: Optional[dict] = None,
 ) -> DictDefault:
-    from axolotl.integrations.base import BUILTIN_PLUGINS
+    from axolotl.integrations.base import get_builtin_plugins
     from axolotl.utils.schemas import config as config_schema
 
-    if cfg.plugins or BUILTIN_PLUGINS:
+    if cfg.plugins or get_builtin_plugins():
         AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()
     else:
         AxolotlConfigWCapabilities = config_schema.AxolotlConfigWCapabilities
@@ -519,16 +609,28 @@ def validate_config(
 
 
 def prepare_plugins(cfg):
-    """Prepare built-in plugins and plugins explicitly selected by the config."""
-    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
+    """Prepare installed plugins and plugins explicitly selected by the config."""
+    from axolotl.integrations.base import (
+        PluginManager,
+        get_builtin_plugins,
+        normalize_plugin_name,
+    )
 
-    if not cfg.get("plugins") and not BUILTIN_PLUGINS:
+    builtin_plugins = get_builtin_plugins()
+    configured_plugins = tuple(
+        dict.fromkeys(
+            normalize_plugin_name(plugin_name)
+            for plugin_name in cfg.get("plugins") or []
+        )
+    )
+
+    if not configured_plugins and not builtin_plugins:
         return
 
     plugin_manager = PluginManager.get_instance()
-    for plugin_name in cfg.get("plugins") or []:
-        if plugin_name not in BUILTIN_PLUGINS:
-            plugin_manager.register(plugin_name)
-    for plugin_name in dict.fromkeys((*BUILTIN_PLUGINS, *(cfg.get("plugins") or []))):
+    for plugin_name in configured_plugins:
+        if plugin_name not in plugin_manager.plugins:
+            plugin_manager.register(plugin_name, required=True)
+    for plugin_name in dict.fromkeys((*builtin_plugins, *configured_plugins)):
         if plugin_name in plugin_manager.plugins:
             plugin_manager.plugins[plugin_name].register(cfg)

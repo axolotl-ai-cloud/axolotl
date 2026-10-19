@@ -2,6 +2,8 @@ base_model: IFM/K2-Horizon-MoVA-36B-A4B
 trust_remote_code: true
 
 chat_template: tokenizer_default
+eot_tokens:
+  - "<|ifm|im_end|>"
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template

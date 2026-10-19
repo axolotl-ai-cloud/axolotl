@@ -12,24 +12,24 @@ requires-python = ">=3.12"
 
 dependencies = [
     # Core ML stack
-    "torch>=2.13.0,<=2.14.0",
+    "torch>=2.13.0,<2.15.0",
     "packaging==26.0",
-    "huggingface_hub==1.18.0",
-    "peft==0.21.0",
-    "tokenizers==0.23.1",
-    "transformers==5.17.0",
+    "huggingface_hub>=1.31.0",
+    "peft==0.21.2",
+    "tokenizers==0.23.3",
+    "transformers==5.20.1",
     "accelerate==1.15.0",
-    "datasets==4.8.4",
-    "trl==1.13.0",
-    "hf_xet==1.4.3",
-    "kernels>=0.16.0,<0.17.0",
-    "trackio==0.19.0",
+    "datasets==5.0.1",
+    "trl==1.14.1",
+    "hf_xet>=1.5.2",
+    "kernels>=0.17.2,<0.18.0",
+    "trackio==0.40.0",
     "typing-extensions==4.15.0",
     "optimum==1.16.2",
     "hf_transfer",
     "sentencepiece",
-    "gradio==6.10.0",
-    "pydantic==2.12.5",
+    "gradio==6.29.1",
+    "pydantic==2.13.5",
     "addict",
     "fire",
     "PyYAML==6.0.3",
@@ -65,7 +65,7 @@ dependencies = [
     "antlr4-python3-runtime==4.13.2",
 
     "schedulefree==1.4.1",
-    "openenv-core==0.1.0",
+    "openenv-core>=0.1.0",
 
     # Axolotl contribs
     "axolotl-contribs-lgpl==0.0.7",
@@ -74,13 +74,13 @@ dependencies = [
     # Telemetry
     "posthog==6.7.11",
 
-    "mistral-common==1.11.5",
+    "mistral-common==1.12.0",
 
     # Platform-specific (Linux only)
     "bitsandbytes==0.50.2 ; sys_platform != 'darwin'",
     "triton>=3.4.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.33.post2 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
-    "liger-kernel==0.8.1 ; sys_platform != 'darwin'",
+    "liger-kernel==0.8.4 ; sys_platform != 'darwin'",
     "torchao==0.18.0 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
 
     # Architecture-specific
@@ -92,9 +92,9 @@ dependencies = [
 fla = ["flash-linear-attention[tilelang]==0.5.2", "tilelang==0.1.14"]
 modal = ["modal==1.3.0.post1"]
 baseten = ["truss==0.18.30"]
-flash-attn = ["flash-attn==2.8.3"]
+coreweave = ["boto3>=1.35"]
 ringmaster = [
-    "axolotl-ringmaster>=0.2.2",
+    "axolotl-ringmaster>=0.2.6",
 ]
 deepspeed = [
     "deepspeed>=0.18.6,<0.20.0",
@@ -127,14 +127,15 @@ optimizers = [
     "lomo-optim==0.1.1",
     "torch-optimi==0.2.1",
     "came_pytorch==0.1.3",
+    "scao==0.2.2",
     "q-galore-torch==1.0",
     "gefen-x>=0.2.0",
 ]
 ray = [
-    "ray[train]>=2.52.1",
+    "ray[train]>=2.59.0",
 ]
 vllm = [
-    "vllm>=0.17.0",
+    "vllm>=0.30.0",
 ]
 llmcompressor = [
     "llmcompressor>=0.10.0",
@@ -174,9 +175,14 @@ test = [
 axolotl = "axolotl.cli.main:main"
 
 [project.entry-points."axolotl.cloud_providers"]
+coreweave = "axolotl.integrations.coreweave.cloud:CoreWeaveCloud"
 nebius = "axolotl.integrations.nebius.cloud:NebiusCloud"
 modal = "axolotl.integrations.modal.cloud:ModalCloud"
 baseten = "axolotl.integrations.baseten.cloud:BasetenCloud"
+
+[project.entry-points."axolotl.plugins"]
+context-parallel = "axolotl.integrations.context_parallel:ContextParallelPlugin"
+expert-parallel = "axolotl.integrations.expert_parallel:ExpertParallelPlugin"
 
 [project.urls]
 Homepage = "https://axolotl.ai/"
@@ -190,7 +196,10 @@ include-package-data = true
 axolotl = [
     "**/*.yaml",
     "**/*.jinja",
+    "core/trainers/prm/LICENSE",
+    "core/trainers/prm/NOTICE",
     "integrations/kernels/libs/scattermoe_lora/metadata.json",
+    "integrations/diffusion_decision/vendored/DJEV_LICENSE",
 ]
 
 "axolotl.integrations.baseten" = ["template/*.sh", "template/*.py"]
@@ -204,6 +213,8 @@ version = { file = "VERSION" }
 [tool.ruff]
 line-length = 88
 target-version = "py312"
+extend-exclude = ["src/axolotl/core/trainers/prm"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "B", "I"]
@@ -234,6 +245,29 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 docstring-code-format = false
 
+# Distributions whose effect is bounded by the modules importing them, mapped to their
+# import roots. cicd/select_e2e_tests.py narrows a version bump of a listed distribution
+# to the e2e tests reachable from those importers; an unlisted one runs every e2e test.
+# List a distribution only when every behaviour it changes sits behind a static import.
+[tool.axolotl.ci.deps]
+"axolotl-ringmaster" = ["ringmaster"]
+"flash-linear-attention" = ["fla"]
+"fla-core" = ["fla"]
+"tilelang" = ["tilelang"]
+"liger-kernel" = ["liger_kernel"]
+"xformers" = ["xformers"]
+"torch-optimi" = ["optimi"]
+"came_pytorch" = ["came_pytorch"]
+"scao" = ["scao"]
+"q-galore-torch" = ["q_galore_torch"]
+"llmcompressor" = ["llmcompressor"]
+"vllm" = ["vllm"]
+"ray" = ["ray"]
+"mlflow" = ["mlflow"]
+"wandb" = ["wandb"]
+"trackio" = ["trackio"]
+"mistral-common" = ["mistral_common"]
+
 [tool.pytest.ini_options]
 addopts = "-m 'not slow'"
 norecursedirs = [
@@ -257,6 +291,8 @@ markers = [
     "distributed_cpu: CPU multi-process (gloo) tests unrelated to NF4 loading",
     "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
     "integration: marks tests as integration tests (real model modeling paths)",
+    "gpu: tests that require a CUDA device; auto-applied from CUDA skipif reasons (see tests/conftest.py)",
+    "nvfp4: NVFP4 multi-GPU tests that need SM100+ GPUs; run by cicd/nvfp4.sh",
 ]
 
 # UV specific configuration
@@ -265,10 +301,6 @@ conflicts = [
     [
         { package = "axolotl" },
         { extra = "vllm" },
-    ],
-    [
-        { package = "axolotl" },
-        { extra = "flash-attn" },
     ],
     [
         { package = "axolotl" },
@@ -291,6 +323,5 @@ conflicts = [
 [tool.uv.extra-build-dependencies]
 mamba-ssm = [{ requirement = "torch", match-runtime = true }]
 causal-conv1d = [{ requirement = "torch", match-runtime = true }]
-flash-attn = [{ requirement = "torch", match-runtime = true }]
 deepspeed = [{ requirement = "torch", match-runtime = true }]
 auto-gptq = [{ requirement = "torch", match-runtime = true }]

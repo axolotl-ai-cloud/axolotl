@@ -2,6 +2,8 @@
 DISCO - DIsk-based Storage and Checkpointing with Optimized prefetching
 """
 
+__ci_config_keys__ = ("activation_offloading",)
+
 # Copyright 2025 Axolotl AI. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,10 +33,8 @@ from typing import Dict
 
 import torch
 
+from axolotl.kernels.utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 from axolotl.utils.logging import get_logger
-
-torch_cuda_amp_custom_fwd = torch.amp.custom_fwd(device_type="cuda")
-torch_cuda_amp_custom_bwd = torch.amp.custom_bwd(device_type="cuda")
 
 # Setup logger
 logger = get_logger(__name__)
@@ -443,7 +443,7 @@ class Disco(torch.autograd.Function):
         return Disco._manager
 
     @staticmethod
-    @torch_cuda_amp_custom_fwd
+    @torch_amp_custom_fwd
     def forward(
         ctx,
         forward_function,
@@ -473,11 +473,14 @@ class Disco(torch.autograd.Function):
         ctx.file_path = file_path
         ctx.forward_function = forward_function
         ctx.args = args
+        ctx._device = (
+            hidden_states.device
+        )  # remember the real compute device for backward
 
         return output
 
     @staticmethod
-    @torch_cuda_amp_custom_bwd
+    @torch_amp_custom_bwd
     def backward(ctx, *grad_outputs):
         """Backward pass that loads activations from disk with prefetching"""
         # Get the manager
@@ -493,7 +496,7 @@ class Disco(torch.autograd.Function):
             # Ensure the file is saved before we try to load it
             manager.wait_for_save(file_path)
 
-            hidden_states = manager.load_tensor(file_path)
+            hidden_states = manager.load_tensor(file_path, target_device=ctx._device)
             hidden_states.requires_grad = True
 
             # Compute gradients

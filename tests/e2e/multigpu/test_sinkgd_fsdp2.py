@@ -205,3 +205,32 @@ def test_dist_fused_matches_compiled(mesh, mode, wide):
         results.append(w.detach().full_tensor())
     rel = (results[0] - results[1]).abs().max() / results[0].abs().max()
     assert rel.item() < 3e-2, f"{mode} wide={wide}: rel={rel.item():.2e}"
+
+
+def test_dist_group_read_from_param_mesh(mesh):
+    """Under pure expert parallelism the dense weights shard over the ``ep`` mesh axis and
+    the builder has no ``dp_shard`` group to pass; the reduce group must come from the
+    parameter's own mesh, and the step must match the dp_shard-group run."""
+    torch.manual_seed(0)
+    m, n = 256, 96
+    w_full = torch.randn(m, n, device="cuda", dtype=torch.float32)
+    g_full = torch.randn(m, n, device="cuda", dtype=torch.float32)
+    dist.broadcast(w_full, 0)
+    dist.broadcast(g_full, 0)
+    ep_mesh = init_device_mesh("cuda", (dist.get_world_size(),), mesh_dim_names=("ep",))
+
+    results = []
+    for dm, grp in ((mesh, mesh["dp_shard"].get_group()), (ep_mesh, None)):
+        w = torch.nn.Parameter(distribute_tensor(w_full.clone(), dm, [Shard(0)]))
+        opt = DistSinkGD(
+            [{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
+            lr=1e-2,
+            sinkgd_lr_scale=0.5,
+            sinkgd_fused_kernel=True,
+            process_group=grp,
+        )
+        for _ in range(3):
+            w.grad = distribute_tensor(g_full.clone(), dm, [Shard(0)])
+            opt.step()
+        results.append(w.detach().full_tensor())
+    assert torch.allclose(results[0], results[1], rtol=1e-5, atol=1e-6)

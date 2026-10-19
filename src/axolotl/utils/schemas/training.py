@@ -63,6 +63,46 @@ class SelectiveCheckpointingConfig(BaseModel):
             )
         },
     )
+    save_modules: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Module names whose base matmul outputs are saved (module scope). "
+                "Each entry matches model.named_modules() of the model before the "
+                "adapter is applied: exact name, a trailing "
+                "dotted suffix (e.g. 'down_proj', 'self_attn.o_proj'), or a glob "
+                "when it contains *, ? or [. A PEFT-wrapped match resolves to its "
+                "base_layer, so LoRA A/B matmuls are not saved. Incompatible with "
+                "the fused LoRA kernels covering those modules."
+            )
+        },
+    )
+    save_matmul_min_k: int | None = Field(
+        default=None,
+        ge=1,
+        json_schema_extra={
+            "description": (
+                "Save every matmul whose contraction dim K (a linear's "
+                "in_features) is >= this value. Also matches MoE expert "
+                "projections (aten::_grouped_mm) and bnb 4-bit gemms. A layer's "
+                "last projection (e.g. down_proj feeding only a residual add) is "
+                "never replayed by recompute, so saving it costs memory for no "
+                "speedup. Incompatible with the fused LoRA kernels."
+            )
+        },
+    )
+
+    @field_validator("save_modules")
+    @classmethod
+    def normalize_save_modules(cls, value):
+        if value is None:
+            return None
+        entries = [entry.strip() for entry in value]
+        if any(not entry for entry in entries):
+            raise ValueError(
+                "selective_checkpointing.save_modules entries must be non-empty strings"
+            )
+        return entries or None
 
 
 class HyperparametersConfig(BaseModel):

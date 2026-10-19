@@ -198,6 +198,7 @@ def _run_gloo(load_balance, world=4):
 
 
 @pytest.mark.slow
+@pytest.mark.distributed_cpu
 def test_glm_dsa_cp_matches_single_gpu():
     """End-to-end: contiguous shard reproduces single-GPU attention to machine
     precision; zigzag (wrong layout) does not."""

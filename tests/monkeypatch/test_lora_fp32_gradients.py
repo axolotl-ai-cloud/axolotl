@@ -184,6 +184,7 @@ def test_fused_groups_keep_fp32_parameter_gradients(kind, monkeypatch):
             assert relative_error < 0.03
 
 
+@pytest.mark.gpu
 @pytest.mark.parametrize("loaded", [False, True])
 @pytest.mark.parametrize("enabled", [False, True])
 def test_loader_precision_for_new_and_saved_adapters(tmp_path, loaded, enabled):

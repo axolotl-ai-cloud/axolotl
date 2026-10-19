@@ -94,6 +94,7 @@ class CustomSupportedOptimizers(str, Enum):
     adamc = "adamc"
     came_pytorch = "came_pytorch"
     muon = "muon"
+    muon_8bit = "muon_8bit"
     dion = "dion"
     sinkgd = "sinkgd"
     polora = "polora"
@@ -102,6 +103,7 @@ class CustomSupportedOptimizers(str, Enum):
     flash_sgd = "flash_sgd"
     flash_sgdw = "flash_sgdw"
     flash_lion = "flash_lion"
+    scao = "scao"
     q_galore_adamw8bit = "q_galore_adamw8bit"
     gefenx = "gefenx"
     gefenx_muon = "gefenx_muon"
@@ -117,6 +119,7 @@ CANONICAL_ATTN_IMPLS = frozenset(
         "flash_attention_4",
         "flash_attention_torch",
         "flex_attention",
+        "varlen",
         "xformers",
         "sage",
         "fp8",

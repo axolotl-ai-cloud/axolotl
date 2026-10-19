@@ -483,6 +483,7 @@ Add profiling to any trainer method with the `@swanlab_profile` decorator:
 ```python
 from axolotl.integrations.swanlab.profiling import swanlab_profile
 
+
 class MyCustomTrainer(AxolotlTrainer):
     @swanlab_profile
     def training_step(self, model, inputs):
@@ -507,6 +508,7 @@ For fine-grained profiling within a method:
 
 ```python
 from axolotl.integrations.swanlab.profiling import swanlab_profiling_context
+
 
 class MyTrainer(AxolotlTrainer):
     def complex_training_step(self, model, inputs):
@@ -535,16 +537,15 @@ from axolotl.integrations.swanlab.profiling import (
 # Create custom profiling config
 profiling_config = ProfilingConfig(
     enabled=True,
-    min_duration_ms=1.0,    # Only log if duration > 1ms
-    log_interval=10,        # Log every 10th call
+    min_duration_ms=1.0,  # Only log if duration > 1ms
+    log_interval=10,  # Log every 10th call
 )
+
 
 class MyTrainer(AxolotlTrainer):
     def frequently_called_method(self, data):
         with swanlab_profiling_context_advanced(
-            self,
-            "frequent_op",
-            config=profiling_config
+            self, "frequent_op", config=profiling_config
         ):
             # This only logs every 10th call, and only if it takes > 1ms
             result = expensive_computation(data)
@@ -628,6 +629,7 @@ from axolotl.integrations.swanlab.profiling import (
     ProfilingConfig,
 )
 
+
 class OptimizedTrainer(AxolotlTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -684,8 +686,8 @@ INFO: SwanLab initialized for project: my-project
 **Solution**: Use `ProfilingConfig` with throttling:
 ```python
 config = ProfilingConfig(
-    min_duration_ms=1.0,    # Skip fast ops
-    log_interval=100,       # Log every 100th call
+    min_duration_ms=1.0,  # Skip fast ops
+    log_interval=100,  # Log every 100th call
 )
 ```
 
@@ -1253,10 +1255,7 @@ You can add custom metrics in your callbacks:
 import swanlab
 
 # In your custom callback
-swanlab.log({
-    "custom_metric": value,
-    "epoch": epoch_num
-})
+swanlab.log({"custom_metric": value, "epoch": epoch_num})
 ```
 
 ### Experiment Comparison
