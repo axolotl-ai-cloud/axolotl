@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from axolotl.processing_strategies import ProcessingStrategy
     from axolotl.utils.dict import DictDefault
 
+    from .diffusion import DiffusionSpec
     from .profile import ModelHookPhase, ModelProfile
 
 LOG = get_logger(__name__)
@@ -133,6 +134,10 @@ class ModelSupport:
     capabilities: ClassVar[Mapping[str, Capability]] = cast(
         Mapping[str, Capability],
         _ProfileProjection("capabilities", {}),
+    )
+    diffusion: ClassVar["DiffusionSpec | None"] = cast(
+        "DiffusionSpec | None",
+        _ProfileProjection("diffusion", None),
     )
 
     def get_auto_model_cls(self) -> type | None:

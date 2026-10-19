@@ -216,3 +216,19 @@ class TestModelsUtils:
             assert res["dp_shard_size"] == expected[2]
         if expected[3] > 1:
             assert res["dp_replicate_size"] == expected[3]
+
+
+class TestNoSplitModuleClasses:
+    def test_set_and_list_and_none(self):
+        from types import SimpleNamespace
+
+        from axolotl.loaders.model import no_split_module_classes
+
+        assert no_split_module_classes(
+            SimpleNamespace(_no_split_modules={"B", "A"})
+        ) == ["A", "B"]
+        assert no_split_module_classes(SimpleNamespace(_no_split_modules=["L"])) == [
+            "L"
+        ]
+        assert no_split_module_classes(SimpleNamespace(_no_split_modules=None)) == []
+        assert no_split_module_classes(SimpleNamespace()) == []

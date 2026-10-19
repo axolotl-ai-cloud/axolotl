@@ -5,18 +5,30 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-# deep_ep[_*] are EP-plugin composites, passed through when expert_parallel_size > 1.
 _BUILTIN_EXPERTS_IMPLS = {"eager", "batched_mm", "grouped_mm"}
 _KERNEL_EXPERTS_IMPLS = {"scattermoe", "sonicmoe"}
-_EP_EXPERTS_IMPLS = {
-    "deep_ep",
-    "deep_ep_grouped_mm",
-    "deep_ep_scattermoe",
-    "deep_ep_sonicmoe",
-}
-_VALID_EXPERTS_IMPLS = (
-    _BUILTIN_EXPERTS_IMPLS | _KERNEL_EXPERTS_IMPLS | _EP_EXPERTS_IMPLS
-)
+_EP_EXPERTS_IMPLS = {"expert_parallel"}
+
+
+def _valid_experts_impls() -> set[str]:
+    from axolotl.integrations.expert_parallel.plugin import (
+        DEPRECATED_EXPERTS_IMPLEMENTATIONS,
+    )
+
+    return (
+        _BUILTIN_EXPERTS_IMPLS
+        | _KERNEL_EXPERTS_IMPLS
+        | _EP_EXPERTS_IMPLS
+        | set(DEPRECATED_EXPERTS_IMPLEMENTATIONS)
+    )
+
+
+def _registered_experts_impls() -> set[str]:
+    try:
+        from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
+    except ImportError:
+        return set()
+    return set(ALL_EXPERTS_FUNCTIONS.keys())
 
 
 class KernelsArgs(BaseModel):
@@ -41,6 +53,20 @@ class KernelsArgs(BaseModel):
     # the dequant'd bf16 is recomputed in backward via a recipe, not saved. None defaults to True; set
     # False to force the chunked path (bounds the per-pass transient for large-expert MoEs / tiny GPUs).
     moe_bnb_fast: bool | None = None
+
+    # JSON file of Triton autotune winners (kernel, shape key, chosen tile). When it exists and
+    # was measured on this GPU model, the kernels' autotune caches are seeded from it before the
+    # first forward, so no training step benchmarks configs (and EP ranks stay in lockstep). It is
+    # rewritten at every checkpoint and at train end with the merged winners of all ranks.
+    autotune_cache_path: str | None = None
+    # Pin or narrow Triton autotune search spaces per kernel: a list of
+    # {kernel, gpu?, match?, configs} entries (see integrations/kernels/autotune_profiles.py).
+    # One config = no benchmarking for any unseen key; several = a short search.
+    autotune_profiles: list[dict] | None = None
+    # Narrow a kernel's autotune search for a new size bucket to configs within this many
+    # parameter changes of its winner for the same shape (1 = one of BLOCK_M/N/K, warps, stages;
+    # 2 = pairs). Only applies once that kernel has a measured or seeded winner.
+    autotune_neighborhood: int | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
@@ -92,22 +118,37 @@ class KernelsArgs(BaseModel):
     def check_nvfp4_merge_aware(cls, data):
         data = cls._canonicalize_expert_backend(data)
         start = data.get("nvfp4_merge_aware_start_step")
-        if not data.get("nvfp4_merge_aware"):
-            if start is not None:
-                raise ValueError(
-                    "nvfp4_merge_aware_start_step requires nvfp4_merge_aware: true"
-                )
+        if data.get("nvfp4_merge_aware") is False and start is not None:
+            LOG.warning(
+                "NVFP4 MERGE WARNING: ignoring nvfp4_merge_aware_start_step because "
+                "merge-aware training is explicitly disabled. NVFP4 merging may "
+                "round away the learned adapter update."
+            )
+            data["nvfp4_merge_aware_start_step"] = None
             return data
-        if not data.get("use_sonicmoe"):
+        if data.get("use_sonicmoe") and data.get("quantize_moe_experts"):
             raise ValueError(
-                "nvfp4_merge_aware requires the sonicmoe expert backend "
-                "(expert_backend: sonicmoe)"
+                "use_sonicmoe has no bitsandbytes expert path: quantize_moe_experts "
+                "(NF4/int8 experts) needs the ScatterMoE backend (use_scattermoe: true)."
             )
-        if data.get("adapter") not in ("lora", "multilora"):
+        if data.get("nvfp4_merge_aware") and data.get("use_scattermoe"):
             raise ValueError(
-                "nvfp4_merge_aware requires a LoRA adapter (adapter: lora or multilora); it snaps "
-                "the LoRA delta to the NVFP4 grid of the frozen base"
+                "nvfp4_merge_aware requires the SonicMoE expert backend (use_sonicmoe: "
+                "true); ScatterMoE has no merge-aware forward and would silently train "
+                "ordinary LoRA that the NVFP4 merge then rounds away."
             )
+        if data.get("nvfp4_merge_aware") and data.get("adapter") not in (
+            "lora",
+            "multilora",
+        ):
+            LOG.warning(
+                "NVFP4 MERGE WARNING: merge-aware training requires a LoRA adapter; "
+                "disabling nvfp4_merge_aware for this configuration."
+            )
+            data["nvfp4_merge_aware"] = False
+            data["nvfp4_merge_aware_start_step"] = None
+            return data
+        # Backend support is resolved after detecting the checkpoint's quantization format.
         if start is not None:
             bad = ValueError(
                 "nvfp4_merge_aware_start_step must be an int >= 0 (absolute step) or "
@@ -179,6 +220,7 @@ class KernelsArgs(BaseModel):
         regardless of validator ordering). Idempotent: every consumer below calls this first because
         pydantic runs same-mode validators in REVERSE definition order, so the before-validator alone
         would run AFTER its consumers and they'd never see its writes."""
+        data = KernelsArgs._flag_deprecated_kernel_composite(data)
         eb = data.get("expert_backend")
         if eb is None:
             return data
@@ -204,6 +246,27 @@ class KernelsArgs(BaseModel):
             data["use_scattermoe"] = True
         elif want_sonic:
             data["use_sonicmoe"] = True
+        return data
+
+    @staticmethod
+    def _flag_deprecated_kernel_composite(data):
+        """A deprecated ``*_scattermoe`` / ``*_sonicmoe`` EP composite selects its kernel through the
+        ``use_*`` flag, so the kernels plugin registers and configures it."""
+        from axolotl.integrations.expert_parallel.plugin import (
+            DEPRECATED_EXPERTS_IMPLEMENTATIONS,
+            KERNEL_IMPLEMENTATION_FLAGS,
+        )
+
+        local = DEPRECATED_EXPERTS_IMPLEMENTATIONS.get(
+            data.get("experts_implementation")
+        )
+        flag = KERNEL_IMPLEMENTATION_FLAGS.get(local)
+        if (
+            flag
+            and data.get("expert_backend") is None
+            and not any(data.get(f) for f in KERNEL_IMPLEMENTATION_FLAGS.values())
+        ):
+            data[flag] = True
         return data
 
     @model_validator(mode="before")
@@ -320,6 +383,10 @@ class KernelsArgs(BaseModel):
     def check_experts_implementation(cls, data):
         """Auto-select impl from kernel flags; reject mismatched/unknown values."""
         data = cls._canonicalize_expert_backend(data)
+        from axolotl.integrations.expert_parallel.plugin import (
+            NO_BACKWARD_EXPERTS_IMPLEMENTATIONS,
+        )
+
         experts_implementation = data.get("experts_implementation")
         use_scattermoe = bool(data.get("use_scattermoe"))
         use_sonicmoe = bool(data.get("use_sonicmoe"))
@@ -347,10 +414,22 @@ class KernelsArgs(BaseModel):
                 "Automatically setting to 'eager'."
             )
             data["experts_implementation"] = "eager"
-        elif experts_implementation not in _VALID_EXPERTS_IMPLS:
+        elif experts_implementation in NO_BACKWARD_EXPERTS_IMPLEMENTATIONS:
+            raise ValueError(
+                f"`experts_implementation={experts_implementation!r}` has no backward pass in "
+                "transformers (expert weights would silently not train). Use grouped_mm, "
+                "batched_mm, eager, use_scattermoe or use_sonicmoe."
+            )
+        elif (
+            data.get("expert_parallel_size") or 1
+        ) > 1 or experts_implementation in _registered_experts_impls():
+            # under EP the plugin checks the name against ALL_EXPERTS_FUNCTIONS at model load,
+            # after user registrations have run
+            pass
+        elif experts_implementation not in (valid := _valid_experts_impls()):
             LOG.warning(
                 f"`experts_implementation={experts_implementation!r}` is not recognized. "
-                f"Valid options: {sorted(_VALID_EXPERTS_IMPLS)}. "
+                f"Valid options: {sorted(valid)}. "
                 f"Automatically setting to 'eager'."
             )
             data["experts_implementation"] = "eager"

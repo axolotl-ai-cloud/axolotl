@@ -1,0 +1,85 @@
+# Beam QLoRA, FSDP2 with the CPU-staged NF4 loader (data-parallel; preferred).
+# The loader quantizes the checkpoint on rank 0 and transfers parameter shards
+# after FSDP wrapping, so no rank holds a full replica. Sized for one 8xH200 node.
+base_model: reflection/Beam-1.0-501B-A23B
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+chat_template: tokenizer_default
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
+
+val_set_size: 0.0
+output_dir: ./outputs/beam-qlora-cpustaged
+
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
+
+adapter: qlora
+load_in_4bit: true
+quantize_moe_experts: true
+nf4_backend: bitsandbytes
+
+lora_r: 16
+lora_alpha: 32
+# must be 0: PEFT's ParamWrapper rejects dropout on target_parameters
+lora_dropout: 0.0
+
+# lora_target_linear is rejected with quantize_moe_experts, and `gate_proj` is
+# ambiguous here -- it names both the attention output gate and the dense MLP.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# Experts are fused 3D nn.Parameter tensors, unreachable as linear modules.
+# The router (mlp.gate.weight) is a bare Parameter too and is deliberately absent:
+# adapting a noaux_tc router destabilizes expert routing.
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 2
+num_epochs: 1
+optimizer: adamw_torch_4bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+train_on_inputs: false
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+fsdp_version: 2
+fsdp_config:
+  # the point of this config: no full-model GPU replica during load
+  cpu_ram_efficient_loading: true
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: BeamDecoderLayer
+  reshard_after_forward: true
+  offload_params: false
+
+# Rank 0 alone reads and quantizes the whole checkpoint while ranks 1-7 wait at a
+# collective. That staging takes well over the default 1800s barrier, so the other
+# ranks abort with "TCPStore doWait ... timeout after 1800000ms". Give it hours.
+ddp_timeout: 21600
+
+# flash_attention_2: transformers>=5.18.0 fixed the FA2 version mapping for this
+# arch; FA2 gives the varlen path the hybrid sliding-window attention wants.
+attn_implementation: flash_attention_2
+logging_steps: 1
+max_steps: 5
+
+special_tokens:
+  eos_token: "<|return|>"
+  pad_token: "<|endoftext|>"

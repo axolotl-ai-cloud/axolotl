@@ -36,6 +36,8 @@ class DPOStrategy:
         training_args_kwargs["max_length"] = cfg.sequence_len
         if cfg.dpo_use_weighting is not None:
             training_args_kwargs["use_weighting"] = cfg.dpo_use_weighting
+        if cfg.dpo_ld_alpha is not None:
+            training_args_kwargs["ld_alpha"] = cfg.dpo_ld_alpha
         if cfg.dpo_padding_free is not None:
             training_args_kwargs["padding_free"] = cfg.dpo_padding_free
         if cfg.dpo_use_liger_kernel is not None:

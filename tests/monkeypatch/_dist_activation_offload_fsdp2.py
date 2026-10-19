@@ -13,8 +13,8 @@ from axolotl.core.trainers.mixins.activation_checkpointing import (
     _patch_trl_offload_current_stream,
 )
 
-live_parameter_pointers = set()
-observed_parameter_pointers = set()
+live_parameter_pointers: set[int] = set()
+observed_parameter_pointers: set[int] = set()
 
 
 class CapturingLinear(nn.Linear):

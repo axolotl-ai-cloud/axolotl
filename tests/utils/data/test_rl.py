@@ -3,12 +3,18 @@ Unit tests for RL data utility functions (excess_length_strategy support).
 """
 
 import unittest
+from unittest.mock import patch
+
+import pytest
+from datasets import Dataset
 
 from axolotl.utils.data.rl import (
     _drop_long_sequences,
+    _load_split,
     _raise_on_long_sequences,
     _truncate_long_sequences_rl,
 )
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
 
@@ -290,3 +296,55 @@ class TestTruncateLongSequencesRL(unittest.TestCase):
         )
         self.assertEqual(result["chosen"], sample["chosen"])
         self.assertEqual(result["rejected"], sample["rejected"])
+
+
+def test_load_split_rejects_mixed_image_and_text_datasets():
+    row = {"prompt": "q", "chosen": "a", "rejected": "b"}
+    cfg = DictDefault(
+        rl=RLType.DPO,
+        skip_prepare_dataset=True,
+        datasets=[
+            DictDefault(path="img", type=None),
+            DictDefault(path="txt", type=None),
+        ],
+    )
+    loaded = [Dataset.from_list([{**row, "images": []}]), Dataset.from_list([row])]
+    with (
+        patch("axolotl.utils.data.rl.load_dataset_with_config", side_effect=loaded),
+        patch("axolotl.utils.data.rl.load_tokenizer"),
+        pytest.raises(ValueError, match="mixing image and text-only"),
+    ):
+        _load_split(cfg, "train")
+
+
+def test_map_dataset_gives_reemitted_columns_fresh_features():
+    """A transform that removes and re-emits a column must not inherit the old feature."""
+    from datasets import Dataset
+
+    from axolotl.utils.data.rl import _map_dataset
+    from axolotl.utils.dict import DictDefault
+
+    dataset = Dataset.from_list(
+        [
+            {
+                "prompt": "q",
+                "chosen": [{"role": "assistant", "content": "good", "extra": None}],
+                "rejected": [{"role": "assistant", "content": "bad", "extra": "x"}],
+            }
+        ]
+    )
+
+    def transform(sample):
+        return {
+            "prompt": sample["prompt"],
+            "chosen": sample["chosen"][-1]["content"],
+            "rejected": sample["rejected"][-1]["content"],
+        }
+
+    cfg = DictDefault({"dataset_num_proc": None, "is_preprocess": True})
+    mapped = _map_dataset(
+        cfg, dataset, transform, remove_columns=["chosen", "rejected"]
+    )
+    assert mapped.column_names == ["prompt", "chosen", "rejected"]
+    assert mapped[0]["chosen"] == "good" and mapped[0]["rejected"] == "bad"
+    assert str(mapped.features["chosen"]) == "Value('string')"

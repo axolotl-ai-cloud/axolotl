@@ -217,9 +217,9 @@ def prepare_plugins(cfg: DictDefault):
 
 
 def plugin_set_cfg(cfg: DictDefault):
-    from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
+    from axolotl.integrations.base import PluginManager, get_builtin_plugins
 
-    if cfg.get("plugins") or BUILTIN_PLUGINS:
+    if cfg.get("plugins") or get_builtin_plugins():
         PluginManager.get_instance().cfg = cfg
 
 
@@ -311,9 +311,9 @@ def load_cfg(
     except Exception:
         # a rejected config must not leave register()-time side effects (e.g.
         # LIGER_KERNEL_IMPL) behind for the next config in this process
-        from axolotl.integrations.base import BUILTIN_PLUGINS, PluginManager
+        from axolotl.integrations.base import PluginManager, get_builtin_plugins
 
-        if cfg.get("plugins") or BUILTIN_PLUGINS:
+        if cfg.get("plugins") or get_builtin_plugins():
             PluginManager.get_instance().on_config_validation_error(cfg)
         raise
 

@@ -125,3 +125,18 @@ def test_ep_skip_handles_all_sentinel_token():
     out = scattermoe_experts_forward_ep(self, torch.randn(N, H, device=DEV), idx, w)
     assert out.shape == (N, H)
     assert torch.equal(out[0], torch.zeros(H, device=DEV))
+
+
+def test_registered_forward_takes_skip_path_when_ep_sharded():
+    """The ``expert_parallel`` wrapper hands remote slots over as id ``num_experts``; the
+    registered forward must route an EP-sharded module to the sentinel-skipping path."""
+    E, H, IM, N, K = 8, 256, 128, 64, 4
+    self, _ = _module(E, H, IM, torch.float32, 0, None)
+    idx, w = _routing(N, K, E, 2, torch.float32)
+    x = torch.randn(N, H, device=DEV)
+    ref = scattermoe_experts_forward_ep(self, x, idx, w)
+
+    self.num_experts_global = 2 * E
+    wrapper_idx = idx.masked_fill(idx < 0, E)
+    out = scattermoe_experts_forward(self, x, wrapper_idx, w.masked_fill(idx < 0, 0))
+    assert torch.allclose(out, ref, rtol=1e-4, atol=1e-4), (out - ref).abs().max()

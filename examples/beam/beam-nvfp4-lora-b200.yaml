@@ -1,0 +1,128 @@
+# Beam NVFP4 LoRA SFT on 1 x 8 B200.
+#
+# EP=8 node-local (each GPU owns 32 of the 256 experts per layer); dense weights
+# FSDP-shard over the same ranks. LoRA on attention projections plus the fused
+# 3D expert tensors via lora_target_parameters.
+base_model: reflection/Beam-1.0-501B-A23B-NVFP4
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+# SonicMoE keeps the ModelOpt NVFP4 experts packed and is the expert backend with a
+# merge-aware LoRA forward; ScatterMoE would train ordinary LoRA that the NVFP4
+# merge rounds away. Other quantized linears dequantize to bf16 at load.
+# Attention + expert LoRA as in the bf16 config.
+use_sonicmoe: true
+nvfp4_merge_aware: true
+strict: false
+cut_cross_entropy: true
+autotune_cache_path: ./outputs/autotune-b200.json
+# Triton autotune winners measured on B200 (sm_100) for this architecture's expert GEMMs
+# (gate_up N=5120 K=5120, down N=5120 K=2560, LoRA rank 32); identical across every routed-row
+# bucket we saw, so pin them: no step benchmarks configs and EP ranks stay in lockstep.
+# The full measured cache (bf16 and NVFP4 paths) is in autotune/b200.json; point
+# autotune_cache_path at a copy to keep recording new keys.
+autotune_profiles:
+  - kernel: _scatter2scatter_lora          # bf16 experts, forward
+    gpu: B200
+    match: { N: 5120 }
+    configs:
+      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
+  - kernel: _scatter2scatter_lora_mx       # NVFP4 experts, forward
+    gpu: B200
+    match: { N: 5120 }
+    configs:
+      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 32, num_stages: 3, num_warps: 4 }
+  - kernel: _scatter2scatter_lora_dX_mx    # NVFP4 experts, input gradient
+    gpu: B200
+    match: { N: 5120 }
+    configs:
+      - { BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 64, num_stages: 2, num_warps: 4 }
+autotune_neighborhood: 1
+
+expert_parallel_size: 8
+dp_shard_size: 1
+expert_parallel_backend: deep_ep
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:2%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+output_dir: ./outputs/beam-nvfp4-lora
+
+sequence_len: 8192
+sample_packing: true
+pad_to_sequence_len: true
+eval_sample_packing: true
+train_on_inputs: false
+
+adapter: lora
+lora_r: 32
+lora_alpha: 64
+# PEFT's ParamWrapper rejects dropout on target_parameters
+lora_dropout: 0.0
+# gate_proj is ambiguous here (attention output gate vs dense MLP); never
+# lora_target_linear.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# routed experts are fused 3D nn.Parameter tensors; the router (mlp.gate.weight)
+# is deliberately absent
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+num_epochs: 2
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1.0e-4
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+bf16: true
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+# Flash Attention 4 (CuTe DSL) shares the image's cutlass-dsl 4.8 with quack-kernels 0.6.5
+attn_implementation: flash_attention_4
+# fused LoRA kernels: the QKV/O patch keeps Beam's gate and norms in place (A/B: identical losses)
+lora_qkv_kernel: true
+lora_o_kernel: true
+lora_mlp_kernel: true
+
+fsdp_version: 2
+fsdp_config:
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: BeamDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  offload_params: false
+
+# rank 0 streams ~1 TB from the shared volume before the first collective
+ddp_timeout: 7200
+
+logging_steps: 1
+evals_per_epoch: 2
+save_steps: 100
+save_total_limit: 3
+seed: 42
+
+special_tokens:
+  eos_token: "<|return|>"
+  pad_token: "<|endoftext|>"

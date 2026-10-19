@@ -139,16 +139,15 @@ else
   PIP install $MSLK_PRE mslk --index-url "$MSLK_INDEX"
 fi
 
-# --- 4. Axolotl + the flash-attn extra -----------------------------------------
+# --- 4. Axolotl + the nvfp4 extra ----------------------------------------------
 if [[ "$INSTALL_AXOLOTL" == "1" ]]; then
-  say "Installing Axolotl + nvfp4 + flash-attn extras"
-  # nvfp4 extra resolves the declared NVFP4 deps (mslk, triton>=3.7). flash-attn
-  # extra: the recommended recipe sets attn_implementation: flash_attention_2
-  # (required on Blackwell). flash-attn 2.8.3 has no cu130 wheel — it builds from
-  # source, so wheel/setuptools/ninja must be present (no-build-isolation).
+  say "Installing Axolotl + nvfp4 extra"
+  # nvfp4 extra resolves the declared NVFP4 deps (mslk, triton>=3.7). The recommended
+  # recipe sets attn_implementation: flash_attention_2 (required on Blackwell); there
+  # is no flash-attn extra any more — axolotl pulls Flash Attention 2 from hub kernels.
   PIP install wheel setuptools ninja packaging psutil
   MAX_JOBS="${MAX_JOBS:-16}" \
-    PIP install -e "${REPO_ROOT}[nvfp4,flash-attn]" --no-build-isolation
+    PIP install -e "${REPO_ROOT}[nvfp4]" --no-build-isolation
   # Re-pull torchao at Axolotl's pinned version from the cu130 index so the
   # NVFP4Tensor prototype mx_formats path lines up with the cu130 torch (the
   # generic PyPI wheel the editable install resolved is CPU/cu12x-built).

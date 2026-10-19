@@ -4,7 +4,10 @@ import torch
 import torch.distributed as dist
 from tqdm.auto import tqdm
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.nf4_loading import nf4_phase
+
+LOG = get_logger(__name__)
 
 
 @nf4_phase("NF4 parameter shard distribution")
@@ -13,12 +16,106 @@ def load_staged_nf4_state(
     model: torch.nn.Module,
     full_state: dict[str, torch.Tensor],
     offload_to_cpu: bool = False,
+    local_state: dict[str, torch.Tensor] | None = None,
 ) -> None:
-    """Consume rank-zero CPU state by broadcasting bounded shards into a wrapped model."""
+    """Consume rank-zero CPU state by broadcasting bounded shards into a wrapped model.
+
+    ``local_state`` holds this rank's expert-parallel expert slices captured before the
+    model moved to meta; they are rank-local, so they are restored rather than distributed.
+    """
+    targets = model.state_dict()
+    local = _expert_parallel_local_names(model, targets)
+    for name in local:
+        full_state.pop(name, None)
     state = _distribute_nf4_state(
-        accelerator, model.state_dict(), full_state, offload_to_cpu
+        accelerator,
+        {name: target for name, target in targets.items() if name not in local},
+        full_state,
+        offload_to_cpu,
+    )
+    state.update(
+        _restore_local_state(
+            targets, local, local_state or {}, accelerator.device, offload_to_cpu
+        )
     )
     model.load_state_dict(state, assign=True, strict=True)
+
+
+# quantization constants every rank shares; the slice-specific tensors are the packed
+# weights and their block scales
+_REPLICATED_QUANT_BUFFERS = ("code", "nested_code", "offset")
+
+
+def _is_expert_parallel_local(name: str, prefixes: tuple[str, ...]) -> bool:
+    return (
+        name.startswith(prefixes)
+        and name.rsplit(".", 1)[-1] not in _REPLICATED_QUANT_BUFFERS
+    )
+
+
+def _expert_parallel_local_names(model, targets) -> set[str]:
+    """State-dict names expert parallelism already sliced per rank; they are not rank zero's to send."""
+    from axolotl.integrations.expert_parallel.shard import _ep_sliced_experts
+
+    prefixes = tuple(f"{path}." for path in _ep_sliced_experts(model))
+    if not prefixes:
+        return set()
+    return {name for name in targets if _is_expert_parallel_local(name, prefixes)}
+
+
+def expert_parallel_local_state(model) -> dict[str, torch.Tensor]:
+    """This rank's expert-parallel expert tensors, keyed like ``state_dict``."""
+    from axolotl.integrations.expert_parallel.shard import _ep_sliced_experts
+
+    prefixes = tuple(f"{path}." for path in _ep_sliced_experts(model))
+    if not prefixes:
+        return {}
+    tensors = dict(model.named_parameters())
+    tensors.update(model.named_buffers())
+    return {
+        name: tensor
+        for name, tensor in tensors.items()
+        if _is_expert_parallel_local(name, prefixes) and not tensor.is_meta
+    }
+
+
+def _restore_local_state(targets, local, local_state, device, offload_to_cpu):
+    from torch.distributed.tensor import DTensor
+
+    state = {}
+    for name in local:
+        target = targets[name]
+        source = local_state.get(name)
+        if source is None:
+            raise ValueError(
+                f"CPU-staged NF4 with expert parallelism: no rank-local copy of {name}"
+            )
+        value = source.detach()
+        if offload_to_cpu:
+            value = value.cpu()
+        elif offload_to_cpu is not None:
+            value = value.to(device)
+        local_shape = tuple(
+            target._local_tensor.shape if isinstance(target, DTensor) else target.shape
+        )
+        if tuple(value.shape) != local_shape:
+            mesh = target.device_mesh.size() if isinstance(target, DTensor) else None
+            raise ValueError(
+                f"CPU-staged NF4 with expert parallelism: {name} is {tuple(value.shape)} "
+                f"on this rank but the wrapped model expects {local_shape} "
+                f"(global {tuple(target.shape)}, mesh size {mesh})"
+            )
+        if isinstance(target, DTensor):
+            value = DTensor.from_local(
+                value,
+                target.device_mesh,
+                target.placements,
+                run_check=False,
+                shape=target.shape,
+                stride=target.stride(),
+            )
+        state[name] = value
+    return state
 
 
 def _agree_distribution_plan(accelerator, targets, device, full_state):
@@ -105,7 +202,28 @@ def _distribute_nf4_state(accelerator, targets, full_state, offload_to_cpu=None)
         source = None
         if accelerator.is_main_process:
             source = full_state[name].to(target.dtype)
-        if sharded:
+        if sharded and target.device_mesh.size() == 1:
+            # expert parallelism wraps each rank's experts on a size-1 mesh, so the whole
+            # tensor is local on every rank and rank zero's copy is broadcast
+            value = (
+                source.to(device)
+                if accelerator.is_main_process
+                else torch.empty(target.shape, dtype=target.dtype, device=device)
+            )
+            dist.broadcast(value, src=0)
+            value = DTensor.from_local(
+                value,
+                target.device_mesh,
+                target.placements,
+                run_check=False,
+                shape=target.shape,
+                stride=target.stride(),
+            )
+            if offload_to_cpu is None:
+                value = value.to(target.device)
+            elif offload_to_cpu:
+                value = value.cpu()
+        elif sharded:
             mesh = target.device_mesh
             if mesh.ndim != 1 or target.placements != (Shard(0),):
                 raise ValueError(
