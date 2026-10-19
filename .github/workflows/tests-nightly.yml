@@ -46,6 +46,15 @@ jobs:
         run: |
           curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
+  distributed-cpu:
+    name: Distributed CPU (nightly)
+    uses: ./.github/workflows/distributed-cpu.yml
+    with:
+      nightly: true
+      pytorch_versions: '["2.13.0"]'
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   pytest:
     name: PyTest
     runs-on: ubuntu-latest
@@ -53,8 +62,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.12"]
-        pytorch_version: ["2.11.0", "2.12.1", "2.13.0"]
+# skip for now to reduce CI costs
+#        python_version: ["3.12", "3.14"]
+        python_version: ["3.14"]
+        pytorch_version: ["2.13.0", "2.14.1"]
     timeout-minutes: 20
 
     steps:
@@ -76,7 +87,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           prune-cache: true
@@ -92,7 +103,7 @@ jobs:
           uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+            codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Override with nightly HF packages
         run: |
@@ -121,15 +132,9 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile \
+          pytest -v --durations=10 -n8 --dist loadfile -m "not slow and not nf4_distributed and not distributed_cpu and not gpu" \
             --ignore=tests/e2e/ \
             --ignore=tests/integrations/kernels/ \
-            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-            --ignore=tests/integrations/test_gemma4_moe.py \
-            --ignore=tests/integrations/test_scattermoe_lora.py \
-            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
-            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
-            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
             --ignore=tests/patched/ \
             --ignore=tests/cli/ \
             tests/
@@ -148,17 +153,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+# skip for now to reduce CI costs
+#          - cuda: 130
+#            cuda_version: 13.0.0
+#            python_version: "3.12"
+#            pytorch: 2.13.0
+#            num_gpus: 1
+#            axolotl_extras:
+#            nightly_build: "true"
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.11.0
-            num_gpus: 1
-            axolotl_extras:
-            nightly_build: "true"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.12.1
+            python_version: "3.14"
+            pytorch: 2.14.1
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -170,7 +176,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
@@ -185,6 +191,8 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -204,10 +212,18 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.12.1
+            pytorch: 2.14.1
             num_gpus: 2
             axolotl_extras:
             nightly_build: "true"
+            test_suite: multigpu
+          - cuda: 130
+            python_version: "3.12"
+            pytorch: 2.14.1
+            num_gpus: 3
+            nightly_build: "true"
+            test_suite: nf4
+            nf4_test_stack: nightly
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -216,7 +232,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
@@ -229,8 +245,12 @@ jobs:
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
+          echo "MULTIGPU_TEST_SUITE=${{ matrix.test_suite }}" >> $GITHUB_ENV
+          echo "NF4_TEST_STACK=${{ matrix.nf4_test_stack }}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -247,17 +267,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+# skip for now to reduce CI costs
+#          - cuda: 130
+#            cuda_version: 13.0.0
+#            python_version: "3.12"
+#            pytorch: 2.13.0
+#            num_gpus: 1
+#            axolotl_extras:
+#            nightly_build: "true"
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.11.0
-            num_gpus: 1
-            axolotl_extras:
-            nightly_build: "true"
-          - cuda: 130
-            cuda_version: 13.0.0
-            python_version: "3.12"
-            pytorch: 2.12.1
+            python_version: "3.14"
+            pytorch: 2.14.1
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -269,7 +290,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install Modal
         run: |
           python -m pip install --upgrade pip
@@ -284,6 +305,8 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

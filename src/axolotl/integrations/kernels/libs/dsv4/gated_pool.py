@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
 """Fused gated-softmax pooling for DeepSeek-V4 compressors (fwd + bwd).
 
 Reference (CSA/HCA compressor §2.3.1/§2.3.2 and the indexer):
@@ -13,6 +17,8 @@ Backward:            d_kv = p * d_out;   d_gate = p * d_out * (kv - out)
 import torch
 import triton
 import triton.language as tl
+
+from .autotune_profiles import bwd_pruner
 
 
 @triton.autotune(
@@ -45,7 +51,8 @@ def _pool_fwd_kernel(KV, GATE, OUT, M, D, W: tl.constexpr, BD: tl.constexpr):
         for bd in (32, 64, 128)
         for w in (2, 4, 8)
     ],
-    key=["M", "D"],
+    key=["M", "D", "W"],
+    prune_configs_by={"early_config_prune": bwd_pruner("pool")},
 )
 @triton.jit
 def _pool_bwd_kernel(

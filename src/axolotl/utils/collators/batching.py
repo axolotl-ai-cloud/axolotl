@@ -1,11 +1,15 @@
 """Data collators for axolotl to pad labels and position_ids for packed sequences"""
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, Callable, List
 
 import numpy as np
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
+
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 @dataclass
@@ -41,6 +45,10 @@ class DataCollatorForSeq2Seq:
             The id to use when padding the labels (-100 will be automatically ignored by PyTorch loss functions).
         return_tensors (`str`):
             The type of Tensor to return. Allowable values are "np", "pt" and "tf".
+        cp_shard (`Callable`, *optional*):
+            Cuts this rank's context-parallel shard out of the padded batch (see
+            ``axolotl.integrations.context_parallel.collator``). When set, the collator
+            returns the shard and leaves the packed varlen metadata to the CP runtime.
     """
 
     tokenizer: PreTrainedTokenizerBase
@@ -51,6 +59,8 @@ class DataCollatorForSeq2Seq:
     label_pad_token_id: int = -100
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
+    emit_fa_varlen_kwargs: bool = False
+    cp_shard: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
     def __call__(self, features, return_tensors=None):
         has_attn_mask = "attention_mask" in features[0].keys()
@@ -121,6 +131,50 @@ class DataCollatorForSeq2Seq:
                 labels=features["labels"]
             )
             features["decoder_input_ids"] = decoder_input_ids
+
+        if self.cp_shard is not None:
+            # Global cu_seqlens cannot describe a local shard; the CP runtime derives its own.
+            return self.cp_shard(dict(features))
+
+        if (
+            self.emit_fa_varlen_kwargs
+            and "position_ids" in features
+            and (
+                "attention_mask" not in features
+                or (
+                    features["attention_mask"].ndim == 2
+                    and bool(features["attention_mask"].all())
+                )
+            )
+        ):
+            # Precompute FA varlen metadata once per batch so transformers skips its per-layer derivation
+            # (host syncs per layer, and a graph break under compile); bit-identical to what it would compute.
+            try:
+                from transformers.modeling_flash_attention_utils import (
+                    prepare_fa_kwargs_from_position_ids,
+                )
+
+                (cu_q, cu_k), (max_q, max_k) = prepare_fa_kwargs_from_position_ids(
+                    features["position_ids"]
+                )
+                features["cu_seq_lens_q"] = cu_q
+                # transformers aliases k to q; dynamo (torch >= 2.13) graph-breaks an
+                # autograd.Function that receives the same tensor twice.
+                features["cu_seq_lens_k"] = cu_k.clone() if cu_k is cu_q else cu_k
+                features["max_length_q"] = int(max_q)
+                features["max_length_k"] = int(max_k)
+            except (
+                ImportError,
+                AttributeError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+                IndexError,
+            ) as exc:  # pragma: no cover - fall back to per-layer derivation
+                LOG.warning_once(
+                    f"FA varlen kwargs precompute failed ({exc}); falling back to "
+                    "transformers' per-layer derivation"
+                )
 
         return features
 

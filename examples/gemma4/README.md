@@ -17,6 +17,9 @@ axolotl train examples/gemma4/26b-a4b-moe-qlora.yaml
 # 31B Dense QLoRA (1x80GB @ ~25.2 GiB)
 axolotl train examples/gemma4/31b-qlora.yaml
 
+# 31B Dense LoRA FSDP2, 32k sequences (multi-GPU)
+axolotl train examples/gemma4/31b-lora-fsdp.yaml
+
 # E2B vision LoRA (1x80GB @ ~10.4 GiB)
 axolotl train examples/gemma4/e2b-vision-lora.yaml
 ```
@@ -33,6 +36,7 @@ The 26B-A4B config uses ScatterMoE kernels via the transformers `ExpertsInterfac
 
 ### TIPS
 
+- **Gradient spikes**: Gemma 4's text attention uses `scaling=1.0` with QK-RMSNorm, leaving the softmax structurally near-saturated. LoRA runs hit intermittent pre-clip gradient norms 100-1000× their neighbours with no matching loss spike ([transformers#45676](https://github.com/huggingface/transformers/issues/45676)). The 31B configs compensate with `learning_rate: 5e-5` and `max_grad_norm: 0.1`; raise either at your own risk.
 - `gemma4_hybrid_attn_impl: true` trains ~2× faster than `flex_attention` on 31B (~25.2 GiB reserved, packing on) and avoids the flex `head_dim=512` kernel, which can exhaust shared memory on Blackwell.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - You can run full finetuning by removing `adapter: qlora`, `load_in_4bit: true`, and `quantize_moe_experts: true` from the config. This is heavy and has not been tested.

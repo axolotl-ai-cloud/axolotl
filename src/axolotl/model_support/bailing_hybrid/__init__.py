@@ -5,7 +5,7 @@ hooks redirect transformers' dynamic-module loading to the training-ready copy
 in this directory.
 """
 
-from axolotl.model_support.base import ModelSupport
+from axolotl.model_support.base import Experimental, ModelSupport
 from axolotl.model_support.profile import (
     ModelHookContext,
     ModelHookPhase,
@@ -36,16 +36,12 @@ def _redirect_remote_code(_context: ModelHookContext) -> None:
     redirect_dynamic_modules(BAILING_PACKAGE, BAILING_MODULES)
 
 
-def _reject_context_parallel(context: ModelHookContext) -> None:
-    """Ring attention shards the sequence across ranks and nothing hands a KDA
-    layer's recurrent state to the next one, so each rank would restart it from zero
-    -- silently, with a loss curve that still looks reasonable."""
-    if (context.cfg.context_parallel_size or 1) > 1:
+def _require_remote_code(context: ModelHookContext) -> None:
+    if not getattr(context.cfg, "trust_remote_code", False):
         raise ValueError(
-            "context_parallel_size > 1 is not supported for Ling 3.0 "
-            "(bailing_hybrid): its linear-attention layers carry a recurrent state "
-            "that is not exchanged across context-parallel ranks. "
-            "Set context_parallel_size: 1."
+            "Ling 3.0 (bailing_hybrid) requires trust_remote_code: true. Without it, "
+            "transformers>=5.20 loads its native BailingHybrid classes, whose module "
+            "layout axolotl's Ling 3.0 support does not target."
         )
 
 
@@ -54,9 +50,10 @@ def _weight_conversions():
     from transformers.core_model_loading import WeightRenaming
 
     # the fused-expert layout and router come from deepseek_v3; only the router
-    # bias is spelled differently in a Bailing checkpoint
+    # bias is spelled differently in a Bailing checkpoint. Keyed by class so
+    # transformers' native `bailing_hybrid` renames never reach this vendored layout.
     return {
-        "bailing_hybrid": get_checkpoint_conversion_mapping("deepseek_v3")
+        "BailingMoeV3ForCausalLM": get_checkpoint_conversion_mapping("deepseek_v3")
         + [WeightRenaming("mlp.gate.expert_bias", "mlp.gate.e_score_correction_bias")]
     }
 
@@ -68,14 +65,19 @@ class BailingHybridSupport(ModelSupport):
     model_types = ("bailing_hybrid",)
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
+        capabilities={
+            "context_parallel": Experimental(
+                "Requires Ringmaster native FLA KDA state passing and contiguous shards."
+            ),
+        },
         matchers=ModelMatchers(cfg=_matches_bailing_cfg),
         registrations=ModelRegistrationOverrides(
             weight_conversions=_weight_conversions
         ),
         hooks=ModelHooks(
             by_phase={
+                ModelHookPhase.CONFIGURE_RUN: (_require_remote_code,),
                 ModelHookPhase.BEFORE_CONFIG_LOAD: (_redirect_remote_code,),
-                ModelHookPhase.CONFIGURE_RUN: (_reject_context_parallel,),
                 ModelHookPhase.BEFORE_TOKENIZER_LOAD: (_redirect_remote_code,),
                 ModelHookPhase.BEFORE_MODEL_BUILD: (_redirect_remote_code,),
             }

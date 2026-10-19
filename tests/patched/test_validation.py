@@ -81,6 +81,24 @@ class TestValidation(BaseValidation):
         assert cfg.train_on_inputs is False
         assert cfg.weight_decay is None
 
+    def test_regional_compile_rejected_with_gradient_checkpointing(self, minimal_cfg):
+        test_cfg = DictDefault(
+            {
+                "torch_compile": True,
+                "torch_compile_regional": True,
+                "gradient_checkpointing": True,
+            }
+            | minimal_cfg
+        )
+
+        with pytest.raises(
+            ValueError, match="torch_compile_regional cannot be combined"
+        ):
+            validate_config(test_cfg)
+
+        test_cfg.gradient_checkpointing = False
+        validate_config(test_cfg)
+
     def test_zero3_qlora_use_reentrant_false(self, minimal_cfg):
         test_cfg = DictDefault(
             {
@@ -491,7 +509,7 @@ class TestValidation(BaseValidation):
             DictDefault(
                 {
                     "base_model": "tiiuae/falcon-7b",
-                    "fsdp": ["full_shard", "auto_wrap"],
+                    "fsdp_config": {"reshard_after_forward": True},
                 }
             )
             | minimal_cfg
@@ -505,7 +523,7 @@ class TestValidation(BaseValidation):
             DictDefault(
                 {
                     "base_model": "Falcon-7b",
-                    "fsdp": ["full_shard", "auto_wrap"],
+                    "fsdp_config": {"reshard_after_forward": True},
                 }
             )
             | minimal_cfg
@@ -1210,6 +1228,79 @@ class TestValidation(BaseValidation):
             assert new_cfg["dpo_beta"] is None
             assert len(self._caplog.records) == 1
 
+    def test_dpo_liger_kernel_keeps_every_loss_type(self, minimal_cfg):
+        """TRL's liger DPO path only swaps in the chunked log-prob kernel; the loss list, ipo
+        included, goes through the regular dpo_loss unchanged."""
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": ["apo_zero", "hinge", "ipo"],
+                    "dpo_loss_weights": [1.0, 0.5, 0.5],
+                }
+            )
+            | minimal_cfg
+        )
+        with self._caplog.at_level("WARNING"):
+            validate_config(cfg)
+            assert not [
+                r for r in self._caplog.records if "liger" in r.getMessage().lower()
+            ]
+
+    def test_dpo_ld_alpha_range(self, minimal_cfg):
+        cfg = DictDefault({"rl": "dpo", "dpo_ld_alpha": 0.3}) | minimal_cfg
+        assert validate_config(cfg).dpo_ld_alpha == 0.3
+        with pytest.raises(ValueError):
+            validate_config(
+                DictDefault({"rl": "dpo", "dpo_ld_alpha": 1.5}) | minimal_cfg
+            )
+
+    def test_dpo_liger_kernel_quoted_false_not_treated_as_enabled(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": "false",
+                    "dpo_loss_type": ["ipo"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["dpo_use_liger_kernel"] is False
+
+    def test_dpo_liger_kernel_malformed_loss_type_hits_schema_error(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": 123,
+                }
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValidationError):
+            validate_config(cfg)
+
+    def test_dpo_liger_kernel_allows_new_liger_loss_types(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "rl": "dpo",
+                    "dpo_use_liger_kernel": True,
+                    "dpo_loss_type": ["discopop"],
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg["dpo_loss_type"] == ["discopop"]
+
     def test_eval_strategy_remap(self, minimal_cfg):
         cfg = (
             DictDefault(
@@ -1227,38 +1318,6 @@ class TestValidation(BaseValidation):
                 "evaluation_strategy is deprecated, use eval_strategy instead"
                 in self._caplog.records[0].message
             )
-
-    def test_torch_version_adopt_req(self, minimal_cfg):
-        cfg = (
-            DictDefault(
-                {
-                    "optimizer": "adopt_adamw",
-                }
-            )
-            | minimal_cfg
-        )
-
-        with pytest.raises(
-            ValueError,
-            match=r".*ADOPT optimizer is incompatible with torch version*",
-        ):
-            env_capabilities = {"torch_version": "2.3.0"}
-            capabilities = {"bf16": False}
-            _ = validate_config(
-                cfg, capabilities=capabilities, env_capabilities=env_capabilities
-            )
-
-        env_capabilities = {"torch_version": "2.6.0"}
-        capabilities = {"bf16": False}
-        _ = validate_config(
-            cfg, capabilities=capabilities, env_capabilities=env_capabilities
-        )
-
-        env_capabilities = {"torch_version": "2.5.2"}
-        capabilities = {"bf16": False}
-        _ = validate_config(
-            cfg, capabilities=capabilities, env_capabilities=env_capabilities
-        )
 
 
 class TestTorchCompileValidation(BaseValidation):
@@ -1283,14 +1342,6 @@ class TestTorchCompileValidation(BaseValidation):
         )
 
         assert updated_cfg.torch_compile is True
-
-        env_capabilities = {"torch_version": "2.4.1"}
-        capabilities = {"bf16": True}
-        updated_cfg = validate_config(
-            cfg, capabilities=capabilities, env_capabilities=env_capabilities
-        )
-
-        assert updated_cfg.torch_compile is False
 
         env_capabilities = {}
         capabilities = {"bf16": True}
@@ -1403,7 +1454,7 @@ class TestTorchCompileValidation(BaseValidation):
             )
             | minimal_cfg
         )
-        env_capabilities = {"torch_version": "2.4.0"}
+        env_capabilities = {}
         with capture_axolotl_warnings(caplog):
             updated_cfg = validate_config(
                 cfg, capabilities={"bf16": True}, env_capabilities=env_capabilities

@@ -121,6 +121,32 @@ def test_broken_plugin_does_not_break_help(cli_runner, group):
     assert "broken" in result.output
 
 
+def test_broken_plugin_command_reports_a_clean_error(cli_runner, group):
+    built = group({"broken": "axolotl.does_not_exist:command"})
+
+    result = cli_runner.invoke(built, ["broken"])
+
+    assert result.exit_code != 0
+    assert "Could not import plugin command" in result.output
+
+
+def test_invalid_plugin_command_warns_without_breaking_help(
+    cli_runner, group, monkeypatch
+):
+    from unittest.mock import Mock
+
+    warning = Mock()
+    monkeypatch.setattr(plugins.LOG, "warning", warning)
+    built = group({"bogus": "tests.cli.test_cli_plugins:not_a_command"})
+
+    result = cli_runner.invoke(built, ["--help"])
+
+    assert result.exit_code == 0
+    warning.assert_called_once()
+    assert "Could not load plugin command" in warning.call_args.args[0]
+    assert warning.call_args.kwargs["exc_info"] is True
+
+
 def test_non_command_target_is_rejected(group):
     built = group({"bogus": "tests.cli.test_cli_plugins:not_a_command"})
 

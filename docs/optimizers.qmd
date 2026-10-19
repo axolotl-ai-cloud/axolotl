@@ -142,6 +142,18 @@ Paper: [https://arxiv.org/abs/2502.16982v1](https://arxiv.org/abs/2502.16982v1)
 optimizer: muon
 ```
 
+### muon_8bit
+
+Muon with its momentum buffer stored as blockwise (2048) linear int8 between steps, cutting
+Muon state memory ~4x; AdamW-backed params (embeddings, lm_head, 1D) stay full precision.
+Runs on a single GPU or FSDP2.
+
+Paper: [https://arxiv.org/abs/2509.23106](https://arxiv.org/abs/2509.23106)
+
+```yaml
+optimizer: muon_8bit
+```
+
 ### dion
 
 Microsoft's Dion (DIstributed OrthoNormalization) optimizer is a scalable and communication-efficient
@@ -156,6 +168,27 @@ optimizer: dion
 dion_lr: 0.01
 dion_momentum: 0.95
 lr: 0.00001  # learning rate for embeddings and parameters that fallback to AdamW
+```
+
+### scao
+
+SCAO (Sparse Curvature-Aware Adaptive Optimizer) is a second-order optimizer
+that approximates curvature information with sparse preconditioning while
+keeping usage close to AdamW.
+
+GitHub: [https://github.com/whispering3/scao](https://github.com/whispering3/scao)
+
+Install: `pip install axolotl[optimizers]`
+
+```yaml
+optimizer: scao
+
+# optional SCAO args can be passed through optim_args
+optim_args:
+  precond_freq: 20
+  k_min: 8
+  k_max: 128
+  sparsity: 0.7
 ```
 
 ### sinkgd
@@ -284,7 +317,7 @@ Install: `pip install axolotl[qgalore]`
 
 This optimizer is for **full fine-tuning**. It is incompatible with `adapter`
 (LoRA/QLoRA), `load_in_8bit`, and `load_in_4bit`. DeepSpeed is currently gated
-off; FSDP requires `fsdp_version: 2` with `use_orig_params: true`.
+off; FSDP2 (`fsdp_config:`) is supported.
 
 ```yaml
 optimizer: q_galore_adamw8bit

@@ -70,7 +70,7 @@ This option is highly recommended when working with sparse models to maximize th
 
 ### Example Config
 
-See [`examples/llama-3/sparse-finetuning.yaml`](examples/llama-3/sparse-finetuning.yaml) for a complete example.
+See [`examples/llama-3/sparse-finetuning.yaml`](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/sparse-finetuning.yaml) for a complete example.
 
 ---
 

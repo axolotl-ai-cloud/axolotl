@@ -7,15 +7,15 @@ with bias, dropout, and DoRA enabled.
 
 from pathlib import Path
 
+import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
 
-from axolotl.utils.dict import DictDefault
-
+from tests.e2e.multigpu.utils import multigpu_training_config
 from tests.e2e.utils import require_torch_2_7_0, requires_flash_attn
 
-pytestmark = requires_flash_attn
+pytestmark = [pytest.mark.gpu, requires_flash_attn]
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -83,7 +83,7 @@ def _base_lora_fsdp2_config(temp_dir, **overrides):
         "save_safetensors": True,
     }
     cfg.update(overrides)
-    return DictDefault(cfg)
+    return multigpu_training_config(cfg)
 
 
 class TestFSDP2LoRAKernels:

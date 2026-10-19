@@ -25,9 +25,19 @@ class TokensPerSecondCallback(TrainerCallback):
     gradient_accumulation_steps and logging_steps.
     """
 
-    def __init__(self, resume_from_checkpoint=None):
+    def __init__(self, resume_from_checkpoint=None, cfg=None):
         super().__init__()
         self.resume_from_checkpoint = resume_from_checkpoint
+        self.cfg = cfg
+
+    def _resolve_resume_from_checkpoint(self):
+        # auto-resume fills in cfg.resume_from_checkpoint only after the callbacks
+        # are built, so the config has to be re-read here rather than snapshotted
+        if isinstance(self.resume_from_checkpoint, str):
+            return self.resume_from_checkpoint
+        if self.cfg is not None:
+            return self.cfg.resume_from_checkpoint
+        return None
 
     def on_train_begin(
         self,
@@ -37,12 +47,17 @@ class TokensPerSecondCallback(TrainerCallback):
         **kwargs,
     ):  # pylint: disable=unused-argument
         """Restore total_tokens state when resuming from checkpoint."""
-        if not isinstance(self.resume_from_checkpoint, str):
+        resume_from_checkpoint = self._resolve_resume_from_checkpoint()
+        if not isinstance(resume_from_checkpoint, str):
             return
-        tokens_state_path = os.path.join(self.resume_from_checkpoint, TOKENS_STATE_FILE)
+        tokens_state_path = os.path.join(resume_from_checkpoint, TOKENS_STATE_FILE)
         if os.path.isfile(tokens_state_path):
-            with open(tokens_state_path, "r", encoding="utf-8") as f:
-                tokens_state = json.load(f)
+            try:
+                with open(tokens_state_path, "r", encoding="utf-8") as f:
+                    tokens_state = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                LOG.warning(f"Ignoring unreadable token state at {tokens_state_path}")
+                return
             state.tokens = {
                 "total": torch.tensor(tokens_state.get("total", 0)),
                 "trainable": torch.tensor(tokens_state.get("trainable", 0)),

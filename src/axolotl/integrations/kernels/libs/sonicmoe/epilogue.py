@@ -114,7 +114,7 @@ def check_model_epilogues(model) -> int:
         if not hasattr(module, "_apply_gate") or not hasattr(module, "gate_up_proj"):
             continue
         # `_apply_gate` is not the contract for non-gated experts (the backends call
-        # `act_fn` directly), and the forward already rejects them by `has_gate`.
+        # `act_fn` directly); those forwards validate the activation themselves.
         if not getattr(module, "has_gate", True):
             continue
         nvfp4 = is_nvfp4_param(module.gate_up_proj)

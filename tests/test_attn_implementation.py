@@ -483,6 +483,30 @@ class TestSamplePackingValidation:
             for r in caplog.records
         )
 
+    def test_native_diffusion_default_does_not_warn(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | DictDefault(
+            sample_packing=True,
+            diffusion_lm={"from_causal_lm": False},
+        )
+        with _capture_axolotl_warnings(caplog):
+            validate_config(cfg)
+        assert not any(
+            "does not handle cross-sample decontamination" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_legacy_diffusion_conversion_still_warns(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | DictDefault(
+            sample_packing=True,
+            diffusion_lm={"from_causal_lm": True},
+        )
+        with _capture_axolotl_warnings(caplog):
+            validate_config(cfg)
+        assert any(
+            "does not handle cross-sample decontamination" in r.getMessage()
+            for r in caplog.records
+        )
+
 
 class TestScalingSoftmaxValidation:
     """`scaling_softmax` is only implemented under flex_attention."""

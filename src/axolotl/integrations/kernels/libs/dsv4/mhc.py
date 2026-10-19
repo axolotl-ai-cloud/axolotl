@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
 """Fused Triton mHC mixer for DeepSeek-V4 HyperConnection (fwd + bwd).
 
 ``DeepseekV4HyperConnection`` runs twice per layer. Its FLOPs are tiny but the
@@ -17,6 +21,8 @@ dx = (dy - sum(dy*y, axis)) / (sum(x,axis)+eps)).
 import torch
 import triton
 import triton.language as tl
+
+from .autotune_profiles import bwd_pruner
 
 
 @triton.autotune(
@@ -398,7 +404,12 @@ def _rmsln_fwd_kernel(
     )
 
 
-@triton.autotune(configs=_RL_CFGS, key=["M", "K", "N"], reset_to_zero=["DFN"])
+@triton.autotune(
+    configs=_RL_CFGS,
+    key=["M", "K", "N", "BM"],
+    reset_to_zero=["DFN"],
+    prune_configs_by={"early_config_prune": bwd_pruner("rmsln")},
+)
 @triton.jit
 def _rmsln_bwd_kernel(
     STREAMS,
@@ -537,8 +548,9 @@ def _collapse_fwd_kernel(PRE, STREAMS, OUT, M, D, HC: tl.constexpr, BD: tl.const
         for bd in (256, 512, 1024)
         for w in (4, 8)
     ],
-    key=["M", "D"],
+    key=["M", "D", "HC"],
     reset_to_zero=["DPRE"],
+    prune_configs_by={"early_config_prune": bwd_pruner("collapse")},
 )
 @triton.jit
 def _collapse_bwd_kernel(

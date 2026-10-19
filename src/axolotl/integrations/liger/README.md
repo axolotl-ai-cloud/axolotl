@@ -21,27 +21,25 @@ liger_fused_linear_cross_entropy: true
 
 # FLCE-specific
 liger_use_token_scaling: true
+
+# Optional: alternative kernel backend (liger-kernel >= 0.8.1, off by default)
+# cutile (pip install cuda-tile) covers cross_entropy/geglu/layer_norm/rope and more;
+# cutedsl (pip install nvidia-cutlass-dsl) covers cross_entropy/rms_norm, tuned for Blackwell.
+# fused_linear_cross_entropy stays on Triton with either backend.
+liger_kernel_impl: cutedsl
 ```
 
 ## Supported Models
 
+Any model type in liger-kernel's native dispatch table (`liger_kernel.transformers.monkey_patch.MODEL_TYPE_TO_APPLY_LIGER_FN`) is supported out of the box — llama, mistral, mixtral, qwen2/qwen3 families, gemma through gemma4, deepseek_v4, glm4, phi3, olmo2, paligemma, and many more (50+ types as of liger 0.8.1).
+
+On top of the native table, axolotl hand-patches these types (not covered upstream, or extended with kernels the native path lacks):
+
 - deepseek_v2
-- gemma
-- gemma2
-- gemma3
-- granite
+- gemma4_unified / gemma4_unified_text
+- granitemoe
 - jamba
-- llama
-- mistral
-- mixtral
-- mllama
-- mllama_text_model
-- olmo2
-- paligemma
-- phi3
-- qwen2
-- qwen2_5_vl
-- qwen2_vl
+- qwen3_5 / qwen3_5_moe (adds the fused gated-RMSNorm kernel for linear-attention layers)
 
 ## Citation
 

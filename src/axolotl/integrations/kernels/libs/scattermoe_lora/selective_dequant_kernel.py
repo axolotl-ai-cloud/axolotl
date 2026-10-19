@@ -111,7 +111,8 @@ def _selective_dequant_nf4_kernel(
     result = code_val * absmax_val
 
     # Store to output
-    out_offset = expert_local_idx * stride_out_e + elem_offset
+    # i64: active experts x per-expert numel exceeds i32 for large fused expert stacks
+    out_offset = expert_local_idx.to(tl.int64) * stride_out_e + elem_offset
     tl.store(out_ptr + out_offset, result.to(out_ptr.dtype.element_ty), mask=mask)
 
 

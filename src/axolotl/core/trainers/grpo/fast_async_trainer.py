@@ -35,6 +35,7 @@ from axolotl.core.trainers.grpo.async_trainer import (
     AsyncGRPOConfig,
     AsyncGRPOTrainer,
     GRPODataProducer,
+    _slice_multimodal_kwargs,
 )
 from axolotl.core.trainers.grpo.replay_buffer import ReplayBuffer
 from axolotl.utils.logging import get_logger
@@ -103,7 +104,7 @@ class FastAsyncGRPOConfig(AsyncGRPOConfig):
         metadata={
             "help": "When True, sync LoRA adapter weights to vLLM via filesystem instead of merging into base model "
             "and NCCL-broadcasting all parameters. vLLM loads the adapter natively using Punica kernels. "
-            "Requires vllm_serve_lora serve module (auto-selected when this is True). "
+            "Requires a vLLM server started with `axolotl vllm-serve` (LoRA runtime updating enabled automatically when this is True). "
             "Syncs only LoRA adapter weights (much smaller) vs full merged model. Legacy merge behavior is used when False."
         },
     )
@@ -575,18 +576,10 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                                 dim=1,
                             )
                             r_logits_to_keep = data["completion_ids"].size(1)
-                            r_fwd_kwargs = {}
-                            for fk in (
-                                "pixel_values",
-                                "image_grid_thw",
-                                "pixel_attention_mask",
-                                "image_sizes",
-                                "token_type_ids",
-                                "mm_token_type_ids",
-                            ):
-                                if fk in data:
-                                    r_fwd_kwargs[fk] = data[fk]
-                            r_logps, _ = self._get_per_token_logps_and_entropies(
+                            r_fwd_kwargs = _slice_multimodal_kwargs(
+                                data, r_start, r_end
+                            )
+                            r_logps, _, _ = self._get_per_token_logps_and_entropies(
                                 self.model,
                                 r_ids,
                                 r_mask,
