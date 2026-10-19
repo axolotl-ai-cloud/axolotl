@@ -1,0 +1,73 @@
+# Beam QLoRA smoke test on a tiny random-weight model (~1 min), for fast
+# iteration. Build it first: uv run examples/beam/build_tiny_model.py
+base_model: ./beam-tiny
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+chat_template: tokenizer_default
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
+
+val_set_size: 0.0
+output_dir: ./outputs/beam-tiny-mp
+
+sequence_len: 512
+sample_packing: false
+pad_to_sequence_len: true
+
+adapter: qlora
+load_in_4bit: true
+quantize_moe_experts: true
+nf4_backend: bitsandbytes
+
+lora_r: 16
+lora_alpha: 32
+# must be 0: PEFT's ParamWrapper rejects dropout on target_parameters
+lora_dropout: 0.0
+
+# lora_target_linear is rejected with quantize_moe_experts, and `gate_proj` is
+# ambiguous here -- it names both the attention output gate and the dense MLP.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# Experts are fused 3D nn.Parameter tensors, unreachable as linear modules.
+# The router (mlp.gate.weight) is a bare Parameter too and is deliberately absent:
+# adapting a noaux_tc router destabilizes expert routing.
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 2
+num_epochs: 1
+# adamw_torch_4bit raises once device_map spreads adapters across GPUs
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 0.0002
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+train_on_inputs: false
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+# no flash-attn build for torch 2.13+cu130; sample_packing is off so varlen is moot
+attn_implementation: sdpa
+logging_steps: 1
+max_steps: 3
+save_strategy: "no"
+
+special_tokens:
+  eos_token: "<|return|>"
+  pad_token: "<|endoftext|>"
+
+device_map: auto
+gpu_memory_limit: 60GiB

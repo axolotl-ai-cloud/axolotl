@@ -537,3 +537,24 @@ class TestTelemetryCallback:
         """Evaluation peaks are read before final evaluation logging."""
         callback.on_prediction_step(None, trainer_state, None)
         callback.tracker.update_gpu_memory_metrics.assert_called_once()
+
+
+def test_step_end_samples_gpu_peaks_before_a_logging_step(
+    callback, training_args, trainer_state, mock_runtime_metrics_tracker
+):
+    """Trainer.log() resets allocator peaks, so they are read before it runs."""
+    control = MagicMock(spec=TrainerControl)
+    control.should_log = True
+    trainer_state.global_step = 7
+    callback.last_report_step = 6
+    callback.last_report_time = time.time()
+
+    callback.on_step_end(training_args, trainer_state, control)
+
+    mock_runtime_metrics_tracker.update_gpu_memory_metrics.assert_called_once()
+    mock_runtime_metrics_tracker.update_step.assert_called_once_with(7)
+
+    control.should_log = False
+    mock_runtime_metrics_tracker.update_gpu_memory_metrics.reset_mock()
+    callback.on_step_end(training_args, trainer_state, control)
+    mock_runtime_metrics_tracker.update_gpu_memory_metrics.assert_not_called()

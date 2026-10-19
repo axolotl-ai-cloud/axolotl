@@ -19,7 +19,11 @@ from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.datasets import dataset_map_buffer_kwargs
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import init_distributed_state, reduce_and_broadcast
+from axolotl.utils.distributed import (
+    get_world_size,
+    init_distributed_state,
+    reduce_and_broadcast,
+)
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
@@ -369,7 +373,8 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                     desc="Add position_id column (PoSE)",
                     **map_buffer_kwargs,
                 )
-    elif cfg.sample_packing:
+    elif cfg.sample_packing or deepspeed_context_parallel(cfg):
+        # DeepSpeed Ulysses shards the sequence, so every batch must carry global positions
         drop_long_kwargs = {}
         if filter_map_kwargs:
             drop_long_kwargs["desc"] = "Add position_id column (Sample Packing)"
@@ -380,7 +385,7 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
             **map_buffer_kwargs,
             **drop_long_kwargs,
         )
-        if cfg.eval_sample_packing:
+        if cfg.eval_sample_packing or deepspeed_context_parallel(cfg):
             if eval_dataset:
                 eval_dataset = eval_dataset.map(
                     add_position_ids,
@@ -390,6 +395,10 @@ def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
                 )
 
     return train_dataset, eval_dataset
+
+
+def deepspeed_context_parallel(cfg) -> bool:
+    return bool(cfg.deepspeed) and (cfg.context_parallel_size or 1) > 1
 
 
 def process_pretraining_datasets_for_packing(
@@ -415,6 +424,20 @@ def process_pretraining_datasets_for_packing(
 
 
 def calculate_total_num_steps(cfg, train_dataset, update=True):
+    from axolotl.core.trainers.diffusion_lm.sampling import (
+        native_packing_lengths,
+        resolve_native_packing_budget,
+    )
+
+    native_budget = resolve_native_packing_budget(cfg)
+    native_lengths = (
+        None
+        if native_budget is None
+        else native_packing_lengths(train_dataset, **native_budget.options)
+    )
+    packing_budget = (
+        cfg.sequence_len if native_budget is None else native_budget.payload_capacity
+    )
     if (
         not cfg.total_num_tokens
         and not cfg.skip_prepare_dataset
@@ -458,7 +481,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         # we have to drop anything longer then sequence len otherwise
         # flash attention with position ids fails
 
-        if cfg.sample_packing_eff_est:
+        if cfg.sample_packing_eff_est and native_lengths is None:
             total_num_steps = (
                 # match count to len est in dataloader
                 int(
@@ -477,9 +500,15 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}"
             )
         else:
-            if cfg.attn_supports_packing and not cfg.multipack_real_batches:
+            if native_lengths is not None or (
+                cfg.attn_supports_packing and not cfg.multipack_real_batches
+            ):
                 sampler_batch_size = 1
-                batch_max_len = cfg.micro_batch_size * cfg.sequence_len
+                batch_max_len = (
+                    packing_budget
+                    if native_lengths is not None
+                    else cfg.micro_batch_size * cfg.sequence_len
+                )
             else:
                 sampler_batch_size = cfg.micro_batch_size
                 batch_max_len = cfg.sequence_len
@@ -489,7 +518,11 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sampler = RandomSampler(train_dataset)
             sampler = MultipackBatchSampler(
                 sampler=sampler,
-                lengths=get_dataset_lengths(train_dataset),
+                lengths=(
+                    native_lengths
+                    if native_lengths is not None
+                    else get_dataset_lengths(train_dataset)
+                ),
                 batch_size=sampler_batch_size,
                 batch_max_len=batch_max_len,
                 group_size=cfg.sample_packing_group_size,
@@ -543,6 +576,9 @@ def setup_torch_compile_env(cfg):
             os.environ["ACCELERATE_DYNAMO_BACKEND"] = "INDUCTOR"
         else:
             os.environ["ACCELERATE_DYNAMO_BACKEND"] = cfg.torch_compile_backend.upper()
+        # HF Trainer builds TorchDynamoPlugin without this field, so accelerate reads it from the env.
+        if cfg.torch_compile_regional:
+            os.environ["ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION"] = "1"
 
 
 def setup_deepspeed_env(cfg, stage=None):
@@ -648,6 +684,9 @@ def setup_parallelism_envs(cfg):
     if cfg.tensor_parallel_size and cfg.tensor_parallel_size > 1:
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_TP_SIZE"] = str(cfg.tensor_parallel_size)
+        from axolotl.monkeypatch.accelerate.tp import patch_accelerate_prepare_tp
+
+        patch_accelerate_prepare_tp()
     if cfg.dp_shard_size and cfg.dp_shard_size > 1:
         set_accelerate_parallelism_config = True
         os.environ["PARALLELISM_CONFIG_DP_SHARD_SIZE"] = str(cfg.dp_shard_size)
@@ -656,8 +695,11 @@ def setup_parallelism_envs(cfg):
         os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(cfg.dp_replicate_size)
     if cfg.context_parallel_size and cfg.context_parallel_size > 1:
         set_accelerate_parallelism_config = True
-        os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
-        os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
+        if cfg.deepspeed:
+            setup_deepspeed_context_parallel_envs(cfg)
+        else:
+            os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
+            os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
     # Expert Parallel patch must apply before the first `Accelerator()`
     # call so `ep_size` lands in the mesh.
     if cfg.expert_parallel_size and cfg.expert_parallel_size > 1:
@@ -671,6 +713,26 @@ def setup_parallelism_envs(cfg):
         patch_parallelism_config()
     if set_accelerate_parallelism_config:
         os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] = "true"
+
+
+def setup_deepspeed_context_parallel_envs(cfg):
+    """Map ``context_parallel_size`` onto accelerate's DeepSpeed Ulysses (ALST) ``sp`` axis.
+
+    ZeRO owns sharding, so the ranks outside the CP group replicate; accelerate registers
+    the sequence-parallel groups with the engine and shards each batch across the group.
+    """
+    cp_size = cfg.context_parallel_size
+    os.environ["PARALLELISM_CONFIG_SP_SIZE"] = str(cp_size)
+    os.environ["PARALLELISM_CONFIG_SP_BACKEND"] = "deepspeed"
+    os.environ["PARALLELISM_CONFIG_SP_SEQ_LENGTH_IS_VARIABLE"] = "true"
+    os.environ["PARALLELISM_CONFIG_SP_ATTN_IMPLEMENTATION"] = (
+        cfg.attn_implementation or "sdpa"
+    )
+    world_size = get_world_size()
+    non_dp = cp_size * (cfg.tensor_parallel_size or 1)
+    if world_size > 1 and world_size % non_dp == 0 and world_size // non_dp > 1:
+        os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(world_size // non_dp)
+    os.environ.pop("PARALLELISM_CONFIG_CP_SIZE", None)
 
 
 def prepare_optim_env(cfg):

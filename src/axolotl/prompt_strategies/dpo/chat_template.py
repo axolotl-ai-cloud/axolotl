@@ -3,7 +3,28 @@ DPO prompt strategies for using tokenizer chat templates.
 """
 
 from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_template
+from axolotl.utils.data.utils import is_vision_dataset
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
+
+
+def _completion_after_prompt(
+    tokenizer, chat_template_string, dummy_user_message, rendered, content
+):
+    """The assistant completion inside a rendering of ``[dummy_user, assistant]``.
+
+    Strip the rendered dummy turn plus generation prompt, so a template with a thinking
+    channel keeps the reasoning that precedes the content; fall back to the first
+    occurrence of the content when the template does not render that prefix verbatim.
+    """
+    prefix = tokenizer.apply_chat_template(
+        [dummy_user_message],
+        add_generation_prompt=True,
+        chat_template=chat_template_string,
+        tokenize=False,
+    )
+    if prefix and rendered.startswith(prefix):
+        return rendered[len(prefix) :].rstrip()
+    return rendered[rendered.find(content) :].rstrip()
 
 
 def default(cfg, dataset_idx=0, **kwargs):
@@ -53,13 +74,19 @@ def default(cfg, dataset_idx=0, **kwargs):
                 }
             ]
 
-        messages = [
-            {
+        def to_message(m):
+            message = {
                 "role": role_map[m[message_property_mappings["role"]]],
                 "content": m[message_property_mappings["content"]],
             }
-            for m in messages
-        ]
+            # further mapped properties (e.g. reasoning_content for templates that render
+            # a thinking channel) ride along when the source message carries them
+            for target, source in message_property_mappings.items():
+                if target not in ("role", "content") and source in m:
+                    message[target] = m[source]
+            return message
+
+        messages = [to_message(m) for m in messages]
 
         chosen_raw = sample[field_chosen]
         if isinstance(chosen_raw, str):
@@ -71,10 +98,7 @@ def default(cfg, dataset_idx=0, **kwargs):
             chosen_msg = chosen_raw
         else:
             chosen_msg = chosen_raw[-1]
-        chosen = {
-            "role": role_map[chosen_msg[message_property_mappings["role"]]],
-            "content": chosen_msg[message_property_mappings["content"]],
-        }
+        chosen = to_message(chosen_msg)
 
         rejected_raw = sample[field_rejected]
         if isinstance(rejected_raw, str):
@@ -86,10 +110,12 @@ def default(cfg, dataset_idx=0, **kwargs):
             rejected_msg = rejected_raw
         else:
             rejected_msg = rejected_raw[-1]
-        rejected = {
-            "role": role_map[rejected_msg[message_property_mappings["role"]]],
-            "content": rejected_msg[message_property_mappings["content"]],
-        }
+        rejected = to_message(rejected_msg)
+
+        if is_vision_dataset(sample.keys()):
+            # TRL renders vision samples with the processor at collate time.
+            return {"prompt": messages, "chosen": [chosen], "rejected": [rejected]}
+
         dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
 
         result = {}
@@ -106,8 +132,13 @@ def default(cfg, dataset_idx=0, **kwargs):
             chat_template=chat_template_string,
             tokenize=False,
         )
-        chosen_strip_index = result["chosen"].find(chosen["content"])
-        result["chosen"] = result["chosen"][chosen_strip_index:].rstrip()
+        result["chosen"] = _completion_after_prompt(
+            tokenizer,
+            chat_template_string,
+            dummy_user_message,
+            result["chosen"],
+            chosen["content"],
+        )
 
         result["rejected"] = tokenizer.apply_chat_template(
             [dummy_user_message, rejected],
@@ -115,8 +146,13 @@ def default(cfg, dataset_idx=0, **kwargs):
             chat_template=chat_template_string,
             tokenize=False,
         )
-        rejected_strip_index = result["rejected"].find(rejected["content"])
-        result["rejected"] = result["rejected"][rejected_strip_index:].rstrip()
+        result["rejected"] = _completion_after_prompt(
+            tokenizer,
+            chat_template_string,
+            dummy_user_message,
+            result["rejected"],
+            rejected["content"],
+        )
 
         return result
 
@@ -211,6 +247,13 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
             "content": rejected_raw[-1][message_property_mappings["content"]],
         }
 
+        if is_vision_dataset(sample.keys()):
+            return {
+                "prompt": chosen_messages,
+                "chosen": [chosen_response],
+                "rejected": [rejected_response],
+            }
+
         dummy_user_message = {"role": "user", "content": "[[dummy_message]]"}
 
         result = {}
@@ -227,8 +270,13 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
             chat_template=chat_template_string,
             tokenize=False,
         )
-        chosen_strip_index = result["chosen"].find(chosen_response["content"])
-        result["chosen"] = result["chosen"][chosen_strip_index:].rstrip()
+        result["chosen"] = _completion_after_prompt(
+            tokenizer,
+            chat_template_string,
+            dummy_user_message,
+            result["chosen"],
+            chosen_response["content"],
+        )
 
         result["rejected"] = tokenizer.apply_chat_template(
             [dummy_user_message, rejected_response],
@@ -236,8 +284,13 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
             chat_template=chat_template_string,
             tokenize=False,
         )
-        rejected_strip_index = result["rejected"].find(rejected_response["content"])
-        result["rejected"] = result["rejected"][rejected_strip_index:].rstrip()
+        result["rejected"] = _completion_after_prompt(
+            tokenizer,
+            chat_template_string,
+            dummy_user_message,
+            result["rejected"],
+            rejected_response["content"],
+        )
 
         return result
 

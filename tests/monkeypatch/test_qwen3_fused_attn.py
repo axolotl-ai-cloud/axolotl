@@ -233,7 +233,7 @@ class TestQwen3FusedAttnLoRACompose:
             pass
 
         patch_qwen3_fused_attn()
-        with pytest.raises(AssertionError, match="Original QKV code not found"):
+        with pytest.raises(ValueError, match="does not use a supported q/k/v/o"):
             patch_self_attn_lora(cfg)
 
 
