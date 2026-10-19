@@ -218,6 +218,8 @@ For quack kernels, `match` is checked on each call against the tuned function's 
 - `arg`: a scalar argument, e.g. `activation: swiglu` (a list = any of)
 - `arg.shape`: a tensor's full shape, `null` for any size
 - `arg.dimN`: one dimension of a tensor, negative `N` counting from the end (a list = any of)
+- a scalar or `dimN` can also take a range, e.g. `"A.dim0": { ge: 262144 }` (`ge`, `gt`, `le`,
+  `lt`; several bounds must all hold)
 
 Each config lists `GemmConfig` fields and selects every candidate that has those values, so a
 partial config like `{tile_m: 256, tile_n: 256}` keeps all the variants of that tile. A config
@@ -312,3 +314,40 @@ it picked 128x160 c1x2 on one rank. For `match`, the argument names are `A, B, p
 postact_out, ...` for `gemm_gated_tuned`, `A, B, out, ...` for `gemm_tuned` and `A, B, PreAct,
 dx_out, postact_out, colvec_scale, activation, colvec_reduce, cu_seqlens_m, A_idx, ...` for
 `gemm_dgated_tuned`.
+
+### Pinning the large training buckets (Beam B200)
+
+The filter above still sweeps every new shape. For the training buckets, whose first sweep is the
+expensive one, a range `match` pins the measured winners for every routed-row count from 262144
+up, while smaller shapes (eval, short batches) keep the filtered search. With
+`sonicmoe_ep_row_padding: highwater`, training sees a few shapes that are not powers of two,
+which is exactly what a threshold covers and a list of exact sizes would miss. List these entries
+before the `allow` entries: the first matching entry for a call decides.
+
+```yaml
+autotune_profiles:
+  - kernel: gemm_gated_tuned          # winner at 512k and 1M rows
+    backend: quack
+    gpu: B200
+    match: { "postact_out.dim0": { ge: 262144 } }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+  - kernel: gemm_tuned                # 256x256 c2x1; 128x256 c1x1 also won at 1M rows
+    backend: quack
+    gpu: B200
+    match: { "A.dim0": { ge: 262144 } }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1 }
+      - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 1 }
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    match: { "PreAct.dim0": { ge: 262144 } }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+```
+
+The `gemm_gated_tuned` and `gemm_dgated_tuned` configs give every field that varies on SM100
+except `swap_ab`, which validity pruning removes for these gathered GEMMs, so each resolves to one
+candidate and is not benchmarked at all. The `gemm_tuned` entries leave `is_dynamic_persistent`
+open, so that kernel runs a 4-config search.

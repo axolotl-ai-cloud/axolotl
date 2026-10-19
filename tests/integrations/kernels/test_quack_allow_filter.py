@@ -397,3 +397,93 @@ def test_slow_key_profiles_cover_all_three_kernels_slowest_first(kernels, tmp_pa
         "gemm_tuned",
     ]
     assert all(p["match"]["A.shape"][0] == 131072 for p in profiles)
+
+
+ROW_ARGS = {
+    "gemm_gated_tuned": ["A", "B", "preact_out", "postact_out"],
+    "gemm_tuned": ["A", "B", "out"],
+    "gemm_dgated_tuned": ["A", "B", "PreAct", "dx_out", "postact_out"],
+}
+
+
+def _call_rows(tuner, rows):
+    """Every non-weight tensor gets ``rows`` rows, passed by the kernel's own argument names."""
+    names = ROW_ARGS[tuner.fn.__name__]
+    tuner.arg_names = [*names, "dynamic_scheduler"]
+    tensors = {
+        name: torch.empty(
+            (32, 2560, 5120) if name == "B" else (rows, 2560), device="meta"
+        )
+        for name in names
+    }
+    return tuner(dynamic_scheduler=False, **tensors).kwargs["config"]
+
+
+def _readme_pin_profiles():
+    text = README.read_text()
+    section = text[text.index("### Pinning the large training buckets") :]
+    block = re.findall(r"```yaml\n(.*?)```", section, re.S)[0]
+    return yaml.safe_load(block)["autotune_profiles"]
+
+
+def test_readme_large_bucket_pins_then_allow_filter(kernels):
+    autotune_profiles.apply_autotune_profiles(
+        _readme_pin_profiles() + _readme_allow_profiles()
+    )
+    pins = {
+        "gemm_gated_tuned": (256, 512, 2, 1, True, True),
+        "gemm_dgated_tuned": (256, 256, 2, 1, True, True),
+    }
+    for rows in (1048576, 1081344, 262144):
+        for name, want in pins.items():
+            tuner = getattr(kernels, name)
+            c = _call_rows(tuner, rows)
+            got = (c.tile_m, c.tile_n, c.cluster_m, c.cluster_n)
+            got += (c.is_dynamic_persistent, c.use_tma_gather)
+            assert got == want and tuner.benched == []
+        tuned = kernels.gemm_tuned
+        tuned.benched.clear()
+        c = _call_rows(tuned, rows)
+        assert len(tuned.benched) == 4
+        assert {
+            (b.kwargs["config"].tile_m, b.kwargs["config"].cluster_m)
+            for b in tuned.benched
+        } == {
+            (256, 2),
+            (128, 1),
+        }
+    expected = {"gemm_gated_tuned": 52, "gemm_tuned": 42, "gemm_dgated_tuned": 52}
+    for name, count in expected.items():
+        tuner = getattr(kernels, name)
+        tuner.benched.clear()
+        _call_rows(tuner, 131072)
+        assert len(tuner.benched) == count
+
+
+def test_range_match_bounds(kernels):
+    tuner = kernels.gemm_tuned
+    autotune_profiles.apply_autotune_profiles(
+        [
+            {
+                "kernel": "gemm_tuned",
+                "backend": "quack",
+                "match": {"A.dim0": {"gt": 65536, "le": 262144}},
+                "allow": {"tile_m": 256},
+            }
+        ]
+    )
+    for rows, count in ((65536, 74), (65537, 26), (262144, 26), (262145, 74)):
+        tuner.benched.clear()
+        _call_rows(tuner, rows)
+        assert len(tuner.benched) == count, rows
+    with pytest.raises(ValueError, match="range takes"):
+        autotune_profiles.apply_autotune_profiles(
+            [
+                {
+                    "kernel": "gemm_tuned",
+                    "backend": "quack",
+                    "match": {"A.dim0": {"min": 1}},
+                    "allow": {"tile_m": 256},
+                }
+            ]
+        )
