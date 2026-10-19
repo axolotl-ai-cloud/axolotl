@@ -139,6 +139,14 @@ def _extend(into: dict[str, list], batch: dict[str, list]) -> None:
         into[key].extend(values)
 
 
+def _split(
+    batch: dict[str, list], num_rows: int
+) -> tuple[dict[str, list], dict[str, list]]:
+    head = {key: values[:num_rows] for key, values in batch.items()}
+    tail = {key: values[num_rows:] for key, values in batch.items()}
+    return head, tail
+
+
 def tokenize_with_work_queue(
     prompt_tokenizer: PromptTokenizingStrategy,
     dataset: Dataset,
@@ -154,6 +162,8 @@ def tokenize_with_work_queue(
     worker is not detected; only a dead one. ``batch_size`` caps the rows per
     chunk (one ``tokenize_prompt`` call) and ``writer_batch_size`` the rows
     buffered before each Arrow flush, like their ``Dataset.map`` namesakes.
+    ``writer_batch_size`` also caps the chunk size, so no single worker result
+    can exceed the flush limit.
     """
     fingerprint = update_fingerprint(
         dataset._fingerprint,
@@ -188,9 +198,11 @@ def tokenize_with_work_queue(
         buf_writer = pa.BufferOutputStream()
         writer_kwargs["stream"] = buf_writer
 
-    max_chunk_size = min(MAX_CHUNK_SIZE, batch_size) if batch_size else MAX_CHUNK_SIZE
-    chunks = _chunk_bounds(len(dataset), num_proc, max_chunk_size)
     writer_batch_size = writer_batch_size or WRITER_BATCH_SIZE
+    max_chunk_size = min(
+        MAX_CHUNK_SIZE, batch_size or MAX_CHUNK_SIZE, writer_batch_size
+    )
+    chunks = _chunk_bounds(len(dataset), num_proc, max_chunk_size)
     LOG.info(
         f"Tokenizing {len(dataset)} examples with {num_proc} workers "
         f"({len(chunks)} chunks)"
@@ -220,10 +232,10 @@ def tokenize_with_work_queue(
                 ):
                     if batch:
                         _extend(buffered, batch)
-                    if _num_rows(buffered) >= writer_batch_size:
-                        writer.write_batch(buffered)
-                        written += _num_rows(buffered)
-                        buffered = {}
+                    while _num_rows(buffered) >= writer_batch_size:
+                        head, buffered = _split(buffered, writer_batch_size)
+                        writer.write_batch(head)
+                        written += writer_batch_size
                     pbar.update(end - start)
                 if buffered:
                     writer.write_batch(buffered)

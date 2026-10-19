@@ -134,6 +134,44 @@ def test_batch_size_caps_rows_per_call(dataset):
     assert max(result["rows_in_call"]) <= 4
 
 
+@pytest.mark.parametrize("batch_size", [None, 16])
+def test_writer_batch_size_bounds_every_flush(dataset, batch_size, monkeypatch):
+    """A writer limit below the chunk size (or an unset batch_size, which falls
+    back to 1000-row chunks) used to flush whole chunks, so the RAM cap did
+    not hold."""
+    from axolotl.utils.data import work_queue
+
+    class BatchSizeStrategy(FakeStrategy):
+        supports_batched = True
+
+        def tokenize_prompt(self, batch):
+            n = len(batch["text"])
+            return {"input_ids": [[0]] * n, "rows_in_call": [n] * n}
+
+    flushed = []
+    original = work_queue.ArrowWriter.write_batch
+
+    def recording_write_batch(self, batch, *args, **kwargs):
+        flushed.append(work_queue._num_rows(batch))
+        return original(self, batch, *args, **kwargs)
+
+    monkeypatch.setattr(work_queue.ArrowWriter, "write_batch", recording_write_batch)
+
+    result = tokenize_with_work_queue(
+        BatchSizeStrategy(),
+        dataset,
+        num_proc=2,
+        keep_in_memory=True,
+        batch_size=batch_size,
+        writer_batch_size=3,
+    )
+
+    assert result.num_rows == len(dataset)
+    assert max(result["rows_in_call"]) <= 3
+    assert flushed and max(flushed) <= 3
+    assert sum(flushed) == len(dataset)
+
+
 def test_cache_round_trip(dataset, tmp_path):
     """Second call must load from the Arrow cache and match the first."""
     dataset = dataset.map(lambda row: row, cache_file_name=str(tmp_path / "base.arrow"))
