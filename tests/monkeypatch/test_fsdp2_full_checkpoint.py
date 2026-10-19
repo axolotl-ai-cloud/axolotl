@@ -225,6 +225,69 @@ def test_write_fills_a_flat_range_of_a_strided_view(shape, start, stop):
     assert base[0].abs().sum() == 0 and base[1, ..., :2].abs().sum() == 0
 
 
+def test_copy_threads_raise_and_restore(monkeypatch):
+    import torch
+
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint
+
+    before = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        monkeypatch.setattr(fsdp2_checkpoint, "_MAX_COPY_THREADS", 3)
+        monkeypatch.setattr(
+            fsdp2_checkpoint.os,
+            "sched_getaffinity",
+            lambda pid: {0, 1, 2, 3},
+            raising=False,
+        )
+        with fsdp2_checkpoint._copy_threads():
+            assert torch.get_num_threads() == 3
+        assert torch.get_num_threads() == 1
+        torch.set_num_threads(8)
+        with fsdp2_checkpoint._copy_threads():
+            assert torch.get_num_threads() == 8  # never lowers
+    finally:
+        torch.set_num_threads(before)
+
+
+def test_only_the_receiver_raises_copy_threads():
+    from unittest.mock import patch
+
+    import torch
+
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint
+
+    seen = []
+    real = fsdp2_checkpoint._transfer_chunks
+
+    def spy(*args):
+        seen.append(torch.get_num_threads())
+        return real(*args)
+
+    before = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        with (
+            patch.object(fsdp2_checkpoint, "_transfer_chunks", spy),
+            patch.object(fsdp2_checkpoint, "_MAX_COPY_THREADS", 2),
+            patch.object(fsdp2_checkpoint.dist, "get_rank", return_value=0),
+            patch.object(
+                fsdp2_checkpoint.os,
+                "sched_getaffinity",
+                lambda pid: {0, 1, 2, 3},
+                create=True,
+            ),
+        ):
+            out = fsdp2_checkpoint._transfer(
+                torch.ones(4), [4], torch.float32, source=0
+            )
+        assert torch.equal(out, torch.ones(4))
+        assert seen == [2]
+        assert torch.get_num_threads() == 1
+    finally:
+        torch.set_num_threads(before)
+
+
 def test_transfer_writes_into_the_destination_view():
     from unittest.mock import patch
 

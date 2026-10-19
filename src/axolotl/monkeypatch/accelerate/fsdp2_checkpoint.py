@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import inspect
 import math
+import os
 from functools import wraps
 from pathlib import Path
 
@@ -203,6 +205,31 @@ def _segments(shape, start, stop):
             yield (end_row, *index)
 
 
+_MAX_COPY_THREADS = 32
+
+
+@contextlib.contextmanager
+def _copy_threads():
+    """Raise torch's intra-op threads for the receiver's CPU copies, then restore them.
+
+    torchrun starts trainers with OMP_NUM_THREADS=1, which leaves the assembly of a large
+    checkpoint on one core.
+    """
+    before = torch.get_num_threads()
+    try:
+        available = len(os.sched_getaffinity(0))
+    except AttributeError:
+        available = os.cpu_count() or 1
+    wanted = min(_MAX_COPY_THREADS, available)
+    if wanted > before:
+        torch.set_num_threads(wanted)
+    try:
+        yield
+    finally:
+        if torch.get_num_threads() != before:
+            torch.set_num_threads(before)
+
+
 def _write(out, start, data):
     offset = 0
     for index in _segments(list(out.shape), start, start + data.numel()):
@@ -221,6 +248,13 @@ def _transfer(value, shape, dtype, source, receiver=0, out=None):
         out = torch.empty(shape, dtype=dtype)
     flat = value.detach().reshape(-1) if rank == source else None
     chunk_size = max(1, _TRANSFER_BYTES // torch.empty((), dtype=dtype).element_size())
+    threads = _copy_threads() if rank == receiver else contextlib.nullcontext()
+    with threads:
+        _transfer_chunks(flat, out, count, chunk_size, dtype, source, receiver, rank)
+    return out if rank == receiver else None
+
+
+def _transfer_chunks(flat, out, count, chunk_size, dtype, source, receiver, rank):
     buffer = None
     # Keep GPU staging bounded even when the complete checkpoint lives on CPU.
     for start in range(0, count, chunk_size):
@@ -244,7 +278,6 @@ def _transfer(value, shape, dtype, source, receiver=0, out=None):
             torch.cuda.current_stream(piece.device).synchronize()
             piece = staged
         _write(out, start, piece)
-    return out if rank == receiver else None
 
 
 def _quantized(value):
