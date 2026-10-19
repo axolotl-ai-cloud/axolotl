@@ -74,6 +74,10 @@ def test_pair_padding_is_highwater_per_mode_and_capped_at_the_grid():
     first = experts.compact_local_pairs(idx, weights, E, True, torch.float32)[0].numel()
     fewer = idx.clone()
     fewer[2:] = E
+    # within a step a smaller call pads by its own count (a recompute must match its forward)
+    within = experts.compact_local_pairs(fewer, weights, E, True, torch.float32)
+    assert within[0].numel() < first
+    experts.promote_ep_padding_marks()
     assert (
         experts.compact_local_pairs(fewer, weights, E, True, torch.float32)[0].numel()
         == first

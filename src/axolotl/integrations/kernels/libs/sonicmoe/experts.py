@@ -13,6 +13,7 @@ import os
 
 import torch
 import torch.nn.functional as F
+from transformers import TrainerCallback
 
 from .lora import (
     MoELoRAMaterialize,
@@ -171,8 +172,6 @@ def sonicmoe_experts_forward_with_lora(
 
 EP_ROW_PADDING_MODES = ("pow2", "highwater")
 _EP_ROW_PADDING: dict = {"mode": "pow2", "granule": 4096, "headroom": 1.03}
-# one high-water mark per module.training value, shared by every MoE layer
-_EP_ROW_MARKS: dict[bool, int] = {}
 
 
 def configure_ep_row_padding(
@@ -188,34 +187,86 @@ def configure_ep_row_padding(
     _EP_ROW_MARKS.clear()
 
 
-def _highwater(marks: dict, training: bool, count: int, granule: int, cap: int) -> int:
-    mark = marks.get(training, 0)
-    if count > mark:
-        wanted = math.ceil(count * _EP_ROW_PADDING["headroom"])
-        mark = min(-(-wanted // granule) * granule, cap)
-        marks[training] = mark
-    return mark
+class _HighWaterMarks:
+    """Padding sizes from a mark that only moves between optimizer steps.
+
+    Within a step every call pads to ``max(frozen mark, its own rounded-up count)`` and only
+    records a pending mark; ``promote`` (at step and evaluation end) folds the pending marks
+    into the frozen ones. A layer's activation-checkpoint recompute therefore gets the same
+    size as its forward, even if a later layer saw more rows in between. One mark per
+    ``module.training`` value, shared by every MoE layer.
+    """
+
+    def __init__(self):
+        self.frozen: dict[bool, int] = {}
+        self.pending: dict[bool, int] = {}
+
+    def size(
+        self,
+        training: bool,
+        count: int,
+        granule: int,
+        cap: int,
+        cap_mark: bool = False,
+    ) -> int:
+        """``cap`` bounds a call's own rounded-up size; ``cap_mark`` also bounds the mark."""
+        frozen = self.frozen.get(training, 0)
+        if count <= frozen:
+            size = min(frozen, cap) if cap_mark else frozen
+        else:
+            wanted = math.ceil(count * _EP_ROW_PADDING["headroom"])
+            size = min(-(-wanted // granule) * granule, cap)
+        if size > self.pending.get(training, 0):
+            self.pending[training] = size
+        return size
+
+    def promote(self) -> None:
+        for training, mark in self.pending.items():
+            self.frozen[training] = max(self.frozen.get(training, 0), mark)
+        self.pending.clear()
+
+    def clear(self) -> None:
+        self.frozen.clear()
+        self.pending.clear()
+
+
+_EP_ROW_MARKS = _HighWaterMarks()
+_EP_PAIR_MARKS = _HighWaterMarks()
+
+
+def promote_ep_padding_marks() -> None:
+    """Let the token and pair marks grow to what the last step saw; call between steps."""
+    _EP_ROW_MARKS.promote()
+    _EP_PAIR_MARKS.promote()
+
+
+class EPPaddingMarksCallback(TrainerCallback):
+    """Promote the EP padding marks at step and evaluation boundaries."""
+
+    def on_step_end(self, args, state, control, **kwargs):
+        promote_ep_padding_marks()
+
+    def on_evaluate(self, args, state, control, **kwargs):
+        promote_ep_padding_marks()
 
 
 def ep_padded_rows(num_recv: int, training: bool) -> int:
     """Tokens to pad an EP-received batch of ``num_recv`` tokens to (never below 1024).
 
-    ``pow2``: the next power of two. ``highwater``: the largest count seen so far (for this
-    ``training`` value) times ``headroom``, rounded up to ``granule``, so shapes stay put
-    across steps and layers without doubling a batch that sits just over a power of two.
+    ``pow2``: the next power of two. ``highwater``: the count times ``headroom`` rounded up
+    to ``granule``, or the largest such size of the previous steps (for this ``training``
+    value) if larger, so shapes stay put across steps and layers without doubling a batch
+    that sits just over a power of two.
     """
     pow2 = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
     if _EP_ROW_PADDING["mode"] != "highwater":
         return pow2
     # headroom must not push a count at a power of two (EP's per-rank cap) past it
-    mark = _highwater(
-        _EP_ROW_MARKS, training, num_recv, _EP_ROW_PADDING["granule"], pow2
-    )
-    return max(mark, 1024)
+    size = _EP_ROW_MARKS.size(training, num_recv, _EP_ROW_PADDING["granule"], pow2)
+    return max(size, 1024)
 
 
 _EP_COMPACT: dict = {"enabled": False, "granule": 32768}
-_EP_PAIR_MARKS: dict[bool, int] = {}
 _EP_COMPACT_WARNED: set[str] = set()
 
 
@@ -248,10 +299,10 @@ def compact_local_pairs(
     required = local.clone()
     required[:, 0] |= ~has_local
     needed = int(required.sum())
-    padded = _highwater(
-        _EP_PAIR_MARKS, training, needed, _EP_COMPACT["granule"], num_tokens * k
+    # pad pairs come from unused grid slots, so the grid size bounds the mark too
+    padded = _EP_PAIR_MARKS.size(
+        training, needed, _EP_COMPACT["granule"], num_tokens * k, cap_mark=True
     )
-    padded = max(padded, needed)
     free = ~required.reshape(-1)
     chosen = free & (torch.cumsum(free, 0) <= padded - needed)
     keep = (required.reshape(-1) | chosen).nonzero().squeeze(1)
