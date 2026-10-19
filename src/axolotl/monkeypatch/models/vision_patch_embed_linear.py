@@ -9,6 +9,11 @@ from torch import nn
 
 from axolotl.utils.logging import get_logger
 
+try:
+    from torch.distributed.tensor import DTensor
+except ImportError:  # torch built without distributed support
+    DTensor = ()  # type: ignore[assignment,misc]
+
 logger = get_logger(__name__)
 
 # model_config_type -> (modeling module, class); all build Conv3d with stride == kernel_size
@@ -64,11 +69,14 @@ def _linear_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
     proj = self.proj
     if (
         type(proj) is not nn.Conv3d
+        or "forward" in vars(proj)
         or hasattr(proj, "_hf_hook")
         or hasattr(proj.weight, "ds_id")
+        or isinstance(proj.weight, DTensor)
     ):
-        # PEFT wrapper, accelerate offload hook, or ZeRO-3 placeholder: only a
-        # module call keeps the adapter delta / device-align / gather logic in path
+        # PEFT wrapper, TP forward wrapper / DTensor weight, accelerate offload
+        # hook, or ZeRO-3 placeholder: only a module call keeps the adapter delta /
+        # local-view / device-align / gather logic in path
         return self._axolotl_patch_embed_original_forward(hidden_states)
     weight = proj.weight
     # input flat layout matches the (D, C, T, Ph, Pw) weight layout element-for-element

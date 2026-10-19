@@ -171,6 +171,55 @@ def test_zero3_placeholder_weight_routes_to_stock_forward(
 
 
 @pytest.mark.parametrize("model_config_type", ["qwen3_vl"])
+def test_instance_forward_wrapper_routes_to_stock_forward(
+    model_config_type, clean_patch_slate
+):
+    """The TP replication shim binds a forward wrapper on the module instance."""
+    patch_vision_patch_embed_linear(model_config_type)
+    module = _make_module(model_config_type)
+    module.proj.forward = lambda hidden_states: hidden_states
+
+    sentinel = torch.zeros(1)
+    clean_patch_slate._axolotl_patch_embed_original_forward = (
+        lambda self, hidden_states: sentinel
+    )
+    assert module(torch.randn(16, 3 * 2 * 4 * 4)) is sentinel
+
+
+@pytest.mark.parametrize("model_config_type", ["qwen3_vl"])
+def test_dtensor_weight_routes_to_stock_forward(
+    model_config_type, clean_patch_slate, tmp_path
+):
+    """Tensor parallelism replaces plain parameters with replicated DTensors."""
+    dist = pytest.importorskip("torch.distributed")
+    if not dist.is_available() or dist.is_initialized():
+        pytest.skip("needs an uninitialised torch.distributed")
+    from torch.distributed.device_mesh import init_device_mesh
+    from torch.distributed.tensor import DTensor, Replicate
+
+    dist.init_process_group(
+        "gloo", init_method=f"file://{tmp_path / 'pg'}", rank=0, world_size=1
+    )
+    try:
+        patch_vision_patch_embed_linear(model_config_type)
+        module = _make_module(model_config_type)
+        mesh = init_device_mesh("cpu", (1,))
+        module.proj.weight = nn.Parameter(
+            DTensor.from_local(
+                module.proj.weight.data, mesh, [Replicate()], run_check=False
+            )
+        )
+
+        sentinel = torch.zeros(1)
+        clean_patch_slate._axolotl_patch_embed_original_forward = (
+            lambda self, hidden_states: sentinel
+        )
+        assert module(torch.randn(16, 3 * 2 * 4 * 4)) is sentinel
+    finally:
+        dist.destroy_process_group()
+
+
+@pytest.mark.parametrize("model_config_type", ["qwen3_vl"])
 def test_accelerate_hooked_proj_routes_to_stock_forward(
     model_config_type, clean_patch_slate
 ):
