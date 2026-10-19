@@ -10,6 +10,7 @@ import copy
 import inspect
 import math
 import os
+import time
 from functools import wraps
 from pathlib import Path
 
@@ -205,7 +206,8 @@ def _segments(shape, start, stop):
             yield (end_row, *index)
 
 
-_MAX_COPY_THREADS = 32
+# measured on 32-core B200 pods: 8-16 threads copy ~14x faster than 32 (OpenMP oversubscription)
+_MAX_COPY_THREADS = 8
 
 
 @contextlib.contextmanager
@@ -223,11 +225,44 @@ def _copy_threads():
     wanted = min(_MAX_COPY_THREADS, available)
     if wanted > before:
         torch.set_num_threads(wanted)
+    if _TIMING is not None:
+        _TIMING["threads"] = torch.get_num_threads()
     try:
         yield
     finally:
         if torch.get_num_threads() != before:
             torch.set_num_threads(before)
+
+
+# AXOLOTL_CHECKPOINT_TIMING=1: rank 0 logs where assembly time goes (per phase, slowest tensors)
+_TIMING: dict | None = None
+
+
+def _timed(phase, start, nbytes=0):
+    if _TIMING is not None:
+        now = time.perf_counter()
+        _TIMING["seconds"][phase] = _TIMING["seconds"].get(phase, 0.0) + now - start
+        _TIMING["bytes"][phase] = _TIMING["bytes"].get(phase, 0) + nbytes
+        return now
+    return start
+
+
+def _log_timing(total):
+    if _TIMING is None or dist.get_rank() != 0:
+        return
+    phases = ", ".join(
+        f"{phase} {seconds:.1f}s/{_TIMING['bytes'][phase] / 2**30:.1f}GiB"
+        for phase, seconds in sorted(_TIMING["seconds"].items(), key=lambda kv: -kv[1])
+    )
+    LOG.info(
+        "checkpoint assembly %.1fs over %d tensors (%d copy threads): %s",
+        total,
+        len(_TIMING["tensors"]),
+        _TIMING.get("threads", torch.get_num_threads()),
+        phases,
+    )
+    for row in sorted(_TIMING["tensors"], key=lambda r: -r[0])[:8]:
+        LOG.info("checkpoint assembly slowest: %.2fs %s", row[0], row[1])
 
 
 def _write(out, start, data):
@@ -269,15 +304,23 @@ def _transfer_chunks(flat, out, count, chunk_size, dtype, source, receiver, rank
             piece = buffer[:length]
             if rank == source:
                 piece.copy_(flat[start : start + length])
+            began = time.perf_counter() if _TIMING is not None else 0.0
             dist.broadcast(piece, src=source)
+            if _TIMING is not None:
+                if piece.device.type == "cuda":
+                    torch.cuda.current_stream(piece.device).synchronize()
+                _timed("broadcast", began, piece.numel() * piece.element_size())
         if rank != receiver:
             continue
+        began = time.perf_counter() if _TIMING is not None else 0.0
         if piece.device.type != "cpu":
             staged = _staging(dtype, length)
             staged.copy_(piece, non_blocking=True)
             torch.cuda.current_stream(piece.device).synchronize()
             piece = staged
+            began = _timed("stage", began, piece.numel() * piece.element_size())
         _write(out, start, piece)
+        _timed("write", began, piece.numel() * piece.element_size())
 
 
 def _quantized(value):
@@ -393,11 +436,14 @@ def _gather_tensor(value, owner=None, records=None):
     if any(info["quantized"] for _, info in chunks):
         return _gather_quantized(local, chunks, shape)
     plan = _boxes(chunks)
+    began = time.perf_counter()
     full = torch.empty(shape, dtype=_dtype(records[0]["dtype"])) if rank == 0 else None
+    _timed("alloc", began)
     if plan is None:
         return _gather_indexed(local, chunks, full)
     view, boxes = plan
     view = full.view(view) if rank == 0 else None
+    destination = None
     for (source, info), (starts, lengths) in zip(chunks, boxes, strict=True):
         if not math.prod(lengths):
             continue
@@ -412,6 +458,15 @@ def _gather_tensor(value, owner=None, records=None):
             _dtype(info["dtype"]),
             source,
             out=destination,
+        )
+    if _TIMING is not None and rank == 0:
+        _TIMING["tensors"].append(
+            (
+                time.perf_counter() - began,
+                f"{records[0]['dtype']} {list(shape)} view {list(view.shape)} "
+                f"stride {list(destination.stride()) if destination is not None else None} "
+                f"from {len(chunks)} chunk(s)",
+            )
         )
     return full
 
@@ -680,6 +735,13 @@ def _load_referenced_adapter(model, directory):
 
 def full_model_state(model, adapter_only=False):
     # TODO: stream checkpoint assembly layerwise to reduce rank-0 host memory.
+    global _TIMING
+    _TIMING = (
+        {"seconds": {}, "bytes": {}, "tensors": []}
+        if os.environ.get("AXOLOTL_CHECKPOINT_TIMING") == "1"
+        else None
+    )
+    began = time.perf_counter()
     adapter_only = adapter_only and is_peft_model(model)
     if adapter_only:
         values = _adapter_model_state(model)
@@ -718,6 +780,8 @@ def full_model_state(model, adapter_only=False):
         else _gather_value(value, owners.get(name))
         for name, value in values.items()
     }
+    _log_timing(time.perf_counter() - began)
+    _TIMING = None
     return state if dist.get_rank() == 0 else {}
 
 
