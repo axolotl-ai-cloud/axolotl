@@ -402,13 +402,11 @@ Config validation rejects these combinations with a list of what to change.
 
 ### Data producer trainer
 
-EBFT and `use_data_producer: true` without `async_prefetch` keep running on axolotl's data producer trainer (a `GRPOTrainer` subclass). Its async mode prefetches the next rollout in a background thread and supports these options:
+`use_data_producer: true` without `async_prefetch` (GRPO, or structured EBFT) keeps running on axolotl's data producer trainer (a `GRPOTrainer` subclass), synchronously, for adapter-only LoRA weight sync without async. It is being retired in favor of async GRPO; its own options are:
 
 ```yaml
 trl:
   use_data_producer: true
-  async_prefetch: true
-  prefetch_depth: 1
   streaming_partial_batch: true   # score one prompt group at a time
   streaming_min_groups: 1
   replay_buffer_size: 100         # replace zero-signal groups with cached high-signal ones
@@ -583,7 +581,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `async_prefetch` | bool | `false` | Async GRPO on TRL's `AsyncGRPOTrainer` (with EBFT: background-thread prefetch) |
+| `async_prefetch` | bool | `false` | Async GRPO on TRL's `AsyncGRPOTrainer` (also structured EBFT) |
 | `vllm_sync_interval` | int | `null` | Sync weights to vLLM every N optimizer steps |
 | `vllm_lora_sync` | bool | `false` | Sync only the LoRA adapter; makes `axolotl vllm-serve` enable LoRA |
 | `vllm_merge_check_interval` | int | `50` | Log how much of the LoRA update survives merged weight sync every N steps; `0` disables |
@@ -592,7 +590,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `token_budget` | int | `null` | Async GRPO: max tokens per rank's micro-batch (default: vLLM `max_model_len`; <= 0 packs `micro_batch_size` samples) |
 | `skip_zero_advantage_batches` | bool | `true` | Async GRPO: drop zero-advantage samples; data producer trainer: skip all-zero micro-batches |
 | `reward_num_workers` | int | `1` | Processes for synchronous reward functions |
-| `use_data_producer` | bool | `false` | Data producer trainer (EBFT, LoRA sync without async) |
+| `use_data_producer` | bool | `false` | Data producer trainer (LoRA sync without async) |
 | `prefetch_depth` | int | `null` | Data producer trainer: batches to prefetch ahead |
 | `streaming_partial_batch` | bool | `null` | Data producer trainer: score prompt groups incrementally |
 | `streaming_min_groups` | int | `null` | Data producer trainer: minimum groups per streaming chunk |

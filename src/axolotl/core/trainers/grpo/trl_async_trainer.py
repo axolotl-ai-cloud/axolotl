@@ -37,10 +37,15 @@ import torch
 from accelerate.utils import is_peft_model
 from datasets import Dataset
 from torch.distributed.tensor import DTensor
+from torch.utils.data import DataLoader
 from transformers import PreTrainedModel
 from trl.experimental.async_grpo import async_grpo_trainer as trl_async_module
 from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig
-from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer
+from trl.experimental.async_grpo.async_grpo_trainer import (
+    AsyncGRPOTrainer,
+    RolloutQueueDataset,
+    _EmptyIterableDataset,
+)
 from trl.experimental.async_grpo.packing import TREE_ATTENTION
 from trl.experimental.async_grpo.vllm_client import VLLMClient
 from trl.trainer.utils import add_fused_lm_head, get_config_model_id, nanmax, nanmin
@@ -50,6 +55,14 @@ from axolotl.core.trainers.grpo.trl_async_rollout import (
     REWARD_SCALINGS,
     AxolotlAsyncRolloutWorker,
     AxolotlRolloutLoop,
+)
+from axolotl.core.trainers.grpo.trl_async_scoring import (
+    GroupedQueue,
+    ScoringCollator,
+    StepPlanner,
+    TrainerScorer,
+    check_step_capacity,
+    score_step,
 )
 from axolotl.core.trainers.mixins import (
     CheckpointWriteRetryMixin,
@@ -383,6 +396,7 @@ class AxolotlAsyncGRPOTrainer(
     """TRL's ``AsyncGRPOTrainer`` adapted to axolotl and extended (see module doc)."""
 
     _tag_names = ["trl", "async-grpo", "axolotl"]
+    rollout_queue: Any
 
     def __init__(
         self,
@@ -399,12 +413,15 @@ class AxolotlAsyncGRPOTrainer(
         reward_processing_classes=None,
         rollout_func=None,
         data_collator=None,
+        trainer_scorers: list[TrainerScorer] | None = None,
         **kwargs,
     ):
         if args is None:
             raise ValueError(
                 "AxolotlAsyncGRPOTrainer requires an AxolotlAsyncGRPOConfig"
             )
+        self._trainer_scorers = list(trainer_scorers or [])
+        self._step_planner: StepPlanner | None = None
         if rollout_func is not None:
             raise ValueError(
                 "Async GRPO generates in TRL's rollout worker and does not take a "
@@ -428,6 +445,7 @@ class AxolotlAsyncGRPOTrainer(
             kwargs.get("rollout_worker")
             or kwargs.get("environment_factory")
             or loop_cls._provides_rollout_reward
+            or self._trainer_scorers
         ):
             # TRL would only notice once the rollout process starts.
             raise ValueError("Async GRPO needs reward functions (`trl.reward_funcs`).")
@@ -445,6 +463,18 @@ class AxolotlAsyncGRPOTrainer(
                     "Async GRPO needs conversational prompts (a list of messages in "
                     "the `prompt` column), e.g. from a `chat_template`-style dataset."
                 )
+        if self._trainer_scorers and args.reward_weights is not None:
+            num_columns = (
+                len(reward_funcs or [])
+                + int(loop_cls._provides_rollout_reward)
+                + len(self._trainer_scorers)
+            )
+            if len(args.reward_weights) != num_columns:
+                raise ValueError(
+                    f"reward_weights has {len(args.reward_weights)} entries but there "
+                    f"are {num_columns} reward sources (reward functions, the rollout "
+                    "loop's own reward, then the trainer-side scorers)"
+                )
 
         replacements: dict[str, Any] = {
             "AsyncRolloutWorker": functools.partial(
@@ -454,6 +484,7 @@ class AxolotlAsyncGRPOTrainer(
                 multi_objective_aggregation=args.multi_objective_aggregation,
                 scale_rewards=args.scale_rewards,
                 reward_num_workers=args.reward_num_workers,
+                trainer_scored=bool(self._trainer_scorers),
                 **(args.rollout_loop_kwargs or {}),
             )
         }
@@ -493,7 +524,12 @@ class AxolotlAsyncGRPOTrainer(
                 "`axolotl vllm-serve`)."
             )
 
-        if self.accelerator.is_main_process and (
+        if self._trainer_scorers:
+            # Advantages exist only once the trainer scored a step; `score_step`
+            # takes zero-advantage and truncated samples out of the loss instead.
+            if self.accelerator.is_main_process:
+                self.rollout_queue = GroupedQueue(self.rollout_queue)
+        elif self.accelerator.is_main_process and (
             args.skip_zero_advantage_batches or args.mask_truncated_completions
         ):
             stop_token_ids = None
@@ -508,6 +544,78 @@ class AxolotlAsyncGRPOTrainer(
                 skip_zero_advantage=args.skip_zero_advantage_batches,
                 stop_token_ids=stop_token_ids,
             )
+
+    def _stop_token_ids(self) -> frozenset[int]:
+        return frozenset([*self.eos_token_ids, self.processing_class.pad_token_id])
+
+    def get_train_dataloader(self) -> DataLoader:
+        if not self._trainer_scorers:
+            return super().get_train_dataloader()
+        # TRL's dataloader with the step planner in place of its batchers.
+        num_processes = self.accelerator.num_processes
+        steps = self.args.gradient_accumulation_steps
+        if self.accelerator.is_main_process:
+            dataset = RolloutQueueDataset(
+                rollout_queue=self.rollout_queue,
+                model_version_fn=lambda: self.model_version,
+                check_health_fn=self.rollout_worker.check_health,
+                stale_after_s=self.args.heartbeat_stale_after_s,
+                metrics=self._metrics["train"],
+                max_staleness=self.args.max_staleness,
+                report_to=self.args.report_to,
+            )
+            self._rollout_dataset = dataset
+            if self.args.token_budget is None:
+                self.vllm_client.wait_for_server_ready()
+                self.args.token_budget = self.vllm_client.get_max_model_len()
+                LOG.info(
+                    "token_budget unset; defaulting to vLLM max_model_len="
+                    f"{self.args.token_budget}"
+                )
+            check_step_capacity(
+                group_rows=self.args.num_generations,
+                steps=steps,
+                num_processes=num_processes,
+                token_budget=self.args.token_budget,
+                samples_per_row=self.args.per_device_train_batch_size,
+            )
+            dataset = self._step_planner = StepPlanner(
+                dataset,
+                num_processes=num_processes,
+                steps=steps,
+                token_budget=self.args.token_budget,
+                samples_per_row=self.args.per_device_train_batch_size,
+                scorers=self._trainer_scorers,
+                metrics=self._metrics["train"],
+                stop_token_ids=self._stop_token_ids()
+                if self.args.mask_truncated_completions
+                else None,
+            )
+        else:
+            dataset = _EmptyIterableDataset()
+        return self.accelerator.prepare(
+            DataLoader(
+                dataset,
+                batch_size=1,
+                collate_fn=ScoringCollator(
+                    self.processing_class.pad_token_id,
+                    num_processes,
+                    groups_trained=self._trained_groups,
+                    metrics=self._metrics["train"],
+                    token_budget=max(self.args.token_budget or 0, 0),
+                    scorers=self._trainer_scorers,
+                ),
+                num_workers=0,
+            )
+        )
+
+    def get_batch_samples(self, epoch_iterator, num_batches, device):
+        batch_samples, num_items_in_batch = super().get_batch_samples(
+            epoch_iterator, num_batches, device
+        )
+        if self._trainer_scorers and batch_samples:
+            score_step(self, batch_samples)
+        return batch_samples, num_items_in_batch
 
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None

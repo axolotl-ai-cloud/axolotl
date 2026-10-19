@@ -189,7 +189,7 @@ def _max_lora_rank(cfg) -> int | None:
 
 def _max_loras(cfg) -> int:
     trl = cfg.trl
-    async_grpo = bool(trl and trl.async_prefetch) and cfg.rl in ("grpo", "gdpo")
+    async_grpo = bool(trl and trl.async_prefetch) and cfg.rl in ("grpo", "gdpo", "ebft")
     if not async_grpo:
         return VllmServeArguments.max_loras
     from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig

@@ -241,6 +241,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = EBFTStrategy.get_training_args_class(self.cfg)
             training_args_kwargs.update(EBFTStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = EBFTStrategy.get_blocklist_args_kwargs(self.cfg)
+            if EBFTStrategy.uses_trl_async(self.cfg):
+                # As for async GRPO: GRPOConfig-only keys have no counterpart in
+                # TRL's AsyncGRPOConfig.
+                ebft_fields = {f.name for f in dataclasses.fields(training_args_cls)}
+                blocklist_args_kwargs.extend(
+                    key for key in training_args_kwargs if key not in ebft_fields
+                )
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 

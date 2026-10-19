@@ -24,7 +24,7 @@ class AxolotlGRPOConfig(AxolotlTrainingMixins, GRPOConfig):
 
 @dataclass
 class AxolotlDataProducerGRPOConfig(AxolotlTrainingMixins, FastAsyncGRPOConfig):
-    """Config for AxolotlDataProducerGRPOTrainer (data producer protocol, EBFT)."""
+    """Config for AxolotlDataProducerGRPOTrainer (data producer protocol)."""
 
     context_parallel_size: int | None = None
     vllm_merge_check_interval: int = DEFAULT_MERGE_CHECK_INTERVAL
