@@ -1,8 +1,10 @@
 """Pydantic models for PEFT-related configuration"""
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, PositiveInt, field_validator, model_validator
+
+from axolotl.integrations.mixlora.constants import MIXLORA_DEFAULTS
 
 VALUE_INDEPENDENT_LORA_INIT = (None, True, False, "gaussian")
 
@@ -56,6 +58,13 @@ class LoraConfig(BaseModel):
         json_schema_extra={
             "description": "If you already have a lora model trained that you want to load, put that here. This means after training, if you want to test the model, you should set this to the value of `output_dir`. Note that if you merge an adapter to the base model, a new subdirectory `merged` will be created under the `output_dir`."
         },
+    )
+    nvfp4_merge_aware: bool | None = Field(
+        default=None,
+        description=(
+            "Train supported NVFP4 LoRA targets against their merged quantized weights. "
+            "Defaults to enabled for supported backends; false opts out with a warning."
+        ),
     )
     lora_r: int | None = None
     lora_alpha: int | None = None
@@ -181,9 +190,9 @@ class LoraConfig(BaseModel):
 
     merge_lora: bool | None = None
     merge_method: Literal["legacy", "memory_efficient"] | None = Field(
-        default="memory_efficient",
+        default=None,
         json_schema_extra={
-            "description": "Method to use for LoRA merging. 'memory_efficient' (default) processes shards individually to reduce memory usage, 'legacy' loads the full model into memory."
+            "description": "Optional LoRA merge method. The generic default is 'memory_efficient'; model profiles can select a verified method when omitted."
         },
     )
 
@@ -277,6 +286,106 @@ class LoraConfig(BaseModel):
                 "and lora_ga read base_layer.weight, which fused expert parameters do "
                 "not have, so PEFT fails when building the adapter; eva and mica are "
                 "not supported for target parameters."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_mixlora(self):
+        if self.adapter == "mixlora":
+            if not self.lora_r:
+                raise ValueError("lora_r is required when using the mixlora adapter")
+            if not self.lora_alpha:
+                raise ValueError(
+                    "lora_alpha is required when using the mixlora adapter"
+                )
+        return self
+
+
+class MixLoraConfig(BaseModel):
+    """MixLoRA configuration subset for MoE-style LoRA finetuning"""
+
+    DEFAULT_NUM_EXPERTS: ClassVar[int] = int(MIXLORA_DEFAULTS["mixlora_num_experts"])
+    DEFAULT_TOP_K: ClassVar[int] = int(MIXLORA_DEFAULTS["mixlora_top_k"])
+    DEFAULT_ROUTER_AUX_LOSS_COEF: ClassVar[float] = MIXLORA_DEFAULTS[
+        "mixlora_router_aux_loss_coef"
+    ]
+    DEFAULT_ROUTER_INIT_RANGE: ClassVar[float] = MIXLORA_DEFAULTS[
+        "mixlora_router_init_range"
+    ]
+    DEFAULT_JITTER_NOISE: ClassVar[float] = MIXLORA_DEFAULTS["mixlora_jitter_noise"]
+
+    mixlora_num_experts: int | None = Field(
+        default=DEFAULT_NUM_EXPERTS,
+        ge=1,
+        json_schema_extra={
+            "description": "Number of LoRA experts per FFN layer for MixLoRA (default 8)"
+        },
+    )
+    mixlora_top_k: int | None = Field(
+        default=DEFAULT_TOP_K,
+        ge=1,
+        json_schema_extra={
+            "description": "Number of experts to route each token to (default 2)"
+        },
+    )
+    mixlora_router_aux_loss_coef: float | None = Field(
+        default=DEFAULT_ROUTER_AUX_LOSS_COEF,
+        ge=0.0,
+        json_schema_extra={
+            "description": "Coefficient for the auxiliary load balance loss (default 0.01)"
+        },
+    )
+    mixlora_router_init_range: float | None = Field(
+        default=DEFAULT_ROUTER_INIT_RANGE,
+        gt=0.0,
+        json_schema_extra={
+            "description": "Initialization range for router weights (default 0.02)"
+        },
+    )
+    mixlora_jitter_noise: float | None = Field(
+        default=DEFAULT_JITTER_NOISE,
+        ge=0.0,
+        json_schema_extra={
+            "description": "Noise added to router inputs during training for exploration (default 0.0)"
+        },
+    )
+    mixlora_expert_lora_r: int | None = Field(
+        default=None,
+        ge=1,
+        json_schema_extra={
+            "description": "Separate LoRA rank for MixLoRA experts. Defaults to lora_r if not set."
+        },
+    )
+    mixlora_expert_lora_alpha: int | None = Field(
+        default=None,
+        ge=1,
+        json_schema_extra={
+            "description": "Separate LoRA alpha for MixLoRA experts. Defaults to lora_alpha if not set."
+        },
+    )
+    mixlora_expert_lora_dropout: float | None = Field(
+        default=None,
+        ge=0.0,
+        json_schema_extra={
+            "description": "Separate LoRA dropout for MixLoRA experts. Defaults to lora_dropout if not set."
+        },
+    )
+
+    @model_validator(mode="after")
+    def validate_mixlora_top_k(self):
+        num_experts = (
+            self.mixlora_num_experts
+            if self.mixlora_num_experts is not None
+            else self.DEFAULT_NUM_EXPERTS
+        )
+        top_k = (
+            self.mixlora_top_k if self.mixlora_top_k is not None else self.DEFAULT_TOP_K
+        )
+
+        if top_k > num_experts:
+            raise ValueError(
+                f"mixlora_top_k ({top_k}) must be <= "
+                f"mixlora_num_experts ({num_experts})"
             )
         return self
 

@@ -7,11 +7,63 @@ from transformers.trainer_optimizer import is_optimizer_factory
 from transformers.utils import is_sagemaker_mp_enabled
 
 from axolotl.utils.logging import get_logger
+from axolotl.utils.optimizers.loraplus import apply_loraplus_lr_groups
 
 if is_sagemaker_mp_enabled():
     import smdistributed.modelparallel.torch as smp
 
 LOG = get_logger(__name__)
+
+
+def _is_embedding_param(name: str) -> bool:
+    """Whether a trainable parameter belongs in the ``embedding_lr`` group.
+
+    Covers LoRA embedding factors, full ``modules_to_save`` copies, anything under
+    ``embed_tokens`` / ``lm_head``, and PEFT trainable-token rows
+    (``<module>.token_adapter.trainable_tokens_delta``) on any module, so the rows
+    of an untied output head with a non-standard name (e.g. ``diffusion_head``) get
+    the same learning rate as the input-embedding rows.
+    """
+    return (
+        "lora_embedding_" in name
+        or name.endswith("modules_to_save.default.weight")
+        or any(embed_name in name for embed_name in ["embed_tokens", "lm_head"])
+        or "trainable_tokens_delta" in name.split(".")
+    )
+
+
+def _log_param_groups(groups: list[dict], opt_model) -> None:
+    names = {id(p): n for n, p in opt_model.named_parameters()}
+    for i, group in enumerate(groups):
+        params = group["params"]
+        kinds: dict[str, int] = {}
+        for p in params:
+            n = names.get(id(p), "?")
+            kind = (
+                "trainable_tokens_delta"
+                if "trainable_tokens_delta" in n
+                else "lora_embedding"
+                if "lora_embedding_" in n
+                else "modules_to_save"
+                if "modules_to_save" in n
+                else "lora"
+                if ".lora_" in n
+                else "other"
+            )
+            kinds[kind] = kinds.get(kind, 0) + 1
+        LOG.info(
+            "optimizer param group %d: lr=%.4g weight_decay=%s tensors=%d numel=%d kinds=%s",
+            i,
+            group.get("lr", float("nan")),
+            group.get("weight_decay"),
+            len(params),
+            sum(p.numel() for p in params),
+            kinds,
+        )
+        for p in params:
+            n = names.get(id(p), "?")
+            if "trainable_tokens_delta" in n or "lora_embedding_" in n:
+                LOG.info("  group %d: %s %s", i, n, tuple(p.shape))
 
 
 class OptimizerMixin(Trainer):
@@ -42,9 +94,7 @@ class OptimizerMixin(Trainer):
         for name, param in opt_model.named_parameters():
             if not param.requires_grad:
                 continue
-            if name.endswith("modules_to_save.default.weight") or any(
-                embed_name in name for embed_name in ["embed_tokens", "lm_head"]
-            ):
+            if _is_embedding_param(name):
                 params["embeddings"][name] = param
             elif name in decay_parameters:
                 lr_group_modules = [
@@ -112,7 +162,12 @@ class OptimizerMixin(Trainer):
             and self.args.lr_groups is None
             and self.optimizer_cls_and_kwargs is None
         ):
-            return super().create_optimizer(model=model)
+            optimizer = super().create_optimizer(model=model)
+            if hasattr(optimizer, "param_groups"):
+                _log_param_groups(
+                    optimizer.param_groups, self.model if model is None else model
+                )
+            return optimizer
 
         opt_model = self.model if model is None else model
 
@@ -139,7 +194,11 @@ class OptimizerMixin(Trainer):
                 opt_model, optimizer_kwargs
             )
 
-            if self.args.loraplus_lr_ratio is not None:
+            if (
+                self.args.loraplus_lr_ratio is not None
+                and self.args.embedding_lr_scale is None
+                and self.args.embedding_lr is None
+            ):
                 loraplus_lr_ratio = getattr(self.args, "loraplus_lr_ratio", None)
                 loraplus_lr_embedding = getattr(
                     self.args, "loraplus_lr_embedding", 1e-6
@@ -153,6 +212,23 @@ class OptimizerMixin(Trainer):
                     **optimizer_kwargs,
                 )
             else:
+                if self.args.loraplus_lr_ratio is not None:
+                    if getattr(
+                        self.args, "loraplus_lr_embedding", None
+                    ) is not None and any(
+                        "lora_embedding_" in name
+                        for name, _ in opt_model.named_parameters()
+                    ):
+                        LOG.warning(
+                            "loraplus_lr_embedding is ignored when embedding_lr or embedding_lr_scale is set; LoRA embedding factors use those learning rates instead."
+                        )
+                    optimizer_grouped_parameters = apply_loraplus_lr_groups(
+                        optimizer_grouped_parameters,
+                        opt_model.named_parameters(),
+                        default_lr=optimizer_kwargs["lr"],
+                        loraplus_lr_ratio=self.args.loraplus_lr_ratio,
+                        eligible=lambda _name, _param, _group: True,
+                    )
                 # Overwrite `params` in case it's created by `get_optimizer_cls_and_kwargs`
                 # e.g. for GaLore optimizer.
                 if "params" in optimizer_kwargs:
@@ -193,6 +269,9 @@ class OptimizerMixin(Trainer):
                         )
                         LOG.debug(f"bitsandbytes: will optimize {module} in fp32")
                 LOG.info(f"skipped: {skipped / 2**20}M params")
+
+        if self.optimizer is not None and hasattr(self.optimizer, "param_groups"):
+            _log_param_groups(self.optimizer.param_groups, opt_model)
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(self.optimizer)

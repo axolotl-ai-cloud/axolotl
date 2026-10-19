@@ -131,9 +131,9 @@ def patch_moe_quantization_on_load(cfg):
         from bitsandbytes.nn.parametrize import replace_parameter_4bit
 
         quant_type = getattr(cfg, "bnb_4bit_quant_type", None) or "nf4"
-        compress_statistics = getattr(cfg, "bnb_4bit_use_double_quant", None)
-        if compress_statistics is None:
-            compress_statistics = True
+        compress_statistics = (getattr(cfg, "bnb_config_kwargs", None) or {}).get(
+            "bnb_4bit_use_double_quant", True
+        )
 
         _moe_load_state["quant_type"] = quant_type
         _moe_load_state["compress_statistics"] = compress_statistics

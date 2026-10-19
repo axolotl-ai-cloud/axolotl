@@ -14,7 +14,7 @@
 #
 # Usage:
 #   # Terminal 1: Start vLLM server
-#   trl vllm-serve --model Qwen/Qwen2.5-1.5B-Instruct
+#   axolotl vllm-serve src/axolotl/integrations/nemo_gym/examples/nemo_gym_multi_turn.yaml
 #
 #   # Terminal 2: Train
 #   axolotl train src/axolotl/integrations/nemo_gym/examples/nemo_gym_multi_turn.yaml

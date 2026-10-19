@@ -7,8 +7,9 @@ attention outputs then cost ~zero GPU memory.
 
 Mutation caveat: an offloaded tensor is a snapshot at pack time; in-place
 mutation of the original after the save cannot be detected (torch's version
-guard only covers non-offloaded leaves). The known mutating case — PEFT's
-in-place adapter add on matmul outputs — is rejected at config validation.
+guard only covers non-offloaded leaves). The known mutating case — the fused
+LoRA kernels' in-place adapter add (``matmul_lora``'s ``addmm_``) on the base
+matmul output — is rejected at config validation.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import torch
+from torch.distributed._functional_collectives import AsyncCollectiveTensor
 from torch.utils._python_dispatch import TorchDispatchMode
 from torch.utils._pytree import tree_map
 from torch.utils.checkpoint import (
@@ -44,6 +46,8 @@ except ImportError:
 from axolotl.monkeypatch.selective_checkpointing import (
     SacPolicyState,
     build_sac_policy,
+    run_rule_diagnostics,
+    wrap_sac_contexts,
 )
 from axolotl.utils.logging import get_logger
 
@@ -65,6 +69,7 @@ class _OffloadRef:
     cpu_tensor: torch.Tensor | None = None
     gpu_tensor: torch.Tensor | None = None
     restore_event: torch.cuda.Event | None = None
+    pending: torch.Tensor | None = None
 
 
 @dataclass
@@ -100,6 +105,7 @@ class SacOffloadEngine:
         self._pending_cpu_buffers: list[
             tuple[_BufferKey, torch.Tensor, torch.cuda.Event]
         ] = []
+        self._deferred: dict[int, _OffloadRef] = {}
 
     @property
     def compute_stream(self):
@@ -164,7 +170,33 @@ class SacOffloadEngine:
             _, event = self._fwd_stash.pop(seq)
             compute.wait_event(event)
 
-    def pack(self, tensor: torch.Tensor, region_id: int) -> _OffloadRef:
+    def pack(
+        self, tensor: torch.Tensor, region_id: int, *, deferred: bool = False
+    ) -> _OffloadRef:
+        """Snapshot ``tensor`` to pinned memory.
+
+        ``deferred`` holds the copy until the tensor is consumed (or the forward region
+        ends): a functional collective's output is still being written by the
+        communication stream until its ``wait_tensor`` runs on the compute stream, and
+        that wait is not visible here when it fires inside the async wrapper subclass.
+        """
+        ref = _OffloadRef(
+            region_id=region_id,
+            device=tensor.device,
+            size=tensor.size(),
+            stride=tuple(tensor.stride()),
+            storage_offset=tensor.storage_offset(),
+            buffer_key=self._buffer_key(tensor),
+        )
+        self._regions[region_id].append(ref)
+        if deferred:
+            ref.pending = tensor
+            self._deferred[_storage_key(tensor)] = ref
+        else:
+            self._copy_out(ref, tensor)
+        return ref
+
+    def _copy_out(self, ref: _OffloadRef, tensor: torch.Tensor) -> None:
         self._pack_seq += 1
         self._reap_fwd_stash(self._pack_seq)
 
@@ -176,19 +208,40 @@ class SacOffloadEngine:
         event = self.s1.record_event()
         self._fwd_stash[self._pack_seq] = (tensor, event)
 
-        ref = _OffloadRef(
-            region_id=region_id,
-            device=tensor.device,
-            size=tensor.size(),
-            stride=tuple(tensor.stride()),
-            storage_offset=tensor.storage_offset(),
-            buffer_key=key,
-            cpu_tensor=cpu_tensor,
-        )
-        self._regions[region_id].append(ref)
+        ref.cpu_tensor = cpu_tensor
+        ref.buffer_key = key
         self.stats.offloaded_tensors += 1
         self.stats.offloaded_bytes += tensor.element_size() * tensor.nelement()
-        return ref
+
+    def has_deferred(self) -> bool:
+        return bool(self._deferred)
+
+    def _flush(self, ref: _OffloadRef) -> None:
+        tensor, ref.pending = ref.pending, None
+        assert tensor is not None
+        self._deferred.pop(_storage_key(tensor), None)
+        # idempotent: a no-op once the consumer already waited, and the only ordering
+        # guarantee otherwise
+        torch.ops._c10d_functional.wait_tensor(tensor)
+        self._copy_out(ref, tensor)
+
+    def flush_consumed(self, args: tuple, kwargs: dict) -> None:
+        """Copy out deferred outputs whose collective an op just waited on."""
+        for tensor in _iter_tensors(args, kwargs):
+            if isinstance(tensor, AsyncCollectiveTensor):
+                # a view op re-wraps without waiting
+                if not tensor.completed:
+                    continue
+                tensor = tensor.elem
+            if type(tensor) is not torch.Tensor:
+                continue
+            ref = self._deferred.get(_storage_key(tensor))
+            if ref is not None:
+                self._flush(ref)
+
+    def flush_deferred(self) -> None:
+        for ref in list(self._deferred.values()):
+            self._flush(ref)
 
     def _start_restore(self, ref: _OffloadRef) -> None:
         if ref.gpu_tensor is not None or ref.cpu_tensor is None:
@@ -210,6 +263,8 @@ class SacOffloadEngine:
             self._start_restore(ref)
 
     def restore(self, ref: _OffloadRef) -> torch.Tensor:
+        if ref.pending is not None:
+            self._flush(ref)
         if ref.gpu_tensor is None:
             self._start_restore(ref)
         compute = self.compute_stream
@@ -235,6 +290,19 @@ class SacOffloadEngine:
         self.stats.restored_tensors += 1
         return gpu_tensor
 
+    def release_region(self, region_id: int) -> None:
+        """Drop refs that the region's recompute ended without reading."""
+        for ref in self._regions.pop(region_id, []):
+            if ref.pending is not None:
+                self._deferred.pop(_storage_key(ref.pending), None)
+                ref.pending = None
+            if ref.cpu_tensor is None:
+                continue
+            event = ref.restore_event or self.s1.record_event()
+            self._pending_cpu_buffers.append((ref.buffer_key, ref.cpu_tensor, event))
+            ref.cpu_tensor = None
+            ref.gpu_tensor = None
+
     def log_once(self) -> None:
         if self.stats.logged or not self.stats.offloaded_tensors:
             return
@@ -247,19 +315,54 @@ class SacOffloadEngine:
         )
 
 
+def _storage_key(tensor: torch.Tensor) -> int:
+    return tensor.untyped_storage().data_ptr()
+
+
+def _iter_tensors(args: tuple, kwargs: dict):
+    for arg in (*args, *kwargs.values()):
+        if isinstance(arg, torch.Tensor):
+            yield arg
+        elif isinstance(arg, (list, tuple)):
+            for item in arg:
+                if isinstance(item, torch.Tensor):
+                    yield item
+
+
+def _is_async_collective(func) -> bool:
+    if getattr(func, "namespace", None) != "_c10d_functional":
+        return False
+    return func._schema.name != "_c10d_functional::wait_tensor"
+
+
 class _OffloadCachingMode(TorchDispatchMode):
+    supports_higher_order_operators = True
+
+    @classmethod
+    def ignore_compile_internals(cls):
+        return True
+
     def __init__(self, policy_fn, storage, engine, region_id):
         self.policy_fn = policy_fn
         self.storage = storage
         self.engine = engine
         self.region_id = region_id
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.engine.flush_deferred()
+
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         kwargs = {} if kwargs is None else kwargs
-        if func in SAC_IGNORED_OPS:
-            return func(*args, **kwargs)
-
         out = func(*args, **kwargs)
+        # a collective-issuing op (incl. the async wrapper) takes the raw output
+        # unwaited; only wait_tensor and ordinary consumers imply the wait ran
+        if self.engine.has_deferred() and not _is_async_collective(func):
+            self.engine.flush_consumed(args, kwargs)
+        if func in SAC_IGNORED_OPS:
+            return out
 
         if isinstance(func, torch._ops.HigherOrderOperator):
             any_ret_has_alias_info = False
@@ -275,11 +378,16 @@ class _OffloadCachingMode(TorchDispatchMode):
             policy = _policy_from_bool(policy)
 
         if policy in _SAVE_POLICIES:
+            deferred = _is_async_collective(func)
 
             def pack_leaf(leaf):
                 detached = _maybe_detach(leaf, any_ret_has_alias_info)
                 if torch.is_tensor(detached) and self.engine.should_offload(detached):
-                    return self.engine.pack(detached, self.region_id)
+                    return self.engine.pack(
+                        detached,
+                        self.region_id,
+                        deferred=deferred and type(detached) is torch.Tensor,
+                    )
                 return _VersionWrapper(detached)
 
             self.storage[func].append(tree_map(pack_leaf, out))
@@ -287,6 +395,12 @@ class _OffloadCachingMode(TorchDispatchMode):
 
 
 class _OffloadCachedMode(TorchDispatchMode):
+    supports_higher_order_operators = True
+
+    @classmethod
+    def ignore_compile_internals(cls):
+        return True
+
     def __init__(self, policy_fn, storage, engine, region_id):
         self.policy_fn = policy_fn
         self.storage = storage
@@ -301,6 +415,14 @@ class _OffloadCachedMode(TorchDispatchMode):
             self.engine.prefetch_region(self.region_id - 1)
         self.engine.log_once()
         return super().__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # early stop ends the replay before ops whose saved outputs backward
+        # never reads (e.g. a layer's last projection), so their refs linger
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.engine.release_region(self.region_id)
 
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         kwargs = {} if kwargs is None else kwargs
@@ -339,21 +461,33 @@ def build_sac_offload_context_fn(
     state: SacPolicyState | None = None,
     engine: SacOffloadEngine | None = None,
     recompute_layer_types: list[str] | None = None,
+    *,
+    save_modules: list[str] | None = None,
+    save_matmul_min_k: int | None = None,
 ) -> Callable:
     """Return a ``context_fn`` whose MUST_SAVE tensors are offloaded to CPU."""
     state = state or SacPolicyState()
     engine = engine or SacOffloadEngine()
     policy_fn = build_sac_policy(
-        save, state, save_sliding_window, recompute_layer_types
+        save,
+        state,
+        save_sliding_window,
+        recompute_layer_types,
+        save_modules=save_modules,
+        save_matmul_min_k=save_matmul_min_k,
     )
 
     def context_fn():
         region_id = state.regions_seen
         state.regions_seen += 1
+        run_rule_diagnostics(state)
         storage: dict[Any, list[Any]] = defaultdict(list)
-        return (
-            _OffloadCachingMode(policy_fn, storage, engine, region_id),
-            _OffloadCachedMode(policy_fn, storage, engine, region_id),
+        return wrap_sac_contexts(
+            (
+                _OffloadCachingMode(policy_fn, storage, engine, region_id),
+                _OffloadCachedMode(policy_fn, storage, engine, region_id),
+            ),
+            policy_fn,
         )
 
     return context_fn

@@ -28,17 +28,23 @@ jobs:
             pytorch: 2.13.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
-            is_latest: true
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.14"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
+            is_latest: true
+          - cuda: 132
+            cuda_version: 13.2.1
+            python_version: "3.14"
+            pytorch: 2.14.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
     runs-on: axolotl-gpu-runner
@@ -104,17 +110,23 @@ jobs:
             pytorch: 2.13.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
-            is_latest: true
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.14"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
+            is_latest: true
+          - cuda: 132
+            cuda_version: 13.2.1
+            python_version: "3.14"
+            pytorch: 2.14.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
     runs-on: axolotl-gpu-runner
@@ -160,6 +172,58 @@ jobs:
              ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-cloud:{0}', steps.metadata.outputs.version) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
 
+  build-axolotl-cloud-blackwell-uv:
+    needs: build-axolotl-cloud-uv
+    if: ${{ ! contains(github.event.head_commit.message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
+    # DeepEP is compiled from source for sm_100 here, so this runs on the self-hosted GPU runners
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.14.1
+            axolotl_extras:
+            platforms: "linux/amd64"
+    runs-on: axolotl-gpu-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Docker metadata
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: |
+            axolotlai/axolotl-cloud-uv
+          tags: |
+            type=ref,event=branch
+            type=pep440,pattern={{version}}
+      - name: Login to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: ${{ matrix.platforms }}
+          build-args: |
+            BASE_TAG=${{ github.ref_type == 'tag' && 'main' || github.ref_name }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+          file: ./docker/Dockerfile-cloud-blackwell-uv
+          push: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=registry,ref=axolotlai/axolotl-cloud-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}-blackwell
+          cache-to: type=inline
+          tags: |
+             axolotlai/axolotl-cloud-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}-blackwell
+             axolotlai/axolotl-cloud:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}-blackwell
+          labels: ${{ steps.metadata.outputs.labels }}
+
   build-axolotl-cloud-no-tmux-uv:
     needs: build-axolotl-uv
     if: ${{ ! contains(github.event.head_commit.message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
@@ -174,19 +238,19 @@ jobs:
             pytorch: 2.13.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
-            is_latest: true
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.14"
-            pytorch: 2.14.0
+            pytorch: 2.14.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
+            is_latest: true
     runs-on: axolotl-gpu-runner
     steps:
       - name: Checkout
