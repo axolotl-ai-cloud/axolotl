@@ -49,6 +49,20 @@ uv pip install kernels "nvidia-cutlass-dsl==4.6.0" "apache-tvm-ffi>=0.1.10,<0.2"
 
 **Note:** Blackwell support is in upstream beta. On Blackwell GPUs Axolotl automatically sets `USE_QUACK_GEMM=1` to enable the Blackwell kernels.
 
+**cutlass-dsl 4.8 with the hub kernel.** The `kernels-community/sonic-moe` `ep-support` build
+(90d2076) vendors quack 0.6.1, which calls `nvvm.mbarrier_arrive(None, addr, ...)` with the
+result type as the first positional argument. cutlass-dsl 4.8 made the result type the
+keyword-only `results=`, so that call raises `TypeError` at the first GEMM compile. When SonicMoE
+is enabled, Axolotl wraps `nvvm.mbarrier_arrive` to accept the old form. It does this only when
+the installed binding has the 4.8 signature, and all other calls pass through unchanged. It is a
+compatibility shim to drop once the hub build vendors quack 0.6.3 or later. A check of the
+vendored quack's other NVVM/LLVM call shapes against 4.6.0, 4.6.2 and 4.8.0 found no other
+mismatch.
+
+The cutlass-dsl version check reads the installed `quack-kernels` requirement. When a hub kernel
+has already loaded its own quack, the check logs both versions and skips that requirement,
+because the installed `quack-kernels` is not the quack that runs.
+
 
 ## How It Works
 

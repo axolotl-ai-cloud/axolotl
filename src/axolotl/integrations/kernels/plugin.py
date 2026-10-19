@@ -2,8 +2,11 @@
 # Copyright (c) Axolotl AI
 # Licensed under the Apache License, Version 2.0
 
+import functools
 import importlib
+import inspect
 import os
+import sys
 
 import torch
 
@@ -85,6 +88,60 @@ def _check_sonicmoe_gpu_compat():
             )
 
     _check_sonicmoe_cutlass_dsl()
+    _shim_nvvm_mbarrier_arrive()
+
+
+def _shim_nvvm_mbarrier_arrive():
+    """Accept the pre-4.8 ``nvvm.mbarrier_arrive(res, addr, ...)`` call form on cutlass-dsl 4.8+.
+
+    cutlass-dsl 4.8 moved the leading result type to the keyword-only ``results=``; the quack
+    0.6.1 vendored in kernels-community/sonic-moe still passes it positionally (``None`` = no
+    result) and fails to compile its cluster-scope barrier arrive.
+    """
+    try:
+        from cutlass._mlir.dialects import nvvm
+    except ImportError:
+        return
+    fn = getattr(nvvm, "mbarrier_arrive", None)
+    if fn is None or getattr(fn, "_axolotl_legacy_shim", False):
+        return
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return
+    positional = [
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    if len(positional) != 1:
+        return
+
+    @functools.wraps(fn)
+    def mbarrier_arrive(*args, **kwargs):
+        if len(args) == 2:
+            result_type, args = args[0], args[1:]
+            if result_type is not None:
+                kwargs.setdefault("results", [result_type])
+        return fn(*args, **kwargs)
+
+    mbarrier_arrive._axolotl_legacy_shim = True  # type: ignore[attr-defined]
+    nvvm.mbarrier_arrive = mbarrier_arrive
+    LOG.info(
+        "cutlass-dsl nvvm.mbarrier_arrive: legacy positional result-type form shimmed"
+    )
+
+
+def _loaded_vendored_quack() -> dict[str, str]:
+    """``{module: __version__}`` for quack copies bundled in a loaded hub kernel."""
+    found = {}
+    for name, module in list(sys.modules.items()):
+        if module is None or name == "quack" or not name.endswith(".quack"):
+            continue
+        if name.startswith("torch."):
+            continue
+        version = getattr(module, "__version__", None)
+        if version is not None:
+            found[name] = str(version)
+    return found
 
 
 def _check_sonicmoe_cutlass_dsl():
@@ -116,8 +173,27 @@ def _check_sonicmoe_cutlass_dsl():
         if requirement.name == "nvidia-cutlass-dsl" and requirement.marker is None:
             cutlass_spec = requirement.specifier
             break
+    vendored = _loaded_vendored_quack()
+    if vendored:
+        # the installed quack-kernels is not the quack that runs: its cutlass pin says nothing
+        LOG.info(
+            "SonicMoE runs a vendored quack (%s) on nvidia-cutlass-dsl %s; installed "
+            "quack-kernels %s (requires nvidia-cutlass-dsl%s) is not the one in use",
+            ", ".join(f"{name} {v}" for name, v in vendored.items()),
+            cutlass_dsl_version,
+            quack_version,
+            cutlass_spec or "",
+        )
+    elif quack_version is not None:
+        LOG.info(
+            "SonicMoE: quack-kernels %s, nvidia-cutlass-dsl %s (a hub sonic-moe kernel "
+            "may load its own vendored quack later)",
+            quack_version,
+            cutlass_dsl_version,
+        )
     if (
-        cutlass_dsl_version is not None
+        not vendored
+        and cutlass_dsl_version is not None
         and cutlass_spec is not None
         and not cutlass_spec.contains(cutlass_dsl_version, prereleases=True)
     ):
