@@ -159,7 +159,7 @@ def _same(value: Any, wanted: Any) -> bool:
 def _quack_matches(match: dict[str, Any] | None, args: dict[str, Any]) -> bool:
     """``arg``: a scalar argument (a list = any of); ``arg.shape``: a tensor's full shape
     (``null`` = any size); ``arg.dimN``: one dimension (negative N counts from the end; a list
-    = any of)."""
+    = any of). A scalar or dimension can also take a range such as ``{ge: 262144}``."""
     for name, wanted in (match or {}).items():
         arg, _, attr = name.partition(".")
         if arg not in args:
@@ -180,14 +180,36 @@ def _quack_matches(match: dict[str, Any] | None, args: dict[str, Any]) -> bool:
             if shape is None or not -len(shape) <= dim < len(shape):
                 return False
             value = shape[dim]
+        if isinstance(wanted, dict):
+            if not _in_range(value, wanted):
+                return False
+            continue
         allowed = wanted if isinstance(wanted, (list, tuple, set)) else (wanted,)
         if not any(_same(value, a) for a in allowed):
             return False
     return True
 
 
+_RANGE_OPS = {
+    "ge": lambda v, b: v >= b,
+    "gt": lambda v, b: v > b,
+    "le": lambda v, b: v <= b,
+    "lt": lambda v, b: v < b,
+}
+
+
+def _in_range(value: Any, bounds: dict[str, Any]) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    return all(_RANGE_OPS[op](value, bound) for op, bound in bounds.items())
+
+
 def _validate_quack_match(profile: dict[str, Any]) -> None:
-    for name in profile.get("match") or {}:
+    for name, wanted in (profile.get("match") or {}).items():
+        if isinstance(wanted, dict) and (not wanted or set(wanted) - set(_RANGE_OPS)):
+            raise ValueError(
+                f"quack autotune profile match {name!r}: a range takes ge, gt, le or lt"
+            )
         _, _, attr = name.partition(".")
         if not attr or attr == "shape":
             continue
