@@ -460,6 +460,24 @@ def test_readme_large_bucket_pins_then_allow_filter(kernels):
         assert len(tuner.benched) == count
 
 
+def test_readme_gemm_tuned_pin_skips_weight_grads_and_other_weights(kernels):
+    autotune_profiles.apply_autotune_profiles(
+        _readme_pin_profiles() + _readme_allow_profiles()
+    )
+    tuner = kernels.gemm_tuned
+    tuner.arg_names = ["A", "B", "out", "dynamic_scheduler"]
+    calls = [
+        ((5120, 1048576), (1048576, 2560)),  # weight gradient: A is [hidden, rows]
+        ((1048576, 5120), (32, 5120, 5120)),  # same rows, another weight
+    ]
+    for a_shape, b_shape in calls:
+        tuner.benched.clear()
+        A = torch.empty(a_shape, device="meta")
+        B = torch.empty(b_shape, device="meta")
+        tuner(A=A, B=B, out=torch.empty((1, 1), device="meta"), dynamic_scheduler=False)
+        assert len(tuner.benched) == 42
+
+
 def test_range_match_bounds(kernels):
     tuner = kernels.gemm_tuned
     autotune_profiles.apply_autotune_profiles(
