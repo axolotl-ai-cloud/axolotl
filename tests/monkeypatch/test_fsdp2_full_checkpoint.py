@@ -10,10 +10,8 @@ import pytest
 from transformers.testing_utils import get_torch_dist_unique_port
 
 
-@pytest.mark.distributed_cpu
-def test_full_checkpoint_ownership_and_next_update(tmp_path):
-    pytest.importorskip("torchao.optim")
-    worker = Path(__file__).with_name("_fsdp2_full_checkpoint.py")
+def _run_worker(name, tmp_path):
+    worker = Path(__file__).with_name(name)
     process = subprocess.Popen(
         [
             sys.executable,
@@ -35,8 +33,15 @@ def test_full_checkpoint_ownership_and_next_update(tmp_path):
     except subprocess.TimeoutExpired:
         os.killpg(process.pid, signal.SIGKILL)
         stdout, stderr = process.communicate()
-        pytest.fail("Distributed checkpoint test timed out:\n" + stdout + stderr)
+        pytest.fail(f"Distributed worker {name} timed out:\n" + stdout + stderr)
     assert process.returncode == 0, stdout + stderr
+    return stdout
+
+
+@pytest.mark.distributed_cpu
+def test_full_checkpoint_ownership_and_next_update(tmp_path):
+    pytest.importorskip("torchao.optim")
+    stdout = _run_worker("_fsdp2_full_checkpoint.py", tmp_path)
     for case in (
         "ep-full-parameter-save-route",
         "native-trainer-non-peft-full-checkpoint",
@@ -167,3 +172,76 @@ def test_transfer_to_self_skips_the_collective(rank):
         assert out.data_ptr() != value.data_ptr()
     else:
         assert out is None
+
+
+@pytest.mark.distributed_cpu
+def test_slice_assembly_matches_index_assembly(tmp_path):
+    stdout = _run_worker("_fsdp2_assembly_worker.py", tmp_path)
+    for case in (
+        "shard0-uneven",
+        "shard1-uneven",
+        "shard0-empty-ranks",
+        "shard0-bf16",
+        "2d-shard0-shard1",
+        "2d-shard0-shard0",
+        "kind-a",
+        "kind-a-uneven",
+        "kind-b-ep4",
+        "kind-b-dp-uneven",
+        "kind-expert",
+        "strided-index-fallback",
+        "strided-contiguous-rows",
+        "gap-rejected",
+        "overlap-rejected",
+    ):
+        assert f"PASS assembly-{case}" in stdout, stdout
+
+
+@pytest.mark.parametrize(
+    "shape, start, stop",
+    [
+        ((5, 7), 0, 35),
+        ((5, 7), 3, 4),
+        ((5, 7), 3, 30),
+        ((5, 7), 7, 21),
+        ((3, 4, 5), 6, 53),
+        ((3, 4, 5), 21, 39),
+        ((), 0, 1),
+        ((9,), 2, 7),
+    ],
+)
+def test_write_fills_a_flat_range_of_a_strided_view(shape, start, stop):
+    import torch
+
+    from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import _write
+
+    base = torch.zeros((2, *shape, 3))
+    out = base[1, ..., 2]
+    expected = torch.zeros(shape).reshape(-1)
+    data = torch.arange(1.0, stop - start + 1)
+    expected[start:stop] = data
+    _write(out, start, data)
+    assert torch.equal(out.reshape(-1), expected)
+    assert base[0].abs().sum() == 0 and base[1, ..., :2].abs().sum() == 0
+
+
+def test_transfer_writes_into_the_destination_view():
+    from unittest.mock import patch
+
+    import torch
+
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint
+
+    full = torch.zeros(6, 8)
+    destination = full[1:4, 2:7]
+    value = torch.arange(15.0).reshape(3, 5)
+    with (
+        patch.object(fsdp2_checkpoint.dist, "get_rank", return_value=0),
+        patch.object(fsdp2_checkpoint, "_TRANSFER_BYTES", 16),
+    ):
+        out = fsdp2_checkpoint._transfer(
+            value, [3, 5], torch.float32, source=0, out=destination
+        )
+    assert out is destination
+    assert torch.equal(full[1:4, 2:7], value)
+    assert full.sum() == value.sum()

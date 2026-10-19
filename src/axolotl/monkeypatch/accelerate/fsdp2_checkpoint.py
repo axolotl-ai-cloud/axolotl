@@ -164,56 +164,249 @@ def _transfer_device():
     return torch.device("cpu")
 
 
-def _transfer(value, shape, dtype, source, receiver=0):
+_STAGING: dict = {}
+
+
+def _staging(dtype, count):
+    buffer = _STAGING.get(dtype)
+    if buffer is None or buffer.numel() < count:
+        buffer = _STAGING[dtype] = torch.empty(count, dtype=dtype, pin_memory=True)
+    return buffer[:count]
+
+
+def _segments(shape, start, stop):
+    """Indices of the row-major boxes covering flat elements ``[start, stop)`` of ``shape``."""
+    if start >= stop:
+        return
+    if not shape:
+        yield ()
+        return
+    inner = math.prod(shape[1:])
+    row, column = divmod(start, inner)
+    end_row, end_column = divmod(stop, inner)
+    if row == end_row:
+        for index in _segments(shape[1:], column, end_column):
+            yield (row, *index)
+        return
+    if column:
+        for index in _segments(shape[1:], column, inner):
+            yield (row, *index)
+        row += 1
+    if end_row > row:
+        yield (slice(row, end_row),)
+    if end_column:
+        for index in _segments(shape[1:], 0, end_column):
+            yield (end_row, *index)
+
+
+def _write(out, start, data):
+    offset = 0
+    for index in _segments(list(out.shape), start, start + data.numel()):
+        view = out[index]
+        view.copy_(data[offset : offset + view.numel()].view(view.shape))
+        offset += view.numel()
+
+
+def _transfer(value, shape, dtype, source, receiver=0, out=None):
+    """Send ``source``'s tensor to ``receiver``'s CPU, into ``out`` (any strided view) when given."""
     count = math.prod(shape)
-    if source == receiver:
-        if dist.get_rank() != receiver:
-            return None
-        return value.detach().reshape(shape).to("cpu", dtype=dtype, copy=True)
-    output = torch.empty(shape, dtype=dtype) if dist.get_rank() == receiver else None
-    device = _transfer_device()
+    rank = dist.get_rank()
+    if source == receiver and rank != receiver:
+        return None
+    if rank == receiver and out is None:
+        out = torch.empty(shape, dtype=dtype)
+    flat = value.detach().reshape(-1) if rank == source else None
     chunk_size = max(1, _TRANSFER_BYTES // torch.empty((), dtype=dtype).element_size())
+    buffer = None
     # Keep GPU staging bounded even when the complete checkpoint lives on CPU.
     for start in range(0, count, chunk_size):
         length = min(chunk_size, count - start)
-        buffer = torch.empty(length, dtype=dtype, device=device)
-        if dist.get_rank() == source:
-            buffer.copy_(value.detach().reshape(-1)[start : start + length])
-        dist.broadcast(buffer, src=source)
-        if output is not None:
-            output.reshape(-1)[start : start + length].copy_(buffer)
-    return output
+        if source == receiver:
+            piece = flat[start : start + length]
+        else:
+            if buffer is None:
+                buffer = torch.empty(
+                    min(chunk_size, count), dtype=dtype, device=_transfer_device()
+                )
+            piece = buffer[:length]
+            if rank == source:
+                piece.copy_(flat[start : start + length])
+            dist.broadcast(piece, src=source)
+        if rank != receiver:
+            continue
+        if piece.device.type != "cpu":
+            staged = _staging(dtype, length)
+            staged.copy_(piece, non_blocking=True)
+            torch.cuda.current_stream(piece.device).synchronize()
+            piece = staged
+        _write(out, start, piece)
+    return out if rank == receiver else None
 
 
 def _quantized(value):
     return type(_local(value)).__name__ == "OptimState8bit"
 
 
-def _gather_tensor(value, owner=None):
+def _tensor_record(value, owner):
     local = _local(value)
-    error = None
-    try:
-        layout = _layout(value, owner)
-    except ValueError as exc:
-        layout, error = None, str(exc)
-    _check_errors(error)
-    quantized = _quantized(value)
-    record = dict(layout, dtype=str(local.dtype), quantized=quantized)
-    if quantized:
+    record = dict(
+        _layout(value, owner), dtype=str(local.dtype), quantized=_quantized(value)
+    )
+    if record["quantized"]:
         record.update(block_size=local.block_size, signed=local.signed)
-    records = [None] * dist.get_world_size()
-    dist.all_gather_object(records, record)
+    return record
+
+
+def _gather_records(items):
+    """Every rank's layout of each ``(value, owner)`` in one collective; raises on every rank
+    when any rank failed."""
+    records, error = None, None
+    try:
+        records = [_tensor_record(value, owner) for value, owner in items]
+    except ValueError as exc:
+        error = str(exc)
+    gathered = [None] * dist.get_world_size()
+    dist.all_gather_object(gathered, (error, records))
+    errors = [error for error, _ in gathered if error]
+    if errors:
+        raise ValueError("Full checkpoint failed: " + "; ".join(errors))
+    return [[ranks[i] for _, ranks in gathered] for i in range(len(items))]
+
+
+def _box(info):
+    """``(view shape, starts, lengths)`` of the dense box a chunk fills, or ``None`` when its
+    coordinates do not form one (``_StridedShard``)."""
+    axes = _coordinates(info)
+    shape = list(info["shape"])
+    owner = info["owner"]
+    if owner is not None and owner["kind"] == "B":
+        # experts are innermost in the [out, r * E] columns: a box of [out, r, E]
+        total, local = owner["total"], owner["local"]
+        columns = axes[1]
+        if len(shape) < 2 or shape[1] % total or columns.numel() % local:
+            return None
+        rows = columns.numel() // local
+        row, expert = divmod(int(columns[0]), total) if columns.numel() else (0, 0)
+        rows_axis = torch.arange(row, row + rows)
+        experts_axis = torch.arange(expert, expert + local)
+        if not torch.equal(
+            columns, (rows_axis[:, None] * total + experts_axis).flatten()
+        ):
+            return None
+        shape[1:2] = [shape[1] // total, total]
+        axes[1:2] = [rows_axis, experts_axis]
+    starts = []
+    for axis in axes:
+        start = int(axis[0]) if axis.numel() else 0
+        if not torch.equal(axis, torch.arange(start, start + axis.numel())):
+            return None
+        starts.append(start)
+    return shape, starts, [axis.numel() for axis in axes]
+
+
+def _boxes(chunks):
+    """Shared view shape and per-chunk ``(starts, lengths)``, or ``None`` to fall back to index
+    assembly; raises unless the boxes tile the tensor exactly once."""
+    boxes = [_box(info) for _, info in chunks]
+    if any(box is None or box[0] != boxes[0][0] for box in boxes):
+        return None
+    view = boxes[0][0]
+    filled = [box for box in boxes if math.prod(box[2])]
+    if any(
+        start < 0 or start + length > size
+        for _, starts, lengths in filled
+        for start, length, size in zip(starts, lengths, view, strict=True)
+    ):
+        raise ValueError("Full checkpoint failed: Checkpoint shard exceeds the tensor")
+    for i, (_, starts, lengths) in enumerate(filled):
+        for _, other_starts, other_lengths in filled[i + 1 :]:
+            if all(
+                a < b + m and b < a + n
+                for a, n, b, m in zip(
+                    starts, lengths, other_starts, other_lengths, strict=True
+                )
+            ):
+                raise ValueError("Full checkpoint failed: Checkpoint shards overlap")
+    if sum(math.prod(lengths) for _, _, lengths in filled) != math.prod(view):
+        raise ValueError(
+            "Full checkpoint failed: Checkpoint does not cover every expert and shard"
+        )
+    return view, [(starts, lengths) for _, starts, lengths in boxes]
+
+
+def _gather_tensor(value, owner=None, records=None):
+    if records is None:
+        (records,) = _gather_records([(value, owner)])
+    local = _local(value)
+    rank = dist.get_rank()
     chunks, seen = [], set()
-    for rank, info in enumerate(records):
+    for source, info in enumerate(records):
         identity = repr(
             (info["owner"], info["offset"], info["local_shape"], info.get("axes"))
         )
-        if identity in seen:
+        if identity not in seen:
+            seen.add(identity)
+            chunks.append((source, info))
+    shape = records[0]["shape"]
+    # records are identical on every rank, so every rank raises the same errors without a collective
+    if any(info["shape"] != shape for _, info in chunks):
+        raise ValueError(
+            "Full checkpoint failed: Checkpoint shards disagree on the global tensor shape"
+        )
+    if any(info["quantized"] for _, info in chunks):
+        return _gather_quantized(local, chunks, shape)
+    plan = _boxes(chunks)
+    full = torch.empty(shape, dtype=_dtype(records[0]["dtype"])) if rank == 0 else None
+    if plan is None:
+        return _gather_indexed(local, chunks, full)
+    view, boxes = plan
+    view = full.view(view) if rank == 0 else None
+    for (source, info), (starts, lengths) in zip(chunks, boxes, strict=True):
+        if not math.prod(lengths):
             continue
-        seen.add(identity)
+        destination = None
+        if rank == 0:
+            destination = view
+            for dim, (start, length) in enumerate(zip(starts, lengths, strict=True)):
+                destination = destination.narrow(dim, start, length)
+        _transfer(
+            local if rank == source else None,
+            info["local_shape"],
+            _dtype(info["dtype"]),
+            source,
+            out=destination,
+        )
+    return full
+
+
+def _gather_indexed(local, chunks, full):
+    rank = dist.get_rank()
+    covered = torch.zeros(full.shape, dtype=torch.bool) if rank == 0 else None
+    for source, info in chunks:
+        tensor = _transfer(
+            local if rank == source else None,
+            info["local_shape"],
+            _dtype(info["dtype"]),
+            source,
+        )
+        if rank == 0:
+            indices = _index(_coordinates(info))
+            full[indices] = tensor
+            covered[indices] = True
+    error = None
+    if rank == 0 and not covered.all():
+        error = "Checkpoint does not cover every expert and shard"
+    _check_errors(error)
+    return full
+
+
+def _gather_quantized(local, chunks, shape):
+    rank = dist.get_rank()
+    gathered = []
+    for source, info in chunks:
         chunk = dict(info)
         if info["quantized"]:
-            for attr, shape, dtype in (
+            for attr, size, dtype in (
                 ("codes", info["local_shape"], torch.uint8),
                 (
                     "scale",
@@ -223,37 +416,22 @@ def _gather_tensor(value, owner=None):
                 ("qmap", [256], torch.float32),
             ):
                 chunk[attr] = _transfer(
-                    getattr(local, attr) if dist.get_rank() == rank else None,
-                    shape,
+                    getattr(local, attr) if rank == source else None,
+                    size,
                     dtype,
-                    rank,
+                    source,
                 )
         else:
             chunk["tensor"] = _transfer(
-                local if dist.get_rank() == rank else None,
+                local if rank == source else None,
                 info["local_shape"],
                 _dtype(info["dtype"]),
-                rank,
+                source,
             )
-        if dist.get_rank() == 0:
-            chunks.append(chunk)
-    full, error = None, None
-    if dist.get_rank() == 0:
-        if any(c["shape"] != records[0]["shape"] for c in chunks):
-            error = "Checkpoint shards disagree on the global tensor shape"
-        elif any(c["quantized"] for c in chunks):
-            full = {_QUANTIZED: 1, "shape": records[0]["shape"], "chunks": chunks}
-        else:
-            full = torch.empty(records[0]["shape"], dtype=local.dtype)
-            covered = torch.zeros(records[0]["shape"], dtype=torch.bool)
-            for chunk in chunks:
-                indices = _index(_coordinates(chunk))
-                full[indices] = chunk["tensor"]
-                covered[indices] = True
-            if not covered.all():
-                error = "Checkpoint does not cover every expert and shard"
-    _check_errors(error)
-    return full
+        gathered.append(chunk)
+    if rank != 0:
+        return None
+    return {_QUANTIZED: 1, "shape": shape, "chunks": gathered}
 
 
 def _gather_value(value, owner):
@@ -417,8 +595,23 @@ def full_model_state(model, adapter_only=False):
         _check_errors(error)
         values = fsdp2_canonicalize_names(dict(model.state_dict()))
     owners = expert_ownership(model)
+    tensors = [
+        name
+        for name, value in values.items()
+        if torch.is_tensor(value) and value.ndim > 0
+    ]
+    records = dict(
+        zip(
+            tensors,
+            _gather_records([(values[name], owners.get(name)) for name in tensors]),
+            strict=True,
+        )
+    )
     state = {
-        name: _gather_value(value, owners.get(name)) for name, value in values.items()
+        name: _gather_tensor(value, owners.get(name), records[name])
+        if name in records
+        else _gather_value(value, owners.get(name))
+        for name, value in values.items()
     }
     return state if dist.get_rank() == 0 else {}
 
