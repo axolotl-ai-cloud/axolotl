@@ -20,6 +20,7 @@ from trl.experimental.async_grpo.async_rollout_worker import (
     AsyncRolloutWorker,
     RolloutGroup,
     RolloutSample,
+    TrainingSequence,
     _AsyncRolloutLoop,
 )
 from trl.trainer.utils import is_async_callable, print_prompt_completions_sample
@@ -31,6 +32,9 @@ LOG = get_logger(__name__)
 
 AGGREGATIONS = ("sum_then_normalize", "normalize_then_sum")
 REWARD_SCALINGS = ("group", "none")
+# Key in `RolloutSample.metrics` carrying what the trainer needs to score a sample whose
+# advantage is still pending; the trainer pops it before metrics are logged.
+SCORE_PAYLOAD = "_trainer_score"
 
 
 def compute_group_advantages(
@@ -167,9 +171,19 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
     Subclasses that score each rollout themselves set ``_provides_rollout_reward``
     and return the reward from ``_generate_one``; it is scored as one more reward
     column, named ``_rollout_reward_name``, after the reward functions.
+
+    With ``trainer_scored``, the trainer adds reward columns that need the GPU, so
+    this process scores its own columns but leaves the advantage pending: samples
+    carry a NaN advantage and a payload under ``SCORE_PAYLOAD`` (the group's row
+    count, the columns scored here and ``_trainer_score_payload``).
     """
 
+    _provides_rollout_reward: bool = False
     _rollout_reward_name = "rollout_reward"
+    # Whether completions go through the chat template's response parser, which reads
+    # tool calls out of them. Loops that decode text themselves, or get messages from
+    # an agent, set this to False and need no parser.
+    _parses_responses = True
 
     def __init__(
         self,
@@ -178,13 +192,23 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
         multi_objective_aggregation: str = "sum_then_normalize",
         scale_rewards: str = "group",
         reward_num_workers: int = 1,
+        trainer_scored: bool = False,
         **kwargs,
     ):
+        self._trainer_scored = trainer_scored
+        provides_rollout_reward = self._provides_rollout_reward
+        if trainer_scored:
+            # TRL refuses a loop without a reward source; the trainer is one here.
+            self._provides_rollout_reward = True
         tokenizer = kwargs["processing_class"]
+        has_parser = (
+            getattr(tokenizer, "response_template", None) is not None
+            or getattr(tokenizer, "response_schema", None) is not None
+        )
         decode_responses = False
         if (
-            getattr(tokenizer, "response_template", None) is None
-            and getattr(tokenizer, "response_schema", None) is None
+            not has_parser
+            and self._parses_responses
             and not (kwargs.get("tools") or kwargs.get("environment_factory"))
         ):
             # TRL ships response parsers, which read tool calls out of completions, for
@@ -192,14 +216,20 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
             # tools, the decoded completion is the whole assistant message.
             try:
                 kwargs["processing_class"] = add_response_schema(tokenizer)
+                has_parser = True
             except ValueError:
                 decode_responses = True
-                tokenizer.response_template = ""  # passes TRL's check for a parser
+        skip_parser = not has_parser and (
+            decode_responses or not self._parses_responses
+        )
+        if skip_parser:
+            tokenizer.response_template = ""  # passes TRL's check for a parser
         try:
             super().__init__(**kwargs)
         finally:
-            if decode_responses:
+            if skip_parser:
                 tokenizer.response_template = None
+        self._provides_rollout_reward = provides_rollout_reward
         if decode_responses:
             tokenizer.parse_response = functools.partial(_decode_as_message, tokenizer)
             LOG.info(
@@ -208,6 +238,14 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
             )
         if self._provides_rollout_reward:
             self.reward_func_names.append(self._rollout_reward_name)
+        # `_generate_one` gets only the prompt; subclasses that need the whole row
+        # look it up here by group.
+        self._group_rows: dict[int, dict] = {}
+        if trainer_scored:
+            # The trainer owns the weights and advantages, and logs completions once
+            # they are scored.
+            reward_weights = None
+            self.log_completions = False
         num_columns = len(self.reward_func_names)
         if reward_weights is None:
             reward_weights = [1.0] * num_columns
@@ -238,6 +276,17 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
         finally:
             if self._reward_pool is not None:
                 self._reward_pool.close()
+
+    def _repeat_iterator(self):
+        for group_id, row in super()._repeat_iterator():
+            self._group_rows[group_id] = row
+            yield group_id, row
+
+    def _trainer_score_payload(
+        self, group: RolloutGroup, index: int, sequence: TrainingSequence
+    ) -> dict[str, Any]:
+        """What the trainer's scorers need for one training row of rollout ``index``."""
+        return {}
 
     async def _call_reward_func(self, func_index: int, kwargs: dict[str, Any]):
         func = self.reward_funcs[func_index]
@@ -334,6 +383,7 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
                 )
 
     async def _score_group(self, group: RolloutGroup) -> list[RolloutSample]:
+        self._group_rows.pop(group.group_id, None)
         kwargs = dict(
             completions=group.completions,
             prompts=group.prompts,
@@ -361,7 +411,9 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
         rewards_per_func = np.array(
             [[np.nan if r is None else r for r in column] for column in all_rewards],
             dtype=float,
-        )
+        ).reshape(len(all_rewards), len(group.completions))
+        if self._trainer_scored:
+            return self._pending_samples(group, rewards_per_func)
         rewards, advantages = compute_group_advantages(
             rewards_per_func,
             self._reward_weights,
@@ -371,21 +423,7 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
         scored_rewards = rewards[~np.isnan(rewards)]
         reward_std = float(scored_rewards.std()) if scored_rewards.size else np.nan
 
-        if sum(group.tool_call_counts) > 0:
-            tool_metrics = [
-                {
-                    "tools/call_frequency": float(n_calls),
-                    "tools/failure_frequency": (n_failures / n_calls)
-                    if n_calls > 0
-                    else 0.0,
-                }
-                for n_calls, n_failures in zip(
-                    group.tool_call_counts, group.tool_failure_counts, strict=True
-                )
-            ]
-        else:
-            tool_metrics = [{}] * len(group.completions)
-
+        tool_metrics = self._tool_metrics(group)
         samples = []
         for i, (prompt, completion, sequences, advantage, reward, extra) in enumerate(
             zip(
@@ -411,19 +449,73 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
             }
             for seq in sequences:
                 samples.append(
-                    RolloutSample(
-                        prompt=prompt,
-                        completion=completion,
-                        input_ids=np.asarray(seq.input_ids, dtype=np.int64),
-                        completion_mask=np.asarray(seq.completion_mask, dtype=np.int64),
-                        old_log_probs=np.asarray(seq.old_log_probs, dtype=np.float32),
-                        advantage=float(advantage),
-                        model_version=group.model_version,
-                        group_id=group.group_id,
-                        metrics=dict(metrics),
+                    self._make_sample(
+                        group, prompt, completion, seq, advantage, metrics
                     )
                 )
         return samples
+
+    def _pending_samples(
+        self, group: RolloutGroup, rewards_per_func: np.ndarray
+    ) -> list[RolloutSample]:
+        tool_metrics = self._tool_metrics(group)
+        group_rows = sum(len(sequences) for sequences in group.completions_sequences)
+        samples = []
+        for i, (prompt, completion, sequences, extra) in enumerate(
+            zip(
+                group.prompts,
+                group.completions,
+                group.completions_sequences,
+                tool_metrics,
+                strict=True,
+            )
+        ):
+            for seq in sequences:
+                payload = {
+                    "group_rows": group_rows,
+                    "reward_names": list(self.reward_func_names),
+                    "rewards": rewards_per_func[:, i].tolist(),
+                    **self._trainer_score_payload(group, i, seq),
+                }
+                metrics = {**extra, SCORE_PAYLOAD: payload}
+                samples.append(
+                    self._make_sample(
+                        group, prompt, completion, seq, float("nan"), metrics
+                    )
+                )
+        return samples
+
+    @staticmethod
+    def _make_sample(
+        group, prompt, completion, seq, advantage, metrics
+    ) -> RolloutSample:
+        return RolloutSample(
+            prompt=prompt,
+            completion=completion,
+            input_ids=np.asarray(seq.input_ids, dtype=np.int64),
+            completion_mask=np.asarray(seq.completion_mask, dtype=np.int64),
+            old_log_probs=np.asarray(seq.old_log_probs, dtype=np.float32),
+            advantage=float(advantage),
+            model_version=group.model_version,
+            group_id=group.group_id,
+            metrics=dict(metrics),
+        )
+
+    @staticmethod
+    def _tool_metrics(group: RolloutGroup) -> list[dict[str, float]]:
+        if sum(group.tool_call_counts) > 0:
+            return [
+                {
+                    "tools/call_frequency": float(n_calls),
+                    "tools/failure_frequency": (n_failures / n_calls)
+                    if n_calls > 0
+                    else 0.0,
+                }
+                for n_calls, n_failures in zip(
+                    group.tool_call_counts, group.tool_failure_counts, strict=True
+                )
+            ]
+        return [{}] * len(group.completions)
 
 
 class AxolotlAsyncRolloutWorker(AsyncRolloutWorker):

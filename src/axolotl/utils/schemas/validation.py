@@ -2701,14 +2701,19 @@ class GRPOVllmValidationMixin:
 
     @model_validator(mode="after")
     def check_async_grpo_compat(self):
-        """`async_prefetch` with rl: grpo/gdpo runs on TRL's AsyncGRPOTrainer."""
+        """`async_prefetch` with rl: grpo/gdpo, or structured EBFT, runs on TRL's
+        AsyncGRPOTrainer."""
         trl = self.trl
-        if self.rl not in ("grpo", "gdpo") or not (trl and trl.async_prefetch):
+        ebft = getattr(self, "ebft", None)
+        structured_ebft = self.rl == "ebft" and getattr(ebft, "mode", None) != "strided"
+        if not (self.rl in ("grpo", "gdpo") or structured_ebft) or not (
+            trl and trl.async_prefetch
+        ):
             return self
 
         def data_producer_only(option: str) -> str:
             return (
-                f"`trl.{option}` belongs to the data producer trainer (EBFT) "
+                f"`trl.{option}` belongs to the data producer trainer "
                 "and has no effect on async GRPO; remove it"
             )
 
@@ -2784,8 +2789,8 @@ class GRPOVllmValidationMixin:
             problems.append(data_producer_only("reroll_start_fraction"))
         if problems:
             raise ValueError(
-                "`trl.async_prefetch` with rl: grpo runs on TRL's AsyncGRPOTrainer:\n- "
-                + "\n- ".join(problems)
+                f"`trl.async_prefetch` with rl: {getattr(self.rl, 'value', self.rl)} "
+                "runs on TRL's AsyncGRPOTrainer:\n- " + "\n- ".join(problems)
             )
 
         if not self.max_steps and self.lr_scheduler not in (None, "constant"):

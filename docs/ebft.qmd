@@ -59,9 +59,11 @@ GPU 1: Trainer (feature extraction, reward computation, GRPO training)
 
 ### Structured Mode (Async)
 
-Same architecture as sync, but overlaps generation of the next batch with training on the current batch. Faster throughput at the cost of slightly stale weights during generation.
+`trl.async_prefetch: true` runs structured EBFT on [async GRPO](grpo.qmd) (TRL's `AsyncGRPOTrainer`): a CUDA-free rollout process keeps generating against the vLLM server while the trainer trains on finished rollouts up to `trl.max_staleness` weight syncs old. The feature-matching reward needs the feature network's hidden states, so it is computed on the trainer: each optimizer step holds whole prompt groups, every rank runs a no-grad forward of its completions and their references with adapters disabled, and the embeddings are all-gathered to score each group. This works under FSDP2.
 
-**When to use**: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by `vllm_sync_interval`).
+Only the first assistant turn is trained; with `remaining_turns`, the later assistant turns are generated as reward context. Differences from the sync trainer: rewards use the sampled token IDs; the adaptive max_tokens budget is set per prompt; the loss is TRL's token-level clipped loss (leave `loss_type` unset); replay, re-roll, streaming and `num_iterations > 1` are not available.
+
+**When to use**: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by `vllm_sync_interval` and `max_staleness`).
 
 ### Strided Mode
 
@@ -468,11 +470,12 @@ These are set under the `trl:` key and control the GRPO training loop.
 | `vllm_lora_sync` | `bool` | `false` | Sync LoRA adapters via filesystem (recommended) |
 | `vllm_sync_interval` | `int` | `1` | Steps between weight syncs to vLLM |
 | `use_data_producer` | `bool` | -- | Required for sync mode with LoRA sync |
-| `async_prefetch` | `bool` | `false` | Enable async generation (overlaps with training) |
-| `streaming_partial_batch` | `bool` | `false` | Score groups incrementally (async mode) |
-| `skip_zero_advantage_batches` | `bool` | `false` | Skip micro-batches where all advantages are zero |
+| `async_prefetch` | `bool` | `false` | Run on async GRPO (overlaps generation with training) |
+| `max_staleness` | `int` | `4` | Async: drop rollouts more than this many weight syncs old |
+| `generation_kwargs` | `dict` | -- | Extra vLLM sampling parameters, e.g. `stop_token_ids` |
+| `skip_zero_advantage_batches` | `bool` | `true` | Async: leave samples with zero advantage out of the loss |
 | `scale_rewards` | `bool` | -- | Normalize rewards within each prompt group |
-| `loss_type` | `string` | `"grpo"` | Loss type for policy optimization |
+| `loss_type` | `string` | `"grpo"` | Loss type for policy optimization (sync only) |
 | `epsilon` | `float` | `0.2` | Clipping parameter for importance sampling |
 
 ### Stop Tokens
