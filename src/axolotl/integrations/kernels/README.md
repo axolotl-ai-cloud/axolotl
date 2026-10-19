@@ -193,6 +193,32 @@ On Beam the expert buffers drop from 131072 padded tokens x 8 = 1,048,576 slot r
   pair count on the host (one sync per MoE call), so under `torch.compile` the grid is used, with
   a warning.
 
+### SonicMoE expert LoRA without merged weights
+
+By default, bf16 SonicMoE experts with LoRA build `W_eff = W + scaling * B @ A` for every local
+expert in every forward (and again in an activation-checkpoint recompute), run sonic-moe on it,
+and in backward compute the full-rank `dW_eff` with the expert weight-gradient GEMMs before
+projecting it onto `lora_A` / `lora_B`. On a Beam EP=8 rank (32 local experts, H 5120, I 2560)
+that is about 2.5 GB of merged weights plus a same-size gradient buffer per MoE layer, and two
+full-size weight-gradient GEMMs the frozen base never needs.
+
+```yaml
+sonicmoe_lora_split: true
+```
+
+keeps the frozen base in sonic-moe's fused quack GEMMs and feeds the LoRA in as a low-rank
+addend: `scaling * (x A^T) B^T` enters the gate/up GEMM before its SwiGLU/GeGLU epilogue and
+`scaling * (a A^T) B^T` the down GEMM. In backward, `gemm_dgated` gives the base part of the
+gate/up gradient and a Triton kernel adds the down-LoRA part through the GLU backward; the router
+score gradient gets the LoRA term too. LoRA gradients come from rank-r GEMMs only. Per layer and
+micro-step this removes the merged weights and the full-rank weight gradients, and cuts the
+expert-GEMM FLOPs by about 31% (about 23% with activation checkpointing, which repeats the
+forward); `scripts/benchmark_sonicmoe_lora_split.py` measures both paths.
+
+It applies to bf16 gated experts with a frozen base, no expert bias and a SwiGLU/GeGLU
+activation, on the EP and non-EP dense paths (with or without `sonicmoe_ep_compact_routing`).
+Anything else logs a warning once and materializes as before.
+
 ## Model Support
 
 Any model whose `Experts` class is decorated with `@use_experts_implementation` upstream works automatically. As of transformers 5.8 this includes (verified). The `bf16` columns are base (unquantized) support; the `NVFP4` columns mark which kernel trains LoRA on a ModelOpt NVFP4 checkpoint of that arch:

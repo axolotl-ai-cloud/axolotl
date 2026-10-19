@@ -330,6 +330,9 @@ class KernelsPlugin(BasePlugin):
                 configure_ep_row_padding,
                 register_sonicmoe_experts,
             )
+            from axolotl.integrations.kernels.libs.sonicmoe.lora_split import (
+                configure_lora_split,
+            )
 
             register_sonicmoe_experts()
             configure_ep_row_padding(
@@ -341,6 +344,7 @@ class KernelsPlugin(BasePlugin):
                 bool(cfg.sonicmoe_ep_compact_routing),
                 granule=cfg.sonicmoe_ep_pair_padding_granule or 32768,
             )
+            configure_lora_split(bool(cfg.sonicmoe_lora_split))
             if not ep_active:
                 cfg.experts_implementation = "sonicmoe"
             LOG.info("Registered 'sonicmoe' in transformers ExpertsInterface")

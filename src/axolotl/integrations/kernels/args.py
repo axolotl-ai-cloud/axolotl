@@ -109,6 +109,11 @@ class KernelsArgs(BaseModel):
     # 2.75x on Beam at EP=8). Unset factor: only the token mark is seeded. Marks still grow.
     sonicmoe_ep_padding_seed: bool | None = None
     sonicmoe_ep_pair_seed_factor: float | None = None
+    # bf16 SonicMoE expert LoRA without building W + scaling * B @ A: the frozen base stays in
+    # sonic-moe's fused GEMMs, the LoRA enters them as a low-rank addend, and the LoRA grads come
+    # from rank-r GEMMs (no full-rank expert weight gradient). Falls back to materializing, with
+    # a warning, for trainable base weights, expert bias, non-GLU activations or non-bf16 experts.
+    sonicmoe_lora_split: bool | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
     use_dsv4_kernels: bool | None = None
     # GLM-5.2 (glm_moe_dsa) DSA fused attention: MLA-absorption head-batched sparse-gather attn

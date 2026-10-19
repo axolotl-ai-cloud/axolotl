@@ -1,9 +1,11 @@
 """LoRA-aware sonicmoe experts forward for the transformers ExpertsInterface.
 
 Dense experts materialize expert LoRA via ``MoELoRAMaterialize`` and hand the result
-to upstream's ``sonicmoe_experts_forward`` through a facade. NVFP4 experts (which the
-CUTLASS kernel cannot read) take the grouped dequant path in ``nvfp4_lora`` instead, and
-non-gated relu² experts (nemotron_h) the grouped MLP in ``nongated``.
+to upstream's ``sonicmoe_experts_forward`` through a facade, or, with ``sonicmoe_lora_split``,
+keep the base in sonic-moe's GEMMs and add the LoRA as low-rank addends (``lora_split``).
+NVFP4 experts (which the CUTLASS kernel cannot read) take the grouped dequant path in
+``nvfp4_lora`` instead, and non-gated relu² experts (nemotron_h) the grouped MLP in
+``nongated``.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from .lora import (
     materialize_expert_lora,
     unwrap_experts_lora,
 )
+from .lora_split import lora_split_applies, sonicmoe_lora_split_forward
 
 
 def _maybe_unwrap_param_wrapper(param):
@@ -467,6 +470,26 @@ def _sonicmoe_ep_forward(
     return out if padded == num_recv else out[:num_recv]
 
 
+def _grid_pairs(
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """The flat routing transformers' ``sonicmoe_experts_forward`` builds from the grid."""
+    num_tokens, k = top_k_index.shape
+    token_indices = (
+        torch.arange(num_tokens, device=hidden_states.device, dtype=torch.int32)
+        .unsqueeze(1)
+        .expand(-1, k)
+        .reshape(-1)
+    )
+    return (
+        token_indices,
+        top_k_index.reshape(-1).int(),
+        top_k_weights.reshape(-1).to(hidden_states.dtype),
+    )
+
+
 def _sonicmoe_forward(
     self,
     hidden_states: torch.Tensor,
@@ -513,6 +536,16 @@ def _sonicmoe_forward(
             b2,
             lora_w1,
             lora_w2,
+        )
+
+    if (lora_w1 is not None or lora_w2 is not None) and lora_split_applies(
+        self, hidden_states, w1, b1, w2, b2
+    ):
+        facade = _LoRAExpertsFacade(self, w1, b1, w2, b2)
+        if pairs is None:
+            pairs = _grid_pairs(hidden_states, top_k_index, top_k_weights)
+        return sonicmoe_lora_split_forward(
+            facade, hidden_states, *pairs, lora_w1, lora_w2
         )
 
     # Materialize W_eff = W + scaling * (B @ A) per expert. No-op when no LoRA.
