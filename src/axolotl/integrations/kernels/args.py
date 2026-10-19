@@ -62,9 +62,10 @@ class KernelsArgs(BaseModel):
     # next to it as <stem>.quack.json.
     autotune_cache_path: str | None = None
     # Pin or narrow autotune search spaces per kernel: a list of
-    # {kernel, backend?, gpu?, match?, configs} entries; backend is triton (default) or quack
-    # (SonicMoE), and quack entries match on argument values, shapes and dims (see the kernels
-    # README). One config = no benchmarking for a matched key; several = a short search.
+    # {kernel, backend?, gpu?, match?, configs | allow} entries; backend is triton (default) or
+    # quack (SonicMoE), and quack entries match on argument values, shapes and dims and can
+    # filter candidates by field value with allow (see the kernels README). One config = no
+    # benchmarking for a matched key; several = a short search.
     autotune_profiles: list[dict] | None = None
     # Narrow a kernel's autotune search for a new size bucket to configs within this many
     # parameter changes of its winner for the same shape (1 = one of BLOCK_M/N/K, warps, stages;
