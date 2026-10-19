@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, model_validator
 
 from axolotl.utils.logging import get_logger
@@ -71,6 +73,15 @@ class KernelsArgs(BaseModel):
     # parameter changes of its winner for the same shape (1 = one of BLOCK_M/N/K, warps, stages;
     # 2 = pairs). Only applies once that kernel has a measured or seeded winner.
     autotune_neighborhood: int | None = None
+    # SonicMoE: round the routed row/pair dims of quack's autotune key for grouped GEMMs up to a
+    # power of two, so one sweep serves every count in a bucket ("pow2", the default with
+    # use_sonicmoe), or key on exact shapes ("none"). A reused winner is checked against quack's
+    # validity pruning for the actual call; a rejected one tunes that exact shape instead.
+    quack_autotune_key_buckets: Literal["pow2", "none"] | None = None
+    # SonicMoE: false = never benchmark quack configs; each GEMM key gets one config from a fixed
+    # per-kernel rule (by output width and reduction size; autotune_profiles still decide when they
+    # match), so a new shape costs at most a compile. Default true (sweep).
+    quack_autotune: bool | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
@@ -116,6 +127,22 @@ class KernelsArgs(BaseModel):
     # of max steps. Default 0 (on from the first step). A short warm-up avoids STE oscillation
     # while the adapter is near its zero init (standard QAT practice).
     nvfp4_merge_aware_start_step: int | float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_quack_autotune(cls, data):
+        data = cls._canonicalize_expert_backend(data)
+        buckets = data.get("quack_autotune_key_buckets")
+        if buckets is not None and buckets not in ("pow2", "none"):
+            raise ValueError("quack_autotune_key_buckets must be 'pow2' or 'none'")
+        tune = data.get("quack_autotune")
+        if tune is not None and not isinstance(tune, bool):
+            raise ValueError("quack_autotune must be true or false")
+        if (buckets is not None or tune is not None) and not data.get("use_sonicmoe"):
+            raise ValueError(
+                "quack_autotune and quack_autotune_key_buckets only apply with use_sonicmoe"
+            )
+        return data
 
     @model_validator(mode="before")
     @classmethod
