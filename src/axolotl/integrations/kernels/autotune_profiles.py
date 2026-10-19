@@ -89,7 +89,9 @@ def _install(autotuner: Any, profiles: list[dict[str, Any]]) -> None:
         args = {**(getattr(autotuner, "nargs", None) or {}), **kwargs}
         for profile in autotuner._axolotl_profiles:
             if _matches(profile.get("match"), args):
+                autotuner._axolotl_profile_hit = True
                 return [_resolve_config(autotuner, c) for c in profile["configs"]]
+        autotuner._axolotl_profile_hit = False
         return orig_prune(kwargs)
 
     autotuner.prune_configs = prune_configs

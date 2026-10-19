@@ -16,12 +16,14 @@ the one it was measured against.
 """
 
 import json
+import math
 import os
 import sys
 import tempfile
 import time
 from collections import Counter
-from typing import Any
+from importlib import metadata
+from typing import Any, Callable
 
 import torch
 from transformers import TrainerCallback
@@ -31,6 +33,12 @@ from axolotl.integrations.kernels.autotune_collector import (
     _config_to_dict,
     _is_autotuner,
     collect_autotune_configs,
+)
+from axolotl.integrations.kernels.sonicmoe_autotune import (
+    QUACK_PACKAGES,
+    collect_sonicmoe_autotune_configs,
+    collect_sonicmoe_records,
+    sonicmoe_autotuners,
 )
 from axolotl.kernels.autotune_reporting import autotuner_metadata
 from axolotl.utils.logging import get_logger
@@ -98,63 +106,97 @@ def _autotuners() -> list[tuple[str, Any, Any]]:
     return found
 
 
-def install_timing_capture() -> int:
-    """Record every benchmarked config's time per key on each loaded autotuner. Idempotent.
+class _TimingCache(dict):
+    """An autotuner ``cache`` that also keeps the full benchmark table of every key it stores.
 
-    Triton keeps only the last benchmark's table (``configs_timings``); wrapping ``prune_configs``
-    (which runs right before a key is benchmarked) and ``_bench`` keeps a table per key in
-    ``autotuner._axolotl_timings`` so the cache file can carry the full distribution, not just
-    the winner. That is what an empirical narrowing of the search space is derived from.
+    Triton and quack keep only the last table (``configs_timings``) and assign it right after
+    the winner goes into ``cache[key]``, both after a live benchmark and on a disk-cache hit, so
+    a key's table is picked up when the next key is stored or when the records are read.
+    """
+
+    def __init__(self, tuner: Any, entries: dict):
+        super().__init__(entries)
+        self.tuner = tuner
+        self.timings: dict[tuple, dict] = {}
+        self.seeded: set[tuple] = set()
+        self.profiled: set[tuple] = set()
+        self._pending: tuple | None = None
+        self._last_table = getattr(tuner, "configs_timings", None)
+
+    def __setitem__(self, key, value):
+        self.harvest()
+        self._pending = key
+        if getattr(self.tuner, "_axolotl_profile_hit", False):
+            self.profiled.add(key)
+            self.tuner._axolotl_profile_hit = False
+        super().__setitem__(key, value)
+
+    def harvest(self) -> None:
+        table = getattr(self.tuner, "configs_timings", None)
+        if (
+            self._pending is not None
+            and table is not None
+            and table is not self._last_table
+        ):
+            self.timings[self._pending] = dict(table)
+        self._last_table = table
+        self._pending = None
+
+
+def install_timing_capture() -> int:
+    """Keep every benchmarked config's time per key on each loaded autotuner. Idempotent.
+
+    Covers the Triton kernel modules and the SonicMoE/quack ones, so the cache files carry the
+    full distribution, not just the winner. Kernel modules imported after this call are picked
+    up by a later call.
     """
     installed = 0
-    for _modname, _module, autotuner in _autotuners():
-        if getattr(autotuner, "_axolotl_timings", None) is not None:
+    tuners = [tuner for _name, _module, tuner in _autotuners()]
+    tuners += [tuner for _name, _module, tuner, _quack in sonicmoe_autotuners()]
+    for autotuner in tuners:
+        if isinstance(autotuner.cache, _TimingCache):
             continue
-        if not hasattr(autotuner, "_bench") or not getattr(autotuner, "keys", None):
-            continue
-        autotuner._axolotl_timings = {}
-        autotuner._axolotl_pending_key = None
-        orig_prune = autotuner.prune_configs
-        orig_bench = autotuner._bench
-
-        def prune_configs(kwargs, _tuner=autotuner, _orig=orig_prune):
-            args = {**(getattr(_tuner, "nargs", None) or {}), **kwargs}
-            try:
-                _tuner._axolotl_pending_key = tuple(
-                    args[name] for name in _tuner.keys if name in args
-                )
-            except Exception:  # pylint: disable=broad-exception-caught
-                _tuner._axolotl_pending_key = None
-            return _orig(kwargs)
-
-        def _bench(*args, _tuner=autotuner, _orig=orig_bench, config=None, **kwargs):
-            result = _orig(*args, config=config, **kwargs)
-            key = _tuner._axolotl_pending_key
-            if key is not None and config is not None:
-                value = result[0] if isinstance(result, (list, tuple)) else result
-                try:
-                    value = float(value)
-                except (TypeError, ValueError):
-                    return result
-                table = _tuner._axolotl_timings.setdefault(key, {})
-                table[json.dumps(_config_to_dict(config), sort_keys=True)] = value
-            return result
-
-        autotuner.prune_configs = prune_configs
-        autotuner._bench = _bench
+        autotuner.cache = _TimingCache(autotuner, autotuner.cache)
         installed += 1
     return installed
 
 
-def _timings_for(autotuner: Any, key_tuple: tuple) -> dict[str, float] | None:
-    """The benchmark table recorded for ``key_tuple`` (declared-argument prefix match)."""
-    tables = getattr(autotuner, "_axolotl_timings", None)
-    if not tables:
-        return None
-    for pending, table in tables.items():
-        if tuple(key_tuple[: len(pending)]) == tuple(pending):
-            return dict(sorted(table.items(), key=lambda kv: kv[1]))
-    return None
+def timing_fields(
+    autotuner: Any, key_tuple: tuple, serialize: Any = _config_to_dict
+) -> dict[str, Any]:
+    """How ``key_tuple``'s winner was chosen, with its benchmark table when one was recorded."""
+    cache = autotuner.cache
+    if not isinstance(cache, _TimingCache):
+        return {}
+    cache.harvest()
+    if key_tuple in cache.seeded:
+        return {"source": "seeded"}
+    table = cache.timings.get(key_tuple)
+    if table is None:
+        return {"source": "profile" if key_tuple in cache.profiled else "untimed"}
+    timings: dict[str, float] = {}
+    failed = 0
+    for config, value in table.items():
+        ms = value[0] if isinstance(value, (list, tuple)) else value
+        try:
+            ms = float(ms)
+        except (TypeError, ValueError):
+            failed += 1
+            continue
+        if not math.isfinite(ms):
+            failed += 1
+            continue
+        try:
+            name = json.dumps(serialize(config), sort_keys=True, default=str)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        timings[name] = ms
+    return {
+        "source": "measured",
+        "timings_ms": dict(sorted(timings.items(), key=lambda kv: kv[1])),
+        "configs_benchmarked": len(table),
+        "failed_configs": failed,
+    }
 
 
 def _kernel_name(autotuner: Any) -> str:
@@ -228,6 +270,8 @@ def seed_autotune_caches(records: list[dict[str, Any]]) -> tuple[int, Counter]:
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 skipped[f"config rejected ({type(exc).__name__})"] += 1
                 continue
+            if isinstance(autotuner.cache, _TimingCache):
+                autotuner.cache.seeded.add(key)
             applied += 1
     return applied, skipped
 
@@ -278,29 +322,70 @@ def _with_timings(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             key = _key_tuple(autotuner, record["key"])
         except (KeyError, TypeError):
             continue
-        timings = _timings_for(autotuner, key)
-        if timings:
-            record["timings_ms"] = timings
+        record.update(timing_fields(autotuner, key))
     return records
 
 
-def gather_autotune_records() -> list[dict[str, Any]]:
-    """This rank's winners, merged with every other rank's when distributed."""
-    local = _with_timings(collect_autotune_configs())
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
-        world: list[list[dict[str, Any]] | None] = [
-            None
-        ] * torch.distributed.get_world_size()
-        torch.distributed.all_gather_object(world, local)
-        merged: dict[tuple, dict[str, Any]] = {}
-        for rank_records in world:
-            for rank_record in rank_records or []:
-                merged.setdefault(_record_identity(rank_record), rank_record)
-        return list(merged.values())
-    return local
+def collect_triton_records() -> list[dict[str, Any]]:
+    return _with_timings(collect_autotune_configs())
 
 
-def write_autotune_cache(path: str, records: list[dict[str, Any]]) -> int:
+def gather_autotune_records(
+    collect: Callable[[], list[dict[str, Any]]] = collect_triton_records,
+) -> list[dict[str, Any]]:
+    """This rank's winners, merged with every other rank's when distributed.
+
+    A key benchmarked on one rank and seeded on another keeps the benchmarked record.
+    """
+    local = collect()
+    if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
+        return local
+    world: list[list[dict[str, Any]] | None] = [
+        None
+    ] * torch.distributed.get_world_size()
+    torch.distributed.all_gather_object(world, local)
+    merged: dict[tuple, dict[str, Any]] = {}
+    for rank_records in world:
+        for rank_record in rank_records or []:
+            identity = _record_identity(rank_record)
+            have = merged.get(identity)
+            if have is None or (
+                not have.get("timings_ms") and rank_record.get("timings_ms")
+            ):
+                merged[identity] = rank_record
+    return list(merged.values())
+
+
+def package_versions(names: tuple[str, ...]) -> dict[str, str]:
+    versions = {}
+    for name in names:
+        try:
+            versions[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            continue
+    return versions
+
+
+def _merge_record(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
+    """A seeded or untimed re-collection of a key must not drop the measurement on file."""
+    if old is None:
+        return new
+    if new.get("source") == "seeded":
+        return old
+    if (
+        not new.get("timings_ms")
+        and old.get("timings_ms")
+        and old.get("config") == new.get("config")
+    ):
+        return old
+    return new
+
+
+def write_autotune_cache(
+    path: str,
+    records: list[dict[str, Any]],
+    packages: tuple[str, ...] = ("triton",),
+) -> int:
     """Merge ``records`` into the file at ``path`` (newer wins) and write it atomically."""
     existing = read_autotune_cache(path)
     merged: dict[tuple, dict[str, Any]] = {}
@@ -309,11 +394,13 @@ def write_autotune_cache(path: str, records: list[dict[str, Any]]) -> int:
         for record in existing.get("records", []):
             merged[_record_identity(record)] = record
     for record in records:
-        merged[_record_identity(record)] = record
+        identity = _record_identity(record)
+        merged[identity] = _merge_record(merged.get(identity), record)
     payload = {
         "version": FILE_VERSION,
         **gpu,
         "torch": torch.__version__,
+        "packages": package_versions(packages),
         "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "records": list(merged.values()),
     }
@@ -327,6 +414,11 @@ def write_autotune_cache(path: str, records: list[dict[str, Any]]) -> int:
     return len(payload["records"])
 
 
+def quack_cache_path(path: str) -> str:
+    """Where the SonicMoE/quack winners go: ``b200.json`` -> ``b200.quack.json``."""
+    return f"{os.path.splitext(path)[0]}.quack.json"
+
+
 def _is_main_process() -> bool:
     if torch.distributed.is_available() and torch.distributed.is_initialized():
         return torch.distributed.get_rank() == 0
@@ -338,7 +430,8 @@ class AutotuneCacheCallback(TrainerCallback):
 
     Winners appear during the first steps (and whenever a new routing-imbalanced bucket shows
     up), so the file is written as soon as this rank's cache grows during the first
-    ``early_steps`` steps, then at every save and at train end.
+    ``early_steps`` steps, then at every save and at train end. With ``sonicmoe`` the
+    SonicMoE/quack winners go to ``quack_cache_path(path)`` on the same schedule.
     """
 
     def __init__(
@@ -347,11 +440,13 @@ class AutotuneCacheCallback(TrainerCallback):
         profiles: list[dict[str, Any]] | None = None,
         early_steps: int = 20,
         neighborhood: int | None = None,
+        sonicmoe: bool = False,
     ):
         self.path = path
         self.profiles = profiles
         self.neighborhood = neighborhood
         self.early_steps = early_steps
+        self.sonicmoe = sonicmoe
         self._last_count = -1
 
     def on_train_begin(self, args, state, control, **kwargs):
@@ -371,7 +466,10 @@ class AutotuneCacheCallback(TrainerCallback):
             install_neighborhood_search(self.neighborhood)
 
     def _local_count(self) -> int:
-        return len(collect_autotune_configs())
+        count = len(collect_autotune_configs())
+        if self.sonicmoe:
+            count += len(collect_sonicmoe_autotune_configs())
+        return count
 
     def _persist(self):
         if not self.path:
@@ -380,7 +478,19 @@ class AutotuneCacheCallback(TrainerCallback):
         if _is_main_process() and records:
             count = write_autotune_cache(self.path, records)
             LOG.info("Wrote %d autotune winner(s) to %s", count, self.path)
+        if self.sonicmoe:
+            records = gather_autotune_records(collect_sonicmoe_records)
+            if _is_main_process() and records:
+                quack_path = quack_cache_path(self.path)
+                count = write_autotune_cache(quack_path, records, QUACK_PACKAGES)
+                LOG.info(
+                    "Wrote %d SonicMoE autotune winner(s) to %s", count, quack_path
+                )
         self._last_count = self._local_count()
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        if self.path and state.global_step <= self.early_steps:
+            install_timing_capture()
 
     def on_step_end(self, args, state, control, **kwargs):
         if state.global_step > self.early_steps:
