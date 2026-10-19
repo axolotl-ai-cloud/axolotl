@@ -44,6 +44,84 @@ autotune_profiles:
     match: { N: 5120, K: [2560, 5120] }
     configs:
       - { BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 64, num_stages: 2, num_warps: 4 }
+  # SonicMoE (use_sonicmoe: true): quack GEMMs on B200, measured on Beam at EP=8 (32 local experts per
+  # rank, so the shapes below carry 32 in the expert dimension). Ignored by ScatterMoE. Pins first (the
+  # first match decides) for the training sizes of sonicmoe_ep_compact_routing with highwater row
+  # padding (>= 98304 pair rows; eval's 32k-65k keep the filtered search); everything else is narrowed
+  # to the tiles that ever won.
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: B200
+    match: { "postact_out.dim0": { ge: 98304 }, "B.shape": [32, 5120, 5120] }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    match: { "A.dim0": { ge: 98304 }, "B.shape": [32, 2560, 5120] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1 }
+      - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 1 }
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    match: { "PreAct.dim0": { ge: 98304 }, "B.shape": [32, 5120, 2560] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+  # backward: expert weight grads (varlen K = pairs; out [local experts, H, I or 2I]) and dX through gate/up.
+  # Measured on Beam EP=8 at 65k-360k pairs: the winner is always one of these two (others >= 3% slower,
+  # non-persistent 4-22% slower), and they trade places by bucket, so both stay in the sweep.
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    match: { "out.shape": [32, 5120, null], "B.dim0": { ge: 65536 } }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    match: { "A.dim0": { ge: 65536 }, "B.shape": [32, 5120, 5120] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true }
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true }
+  # forward gated below the training sizes (eval, small layers): 16k-98k rows, 11 measured keys; these
+  # four always held a config within 1% of the best
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: B200
+    match: { "postact_out.dim0": { ge: 16384, lt: 98304 }, "B.shape": [32, 5120, 5120] }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false }
+      - { tile_m: 128, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true }
+  # dgated below the training sizes: 256x256 c2x1 persistent won both measured keys (65k rows), others >= 4% slower
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    match: { "PreAct.dim0": { ge: 16384, lt: 98304 }, "B.shape": [32, 5120, 2560] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true }
+  # everything else: narrowed search (tile_n = tile_m or 2x for gated; measured winners all kept)
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      where:
+        - { if: { tile_m: 128 }, then: { tile_n: [128, 256] } }
+        - { if: { tile_m: 256 }, then: { tile_n: [256, 512] } }
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      tile_n: [160, 192, 224, 256, 512]
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      tile_n: [160, 192, 224, 256, 512]
+      where:
+        - { if: { cluster: [2, 2] }, then: { tile_m: 256 } }
 autotune_neighborhood: 1
 
 expert_parallel_size: 8
