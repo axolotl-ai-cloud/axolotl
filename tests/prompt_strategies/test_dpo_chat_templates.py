@@ -377,5 +377,42 @@ class TestDPOChatTemplateToolRole:
         assert "prompt" in result
 
 
+class TestDPOChatTemplateVision:
+    """Vision samples stay conversational so TRL renders them with the processor."""
+
+    def test_default_keeps_messages_for_image_datasets(self, llama3_tokenizer):
+        sample = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image"},
+                        {"type": "text", "text": "What is this?"},
+                    ],
+                }
+            ],
+            "chosen": {"role": "assistant", "content": "A cat."},
+            "rejected": {"role": "assistant", "content": "A dog."},
+            "images": ["cat.png"],
+        }
+        transform_fn, map_kwargs = default(
+            DictDefault(
+                {
+                    "chat_template": "llama3",
+                    "datasets": [{"type": "chat_template"}],
+                }
+            )
+        )
+
+        result = transform_fn(sample, tokenizer=llama3_tokenizer)
+
+        assert result == {
+            "prompt": sample["messages"],
+            "chosen": [sample["chosen"]],
+            "rejected": [sample["rejected"]],
+        }
+        assert "images" not in map_kwargs["remove_columns"]
+
+
 if __name__ == "__main__":
     unittest.main()

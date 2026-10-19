@@ -47,14 +47,57 @@ def get_current_device() -> int:
     return 0
 
 
+def _backend_timeout(group, device) -> timedelta | None:
+    try:
+        return group._get_backend(device).options._timeout
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        return None
+
+
+def _process_group_timeout() -> timedelta | None:
+    """Best-effort read of the timeout the live process group was created with."""
+    group = dist.group.WORLD
+    for device in (get_device_type(), torch.device("cpu")):
+        timeout = _backend_timeout(group, device)
+        if timeout is not None:
+            return timeout
+    try:
+        return dist.distributed_c10d._get_process_group_store(group).timeout
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        return None
+
+
 def init_distributed_state():
     global distributed_state
-    if distributed_state is None:
-        timeout = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
-        try:
-            distributed_state = PartialState(timeout=timedelta(seconds=timeout))
-        except ValueError:
-            pass
+    if distributed_state is not None:
+        return
+    from axolotl.utils.logging import get_logger
+
+    log = get_logger(__name__)
+    requested = int(os.environ.get("AXOLOTL_NCCL_TIMEOUT", 1800))
+    # accelerate drops PartialState kwargs once a process group or PartialState exists
+    preexisting = dist.is_initialized() or bool(PartialState._shared_state)
+    try:
+        distributed_state = PartialState(timeout=timedelta(seconds=requested))
+    except ValueError as exc:
+        log.warning("Could not initialize the distributed state: %s", exc)
+        return
+    if not preexisting:
+        log.debug("Distributed timeout set to %ss", requested)
+        return
+    if not dist.is_initialized():
+        return
+    effective = _process_group_timeout()
+    if effective is not None and effective >= timedelta(seconds=requested):
+        return
+    log.warning(
+        "The requested distributed timeout of %ss was discarded: the process group was "
+        "already initialized with a timeout of %s. Pass timeout= to "
+        "torch.distributed.init_process_group before Axolotl initializes, or let Axolotl "
+        "create the process group, for ddp_timeout / AXOLOTL_NCCL_TIMEOUT to take effect.",
+        requested,
+        effective if effective is not None else "unknown",
+    )
 
 
 def get_distributed_state() -> PartialState | None:
@@ -95,6 +138,9 @@ def is_main_process() -> bool:
         return os.environ.get("LOCAL_RANK", "0") == "0"
     if not is_distributed():
         return True
+    # the state outlives the process group: post-training hooks log after teardown
+    if not dist.is_initialized():
+        return os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")) == "0"
     return dist.get_rank() == 0
 
 
@@ -305,6 +351,7 @@ def build_parallelism_config(cfg):
         cfg.dp_replicate_size,
         bool(cfg.fsdp or cfg.fsdp_config),
         getattr(cfg, "expert_parallel_size", None),
+        is_deepspeed=bool(getattr(cfg, "deepspeed", None)),
     )
 
     if pc_kwargs:
@@ -325,8 +372,11 @@ def _get_parallel_config_kwargs(
     dp_replicate_size: int | None = None,
     is_fsdp: bool = False,
     expert_parallel_size: int | None = None,
+    is_deepspeed: bool = False,
 ):
-    pc_kwargs = {}
+    """Under DeepSpeed, ``context_parallel_size`` becomes accelerate's DeepSpeed Ulysses
+    ``sp`` axis (ALST) and the remaining ranks replicate, since ZeRO owns sharding."""
+    pc_kwargs: dict[str, int | str] = {}
     remaining_world_size = world_size
 
     # EP consumes part of world_size; subtract it up front so the auto-fill
@@ -344,8 +394,22 @@ def _get_parallel_config_kwargs(
         remaining_world_size = remaining_world_size // tensor_parallel_size
 
     if context_parallel_size and context_parallel_size > 1:
-        pc_kwargs["cp_size"] = context_parallel_size
+        if is_deepspeed:
+            pc_kwargs["sp_size"] = context_parallel_size
+            pc_kwargs["sp_backend"] = "deepspeed"
+        else:
+            pc_kwargs["cp_size"] = context_parallel_size
         remaining_world_size = remaining_world_size // context_parallel_size
+
+    if is_deepspeed and "sp_size" in pc_kwargs and remaining_world_size > 1:
+        if dp_replicate_size and dp_replicate_size > 1:
+            if dp_replicate_size != remaining_world_size:
+                raise ValueError(
+                    f"dp_replicate_size ({dp_replicate_size}) must equal world_size / "
+                    f"context_parallel_size ({remaining_world_size}) under DeepSpeed."
+                )
+        pc_kwargs["dp_replicate_size"] = remaining_world_size
+        return pc_kwargs
 
     if dp_shard_size is None and dp_replicate_size in (None, 1):
         if remaining_world_size > 1:

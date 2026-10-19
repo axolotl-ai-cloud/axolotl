@@ -1,14 +1,26 @@
 """Unit tests for axolotl.core.builders SFT and reward-model trainer builders."""
 
+import sys
+import types
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
+import torch._dynamo.config as _dynamo_cfg
 import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.core.trainers import AxolotlTrainer
+from axolotl.model_support import ModelStrategies
+from axolotl.utils.collators import (
+    BatchSamplerDataCollatorForSeq2Seq,
+    DataCollatorForSeq2Seq,
+    V2BatchSamplerDataCollatorForSeq2Seq,
+)
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import INDUCTOR_COMPILE_OPTIONS_ALLOWLIST
 
 
@@ -18,6 +30,90 @@ def _gradient_checkpointing_kwargs(cfg):
         SimpleNamespace(cfg=cfg), training_args_kwargs
     )
     return training_args_kwargs
+
+
+def _save_and_eval_kwargs(cfg, *, eval_dataset=True, initial_kwargs=None):
+    builder = SimpleNamespace(cfg=cfg, eval_dataset=eval_dataset)
+    training_args_kwargs = dict(initial_kwargs or {})
+    TrainerBuilderBase._configure_save_and_eval_strategy(builder, training_args_kwargs)
+    return training_args_kwargs
+
+
+class TestSaveAndEvalStrategy:
+    def test_explicit_no_disables_initial_eval_even_with_eval_steps(self):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy="no",
+                eval_steps=5,
+            ),
+            initial_kwargs={"eval_on_start": True},
+        )
+
+        assert kwargs["eval_strategy"] == "no"
+        assert kwargs["eval_on_start"] is False
+        assert "eval_steps" not in kwargs
+
+    @pytest.mark.parametrize(
+        ("eval_strategy", "eval_steps", "expected_strategy"),
+        [("epoch", None, "epoch"), ("steps", 5, "steps")],
+    )
+    def test_enabled_eval_keeps_initial_eval_behavior(
+        self, eval_strategy, eval_steps, expected_strategy
+    ):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=eval_strategy,
+                eval_steps=eval_steps,
+            )
+        )
+
+        assert kwargs["eval_strategy"] == expected_strategy
+        assert kwargs["eval_on_start"] is True
+        if eval_steps:
+            assert kwargs["eval_steps"] == eval_steps
+
+    @pytest.mark.parametrize(
+        ("eval_strategy", "eval_steps"), [("epoch", None), ("steps", 5)]
+    )
+    def test_explicit_eval_on_start_false_skips_initial_eval(
+        self, eval_strategy, eval_steps
+    ):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=eval_strategy,
+                eval_steps=eval_steps,
+                eval_on_start=False,
+            )
+        )
+
+        assert kwargs["eval_on_start"] is False
+
+    def test_explicit_eval_on_start_true_is_kept(self):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=None,
+                eval_steps=5,
+                eval_on_start=True,
+            )
+        )
+
+        assert kwargs["eval_on_start"] is True
 
 
 class TestGradientCheckpointingConfig:
@@ -93,8 +189,8 @@ class TestHFCausalTrainerBuilder:
 
         assert training_arguments.learning_rate == 0.00005
         assert training_arguments.weight_decay == 0.01
-        assert training_arguments.adam_beta1 == 0.998
-        assert training_arguments.adam_beta2 == 0.9
+        assert training_arguments.adam_beta1 == 0.91
+        assert training_arguments.adam_beta2 == 0.99
         assert training_arguments.adam_epsilon == 0.00001
         assert training_arguments.max_grad_norm == 1.0
 
@@ -139,12 +235,47 @@ class TestHFCausalTrainerBuilder:
         assert optimizer_cls is MuonOptimizerFactory
         assert optimizer_kwargs["lr"] == 0.00005
         assert optimizer_kwargs["weight_decay"] == 0.01
-        assert optimizer_kwargs["betas"] == (0.998, 0.9)
+        assert optimizer_kwargs["betas"] == (0.91, 0.99)
         assert optimizer_kwargs["eps"] == 0.00001
 
         # Ensure optimizer is created with correct class
         optim = trainer.create_optimizer()
         assert isinstance(optim, Muon)
+
+    def test_scao_import_from_top_level_with_optim_args(
+        self, sft_cfg, model, tokenizer
+    ):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "scao"
+        cfg["optim_args"] = {"precond_freq": 10, "k_max": 64}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        training_args_kwargs = {
+            "learning_rate": 0.00005,
+            "weight_decay": 0.01,
+            "adam_beta1": 0.998,
+            "adam_beta2": 0.9,
+            "adam_epsilon": 0.00001,
+        }
+        trainer_kwargs = {}
+
+        class FakeSCAO:
+            pass
+
+        scao_module = types.ModuleType("scao")
+        scao_module.SCAO = FakeSCAO
+
+        with patch.dict(sys.modules, {"scao": scao_module}, clear=False):
+            builder._configure_optimizer(training_args_kwargs, trainer_kwargs)
+
+        optimizer_cls, optimizer_kwargs = trainer_kwargs["optimizer_cls_and_kwargs"]
+        assert optimizer_cls is FakeSCAO
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["weight_decay"] == 0.01
+        assert optimizer_kwargs["betas"] == (0.998, 0.9)
+        assert optimizer_kwargs["eps"] == 0.00001
+        assert optimizer_kwargs["precond_freq"] == 10
+        assert optimizer_kwargs["k_max"] == 64
 
     def test_polora_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
@@ -164,6 +295,27 @@ class TestHFCausalTrainerBuilder:
         # polora takes no Adam betas/eps; the builder branch must not merge them in
         assert "betas" not in optimizer_kwargs
         assert "eps" not in optimizer_kwargs
+
+    @pytest.mark.parametrize("weight_decay", [0.0, 0.05])
+    def test_loraplus_optimizer_weight_decay(
+        self, sft_cfg, model, tokenizer, weight_decay
+    ):
+        cfg = sft_cfg.copy()
+        cfg["loraplus_lr_ratio"] = 16
+        cfg["weight_decay"] = weight_decay
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+        assert trainer.args.weight_decay == weight_decay
+
+        optim = trainer.create_optimizer()
+
+        # loraplus zeroes its no-decay group regardless; every other group tracks the config
+        decays = {
+            group["weight_decay"] for group in optim.param_groups if group["params"]
+        }
+        assert decays <= {weight_decay, 0.0}
+        assert weight_decay in decays
 
     def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
@@ -343,6 +495,58 @@ class TestApplyTorchCompileOptions:
         for k, v in inductor_config_snapshot.items():
             assert getattr(_inductor_cfg, k) == v
 
+    @pytest.mark.parametrize(
+        ("accelerator_config", "pin_memory", "expected"),
+        [
+            (None, None, True),
+            (None, True, True),
+            (None, False, False),
+            ({"split_batches": False}, None, True),
+            ({"non_blocking": False}, None, False),
+            ({"non_blocking": True}, False, True),
+        ],
+    )
+    def test_configure_accelerator_config_non_blocking(
+        self, accelerator_config, pin_memory, expected
+    ):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(
+            accelerator_config=accelerator_config, dataloader_pin_memory=pin_memory
+        )
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_accelerator_config(builder, training_args_kwargs)
+
+        config = training_args_kwargs["accelerator_config"]
+        assert config.non_blocking is expected
+        if accelerator_config:
+            for key, value in accelerator_config.items():
+                assert getattr(config, key) is value
+
+    def test_configure_torch_compile_disables_dynamo_lru_under_checkpointing(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=True)
+        with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+        set_lru.assert_called_once_with(False)
+
+    def test_configure_torch_compile_keeps_dynamo_lru_without_checkpointing(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=False)
+        with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+        set_lru.assert_not_called()
+
+    def test_configure_torch_compile_raises_recompile_limit_for_regional(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, torch_compile_regional=True)
+        before = _dynamo_cfg.recompile_limit
+        try:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+            assert _dynamo_cfg.recompile_limit >= 64
+        finally:
+            _dynamo_cfg.recompile_limit = before
+
     def test_configure_torch_compile_invokes_apply_when_options_set(self):
         builder = MagicMock(spec=TrainerBuilderBase)
         builder.cfg = MagicMock()
@@ -370,3 +574,260 @@ class TestApplyTorchCompileOptions:
         TrainerBuilderBase._configure_torch_compile(builder, training_args_kwargs)
 
         builder._apply_torch_compile_options.assert_not_called()
+
+
+@pytest.mark.parametrize("is_eval", [False, True])
+@pytest.mark.parametrize(
+    ("attn_implementation", "expected"),
+    [
+        ("flash_attention_2", True),
+        ("flash_attention_3", True),
+        ("flash_attention_4", True),
+        ("flash_attention_torch", True),
+        ("kernels-community/flash-attn2", True),
+        ("kernels-community/flash-attn3@v2:flash_attn_func", True),
+        ("kernels-community/vllm-flash-attn3", True),
+        ("kernels-community/flash-attn4", True),
+        ("sdpa", False),
+        ("eager", False),
+        ("flex_attention", False),
+        ("kernels-community/sage-attention", False),
+        (None, False),
+    ],
+)
+def test_packed_collator_flash_attention_metadata(
+    attn_implementation, expected, is_eval
+):
+    builder = HFCausalTrainerBuilder(
+        DictDefault(
+            attn_implementation=attn_implementation,
+            model_config_type="llama",
+            torch_compile=False,
+        ),
+        model=None,
+        tokenizer=MagicMock(),
+    )
+    training_args = SimpleNamespace(
+        pretraining=False,
+        sample_packing=not is_eval,
+        eval_sample_packing=is_eval,
+    )
+
+    collator = builder.build_collator(training_args, is_eval=is_eval)
+
+    assert type(collator) is V2BatchSamplerDataCollatorForSeq2Seq
+    assert collator.emit_fa_varlen_kwargs is expected
+    builder.tokenizer.padding_side = "right"
+    builder.tokenizer.pad.side_effect = lambda features, **kwargs: {
+        key: torch.tensor([feature[key] for feature in features]) for key in features[0]
+    }
+    batch = collator(
+        [
+            {"input_ids": [10, 11], "position_ids": [0, 1]},
+            {"input_ids": [12], "position_ids": [0]},
+        ]
+    )
+    assert ("cu_seq_lens_q" in batch) is expected
+    if expected:
+        assert batch["cu_seq_lens_q"].tolist() == [0, 2, 3]
+        assert batch["max_length_q"] == 2
+
+
+@pytest.mark.parametrize("is_eval", [False, True])
+def test_packed_collator_flash_attention_metadata_streaming_without_dispatch(is_eval):
+    builder = HFCausalTrainerBuilder(
+        DictDefault(
+            attn_implementation="flash_attention_2",
+            model_config_type="llama",
+            streaming=True,
+            accelerator_config={"dispatch_batches": False},
+        ),
+        model=None,
+        tokenizer=MagicMock(),
+    )
+    training_args = SimpleNamespace(
+        pretraining=False, sample_packing=not is_eval, eval_sample_packing=is_eval
+    )
+
+    collator = builder.build_collator(training_args, is_eval=is_eval)
+
+    assert collator.emit_fa_varlen_kwargs is True
+
+
+@pytest.mark.parametrize("is_eval", [False, True])
+@pytest.mark.parametrize(
+    ("fa_varlen_kwargs_in_collator", "packing", "model_type", "collator_cls", "extra"),
+    [
+        (False, True, "llama", V2BatchSamplerDataCollatorForSeq2Seq, {}),
+        (True, False, "llama", DataCollatorForSeq2Seq, {}),
+        (True, True, "gpt2", BatchSamplerDataCollatorForSeq2Seq, {}),
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {"accelerator_config": {"dispatch_batches": True}},
+        ),
+        # DeepSpeed Ulysses slices every batch tensor as [batch, seq]
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {
+                "deepspeed": "deepspeed_configs/zero3_bf16.json",
+                "context_parallel_size": 2,
+            },
+        ),
+        # accelerate dispatches iterable-dataset batches by slicing every tensor on dim 0
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {"streaming": True},
+        ),
+    ],
+)
+def test_collator_flash_attention_metadata_requires_supported_packed(
+    fa_varlen_kwargs_in_collator, packing, model_type, collator_cls, extra, is_eval
+):
+    builder = HFCausalTrainerBuilder(
+        DictDefault(
+            attn_implementation="flash_attention_2",
+            model_config_type=model_type,
+            fa_varlen_kwargs_in_collator=fa_varlen_kwargs_in_collator,
+            **extra,
+        ),
+        model=None,
+        tokenizer=MagicMock(),
+    )
+    training_args = SimpleNamespace(
+        pretraining=False,
+        sample_packing=not packing if is_eval else packing,
+        eval_sample_packing=packing if is_eval else not packing,
+    )
+
+    collator = builder.build_collator(training_args, is_eval=is_eval)
+
+    assert type(collator) is collator_cls
+    assert collator.emit_fa_varlen_kwargs is False
+
+
+class _ProfileTrainer(AxolotlTrainer):
+    post_set_calls = 0
+
+    @classmethod
+    def requires_all_columns(cls, cfg):
+        return True
+
+    def post_set_axolotl_cfg(self):
+        type(self).post_set_calls += 1
+
+
+def _patch_profile(strategies):
+    return patch(
+        "axolotl.core.builders.causal.resolve_model_support",
+        return_value=SimpleNamespace(strategies=strategies),
+    )
+
+
+def _patch_plugins(trainer_cls=None, collator=None):
+    plugin_manager = MagicMock()
+    plugin_manager.get_trainer_cls.return_value = trainer_cls
+    plugin_manager.get_collator_cls_and_kwargs.return_value = collator
+    return patch(
+        "axolotl.core.builders.causal.PluginManager.get_instance",
+        return_value=plugin_manager,
+    )
+
+
+class TestProfileStrategyFactories:
+    def _builder(self, cfg=None):
+        return HFCausalTrainerBuilder(
+            cfg or DictDefault(model_config_type="llama"),
+            model=None,
+            tokenizer=MagicMock(),
+        )
+
+    def test_profile_trainer_factory_receives_cfg(self):
+        builder = self._builder()
+        factory = MagicMock(return_value=_ProfileTrainer)
+        with _patch_profile(ModelStrategies(trainer_cls=factory)):
+            assert builder._get_trainer_cls() is _ProfileTrainer
+        factory.assert_called_once_with(builder.cfg)
+
+    def test_profile_trainer_factory_none_falls_back(self):
+        builder = self._builder()
+        with _patch_profile(ModelStrategies(trainer_cls=lambda cfg: None)):
+            assert builder._get_trainer_cls() is AxolotlTrainer
+
+    def test_plugin_trainer_wins_over_profile(self):
+        class PluginTrainer(AxolotlTrainer):
+            pass
+
+        builder = self._builder()
+        factory = MagicMock(return_value=_ProfileTrainer)
+        with (
+            _patch_plugins(trainer_cls=PluginTrainer),
+            _patch_profile(ModelStrategies(trainer_cls=factory)),
+        ):
+            assert builder._get_trainer_cls() is PluginTrainer
+        factory.assert_not_called()
+
+    @pytest.mark.parametrize("is_eval", [False, True])
+    def test_profile_collator_factory_is_used(self, is_eval):
+        builder = self._builder()
+        sentinel = object()
+        factory = MagicMock(return_value=sentinel)
+        training_args = SimpleNamespace(
+            pretraining=False, sample_packing=False, eval_sample_packing=False
+        )
+        with _patch_profile(ModelStrategies(collator_factory=factory)):
+            collator = builder.build_collator(training_args, is_eval=is_eval)
+        assert collator is sentinel
+        factory.assert_called_once_with(builder.cfg, builder.tokenizer, is_eval)
+
+    def test_profile_collator_factory_none_falls_back(self):
+        builder = self._builder()
+        training_args = SimpleNamespace(
+            pretraining=False, sample_packing=False, eval_sample_packing=False
+        )
+        with _patch_profile(
+            ModelStrategies(collator_factory=lambda cfg, tokenizer, is_eval: None)
+        ):
+            collator = builder.build_collator(training_args)
+        assert type(collator) is DataCollatorForSeq2Seq
+
+    def test_plugin_collator_wins_over_profile(self):
+        class PluginCollator:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        builder = self._builder()
+        factory = MagicMock(return_value=object())
+        training_args = SimpleNamespace(
+            pretraining=False, sample_packing=False, eval_sample_packing=False
+        )
+        with (
+            _patch_plugins(collator=(PluginCollator, {})),
+            _patch_profile(ModelStrategies(collator_factory=factory)),
+        ):
+            collator = builder.build_collator(training_args)
+        assert isinstance(collator, PluginCollator)
+        factory.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("user_value", "expected"), [(None, False), (True, True), (False, False)]
+    )
+    def test_trainer_requires_all_columns(
+        self, sft_cfg, model, tokenizer, user_value, expected
+    ):
+        cfg = sft_cfg.copy()
+        cfg.remove_unused_columns = user_value
+        _ProfileTrainer.post_set_calls = 0
+        with _patch_profile(ModelStrategies(trainer_cls=lambda cfg: _ProfileTrainer)):
+            trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        assert type(trainer) is _ProfileTrainer
+        assert trainer.args.remove_unused_columns is expected
+        assert _ProfileTrainer.post_set_calls == 1

@@ -43,7 +43,6 @@ trl:
 vllm:
   gpu_memory_utilization: 0.5
   max_model_len: 2048
-  serve_module: axolotl.scripts.vllm_serve_lora
   enforce_eager: true
 
 datasets:

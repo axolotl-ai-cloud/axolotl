@@ -270,3 +270,23 @@ def test_shutdown(manager):
     with patch("posthog.shutdown") as mock_shutdown:
         manager.shutdown()
         assert mock_shutdown.called
+
+
+def test_nonfinite_event_properties(manager):
+    """Non-finite diagnostics survive as explicit, JSON-safe values."""
+    import json
+
+    properties = {
+        "aggregate": {"train_loss": float("inf")},
+        "latest_step": {"loss": 0.0, "grad_norm": float("nan")},
+        "values": [float("-inf"), 1.5],
+    }
+    with patch("posthog.capture") as capture:
+        manager.send_event("train-end", properties)
+    payload = capture.call_args.kwargs["properties"]
+    assert payload == {
+        "aggregate": {"train_loss": "Infinity"},
+        "latest_step": {"loss": 0.0, "grad_norm": "NaN"},
+        "values": ["-Infinity", 1.5],
+    }
+    json.dumps(payload, allow_nan=False)

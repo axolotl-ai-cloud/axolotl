@@ -1,17 +1,10 @@
-"""Init for ring attention monkeypatch module"""
+"""Init for the context-parallel group registry"""
 
 # flake8: noqa
 
-from .patch import (
-    get_ring_attn_group,
-    register_ring_attn_from_device_mesh,
-    set_ring_attn_group,
-    update_ring_attn_params,
-)
+from .patch import get_ring_attn_group, set_ring_attn_group
 
 __all__ = (
     "get_ring_attn_group",
-    "register_ring_attn_from_device_mesh",
     "set_ring_attn_group",
-    "update_ring_attn_params",
 )

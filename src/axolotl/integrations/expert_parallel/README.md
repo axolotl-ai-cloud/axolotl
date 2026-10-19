@@ -1,12 +1,40 @@
 # Expert Parallelism Integration
 
-Replaces the MoE dispatch/combine path with DeepEP's fused kernels.
+Replaces the MoE dispatch/combine path with token-parallel expert dispatch, on one of two backends.
+
+## Backends
+
+| `expert_parallel_backend` | Dispatch | Needs |
+|----------------------------|----------|-------|
+| `deep_ep`                  | DeepEP's fused NVSHMEM kernels | NVLink (intranode) or RDMA (internode); the `deep_ep` build — see [Installation](#installation) |
+| `torch`                     | Plain `all_to_all_single` over the EP process group | Any NCCL or gloo fabric — no extra build, works over PCIe |
+| `auto` (default)            | `deep_ep` if importable, else `torch` | — |
+
+Both backends compose with the same local-experts kernel (ScatterMoE, SonicMoE, grouped_mm, eager), the same FSDP mesh, and the same sharding/save-load path — only the token dispatch/combine collective differs. Set explicitly to pin one:
+
+```yaml
+expert_parallel_backend: torch  # or deep_ep; omit for auto
+```
+
+An explicit `deep_ep` without the `deep_ep` package installed follows `expert_parallel_fallback_on_unsupported` (warn + fall back to no EP, or raise); an explicit `torch` never imports or requires `deep_ep`.
+
+### Checkpointing with the `torch` backend
+
+The `torch` backend's dispatch is training-critical to recompute correctly under activation checkpointing: the router's `topk` must not re-run (a different, nondeterministically-tied result would desync the `all_to_all` shapes each rank sends, which hangs the other ranks) and the token-count split tensors must not be recomputed either. The `topk` save is scoped to the MoE block that owns each Experts module, so a `topk` elsewhere in the layer (GLM-DSA's attention indexer, for one) is recomputed as usual instead of being held to backward. The plugin installs a policy that always saves these under `gradient_checkpointing` (with or without `selective_checkpointing`, including `activation_offloading: hidden_states`) and under FSDP2 `fsdp_config.activation_checkpointing`; reentrant checkpointing and the TRL offloader modes (`activation_offloading: true | legacy | disk`) are rejected at config validation. The dispatched/combined rows themselves are an optional save, off by default. Saving them (`expert_parallel_save_dispatch: true`) removes the backward `all_to_all`s at the cost of holding their output: 24 GiB on Qwen3-30B-A3B at 32k packed on 2 GPUs. Recomputing them cost 1.6 s/step on a PCIe-only pair and was a tie on an NVLink pair, so the default recomputes; enable the save on bandwidth-starved links with memory to spare. With the default (recompute), EP=2 needs less peak memory than FSDP2 alone for the same run: 40.7 GiB vs 48.5 GiB live at the peak of a Qwen3-30B-A3B LoRA step at 32k (2xH100), because each rank only ever materialises its own experts' rows.
+
+### Chunked dispatch with the `torch` backend
+
+`expert_parallel_dispatch_chunks: N` (default `1`, `torch` backend only) splits each MoE layer's tokens into `N` chunks and pipelines them: chunk `i+1`'s dispatch `all_to_all` is in flight while chunk `i`'s expert GEMMs run, and chunk `i`'s combine is consumed only after chunk `i+1`'s GEMMs are enqueued, so the collectives can overlap compute. All chunks' split counts come from one count exchange and one device-to-host copy per layer. Only the forward overlaps: autograd runs each chunk's backward chain back to back. An explicit `expert_parallel_backend: deep_ep` with `N > 1` is rejected at config validation.
+
+Overlap is not a speedup guarantee: each chunk adds its own collectives and kernel launches, and that per-chunk overhead can exceed what the overlap hides. On 2x PCIe GPUs (16k tokens, hidden 4096), `N: 2` was 12-18% faster when expert compute dominated and ~5% slower when communication-bound; `N: 4` helped only in the most compute-heavy case, and `N: 8` was never faster and up to 3x slower. Benchmark your model's forward before raising `N`, and start from `2`.
 
 ## Requirements
 
-Ampere (sm_80, A100) or Hopper (sm_90, H100), all-pairs NVLink.
+Ampere (sm_80, A100), Hopper (sm_90, H100) or Blackwell (sm_100, B200), all-pairs NVLink — for the `deep_ep` backend only. The `torch` backend runs on any GPU topology with a working NCCL or gloo backend, including PCIe-only setups with no NVLink.
 
 ## Installation
+
+The `torch` backend needs nothing beyond axolotl's own dependencies. The rest of this section is the `deep_ep` build.
 
 **Hopper (sm_90, H100), multi-node with NCCL 2.29+ (torch 2.11+) and OFED:**
 
@@ -141,13 +169,45 @@ DISABLE_NVSHMEM=1 DISABLE_SM90_FEATURES=1 TORCH_CUDA_ARCH_LIST=8.0 MAX_JOBS=16 \
 python -c "import deep_ep; print(deep_ep.Buffer)"
 ```
 
+**Blackwell (sm_100, B200), node-local EP on CUDA 13.0:**
+
+DeepEP `main` requires CUDA 13.1; `v1.2.1` builds against the CUDA 13.0 toolkit
+that the Axolotl images ship once CUDA 13's relocated `cuda/std/*` headers (`include/cccl`) are on the
+include path. It links the `nvidia-nvshmem-cu13` wheel that torch already depends on, so no OFED headers
+or system NVSHMEM are needed. No GPU is needed for the build; the wheel can be built once and installed
+on every node.
+
+```bash
+git clone --depth 1 --branch v1.2.1 https://github.com/deepseek-ai/DeepEP.git
+cd DeepEP
+export TORCH_CUDA_ARCH_LIST=10.0 MAX_JOBS=16 \
+  CFLAGS=-I/usr/local/cuda/include/cccl CXXFLAGS=-I/usr/local/cuda/include/cccl \
+  NVCC_PREPEND_FLAGS=-I/usr/local/cuda/include/cccl
+python setup.py bdist_wheel -d dist     # uv pip install . fails in the build backend on this tag
+uv pip install --no-deps dist/deep_ep-*.whl
+python -c "import deep_ep; print(deep_ep.Buffer)"
+```
+
+Notes:
+
+- `TORCH_CUDA_ARCH_LIST=10.0` makes `setup.py` set `DISABLE_AGGRESSIVE_PTX_INSTRS=1` on its own; the sm_90-only PTX tricks are not built. Hopper features (FP8 dispatch, TMA) stay on.
+- Axolotl's mesh keeps `ep` as the innermost axis, so EP groups are node-local and DeepEP only uses its NVLink intranode path; the NVSHMEM/RDMA path is linked but idle (`num_rdma_bytes` stays 0).
+- The `axolotlai/axolotl-cloud` `-blackwell` image tags ship this wheel together with the rest of the Blackwell kernel stack (see the [Docker docs](https://docs.axolotl.ai/docs/docker.html)).
+
 ## Usage
+
+EP requires FSDP2 (`fsdp_version: 2` with an `fsdp_config` block) and `fsdp_config.state_dict_type: FULL_STATE_DICT`; config validation rejects EP under DDP, DeepSpeed, or a sharded state dict. The dense weights FSDP-shard, the experts are wrapped on the non-`ep` axes, and the full state dict gathers every EP group's experts before rank 0 writes. `SHARDED_STATE_DICT` (accelerate's FSDP2 default when unset) would keep only EP group 0's experts, because every group's expert shard has the same name, shape and offset and DCP deduplicates them.
 
 ```yaml
 plugins:
   - axolotl.integrations.expert_parallel.ExpertParallelPlugin
 
 expert_parallel_size: 2  # 1 = disabled (default); > 1 = enabled
+fsdp_version: 2
+fsdp_config:
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
 ```
 
 For composition with FSDP at 4+ GPUs, set both `expert_parallel_size` and `dp_shard_size`. The product must equal `world_size`:
@@ -156,38 +216,99 @@ For composition with FSDP at 4+ GPUs, set both `expert_parallel_size` and `dp_sh
 # 4-GPU example: ep × dp_shard = 2 × 2 = 4
 expert_parallel_size: 2
 dp_shard_size: 2
+fsdp_version: 2
 fsdp_config:
-  fsdp_version: 2
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Qwen3MoeDecoderLayer
   state_dict_type: FULL_STATE_DICT
-  sharding_strategy: FULL_SHARD
+  reshard_after_forward: true
 ```
+
+Full-parameter training works with either layout. At 2 GPUs (`expert_parallel_size` equal to the world size, so no `dp_shard` axis) the dense parameters FSDP-shard across the whole world while the trainable experts are wrapped on a per-rank mesh, so every parameter is a DTensor and fused/foreach optimizers and gradient clipping see one kind of tensor. The expert combine sums gradients over the ranks that sent tokens where FSDP averages, so the experts' reduce-scatter is divided by `ep × dp_shard`; the full state dict gathers the experts across the EP axis before rank 0 writes, so the saved model carries every expert.
 
 See full example configs at [`examples/expert_parallel/`](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/expert_parallel).
 
 #### Implementation notes
 
-EP composes with the local-experts kernel you've already configured: ScatterMoE, SonicMoE, grouped_mm, or eager.
+EP runs as one experts implementation, `expert_parallel`, that wraps the local one you've already configured: the plugin records it, sets `experts_implementation: expert_parallel`, and calls the local implementation on the rows each rank receives. The local implementation is, in order of precedence:
 
-EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
+1. `use_scattermoe: true` -> ScatterMoE (Triton)
+2. `use_sonicmoe: true` -> SonicMoE (bf16 gated experts)
+3. `experts_implementation: <name>` -> any implementation registered in transformers' `ALL_EXPERTS_FUNCTIONS` (`grouped_mm`, `batched_mm`, your own) or `eager` (a Python loop, the numerics reference). transformers' `deepgemm` has no backward pass and is rejected.
+4. unset -> `grouped_mm` (with the kernels plugin loaded, unset means `eager`: its validator pins that default)
 
-| Your existing config                                | Local kernel under DeepEP |
-|-----------------------------------------------------|---------------------------|
-| `use_scattermoe: true`                              | ScatterMoE (Triton)       |
-| `use_sonicmoe: true`                                | SonicMoE (bf16 experts)   |
-| `experts_implementation: grouped_mm` / `batched_mm` | grouped_mm (transformers) |
-| `experts_implementation: eager`                     | eager Python loop         |
-| (unset)                                             | grouped_mm (default)      |
+The same list applies to either backend. Slots routed to another rank reach the local implementation as expert id `num_experts` with weight 0, the sentinel transformers' kernels already drop, so a newly registered implementation works under EP with no EP-side code as long as it ignores ids `>= num_experts`.
+
+The pre-`expert_parallel` names (`deep_ep`, `deep_ep_grouped_mm`, `deep_ep_scattermoe`, `deep_ep_sonicmoe`, `torch_ep_eager`, `torch_ep_grouped_mm`, `torch_ep_scattermoe`, `torch_ep_sonicmoe`) are deprecated: they still load, with a warning, as the matching local implementation (`*_scattermoe` / `*_sonicmoe` set `use_scattermoe` / `use_sonicmoe`). The backend prefix is ignored, as before; `expert_parallel_backend` picks the dispatch.
+
+EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. The mesh is ordered `(dp_replicate, dp_shard, cp, ep, tp)`, `ep` innermost, so each EP all-to-all group is a run of consecutive ranks that stays inside a node whenever `ep × tp` fits on one; the startup log reports which axes cross nodes. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
+
+## Training checkpoints and resume
+
+FSDP2 `FULL_STATE_DICT` checkpoints preserve every EP group's expert weights,
+expert LoRA, and optimizer state. The shared ownership-aware checkpoint path serves
+both Trainer and Accelerate. See [Full checkpoints and resume](https://docs.axolotl.ai/docs/multi-gpu.html#full-checkpoints-and-resume)
+for quantization, memory, and mesh compatibility limits.
+
+### Checkpoint files
+
+- `pytorch_model_fsdp.bin` is the native model checkpoint used by
+  `resume_from_checkpoint` and best-model loading. Trainer LoRA/QLoRA checkpoints
+  include PEFT export state, including frozen adapter factors, saved modules, and
+  required embeddings; the frozen base model is loaded separately.
+- `optimizer.bin` preserves every expert owner's optimizer state. It is absent
+  when `save_only_model: true`.
+- `adapter_model.safetensors` is the ordinary PEFT adapter export used by
+  `lora_model_dir`. Model-only intermediate checkpoints also include the native
+  resume file; final exports do not.
+
+Native checkpoints and final exports need not have the same layout. For example,
+Mixtral full-model exports unpack fused expert weights, while native checkpoints
+retain fused tensors. Packed bitsandbytes checkpoints also carry owner-specific
+quantization metadata and require unchanged EP ownership ranges.
+
+### Checkpoints from earlier versions
+
+Older EP checkpoints may contain only EP group 0's expert weights, expert LoRA,
+and optimizer moments. The full-checkpoint loader rejects incompatible shapes on
+every rank. Model tensor shapes are checked before any model parameters are copied,
+so a truncated model checkpoint does not partially overwrite the model.
+
+To recover from an incomplete legacy checkpoint:
+
+- **Full-parameter training:** start a new run from a complete final model export.
+- **LoRA:** if the legacy checkpoint has a complete `adapter_model.safetensors`,
+  load it with `lora_model_dir` in a new run.
+
+These recovery paths do not recover optimizer state or scheduler progress. Missing
+experts cannot be reconstructed from the truncated native checkpoint.
 
 ## Limitations
 
-- Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). `ModuleList` as used in Mixtral is not supported.
+- Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`, or `up_proj` / `down_proj` for non-gated experts such as Nemotron-H's relu² MoE). `ModuleList` as used in Mixtral is not supported.
 - `num_experts` must be divisible by `expert_parallel_size`.
-- Supported mesh axes: EP, EP × dp_shard, **EP × cp**, EP × cp × dp_shard (experts shard on `ep`,
-  the sequence on `cp`, non-expert weights on `dp_shard`). EP × **TP** is not yet supported and
-  raises `NotImplementedError`. EP × CP requires the model's attention to be context-parallel-aware
-  on the `cp` axis (e.g. GLM-5.2 DSA via the kernels plugin); stock attention uses accelerate CP.
+- EP requires FSDP2 with `fsdp_config.state_dict_type: FULL_STATE_DICT` (see [Usage](#usage));
+  DDP, DeepSpeed and `SHARDED_STATE_DICT` are rejected at config validation.
+- Supported mesh axes (`dp_replicate × ep × cp × dp_shard == world_size`):
+
+  | Layout | `dp_replicate` | `ep` | `cp` | `dp_shard` | Status |
+  |---|:---:|:---:|:---:|:---:|---|
+  | EP | 1 | =world | 1 | 1 | ✅ experts whole per rank, dense weights sharded over the world |
+  | EP × dp_shard | 1 | >1 | 1 | >1 | ✅ |
+  | EP × cp | 1 | >1 | >1 | 1 | ✅ expert slices shard over `cp` |
+  | EP × cp × dp_shard | 1 | >1 | >1 | >1 | ✅ expert slices shard over `dp_shard × cp` |
+  | HSDP × EP × dp_shard | >1 | >1 | 1 | >1 | ✅ `dp_replicate` outermost |
+  | HSDP × EP × cp | >1 | >1 | >1 | 1 | ✅ `dp_replicate` outermost |
+  | HSDP × EP × cp × dp_shard | >1 | >1 | >1 | >1 | ✅ |
+  | HSDP × EP (no `dp_shard`, no `cp`) | >1 | >1 | 1 | 1 | ✅ `dp_replicate` outermost; each replica keeps its expert slices whole (size-1 shard mesh) and reduces them across replicas |
+  | EP × TP | * | >1 | * | * | ❌ rejected at config validation (`ValueError`) |
+
+  Experts shard on `ep`, the sequence on `cp`, dense weights on every non-`ep` axis, expert
+  slices on `dp_shard × cp`. Stock attention runs CP through ringmaster (Ulysses preferred);
+  GLM-5.2 DSA via the kernels plugin brings its own `cp`-aware attention.
+- transformers' own expert/tensor parallelism (`distributed_config` with `enable_expert_parallel`,
+  `tp_plan`, `tp_size` via `model_kwargs`) is rejected: the plugin shards the experts itself and
+  routes tokens with its own backends, not transformers' RouterParallel plan.
 - DeepEP limitation: Low-latency (LL) kernels are inter-node only by design (pure RDMA via IBGDA). Single-node + intranode setups always use the standard kernels and don't benefit from LL.
 - FP8 dispatch needs Hopper + DISABLE_SM90_FEATURES=0.
 

@@ -207,3 +207,24 @@ def test_fp4_dtype_falls_back_to_empty_like():
     assert model.p.device.type == "cpu"
     assert model.p.dtype == torch.float4_e2m1fn_x2
     assert model.p.data_ptr() != 0
+
+
+@pytest.mark.parametrize("staged", [True, False])
+def test_loader_gate_uses_global_rank_for_staged_models(monkeypatch, staged):
+    """Staging is by global rank 0, so node 1's local rank 0 holds a meta model too."""
+    from axolotl.loaders.model import ModelLoader
+    from axolotl.utils.dict import DictDefault
+
+    monkeypatch.setenv("LOCAL_RANK", "0")
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    model = _NestedMetaAdapter()
+    model._axolotl_staged_nf4 = staged
+    loader = ModelLoader.__new__(ModelLoader)
+    loader.cfg = DictDefault(fsdp_config={"cpu_ram_efficient_loading": True})
+    loader.model = model
+
+    loader._materialize_trainable_meta_params()
+
+    materialized = not any(p.is_meta for p in model.parameters())
+    assert materialized is staged

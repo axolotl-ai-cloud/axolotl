@@ -127,27 +127,9 @@ class EBFTStrategy:
             trl = cfg.trl
             if trl:
                 if trl.use_vllm:
-                    kwargs["use_vllm"] = trl.use_vllm
-                    if trl.vllm_mode:
-                        kwargs["vllm_mode"] = trl.vllm_mode
-                    if trl.vllm_mode == "colocate":
-                        kwargs["vllm_enable_sleep_mode"] = trl.vllm_enable_sleep_mode
-                        vllm_cfg = cfg.vllm
-                        if vllm_cfg:
-                            kwargs["vllm_gpu_memory_utilization"] = (
-                                vllm_cfg.gpu_memory_utilization
-                            )
-                            kwargs["vllm_tensor_parallel_size"] = (
-                                vllm_cfg.tensor_parallel_size
-                            )
-                    kwargs["vllm_server_host"] = trl.vllm_server_host or (
-                        trl.vllm.host if trl.vllm else None
-                    )
-                    kwargs["vllm_server_port"] = trl.vllm_server_port or (
-                        trl.vllm.port if trl.vllm else None
-                    )
-                    if trl.vllm_server_timeout:
-                        kwargs["vllm_server_timeout"] = trl.vllm_server_timeout
+                    from axolotl.core.trainers.grpo import GRPOStrategy
+
+                    kwargs.update(GRPOStrategy.get_vllm_kwargs(trl, cfg.vllm))
 
                 if trl.num_generations:
                     kwargs["num_generations"] = trl.num_generations

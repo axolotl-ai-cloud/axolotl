@@ -7,7 +7,7 @@ import types
 from typing import Generator, Tuple, Type
 
 import torch
-from peft import PeftModelForCausalLM
+from peft import PeftModel, PeftModelForCausalLM
 from torch import nn
 from transformers import AutoConfig
 
@@ -16,6 +16,7 @@ from axolotl.kernels.lora import (
     apply_lora_gdn_in_proj,
     apply_lora_linear,
     apply_lora_mlp_geglu,
+    apply_lora_mlp_relu2,
     apply_lora_mlp_swiglu,
     apply_lora_o,
     apply_lora_qk,
@@ -170,8 +171,25 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
     if "base_model" not in cfg:
         raise ValueError("base_model must be specified in config")
 
+    from axolotl.model_support import get_model_support, resolve_model_support
+
+    support = get_model_support(cfg.get("model_config_type"))
+    provider = (
+        resolve_model_support(support).strategies.lora_attention_cls
+        if support is not None
+        else None
+    )
+    if provider is not None:
+        attention_cls = provider(cfg)
+        if attention_cls is not None:
+            return attention_cls
+
     # Get model config without loading the model
-    model_config = AutoConfig.from_pretrained(cfg["base_model"])
+    model_config = AutoConfig.from_pretrained(
+        cfg["base_model"],
+        trust_remote_code=bool(cfg.get("trust_remote_code")),
+        revision=cfg.get("revision_of_model"),
+    )
     model_type = model_config.model_type
 
     # Special case for model_type = "qwen2"
@@ -245,8 +263,8 @@ def patch_self_attn_lora(cfg: DictDefault):
         cfg: Dictionary mapping `axolotl` config keys to values.
 
     Raises:
-        AssertionError: If the required code blocks are not found in the attention
-            implementation.
+        ValueError: If the attention forward doesn't use a supported q/k/v/o
+            projection layout (e.g. MLA's q_a_proj/kv_a_proj_with_mqa).
     """
     attention_cls = get_attention_cls_from_config(cfg)
 
@@ -302,10 +320,14 @@ def patch_self_attn_lora(cfg: DictDefault):
     attention_cls._original_forward = self_attn_forward
     self_attn_forward, _ = detab_code(self_attn_forward)
 
-    assert any(qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES), (
-        "Original QKV code not found"
-    )
-    assert ORIGINAL_O_CODE in self_attn_forward, "Original O code not found"
+    if not any(qkv_options[0] in self_attn_forward for qkv_options in QKV_PATCHES) or (
+        ORIGINAL_O_CODE not in self_attn_forward
+    ):
+        raise ValueError(
+            f"{attention_cls.__name__} does not use a supported q/k/v/o projection "
+            "layout, so lora_qkv_kernel/lora_o_kernel cannot be applied. Set "
+            "lora_qkv_kernel: false and lora_o_kernel: false."
+        )
 
     for qkv_orig, qkv_patched in QKV_PATCHES:
         if qkv_orig in self_attn_forward:
@@ -321,35 +343,28 @@ def patch_self_attn_lora(cfg: DictDefault):
         1,
     )
 
-    # Load necessary imports
-    module_name = attention_cls.__module__
-    module = importlib.import_module(module_name)
-
-    items_to_import = []
-    for item in dir(module):
-        if item in self_attn_forward:
-            items_to_import.append(item)
-
-    exec(
-        f"from {module_name} import ({', '.join(items_to_import)})",
-        globals(),
-    )
-    exec(self_attn_forward, globals())
+    # Evaluate the rewritten forward in a copy of the defining module's namespace so
+    # its globals resolve as before, including for remote-code module paths.
+    module = importlib.import_module(attention_cls.__module__)
+    namespace = dict(vars(module))
+    exec(self_attn_forward, namespace)  # nosec B102
 
     LOG.info(f"Patched attention class with LoRA optims: {attention_cls.__name__}")
-    attention_cls.forward = axolotl_attn_forward
+    attention_cls.forward = namespace["axolotl_attn_forward"]
 
 
 def find_self_attn_in_layer(
     layer: nn.Module,
 ) -> Generator[Tuple[nn.Module], None, None]:
-    # general case of most models
-    if hasattr(layer, "self_attn"):
-        if all(
-            hasattr(layer.self_attn, proj)
-            for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]
+    seen = set()
+    for name in ("self_attn", "mixer"):
+        attention = getattr(layer, name, None)
+        if id(attention) not in seen and all(
+            hasattr(attention, proj)
+            for proj in ("q_proj", "k_proj", "v_proj", "o_proj")
         ):
-            yield layer.self_attn
+            seen.add(id(attention))
+            yield attention
 
 
 # GatedDeltaNet projections routed through the fused kernels to avoid peft's
@@ -449,6 +464,9 @@ def get_layers(model: PeftModelForCausalLM) -> list[nn.Module]:
         if hasattr(pretrained_model.model, "language_model"):
             return pretrained_model.model.language_model.layers
         return pretrained_model.model.layers
+    encoder = getattr(pretrained_model, "encoder", None)
+    if hasattr(encoder, "layers"):
+        return encoder.layers
 
     raise NotImplementedError(
         f"Model type {model.config.model_type} is not supported yet. Please create an Issue."
@@ -481,8 +499,8 @@ def apply_lora_kernel_patches(
         The optimizations require LoRA adapters with no dropout and no bias terms. The
             function will skip patching if these conditions aren't met.
     """
-    if not isinstance(model, PeftModelForCausalLM):
-        raise TypeError("Model must be a PeftModelForCausalLM")
+    if not isinstance(model, PeftModel):
+        raise TypeError("Model must be a PeftModel")
 
     # Get active LoRA adapter config
     if hasattr(model, "active_adapters"):
@@ -612,6 +630,20 @@ def apply_lora_kernel_patches(
                     patched = True
                 if patched:
                     linear_attn_patched_layers += 1
+        if cfg.lora_mlp_kernel and activation == "relu2":
+            candidates = [getattr(layer, name, None) for name in ("mlp", "mixer")]
+            mixer = getattr(layer, "mixer", None)
+            candidates.append(getattr(mixer, "shared_experts", None))
+            for mlp in candidates:
+                if (
+                    mlp is not None
+                    and not hasattr(mlp, "gate_proj")
+                    and all(
+                        hasattr(getattr(mlp, name, None), "lora_A")
+                        for name in ("up_proj", "down_proj")
+                    )
+                ):
+                    mlp.forward = types.MethodType(apply_lora_mlp_relu2, mlp)
         # When ScatterMoE/SonicMoE owns the routed experts, lora_mlp_kernel must only fuse the
         # DENSE shared MLP, never the routed-expert containers (which the MoE kernel handles).
         _moe_kernels_own_experts = bool(cfg.use_scattermoe) or bool(cfg.use_sonicmoe)
@@ -635,7 +667,7 @@ def apply_lora_kernel_patches(
 
                 if can_patch_mlp:
                     apply_fn = APPLY_FN_MAPPING[activation]
-                    layer.mlp.forward = types.MethodType(apply_fn, mlp)
+                    mlp.forward = types.MethodType(apply_fn, mlp)
                 else:
                     LOG.warning_once(
                         "Cannot patch some MLP layers - requires LoRA adapters"

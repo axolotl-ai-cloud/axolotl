@@ -39,3 +39,17 @@ def test_legacy_gc_steps_still_registers_callback():
 
 def test_no_gc_config_registers_nothing():
     assert _gc(_get_callbacks({})) is None
+
+
+def test_sync_profiler_keeps_explicit_start_step_zero():
+    from axolotl.utils.callbacks.sync_profiler import SyncProfilerCallback
+
+    callbacks = _get_callbacks(
+        {"sync_profiler_steps": 2, "sync_profiler_start_step": 0}
+    )
+    profiler = next(c for c in callbacks if isinstance(c, SyncProfilerCallback))
+    assert profiler.start_step == 0
+
+    callbacks = _get_callbacks({"sync_profiler_steps": 2})
+    profiler = next(c for c in callbacks if isinstance(c, SyncProfilerCallback))
+    assert profiler.start_step == 2

@@ -158,7 +158,7 @@ class NemoGymDataProducer(GRPODataProducer):
             loop.close()
 
         # Parse responses
-        eos_token_id = trainer.processing_class.eos_token_id
+        eos_token_id = trainer._tokenizer.eos_token_id
         prompt_ids_list = []
         completion_ids_list = []
         env_mask_list = []
@@ -179,7 +179,9 @@ class NemoGymDataProducer(GRPODataProducer):
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
         prompt_mask = [torch.ones_like(ids, dtype=torch.long) for ids in prompt_ids]
         prompt_ids = pad(
-            prompt_ids, padding_value=trainer.pad_token_id, padding_side="left"
+            prompt_ids,
+            padding_value=trainer._tokenizer.pad_token_id,
+            padding_side="left",
         )
         prompt_mask = pad(prompt_mask, padding_value=0, padding_side="left")
 
@@ -190,7 +192,9 @@ class NemoGymDataProducer(GRPODataProducer):
             torch.ones_like(ids, dtype=torch.long) for ids in completion_ids
         ]
         completion_ids = pad(
-            completion_ids, padding_value=trainer.pad_token_id, padding_side="right"
+            completion_ids,
+            padding_value=trainer._tokenizer.pad_token_id,
+            padding_side="right",
         )
         completion_mask = pad(completion_mask, padding_value=0, padding_side="right")
 

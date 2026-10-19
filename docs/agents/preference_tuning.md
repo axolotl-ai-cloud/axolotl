@@ -14,6 +14,8 @@ Reference for DPO, IPO, KTO, ORPO, and SimPO. For config templates and dataset f
 
 Default: start with DPO. All methods require `sample_packing: false`.
 
+DPO/IPO and KTO also accept image datasets for VLMs (`images`/`image` column, `processor_type: AutoProcessor`); ORPO and SimPO do not. See [rlhf.qmd](../rlhf.qmd#multimodal).
+
 ## Architecture
 
 ```

@@ -45,7 +45,7 @@ from transformers.utils.output_capturing import capture_outputs
 from axolotl.model_support.bailing_hybrid.configuration_bailing_moe_v3 import (
     BailingMoeV3Config,
 )
-from axolotl.monkeypatch.utils import get_unpad_data
+from axolotl.monkeypatch.utils import cu_seqlens_from_position_ids, get_unpad_data
 from axolotl.utils.logging import get_logger
 
 try:
@@ -59,38 +59,8 @@ except ImportError as err:
 LOG = get_logger(__name__)
 
 
-def cu_seqlens_from_position_ids(
-    position_ids: torch.Tensor | None,
-) -> torch.Tensor | None:
-    """Flat ``[N + 1]`` document offsets for fla's varlen API, or None if unpacked.
-
-    Axolotl removes the packed attention mask whenever sample packing is on
-    (``sample_packing_drop_attention_mask``), so a ``position_ids`` restarting at 0
-    is the only remaining signal for a document boundary. A batch is concatenated
-    into a single varlen stream, so each row boundary is a document boundary too.
-    """
-    if position_ids is None:
-        return None
-    if position_ids.dim() == 1:
-        position_ids = position_ids.unsqueeze(0)
-    rows, seq_len = position_ids.shape
-    restarts = (position_ids == 0).nonzero()
-    # a plain batch packs nothing; fla takes `[B, T, ...]` without a varlen stream
-    if rows > 1 and not bool((restarts[:, 1] != 0).any()):
-        return None
-    starts = restarts[:, 0] * seq_len + restarts[:, 1]
-    # a row can start mid-document: under context parallelism a chunk has no leading
-    # 0, and flattening a batch splits at every row start whether or not one is there
-    row_starts = torch.arange(rows, device=position_ids.device) * seq_len
-    starts = torch.cat([row_starts, starts]).unique()
-    if rows == 1 and starts.numel() < 2:
-        return None
-    total = starts.new_tensor([rows * seq_len])
-    return torch.cat([starts, total]).to(torch.int32)
-
-
 class BailingMoeV3RotaryEmbedding(DeepseekV3RotaryEmbedding):
-    def __init__(self, config: BailingMoeV3Config, device=None):
+    def __init__(self, config: BailingMoeV3Config):
         rope_config = copy.deepcopy(config)
         # `head_dim` sizes the linear-attention heads; rope only covers the MLA rope split
         rope_config.head_dim = config.qk_rope_head_dim
@@ -98,7 +68,7 @@ class BailingMoeV3RotaryEmbedding(DeepseekV3RotaryEmbedding):
             **config.rope_parameters,
             "partial_rotary_factor": 1.0,
         }
-        super().__init__(rope_config, device=device)
+        super().__init__(rope_config)
 
 
 class BailingMoeV3MultiLatentAttention(nn.Module):
