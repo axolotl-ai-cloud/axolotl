@@ -314,7 +314,16 @@ class DistributedParallelMixin(Trainer):
             and self.accelerator.parallelism_config
             and self.accelerator.parallelism_config.dp_shard_enabled
         ):
-            state_dict = self.accelerator.get_state_dict(self.model)
+            from accelerate.utils.modeling import is_peft_model
+
+            if is_peft_model(self.model):
+                from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+                    full_model_state,
+                )
+
+                state_dict = full_model_state(self.model, adapter_only=True)
+            else:
+                state_dict = self.accelerator.get_state_dict(self.model)
         self._save_fsdp2_model_only_checkpoint(output_dir, state_dict)
         super()._save(output_dir, state_dict=state_dict)
 

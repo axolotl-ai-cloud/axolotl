@@ -258,10 +258,38 @@ def check_peft_trainer_save_route(mesh, root):
     for unwrap in (True, False):
         full = accelerator.get_state_dict(model, unwrap=unwrap)
         if dist.get_rank() == 0:
-            assert set(full) == set(model.state_dict())
-            assert "base_model.model.counter" in full
-            assert "base_model.model.dense.base_layer.weight" in full
+            # the frozen base never reaches rank 0; PEFT selects the adapter from these keys
+            assert set(full) == {k for k in model.state_dict() if "lora_" in k}
+            assert set(get_peft_model_state_dict(model, state_dict=full)) == set(
+                get_peft_model_state_dict(model)
+            )
+    from transformers import Trainer
+
+    from axolotl.core.trainers.mixins.distributed_parallel import (
+        DistributedParallelMixin,
+    )
+
+    def no_full_gather(*args, **kwargs):
+        raise AssertionError("gathered the full PEFT state dict")
+
+    mixin = object.__new__(DistributedParallelMixin)
+    mixin.model = model
+    mixin.args = SimpleNamespace(should_save=False)
+    mixin.accelerator = SimpleNamespace(
+        parallelism_config=SimpleNamespace(dp_shard_enabled=True),
+        get_state_dict=no_full_gather,
+    )
+    captured = {}
+    with patch.object(
+        Trainer,
+        "_save",
+        lambda self, output_dir=None, state_dict=None: captured.update(
+            state=state_dict
+        ),
+    ):
+        mixin._save(str(root / "mixin-save"))
     if dist.get_rank() == 0:
+        assert set(captured["state"]) == {k for k in model.state_dict() if "lora_" in k}
         print("PASS full-peft-state-dict", flush=True)
     trainer = object.__new__(AxolotlTrainer)
     trainer.model = model

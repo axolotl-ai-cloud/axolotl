@@ -1167,7 +1167,8 @@ def patch_fsdp2_full_checkpoint():
     def get_state_dict(self, model, unwrap=True):
         plugin = getattr(self.state, "fsdp_plugin", None)
         if plugin is not None and _full(plugin) and _model_needs_ownership(model):
-            return full_model_state(model)
+            # PEFT saves select the adapter from this; never gather the frozen base to rank 0
+            return full_model_state(model, adapter_only=is_peft_model(model))
         return original_get(self, model, unwrap=unwrap)
 
     accelerate.Accelerator.get_state_dict = get_state_dict
