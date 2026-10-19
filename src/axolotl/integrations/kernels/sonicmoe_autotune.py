@@ -174,14 +174,41 @@ def collect_sonicmoe_records():
     return collect_sonicmoe_autotune_configs(with_timings=True)
 
 
+def _timing_spread(ms):
+    """Best/worst time and the regret (% over the best) of the runner-up and the slowest
+    candidate, over the whole benchmarked set (``ms`` sorted ascending)."""
+    best, worst = ms[0], ms[-1]
+    if best <= 0:
+        return {}
+    spread = {
+        "best_ms": round(best, 4),
+        "worst_ms": round(worst, 4),
+        "worst_regret_pct": round((worst / best - 1) * 100, 2),
+    }
+    if len(ms) > 1:
+        spread["runner_up_regret_pct"] = round((ms[1] / best - 1) * 100, 2)
+    return spread
+
+
 class SonicMoEAutotuneReportCallback(AutotuneTelemetryCallback):
     """Report external SonicMoE/Quack winners and final loaded-cache coverage."""
 
     event_type = "sonicmoe-autotune"
+    # quack sweeps 40-80 candidates per key; the fastest few carry the profile signal
+    max_timings_per_record = 8
 
     def _collect_configs(self):
         self._coverage = []
-        return collect_sonicmoe_autotune_configs(self._coverage)
+        records = collect_sonicmoe_autotune_configs(self._coverage, with_timings=True)
+        for record in records:
+            timings = record.get("timings_ms")
+            if timings:
+                record.update(_timing_spread(list(timings.values())))
+            if timings and len(timings) > self.max_timings_per_record:
+                kept = list(timings.items())[: self.max_timings_per_record]
+                record["timings_ms"] = dict(kept)
+                record["timings_ms_dropped"] = len(timings) - len(kept)
+        return records
 
     def _coverage_info(self):
         coverage = getattr(self, "_coverage", [])
