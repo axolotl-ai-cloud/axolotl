@@ -87,6 +87,15 @@ class KernelsArgs(BaseModel):
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
     use_sonicmoe: bool | None = None
+    # SonicMoE under expert parallelism pads each rank's received rows so quack's autotuner sees
+    # few distinct shapes. "pow2" (default): the next power of two. "highwater": the largest count
+    # seen so far times sonicmoe_ep_row_padding_headroom (default 1.03), rounded up to
+    # sonicmoe_ep_row_padding_granule rows (default 65536), tracked separately for training and
+    # eval. Use highwater when tokens * top_k per rank is a power of two: pow2 then doubles about
+    # half the batches.
+    sonicmoe_ep_row_padding: Literal["pow2", "highwater"] | None = None
+    sonicmoe_ep_row_padding_granule: int | None = None
+    sonicmoe_ep_row_padding_headroom: float | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
     use_dsv4_kernels: bool | None = None
     # GLM-5.2 (glm_moe_dsa) DSA fused attention: MLA-absorption head-batched sparse-gather attn
@@ -144,6 +153,24 @@ class KernelsArgs(BaseModel):
         if (buckets is not None or tune is not None) and not data.get("use_sonicmoe"):
             raise ValueError(
                 "quack_autotune and quack_autotune_key_buckets only apply with use_sonicmoe"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sonicmoe_ep_row_padding(cls, data):
+        granule = data.get("sonicmoe_ep_row_padding_granule")
+        headroom = data.get("sonicmoe_ep_row_padding_headroom")
+        if granule is not None and granule < 1:
+            raise ValueError("sonicmoe_ep_row_padding_granule must be at least 1")
+        if headroom is not None and headroom < 1:
+            raise ValueError("sonicmoe_ep_row_padding_headroom must be at least 1.0")
+        if (granule is not None or headroom is not None) and data.get(
+            "sonicmoe_ep_row_padding"
+        ) != "highwater":
+            LOG.warning(
+                "sonicmoe_ep_row_padding_granule/_headroom only apply with "
+                "sonicmoe_ep_row_padding: highwater"
             )
         return data
 
