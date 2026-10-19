@@ -17,6 +17,27 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def _preload_sonicmoe_kernel() -> bool:
+    """Import the hub sonic-moe kernel now so its quack autotuners exist before any forward.
+
+    Otherwise the first MoE forward imports it, and with ``eval_on_start`` that forward is in
+    the step-0 eval, which runs after ``on_train_begin`` and before the first ``on_step_begin``:
+    neither hook could attach autotune profiles or seed the quack cache for that eval.
+    """
+    try:
+        from transformers.integrations.sonicmoe import load_sonicmoe_kernel
+
+        load_sonicmoe_kernel()
+    except Exception as exc:  # pylint: disable=broad-except
+        LOG.warning(
+            "Could not preload the sonic-moe kernel (%s); its autotune profiles attach "
+            "at the first training step instead",
+            exc,
+        )
+        return False
+    return True
+
+
 def _check_sonicmoe_gpu_compat():
     """Validate GPU compute capability for SonicMoE and configure env.
 
@@ -251,10 +272,18 @@ class KernelsPlugin(BasePlugin):
             adapter.pre_lora_load(cfg, model)
 
     def post_model_load(self, cfg, model):
+        sonic_loaded = bool(cfg.use_sonicmoe) and _preload_sonicmoe_kernel()
         if cfg.autotune_cache_path:
             from axolotl.integrations.kernels.autotune_cache import load_autotune_cache
 
             load_autotune_cache(cfg.autotune_cache_path)
+            if sonic_loaded:
+                from axolotl.integrations.kernels.autotune_cache import (
+                    load_quack_cache,
+                    quack_cache_path,
+                )
+
+                load_quack_cache(quack_cache_path(cfg.autotune_cache_path))
         if cfg.autotune_profiles:
             from axolotl.integrations.kernels.autotune_profiles import (
                 apply_autotune_profiles,

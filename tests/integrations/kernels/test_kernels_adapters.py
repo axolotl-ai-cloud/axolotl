@@ -125,6 +125,65 @@ def test_plugin_caches_adapter_discovery(monkeypatch):
     assert calls["n"] == 1  # discovered once, cached across hooks
 
 
+def test_post_model_load_preloads_sonicmoe_before_profiles(monkeypatch):
+    import axolotl.integrations.kernels.autotune_cache as cache_mod
+    import axolotl.integrations.kernels.autotune_profiles as profiles_mod
+    import axolotl.integrations.kernels.libs.sonicmoe.epilogue as epilogue_mod
+
+    order = []
+    monkeypatch.setattr(plugin_mod, "get_active_adapters", lambda cfg: [])
+    monkeypatch.setattr(
+        plugin_mod, "_preload_sonicmoe_kernel", lambda: order.append("preload") or True
+    )
+    monkeypatch.setattr(
+        cache_mod, "load_autotune_cache", lambda path: order.append("triton-cache")
+    )
+    monkeypatch.setattr(
+        cache_mod, "load_quack_cache", lambda path: order.append(("quack-cache", path))
+    )
+    monkeypatch.setattr(
+        profiles_mod,
+        "apply_autotune_profiles",
+        lambda profiles: order.append("profiles"),
+    )
+    monkeypatch.setattr(epilogue_mod, "check_model_epilogues", lambda model: None)
+
+    cfg = Cfg(
+        use_sonicmoe=True,
+        autotune_cache_path="/cache/b200.json",
+        autotune_profiles=[{"kernel": "gemm_tuned", "backend": "quack"}],
+    )
+    KernelsPlugin().post_model_load(cfg, object())
+
+    assert order == [
+        "preload",
+        "triton-cache",
+        ("quack-cache", "/cache/b200.quack.json"),
+        "profiles",
+    ]
+
+
+def test_post_model_load_skips_sonicmoe_preload_without_sonicmoe(monkeypatch):
+    monkeypatch.setattr(plugin_mod, "get_active_adapters", lambda cfg: [])
+    preload = MagicMock(return_value=True)
+    monkeypatch.setattr(plugin_mod, "_preload_sonicmoe_kernel", preload)
+    KernelsPlugin().post_model_load(Cfg(use_sonicmoe=False), object())
+    preload.assert_not_called()
+
+
+def test_preload_sonicmoe_kernel_failure_is_a_warning(monkeypatch):
+    import transformers.integrations.sonicmoe as hf_sonic
+
+    def boom():
+        raise RuntimeError("no kernel")
+
+    monkeypatch.setattr(hf_sonic, "load_sonicmoe_kernel", boom)
+    warning = MagicMock()
+    monkeypatch.setattr(plugin_mod.LOG, "warning", warning)
+    assert plugin_mod._preload_sonicmoe_kernel() is False
+    warning.assert_called_once()
+
+
 def test_resolve_nonexpert_quantization_intent_and_legacy():
     # intent field takes precedence
     assert (
