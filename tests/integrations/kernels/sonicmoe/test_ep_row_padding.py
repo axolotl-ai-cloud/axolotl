@@ -109,7 +109,8 @@ def test_ep_forward_pads_with_sentinels_and_slices_back(mode, monkeypatch):
     experts.configure_ep_row_padding(mode, granule=1536, headroom=1.0)
     seen = {}
 
-    def fake_forward(module, hidden_states, top_k_index, top_k_weights):
+    def fake_forward(module, hidden_states, top_k_index, top_k_weights, pairs=None):
+        assert pairs is None
         seen.update(hidden=hidden_states, index=top_k_index, weights=top_k_weights)
         return hidden_states * 2
 

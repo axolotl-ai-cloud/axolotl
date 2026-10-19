@@ -202,6 +202,7 @@ class KernelsPlugin(BasePlugin):
             _check_sonicmoe_gpu_compat()
 
             from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+                configure_ep_compact_routing,
                 configure_ep_row_padding,
                 register_sonicmoe_experts,
             )
@@ -211,6 +212,10 @@ class KernelsPlugin(BasePlugin):
                 cfg.sonicmoe_ep_row_padding or "pow2",
                 granule=cfg.sonicmoe_ep_row_padding_granule or 4096,
                 headroom=cfg.sonicmoe_ep_row_padding_headroom or 1.03,
+            )
+            configure_ep_compact_routing(
+                bool(cfg.sonicmoe_ep_compact_routing),
+                granule=cfg.sonicmoe_ep_pair_padding_granule or 32768,
             )
             if not ep_active:
                 cfg.experts_implementation = "sonicmoe"

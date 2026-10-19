@@ -188,6 +188,15 @@ def configure_ep_row_padding(
     _EP_ROW_MARKS.clear()
 
 
+def _highwater(marks: dict, training: bool, count: int, granule: int, cap: int) -> int:
+    mark = marks.get(training, 0)
+    if count > mark:
+        wanted = math.ceil(count * _EP_ROW_PADDING["headroom"])
+        mark = min(-(-wanted // granule) * granule, cap)
+        marks[training] = mark
+    return mark
+
+
 def ep_padded_rows(num_recv: int, training: bool) -> int:
     """Tokens to pad an EP-received batch of ``num_recv`` tokens to (never below 1024).
 
@@ -198,14 +207,131 @@ def ep_padded_rows(num_recv: int, training: bool) -> int:
     pow2 = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
     if _EP_ROW_PADDING["mode"] != "highwater":
         return pow2
-    mark = _EP_ROW_MARKS.get(training, 0)
-    if num_recv > mark:
-        granule = _EP_ROW_PADDING["granule"]
-        wanted = math.ceil(num_recv * _EP_ROW_PADDING["headroom"])
-        # headroom must not push a count at a power of two (EP's per-rank cap) past it
-        mark = min(-(-wanted // granule) * granule, pow2)
-        _EP_ROW_MARKS[training] = mark
+    # headroom must not push a count at a power of two (EP's per-rank cap) past it
+    mark = _highwater(
+        _EP_ROW_MARKS, training, num_recv, _EP_ROW_PADDING["granule"], pow2
+    )
     return max(mark, 1024)
+
+
+_EP_COMPACT: dict = {"enabled": False, "granule": 32768}
+_EP_PAIR_MARKS: dict[bool, int] = {}
+_EP_COMPACT_WARNED: set[str] = set()
+
+
+def configure_ep_compact_routing(enabled: bool = False, granule: int = 32768) -> None:
+    if granule < 1:
+        raise ValueError("sonicmoe_ep_pair_padding_granule must be at least 1")
+    _EP_COMPACT.update(enabled=bool(enabled), granule=int(granule))
+    _EP_PAIR_MARKS.clear()
+
+
+def compact_local_pairs(
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    num_experts: int,
+    training: bool,
+    dtype: torch.dtype,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Flat ``(token_indices, expert_indices, router_scores)`` for the local slots only.
+
+    ``top_k_index`` is the (token-padded) EP grid: ids in ``[0, num_experts)`` are local
+    experts, anything else is a remote slot. The pair count is padded high-water style
+    (``_EP_COMPACT["granule"]``, shared headroom) with sentinel pairs (expert
+    ``num_experts``, score 0) taken from unused slots in token order, so ``token_indices``
+    stays sorted ascending and no token has more than ``k`` pairs. A token with no local
+    expert keeps one sentinel pair, as it has on the full grid, so every token is covered.
+    """
+    num_tokens, k = top_k_index.shape
+    local = (top_k_index >= 0) & (top_k_index < num_experts)
+    has_local = local.any(dim=1)
+    required = local.clone()
+    required[:, 0] |= ~has_local
+    needed = int(required.sum())
+    padded = _highwater(
+        _EP_PAIR_MARKS, training, needed, _EP_COMPACT["granule"], num_tokens * k
+    )
+    padded = max(padded, needed)
+    free = ~required.reshape(-1)
+    chosen = free & (torch.cumsum(free, 0) <= padded - needed)
+    keep = (required.reshape(-1) | chosen).nonzero().squeeze(1)
+    token_indices = torch.arange(
+        num_tokens, device=top_k_index.device, dtype=torch.int32
+    ).repeat_interleave(k)[keep]
+    expert_indices = (
+        torch.where(local, top_k_index, num_experts).reshape(-1)[keep].to(torch.int32)
+    )
+    router_scores = (
+        torch.where(local, top_k_weights, torch.zeros_like(top_k_weights))
+        .reshape(-1)[keep]
+        .to(dtype)
+    )
+    return token_indices, expert_indices, router_scores
+
+
+def _sonicmoe_pairs_forward(
+    facade: "_LoRAExpertsFacade",
+    hidden_states: torch.Tensor,
+    token_indices: torch.Tensor,
+    expert_indices: torch.Tensor,
+    router_scores: torch.Tensor,
+) -> torch.Tensor:
+    """transformers' ``sonicmoe_experts_forward`` with caller-built flat routing."""
+    from transformers.integrations.sonicmoe import ACT_MAP, load_sonicmoe_kernel
+
+    if facade.has_post_expert_norm:
+        raise ValueError(
+            "The `sonicmoe` experts implementation does not support experts with a "
+            "post-expert norm."
+        )
+    act_name = getattr(facade.config, "hidden_act", "silu").lower()
+    if act_name not in ACT_MAP:
+        raise ValueError(
+            f"sonicmoe does not support the {act_name!r} activation; expected one of "
+            f"{sorted(ACT_MAP)}."
+        )
+    perm = (2, 1, 0) if facade.is_transposed else (1, 2, 0)
+    sonicmoe = load_sonicmoe_kernel()
+    output, _ = sonicmoe.moe_general_routing_inputs(
+        hidden_states,
+        router_scores,
+        token_indices,
+        expert_indices,
+        facade.gate_up_proj.permute(*perm),
+        facade.gate_up_proj_bias if facade.has_bias else None,
+        facade.down_proj.permute(*perm),
+        facade.down_proj_bias if facade.has_bias else None,
+        E=facade.num_experts,
+        activation_type=getattr(
+            sonicmoe.activation_type_enum, ACT_MAP[act_name].upper()
+        ),
+        is_inference_mode_enabled=not torch.is_grad_enabled(),
+        concat_layout=facade.is_concatenated,
+        stream_id=None,
+    )
+    return output
+
+
+def _compact_routing_applies(experts_module) -> bool:
+    if not _EP_COMPACT["enabled"]:
+        return False
+    if not getattr(experts_module, "has_gate", True):
+        reason = "non-gated experts"
+    elif getattr(experts_module, "_axolotl_multilora_sonic_forward", None) is not None:
+        reason = "multi-LoRA"
+    elif torch.compiler.is_compiling():
+        reason = "torch.compile (the pair count is data-dependent)"
+    else:
+        return True
+    if reason not in _EP_COMPACT_WARNED:
+        _EP_COMPACT_WARNED.add(reason)
+        from axolotl.utils.logging import get_logger
+
+        get_logger(__name__).warning(
+            "sonicmoe_ep_compact_routing: %s, using the full tokens x top_k grid",
+            reason,
+        )
+    return False
 
 
 def _sonicmoe_ep_forward(
@@ -259,16 +385,22 @@ def _sonicmoe_ep_forward(
 
     num_recv = hidden_states.size(0)
     padded = ep_padded_rows(num_recv, self.training)
-    if padded == num_recv:
-        return _sonicmoe_forward(self, hidden_states, top_k_index, top_k_weights)
-    pad = padded - num_recv
-    out = _sonicmoe_forward(
-        self,
-        F.pad(hidden_states, (0, 0, 0, pad)),
-        F.pad(top_k_index, (0, 0, 0, pad), value=self.num_experts),
-        F.pad(top_k_weights, (0, 0, 0, pad)),
-    )
-    return out[:num_recv]
+    if padded != num_recv:
+        pad = padded - num_recv
+        hidden_states = F.pad(hidden_states, (0, 0, 0, pad))
+        top_k_index = F.pad(top_k_index, (0, 0, 0, pad), value=self.num_experts)
+        top_k_weights = F.pad(top_k_weights, (0, 0, 0, pad))
+    pairs = None
+    if _compact_routing_applies(self):
+        pairs = compact_local_pairs(
+            top_k_index,
+            top_k_weights,
+            self.num_experts,
+            self.training,
+            hidden_states.dtype,
+        )
+    out = _sonicmoe_forward(self, hidden_states, top_k_index, top_k_weights, pairs)
+    return out if padded == num_recv else out[:num_recv]
 
 
 def _sonicmoe_forward(
@@ -276,7 +408,10 @@ def _sonicmoe_forward(
     hidden_states: torch.Tensor,
     top_k_index: torch.Tensor,
     top_k_weights: torch.Tensor,
+    pairs: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
 ) -> torch.Tensor:
+    """``pairs`` (from ``compact_local_pairs``) replaces the tokens x top_k grid for the dense
+    gated kernel call; every other branch reads the grid, which still describes the routing."""
     from transformers.integrations.sonicmoe import sonicmoe_experts_forward
 
     from .nvfp4 import is_nvfp4_param
@@ -327,12 +462,10 @@ def _sonicmoe_forward(
             self, hidden_states, top_k_index, top_k_weights, w1, b1, w2, b2
         )
 
-    return sonicmoe_experts_forward(
-        _LoRAExpertsFacade(self, w1, b1, w2, b2),
-        hidden_states,
-        top_k_index,
-        top_k_weights,
-    )
+    facade = _LoRAExpertsFacade(self, w1, b1, w2, b2)
+    if pairs is not None:
+        return _sonicmoe_pairs_forward(facade, hidden_states, *pairs)
+    return sonicmoe_experts_forward(facade, hidden_states, top_k_index, top_k_weights)
 
 
 def _sonicmoe_nongated_forward(

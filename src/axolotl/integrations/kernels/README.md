@@ -140,10 +140,37 @@ setting.
 
 The larger cost is the tokens x top_k expansion itself: about 7/8 of the expert-buffer rows on
 Beam are sentinels. sonic-moe's `moe_general_routing_inputs` takes flat per-pair routing
-(`router_scores`, `token_indices` sorted ascending, `expert_indices`), so passing only the local
-pairs would shrink those buffers to about the real pair count. That needs axolotl to call it
-directly instead of going through transformers' `sonicmoe_experts_forward`, which always passes
-every slot.
+(`router_scores`, `token_indices` sorted ascending, `expert_indices`), and
+`sonicmoe_ep_compact_routing` uses it to pass only the local (token, expert) pairs:
+
+```yaml
+sonicmoe_ep_compact_routing: true
+sonicmoe_ep_pair_padding_granule: 32768   # pairs; default
+sonicmoe_ep_row_padding: highwater        # recommended with it, see below
+```
+
+On Beam the expert buffers drop from 131072 padded tokens x 8 = 1,048,576 slot rows to about
+131k pairs (16384 tokens x 8 experts spread over 8 ranks), padded up to the pair mark.
+
+- **Pair padding.** The pair count is padded high-water style (largest count seen x
+  `sonicmoe_ep_row_padding_headroom`, rounded up to the pair granule; separate marks for training
+  and eval, capped at tokens x top_k). Pad pairs are unused slots of the grid in token order with
+  expert id `num_experts` and score 0, so `token_indices` stays sorted and no token gets more than
+  top_k pairs.
+- **Token padding still applies.** The received tokens are padded as before because the token
+  count is in the kernel shapes too: it is the gather source of the gate/up GEMM and sizes the
+  per-token offsets and the output. That costs tokens x hidden, not tokens x top_k x hidden. Every
+  token keeps at least one pair, a sentinel one if it has no local expert, just as it has a full
+  sentinel row on the grid, so pow2 token padding to 131072 also adds up to ~45k sentinel pairs.
+  Use `highwater` token padding with compaction.
+- **Sentinel masking.** On the grid most slots are sentinels, so the EP path depends on
+  sonic-moe dropping `expert >= E` lanes (the kernels-community EP sentinel fix, 9aaebcd;
+  Dao-AILab/sonic-moe#51). With compaction only the pad pairs and the one pair of a token with no
+  local expert are sentinels.
+- **Where it applies.** Dense gated bf16 experts on the EP path. NVFP4 / merge-aware, multi-LoRA,
+  non-gated experts and the non-EP path keep their current routes. Building the pairs reads the
+  pair count on the host (one sync per MoE call), so under `torch.compile` the grid is used, with
+  a warning.
 
 ## Model Support
 

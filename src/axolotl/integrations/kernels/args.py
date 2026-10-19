@@ -81,6 +81,12 @@ class KernelsArgs(BaseModel):
     sonicmoe_ep_row_padding: Literal["pow2", "highwater"] | None = None
     sonicmoe_ep_row_padding_granule: int | None = None
     sonicmoe_ep_row_padding_headroom: float | None = None
+    # Hand the bf16 SonicMoE EP kernel only the (token, local expert) pairs instead of the
+    # tokens x top_k grid of mostly remote-slot sentinels, which shrinks its expert buffers about
+    # top_k / (local experts hit per token) times. The pair count is padded high-water style to
+    # sonicmoe_ep_pair_padding_granule pairs (default 32768) with the row-padding headroom.
+    sonicmoe_ep_compact_routing: bool | None = None
+    sonicmoe_ep_pair_padding_granule: int | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
     use_dsv4_kernels: bool | None = None
     # GLM-5.2 (glm_moe_dsa) DSA fused attention: MLA-absorption head-batched sparse-gather attn
@@ -132,12 +138,25 @@ class KernelsArgs(BaseModel):
             raise ValueError("sonicmoe_ep_row_padding_granule must be at least 1")
         if headroom is not None and headroom < 1:
             raise ValueError("sonicmoe_ep_row_padding_headroom must be at least 1.0")
-        if (granule is not None or headroom is not None) and data.get(
-            "sonicmoe_ep_row_padding"
-        ) != "highwater":
+        highwater = data.get("sonicmoe_ep_row_padding") == "highwater"
+        compact = bool(data.get("sonicmoe_ep_compact_routing"))
+        if granule is not None and not highwater:
             LOG.warning(
-                "sonicmoe_ep_row_padding_granule/_headroom only apply with "
+                "sonicmoe_ep_row_padding_granule only applies with "
                 "sonicmoe_ep_row_padding: highwater"
+            )
+        if headroom is not None and not (highwater or compact):
+            LOG.warning(
+                "sonicmoe_ep_row_padding_headroom only applies with "
+                "sonicmoe_ep_row_padding: highwater or sonicmoe_ep_compact_routing"
+            )
+        pair_granule = data.get("sonicmoe_ep_pair_padding_granule")
+        if pair_granule is not None and pair_granule < 1:
+            raise ValueError("sonicmoe_ep_pair_padding_granule must be at least 1")
+        if pair_granule is not None and not compact:
+            LOG.warning(
+                "sonicmoe_ep_pair_padding_granule only applies with "
+                "sonicmoe_ep_compact_routing: true"
             )
         return data
 
