@@ -234,6 +234,19 @@ _EP_ROW_MARKS = _HighWaterMarks()
 _EP_PAIR_MARKS = _HighWaterMarks()
 
 
+def seed_ep_padding_marks(rows: int | None = None, pairs: int | None = None) -> None:
+    """Start the training marks at ``rows`` tokens and ``pairs`` pairs, rounded up to their
+    granules, so the first step pads every layer to them instead of to its own count. Never
+    lowers a mark; a step that sees more still raises it."""
+    for count, marks, granule in (
+        (rows, _EP_ROW_MARKS, _EP_ROW_PADDING["granule"]),
+        (pairs, _EP_PAIR_MARKS, _EP_COMPACT["granule"]),
+    ):
+        if count:
+            size = -(-int(count) // granule) * granule
+            marks.frozen[True] = max(marks.frozen.get(True, 0), size)
+
+
 def promote_ep_padding_marks() -> None:
     """Let the token and pair marks grow to what the last step saw; call between steps."""
     _EP_ROW_MARKS.promote()

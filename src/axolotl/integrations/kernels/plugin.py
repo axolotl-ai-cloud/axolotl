@@ -48,6 +48,26 @@ def _quack_policy(cfg) -> tuple[str, bool] | None:
     return cfg.quack_autotune_key_buckets or "pow2", cfg.quack_autotune is not False
 
 
+def _seed_ep_padding(cfg, model) -> None:
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import seed_ep_padding_marks
+
+    ep = cfg.expert_parallel_size or 1
+    tokens = (cfg.sequence_len or 0) * (cfg.micro_batch_size or 1) * ep
+    pairs = None
+    if cfg.sonicmoe_ep_compact_routing and cfg.sonicmoe_ep_pair_seed_factor:
+        config = getattr(model, "config", None)
+        config = getattr(config, "text_config", None) or config
+        top_k = getattr(config, "num_experts_per_tok", None)
+        if top_k:
+            pairs = int(tokens * top_k / ep * cfg.sonicmoe_ep_pair_seed_factor)
+        else:
+            LOG.warning(
+                "sonicmoe_ep_pair_seed_factor: no num_experts_per_tok on the model config"
+            )
+    seed_ep_padding_marks(rows=tokens, pairs=pairs)
+    LOG.info("Seeded SonicMoE EP padding marks: %d tokens, %s pairs", tokens, pairs)
+
+
 def _check_sonicmoe_gpu_compat():
     """Validate GPU compute capability for SonicMoE and configure env.
 
@@ -366,6 +386,8 @@ class KernelsPlugin(BasePlugin):
             adapter.pre_lora_load(cfg, model)
 
     def post_model_load(self, cfg, model):
+        if cfg.use_sonicmoe and cfg.sonicmoe_ep_padding_seed:
+            _seed_ep_padding(cfg, model)
         sonic_loaded = bool(cfg.use_sonicmoe) and _preload_sonicmoe_kernel()
         if cfg.autotune_cache_path:
             from axolotl.integrations.kernels.autotune_cache import load_autotune_cache
