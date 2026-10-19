@@ -532,6 +532,7 @@ website:
             - docs/qat.qmd
             - docs/quantize.qmd
             - docs/export.qmd
+            - docs/nvfp4_training.qmd
             - docs/nvfp4_lora.qmd
             - docs/1_58bit_finetuning.qmd
             - docs/optimizations.qmd
