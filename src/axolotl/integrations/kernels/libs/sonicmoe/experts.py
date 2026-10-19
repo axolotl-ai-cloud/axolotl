@@ -170,13 +170,13 @@ def sonicmoe_experts_forward_with_lora(
 
 
 EP_ROW_PADDING_MODES = ("pow2", "highwater")
-_EP_ROW_PADDING: dict = {"mode": "pow2", "granule": 65536, "headroom": 1.03}
+_EP_ROW_PADDING: dict = {"mode": "pow2", "granule": 4096, "headroom": 1.03}
 # one high-water mark per module.training value, shared by every MoE layer
 _EP_ROW_MARKS: dict[bool, int] = {}
 
 
 def configure_ep_row_padding(
-    mode: str = "pow2", granule: int = 65536, headroom: float = 1.03
+    mode: str = "pow2", granule: int = 4096, headroom: float = 1.03
 ) -> None:
     if mode not in EP_ROW_PADDING_MODES:
         raise ValueError(
@@ -189,19 +189,21 @@ def configure_ep_row_padding(
 
 
 def ep_padded_rows(num_recv: int, training: bool) -> int:
-    """Rows to pad an EP-received batch to (never below 1024).
+    """Tokens to pad an EP-received batch of ``num_recv`` tokens to (never below 1024).
 
     ``pow2``: the next power of two. ``highwater``: the largest count seen so far (for this
     ``training`` value) times ``headroom``, rounded up to ``granule``, so shapes stay put
     across steps and layers without doubling a batch that sits just over a power of two.
     """
+    pow2 = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
     if _EP_ROW_PADDING["mode"] != "highwater":
-        return max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
+        return pow2
     mark = _EP_ROW_MARKS.get(training, 0)
     if num_recv > mark:
         granule = _EP_ROW_PADDING["granule"]
         wanted = math.ceil(num_recv * _EP_ROW_PADDING["headroom"])
-        mark = -(-wanted // granule) * granule
+        # headroom must not push a count at a power of two (EP's per-rank cap) past it
+        mark = min(-(-wanted // granule) * granule, pow2)
         _EP_ROW_MARKS[training] = mark
     return max(mark, 1024)
 

@@ -33,17 +33,25 @@ def test_pow2_is_the_default():
     assert experts.ep_padded_rows((1 << 20) + 1, True) == 1 << 21
 
 
-def test_highwater_bucketing_sequence():
-    experts.configure_ep_row_padding("highwater", granule=65536, headroom=1.03)
-    granule = 65536
-    # 1048576 * 1.03 = 1080033.3 -> 17 granules
-    assert experts.ep_padded_rows(1 << 20, True) == 17 * granule
-    assert experts.ep_padded_rows(1000000, True) == 17 * granule
-    assert experts.ep_padded_rows(17 * granule, True) == 17 * granule
-    # a count above the mark raises it: 1200000 * 1.03 = 1236000 -> 19 granules
-    assert experts.ep_padded_rows(1200000, True) == 19 * granule
-    assert experts.ep_padded_rows((1 << 20) + 1, True) == 19 * granule
-    assert experts.ep_padded_rows(0, True) == 19 * granule
+def test_pow2_pads_a_typical_beam_receive_by_half_again():
+    # EP=8, 16384 tokens/rank, top_k 8: at most 131072 tokens, ~86k on average
+    assert experts.ep_padded_rows(86000, True) == 131072
+
+
+def test_highwater_bucketing_sequence_with_defaults():
+    experts.configure_ep_row_padding("highwater")
+    granule = 4096
+    # 86000 * 1.03 = 88580 -> 22 granules
+    assert experts.ep_padded_rows(86000, True) == 22 * granule
+    assert experts.ep_padded_rows(80000, True) == 22 * granule
+    assert experts.ep_padded_rows(22 * granule, True) == 22 * granule
+    # a count above the mark raises it: 95000 * 1.03 = 97850 -> 24 granules
+    assert experts.ep_padded_rows(95000, True) == 24 * granule
+    assert experts.ep_padded_rows(22 * granule + 1, True) == 24 * granule
+    assert experts.ep_padded_rows(0, True) == 24 * granule
+    # the per-rank cap (8 x 16384) is a power of two: headroom does not pad past it
+    assert experts.ep_padded_rows(131072, True) == 131072
+    assert experts.ep_padded_rows(100000, True) == 131072
 
 
 def test_highwater_marks_are_separate_for_train_and_eval():
