@@ -104,6 +104,33 @@ Advanced tuning knobs (fused up-proj, per-tensor-scale fold, fp8 DeepGEMM backwa
 
 **Tip:** in our tests, the Triton `dequant` path is currently faster (and lower mem) end to end than the `fp4_cute` path for < 100B param MoE model. However, `fp4_cute` should overtake when expert matmul become more dominant cost.
 
+### SonicMoE under expert parallelism: row padding
+
+With expert parallelism, every rank receives a different number of routed rows each step and
+layer. quack autotunes per exact shape, and a first sweep costs minutes, so the bf16 SonicMoE EP
+forward pads the received rows with zero-compute sentinel rows up to a bucket and slices the
+output back. By default (`sonicmoe_ep_row_padding: pow2`) the bucket is the next power of two,
+never below 1024.
+
+That default is a poor fit when the balanced load is itself a power of two. On Beam (EP=8,
+131072 tokens per rank per step, top_k 8) the mean receive is exactly 2^20 rows, so about half the
+layers land just above it and pad to 2^21. That doubles their activations (it ran out of memory
+on a 10 GiB `[1048576, 5120]` bf16 allocation, and later inside sonic-moe's token-broadcast
+backward) and adds a new shape to sweep. High-water padding avoids the doubling:
+
+```yaml
+sonicmoe_ep_row_padding: highwater
+sonicmoe_ep_row_padding_granule: 65536    # default
+sonicmoe_ep_row_padding_headroom: 1.03    # default
+```
+
+Each call pads to the largest receive count seen so far times the headroom, rounded up to the
+granule. The mark is shared by all MoE layers and kept separately for training and eval, so short
+eval batches do not pad to the training size. It rises a few times early in training and then
+stays put, so training sees a handful of shapes that are not powers of two. Marks are per rank,
+so ranks can settle on different sizes. The
+NVFP4 EP paths drop the sentinel rows instead of padding and do not use this setting.
+
 ## Model Support
 
 Any model whose `Experts` class is decorated with `@use_experts_implementation` upstream works automatically. As of transformers 5.8 this includes (verified). The `bf16` columns are base (unquantized) support; the `NVFP4` columns mark which kernel trains LoRA on a ModelOpt NVFP4 checkpoint of that arch:

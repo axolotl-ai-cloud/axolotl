@@ -8,6 +8,7 @@ non-gated relu² experts (nemotron_h) the grouped MLP in ``nongated``.
 
 from __future__ import annotations
 
+import math
 import os
 
 import torch
@@ -168,13 +169,50 @@ def sonicmoe_experts_forward_with_lora(
     return _sonicmoe_forward(self, hidden_states, top_k_index, top_k_weights)
 
 
+EP_ROW_PADDING_MODES = ("pow2", "highwater")
+_EP_ROW_PADDING: dict = {"mode": "pow2", "granule": 65536, "headroom": 1.03}
+# one high-water mark per module.training value, shared by every MoE layer
+_EP_ROW_MARKS: dict[bool, int] = {}
+
+
+def configure_ep_row_padding(
+    mode: str = "pow2", granule: int = 65536, headroom: float = 1.03
+) -> None:
+    if mode not in EP_ROW_PADDING_MODES:
+        raise ValueError(
+            f"sonicmoe_ep_row_padding must be one of {EP_ROW_PADDING_MODES}"
+        )
+    if granule < 1 or headroom < 1:
+        raise ValueError("EP row padding needs granule >= 1 and headroom >= 1")
+    _EP_ROW_PADDING.update(mode=mode, granule=int(granule), headroom=float(headroom))
+    _EP_ROW_MARKS.clear()
+
+
+def ep_padded_rows(num_recv: int, training: bool) -> int:
+    """Rows to pad an EP-received batch to (never below 1024).
+
+    ``pow2``: the next power of two. ``highwater``: the largest count seen so far (for this
+    ``training`` value) times ``headroom``, rounded up to ``granule``, so shapes stay put
+    across steps and layers without doubling a batch that sits just over a power of two.
+    """
+    if _EP_ROW_PADDING["mode"] != "highwater":
+        return max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
+    mark = _EP_ROW_MARKS.get(training, 0)
+    if num_recv > mark:
+        granule = _EP_ROW_PADDING["granule"]
+        wanted = math.ceil(num_recv * _EP_ROW_PADDING["headroom"])
+        mark = -(-wanted // granule) * granule
+        _EP_ROW_MARKS[training] = mark
+    return max(mark, 1024)
+
+
 def _sonicmoe_ep_forward(
     self,
     hidden_states: torch.Tensor,
     top_k_index: torch.Tensor,
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
-    """Pad the received rows to a power-of-two bucket (min 1024) with sentinel rows.
+    """Pad the received rows to a bucket (``ep_padded_rows``, min 1024) with sentinel rows.
 
     The quack autotuner caches per exact tensor shape and the EP receive count changes
     every step/layer, so unpadded calls re-trigger a full compile+benchmark sweep per MoE
@@ -218,7 +256,7 @@ def _sonicmoe_ep_forward(
         )
 
     num_recv = hidden_states.size(0)
-    padded = max(1024, 1 << (num_recv - 1).bit_length()) if num_recv else 1024
+    padded = ep_padded_rows(num_recv, self.training)
     if padded == num_recv:
         return _sonicmoe_forward(self, hidden_states, top_k_index, top_k_weights)
     pad = padded - num_recv

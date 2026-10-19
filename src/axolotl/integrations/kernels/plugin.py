@@ -202,10 +202,16 @@ class KernelsPlugin(BasePlugin):
             _check_sonicmoe_gpu_compat()
 
             from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+                configure_ep_row_padding,
                 register_sonicmoe_experts,
             )
 
             register_sonicmoe_experts()
+            configure_ep_row_padding(
+                cfg.sonicmoe_ep_row_padding or "pow2",
+                granule=cfg.sonicmoe_ep_row_padding_granule or 65536,
+                headroom=cfg.sonicmoe_ep_row_padding_headroom or 1.03,
+            )
             if not ep_active:
                 cfg.experts_implementation = "sonicmoe"
             LOG.info("Registered 'sonicmoe' in transformers ExpertsInterface")
