@@ -198,3 +198,17 @@ class TestGenericPatchGuard:
         config = SimpleNamespace(final_logit_softcapping=30.0)
         load = self._check("beam", config, patch_fns={"beam": object()})
         load.assert_not_called()
+
+    def test_pre_model_load_refuses_before_patching(self):
+        config = SimpleNamespace(final_logit_softcapping=30.0)
+        with (
+            patch.object(CutCrossEntropyPlugin, "_check_requirements"),
+            patch.dict(
+                "cut_cross_entropy.transformers.patch.PATCH_FNS", {}, clear=True
+            ),
+            patch("axolotl.loaders.utils.load_model_config", return_value=config),
+            patch("cut_cross_entropy.transformers.patch.cce_patch") as cce_patch,
+            pytest.raises(ValueError, match="final_logit_softcapping"),
+        ):
+            CutCrossEntropyPlugin().pre_model_load(_cfg(model_config_type="beam"))
+        cce_patch.assert_not_called()
