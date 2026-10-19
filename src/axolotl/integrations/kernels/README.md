@@ -370,3 +370,47 @@ leaves them alone on purpose, since its winners were measured on the down-projec
 
 Those keep the `allow` filter and their own search until their winners are measured. A dW pin
 would match on `"A.dim1": { ge: 32768 }`.
+
+## quack key buckets and the no-sweep mode (SonicMoE)
+
+quack keys each autotune winner on every tensor's exact shape, so every new routed row count of a
+grouped GEMM starts a full sweep (40-76 candidates). With `use_sonicmoe`, the variable-length dims
+of grouped calls are rounded up to the next power of two in the key quack looks up, stores and
+writes to its disk cache, so one sweep serves the bucket:
+
+- with `cu_seqlens_m`: the total-M rows (dim 0 of `A`, `out`, `C`, `preact_out`, `postact_out`,
+  `PreAct`, `dx_out`, `colvec_scale`) and the length of `A_idx` (with `A_idx`, `A`'s rows are the
+  gather source, which is bucketed too);
+- with `cu_seqlens_k`: the total-K dim (`A`'s last dim, `B`'s first) and the length of `A_idx`.
+
+Weight and feature dims, the expert count and blockscaled calls keep their exact keys. Bucketed
+keys end with `axolotl_bucket=pow2`. Before a winner is reused for another shape in its bucket,
+quack's validity pruning (plus any matching `autotune_profiles`) runs for the actual call; a winner
+it rejects sends that call to a sweep of its own exact key (`bucket_fallback: true` in its record).
+Records of bucketed keys carry `bucket_reuses`, the number of other shapes that reused the winner;
+`call_args` keeps the shapes of the call that was tuned.
+
+`quack_autotune: false` never benchmarks: each key gets one config by a fixed rule, so a new shape
+costs at most a compile of that config (`source: heuristic` in the records). Matching
+`autotune_profiles` still decide the candidates; the rule then picks among them.
+
+| kernel | rule (B200) |
+|---|---|
+| `gemm_gated_tuned` | 256x512, cluster 2x1, persistent |
+| `gemm_dgated_tuned` | 256x256, cluster 2x1, persistent |
+| `gemm_tuned`, N <= 128 | 128x64, cluster 2x1 with `cu_seqlens_k` else 1x1, persistent |
+| `gemm_tuned`, K <= 128 < N | 128x256, cluster 1x2, not persistent |
+| `gemm_tuned` otherwise, other kernels | 256x256, cluster 2x1, persistent |
+
+All use `use_tma_gather` exactly when `A_idx` is passed, no pingpong and no `swap_ab`. When the
+rule's config is not a valid candidate (another GPU generation, or pruned for the call) the first
+valid candidate is used, logged once per kernel.
+
+```yaml
+use_sonicmoe: true
+quack_autotune_key_buckets: pow2   # default with use_sonicmoe; none = exact shapes
+quack_autotune: false              # default true (sweep)
+```
+
+With `use_sonicmoe` (or any quack `autotune_profiles`), the ~200 ms GPU warm-up matmul quack runs
+before each new key's sweep is skipped.

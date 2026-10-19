@@ -38,6 +38,13 @@ def _preload_sonicmoe_kernel() -> bool:
     return True
 
 
+def _quack_policy(cfg) -> tuple[str, bool] | None:
+    """(key buckets, sweep) for the quack autotuners, or None without SonicMoE."""
+    if not cfg.use_sonicmoe:
+        return None
+    return cfg.quack_autotune_key_buckets or "pow2", cfg.quack_autotune is not False
+
+
 def _check_sonicmoe_gpu_compat():
     """Validate GPU compute capability for SonicMoE and configure env.
 
@@ -296,6 +303,13 @@ class KernelsPlugin(BasePlugin):
             )
 
             install_neighborhood_search(cfg.autotune_neighborhood)
+        policy = _quack_policy(cfg)
+        if policy is not None:
+            from axolotl.integrations.kernels.quack_autotune_policy import (
+                install_quack_key_policy,
+            )
+
+            install_quack_key_policy(*policy)
         if cfg.use_sonicmoe:
             from axolotl.integrations.kernels.libs.sonicmoe.epilogue import (
                 check_model_epilogues,
@@ -325,6 +339,7 @@ class KernelsPlugin(BasePlugin):
             cfg.autotune_cache_path
             or cfg.autotune_profiles
             or cfg.autotune_neighborhood
+            or cfg.use_sonicmoe
         ):
             from axolotl.integrations.kernels.autotune_cache import (
                 AutotuneCacheCallback,
@@ -336,6 +351,7 @@ class KernelsPlugin(BasePlugin):
                     cfg.autotune_profiles,
                     neighborhood=cfg.autotune_neighborhood,
                     sonicmoe=bool(cfg.use_sonicmoe),
+                    quack_policy=_quack_policy(cfg),
                 )
             )
         if cfg.use_sonicmoe and cfg.nvfp4_merge_aware:

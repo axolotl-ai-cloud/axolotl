@@ -128,12 +128,33 @@ class _TimingCache(dict):
         self.seeded: set[tuple] = set()
         self.profiled: set[tuple] = set()
         self.pinned: set[tuple] = set()
+        self.heuristic: set[tuple] = set()
+        self.origins: dict[tuple, tuple] = {}
+        self.aliases: dict[tuple, tuple] = {}
+        self.exact_fallbacks: set[tuple] = set()
         self._pending: tuple | None = None
         self._pending_sweep: float | None = None
         self._last_table = getattr(tuner, "configs_timings", None)
         self._last_bench = getattr(tuner, "bench_time", None)
 
+    def _policy(self):
+        return getattr(self.tuner, "_axolotl_key_policy", None)
+
+    def __contains__(self, key):
+        policy = self._policy()
+        if policy is None or not policy.in_call():
+            return super().__contains__(key)
+        return policy.lookup(self, key)
+
+    def __getitem__(self, key):
+        policy = self._policy()
+        return super().__getitem__(key if policy is None else policy.storage_for(key))
+
     def __setitem__(self, key, value):
+        policy = self._policy()
+        if policy is not None:
+            key = policy.storage_for(key)
+            policy.stored(self, key)
         self.harvest()
         self._pending = key
         tuner = self.tuner
@@ -265,8 +286,15 @@ def timing_fields(
         out["call_args"] = cache.call_args[key_tuple]
     if key_tuple in cache.candidate_counts:
         out["candidate_config_count"] = cache.candidate_counts[key_tuple]
+    reuses = sum(1 for bucket, _w in cache.aliases.values() if bucket == key_tuple)
+    if reuses:
+        out["bucket_reuses"] = reuses
+    if key_tuple in cache.exact_fallbacks:
+        out["bucket_fallback"] = True
     if key_tuple in cache.seeded:
         return {**out, "source": "seeded"}
+    if key_tuple in cache.heuristic:
+        return {**out, "source": "heuristic"}
     table = cache.timings.get(key_tuple)
     if key_tuple in cache.profiled:
         out["source"] = "profile"
@@ -612,8 +640,10 @@ class AutotuneCacheCallback(TrainerCallback):
         early_steps: int = 20,
         neighborhood: int | None = None,
         sonicmoe: bool = False,
+        quack_policy: tuple[str, bool] | None = None,
     ):
         self.path = path
+        self.quack_policy = quack_policy
         self.profiles = profiles
         self.neighborhood = neighborhood
         self.early_steps = early_steps
@@ -637,6 +667,16 @@ class AutotuneCacheCallback(TrainerCallback):
             )
 
             install_neighborhood_search(self.neighborhood)
+        self._install_quack_policy()
+
+    def _install_quack_policy(self):
+        if self.quack_policy is None:
+            return
+        from axolotl.integrations.kernels.quack_autotune_policy import (
+            install_quack_key_policy,
+        )
+
+        install_quack_key_policy(*self.quack_policy)
 
     def _local_count(self) -> int:
         count = len(collect_autotune_configs())
@@ -676,9 +716,10 @@ class AutotuneCacheCallback(TrainerCallback):
             )
 
             apply_autotune_profiles(self.profiles, quiet=True)
+        self._install_quack_policy()
 
     def on_step_end(self, args, state, control, **kwargs):
-        if state.global_step > self.early_steps:
+        if state.global_step > self.early_steps or not self.path:
             return
         # every rank must agree on whether to run the collective gather
         grew = self._local_count() != self._last_count

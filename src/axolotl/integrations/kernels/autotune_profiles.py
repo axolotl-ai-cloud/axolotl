@@ -23,6 +23,7 @@ autotune_profiles:
 
 import fnmatch
 import json
+import sys
 from dataclasses import fields, is_dataclass, replace
 from typing import Any
 
@@ -286,6 +287,24 @@ def _validate_allow(autotuner: Any, profile: dict[str, Any]) -> None:
         )
 
 
+def _skip_gpu_warmup(*_args, **_kwargs) -> None:
+    return None
+
+
+def noop_quack_gpu_warmup(autotuner: Any) -> bool:
+    """Drop the ~200 ms GPU warm-up matmul quack runs before every new key's sweep.
+
+    Patched on the autotuner's defining module, whose ``benchmark`` closure looks it up as a
+    global; a quack without ``_gpu_warmup`` is left alone.
+    """
+    module = sys.modules.get(getattr(type(autotuner), "__module__", ""))
+    current = getattr(module, "_gpu_warmup", None)
+    if current is None or current is _skip_gpu_warmup:
+        return False
+    module._gpu_warmup = _skip_gpu_warmup  # type: ignore[union-attr]
+    return True
+
+
 def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
     """Restrict a quack autotuner's candidates per call.
 
@@ -305,6 +324,7 @@ def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
                     if config not in selected:
                         selected.append(config)
         resolved.append((profile, selected))
+    noop_quack_gpu_warmup(autotuner)
     first = getattr(autotuner, "_axolotl_quack_profiles", None) is None
     autotuner._axolotl_quack_profiles = resolved
     if not first:
