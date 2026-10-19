@@ -9,7 +9,10 @@ from types import SimpleNamespace
 
 import axolotl.model_support
 from axolotl.model_support import get_model_support, resolve_model_support
-from axolotl.processing_strategies import get_processing_strategy
+from axolotl.processing_strategies import (
+    Qwen3_5ProcessingStrategy,
+    get_processing_strategy,
+)
 
 
 class _SentinelStrategy:
@@ -21,6 +24,7 @@ def _stub_processor():
     tokenizer = SimpleNamespace(
         chat_template="{{ x }}",
         convert_tokens_to_ids=lambda _tok: 0,
+        encode=lambda _text, **_kw: [0],
         pad_token_id=0,
     )
     return SimpleNamespace(tokenizer=tokenizer)
@@ -31,7 +35,7 @@ def test_qwen4_exp_descriptor_declares_a_processing_strategy():
     resolved = resolve_model_support(get_model_support("qwen4_exp"))
     provider = resolved.strategies.processing_strategy_cls
     assert provider is not None
-    assert provider().__name__ == "Qwen3_5ProcessingStrategy"
+    assert provider() is Qwen3_5ProcessingStrategy
 
 
 def test_model_type_is_preferred_over_chat_template(monkeypatch):
@@ -98,3 +102,10 @@ def test_no_registry_key_collides_with_a_chat_template_name():
         template.value for template in ChatTemplate
     }
     assert not collisions
+
+
+def test_qwen3_5_moe_dispatches_on_model_type_not_chat_template():
+    strategy = get_processing_strategy(
+        _stub_processor(), None, "tokenizer_default", model_type="qwen3_5_moe"
+    )
+    assert type(strategy) is Qwen3_5ProcessingStrategy

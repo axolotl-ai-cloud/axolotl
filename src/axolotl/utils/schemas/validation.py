@@ -1,8 +1,12 @@
 """Module with validation methods for config pydantic model."""
 
+import fnmatch
 import json
+import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from pydantic import (
     field_validator,
@@ -10,6 +14,7 @@ from pydantic import (
 )
 from transformers.utils.import_utils import is_torch_npu_available
 
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mm_cpt import is_mm_cpt_entry
 from axolotl.utils.schemas.enums import (
@@ -20,6 +25,130 @@ from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
 
 LOG = get_logger(__name__)
+
+# modules whose forward a fused kernel replaces, so module-scope SAC hooks on
+# them never fire; containers are listed because their hooks still fire but the
+# kernel's visible mm inside is then mutated in place
+_SAC_FUSED_MODULE_COVERAGE = (
+    (
+        "lora_mlp_kernel",
+        (
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+            "mlp",
+            "mixer",
+            "shared_experts",
+            "shared_expert",
+            "feedforward",
+            "experts",
+            "gate_projs",
+            "up_projs",
+            "down_projs",
+        ),
+    ),
+    (
+        "lora_qkv_kernel",
+        (
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "in_proj_qkv",
+            "in_proj_z",
+            "in_proj_b",
+            "in_proj_a",
+            "self_attn",
+            "linear_attn",
+            "mixer",
+        ),
+    ),
+    ("lora_o_kernel", ("o_proj", "out_proj", "self_attn", "linear_attn", "mixer")),
+    ("flash_attn_fuse_mlp", ("gate_proj", "up_proj", "down_proj", "mlp")),
+)
+
+# decoder-layer and model containers enclose every projection a LoRA kernel runs;
+# a numeric last component (``layers.0``) names a decoder layer
+_SAC_LAYER_CONTAINERS = (
+    "model",
+    "language_model",
+    "text_model",
+    "decoder",
+    "transformer",
+    "backbone",
+    "layers",
+    "layer",
+    "h",
+    "blocks",
+    "block",
+)
+
+_LORA_KERNEL_FLAGS = (
+    "lora_mlp_kernel",
+    "lora_qkv_kernel",
+    "lora_o_kernel",
+    "lora_embedding_kernel",
+)
+
+
+def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
+    """Whether the unset ``lora_*_kernel`` flags would be auto-enabled for this config.
+
+    ``get`` reads a config value by name (a raw ``data`` dict or a validated model).
+    The single source of truth for ``check_auto_enable_lora_kernels`` and for the
+    validators that must predict its outcome.
+    """
+    if get("rl") or get("nvfp4_merge_aware"):
+        return False
+    adapter = get("adapter")
+    if adapter not in ("lora", "qlora"):
+        return False
+    if any(get(flag) is not None for flag in _LORA_KERNEL_FLAGS):
+        return False
+    if adapter == "lora" and get("load_in_8bit"):
+        return False
+    if get("trust_remote_code"):
+        return False
+
+    from axolotl.model_support import (
+        Unsupported,
+        get_model_support,
+        resolve_model_support,
+    )
+
+    support = get_model_support(get("model_config_type"))
+    if support is not None and isinstance(
+        resolve_model_support(support).capabilities.get("lora_kernels"), Unsupported
+    ):
+        return False
+
+    return True
+
+
+def _lora_kernel_enabled(cfg, flag: str) -> bool:
+    """Explicit flag value, else whether check_auto_enable_lora_kernels would set it.
+
+    Auto-enable runs only on the capabilities-aware config class, so an unset flag
+    is predicted from the same preconditions rather than read as off.
+    """
+    value = getattr(cfg, flag, None)
+    if value is not None:
+        return bool(value) and bool(cfg.adapter)
+    return lora_kernels_auto_enable(lambda key: getattr(cfg, key, None))
+
+
+def _sac_entry_covers(entry: str, module: str) -> bool:
+    last = entry.rsplit(".", 1)[-1]
+    if any(ch in last for ch in "*?["):
+        return fnmatch.fnmatchcase(module, last)
+    return last == module
+
+
+def _sac_entry_is_layer_container(entry: str) -> bool:
+    last = entry.rsplit(".", 1)[-1]
+    if any(ch in last for ch in "*?["):
+        candidates = _SAC_LAYER_CONTAINERS + tuple(str(i) for i in range(100))
+        return any(fnmatch.fnmatchcase(name, last) for name in candidates)
+    return last.isdigit() or last in _SAC_LAYER_CONTAINERS
 
 
 def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
@@ -35,14 +164,60 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
     repo_id = FLASH_ATTN_KERNEL_FALLBACK.get(attn_implementation)
     if repo_id is None:
         return None
+    version: int | None = None
     try:
+        # resolving the pinned version lists hub refs, so it fails offline too
+        version = get_attn_kernel_version(repo_id)
         # Direct kernels calls do not read Transformers' allow_all_hub_kernels flag.
-        get_kernel(
-            repo_id, version=get_attn_kernel_version(repo_id), trust_remote_code=True
-        )
+        get_kernel(repo_id, version=version, trust_remote_code=True)
     except Exception as err:  # noqa: BLE001
-        return f"{type(err).__name__}: {err}"
+        try:
+            _get_kernel_from_cache(repo_id, version)
+        except Exception:  # noqa: BLE001
+            return f"{type(err).__name__}: {err}"
+        LOG.warning(
+            "kernels hub lookup for %s failed (%s: %s); using the cached build",
+            repo_id,
+            type(err).__name__,
+            err,
+        )
     return None
+
+
+def _get_kernel_from_cache(repo_id: str, version: int | None):
+    """Load a hub kernel from a cached snapshot without touching the network."""
+    from huggingface_hub import constants
+    from huggingface_hub.file_download import repo_folder_name
+    from kernels import get_local_kernel
+
+    cache_dir = Path(os.environ.get("KERNELS_CACHE") or constants.HF_HUB_CACHE)
+    # get_kernel(version=N) downloads by commit and writes no refs entry, so the
+    # kernels offline resolver cannot map the version; read the snapshots directly
+    candidates: list[Path] = []
+    for repo_type in ("kernel", "model"):
+        repo_dir = cache_dir / repo_folder_name(repo_id=repo_id, repo_type=repo_type)
+        ref = repo_dir / "refs" / f"v{version}"
+        if version is not None and ref.is_file():
+            pinned = repo_dir / "snapshots" / ref.read_text().strip()
+            if pinned.is_dir():
+                candidates.append(pinned)
+        snapshots = repo_dir / "snapshots"
+        if snapshots.is_dir():
+            candidates.extend(
+                sorted(
+                    (p for p in snapshots.iterdir() if (p / "build").is_dir()),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+            )
+    errors = []
+    for snapshot in dict.fromkeys(candidates):
+        try:
+            return get_local_kernel(snapshot, trust_remote_code=True)
+        except Exception as err:  # noqa: BLE001
+            errors.append(f"{snapshot.name}: {type(err).__name__}: {err}")
+    detail = f": {'; '.join(errors)}" if errors else ""
+    raise FileNotFoundError(f"no loadable cached snapshot of {repo_id}{detail}")
 
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
@@ -75,6 +250,13 @@ class DatasetValidationMixin:
             LOG.info("`seed` not set in config; setting to 42")
             seed = 42
         return seed
+
+    @model_validator(mode="after")
+    def seed_full_determinism(self):
+        if self.full_determinism and self.seed is None:
+            LOG.info("`full_determinism` set without `seed`; setting seed to 42")
+            self.seed = 42
+        return self
 
     @field_validator("datasets", mode="before")
     @classmethod
@@ -227,7 +409,14 @@ class AttentionValidationMixin:
 
     @model_validator(mode="after")
     def check_sample_packing_without_attention(self):
-        if self.sample_packing and not self.attn_decontaminates_packing:
+        native_diffusion_default = (
+            self.diffusion_lm is not None and not self.diffusion_lm.from_causal_lm
+        )
+        if (
+            self.sample_packing
+            and not native_diffusion_default
+            and not self.attn_decontaminates_packing
+        ):
             if self.attn_implementation:
                 LOG.warning(
                     "`sample_packing` with `attn_implementation=%r` does not handle "
@@ -669,8 +858,15 @@ class LoRAValidationMixin:
 
     @model_validator(mode="after")
     def check_fused_lora(self):
-        if self.adapter in ["lora", "qlora"] and self.flash_attn_fuse_mlp:
+        if self.adapter in ["lora", "qlora", "mixlora"] and self.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
+        if self.adapter == "mixlora" and getattr(self, "flash_attn_fuse_qkv", False):
+            raise ValueError("flash_attn_fuse_qkv is not supported with MixLoRA")
+        if self.adapter == "mixlora" and self.rl is not None:
+            raise ValueError(
+                "MixLoRA is not compatible with RL training (DPO/KTO/GRPO). "
+                "Use adapter: lora or qlora for RL fine-tuning."
+            )
         return self
 
     @model_validator(mode="after")
@@ -728,6 +924,18 @@ class LoRAValidationMixin:
             or data.get("lora_qkv_kernel")
             or data.get("lora_o_kernel")
         ) and data.get("trust_remote_code"):
+            from axolotl.model_support import (
+                get_model_support_for_cfg,
+                resolve_model_support,
+            )
+
+            support = get_model_support_for_cfg(DictDefault(data))
+            if (
+                support is not None
+                and resolve_model_support(support).strategies.lora_attention_cls
+                is not None
+            ):
+                return data
             raise ValueError(
                 "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
                 "compatible with trust_remote_code. Please disable trust_remote_code "
@@ -759,7 +967,7 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_grpo_liger_sequence_parallel(cls, data):
+    def check_grpo_liger_context_parallel(cls, data):
         if (
             data.get("rl") == "grpo"
             and data.get("trl", {})
@@ -840,28 +1048,6 @@ class RLValidationMixin:
 
         return data
 
-    @model_validator(mode="after")
-    def check_dpo_use_liger_kernel(self):
-        if not self.dpo_use_liger_kernel:
-            return self
-        loss_types = self.dpo_loss_type
-        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
-        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
-        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
-            raise ValueError(
-                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
-                "(liger-kernel's fused DPO loss cannot length-normalize the "
-                "squared margin). Disable the liger kernel or use another loss."
-            )
-        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
-        if loss_types and len(loss_types) > 1:
-            LOG.warning(
-                "`dpo_use_liger_kernel` uses only the first entry of "
-                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
-                "are ignored on the liger loss path."
-            )
-        return self
-
     @model_validator(mode="before")
     @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
@@ -896,15 +1082,25 @@ class RLValidationMixin:
                 "the policy never updates."
             )
 
+        # Without `capabilities` populated yet (mode='before'), fall back to
+        # user-set distributed fields.
+        world_size = int(
+            (data.get("capabilities") or {}).get("n_gpu") or data.get("world_size") or 1
+        )
+
         explicit_gbs = trl_cfg.get("generation_batch_size")
         if explicit_gbs is not None:
             effective_gbs = int(explicit_gbs)
             gbs_source = "trl.generation_batch_size"
         else:
+            # TRL's default is per_device_train_batch_size * num_processes *
+            # steps_per_generation, with steps_per_generation = GA.
             mb = data.get("micro_batch_size") or 1
             ga = data.get("gradient_accumulation_steps") or 1
-            effective_gbs = int(mb) * int(ga)
+            effective_gbs = int(mb) * int(ga) * world_size
             gbs_source = f"micro_batch_size ({mb}) * gradient_accumulation_steps ({ga})"
+            if world_size > 1:
+                gbs_source += f" * world_size ({world_size})"
 
         if effective_gbs % num_gen != 0:
             # Suggest the smallest GA bump that fixes it for the common case
@@ -913,14 +1109,14 @@ class RLValidationMixin:
             if explicit_gbs is None:
                 from math import gcd
 
-                mb_val = int(data.get("micro_batch_size") or 1)
-                # smallest GA such that mb*GA is a multiple of num_gen
-                lcm = num_gen * mb_val // gcd(num_gen, mb_val)
-                suggested_ga = lcm // mb_val
+                per_step = int(data.get("micro_batch_size") or 1) * world_size
+                # smallest GA such that the generation batch is a multiple of num_gen
+                lcm = num_gen * per_step // gcd(num_gen, per_step)
+                suggested_ga = lcm // per_step
                 hint = (
                     f" Smallest fix: set `gradient_accumulation_steps: "
-                    f"{suggested_ga}` (so micro_batch_size * GA = "
-                    f"{mb_val * suggested_ga} is a multiple of {num_gen})."
+                    f"{suggested_ga}` (so the generation batch size "
+                    f"{per_step * suggested_ga} is a multiple of {num_gen})."
                 )
             raise ValueError(
                 f"GRPO: generation batch size must be divisible by "
@@ -929,12 +1125,8 @@ class RLValidationMixin:
             )
 
         # Multi-rank check: each rank must receive at least one full group
-        # per step. Without `capabilities` populated yet (mode='before'), we
-        # fall back to user-set distributed fields.
-        world_size = (
-            (data.get("capabilities") or {}).get("n_gpu") or data.get("world_size") or 1
-        )
-        if world_size and world_size > 1 and effective_gbs < num_gen * world_size:
+        # per step.
+        if world_size > 1 and effective_gbs < num_gen * world_size:
             raise ValueError(
                 f"GRPO with world_size={world_size} requires effective_gbs "
                 f">= num_generations * world_size = {num_gen * world_size}, "
@@ -967,9 +1159,8 @@ STAGED_NF4_CONSTRAINTS = [
             bool(self.deepspeed)
             or (self.tensor_parallel_size or 1) > 1
             or (self.context_parallel_size or 1) > 1
-            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
         ),
-        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+        "CPU-staged NF4 does not support DeepSpeed, tensor or context parallelism",
     ),
     (
         lambda self: (self.dp_replicate_size or 1) > 1,
@@ -1026,7 +1217,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon":
+        if data.get("optimizer") in ("muon", "muon_8bit"):
             if data.get("deepspeed"):
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"
@@ -1145,7 +1336,9 @@ class OptimizationValidationMixin:
             return self
 
         batch_flattening_auto = self.batch_flattening == "auto"
-        has_varlen_attn = self.attn_supports_packing
+        has_varlen_attn = self.attn_supports_packing or (
+            self.attn_implementation == "varlen"
+        )
 
         if not has_varlen_attn and not batch_flattening_auto:
             raise ValueError(
@@ -1206,6 +1399,42 @@ class OptimizationValidationMixin:
                 f"Only one cross entropy optimization can be enabled at a time. "
                 f"Found {len(enabled_options)} enabled: {', '.join(enabled_options)}. "
                 "Please disable all but one."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_custom_loss_conflicts(cls, data):
+        custom_losses = [k for k in ("use_dft", "use_eaft") if data.get(k)]
+        if not custom_losses:
+            return data
+        if len(custom_losses) > 1:
+            raise ValueError("`use_dft` and `use_eaft` cannot be enabled together.")
+
+        # labels are popped before forward: fused/chunked CE never runs, CP shards logits but not labels
+        conflicts = [
+            k
+            for k in (
+                "rl",
+                "reward_model",
+                "process_reward_model",
+                "cut_cross_entropy",
+                "liger_fused_linear_cross_entropy",
+                "chunked_cross_entropy",
+            )
+            if data.get(k)
+        ]
+        cp_size = (
+            data.get("context_parallel_size")
+            or data.get("sequence_parallel_degree")
+            or 1
+        )
+        if cp_size > 1:
+            conflicts.append("context_parallel_size > 1")
+        if conflicts:
+            raise ValueError(
+                f"`{custom_losses[0]}` is an SFT-only loss and cannot be combined "
+                f"with: {', '.join(conflicts)}."
             )
         return data
 
@@ -1566,12 +1795,6 @@ class SystemValidationMixin:
             checker = is_flash_attn_3_available
         else:
             checker = is_flash_attn_2_available
-            # TODO: remove when transformers 5.18.0 is released
-            from transformers.integrations.hub_kernels import (
-                _FLASH_ATTN_KERNEL_VERSION_MAPPING,  # pylint: disable=protected-access
-            )
-
-            _FLASH_ATTN_KERNEL_VERSION_MAPPING[2] = 3
         with allow_all_hub_kernels():
             available = checker(kernels_fallback_ok=True)
         reason = None
@@ -1918,27 +2141,128 @@ class ModelCompatibilityValidationMixin:
                 "activation_offloading: hidden_states (or false); the TRL offloader "
                 "paths bypass HF gradient checkpointing"
             )
-        if self.adapter:
-            # PEFT adds the adapter delta into the base linear output in-place,
-            # mutating cached mm outputs; SAC's cache-mutation guard errors at runtime
+        sac = self.selective_checkpointing
+        fused_lora = any(
+            _lora_kernel_enabled(self, flag)
+            for flag in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
+        )
+        if fused_lora:
             matmul_ops = ("aten::mm", "aten::addmm", "aten::matmul", "aten::bmm")
             bad = [
                 spec
-                for spec in self.selective_checkpointing.save
+                for spec in sac.save
                 if spec != "attention" and any(spec in op for op in matmul_ops)
             ]
             if bad:
                 raise ValueError(
                     f"selective_checkpointing.save entries {bad} match matmul ops, "
-                    "which cannot be saved when training with a LoRA/QLoRA adapter: "
-                    "PEFT mutates the base linear output in-place to add the adapter "
-                    "delta, which invalidates the cached tensor. Use save: [attention] "
-                    "or train without an adapter."
+                    "which cannot be saved while a fused LoRA kernel is enabled: the "
+                    "kernel adds the adapter delta into the base matmul output "
+                    "in-place (addmm_), which invalidates the cached tensor. Set "
+                    "lora_mlp_kernel: false, lora_qkv_kernel: false and "
+                    "lora_o_kernel: false (they are auto-enabled for LoRA/QLoRA), "
+                    "or use save: [attention]."
                 )
+            if sac.save_matmul_min_k:
+                raise ValueError(
+                    "selective_checkpointing.save_matmul_min_k saves the base matmul "
+                    "that a fused LoRA kernel then mutates in-place (addmm_). Set "
+                    "lora_mlp_kernel: false, lora_qkv_kernel: false and "
+                    "lora_o_kernel: false (they are auto-enabled for LoRA/QLoRA), "
+                    "or drop save_matmul_min_k."
+                )
+        for flag, modules in _SAC_FUSED_MODULE_COVERAGE:
+            enabled = (
+                _lora_kernel_enabled(self, flag)
+                if flag.startswith("lora_")
+                else bool(getattr(self, flag, None))
+            )
+            if not enabled:
+                continue
+            for entry in sac.save_modules or []:
+                if any(_sac_entry_covers(entry, module) for module in modules):
+                    raise ValueError(
+                        f"selective_checkpointing.save_modules entry {entry!r} names "
+                        f"a module whose forward is replaced by {flag}: true, so its "
+                        "hooks never fire and the rule would be a silent no-op. Set "
+                        f"{flag}: false (LoRA kernels are auto-enabled for "
+                        "LoRA/QLoRA) or remove the entry."
+                    )
+                if flag.startswith("lora_") and _sac_entry_is_layer_container(entry):
+                    raise ValueError(
+                        f"selective_checkpointing.save_modules entry {entry!r} scopes "
+                        "a decoder layer or model container, which holds the "
+                        f"projections {flag}: true runs; the kernel adds the adapter "
+                        "delta into their saved base matmul output in-place "
+                        f"(addmm_), which invalidates the cached tensor. Set {flag}: "
+                        "false (LoRA kernels are auto-enabled for LoRA/QLoRA) or name "
+                        "a projection the kernel does not cover."
+                    )
         if self.torch_compile:
             LOG.warning(
                 "selective_checkpointing with torch_compile is untested in axolotl; "
                 "the SAC context_fn targets the eager checkpointing path"
+            )
+        return self
+
+    def _resolved_expert_parallel_backend(self) -> str | None:
+        backend = getattr(self, "expert_parallel_backend", None)
+        if backend == "auto":
+            from importlib.util import find_spec
+
+            backend = "deep_ep" if find_spec("deep_ep") is not None else "torch"
+        return backend
+
+    @model_validator(mode="after")
+    def check_torch_compile_regional_with_gradient_checkpointing(self):
+        if (
+            self.torch_compile
+            and self.torch_compile_regional
+            and self.gradient_checkpointing
+        ):
+            raise ValueError(
+                "torch_compile_regional cannot be combined with gradient_checkpointing: "
+                "the checkpoint recompute can run a different Dynamo cache entry than "
+                "the forward (pytorch/pytorch#166926). Use whole-model compile."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_torch_expert_parallel_checkpointing(self):
+        if (getattr(self, "expert_parallel_size", 1) or 1) <= 1:
+            return self
+        if self._resolved_expert_parallel_backend() != "torch":
+            return self
+        # recompute has to replay the forward's routing through a SAC policy
+        if self.gradient_checkpointing and (
+            self.gradient_checkpointing_kwargs or {}
+        ).get("use_reentrant"):
+            raise ValueError(
+                "expert_parallel_backend: torch requires non-reentrant gradient "
+                "checkpointing (gradient_checkpointing_kwargs.use_reentrant: false): "
+                "recompute must reuse the forward's routing, which reentrant "
+                "checkpointing cannot guarantee"
+            )
+        if self.gradient_checkpointing and self.activation_offloading in (
+            True,
+            "legacy",
+            "disk",
+        ):
+            raise ValueError(
+                "expert_parallel_backend: torch is incompatible with activation_offloading "
+                f"{self.activation_offloading!r}: the TRL offloader bypasses the "
+                "checkpointing policy that keeps recompute on the forward's routing. "
+                "Use activation_offloading: hidden_states or false."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_expert_parallel_dispatch_chunks(self):
+        chunks = getattr(self, "expert_parallel_dispatch_chunks", None) or 1
+        if chunks > 1 and self._resolved_expert_parallel_backend() == "deep_ep":
+            raise ValueError(
+                "expert_parallel_dispatch_chunks > 1 requires expert_parallel_backend: "
+                "torch (DeepEP dispatches the whole batch in one fused kernel)"
             )
         return self
 
@@ -2117,14 +2441,46 @@ class ComplexValidationMixin:
                 )
 
             LOG.warning(
-                "Sequence parallelism (SP) is enabled with "
+                "Context parallelism (CP) is enabled with "
                 f"context_parallel_size={self.context_parallel_size}. "
-                "Please note that logged losses may differ slightly to the non-SP "
+                "Please note that logged losses may differ slightly to the non-CP "
                 "losses due to transformers Trainer implementation details. "
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
                 "for more details."
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def check_context_parallel_deepspeed(self):
+        if not (self.deepspeed and (self.context_parallel_size or 1) > 1):
+            return self
+        if getattr(self, "use_glm_dsa_kernels", False):
+            raise ValueError(
+                "GLM DSA context parallelism needs ringmaster, which does not run under "
+                "DeepSpeed; use FSDP2 instead."
+            )
+        if self.rl:
+            raise ValueError(
+                f"rl: {self.rl} with context_parallel_size > 1 under DeepSpeed is not "
+                "supported: only the SFT trainer weights each Ulysses rank's loss; use FSDP2."
+            )
+        cp = getattr(self, "context_parallel", None)
+        if cp is not None and (
+            getattr(cp, "backend", "auto") not in ("auto", "ulysses")
+            or getattr(cp, "ring_size", None) not in (None, 1)
+            or getattr(cp, "ulysses_size", None) not in (None, cp.size)
+        ):
+            raise ValueError(
+                "Under DeepSpeed, context parallelism maps to DeepSpeed Ulysses (ALST): "
+                "only `context_parallel.backend: ulysses` (or auto) with the full CP "
+                "degree as ulysses_size is supported; Ring/USP need FSDP2."
+            )
+        LOG.info(
+            "DeepSpeed + context_parallel_size=%d: sequences are split with DeepSpeed "
+            "Ulysses (ALST) through accelerate's sequence-parallel axis.",
+            self.context_parallel_size,
+        )
         return self
 
     @model_validator(mode="after")
@@ -2157,12 +2513,44 @@ class DistributedValidationMixin:
 
     @model_validator(mode="after")
     def check_tensor_parallel_optimizer(self):
-        if self.tensor_parallel_size > 1:
+        if (self.tensor_parallel_size or 1) > 1:
             if self.optimizer in ["paged_adamw_8bit", "adamw_8bit", "adamw_bnb_8bit"]:
                 raise ValueError(
                     "tensor_parallel_size is not supported with paged_adamw_8bit, adamw_8bit, and adamw_bnb_8bit optimizers"
                 )
 
+        return self
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_cpu_ram_efficient_loading(self):
+        # transformers' TP load places each rank's own shard, so the rank-0-only load that
+        # cpu_ram_efficient_loading broadcasts from would leave every other rank with zeros
+        # CPU-staged NF4 rejects TP itself and needs the flag intact to reach that check
+        staged_nf4 = self.nf4_backend == "torchao" or (
+            self.qlora_sharded_model_loading and self.load_in_4bit
+        )
+        if (
+            (self.tensor_parallel_size or 1) > 1
+            and not staged_nf4
+            and self.fsdp_config
+            and self.fsdp_config.cpu_ram_efficient_loading
+        ):
+            LOG.warning(
+                "fsdp_config.cpu_ram_efficient_loading is disabled with tensor_parallel_size > 1; "
+                "each rank loads its own tensor-parallel shard directly"
+            )
+            self.fsdp_config.cpu_ram_efficient_loading = False
+        return self
+
+    @model_validator(mode="after")
+    def check_tensor_parallel_expert_parallel(self):
+        if (self.tensor_parallel_size or 1) > 1 and (
+            getattr(self, "expert_parallel_size", 1) or 1
+        ) > 1:
+            raise ValueError(
+                "tensor_parallel_size > 1 cannot be combined with expert_parallel_size > 1; "
+                "shard the experts with expert_parallel_size and the rest with dp_shard_size"
+            )
         return self
 
 
@@ -2297,6 +2685,36 @@ class GRPOVllmValidationMixin:
             self.trl.vllm_mode = "server"
         return self
 
+    @model_validator(mode="after")
+    def check_vllm_colocate_compat(self):
+        trl = self.trl
+        if not (trl and trl.use_vllm and trl.vllm_mode == "colocate"):
+            return self
+        if (self.context_parallel_size or 1) > 1:
+            raise ValueError(
+                "`vllm_mode: colocate` is not supported with `context_parallel_size > 1`. "
+                "Use `vllm_mode: server` with a dedicated vLLM GPU."
+            )
+        if trl.vllm_lora_sync:
+            raise ValueError(
+                "`vllm_lora_sync: true` requires `vllm_mode: server` (adapters are pushed "
+                "over HTTP to the vLLM server). In colocate mode, remove `vllm_lora_sync`; "
+                "weights are merged and loaded into the colocated engine directly."
+            )
+        if (trl.async_prefetch or trl.use_data_producer) and self.adapter:
+            raise ValueError(
+                "`vllm_mode: colocate` with an adapter is not supported by the async GRPO "
+                "trainer (`async_prefetch` / `use_data_producer`): its LoRA weight sync only "
+                "targets a vLLM server. Remove those options or use `vllm_mode: server`."
+            )
+        if not (self.vllm and self.vllm.max_model_len):
+            LOG.warning(
+                "Set `vllm.max_model_len` (longest prompt + max_completion_length) for "
+                "`vllm_mode: colocate`; otherwise vLLM reserves KV cache for the model's "
+                "full context and may fail to start on the shared GPU."
+            )
+        return self
+
 
 class ValidationMixin(
     DatasetValidationMixin,
@@ -2310,6 +2728,7 @@ class ValidationMixin(
     PretrainingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
+    DistributedValidationMixin,
     EBFTValidationMixin,
     GRPOVllmValidationMixin,
 ):

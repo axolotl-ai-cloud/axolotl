@@ -386,3 +386,37 @@ class TestMergeWithWeightedDatasets(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDatasetHashDeepSpeedContextParallel:
+    def test_deepspeed_cp_changes_the_hash(self):
+        ds = [
+            DictDefault(
+                {
+                    "path": "test/ds",
+                    "type": "alpaca",
+                    "shards": None,
+                    "conversation": None,
+                    "split": "train",
+                    "temperature": None,
+                }
+            )
+        ]
+        base = DictDefault({"sequence_len": 64, "sample_packing": False})
+        cp = DictDefault(
+            {
+                "sequence_len": 64,
+                "sample_packing": False,
+                "deepspeed": "zero2.json",
+                "context_parallel_size": 2,
+            }
+        )
+        fsdp_cp = DictDefault(
+            {"sequence_len": 64, "sample_packing": False, "context_parallel_size": 2}
+        )
+        assert generate_dataset_hash_from_config(
+            base, ds, "tok"
+        ) != generate_dataset_hash_from_config(cp, ds, "tok")
+        assert generate_dataset_hash_from_config(
+            base, ds, "tok"
+        ) == generate_dataset_hash_from_config(fsdp_cp, ds, "tok")

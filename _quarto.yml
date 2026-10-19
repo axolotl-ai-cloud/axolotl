@@ -224,7 +224,6 @@ quartodoc:
         - monkeypatch.trainer.lr
         - monkeypatch.trainer.trl
         - monkeypatch.trainer.trl_vllm
-        - monkeypatch.trainer.utils
         - monkeypatch.transformers.trainer_loss_calc
         - monkeypatch.xformers_
     - title: Utils
@@ -251,7 +250,7 @@ quartodoc:
         - utils.train
         - utils.trainer
         - utils.wandb_
-        - utils.weight_serde
+        - utils.vllm_lora_sync
         - utils.schedulers
         - utils.distributed
         - utils.dict
@@ -308,6 +307,7 @@ quartodoc:
         - integrations.expert_parallel.experts_fn
         - integrations.expert_parallel.plugin
         - integrations.expert_parallel.shard
+        - integrations.expert_parallel.torch_dispatch
         - integrations.grokfast.args
         - integrations.grokfast.optimizer
         - integrations.hatchery.args
@@ -372,6 +372,7 @@ quartodoc:
         - utils.collators.batching
         - utils.collators.dpo
         - utils.collators.mm_chat
+        - utils.collators.mm_rl
         - utils.samplers.multipack
         - utils.samplers.utils
     - title: Callbacks
@@ -391,12 +392,6 @@ quartodoc:
         - utils.callbacks.swanlab
         - utils.callbacks.tokens_per_second
         - utils.callbacks.trackio_
-    - title: Scripts
-      desc: Standalone helper scripts
-      contents:
-        - scripts.process_cleanup
-        - scripts.vllm_serve_lora
-        - scripts.vllm_worker_ext
     - title: Telemetry
       desc: Usage telemetry
       contents:
@@ -442,7 +437,10 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/beam.qmd
                 - docs/models/k2-horizon.qmd
+                - docs/models/nex-n2.5.qmd
+                - docs/models/minicpm5.qmd
                 - docs/models/ling3.qmd
                 - docs/models/muse-glimmer.qmd
                 - docs/models/cohere-north-micro-vision-instruct.qmd
@@ -480,6 +478,7 @@ website:
                 - docs/models/qwen3.qmd
                 - docs/models/gemma4.qmd
                 - docs/models/gemma3n.qmd
+                - docs/models/glm53-flash.qmd
                 - docs/models/glm47-flash.qmd
                 - docs/models/glm46v.qmd
                 - docs/models/glm45.qmd
@@ -506,12 +505,14 @@ website:
         - section: "Deployments"
           contents:
             - docs/docker.qmd
+            - docs/airgapped.qmd
             - docs/multi-gpu.qmd
             - docs/multi-node.qmd
             - docs/ray-integration.qmd
             - docs/skypilot.qmd
             - docs/hf-jobs.qmd
             - docs/nebius-serverless.qmd
+            - docs/coreweave.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 
@@ -519,6 +520,7 @@ website:
           contents:
             - docs/multimodal.qmd
             - docs/rlhf.qmd
+            - docs/diffusion_lm.qmd
             - docs/grpo.qmd
             - docs/ebft.qmd
             - docs/vllm_serving.qmd

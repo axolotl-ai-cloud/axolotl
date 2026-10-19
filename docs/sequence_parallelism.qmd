@@ -1,17 +1,24 @@
 ---
-title: Sequence Parallelism
+title: Context Parallelism
 description: Train with long sequences split across multiple GPUs.
 ---
 
-Context parallelism splits each sequence across a group of GPUs to reduce the
+Context parallelism (CP, called sequence parallelism by some frameworks and by
+older Axolotl releases) splits each sequence across a group of GPUs to reduce the
 activation memory needed for long-context training. Axolotl uses Ringmaster for
 Ulysses, Ring, and their combination (USP), while Accelerate owns the device mesh
-and FSDP2 gradient reduction.
+and FSDP2 gradient reduction. Under `deepspeed:` the same `context_parallel_size`
+maps onto DeepSpeed's Ulysses (ALST) implementation through accelerate's
+sequence-parallel axis: only the Ulysses backend is available there, ZeRO owns the
+sharding, and the remaining ranks replicate. Axolotl adds the `position_ids` Ulysses
+needs to every sample and weights each rank's loss by its share of the sequence's
+tokens, so per-step loss and gradient norm match a single-process run of the same
+sequences (DeepSpeed >= 0.18.2).
 
 ## Configuration
 
 Install `pip install 'axolotl[ringmaster]'` and use torch >= 2.13. The integration
-targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.2.
+targets Transformers 5.17.0, Accelerate 1.15.0, and axolotl-ringmaster ≥0.2.6.
 
 ```yaml
 context_parallel_size: 4
@@ -58,8 +65,14 @@ an architecture allowlist entry. ModelSupport descriptors can mark
 metadata uses generic handling; it does not imply tested accuracy for every
 architecture. Kernel and configuration prerequisites still apply.
 
-The plugin shards input IDs, labels, masks, and positions using model hooks.
-Accelerate replicates each batch within its CP group. Trainer's supervised-token
+Accelerate replicates each batch within its CP group, and the sequence collator
+cuts each rank's shard of input IDs, labels, masks, and positions in the
+dataloader worker (`shard_in_collator: true`, the default), together with the
+packed-document boundaries the Ulysses varlen path needs, so the forward pre-hook
+has nothing to broadcast or scan on the device. Runs whose batches Accelerate
+dispatches (streaming or pretraining datasets), collators other than Axolotl's
+sequence collators, and older ringmaster releases shard in the forward pre-hook
+instead, which `shard_in_collator: false` also selects. Trainer's supervised-token
 count is preserved across the full accumulation window, including unequal
 microbatches and partial final windows.
 
@@ -73,9 +86,11 @@ therefore processes four distinct sequences per step before gradient accumulatio
 
 The regular e2e suite includes an optional small FLA/TileLang kernel smoke test.
 Distributed checks are marked `slow`: two-GPU FSDP2 loss/gradient parity, four-rank
-FLA recurrent-plus-attention forward/backward parity, and CPU USP mesh isolation
-and attention-gradient tests. GPU USP and additional recurrent architectures
-require further coverage.
+FLA recurrent-plus-attention forward/backward parity, two-GPU patched GDN
+forward/backward parity for dense and packed inputs with and without compilation,
+and CPU USP mesh isolation and attention-gradient tests. The multigpu CI suite
+runs the two-GPU patched GDN checks explicitly. GPU USP and additional recurrent
+architectures require further coverage.
 
 
 Pure Mamba/Mamba2 checkpoints can explicitly select the [FLA implementation](fla-mamba.qmd).

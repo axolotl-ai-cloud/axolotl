@@ -193,6 +193,11 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         verify_deduplication(train_dataset, expected_dataset_train, "train_dataset")
         verify_deduplication(eval_dataset, expected_dataset_eval, "eval_dataset")
 
+    def test_image_datasets_are_not_deduplicated(self):
+        dataset = Dataset.from_dict({"prompt": ["a", "a"], "images": [[], []]})
+        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+        assert len(train_dataset) == 2
+
 
 class TestDeduplicateRLDataset:
     """Test a configured dataloader with deduplication."""

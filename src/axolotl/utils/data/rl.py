@@ -25,6 +25,7 @@ from axolotl.utils.data.shared import (
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
+    is_vision_dataset,
     retry_on_request_exceptions,
 )
 from axolotl.utils.dict import DictDefault
@@ -84,6 +85,19 @@ def prepare_preference_datasets(
     return train_dataset, eval_dataset
 
 
+def _with_source_columns(transform: Callable[..., Any], sources: dict[str, str]):
+    """Hand ``transform`` the sample with the renamed source columns under their original names."""
+
+    def wrapped(sample, **kwargs):
+        restored = dict(sample)
+        for name, renamed in sources.items():
+            if renamed in restored:
+                restored[name] = restored.pop(renamed)
+        return transform(restored, **kwargs)
+
+    return wrapped
+
+
 def _map_dataset(
     cfg: DictDefault,
     dataset: Dataset | DatasetDict,
@@ -111,6 +125,20 @@ def _map_dataset(
 
     if isinstance(dataset, DatasetDict):
         dataset = dataset["train"]
+
+    # a transform that re-emits a column it also removes must get a fresh column:
+    # datasets keeps the input feature for a same-named output (a message list typed
+    # List(Json) turns the rendered string into a list of characters), so the sources
+    # are renamed out of the way and dropped after the map
+    sources = {
+        name: f"_axolotl_source_{name}"
+        for name in map_kwargs.get("remove_columns") or []
+        if name in dataset.column_names
+    }
+    if sources:
+        dataset = dataset.rename_columns(sources)
+        ds_transform_fn = _with_source_columns(ds_transform_fn, sources)
+        map_kwargs["remove_columns"] = list(sources.values())
 
     dataset = dataset.map(
         ds_transform_fn,
@@ -362,7 +390,12 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             # "prompt", "chosen", and "rejected" already preprocessed
             split_datasets[i] = dataset
 
-        if not cfg.skip_prepare_dataset:
+        if is_vision_dataset(split_datasets[i].column_names):
+            # Image token counts depend on the processor; TRL truncates at collate time.
+            LOG.info(
+                f"Skipping sequence length filtering for multimodal dataset index {i}"
+            )
+        elif not cfg.skip_prepare_dataset:
             excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
 
             if excess_length_strategy == "truncate":
@@ -434,6 +467,12 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
                     LOG.warning(
                         f"Dropped {dropped} long samples from dataset index {i}"
                     )
+
+    has_images = [is_vision_dataset(ds.column_names) for ds in split_datasets]
+    if any(has_images) and not all(has_images):
+        raise ValueError(
+            "Multimodal RL does not support mixing image and text-only datasets."
+        )
 
     # Merge datasets
     dataset = merge_datasets(split_datasets, cfg)

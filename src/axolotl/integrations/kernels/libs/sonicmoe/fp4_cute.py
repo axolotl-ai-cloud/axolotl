@@ -22,8 +22,8 @@ Conventions:
 Uses quack's LOW-LEVEL ``quack.gemm.gemm`` (not ``gemm_interface.gemm``: the
 custom-op/autotune wrapper adds ~4x per-call Python dispatch at these MoE sizes).
 
-GPU-only (SM100/SM110); quack/cutlass import lazily. Runtime pin
-quack-kernels 0.6.1 + nvidia-cutlass-dsl 4.6.0.
+GPU-only (SM100/SM110); quack/cutlass import lazily. Verified with
+quack-kernels 0.6.5 on nvidia-cutlass-dsl 4.8 (the version flash-attn-4 also needs).
 """
 
 from __future__ import annotations

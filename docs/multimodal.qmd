@@ -558,6 +558,10 @@ marker tokens rather than only the target text. On architectures like
 Qwen-VL and SmolVLM, leaving them unmasked substantially increases loss and can
 destabilize training.
 
+## Preference and RL training
+
+DPO, KTO and GRPO also train on image datasets with the same model setup. See [Multimodal (vision) datasets](rlhf.qmd#multimodal) for the dataset shapes and limitations.
+
 ## FAQ
 
 1. `PIL.UnidentifiedImageError: cannot identify image file ...`

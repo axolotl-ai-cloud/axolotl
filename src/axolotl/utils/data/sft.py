@@ -41,6 +41,7 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.mm_cpt import is_mm_cpt_entry
 from axolotl.utils.trainer import (
     calculate_total_num_steps,
+    deepspeed_context_parallel,
     process_datasets_for_packing,
 )
 
@@ -101,6 +102,13 @@ def _prepare_standard_dataset(
         train_dataset, eval_dataset, prompters = loader.load(_load_datasets)
     finally:
         loader.cleanup()
+
+    from axolotl.core.trainers.diffusion_lm.sampling import (
+        filter_native_diffusion_dataset,
+    )
+
+    train_dataset = filter_native_diffusion_dataset(cfg, train_dataset, split="train")
+    eval_dataset = filter_native_diffusion_dataset(cfg, eval_dataset, split="eval")
 
     if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
         return train_dataset, eval_dataset, -1, prompters
@@ -436,8 +444,10 @@ def _load_raw_datasets(
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:
             dataset = handle_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
-        if (split == "train" and cfg.sample_packing) or (
-            split == "test" and cfg.eval_sample_packing
+        if (
+            (split == "train" and cfg.sample_packing)
+            or (split == "test" and cfg.eval_sample_packing)
+            or deepspeed_context_parallel(cfg)
         ):
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 

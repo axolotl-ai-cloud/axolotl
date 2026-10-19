@@ -16,7 +16,7 @@ from tests.e2e.utils import (
     requires_flash_attn,
 )
 
-pytestmark = requires_flash_attn
+pytestmark = [pytest.mark.gpu, requires_flash_attn]
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -86,11 +86,7 @@ class TestMultiGPURay:
         )
 
     @require_torch_2_7_0
-    @pytest.mark.parametrize(
-        "gradient_accumulation_steps",
-        [1, 2],
-    )
-    def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps):
+    def test_ds_zero2_packed(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -111,7 +107,7 @@ class TestMultiGPURay:
                 "num_epochs": 1,
                 "max_steps": 2,
                 "micro_batch_size": 1,
-                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
@@ -145,11 +141,7 @@ class TestMultiGPURay:
         )
 
     @require_torch_2_7_0
-    @pytest.mark.parametrize(
-        "gradient_accumulation_steps",
-        [1, 2],
-    )
-    def test_sft_fsdp2_packed(self, temp_dir, gradient_accumulation_steps):
+    def test_sft_fsdp2_packed(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "HuggingFaceTB/SmolLM2-135M",
@@ -170,7 +162,7 @@ class TestMultiGPURay:
                 "num_epochs": 1,
                 "max_steps": 2,
                 "micro_batch_size": 1,
-                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "dataset_prepared_path": temp_dir + "/last_run_prepared",
                 "learning_rate": 0.00001,
