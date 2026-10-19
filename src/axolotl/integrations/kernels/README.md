@@ -275,16 +275,23 @@ of it (default 5%), the filter would prune, and exits 1 if a winner would be pru
 
 On Beam (B200, bf16 SonicMoE) the three expert GEMMs are `gemm_gated_tuned` (gate_up forward),
 `gemm_tuned` (down) and `gemm_dgated_tuned` (gate_up backward, the slowest first sweep at about
-510 s per rank). None of their measured winners use `tile_n` 64 or 128, and a 2x2 cluster only
-ever won with `tile_m` 256. This filter keeps every measured winner:
+510 s per rank).
+
+- **`gemm_gated_tuned`:** the winner had `tile_n` equal to `tile_m` or twice it on 36 of the 37
+  measured shapes. The exception, 256x224, beat the best surviving config by 1.6%. Both ratios
+  have to stay: each lost by up to 22-47% on some shapes the other won.
+- **`gemm_dgated_tuned` and `gemm_tuned`:** they do not follow that ratio. None of their measured
+  winners use `tile_n` 64 or 128, and a 2x2 cluster only ever won with `tile_m` 256.
+
+The filter below keeps these measured winners:
 
 - `gemm_gated_tuned`: 128x256 c2x1, 256x512 c2x1
 - `gemm_tuned`: 128x256 c2x1 and c1x1, 128x224 c2x1, 256x256 c2x1, 128x160 c1x2, 256x192 c2x2,
   128x192 c1x1
 - `gemm_dgated_tuned`: 256x256 c2x1
 
-It cuts each first sweep from 76 to 52 candidates for `gemm_gated_tuned` and `gemm_dgated_tuned`
-and from 74 to 42 for `gemm_tuned`:
+It cuts each first sweep from 76 to 24 candidates for `gemm_gated_tuned`, from 76 to 52 for
+`gemm_dgated_tuned` and from 74 to 42 for `gemm_tuned`:
 
 ```yaml
 autotune_profiles:
@@ -292,7 +299,9 @@ autotune_profiles:
     backend: quack
     gpu: B200
     allow:
-      tile_n: [160, 192, 224, 256, 512]
+      where:
+        - { if: { tile_m: 128 }, then: { tile_n: [128, 256] } }
+        - { if: { tile_m: 256 }, then: { tile_n: [256, 512] } }
   - kernel: gemm_dgated_tuned
     backend: quack
     gpu: B200

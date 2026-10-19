@@ -192,7 +192,7 @@ def test_validity_pruning_matches_the_cluster_counts(kernels):
 def test_readme_beam_filter_keeps_every_measured_winner(kernels):
     autotune_cache.install_timing_capture()
     autotune_profiles.apply_autotune_profiles(_readme_allow_profiles())
-    expected = {"gemm_gated_tuned": 52, "gemm_tuned": 42, "gemm_dgated_tuned": 52}
+    expected = {"gemm_gated_tuned": 24, "gemm_tuned": 42, "gemm_dgated_tuned": 52}
     for name, count in expected.items():
         tuner = getattr(kernels, name)
         _call(tuner, 131072)
@@ -203,7 +203,7 @@ def test_readme_beam_filter_keeps_every_measured_winner(kernels):
         }
         assert set(MEASURED_WINNERS[name]) <= kept
     records = {r["kernel"]: r for r in autotune_cache.collect_sonicmoe_records()}
-    assert records["gemm_gated_tuned"]["candidate_config_count"] == 52
+    assert records["gemm_gated_tuned"]["candidate_config_count"] == 24
     assert records["gemm_tuned"]["candidate_config_count"] == 42
     assert records["gemm_tuned"]["source"] == "measured"
     assert records["gemm_tuned"]["configs_benchmarked"] == 42
@@ -452,7 +452,7 @@ def test_readme_large_bucket_pins_then_allow_filter(kernels):
             (256, 2),
             (128, 1),
         }
-    expected = {"gemm_gated_tuned": 52, "gemm_tuned": 42, "gemm_dgated_tuned": 52}
+    expected = {"gemm_gated_tuned": 24, "gemm_tuned": 42, "gemm_dgated_tuned": 52}
     for name, count in expected.items():
         tuner = getattr(kernels, name)
         tuner.benched.clear()
@@ -505,3 +505,55 @@ def test_range_match_bounds(kernels):
                 }
             ]
         )
+
+
+def _gemm_config(tile_m, tile_n, gather):
+    return (
+        f"config: GemmConfig(tile_m={tile_m}, tile_n={tile_n}, tile_k=None, "
+        "num_warps=None, pingpong=False, is_dynamic_persistent=True, cluster_m=2, "
+        "cluster_n=1, cluster_k=1, swap_ab=False, max_swizzle_size=8, "
+        f"device_capacity=10, use_tma_gather={gather})"
+    )
+
+
+def test_readme_gated_ratio_rule_costs_the_one_exception_under_2_percent(tmp_path):
+    """The one measured gated shape whose winner breaks tile_n in {tile_m, 2 x tile_m}.
+
+    Beam B200, 884736 expert rows: top three of quack's own disk-cache timings.
+    """
+    entry = tmp_path / "quack" / "HASH" / "gemm_gated_tuned.autotune.json"
+    entry.parent.mkdir(parents=True)
+    entry.write_text(
+        json.dumps(
+            {
+                "key": ["swiglu", "False", "torch.Size([884736, 2560])"],
+                "configs_timings": [
+                    [_gemm_config(256, 224, False), [8.9851] * 3],
+                    [_gemm_config(256, 256, True), [9.1249] * 3],
+                    [_gemm_config(256, 512, True), [9.1372] * 3],
+                ],
+            }
+        )
+    )
+    (gated,) = [
+        p for p in _readme_allow_profiles() if p["kernel"] == "gemm_gated_tuned"
+    ]
+    config = tmp_path / "gated.yaml"
+    config.write_text(yaml.safe_dump({"autotune_profiles": [gated]}))
+    out = _run_report(
+        "--quack-cache-dir", str(tmp_path / "quack"), "--check-allow", str(config)
+    )
+    assert out.returncode == 1 and out.stdout.count("PRUNES WINNER") == 1
+    assert '"tile_m": 256, "tile_n": 224' in out.stdout
+    allowed = [
+        t
+        for c, (t, *_rest) in json.loads(entry.read_text())["configs_timings"]
+        if autotune_profiles.config_allowed(
+            {
+                "tile_m": int(c.split("tile_m=")[1].split(",")[0]),
+                "tile_n": int(c.split("tile_n=")[1].split(",")[0]),
+            },
+            gated["allow"],
+        )
+    ]
+    assert min(allowed) / 8.9851 - 1 < 0.02
