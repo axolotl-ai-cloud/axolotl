@@ -26,10 +26,11 @@ from axolotl.kernels.autotune_reporting import (
 
 
 def _is_sonic_module(name):
+    # hub kernels load under a hash-named package such as ``_sonic_moe_cuda_89d4054``
     return any(
         part in ("quack", "sonicmoe", "sonic_moe")
         or part.startswith(("sonic_moe_", "sonicmoe_"))
-        for part in name.split(".")
+        for part in (piece.lstrip("_") for piece in name.split("."))
     )
 
 
@@ -64,6 +65,35 @@ def _quack_key(autotuner, key):
 
 
 QUACK_PACKAGES = ("quack-kernels", "nvidia-cutlass-dsl", "sonic-moe", "triton")
+
+
+def loaded_quack_versions():
+    """``{module name: {version, file}}`` for each loaded quack package, vendored ones included.
+
+    The hub sonic-moe kernel ships its own quack, so the installed ``quack-kernels``
+    distribution is not necessarily the one that ran.
+    """
+    found = {}
+    for name, module in list(sys.modules.items()):
+        if module is None or name.rsplit(".", 1)[-1] != "quack":
+            continue
+        version = getattr(module, "__version__", None)
+        if version is None:
+            continue
+        found[name] = {
+            "version": str(version),
+            "file": getattr(module, "__file__", None),
+        }
+    return found
+
+
+def quack_file_metadata():
+    """Versions for the quack cache file; drops ``quack-kernels`` when only a vendored quack ran."""
+    loaded = loaded_quack_versions()
+    packages = QUACK_PACKAGES
+    if loaded and "quack" not in loaded:
+        packages = tuple(p for p in packages if p != "quack-kernels")
+    return packages, {"quack_loaded": loaded}
 
 
 def sonicmoe_autotuners():

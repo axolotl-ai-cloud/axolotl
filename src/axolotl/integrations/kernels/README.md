@@ -180,7 +180,8 @@ re-run that only seeds or pins a key keeps the measured record on file.
 
 With `use_sonicmoe: true`, the SonicMoE/quack autotune winners (and any Triton kernels bundled
 with SonicMoE) are written on the same schedule to a second file next to it, `b200.quack.json`,
-with the same record layout plus the quack and CuTe DSL versions. That file is a record only; it
+with the same record layout plus the CuTe DSL version and, under `quack_loaded`, the version and
+location of every quack that was imported (the hub sonic-moe kernel vendors its own). That file is a record only; it
 is not used to seed quack.
 
 `python scripts/autotune_report.py /shared/cache/autotune/b200.json` summarizes both files: shape

@@ -35,9 +35,9 @@ from axolotl.integrations.kernels.autotune_collector import (
     collect_autotune_configs,
 )
 from axolotl.integrations.kernels.sonicmoe_autotune import (
-    QUACK_PACKAGES,
     collect_sonicmoe_autotune_configs,
     collect_sonicmoe_records,
+    quack_file_metadata,
     sonicmoe_autotuners,
 )
 from axolotl.kernels.autotune_reporting import autotuner_metadata
@@ -385,6 +385,7 @@ def write_autotune_cache(
     path: str,
     records: list[dict[str, Any]],
     packages: tuple[str, ...] = ("triton",),
+    extra: dict[str, Any] | None = None,
 ) -> int:
     """Merge ``records`` into the file at ``path`` (newer wins) and write it atomically."""
     existing = read_autotune_cache(path)
@@ -401,6 +402,7 @@ def write_autotune_cache(
         **gpu,
         "torch": torch.__version__,
         "packages": package_versions(packages),
+        **(extra or {}),
         "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "records": list(merged.values()),
     }
@@ -482,7 +484,8 @@ class AutotuneCacheCallback(TrainerCallback):
             records = gather_autotune_records(collect_sonicmoe_records)
             if _is_main_process() and records:
                 quack_path = quack_cache_path(self.path)
-                count = write_autotune_cache(quack_path, records, QUACK_PACKAGES)
+                packages, extra = quack_file_metadata()
+                count = write_autotune_cache(quack_path, records, packages, extra)
                 LOG.info(
                     "Wrote %d SonicMoE autotune winner(s) to %s", count, quack_path
                 )
