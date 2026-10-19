@@ -8,7 +8,7 @@ One Qwen3-MoE experts module is treated as an expert-parallel shard (``num_exper
 > ``num_experts``), fed an EP-style receive grid (local ids, sentinel ``num_experts`` with
 weight 0), and run three ways: transformers' grid path (``sonicmoe_ep_compact_routing`` off),
 the compacted path (on), and a pure-torch fp32 reference. Forward output, d_hidden_states,
-d_router_weights and the base-weight and LoRA grads must agree to bf16 tolerance. One expert
+d_router_weights and the LoRA grads must agree to bf16 tolerance. One expert
 gets no tokens and one token has no local expert; that token's output and grad must be
 exactly zero on both kernel paths.
 """
@@ -125,7 +125,8 @@ def _run(experts, compact, x, idx, weights, lora):
         out = sonic._sonicmoe_ep_forward(experts, x, idx, weights)
     finally:
         del experts._sonicmoe_lora
-    params = (x, weights, experts.gate_up_proj, experts.down_proj, a1, b1, a2, b2)
+    # base expert weights are frozen and enter W_eff detached on the LoRA path
+    params = (x, weights, a1, b1, a2, b2)
     grads = torch.autograd.grad(out.float().square().sum(), params)
     return out.detach(), grads
 
@@ -134,8 +135,8 @@ def _reference(experts, x, idx, weights, lora):
     """fp32 torch: W_eff = W + s * B @ A per expert, then the grid semantics."""
     x = x.float().clone().requires_grad_(True)
     weights = weights.float().clone().requires_grad_(True)
-    w1 = experts.gate_up_proj.detach().float().requires_grad_(True)
-    w2 = experts.down_proj.detach().float().requires_grad_(True)
+    w1 = experts.gate_up_proj.detach().float()
+    w2 = experts.down_proj.detach().float()
     (a1, b1), (a2, b2) = (
         tuple(t.float().clone().requires_grad_(True) for t in p) for p in lora
     )
@@ -155,7 +156,7 @@ def _reference(experts, x, idx, weights, lora):
         gate, up = F.linear(x[rows], w1_eff[e]).chunk(2, dim=-1)
         y = F.linear(F.silu(gate) * up, w2_eff[e])
         out = out.index_add(0, rows, y * weights[rows, slots, None])
-    params = (x, weights, w1, w2, a1, b1, a2, b2)
+    params = (x, weights, a1, b1, a2, b2)
     grads = torch.autograd.grad(out.square().sum(), params)
     return out.detach(), grads
 
@@ -167,8 +168,6 @@ def _rel(a, b):
 NAMES = (
     "d_hidden",
     "d_router_weights",
-    "d_gate_up",
-    "d_down",
     "d_lora_A1",
     "d_lora_B1",
     "d_lora_A2",
@@ -196,5 +195,8 @@ def test_compacted_routing_matches_grid_and_reference(experts_module):
         assert torch.equal(
             d_hidden[NO_LOCAL_TOKEN], torch.zeros_like(d_hidden[NO_LOCAL_TOKEN])
         )
-        assert not grads[2][IDLE_EXPERT].any() and not grads[3][IDLE_EXPERT].any()
+        # lora_A rows are expert-major (E, r, in); lora_B columns are r-major, expert innermost
+        for d_a, d_b in ((grads[2], grads[3]), (grads[4], grads[5])):
+            assert not d_a[IDLE_EXPERT * RANK : (IDLE_EXPERT + 1) * RANK].any()
+            assert not d_b.reshape(d_b.shape[0], RANK, -1)[:, :, IDLE_EXPERT].any()
         assert not grads[1][idx == E_LOCAL].any()
