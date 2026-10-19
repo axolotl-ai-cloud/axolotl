@@ -15,6 +15,7 @@ from trl.experimental.async_grpo.async_rollout_worker import (
     RolloutSample,
     TrainingSequence,
 )
+from trl_async_test_utils import StubTransfer, StubWorker, reference_tree_attention
 
 from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.core.trainers.grpo.trl_async_rollout import (
@@ -552,82 +553,6 @@ class TestMergedWeightSync:
             torch.testing.assert_close(tensor, expected[name], rtol=0, atol=0)
 
 
-def reference_tree_attention(
-    module,
-    query,
-    key,
-    value,
-    attention_mask,
-    *,
-    tree_kv_index,
-    tree_cu_seqlens_q,
-    tree_cu_seqlens_k,
-    tree_max_seqlen_q,
-    tree_max_seqlen_k,
-    scaling=None,
-    **kwargs,
-):
-    """Pure-torch stand-in for TRL's FA3 tree attention."""
-    q, k, v = (x.transpose(1, 2)[0] for x in (query, key, value))
-    k, v = k.index_select(0, tree_kv_index), v.index_select(0, tree_kv_index)
-    groups = q.shape[1] // k.shape[1]
-    out = torch.empty_like(q)
-    for s in range(len(tree_cu_seqlens_q) - 1):
-        qs, qe = int(tree_cu_seqlens_q[s]), int(tree_cu_seqlens_q[s + 1])
-        ks, ke = int(tree_cu_seqlens_k[s]), int(tree_cu_seqlens_k[s + 1])
-        lq, lk = qe - qs, ke - ks
-        mask = torch.arange(lk)[None, :] <= (lk - lq + torch.arange(lq))[:, None]
-        out[qs:qe] = torch.nn.functional.scaled_dot_product_attention(
-            q[qs:qe].transpose(0, 1),
-            k[ks:ke].repeat_interleave(groups, 1).transpose(0, 1),
-            v[ks:ke].repeat_interleave(groups, 1).transpose(0, 1),
-            attn_mask=mask,
-            scale=scaling,
-        ).transpose(0, 1)
-    return out.unsqueeze(0), None
-
-
-class _StubWorker:
-    def __init__(self, samples):
-        self.rollout_buffer = queue.Queue()
-        self.metrics_queue = queue.Queue()
-        self._samples = samples
-        self.versions = []
-
-    def start(self):
-        for sample in self._samples:
-            self.rollout_buffer.put(sample)
-
-    def stop(self):
-        pass
-
-    def update_model_version(self, version):
-        self.versions.append(version)
-
-    def check_health(self, stale_after_s):
-        pass
-
-
-class _StubTransfer:
-    syncs = 0
-
-    def init_weight_transfer(self):
-        pass
-
-    def pause(self):
-        pass
-
-    def send_weights(self, iterator):
-        self.names = [name for name, _ in iterator]
-        self.syncs += 1
-
-    def resume(self):
-        pass
-
-    def destroy(self):
-        pass
-
-
 def test_trains_axolotl_loaded_lora_model_on_cpu(
     download_smollm2_135m_instruct_model, tmp_path, monkeypatch
 ):
@@ -689,8 +614,8 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
         save_strategy="no",
         gradient_checkpointing=False,
     )
-    transfer = _StubTransfer()
-    worker = _StubWorker(samples)
+    transfer = StubTransfer()
+    worker = StubWorker(samples)
     trainer = AxolotlAsyncGRPOTrainer(
         model,
         reward_funcs=[],
@@ -825,7 +750,7 @@ def test_custom_rollout_loop_and_alias_wiring(tmp_path, monkeypatch):
             {"prompt": [[{"role": "user", "content": "q"}]] * 4}
         ),
         processing_class=tokenizer,
-        weight_transfer=_StubTransfer(),
+        weight_transfer=StubTransfer(),
     )
     worker = trainer.rollout_worker
     assert worker._loop_cls is _RolloutRewardLoop
@@ -846,7 +771,7 @@ def test_custom_rollout_loop_and_alias_wiring(tmp_path, monkeypatch):
                 {"prompt": [[{"role": "user", "content": "q"}]] * 4}
             ),
             processing_class=tokenizer,
-            weight_transfer=_StubTransfer(),
+            weight_transfer=StubTransfer(),
         )
 
 

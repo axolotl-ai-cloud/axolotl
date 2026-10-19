@@ -21,9 +21,7 @@ from axolotl.core.trainers.ebft.args import AxolotlEBFTConfig
 from axolotl.core.trainers.ebft.rewards import (
     apply_embed_method,
     extract_hidden_states,
-    get_alignment_rewards,
-    get_diversity_rewards,
-    whiten_embeddings_batched,
+    group_feature_rewards,
 )
 from axolotl.core.trainers.grpo.trainer import (
     AxolotlDataProducerGRPOTrainer,
@@ -361,45 +359,22 @@ class EBFTMixin:
             prompt_lengths=gt_prompt_lengths,
         )
 
-        # --- Optional whitening ---
-        batch_size = gen_emb.shape[0]
-        if args.ebft_use_whitening and batch_size > 1:
-            num_prompts = batch_size // num_gens
-            gen_reshaped = gen_emb.view(num_prompts, num_gens, -1)
-            whitened_gen_list = []
-            whitened_gt_list = []
-            for i in range(num_prompts):
-                w_gen, w_gt = whiten_embeddings_batched(
-                    gen_reshaped[i], gt_emb[i : i + 1]
-                )
-                whitened_gen_list.append(w_gen)
-                whitened_gt_list.append(w_gt)
-            gen_emb = torch.cat(whitened_gen_list, dim=0)
-            gt_emb = torch.cat(whitened_gt_list, dim=0)
-        else:
-            gen_emb = torch.nn.functional.normalize(gen_emb, p=2, dim=-1)
-            gt_emb = torch.nn.functional.normalize(gt_emb, p=2, dim=-1)
-
-        # Repeat gt_emb: each GT repeated num_generations times
-        gt_emb_expanded = gt_emb.repeat_interleave(num_gens, dim=0)
-
-        # --- Compute rewards ---
-        alignment = get_alignment_rewards(gen_emb, gt_emb_expanded)
-        diversity = get_diversity_rewards(gen_emb, num_gens)
-
-        # Scale by 2 per paper equation (7):
-        #   r_j = 2*φ(ŷ_j)^T*φ(y) - 2/(n-1) * Σ_{j'≠j} φ(ŷ_j)^T*φ(ŷ_{j'})
-        alignment = alignment * 2
-        diversity = diversity * 2
-
-        rewards = (
-            args.ebft_alignment_coef * alignment - args.ebft_diversity_coef * diversity
-        )
-
-        # Compute CFM loss: ||E[φ(ŷ)] - φ(y)||^2 (paper eq 2)
-        gen_reshaped = gen_emb.view(-1, num_gens, gen_emb.shape[-1])
-        mean_gen = gen_reshaped.mean(dim=1)  # (num_prompts, D)
-        cfm_loss = ((mean_gen - gt_emb) ** 2).sum(dim=-1).mean()
+        # --- Rewards per prompt group ---
+        whiten = args.ebft_use_whitening and gen_emb.shape[0] > 1
+        per_group = [
+            group_feature_rewards(
+                gen_emb[i * num_gens : (i + 1) * num_gens],
+                gt_emb[i : i + 1],
+                whiten,
+                args.ebft_alignment_coef,
+                args.ebft_diversity_coef,
+            )
+            for i in range(gen_emb.shape[0] // num_gens)
+        ]
+        rewards = torch.cat([group[0] for group in per_group])
+        alignment = torch.cat([group[1] for group in per_group])
+        diversity = torch.cat([group[2] for group in per_group])
+        cfm_loss = torch.stack([group[3] for group in per_group]).mean()
 
         # Log feature-matching metrics to console and wandb
         _align = alignment.mean().item()

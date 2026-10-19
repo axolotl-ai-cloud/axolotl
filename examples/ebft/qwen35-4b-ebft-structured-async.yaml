@@ -31,7 +31,6 @@ trl:
   vllm_server_host: 0.0.0.0
   vllm_server_port: 8000
   scale_rewards: true
-  loss_type: grpo
   epsilon: 0.2
   generation_kwargs:
     stop_token_ids: [248044, 248046]  # <|endoftext|>, <|im_end|>

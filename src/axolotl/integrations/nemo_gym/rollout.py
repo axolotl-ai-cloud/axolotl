@@ -135,6 +135,7 @@ class NemoGymRolloutLoop(AxolotlRolloutLoop):
 
     _provides_rollout_reward = True
     _rollout_reward_name = "nemo_gym"
+    _parses_responses = False
     # Failed rollouts train nothing and stay out of the group baseline.
     _UNSCORABLE: tuple = ([], [], [], 0, 0, None)
 
@@ -150,18 +151,7 @@ class NemoGymRolloutLoop(AxolotlRolloutLoop):
         super().__init__(**kwargs)
         self._agent_servers = dict(agent_servers)
         self._run_timeout = run_timeout
-        self._group_rows: dict[int, dict] = {}
         self._agent_session: aiohttp.ClientSession | None = None
-
-    def _repeat_iterator(self):
-        # `_generate_one` gets only the prompt; the agent needs the whole row.
-        for group_id, row in super()._repeat_iterator():
-            self._group_rows[group_id] = row
-            yield group_id, row
-
-    async def _score_group(self, group):
-        self._group_rows.pop(group.group_id, None)
-        return await super()._score_group(group)
 
     async def _run_loops(self, stop_event: asyncio.Event) -> None:
         # Agents keep a session per cookie, which a shared jar would hand to every

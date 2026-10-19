@@ -25,6 +25,16 @@ def _get_ebft_mode(cfg: DictDefault) -> str:
 class EBFTStrategy:
     """Strategy for EBFT training — dispatches between structured and strided modes."""
 
+    @staticmethod
+    def uses_trl_async(cfg: DictDefault | None) -> bool:
+        """Structured mode with `async_prefetch` runs on TRL's AsyncGRPOTrainer."""
+        return bool(
+            cfg
+            and _get_ebft_mode(cfg) == "structured"
+            and cfg.trl
+            and cfg.trl.async_prefetch
+        )
+
     @classmethod
     def get_trainer_class(cls, cfg: DictDefault | None = None):
         mode = _get_ebft_mode(cfg) if cfg else "structured"
@@ -32,6 +42,12 @@ class EBFTStrategy:
             from axolotl.core.trainers.ebft.strided import AxolotlStridedEBFTTrainer
 
             return AxolotlStridedEBFTTrainer
+        if cls.uses_trl_async(cfg):
+            from axolotl.core.trainers.ebft.trl_async_trainer import (
+                AxolotlTRLAsyncEBFTTrainer,
+            )
+
+            return AxolotlTRLAsyncEBFTTrainer
 
         # Structured mode: async or sync
         # use_data_producer also triggers async trainer (needed for LoRA sync
@@ -57,6 +73,12 @@ class EBFTStrategy:
         mode = _get_ebft_mode(cfg) if cfg else "structured"
         if mode == "strided":
             return AxolotlStridedEBFTConfig
+        if cls.uses_trl_async(cfg):
+            from axolotl.core.trainers.ebft.trl_async_trainer import (
+                AxolotlTRLAsyncEBFTConfig,
+            )
+
+            return AxolotlTRLAsyncEBFTConfig
 
         # Structured mode: async or sync config
         use_async = (
@@ -101,7 +123,13 @@ class EBFTStrategy:
             if getattr(ebft, "gt_length_multiplier", None) is not None:
                 kwargs["ebft_gt_length_multiplier"] = ebft.gt_length_multiplier
 
-        if mode == "strided":
+        if cls.uses_trl_async(cfg):
+            from axolotl.core.trainers.grpo import GRPOStrategy
+
+            kwargs.update(GRPOStrategy.set_async_training_args_kwargs(cfg))
+            if cfg.trl.generation_kwargs is not None:
+                kwargs["generation_kwargs"] = cfg.trl.generation_kwargs
+        elif mode == "strided":
             # Strided-specific fields
             if ebft:
                 if ebft.stride is not None:
