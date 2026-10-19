@@ -171,3 +171,17 @@ config matrix still matches, and whose key is not yet measured is inserted into 
 cache. The file is rewritten at every checkpoint and at train end with the union of all ranks'
 winners. Files record the GPU they were measured on and are ignored on a different GPU model, since
 the winners are device-specific.
+
+Each record carries a `source`: `measured` (benchmarked in a run, with the full `timings_ms` table
+per candidate config, `configs_benchmarked`, and `failed_configs` for configs that did not compile
+or ran out of resources), `profile` (pinned by `autotune_profiles`, never benchmarked), `seeded`
+(taken from the file), or `untimed` (benchmarked before timing capture reached that kernel). A
+re-run that only seeds or pins a key keeps the measured record on file.
+
+With `use_sonicmoe: true`, the SonicMoE/quack autotune winners (and any Triton kernels bundled
+with SonicMoE) are written on the same schedule to a second file next to it, `b200.quack.json`,
+with the same record layout plus the quack and CuTe DSL versions. That file is a record only; it
+is not used to seed quack.
+
+`python scripts/autotune_report.py /shared/cache/autotune/b200.json` summarizes both files: shape
+keys, winners, and timing spread per kernel.

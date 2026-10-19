@@ -306,6 +306,7 @@ class KernelsPlugin(BasePlugin):
                     cfg.autotune_cache_path,
                     cfg.autotune_profiles,
                     neighborhood=cfg.autotune_neighborhood,
+                    sonicmoe=bool(cfg.use_sonicmoe),
                 )
             )
         if cfg.use_sonicmoe and cfg.nvfp4_merge_aware:

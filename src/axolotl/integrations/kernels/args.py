@@ -57,7 +57,9 @@ class KernelsArgs(BaseModel):
     # JSON file of Triton autotune winners (kernel, shape key, chosen tile). When it exists and
     # was measured on this GPU model, the kernels' autotune caches are seeded from it before the
     # first forward, so no training step benchmarks configs (and EP ranks stay in lockstep). It is
-    # rewritten at every checkpoint and at train end with the merged winners of all ranks.
+    # rewritten at every checkpoint and at train end with the merged winners of all ranks, with
+    # each measured key's per-config timings. With use_sonicmoe, the quack winners are written
+    # next to it as <stem>.quack.json.
     autotune_cache_path: str | None = None
     # Pin or narrow Triton autotune search spaces per kernel: a list of
     # {kernel, gpu?, match?, configs} entries (see integrations/kernels/autotune_profiles.py).
