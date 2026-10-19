@@ -1,10 +1,12 @@
 """CoreWeave job submission configuration (SUNK or CKS), independent of training imports."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from axolotl.utils.schemas.cloud import CloudImageConfig
+
+AbsolutePath = Annotated[str, StringConstraints(pattern=r"^/[^\s,:]*$")]
 
 
 class ObjectStorageIdentity(BaseModel):
@@ -70,6 +72,8 @@ class CoreWeaveCloudConfig(CloudImageConfig):
     memory_request: str = Field(default="256Gi", pattern=r"^[0-9]+[EPTGMK]i?$")
     shm_size: str = Field(default="64Gi", pattern=r"^[0-9]+[EPTGMK]i?$")
     scratch_size: str | None = Field(default=None, pattern=r"^[0-9]+[EPTGMK]i?$")
+    # node-local directories mounted read-only, host path -> container path (e.g. model weights staged on NVMe)
+    host_paths: dict[AbsolutePath, AbsolutePath] = Field(default_factory=dict)
     # request rdma/ib and set CoreWeave's InfiniBand NCCL recipe
     rdma: bool = True
     node_selector: dict[str, str] = Field(default_factory=dict)
