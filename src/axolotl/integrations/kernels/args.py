@@ -73,12 +73,11 @@ class KernelsArgs(BaseModel):
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
     use_sonicmoe: bool | None = None
-    # SonicMoE under expert parallelism pads each rank's received rows so quack's autotuner sees
+    # SonicMoE under expert parallelism pads each rank's received tokens so quack's autotuner sees
     # few distinct shapes. "pow2" (default): the next power of two. "highwater": the largest count
     # seen so far times sonicmoe_ep_row_padding_headroom (default 1.03), rounded up to
-    # sonicmoe_ep_row_padding_granule rows (default 65536), tracked separately for training and
-    # eval. Use highwater when tokens * top_k per rank is a power of two: pow2 then doubles about
-    # half the batches.
+    # sonicmoe_ep_row_padding_granule tokens (default 4096), tracked separately for training and
+    # eval. pow2 can pad a rank's typical receive by half again (see the kernels README).
     sonicmoe_ep_row_padding: Literal["pow2", "highwater"] | None = None
     sonicmoe_ep_row_padding_granule: int | None = None
     sonicmoe_ep_row_padding_headroom: float | None = None

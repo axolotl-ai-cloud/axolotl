@@ -104,32 +104,46 @@ Advanced tuning knobs (fused up-proj, per-tensor-scale fold, fp8 DeepGEMM backwa
 
 **Tip:** in our tests, the Triton `dequant` path is currently faster (and lower mem) end to end than the `fp4_cute` path for < 100B param MoE model. However, `fp4_cute` should overtake when expert matmul become more dominant cost.
 
-### SonicMoE under expert parallelism: row padding
+### SonicMoE under expert parallelism: token padding
 
-With expert parallelism, every rank receives a different number of routed rows each step and
-layer. quack autotunes per exact shape, and a first sweep costs minutes, so the bf16 SonicMoE EP
-forward pads the received rows with zero-compute sentinel rows up to a bucket and slices the
-output back. By default (`sonicmoe_ep_row_padding: pow2`) the bucket is the next power of two,
-never below 1024.
+With expert parallelism, DeepEP sends each token once to every rank that holds at least one of
+its top-k experts, so the number of tokens a rank receives changes every step and layer. quack
+autotunes per exact shape, and a first sweep costs minutes, so the bf16 SonicMoE EP forward pads
+the received tokens with zero-compute sentinel tokens up to a bucket and slices the output back.
+By default (`sonicmoe_ep_row_padding: pow2`) the bucket is the next power of two, never below
+1024.
 
-That default is a poor fit when the balanced load is itself a power of two. On Beam (EP=8,
-131072 tokens per rank per step, top_k 8) the mean receive is exactly 2^20 rows, so about half the
-layers land just above it and pad to 2^21. That doubles their activations (it ran out of memory
-on a 10 GiB `[1048576, 5120]` bf16 allocation, and later inside sonic-moe's token-broadcast
-backward) and adds a new shape to sweep. High-water padding avoids the doubling:
+sonic-moe then sizes its expert buffers as tokens x top_k, with a sentinel in every slot whose
+expert lives on another rank. On Beam (EP=8, 16384 tokens per rank, top_k 8, 32 of 256 experts
+per rank) a rank receives at most 8 x 16384 = 131072 tokens and about 1 - (7/8)^8 = 66% of that
+(~86k) on average. pow2 pads those ~86k tokens to 131072, about 52% waste, and the expert buffers
+become 131072 x 8 = 1048576 rows for about 131k real local (token, expert) pairs. The 10 GiB
+allocation that ran out of memory was one of them: `[1048576, 5120]` bf16, that is 131072 padded
+tokens x 8 slots x 5120.
+
+High-water padding keeps the shapes stable without rounding up to the next power of two:
 
 ```yaml
 sonicmoe_ep_row_padding: highwater
-sonicmoe_ep_row_padding_granule: 65536    # default
+sonicmoe_ep_row_padding_granule: 4096     # tokens; default
 sonicmoe_ep_row_padding_headroom: 1.03    # default
 ```
 
-Each call pads to the largest receive count seen so far times the headroom, rounded up to the
-granule. The mark is shared by all MoE layers and kept separately for training and eval, so short
+Each call pads to the largest token count received so far times the headroom, rounded up to the
+granule, but never past the next power of two (so a receive at the 131072-token cap stays at
+131072). The mark is shared by all MoE layers and kept separately for training and eval, so short
 eval batches do not pad to the training size. It rises a few times early in training and then
-stays put, so training sees a handful of shapes that are not powers of two. Marks are per rank,
-so ranks can settle on different sizes. The
-NVFP4 EP paths drop the sentinel rows instead of padding and do not use this setting.
+stays put, so training sees a handful of sizes that are not powers of two (multiples of 4096
+tokens, so multiples of 32768 expert rows with top_k 8). Marks are per rank, so ranks can settle
+on different sizes. The NVFP4 EP paths drop the sentinels instead of padding and do not use this
+setting.
+
+The larger cost is the tokens x top_k expansion itself: about 7/8 of the expert-buffer rows on
+Beam are sentinels. sonic-moe's `moe_general_routing_inputs` takes flat per-pair routing
+(`router_scores`, `token_indices` sorted ascending, `expert_indices`), so passing only the local
+pairs would shrink those buffers to about the real pair count. That needs axolotl to call it
+directly instead of going through transformers' `sonicmoe_experts_forward`, which always passes
+every slot.
 
 ## Model Support
 

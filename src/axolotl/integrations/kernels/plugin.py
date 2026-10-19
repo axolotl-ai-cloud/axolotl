@@ -209,7 +209,7 @@ class KernelsPlugin(BasePlugin):
             register_sonicmoe_experts()
             configure_ep_row_padding(
                 cfg.sonicmoe_ep_row_padding or "pow2",
-                granule=cfg.sonicmoe_ep_row_padding_granule or 65536,
+                granule=cfg.sonicmoe_ep_row_padding_granule or 4096,
                 headroom=cfg.sonicmoe_ep_row_padding_headroom or 1.03,
             )
             if not ep_active:
