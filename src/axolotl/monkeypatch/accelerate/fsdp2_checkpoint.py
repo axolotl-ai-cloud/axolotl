@@ -18,6 +18,10 @@ from accelerate.utils.modeling import is_peft_model
 from torch.distributed.tensor import DTensor
 from torch.distributed.tensor._utils import compute_local_shape_and_global_offset
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
 _QUANTIZED = "_axolotl_optim_state_8bit"
 _VERSION = "_axolotl_full_optimizer_version"
 _OWNED_SCALAR = "_axolotl_ep_scalar"
@@ -475,6 +479,56 @@ def _adapter_values(model):
     return fsdp2_canonicalize_names(values)
 
 
+def _base_config_dir(model):
+    """Local directory holding the base model's config.json, without a Hub request."""
+    import os
+
+    configs = getattr(model, "peft_config", {}).values()
+    model_id = next((c.base_model_name_or_path for c in configs), None)
+    if not model_id:
+        return None
+    if os.path.isfile(os.path.join(model_id, "config.json")):
+        return model_id
+    try:
+        from huggingface_hub import try_to_load_from_cache
+
+        cached = try_to_load_from_cache(model_id, "config.json")
+    except Exception:  # pylint: disable=broad-except
+        return None
+    return os.path.dirname(cached) if isinstance(cached, str) else None
+
+
+def peft_save_embedding_layers(model):
+    """Explicit PEFT ``save_embedding_layers``: ``"auto"`` asks the Hub for the base model's
+    config.json on every save, on every rank, to detect a resized vocabulary."""
+    from peft.tuners.trainable_tokens.layer import TrainableTokensLayer
+    from peft.tuners.tuners_utils import BaseTunerLayer
+    from peft.utils.other import AuxiliaryTrainingWrapper
+
+    for getter in ("get_input_embeddings", "get_output_embeddings"):
+        try:
+            layer = getattr(model, getter)()
+        except (AttributeError, NotImplementedError):
+            continue
+        # modules_to_save and trainable-token wrappers export their own trained copy
+        if layer is None or isinstance(layer, AuxiliaryTrainingWrapper):
+            continue
+        if isinstance(layer, BaseTunerLayer):
+            if not isinstance(layer, TrainableTokensLayer):
+                return True
+        elif any(p.requires_grad for p in layer.parameters()):
+            return True
+    vocab_size = getattr(getattr(model, "config", None), "vocab_size", None)
+    directory = _base_config_dir(model) if vocab_size else None
+    if directory is None:
+        return False
+    try:
+        base = type(model.config).from_pretrained(directory)
+    except (OSError, ValueError):
+        return False
+    return vocab_size != getattr(base, "vocab_size", vocab_size)
+
+
 def _adapter_export_names(model, values, adapter):
     """PEFT export key -> canonical parameter/buffer names it holds."""
     from peft.utils.save_and_load import get_peft_model_state_dict
@@ -485,6 +539,7 @@ def _adapter_export_names(model, values, adapter):
         state_dict={name: name for name in values},
         adapter_name=adapter,
         unwrap_compiled=True,
+        save_embedding_layers=peft_save_embedding_layers(model),
     )
     mapping = {}
     for key, value in exported.items():
@@ -507,12 +562,29 @@ def _adapter_model_state(model):
                 selected.update(names)
     except Exception as exc:  # pylint: disable=broad-except
         error = f"Adapter checkpoint selection failed: {exc}"
-    _check_errors(error)
-    signatures = [None] * dist.get_world_size()
-    dist.all_gather_object(signatures, sorted(selected))
-    if any(names != sorted(selected) for names in signatures):
+    gathered = [None] * dist.get_world_size()
+    dist.all_gather_object(gathered, (error, sorted(selected)))
+    errors = [error for error, _ in gathered if error]
+    if errors:
+        raise ValueError("Full checkpoint failed: " + "; ".join(errors))
+    if any(names != sorted(selected) for _, names in gathered):
         raise ValueError("Adapter checkpoint keys differ across ranks")
+    _warn_unsaved_trainable(model, {id(values[name]) for name in selected})
     return {name: values[name] for name in sorted(selected)}
+
+
+def _warn_unsaved_trainable(model, saved):
+    unsaved = sorted(
+        name
+        for name, parameter in _parameters(model).items()
+        if parameter.requires_grad and id(parameter) not in saved
+    )
+    if unsaved:
+        LOG.warning_once(
+            f"{len(unsaved)} trainable parameters are not part of the PEFT adapter and are "
+            f"not saved in adapter checkpoints or exports: {unsaved[:8]}. Add their modules "
+            "to lora_modules_to_save (or freeze them) to keep their updates."
+        )
 
 
 _ADAPTER_REFERENCE = "_axolotl_adapter_reference"

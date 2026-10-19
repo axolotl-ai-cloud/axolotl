@@ -40,5 +40,6 @@ def test_ep_lora_adapter_save_keeps_tensors_on_writer_only(tmp_path):
         "ep-lora-adapter-save-writer-only",
         "fsdp2-lora-adapter-save-writer-only",
         "ep-lora-adapter-save-rejects-unfilled",
+        "ep-lora-adapter-trainer-save-exact",
     ):
         assert f"PASS {case}" in stdout

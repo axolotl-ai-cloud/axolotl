@@ -245,3 +245,56 @@ def test_transfer_writes_into_the_destination_view():
     assert out is destination
     assert torch.equal(full[1:4, 2:7], value)
     assert full.sum() == value.sum()
+
+
+@pytest.mark.parametrize(
+    "case, expected",
+    [
+        ("lora", False),
+        ("lora-embedding", True),
+        ("modules-to-save-embedding", False),
+        ("unfrozen-embedding", True),
+        ("resized-local-base", True),
+        ("hub-base-not-cached", False),
+    ],
+)
+def test_save_embedding_layers_is_explicit_without_hub_requests(
+    tmp_path, case, expected
+):
+    from unittest.mock import patch
+
+    from peft import LoraConfig, get_peft_model
+    from peft.utils.save_and_load import get_peft_model_state_dict
+    from transformers import GPT2Config, GPT2LMHeadModel
+
+    from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+        peft_save_embedding_layers,
+    )
+
+    config = GPT2Config(vocab_size=32, n_embd=8, n_head=2, n_layer=1)
+    config.save_pretrained(tmp_path)
+    base = GPT2LMHeadModel(config)
+    base.name_or_path = (
+        "axolotl-ai-co/not-a-cached-model" if case == "hub-base-not-cached" else ""
+    )
+    if case == "resized-local-base":
+        base.resize_token_embeddings(40)
+        base.name_or_path = str(tmp_path)
+    lora = dict(target_modules=["c_attn"], r=2)
+    if case == "lora-embedding":
+        lora["target_modules"] = ["c_attn", "wte"]
+    if case == "modules-to-save-embedding":
+        lora["modules_to_save"] = ["wte"]
+    model = get_peft_model(base, LoraConfig(**lora))
+    if case == "unfrozen-embedding":
+        model.base_model.model.transformer.wte.weight.requires_grad_(True)
+    with patch(
+        "peft.utils.save_and_load.check_file_exists_on_hf_hub",
+        side_effect=AssertionError("Hub request during save"),
+    ):
+        flag = peft_save_embedding_layers(model)
+        get_peft_model_state_dict(model, save_embedding_layers=flag)
+        if case == "hub-base-not-cached":
+            with pytest.raises(AssertionError, match="Hub request"):
+                get_peft_model_state_dict(model)
+    assert flag is expected

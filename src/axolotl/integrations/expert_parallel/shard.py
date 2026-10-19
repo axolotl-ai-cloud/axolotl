@@ -592,8 +592,9 @@ def _replicated_adapter_state(model, deferred: dict) -> tuple[dict, set]:
             value = _keep_for_writer(_gather_adapter_tensor(p))
         sd[_strip_checkpoint_wrapper(name)] = value
     add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
+    # sd holds only LoRA weights; an explicit flag skips PEFT's Hub vocab-size lookup
     adapter_sd = _canonical_adapter_keys(
-        get_peft_model_state_dict(model, state_dict=sd)
+        get_peft_model_state_dict(model, state_dict=sd, save_embedding_layers=False)
     )
     return adapter_sd, {k for k, v in adapter_sd.items() if id(v) in placeholders}
 
