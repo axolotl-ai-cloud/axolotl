@@ -111,11 +111,19 @@ def chunked_bnb_moe(
         Agu, Bgu, sgu = _lora_stack(gup_lora, num_experts, H, two_i)
         Adn, Bdn, sdn = _lora_stack(down_lora, num_experts, inter, H)
 
-    # Sort tokens by expert so each expert's tokens are contiguous for grouped_mm.
+    # Sort tokens by expert so each expert's tokens are contiguous for grouped_mm. Negative
+    # ids are slots routed to another expert-parallel rank and carry no work.
     flat_exp = idx.reshape(-1)
+    rep_all = torch.arange(N, device=dev).repeat_interleave(idx.size(1))
+    w_all = wts.reshape(-1)
+    valid = flat_exp >= 0
+    if not bool(valid.all()):
+        flat_exp, rep_all, w_all = flat_exp[valid], rep_all[valid], w_all[valid]
+        if flat_exp.numel() == 0:
+            return hidden.new_zeros(N, H)
     order = flat_exp.argsort()
-    rep = torch.arange(N, device=dev).repeat_interleave(idx.size(1))[order]
-    wflat = wts.reshape(-1)[order]
+    rep = rep_all[order]
+    wflat = w_all[order]
     counts = torch.bincount(flat_exp, minlength=num_experts)
     tok_off = torch.cat([counts.new_zeros(1), counts.cumsum(0)]).tolist()
     flat = hidden[rep]

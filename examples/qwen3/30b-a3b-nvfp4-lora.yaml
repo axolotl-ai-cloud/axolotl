@@ -9,6 +9,8 @@ nvfp4_merge_aware: true
 strict: false
 
 chat_template: tokenizer_default
+eot_tokens:
+  - "<|im_end|>"
 datasets:
   - path: mlabonne/FineTome-100k
     type: chat_template

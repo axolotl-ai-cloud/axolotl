@@ -125,15 +125,20 @@ class HFMistralTokenizer(MistralCommonBackend):
                 except (AttributeError, NotImplementedError):
                     system_prompt = None
 
-                return normalizer._instruct_request_class(
+                request_class = normalizer._instruct_request_class
+                continuation_kwargs = {}
+                if "continue_final_message" in request_class.model_fields:
+                    continuation_kwargs["continue_final_message"] = getattr(
+                        request, "continue_final_message", False
+                    )
+
+                return request_class(
                     messages=messages,
                     system_prompt=system_prompt,
                     available_tools=request.tools,
                     truncate_at_max_tokens=None,
-                    continue_final_message=getattr(
-                        request, "continue_final_message", False
-                    ),
                     settings=settings,
+                    **continuation_kwargs,
                 )
 
         normalizer.from_chat_completion_request = from_chat_completion_request

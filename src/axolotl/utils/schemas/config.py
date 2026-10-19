@@ -28,6 +28,7 @@ from axolotl.utils.schemas.datasets import (
     SyntheticDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
+from axolotl.utils.schemas.diffusion import DiffusionLMConfig
 from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
 from axolotl.utils.schemas.enums import (
     ATTN_IMPLS_SUPPORTING_PACKING,
@@ -62,7 +63,7 @@ from axolotl.utils.schemas.model import (
     SpecialTokensConfig,
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
-from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
+from axolotl.utils.schemas.peft import LoraConfig, MixLoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
 from axolotl.utils.schemas.training import (
     HyperparametersConfig,
@@ -70,7 +71,10 @@ from axolotl.utils.schemas.training import (
     SelectiveCheckpointingConfig,
 )
 from axolotl.utils.schemas.trl import TRLConfig
-from axolotl.utils.schemas.validation import ValidationMixin
+from axolotl.utils.schemas.validation import (
+    ValidationMixin,
+    lora_kernels_auto_enable,
+)
 from axolotl.utils.schemas.vllm import VllmConfig
 
 LOG = get_logger(__name__)
@@ -193,6 +197,7 @@ class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
     LoraConfig,
+    MixLoraConfig,
     ReLoRAConfig,
     JaggedLRConfig,
     HyperparametersConfig,
@@ -213,6 +218,13 @@ class AxolotlInputConfig(
     """Wrapper of all config options."""
 
     model_config = {"populate_by_name": True}
+
+    diffusion_lm: DiffusionLMConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Canonical configuration for diffusion language-model training"
+        },
+    )
 
     strict: bool | None = Field(
         default=False,
@@ -321,6 +333,16 @@ class AxolotlInputConfig(
         },
     )
     dpo_label_smoothing: float | None = None
+    dpo_ld_alpha: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        json_schema_extra={
+            "description": "LD-DPO length desensitization: weight on the log-probabilities of the tokens a "
+            "response has beyond the shorter response of its pair (1.0 = unweighted, 0.0 = ignore them). "
+            "Applies to every DPO loss type, including apo_zero."
+        },
+    )
     precompute_ref_log_probs: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -495,6 +517,12 @@ class AxolotlInputConfig(
 
     seed: int | None = Field(
         default=None, json_schema_extra={"description": "Seed for reproducibility"}
+    )
+    full_determinism: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Seed with transformers' enable_full_determinism (deterministic torch algorithms and CUBLAS workspace config) instead of set_seed. Slower."
+        },
     )
     ddp_timeout: int | None = Field(
         default=None,
@@ -704,6 +732,20 @@ class AxolotlInputConfig(
             "description": "Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'"
         },
     )
+    balance_labels: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Balance supervised tokens across causal LM packed, flattened, or padded batches. Supports streaming with sample packing."
+        },
+    )
+    label_balance_window_optim_steps: int = Field(
+        default=1,
+        ge=1,
+        strict=True,
+        json_schema_extra={
+            "description": "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only."
+        },
+    )
     sample_packing_group_size: int | None = Field(
         default=100_000,
         json_schema_extra={
@@ -730,6 +772,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Set to 'false' if getting errors during eval with sample_packing on"
+        },
+    )
+    fa_varlen_kwargs_in_collator: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "With sample_packing and flash attention, precompute the varlen metadata (cu_seq_lens, max_length) once per batch in the collator instead of letting transformers derive it in every attention layer, which costs several host-device syncs per layer. Not used when batches are dispatched (streaming or pretraining datasets unless accelerator_config.dispatch_batches is false) or under DeepSpeed sequence parallel, since both slice every batch tensor per rank. Set to 'false' to restore the per-layer derivation."
         },
     )
     pad_to_sequence_len: bool | None = Field(
@@ -861,7 +909,8 @@ class AxolotlInputConfig(
             "description": (
                 "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
                 "flash_attention_3, flash_attention_4, flash_attention_torch, "
-                "flex_attention, xformers, sage, fp8. Hub-kernel paths (e.g. "
+                "flex_attention, varlen, xformers, sage, fp8. `varlen` is native "
+                "full-sequence diffusion only. Hub-kernel paths (e.g. "
                 "kernels-community/flash-attn3) are also accepted and passed through to "
                 "transformers."
             )
@@ -1039,6 +1088,12 @@ class AxolotlInputConfig(
             "description": "Number of top logits for entropy approximation (default: 20)"
         },
     )
+    use_dft: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Enable Dynamic Fine-Tuning loss (DFT): per-token cross entropy weighted by its own detached probability"
+        },
+    )
 
     tiled_mlp: bool | None = Field(
         default=None,
@@ -1187,6 +1242,12 @@ class AxolotlInputConfig(
     torch_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
         None
     )
+    torch_compile_regional: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks gradient_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without gradient checkpointing."
+        },
+    )
     torch_compile_options: dict[str, bool | int | float | str] | None = Field(
         default=None,
         json_schema_extra={
@@ -1238,6 +1299,12 @@ class AxolotlInputConfig(
             "description": "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`"
         },
     )
+    eval_on_start: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Run an evaluation before the first training step. Leave empty to keep the default (on whenever evaluation is enabled); set to false to skip the step-0 eval"
+        },
+    )
 
     save_steps: int | float | None = Field(
         default=None,
@@ -1270,6 +1337,12 @@ class AxolotlInputConfig(
     logging_steps: int | None = Field(
         default=None, json_schema_extra={"description": "Logging frequency"}
     )
+    logging_nan_inf_filter: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss (HF default). The check reads the loss on the host every micro-step, one device sync; set to 'false' to remove it."
+        },
+    )
     early_stopping_patience: int | None = Field(
         default=None,
         json_schema_extra={
@@ -1285,6 +1358,18 @@ class AxolotlInputConfig(
     )
     use_tensorboard: bool | None = Field(
         default=None, json_schema_extra={"description": "Use tensorboard for logging"}
+    )
+    sync_profiler_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Debugging aid, separate from profiler_steps (the torch profiler timeline): count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the call sites and write sync_profile.json to output_dir."
+        },
+    )
+    sync_profiler_start_step: int = Field(
+        default=2,
+        json_schema_extra={
+            "description": "Optimizer step at which the sync profiler starts (after warm-up)."
+        },
     )
     profiler_steps: int | None = Field(
         default=None,
@@ -1543,10 +1628,20 @@ class AxolotlInputConfig(
             if isinstance(peft_trainable_token_indices, int):
                 peft_trainable_token_indices = (peft_trainable_token_indices,)
 
+            trainable_token_ids = (
+                {
+                    token_id
+                    for indices in peft_trainable_token_indices.values()
+                    for token_id in indices
+                }
+                if isinstance(peft_trainable_token_indices, dict)
+                else set(peft_trainable_token_indices)
+            )
+
             for untrained_token_id in fix_untrained_tokens:
-                if untrained_token_id not in peft_trainable_token_indices:
+                if untrained_token_id not in trainable_token_ids:
                     LOG.warning_once(
-                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices: ` list. "
+                        f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices`. "
                         "Please add it, otherwise the token won't be trained on."
                     )
         return data
@@ -1656,6 +1751,40 @@ class AxolotlInputConfig(
                 f"Allowed: {sorted(INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)}."
             )
         return value
+
+    @model_validator(mode="after")
+    def check_label_balanced_packing(self):
+        """Label balancing requires static token-level labels and reorderable samples."""
+        if self.balance_labels and (
+            (
+                not self.sample_packing
+                and (self.streaming or self.pretraining_dataset or self.group_by_length)
+            )
+            or self.sample_packing_sequentially
+            or self.curriculum_sampling
+            or self.diffusion_lm
+            or self.rl
+            or self.reward_model
+            or self.process_reward_model
+        ):
+            raise ValueError(
+                "balance_labels requires causal LM "
+                "sample_packing or map-style fixed-count batching without sequential, curriculum, or conflicting length-grouped sampling"
+            )
+        if self.label_balance_window_optim_steps > 1:
+            if not self.balance_labels:
+                raise ValueError(
+                    "label_balance_window_optim_steps requires balance_labels"
+                )
+            if self.streaming or self.pretraining_dataset:
+                raise ValueError(
+                    "label_balance_window_optim_steps > 1 requires non-streaming training"
+                )
+        if self.balance_labels and (self.accelerator_config or {}).get("split_batches"):
+            raise ValueError(
+                "balance_labels requires split_batches=False for optimizer-step grouping"
+            )
+        return self
 
     @model_validator(mode="after")
     def check_torch_compile_options_requires_compile(self):
@@ -1900,7 +2029,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="after")
     def check_fp8_attention_preflight(self):
-        """fp8 attention requires SM90+ and torch >= 2.11 (torchao >= 0.17 is pinned)."""
+        """fp8 attention requires SM90+ (torchao >= 0.17 is pinned)."""
         if self.attn_implementation != "fp8":
             return self
 
@@ -1912,19 +2041,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     f"attn_implementation=fp8 requires compute capability sm_90 or "
                     f"higher (Hopper+). Detected {cc!r}."
                 )
-
-        torch_version = (
-            self.env_capabilities.torch_version if self.env_capabilities else None
-        )
-        if torch_version is None:
-            import torch
-
-            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-        if version.parse(torch_version) < version.parse("2.11.0"):
-            raise ValueError(
-                f"attn_implementation=fp8 requires PyTorch >= 2.11.0. "
-                f"Detected {torch_version}."
-            )
 
         return self
 
@@ -1964,81 +2080,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_auto_enable_lora_kernels(cls, data):
-        # Only proceed if using LoRA or QLoRA adapter
-        if data.get("rl"):
-            # RL trainers not tested so don't enable kernels by default
-            return data
-        if data.get("nvfp4_merge_aware"):
-            # Keep merge-aware kernel selection opt-in until its overhead is benchmarked.
-            return data
-        if data.get("adapter") in ["lora", "qlora"]:
-            # Skip if already set or using 8-bit
-            kernel_fields = [
-                "lora_mlp_kernel",
-                "lora_qkv_kernel",
-                "lora_o_kernel",
-                "lora_embedding_kernel",
-            ]
-            if (
-                any(data.get(k) is not None for k in kernel_fields)
-                or data.get("adapter") == "lora"
-                and data.get("load_in_8bit")
-            ):
-                return data
-
-            # Skip if trust_remote_code is enabled, as lora kernels are not compatible
-            if data.get("trust_remote_code"):
-                return data
-
-            # Skip architectures that declare the fused kernels unsupported.
-            # model_config_type is usually resolved later (normalize_config),
-            # which disables any kernels auto-enabled here.
-            from axolotl.model_support import (
-                Unsupported,
-                get_model_support,
-                resolve_model_support,
-            )
-
-            support = get_model_support(data.get("model_config_type"))
-            if support is not None and isinstance(
-                resolve_model_support(support).capabilities.get("lora_kernels"),
-                Unsupported,
-            ):
-                return data
-
-            # Skip auto-enable for MoE models when native grouped_mm is unavailable
-            # (torch < 2.9). The grouped_mm fallback in transformers uses torch.mm
-            # with out= which bypasses autocast and fails on mixed dtypes during eval.
-            env_capabilities = data.get("env_capabilities", {})
-            torch_version = env_capabilities.get("torch_version")
-            if torch_version is None:
-                import torch
-
-                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-            has_grouped_mm = version.parse(torch_version) >= version.parse("2.9.0")
-            if not has_grouped_mm:
-                is_moe = False
-                model_type = data.get("model_config_type", "")
-                if model_type and "moe" in model_type.lower():
-                    is_moe = True
-                if not is_moe:
-                    try:
-                        from transformers import AutoConfig
-
-                        base_model = data.get("base_model")
-                        if base_model:
-                            auto_cfg = AutoConfig.from_pretrained(
-                                base_model, trust_remote_code=False
-                            )
-                            if getattr(auto_cfg, "num_local_experts", None) or getattr(
-                                auto_cfg, "num_experts", None
-                            ):
-                                is_moe = True
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        pass
-                if is_moe:
-                    return data
-
+        if lora_kernels_auto_enable(data.get):
             # Auto-enable kernels if not explicitly set by user
             if data.get("lora_mlp_kernel") is None:
                 data["lora_mlp_kernel"] = True
@@ -2062,60 +2104,18 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def check_adopt_torch_version(cls, data):
-        if (data.get("optimizer") is not None) and ("adopt" in data.get("optimizer")):
-            env_capabilities = data.get("env_capabilities", {})
-            torch_version = env_capabilities.get("torch_version")
-
-            if torch_version is None:
-                import torch
-
-                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-            if version.parse(torch_version) < version.parse("2.5.1"):
-                raise ValueError(
-                    "ADOPT optimizer is incompatible with torch version < 2.5.1"
-                )
-        return data
-
-    @model_validator(mode="after")
-    def check_flex_torch_version(self):
-        if self.attn_implementation == "flex_attention":
-            torch_version = (
-                self.env_capabilities.torch_version if self.env_capabilities else None
-            )
-            if torch_version is None:
-                import torch
-
-                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-            if version.parse(torch_version) < version.parse("2.6.0"):
-                raise ValueError(
-                    "Flex attention is not supported on torch version < 2.6.0"
-                )
-        return self
-
-    @model_validator(mode="before")
-    @classmethod
     def check_torch_compile_auto(cls, data):
         if data.get("torch_compile") == "auto":
             env_capabilities = data.get("env_capabilities", {})
             if env_capabilities.get("torch_version"):
-                if version.parse(
-                    env_capabilities.get("torch_version")
-                ) >= version.parse("2.5.1"):
-                    LOG.info(
-                        "torch.compile is available, setting torch_compile to True"
-                    )
-                    data["torch_compile"] = True
-                else:
-                    data["torch_compile"] = False
+                LOG.info("torch.compile is available, setting torch_compile to True")
+                data["torch_compile"] = True
             else:
                 data["torch_compile"] = False
             if data["torch_compile"] is False and data.get("torch_compile_options"):
                 LOG.warning(
                     "torch_compile: auto resolved to False on this environment "
-                    "(torch < 2.5.1); ignoring torch_compile_options."
+                    "(torch version unknown); ignoring torch_compile_options."
                 )
                 data["torch_compile_options"] = None
         return data
@@ -2132,9 +2132,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     def check_min_torch_version(self):
         if self.env_capabilities and self.env_capabilities.torch_version:
             torch_version = self.env_capabilities.torch_version
-            if version.parse(torch_version) < version.parse("2.6.0"):
+            if version.parse(torch_version) < version.parse("2.13.0"):
                 LOG.warning(
-                    f"torch=={torch_version} not be supported. Please upgrade to torch>=2.6.0."
+                    f"torch=={torch_version} may not be supported. Please upgrade to torch>=2.13.0."
                 )
 
         return self
@@ -2159,34 +2159,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             "activation_dtype"
         ) not in (None, "int8"):
             raise ValueError("Ternary QAT only supports activation_dtype: int8.")
-
-        env_capabilities = data.get("env_capabilities", {})
-        torch_version = env_capabilities.get("torch_version")
-
-        if torch_version is None:
-            import torch
-
-            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-        if version.parse(torch_version) < version.parse("2.6.0"):
-            raise ValueError("QAT is not supported on torch version < 2.6.0")
-
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_fsdp_torch_version(cls, data):
-        env_capabilities = data.get("env_capabilities", {})
-        torch_version = env_capabilities.get("torch_version")
-
-        if torch_version is None:
-            import torch
-
-            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
-
-        if data.get("fsdp_config"):
-            if version.parse(torch_version) < version.parse("2.7.0"):
-                raise ValueError("FSDP2 is not supported on torch version < 2.7.0")
 
         return data
 

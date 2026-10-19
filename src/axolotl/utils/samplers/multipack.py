@@ -13,16 +13,24 @@ from typing import Iterable, Iterator, Union
 
 import numba
 import numpy as np
-from torch.utils.data import BatchSampler, Sampler, SequentialSampler
+import torch
+from torch.utils.data import BatchSampler, RandomSampler, Sampler, SequentialSampler
 
 from axolotl.utils.distributed import reduce_and_broadcast
 from axolotl.utils.logging import get_logger
+from axolotl.utils.samplers.accumulation import (
+    accumulation_metrics,
+    balance_accumulation,
+)
 from axolotl.utils.samplers.balanced import (
     BALANCED_GREEDY,
     FIRST_FIT_DECREASING,
     PackingStrategy,
     balanced_greedy_pack_group,
 )
+from axolotl.utils.samplers.label_balance import _batch_labels, balance_labels
+from axolotl.utils.samplers.microbatch_balance import balance_microbatches
+from axolotl.utils.samplers.rank_balance import order_batches_by_rank
 
 LOG = get_logger(__name__)
 
@@ -301,6 +309,13 @@ class MultipackBatchSampler(BatchSampler):
         safe_mode: bool = True,  # Conservative packing to prevent training instability
         mp_start_method: str = "fork",
         packing_strategy: PackingStrategy = FIRST_FIT_DECREASING,
+        label_counts: np.ndarray | None = None,
+        label_start_counts: np.ndarray | None = None,
+        seed: int = 0,
+        padding_multiple: int | None = None,
+        batches_per_optimizer_step: int = 1,
+        dp_count: int = 1,
+        label_balance_window_optim_steps: int = 1,
         **kwargs,
     ):
         super().__init__(sampler, batch_size, drop_last)
@@ -318,6 +333,57 @@ class MultipackBatchSampler(BatchSampler):
 
         assert isinstance(self.lengths, np.ndarray)
 
+        self.label_counts: np.ndarray | None = None
+        self.label_start_counts: np.ndarray | None = None
+        self.seed = seed
+        self.padding_multiple = padding_multiple
+        if batches_per_optimizer_step < 1:
+            raise ValueError("batches_per_optimizer_step must be positive")
+        self.batches_per_optimizer_step = batches_per_optimizer_step
+        if dp_count < 1 or batches_per_optimizer_step % dp_count:
+            raise ValueError("Optimizer-step width must be divisible by dp_count")
+        self.dp_count = dp_count
+        if (
+            isinstance(label_balance_window_optim_steps, bool)
+            or not isinstance(label_balance_window_optim_steps, (int, np.integer))
+            or label_balance_window_optim_steps < 1
+        ):
+            raise ValueError(
+                "label_balance_window_optim_steps must be a positive integer"
+            )
+        self.label_balance_window_optim_steps = label_balance_window_optim_steps
+        if label_counts is not None:
+            if sequential:
+                raise ValueError(
+                    "Label balancing is incompatible with sequential packing"
+                )
+            counts = np.asarray(label_counts)
+            starts = (
+                np.zeros_like(counts)
+                if label_start_counts is None
+                else np.asarray(label_start_counts)
+            )
+            if (
+                counts.shape != self.lengths.shape
+                or starts.shape != counts.shape
+                or not np.issubdtype(counts.dtype, np.integer)
+                or not np.issubdtype(starts.dtype, np.integer)
+                or np.any(counts < 0)
+                or np.any(counts > self.lengths)
+                or np.any(starts < 0)
+                or np.any(starts > 1)
+                or np.any(starts > counts)
+                or np.any(self.lengths <= 0)
+                or np.any(self.lengths > batch_max_len)
+            ):
+                raise ValueError("Invalid lengths or label counts for label balancing")
+            self.label_counts = counts.astype(np.int64)
+            self.label_start_counts = starts.astype(np.int64)
+        elif label_start_counts is not None:
+            raise ValueError("label_start_counts requires label_counts")
+
+        self.label_metrics: dict[str, dict[str, float | int]] | None = None
+        self._label_metrics_logged = False
         self.epoch = 0
 
         # Efficiency statistics tracking
@@ -339,22 +405,37 @@ class MultipackBatchSampler(BatchSampler):
         """Set the epoch number, used for reproducible shuffling across epochs"""
         self.epoch = epoch
         self._batches = None  # Invalidate batch cache
+        self.label_metrics = None
+        self._label_metrics_logged = False
 
     def generate_batches(self, set_stats: bool = False) -> list[list[list[int]]]:
         """Generate packed batches for training.
 
         Args:
-            set_stats: Whether to update efficiency statistics.
+            set_stats: Whether to update efficiency statistics and log label metrics.
 
         Returns:
             List of batches, where each batch contains multiple bins, and each bin
                 contains multiple sequence indices.
         """
         if self._batches is not None:
+            if set_stats:
+                self._log_label_metrics()
             return self._batches
 
         # Get indices from the sampler
-        indices = [idx for idx in self.sampler]
+        base_sampler = self.sampler
+        if self.label_counts is not None and isinstance(base_sampler, RandomSampler):
+            # Packing happens before rank sharding, so rank-local RNG must not affect it.
+            base_sampler = RandomSampler(
+                base_sampler.data_source,
+                replacement=base_sampler.replacement,
+                num_samples=base_sampler.num_samples,
+                generator=torch.Generator().manual_seed(self.seed + self.epoch),
+            )
+        indices = list(base_sampler)
+        self.label_metrics = None
+        self._label_metrics_logged = False
 
         # Get lengths of the selected sequences
         lengths = self.lengths[indices]
@@ -410,14 +491,167 @@ class MultipackBatchSampler(BatchSampler):
                 for idx in bin_indices
             )
 
+        if self.label_counts is not None:
+            assert self.label_start_counts is not None
+            before = self._get_label_metrics(batches)
+            limit = len(batches) - int(
+                bool(batches) and len(batches[-1]) < self.batch_size
+            )
+            if self._len_across_ranks is not None:
+                limit = min(limit, self._len_across_ranks)
+            limit -= limit % self.batches_per_optimizer_step
+            batches[:limit] = balance_labels(
+                batches[:limit],
+                self.lengths,
+                self.label_counts,
+                self.label_start_counts,
+                self.batch_max_len,
+                self.bin_size or self.batch_max_len,
+                self.seed + self.epoch,
+                padding_multiple=self.padding_multiple,
+            )
+            before_accumulation = self._get_label_metrics(batches)
+            batches[:limit] = balance_accumulation(
+                batches[:limit],
+                [
+                    _batch_labels(batch, self.label_counts, self.label_start_counts)
+                    for batch in batches[:limit]
+                ],
+                self.batches_per_optimizer_step,
+            )
+
+            before_microbatch = self._get_label_metrics(batches)
+            window = self.label_balance_window_optim_steps
+            refinement_windows = (window, 1) if window > 1 else (1,)
+            for refinement_window in refinement_windows:
+                batches[:limit] = balance_microbatches(
+                    batches[:limit],
+                    self.lengths,
+                    self.label_counts,
+                    self.label_start_counts,
+                    self.batches_per_optimizer_step,
+                    window_steps=refinement_window,
+                    padding_multiple=self.padding_multiple or 1,
+                    capacity=self.batch_max_len,
+                )
+            before_rank = self._get_label_metrics(batches)
+            if self.dp_count > 1 and limit:
+                multiple = self.padding_multiple or 1
+                costs = [
+                    len(batch)
+                    * (
+                        (
+                            max(sum(int(self.lengths[i]) for i in row) for row in batch)
+                            + multiple
+                            - 1
+                        )
+                        // multiple
+                        * multiple
+                    )
+                    for batch in batches[:limit]
+                ]
+                order = order_batches_by_rank(
+                    costs,
+                    dp=self.dp_count,
+                    gas=self.batches_per_optimizer_step // self.dp_count,
+                )
+                prefix = batches[:limit]
+                batches[:limit] = [prefix[i] for i in order]
+            self.label_metrics = {
+                "before_rank": before_rank,
+                "before_microbatch": before_microbatch,
+                "before": before,
+                "before_accumulation": before_accumulation,
+                "after": self._get_label_metrics(batches),
+            }
+
         # Update statistics if requested
         if set_stats:
             self.total_tokens_used += total_used
             self.total_token_slots += total_slots
+            self._log_label_metrics()
 
         self._batches = batches
         gc.collect()
         return batches
+
+    def _get_label_metrics(self, batches) -> dict[str, float | int]:
+        assert self.label_counts is not None
+        assert self.label_start_counts is not None
+        labels = [
+            sum(
+                sum(int(self.label_counts[i]) for i in bin_)
+                - int(self.label_start_counts[bin_[0]])
+                for bin_ in batch
+            )
+            for batch in batches
+        ]
+        lengths = [
+            sum(int(self.lengths[i]) for i in bin_)
+            for batch in batches
+            for bin_ in batch
+        ]
+        return {
+            "batches": len(batches),
+            "packed_rows": len(lengths),
+            "mean_packed_length": float(np.mean(lengths)) if lengths else 0.0,
+            "mean_label_count": float(np.mean(labels)) if labels else 0.0,
+            "std_label_count": float(np.std(labels)) if labels else 0.0,
+            "total_label_count": sum(labels),
+            **accumulation_metrics(
+                labels[
+                    : len(batches)
+                    - int(bool(batches) and len(batches[-1]) < self.batch_size)
+                ],
+                self.batches_per_optimizer_step,
+            ),
+        }
+
+    def _log_label_metrics(self):
+        if self.label_metrics is None or self._label_metrics_logged:
+            return
+        before = self.label_metrics["before"]
+        after = self.label_metrics["after"]
+        lines = [
+            f"Packed batch balancing: {self.dp_count} DP ranks x GAS "
+            f"{self.batches_per_optimizer_step // self.dp_count}; "
+            f"refinement window {self.label_balance_window_optim_steps} steps",
+            "Before rank sharding/truncation",
+            f"{after['batches']:,} microbatches ({after['packed_rows']:,} packed rows) "
+            f"-> {after['updates']:,} complete optimizer steps",
+            f"{'Label-count stddev':<34} {'Before':>10} {'After':>10} {'Change':>10}",
+        ]
+        for label, key in (
+            ("Per global optimizer step", "std_global_update_labels"),
+            ("Per microbatch", "std_label_count"),
+        ):
+            old, new = before[key], after[key]
+            change = (
+                f"{100 * (new / old - 1):+.1f}%"
+                if old
+                else ("0.0%" if not new else "n/a")
+            )
+            lines.append(f"{label:<34} {old:>10,.0f} {new:>10,.0f} {change:>10}")
+        length = after["mean_packed_length"]
+        utilization = (
+            f"{100 * length / self.batch_max_len:.1f}%" if self.batch_max_len else "n/a"
+        )
+        lines.extend(
+            [
+                f"Mean labels / global optimizer step: {after['mean_global_update_labels']:,.0f}",
+                f"Mean labels / microbatch: {after['mean_label_count']:,.0f}",
+                f"Mean unpadded row length: {length:,.0f} / {self.batch_max_len:,} "
+                f"({utilization})",
+            ]
+        )
+        excluded = after["batches"] - after["updates"] * self.batches_per_optimizer_step
+        if excluded:
+            lines.append(
+                f"Microbatches excluded from optimizer-step metrics: {excluded:,}"
+            )
+        LOG.info("%s", "\n".join(lines))
+        LOG.debug("Packed label metrics by stage: %s", self.label_metrics)
+        self._label_metrics_logged = True
 
     def __iter__(self) -> Iterator[list[list[int]]]:
         """Return an iterator over batches.
@@ -489,6 +723,13 @@ class MultipackBatchSampler(BatchSampler):
         """
         if self._batches is None:
             self._batches = self.generate_batches(set_stats=True)
+
+        if (
+            self._len_across_ranks is None
+            and self.label_counts is not None
+            and isinstance(self.sampler, (RandomSampler, SequentialSampler))
+        ):
+            self._len_across_ranks = self.gather_len_batches(len(self._batches))
 
         if self._len_across_ranks is None:
             # Sample multiple times to get stable estimate

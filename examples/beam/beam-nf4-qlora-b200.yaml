@@ -1,0 +1,112 @@
+# Beam NF4 QLoRA SFT on one 8 x B200 node.
+#
+# The bf16 checkpoint is quantized to bitsandbytes NF4 at load (attention,
+# dense MLP and the fused 3D expert tensors, quantize_moe_experts). Rank 0
+# quantizes in bounded GPU chunks into host RAM, the other ranks build on
+# meta, and shards transfer after FSDP wrapping (qlora_sharded_model_loading,
+# on by default for this combination). The ScatterMoE bnb path dequantizes
+# only the routed experts a token hits and recomputes that in backward.
+base_model: reflection/Beam-1.0-501B-A23B
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+# ScatterMoE grouped GEMM for the routed experts (Triton, any sm80+). Swap to
+# use_sonicmoe: true once the baseline runs; it is the faster B200 path.
+use_scattermoe: true
+cut_cross_entropy: true
+autotune_cache_path: ./outputs/autotune-b200.json
+autotune_neighborhood: 1
+
+# EP=8 node-local: each GPU owns 32 of the 256 packed NF4 experts per layer, sliced
+# from rank 0's packed weights without requantizing, and the dense weights FSDP-shard
+# over the same axis. dp_shard_size: 8 without expert parallelism also works and is
+# ~40% slower here, since every rank then dequantizes every expert its tokens hit.
+expert_parallel_size: 8
+dp_shard_size: 1
+expert_parallel_backend: deep_ep
+# chunked-dequant grouped_mm experts (64 of the 256 experts dequantized per chunk); the
+# selective-dequant scatter2scatter default (moe_bnb_fast) faults on these experts
+moe_bnb_fast: false
+moe_dequant_chunk_size: 64
+
+chat_template: tokenizer_default
+datasets:
+  - path: your/chat_dataset
+    type: chat_template
+    field_messages: messages
+    roles_to_train: ["assistant"]
+dataset_prepared_path: ./last_run_prepared
+val_set_size: 0.0
+output_dir: ./outputs/beam-nf4-qlora
+
+sequence_len: 8192
+sample_packing: true
+pad_to_sequence_len: true
+eval_sample_packing: true
+train_on_inputs: false
+
+adapter: qlora
+load_in_4bit: true
+quantize_moe_experts: true
+nf4_backend: bitsandbytes
+lora_r: 32
+lora_alpha: 64
+# PEFT's ParamWrapper rejects dropout on target_parameters
+lora_dropout: 0.0
+# gate_proj is ambiguous here (attention output gate vs dense MLP); never
+# lora_target_linear.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# routed experts are fused 3D nn.Parameter tensors; the router (mlp.gate.weight)
+# is deliberately absent
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+num_epochs: 2
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1.0e-4
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+bf16: true
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+attn_implementation: flash_attention_4
+# fused LoRA kernels: the QKV/O patch keeps Beam's gate and norms in place (descriptor: Experimental)
+lora_qkv_kernel: true
+lora_o_kernel: true
+lora_mlp_kernel: true
+
+fsdp_version: 2
+fsdp_config:
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: BeamDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  offload_params: false
+
+# rank 0 streams and quantizes the ~1 TB bf16 checkpoint before the first collective
+ddp_timeout: 21600
+
+logging_steps: 1
+save_strategy: "no"
+save_total_limit: 3
+seed: 42
+
+special_tokens:
+  eos_token: "<|return|>"
+  pad_token: "<|endoftext|>"

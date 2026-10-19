@@ -217,7 +217,11 @@ def _load_nf4_model(
         _raise_on_any_rank_failure(error, control_group)
         # the broadcast shapes are packed NF4 storage, so peers cannot re-derive which
         # parameters were experts; take rank zero's classification instead
-        payload = [structures, export_moe_load_state() if main else None]
+        payload = [
+            structures,
+            export_moe_load_state() if main else None,
+            _parameter_dtypes(model) if main else None,
+        ]
         with nf4_phase("NF4 metadata broadcast"):
             dist.broadcast_object_list(
                 payload, src=0, group=control_group, device=torch.device("cpu")
@@ -226,6 +230,12 @@ def _load_nf4_model(
             try:
                 import_moe_load_state(payload[1])
                 _apply_nf4_structures(model, payload[0])
+                aligned = _align_parameter_dtypes(model, payload[2])
+                if aligned:
+                    LOG.info(
+                        f"Aligned {aligned} parameter/buffer dtype(s) with rank zero",
+                        main_process_only=False,
+                    )
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
         del payload, structures
@@ -244,6 +254,43 @@ def _raise_on_any_rank_failure(error, control_group):
     failures = [f"rank {rank}: {msg}" for rank, msg in enumerate(statuses) if msg]
     if failures:
         raise RuntimeError("NF4 loading failed on " + "; ".join(failures))
+
+
+def _parameter_dtypes(model) -> dict[str, str]:
+    """Dtype of every parameter and persistent buffer, keyed like ``state_dict``."""
+    return {name: str(tensor.dtype) for name, tensor in model.state_dict().items()}
+
+
+def _align_parameter_dtypes(model, dtypes: dict[str, str]) -> int:
+    """Give meta parameters and buffers the dtype rank zero loaded, not the config default.
+
+    ``from_pretrained`` honors the architecture's keep-in-fp32 lists while the peers'
+    ``from_config`` build does not, and the shard distribution refuses a dtype mismatch.
+    """
+    aligned = 0
+    for name, dtype in dtypes.items():
+        path, _, attr = name.rpartition(".")
+        owner = model.get_submodule(path) if path else model
+        tensor = owner._parameters.get(attr)
+        kind = "param"
+        if tensor is None:
+            tensor = owner._buffers.get(attr)
+            kind = "buffer"
+        if tensor is None or str(tensor.dtype) == dtype:
+            continue
+        target = getattr(torch, dtype.removeprefix("torch."))
+        if kind == "param":
+            if not tensor.is_meta:
+                continue
+            owner._parameters[attr] = nn.Parameter(
+                torch.empty(tensor.shape, dtype=target, device="meta"),
+                requires_grad=tensor.requires_grad,
+            )
+        else:
+            # the meta build materializes buffers, so a real buffer is cast in place
+            owner._buffers[attr] = tensor.to(target)
+        aligned += 1
+    return aligned
 
 
 def _apply_nf4_structures(model, structures):

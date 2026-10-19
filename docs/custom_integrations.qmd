@@ -120,11 +120,54 @@ See this repo for an example: [https://github.com/axolotl-ai-cloud/diff-transfor
 
 :::
 
+### Publishing an always-on training plugin
+
+An installed integration can register itself before configuration validation.
+This is useful when it contributes configuration fields, an adapter, or hooks
+that must be available for every Axolotl invocation. Point the plugin package's
+`pyproject.toml` at its `BasePlugin` subclass:
+
+```toml
+[project.entry-points."axolotl.plugins"]
+my-integration = "my_package.integration:MyIntegrationPlugin"
+```
+
+Axolotl loads every `axolotl.plugins` entry point alongside its bundled plugins,
+so users do not need to repeat the plugin in `plugins:`. The entry-point target
+uses the usual `module:class` form and must be importable in the environment
+running Axolotl. Reinstall the package after changing this declaration; entry
+points are read from installed package metadata, not from a checkout's
+`pyproject.toml`.
+
+### Publishing model support
+
+A package can add support for a model architecture, or override Axolotl's
+descriptor for an existing `model_type`, with a model-support entry point:
+
+```python
+from axolotl.model_support import ModelSupport
+
+class MyModelSupport(ModelSupport):
+    model_types = ("my_model",)
+    # profile, matchers, hooks, and registrations as needed
+```
+
+```toml
+[project.entry-points."axolotl.model_support"]
+my-model = "my_package.model_support:MyModelSupport"
+```
+
+The target must be a `ModelSupport` subclass. Axolotl imports bundled descriptors
+first and registers entry-point descriptors after them, so an external descriptor
+with the same `model_type` replaces the bundled one. Entry points load lazily on
+the first model-support lookup and then remain registered for that process.
+
 ## Adding a CLI command
 
-An integration can contribute its own `axolotl` subcommand. Unlike plugin hooks, which are
-loaded from the `plugins:` list of a config file, a subcommand has to be discoverable before
-any config is read, so it is registered through a packaging entry point instead.
+An integration can contribute its own `axolotl` subcommand. Unlike training plugins selected
+through a config file's `plugins:` list, a subcommand has to be discoverable before any config
+is read, so it is registered through a packaging entry point instead. Always-on training plugins
+can also use the `axolotl.plugins` entry-point group described above.
 
 Define a regular `click` command in your package:
 

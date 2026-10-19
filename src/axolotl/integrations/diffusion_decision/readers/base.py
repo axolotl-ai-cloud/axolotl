@@ -1,0 +1,214 @@
+"""Shared typed results and validation for decision readers."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from numbers import Integral
+from typing import Sequence
+
+import torch
+
+from .._image_tokens import (
+    NEMOTRON_VLM_IMAGE_BREAK_ID,
+    NEMOTRON_VLM_IMAGE_END_ID,
+    NEMOTRON_VLM_IMAGE_PAD_ID,
+    NEMOTRON_VLM_IMAGE_START_ID,
+    NEMOTRON_VLM_TOKEN_SIDE,
+    merged_patch_count,
+)
+from ..records import DecisionCanvas, OrdinalMetadata
+
+_IMAGE_MARKER_IDS = frozenset(
+    (
+        NEMOTRON_VLM_IMAGE_START_ID,
+        NEMOTRON_VLM_IMAGE_PAD_ID,
+        NEMOTRON_VLM_IMAGE_BREAK_ID,
+        NEMOTRON_VLM_IMAGE_END_ID,
+    )
+)
+
+
+@dataclass(frozen=True)
+class ReadDiagnostics:
+    """Inputs and recurrence facts retained for an optional parity fixture."""
+
+    noise_seed: int | None
+    noise_kind: str
+    update_policy: str
+    steps: int
+    forward_count: int
+    initial_canvas_ids: torch.Tensor
+    final_canvas_ids: torch.Tensor
+    slot_init_policy: str = "prepared_canvas_v0"
+
+
+@dataclass(frozen=True)
+class DecisionRead:
+    """Full-vocabulary and candidate-restricted scores for one decision canvas."""
+
+    question_ids: tuple[str, ...]
+    label_positions: torch.Tensor
+    allowed_ids: torch.Tensor
+    candidate_mask: torch.Tensor
+    full_vocab_logprobs: torch.Tensor
+    restricted_probs: torch.Tensor
+    diagnostics: ReadDiagnostics | None = None
+
+
+def validate_canvas(
+    canvas: DecisionCanvas,
+    *,
+    check_prompt_tokens: bool = True,
+    image_markers_reserved: bool = False,
+) -> int:
+    """Validate the model-agnostic canvas invariants before any model execution.
+
+    ``check_prompt_tokens=False`` skips the per-token type check of a prompt known
+    to hold nonnegative ints (concatenated from validated token spans).
+
+    ``image_markers_reserved`` marks ids 18-21 as image markers (they are ordinary
+    vocabulary for other tokenizers), so text-only canvases must not contain them.
+    """
+
+    width = len(canvas.canvas_ids)
+    if not canvas.prompt_ids or width < 2:
+        raise ValueError("a decision canvas requires a prompt and token space")
+    if (
+        isinstance(canvas.template_length, bool)
+        or not isinstance(canvas.template_length, Integral)
+        or not 0 < canvas.template_length < width
+    ):
+        raise ValueError("template_length must end before the turn-close token")
+    checked = (canvas.prompt_ids,) if check_prompt_tokens else ()
+    for tokens in (*checked, canvas.canvas_ids, *canvas.allowed_ids):
+        if any(
+            (
+                type(token) is not int
+                and (isinstance(token, bool) or not isinstance(token, Integral))
+            )
+            or token < 0
+            for token in tokens
+        ):
+            raise ValueError("decision token IDs must be nonnegative integers")
+    if len(set(canvas.question_ids)) != len(canvas.question_ids) or any(
+        not isinstance(key, str) or not key for key in canvas.question_ids
+    ):
+        raise ValueError("question IDs must be distinct nonempty strings")
+    fields: tuple[tuple[str, Sequence[object]], ...] = (
+        ("pinned_mask", canvas.pinned_mask),
+        ("semantic_mask", canvas.semantic_mask),
+        ("slot_mask", canvas.slot_mask),
+    )
+    for name, values in fields:
+        if len(values) != width:
+            raise ValueError(f"{name} must have one value for each canvas token")
+    if canvas.prompt_slot_mask:
+        if len(canvas.prompt_slot_mask) != len(canvas.prompt_ids):
+            raise ValueError(
+                "prompt_slot_mask must have one value for each prompt token"
+            )
+        if any(not isinstance(value, bool) for value in canvas.prompt_slot_mask):
+            raise TypeError("prompt_slot_mask values must be bool")
+    _validate_canvas_images(canvas, image_markers_reserved)
+    question_count = len(canvas.label_positions)
+    if question_count == 0:
+        raise ValueError("a decision canvas must contain at least one label position")
+    if not (
+        len(canvas.allowed_ids) == len(canvas.question_ids) == question_count
+        and len(canvas.targets) in (0, question_count)
+    ):
+        raise ValueError("question metadata must align with label_positions")
+    if canvas.ordinal_metadata and len(canvas.ordinal_metadata) != question_count:
+        raise ValueError("ordinal metadata must align with canvas questions")
+    seen_positions: set[int] = set()
+    for index, (position, candidates) in enumerate(
+        zip(canvas.label_positions, canvas.allowed_ids, strict=True)
+    ):
+        if (
+            isinstance(position, bool)
+            or not isinstance(position, Integral)
+            or position < 0
+            or position >= canvas.template_length
+        ):
+            raise ValueError(
+                f"label position {position} is outside the decision canvas"
+            )
+        if position in seen_positions:
+            raise ValueError("each question must have a distinct label position")
+        if canvas.slot_mask[position]:
+            raise ValueError("latent slots cannot be label positions")
+        if canvas.pinned_mask[position]:
+            raise ValueError("pinned tokens cannot be label positions")
+        if not canvas.semantic_mask[position]:
+            raise ValueError("label positions must be semantically valid")
+        if not candidates:
+            raise ValueError(f"question {index} has no allowed label token")
+        if len(set(candidates)) != len(candidates):
+            raise ValueError(f"question {index} repeats an allowed label token")
+        metadata = canvas.ordinal_metadata[index] if canvas.ordinal_metadata else None
+        if metadata is not None:
+            if not isinstance(metadata, OrdinalMetadata):
+                raise TypeError("ordinal metadata must be OrdinalMetadata or None")
+            metadata.check_candidates(len(candidates))
+        seen_positions.add(position)
+    return width
+
+
+def _validate_canvas_images(
+    canvas: DecisionCanvas, image_markers_reserved: bool
+) -> None:
+    if len(canvas.image_refs) != len(canvas.image_sizes):
+        raise ValueError("image_refs and image_sizes must align")
+    if not canvas.image_refs:
+        if image_markers_reserved and _IMAGE_MARKER_IDS.intersection(
+            (*canvas.prompt_ids, *canvas.canvas_ids)
+        ):
+            raise ValueError("image marker tokens require image_refs")
+        return
+    if _IMAGE_MARKER_IDS.intersection(canvas.canvas_ids):
+        raise ValueError("image marker tokens cannot occupy the decision canvas")
+    if any(not isinstance(ref, str) or not ref for ref in canvas.image_refs):
+        raise ValueError("image_refs must be nonempty strings")
+    expected = sum(merged_patch_count(size) for size in canvas.image_sizes)
+    prompt = list(canvas.prompt_ids)
+    if prompt.count(NEMOTRON_VLM_IMAGE_PAD_ID) != expected:
+        raise ValueError("prompt image pad tokens must match image_sizes")
+    images = len(canvas.image_sizes)
+    breaks = sum(
+        int(height) // NEMOTRON_VLM_TOKEN_SIDE - 1 for height, _ in canvas.image_sizes
+    )
+    if (
+        prompt.count(NEMOTRON_VLM_IMAGE_START_ID) != images
+        or prompt.count(NEMOTRON_VLM_IMAGE_END_ID) != images
+        or prompt.count(NEMOTRON_VLM_IMAGE_BREAK_ID) != breaks
+    ):
+        raise ValueError("prompt image start/end/break tokens must match image_sizes")
+
+
+def restricted_probabilities(
+    full_vocab_logprobs: torch.Tensor, allowed_ids: Sequence[Sequence[int]]
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Apply a per-question candidate softmax without losing full-vocabulary scores."""
+
+    if full_vocab_logprobs.ndim != 2:
+        raise ValueError("full_vocab_logprobs must be [questions, vocabulary]")
+    question_count, vocab_size = full_vocab_logprobs.shape
+    if question_count != len(allowed_ids):
+        raise ValueError("allowed_ids must contain one candidate sequence per question")
+    maximum = max(len(ids) for ids in allowed_ids)
+    ids = torch.zeros(
+        (question_count, maximum), dtype=torch.long, device=full_vocab_logprobs.device
+    )
+    valid = torch.zeros_like(ids, dtype=torch.bool)
+    for row, candidates in enumerate(allowed_ids):
+        if any(token < 0 or token >= vocab_size for token in candidates):
+            raise ValueError("allowed label token ID is outside the model vocabulary")
+        candidate_ids = torch.as_tensor(
+            candidates, dtype=torch.long, device=full_vocab_logprobs.device
+        )
+        ids[row, : candidate_ids.numel()] = candidate_ids
+        valid[row, : candidate_ids.numel()] = True
+    selected = full_vocab_logprobs.gather(1, ids)
+    selected = selected.masked_fill(~valid, -torch.inf)
+    probabilities = torch.softmax(selected, dim=-1).masked_fill(~valid, 0.0)
+    return ids, valid, probabilities

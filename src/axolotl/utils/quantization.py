@@ -3,7 +3,6 @@ Utilities for quantization including QAT and PTQ using torchao.
 """
 
 import torch
-from packaging import version
 from torchao.core.config import AOBaseConfig
 from torchao.quantization import quantize_
 from torchao.quantization.granularity import PerGroup
@@ -31,38 +30,37 @@ quantization_config_to_str = {
     Float8DynamicActivationInt4WeightConfig: "fp8int4",
 }
 
-if version.parse(torch.__version__) >= version.parse("2.8.0"):
-    try:
-        from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
+try:
+    from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
 
-        quantization_config_to_str[NVFP4WeightOnlyConfig] = "nvfp4"
-    except (ImportError, RuntimeError):
-        pass
+    quantization_config_to_str[NVFP4WeightOnlyConfig] = "nvfp4"
+except (ImportError, RuntimeError):
+    pass
 
-    try:
-        from torchao.prototype.mx_formats import NVFP4DynamicActivationNVFP4WeightConfig
+try:
+    from torchao.prototype.mx_formats import NVFP4DynamicActivationNVFP4WeightConfig
 
-        quantization_config_to_str[NVFP4DynamicActivationNVFP4WeightConfig] = (
-            "nvfp4-dynamic"
-        )
-    except (ImportError, RuntimeError):
-        pass
+    quantization_config_to_str[NVFP4DynamicActivationNVFP4WeightConfig] = (
+        "nvfp4-dynamic"
+    )
+except (ImportError, RuntimeError):
+    pass
 
-    try:
-        from torchao.quantization.quant_api import Int4WeightOnlyConfig
+try:
+    from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
-        quantization_config_to_str[Int4WeightOnlyConfig] = "int4"
-    except (ImportError, RuntimeError):
-        pass
+    quantization_config_to_str[Int4WeightOnlyConfig] = "int4"
+except (ImportError, RuntimeError):
+    pass
 
-    try:
-        from torchao.prototype.mx_formats import (
-            MXDynamicActivationMXWeightConfig as MXLinearConfig,
-        )
+try:
+    from torchao.prototype.mx_formats import (
+        MXDynamicActivationMXWeightConfig as MXLinearConfig,
+    )
 
-        quantization_config_to_str[MXLinearConfig] = "mxfp4"
-    except (ImportError, RuntimeError):
-        pass
+    quantization_config_to_str[MXLinearConfig] = "mxfp4"
+except (ImportError, RuntimeError):
+    pass
 
 
 def get_quantization_config(

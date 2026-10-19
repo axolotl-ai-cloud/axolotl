@@ -239,7 +239,7 @@ def _build_scattermoe_block(hidden, intermediate, num_experts, top_k, dtype, dev
 def test_tiled_scattermoe_gated_mlp_parity():
     """ScatterMoEGatedMLP: tiled vs un-tiled fwd+bwd parity in bf16.
 
-    Uses the same tolerance scale as ``tests/integrations/test_scattermoe_lora_kernels.py``
+    Uses the same tolerance scale as ``tests/integrations/kernels/scattermoe_lora/test_lora_kernels.py``
     (norm-relative error < 1% for weight grads is the established bar there
     given the bf16 + tiled reduction order differences).
     """

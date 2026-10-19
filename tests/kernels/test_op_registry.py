@@ -40,13 +40,6 @@ class TestOpsRegistered:
         assert torch.ops.axolotl.rms_norm_gated_fwd is not None
         assert torch.ops.axolotl.rms_norm_gated_bwd is not None
 
-    def test_trainer_utils_ops_exist(self):
-        import axolotl.monkeypatch.trainer.utils  # noqa: F401
-
-        assert torch.ops.axolotl.selective_log_softmax_fwd is not None
-        assert torch.ops.axolotl.selective_log_softmax_bwd is not None
-        assert torch.ops.axolotl.entropy_from_logits is not None
-
     def test_ebft_ops_exist(self):
         import axolotl.core.trainers.ebft.kernels  # noqa: F401
 
@@ -124,25 +117,6 @@ class TestNewOpsDispatchVisibility:
         assert any("axolotl.rms_norm_gated_fwd" in s for s in rec.seen)
 
     @requires_cuda
-    def test_selective_log_softmax_visible_to_dispatch_mode(self):
-        from axolotl.monkeypatch.trainer.utils import selective_log_softmax
-
-        logits = torch.randn(2, 16, 512, device="cuda", dtype=torch.bfloat16)
-        index = torch.randint(0, 512, (2, 16), device="cuda")
-        with _OpRecorder() as rec:
-            selective_log_softmax(logits, index)
-        assert any("axolotl.selective_log_softmax_fwd" in s for s in rec.seen)
-
-    @requires_cuda
-    def test_entropy_visible_to_dispatch_mode(self):
-        from axolotl.monkeypatch.trainer.utils import entropy_from_logits
-
-        logits = torch.randn(2, 16, 512, device="cuda", dtype=torch.bfloat16)
-        with _OpRecorder() as rec:
-            entropy_from_logits(logits)
-        assert any("axolotl.entropy_from_logits" in s for s in rec.seen)
-
-    @requires_cuda
     def test_ebft_ops_visible_to_dispatch_mode(self):
         from axolotl.core.trainers.ebft.kernels import (
             fused_cosine_similarity,
@@ -186,32 +160,6 @@ class TestNewOpsFakeTensor:
             y, rstd = torch.ops.axolotl.rms_norm_gated_fwd(x, g, w, 1e-6, 0.0, 64, 4)
             assert y.shape == x.shape and y.dtype == x.dtype
             assert rstd.shape == (16,) and rstd.dtype == torch.float32
-
-    @requires_cuda
-    def test_selective_log_softmax_fwd_fake_shapes(self):
-        from torch._subclasses.fake_tensor import FakeTensorMode
-
-        import axolotl.monkeypatch.trainer.utils  # noqa: F401
-
-        with FakeTensorMode():
-            logits = torch.empty(32, 512, device="cuda", dtype=torch.bfloat16)
-            index = torch.empty(32, 1, device="cuda", dtype=torch.int64)
-            out, lse = torch.ops.axolotl.selective_log_softmax_fwd(
-                logits, index, 1, 1, 512, 4096, 8192
-            )
-            assert out.shape == (32, 1) and out.dtype == torch.float32
-            assert lse.shape == (32,) and lse.dtype == torch.float32
-
-    @requires_cuda
-    def test_entropy_fake_shapes(self):
-        from torch._subclasses.fake_tensor import FakeTensorMode
-
-        import axolotl.monkeypatch.trainer.utils  # noqa: F401
-
-        with FakeTensorMode():
-            logits = torch.empty(2, 16, 512, device="cuda", dtype=torch.bfloat16)
-            out = torch.ops.axolotl.entropy_from_logits(logits, 128)
-            assert out.shape == (32,) and out.dtype == torch.float32
 
     @requires_cuda
     def test_ebft_fake_shapes(self):

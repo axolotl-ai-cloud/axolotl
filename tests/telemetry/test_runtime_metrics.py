@@ -379,9 +379,9 @@ def test_allocator_peak_between_steps(
     setattr(fake_torch, backend_name, backend)
     with patch("axolotl.telemetry.runtime_metrics.torch", fake_torch):
         tracker = RuntimeMetricsTracker()
-        tracker.update_step(1)
+        tracker.update_step(100)
         backend.max_memory_allocated.return_value = 100
-        tracker.update_step(2)
+        tracker.update_step(200)
         result = tracker.metrics.to_dict()["gpu_memory"]
         assert result["gpu_0_peak_memory_bytes"] == 900
         assert result["gpu_0_peak_memory_source"] == "allocator_high_water_mark"
@@ -399,7 +399,7 @@ def test_mps_peak_is_labeled_sampled(mock_psutil, mock_telemetry_manager):
     )
     with patch("axolotl.telemetry.runtime_metrics.torch", fake_torch):
         tracker = RuntimeMetricsTracker()
-        tracker.update_step(1)
+        tracker.update_step(100)
         result = tracker.get_memory_metrics()
         assert result["gpu_0_peak_memory_bytes"] == 100
         assert result["gpu_0_peak_memory_source"] == "sampled"
