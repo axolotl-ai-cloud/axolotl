@@ -207,6 +207,7 @@ autotune_profiles:
     gpu: B200                # optional substring of the GPU name
     match: {...}             # optional; without it every unseen key uses the profile
     configs: [{...}, ...]    # one = no benchmark; several = a short search
+    allow: {...}             # quack only: filter the candidates instead of listing them
 ```
 
 For Triton kernels, `match` keys are the kernel's arguments (a list = any of) and each config is a
@@ -246,3 +247,68 @@ autotune_profiles:
       - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 1 }
       - { tile_m: 128, tile_n: 224, cluster_m: 2, cluster_n: 1 }
 ```
+
+### Allow filters (quack)
+
+Instead of listing configs, a quack entry can filter the candidates by field value with `allow`.
+The filter runs after quack's own validity pruning (`prune_invalid_gemm_configs`), never instead
+of it, so it can only remove configs quack would otherwise compile and benchmark. A key that
+benchmarks under a filter is still recorded as `measured`, with `candidate_config_count` set to
+the number of configs actually swept.
+
+- `<field>: [values]` for any `GemmConfig` field (`tile_m`, `tile_n`, `swap_ab`,
+  `is_dynamic_persistent`, `use_tma_gather`, ...); a single value is allowed as is.
+- `cluster: [[cluster_m, cluster_n], ...]`.
+- `where: [{if: {...}, then: {...}}, ...]`: a config whose fields match every `if` entry must
+  also match every `then` entry. Configs that do not match `if` are not affected.
+
+`match` works as above; without it the filter covers every call of that kernel on that GPU. If
+the filter removes every valid config for a call, that call keeps quack's valid list and a
+warning is logged once per shape.
+
+`python scripts/autotune_report.py b200.json --quack-cache-dir $QUACK_CACHE_DIR --check-allow
+config.yaml` checks each allow filter in the config against the measured keys in `b200.quack.json`
+and in quack's own disk cache. It lists every key whose winner, or any config within `--within`
+of it (default 5%), the filter would prune, and exits 1 if a winner would be pruned.
+
+On Beam (B200, bf16 SonicMoE) the three expert GEMMs are `gemm_gated_tuned` (gate_up forward),
+`gemm_tuned` (down) and `gemm_dgated_tuned` (gate_up backward, the slowest first sweep at about
+510 s per rank). None of their measured winners use `tile_n` 64 or 128, and a 2x2 cluster only
+ever won with `tile_m` 256. This filter keeps every measured winner:
+
+- `gemm_gated_tuned`: 128x256 c2x1, 256x512 c2x1
+- `gemm_tuned`: 128x256 c2x1 and c1x1, 128x224 c2x1, 256x256 c2x1, 128x160 c1x2, 256x192 c2x2,
+  128x192 c1x1
+- `gemm_dgated_tuned`: 256x256 c2x1
+
+It cuts each first sweep from 76 to 52 candidates for `gemm_gated_tuned` and `gemm_dgated_tuned`
+and from 74 to 42 for `gemm_tuned`:
+
+```yaml
+autotune_profiles:
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      tile_n: [160, 192, 224, 256, 512]
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      tile_n: [160, 192, 224, 256, 512]
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      tile_n: [160, 192, 224, 256, 512]
+      where:
+        - { if: { cluster: [2, 2] }, then: { tile_m: 256 } }
+```
+
+The gated kernels need no cluster rule. Both gather their input (`A_idx`), and quack's validity
+pruning then keeps only `cluster_n` 1 and drops `swap_ab`, which leaves 76 of the 296-config
+`dgated` grid and of the 148-config `gated` grid. The 1x2 cluster stays for `gemm_tuned` because
+it picked 128x160 c1x2 on one rank. For `match`, the argument names are `A, B, preact_out,
+postact_out, ...` for `gemm_gated_tuned`, `A, B, out, ...` for `gemm_tuned` and `A, B, PreAct,
+dx_out, postact_out, colvec_scale, activation, colvec_reduce, cu_seqlens_m, A_idx, ...` for
+`gemm_dgated_tuned`.

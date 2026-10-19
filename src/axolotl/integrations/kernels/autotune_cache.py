@@ -124,6 +124,7 @@ class _TimingCache(dict):
         self.timings: dict[tuple, dict] = {}
         self.sweep_seconds: dict[tuple, float] = {}
         self.call_args: dict[tuple, dict] = {}
+        self.candidate_counts: dict[tuple, int] = {}
         self.seeded: set[tuple] = set()
         self.profiled: set[tuple] = set()
         self.pinned: set[tuple] = set()
@@ -150,6 +151,10 @@ class _TimingCache(dict):
         if noted is not None:
             self.call_args[key] = noted
             tuner._axolotl_call_args = None
+        count = getattr(tuner, "_axolotl_candidate_count", None)
+        if count is not None:
+            self.candidate_counts[key] = count
+            tuner._axolotl_candidate_count = None
         super().__setitem__(key, value)
 
     def harvest(self) -> None:
@@ -198,7 +203,9 @@ def _note_quack_calls(tuner: Any) -> None:
 
     def prune_configs(kwargs):
         note_call_args(tuner, kwargs)
-        return orig_prune(kwargs)
+        configs = orig_prune(kwargs)
+        tuner._axolotl_candidate_count = len(configs)
+        return configs
 
     tuner.prune_configs = prune_configs
     tuner._axolotl_notes_calls = True
@@ -256,6 +263,8 @@ def timing_fields(
     out: dict[str, Any] = {}
     if key_tuple in cache.call_args:
         out["call_args"] = cache.call_args[key_tuple]
+    if key_tuple in cache.candidate_counts:
+        out["candidate_config_count"] = cache.candidate_counts[key_tuple]
     if key_tuple in cache.seeded:
         return {**out, "source": "seeded"}
     table = cache.timings.get(key_tuple)

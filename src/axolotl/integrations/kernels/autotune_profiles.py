@@ -22,6 +22,7 @@ autotune_profiles:
 """
 
 import fnmatch
+import json
 from dataclasses import fields, is_dataclass, replace
 from typing import Any
 
@@ -202,19 +203,85 @@ def _validate_quack_match(profile: dict[str, Any]) -> None:
             )
 
 
-def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
-    """Restrict a quack autotuner's candidates per call; a single survivor is not benchmarked.
+def _alternatives(name: str, wanted: Any) -> list:
+    if name == "cluster":
+        pairs = list(wanted)
+        if pairs and all(isinstance(v, int) for v in pairs):
+            return [pairs]
+        return [list(pair) for pair in pairs]
+    return list(wanted) if isinstance(wanted, (list, tuple, set)) else [wanted]
 
-    quack benchmarks even one pruned candidate, so ``_bench`` is short-circuited for it.
+
+def _field_allowed(config_fields: dict[str, Any], name: str, wanted: Any) -> bool:
+    if name == "cluster":
+        value: Any = [config_fields.get("cluster_m"), config_fields.get("cluster_n")]
+    else:
+        value = config_fields.get(name)
+    return value in _alternatives(name, wanted)
+
+
+def config_allowed(config_fields: dict[str, Any], allow: dict[str, Any]) -> bool:
+    """Whether a config's ``GemmConfig`` fields pass an ``allow`` filter.
+
+    Each field lists its allowed values (``cluster`` takes ``[cluster_m, cluster_n]`` pairs);
+    each ``where`` clause ``{if: {...}, then: {...}}`` requires its ``then`` fields only for
+    configs whose fields match all of ``if``.
+    """
+    for name, wanted in allow.items():
+        if name == "where":
+            continue
+        if not _field_allowed(config_fields, name, wanted):
+            return False
+    for clause in allow.get("where") or []:
+        when = clause.get("if") or {}
+        if all(_field_allowed(config_fields, n, w) for n, w in when.items()):
+            if not all(
+                _field_allowed(config_fields, n, w)
+                for n, w in (clause.get("then") or {}).items()
+            ):
+                return False
+    return True
+
+
+def _validate_allow(autotuner: Any, profile: dict[str, Any]) -> None:
+    allow = profile.get("allow")
+    if allow is None:
+        return
+    known = set(_quack_fields(autotuner.configs[0])) | {"cluster"}
+    names = [n for n in allow if n != "where"]
+    for clause in allow.get("where") or []:
+        if set(clause) - {"if", "then"} or not clause.get("then"):
+            raise ValueError(
+                f"autotune profile for {profile['kernel']}: each allow.where clause is "
+                "{if: {field: values}, then: {field: values}}"
+            )
+        names += list(clause.get("if") or {}) + list(clause["then"])
+    unknown = sorted(set(names) - known)
+    if unknown:
+        raise ValueError(
+            f"autotune profile for {profile['kernel']}: unknown allow field(s) {unknown}; "
+            f"known: {sorted(known)}"
+        )
+
+
+def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
+    """Restrict a quack autotuner's candidates per call.
+
+    ``configs`` replaces the candidate list (a single survivor is not benchmarked: quack
+    benchmarks even one pruned candidate, so ``_bench`` is short-circuited for it). ``allow``
+    filters whatever quack's own validity pruning (or ``configs``) left.
     """
     resolved = []
     for profile in profiles:
         _validate_quack_match(profile)
-        selected: list = []
-        for wanted in profile["configs"]:
-            for config in _resolve_quack_configs(autotuner, wanted):
-                if config not in selected:
-                    selected.append(config)
+        _validate_allow(autotuner, profile)
+        selected: list | None = None
+        if profile.get("configs"):
+            selected = []
+            for wanted in profile["configs"]:
+                for config in _resolve_quack_configs(autotuner, wanted):
+                    if config not in selected:
+                        selected.append(config)
         resolved.append((profile, selected))
     first = getattr(autotuner, "_axolotl_quack_profiles", None) is None
     autotuner._axolotl_quack_profiles = resolved
@@ -223,13 +290,34 @@ def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
     orig_prune = autotuner.prune_configs
     orig_bench = autotuner._bench
     autotuner._axolotl_skip_bench = False
+    autotuner._axolotl_allow_warned = set()
 
-    def prune_configs(kwargs):
-        note_call_args(autotuner, kwargs)
+    def _filter(profile, configs):
+        allow = profile.get("allow")
+        if not allow:
+            return configs
+        kept = [c for c in configs if config_allowed(_quack_fields(c), allow)]
+        if kept:
+            return kept
+        call = json.dumps(getattr(autotuner, "_axolotl_call_args", None), default=str)
+        if call not in autotuner._axolotl_allow_warned:
+            autotuner._axolotl_allow_warned.add(call)
+            LOG.warning(
+                "autotune profile allow filter for %s removes every valid config for %s; "
+                "searching the %d valid ones",
+                profile["kernel"],
+                call,
+                len(configs),
+            )
+        return configs
+
+    def _decide(kwargs):
         args = {**(getattr(autotuner, "nargs", None) or {}), **kwargs}
         for profile, selected in autotuner._axolotl_quack_profiles:
             if not _quack_matches(profile.get("match"), args):
                 continue
+            if selected is None:
+                return _filter(profile, list(orig_prune(kwargs))), False
             configs = list(selected)
             prune = getattr(autotuner, "early_config_prune", None)
             if prune is not None:
@@ -241,12 +329,16 @@ def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
                     profile["kernel"],
                 )
                 break
-            autotuner._axolotl_profile_hit = True
-            autotuner._axolotl_skip_bench = len(configs) == 1
-            return configs
-        autotuner._axolotl_profile_hit = False
-        autotuner._axolotl_skip_bench = False
-        return orig_prune(kwargs)
+            return _filter(profile, configs), True
+        return list(orig_prune(kwargs)), False
+
+    def prune_configs(kwargs):
+        note_call_args(autotuner, kwargs)
+        configs, pinned = _decide(kwargs)
+        autotuner._axolotl_profile_hit = pinned
+        autotuner._axolotl_skip_bench = pinned and len(configs) == 1
+        autotuner._axolotl_candidate_count = len(configs)
+        return configs
 
     def _bench(*args, config, **meta):
         if autotuner._axolotl_skip_bench:
@@ -282,14 +374,19 @@ def apply_autotune_profiles(profiles: list[dict[str, Any]], quiet: bool = False)
         wanted_gpu = profile.get("gpu")
         if wanted_gpu and gpu and wanted_gpu.lower() not in gpu.lower():
             continue
-        if not profile.get("configs"):
-            raise ValueError(
-                f"autotune profile for {profile.get('kernel')!r} has no configs"
-            )
-        if profile.get("backend", "triton") not in ("triton", "quack"):
+        backend = profile.get("backend", "triton")
+        if backend not in ("triton", "quack"):
             raise ValueError(
                 f"autotune profile for {profile.get('kernel')!r}: backend must be "
                 "'triton' or 'quack'"
+            )
+        if profile.get("allow") is not None and backend != "quack":
+            raise ValueError(
+                f"autotune profile for {profile.get('kernel')!r}: allow needs backend: quack"
+            )
+        if not profile.get("configs") and not profile.get("allow"):
+            raise ValueError(
+                f"autotune profile for {profile.get('kernel')!r} has no configs"
             )
         active.append(profile)
     if not active:
