@@ -1,6 +1,7 @@
 """Distributed CPU worker: slice-view assembly of gathered checkpoint tensors is bit-identical to
 the index (meshgrid) assembly it replaced, and still rejects gaps and overlaps."""
 
+import os
 from unittest.mock import patch
 
 import torch
@@ -58,6 +59,14 @@ def index_gather(value, owner=None):
     return full
 
 
+# "cuda" runs the NCCL transfer path (pinned staging) on 4 GPUs
+DEVICE = os.environ.get("AXOLOTL_ASSEMBLY_DEVICE", "cpu")
+
+
+def on(tensor):
+    return tensor.to(DEVICE, copy=True)
+
+
 def bits(tensor):
     return tensor.view({4: torch.int32, 2: torch.int16}[tensor.element_size()])
 
@@ -109,7 +118,11 @@ def plain_shards(flat, mesh):
         ("2d-shard0-shard0", full(11, 4, seed=6), (Shard(0), Shard(0)), mesh),
     ):
         expect(
-            label, distribute_tensor(tensor, target, placements), None, tensor, False
+            label,
+            distribute_tensor(on(tensor), target, placements),
+            None,
+            tensor,
+            False,
         )
 
 
@@ -125,7 +138,7 @@ def expert_layouts(mesh):
         offset = ep_rank * local
         ep_local = reference[offset * r : (offset + local) * r]
         owner = dict(offset=offset, local=local, total=total, kind="A")
-        value = distribute_tensor(ep_local.clone(), mesh["dp"], (Shard(0),))
+        value = distribute_tensor(on(ep_local), mesh["dp"], (Shard(0),))
         expect(label, value, owner, reference, False)
     # kind B, Beam's interleaved [out, r * E] with experts innermost, scaled down
     out, r, total = 40, 4, 8
@@ -134,9 +147,7 @@ def expert_layouts(mesh):
     offset = rank * local
     ep_local = reference.view(out, r, total)[:, :, offset : offset + local]
     owner = dict(offset=offset, local=local, total=total, kind="B")
-    expect(
-        "kind-b-ep4", ep_local.reshape(out, r * local).clone(), owner, reference, False
-    )
+    expect("kind-b-ep4", on(ep_local.reshape(out, r * local)), owner, reference, False)
     out = 41
     reference = full(out, r * total, seed=21)
     local = total // 2
@@ -144,14 +155,14 @@ def expert_layouts(mesh):
     ep_local = reference.view(out, r, total)[:, :, offset : offset + local]
     owner = dict(offset=offset, local=local, total=total, kind="B")
     value = distribute_tensor(
-        ep_local.reshape(out, r * local).clone(), mesh["dp"], (Shard(0),)
+        on(ep_local.reshape(out, r * local)), mesh["dp"], (Shard(0),)
     )
     expect("kind-b-dp-uneven", value, owner, reference, False)
     # expert base weights [E, ...], one expert per dp shard
     reference = full(4, 6, 5, seed=30)
     owner = dict(offset=ep_rank * 2, local=2, total=4, kind="expert")
     value = distribute_tensor(
-        reference[ep_rank * 2 : ep_rank * 2 + 2].clone(), mesh["dp"], (Shard(0),)
+        on(reference[ep_rank * 2 : ep_rank * 2 + 2]), mesh["dp"], (Shard(0),)
     )
     expect("kind-expert", value, owner, reference, False)
 
@@ -160,31 +171,35 @@ def strided(mesh):
     reference = full(16, 6, seed=40)
     # rows interleave across ranks: only index assembly can place them
     value = distribute_tensor(
-        reference, mesh, (Shard(0), _StridedShard(0, split_factor=2))
+        on(reference), mesh, (Shard(0), _StridedShard(0, split_factor=2))
     )
     assert fsdp2_checkpoint._box(_layout(value)) is None
     expect("strided-index-fallback", value, None, reference, True)
     # strided placement that still leaves every rank one contiguous row block
     value = distribute_tensor(
-        reference, mesh, (_StridedShard(0, split_factor=2), Shard(0))
+        on(reference), mesh, (_StridedShard(0, split_factor=2), Shard(0))
     )
     expect("strided-contiguous-rows", value, None, reference, False)
 
 
 def invalid():
     rank = dist.get_rank()
-    value = full(1, 3, seed=50 + rank)
+    value = on(full(1, 3, seed=50 + rank))
     owner = dict(offset=rank, local=1, total=8, kind="expert")
     expect_error("gap-rejected", value, owner, "does not cover every expert and shard")
-    value = full(2, 3, seed=60 + min(rank, 2))
+    value = on(full(2, 3, seed=60 + min(rank, 2)))
     owner = dict(offset=min(rank, 2), local=2, total=4, kind="expert")
     expect_error("overlap-rejected", value, owner, "Checkpoint shards overlap")
 
 
 def main():
-    dist.init_process_group("gloo")
-    flat = init_device_mesh("cpu", (4,), mesh_dim_names=("tp",))
-    mesh = init_device_mesh("cpu", (2, 2), mesh_dim_names=("dp", "ep"))
+    if DEVICE == "cuda":
+        torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+        dist.init_process_group("cuda:nccl,cpu:gloo")
+    else:
+        dist.init_process_group("gloo")
+    flat = init_device_mesh(DEVICE, (4,), mesh_dim_names=("tp",))
+    mesh = init_device_mesh(DEVICE, (2, 2), mesh_dim_names=("dp", "ep"))
     plain_shards(flat, mesh)
     expert_layouts(mesh)
     strided(mesh)
