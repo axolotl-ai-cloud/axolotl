@@ -441,6 +441,15 @@ class KernelsPlugin(BasePlugin):
                     quack_policy=_quack_policy(cfg),
                 )
             )
+        if cfg.use_sonicmoe and (
+            cfg.sonicmoe_ep_row_padding == "highwater"
+            or cfg.sonicmoe_ep_compact_routing
+        ):
+            from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+                EPPaddingMarksCallback,
+            )
+
+            callbacks.append(EPPaddingMarksCallback())
         if cfg.use_sonicmoe and cfg.nvfp4_merge_aware:
             from axolotl.integrations.kernels.merge_aware_callback import (
                 MergeAwareScheduleCallback,

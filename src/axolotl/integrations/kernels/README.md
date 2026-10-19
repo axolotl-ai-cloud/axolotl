@@ -143,10 +143,17 @@ sonicmoe_ep_row_padding_granule: 4096     # tokens; default
 sonicmoe_ep_row_padding_headroom: 1.03    # default
 ```
 
-Each call pads to the largest token count received so far times the headroom, rounded up to the
-granule, but never past the next power of two (so a receive at the 131072-token cap stays at
-131072). The mark is shared by all MoE layers and kept separately for training and eval, so short
-eval batches do not pad to the training size. It rises a few times early in training and then
+A call that fits the current mark pads to it. A larger call pads to its own count times the
+headroom, rounded up to the granule, but never past the next power of two, so a receive at the
+131072-token cap stays at 131072. The mark is shared by all MoE layers and kept separately for
+training and eval, so short eval batches do not pad to the training size.
+
+The mark only rises between optimizer steps (and after evaluation), to the largest size the
+previous step used. Within a step, each call's size depends only on its own count. That keeps an
+activation-checkpointing recompute the same shape as its forward even when a later layer received
+more tokens in between; a mark that moved mid-step made torch raise `CheckpointError` on the
+recompute. The kernels plugin registers the callback that promotes the marks whenever highwater
+padding or compaction is on. It rises a few times early in training and then
 stays put, so training sees a handful of sizes that are not powers of two (multiples of 4096
 tokens, so multiples of 32768 expert rows with top_k 8). Marks are per rank, so ranks can settle
 on different sizes. The NVFP4 EP paths drop the sentinels instead of padding and do not use this
@@ -166,9 +173,9 @@ sonicmoe_ep_row_padding: highwater        # recommended with it, see below
 On Beam the expert buffers drop from 131072 padded tokens x 8 = 1,048,576 slot rows to about
 131k pairs (16384 tokens x 8 experts spread over 8 ranks), padded up to the pair mark.
 
-- **Pair padding.** The pair count is padded high-water style (largest count seen x
-  `sonicmoe_ep_row_padding_headroom`, rounded up to the pair granule; separate marks for training
-  and eval, capped at tokens x top_k). Pad pairs are unused slots of the grid in token order with
+- **Pair padding.** The pair count is padded high-water style like the tokens (count x
+  `sonicmoe_ep_row_padding_headroom` rounded up to the pair granule, or the previous steps' mark;
+  separate marks for training and eval, promoted only between steps, capped at tokens x top_k). Pad pairs are unused slots of the grid in token order with
   expert id `num_experts` and score 0, so `token_indices` stays sorted and no token gets more than
   top_k pairs.
 - **Token padding still applies.** The received tokens are padded as before because the token

@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import pytest
 import torch
+import torch.nn.functional as F
+import torch.utils.checkpoint
 
 from axolotl.integrations.kernels.args import KernelsArgs
 from axolotl.integrations.kernels.libs.sonicmoe import experts
@@ -43,14 +45,19 @@ def test_highwater_bucketing_sequence_with_defaults():
     granule = 4096
     # 86000 * 1.03 = 88580 -> 22 granules
     assert experts.ep_padded_rows(86000, True) == 22 * granule
+    experts.promote_ep_padding_marks()
     assert experts.ep_padded_rows(80000, True) == 22 * granule
     assert experts.ep_padded_rows(22 * granule, True) == 22 * granule
-    # a count above the mark raises it: 95000 * 1.03 = 97850 -> 24 granules
+    # a count above the mark pads by its own size: 95000 * 1.03 = 97850 -> 24 granules
     assert experts.ep_padded_rows(95000, True) == 24 * granule
-    assert experts.ep_padded_rows(22 * granule + 1, True) == 24 * granule
+    # ... and the mark only follows at the step boundary
+    assert experts.ep_padded_rows(80000, True) == 22 * granule
+    experts.promote_ep_padding_marks()
+    assert experts.ep_padded_rows(80000, True) == 24 * granule
     assert experts.ep_padded_rows(0, True) == 24 * granule
     # the per-rank cap (8 x 16384) is a power of two: headroom does not pad past it
     assert experts.ep_padded_rows(131072, True) == 131072
+    experts.promote_ep_padding_marks()
     assert experts.ep_padded_rows(100000, True) == 131072
 
 
@@ -58,6 +65,7 @@ def test_highwater_marks_are_separate_for_train_and_eval():
     experts.configure_ep_row_padding("highwater", granule=4096, headroom=1.0)
     assert experts.ep_padded_rows(500000, True) == 503808
     assert experts.ep_padded_rows(5000, False) == 8192
+    experts.promote_ep_padding_marks()
     assert experts.ep_padded_rows(6000, False) == 8192
     assert experts.ep_padded_rows(10, True) == 503808
 
@@ -66,8 +74,54 @@ def test_highwater_never_pads_below_1024_and_reconfigure_resets():
     experts.configure_ep_row_padding("highwater", granule=256, headroom=1.0)
     assert experts.ep_padded_rows(10, True) == 1024
     assert experts.ep_padded_rows(2000, True) == 2048
+    experts.promote_ep_padding_marks()
     experts.configure_ep_row_padding("highwater", granule=256, headroom=1.0)
     assert experts.ep_padded_rows(10, True) == 1024
+
+
+def test_a_later_layer_does_not_change_an_earlier_layers_recompute_size():
+    experts.configure_ep_row_padding("highwater", granule=1024, headroom=1.0)
+    first_forward = experts.ep_padded_rows(3000, True)
+    assert experts.ep_padded_rows(9000, True) == 9216  # a later layer, larger receive
+    assert experts.ep_padded_rows(3000, True) == first_forward == 3072
+
+
+def test_marks_promote_at_step_and_evaluation_end():
+    experts.configure_ep_row_padding("highwater", granule=1024, headroom=1.0)
+    callback = experts.EPPaddingMarksCallback()
+    experts.ep_padded_rows(9000, True)
+    experts.ep_padded_rows(2000, False)
+    callback.on_step_end(None, None, None)
+    assert experts.ep_padded_rows(3000, True) == 9216
+    assert experts.ep_padded_rows(100, False) == 2048
+    experts.ep_padded_rows(5000, False)
+    assert experts.ep_padded_rows(100, False) == 2048
+    callback.on_evaluate(None, None, None)
+    assert experts.ep_padded_rows(100, False) == 5120
+
+
+class _PaddedLayer(torch.nn.Module):
+    """Pads its rows like the EP forward, so its saved tensors carry the padded shape."""
+
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.randn(4, 4))
+
+    def forward(self, x):
+        rows = x.shape[0]
+        padded = F.pad(x, (0, 0, 0, experts.ep_padded_rows(rows, True) - rows))
+        return (padded @ self.weight).square()[:rows]
+
+
+def test_checkpoint_recompute_after_a_larger_layer_does_not_raise():
+    experts.configure_ep_row_padding("highwater", granule=1024, headroom=1.0)
+    early, late = _PaddedLayer(), _PaddedLayer()
+    x = torch.randn(3000, 4, requires_grad=True)
+    y = torch.utils.checkpoint.checkpoint(early, x, use_reentrant=False)
+    # a later layer receives more rows before the early layer's recompute in backward
+    z = late(torch.randn(9000, 4))
+    (y.sum() + z.sum()).backward()
+    assert x.grad is not None and early.weight.grad is not None
 
 
 @pytest.mark.parametrize(
