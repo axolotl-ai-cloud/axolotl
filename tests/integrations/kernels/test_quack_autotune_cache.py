@@ -156,3 +156,44 @@ def test_report_summarizes_both_files(quack_module, tmp_path):
     assert "_scatter2scatter_lora: 1 key(s) (1 profile)" in out
     assert "gemm_gated_tuned [quack]: 1 key(s) (1 measured)" in out
     assert "1/3 benchmarked configs failed" in out
+
+
+HUB_PACKAGE = "_sonic_moe_cuda_89d4054"
+
+
+class VendoredQuackAutotuner(QuackAutotuner):
+    __module__ = f"{HUB_PACKAGE}.quack.autotuner"
+
+
+def test_vendored_hub_quack_is_captured_with_its_own_version(quack_module, tmp_path):
+    quack = ModuleType(f"{HUB_PACKAGE}.quack")
+    quack.__version__ = "0.6.1"  # type: ignore[attr-defined]
+    gemm = ModuleType(f"{HUB_PACKAGE}.quack.gemm_interface")
+    tuner = VendoredQuackAutotuner(gemm.__name__)
+    gemm.gemm_gated_tuned = tuner  # type: ignore[attr-defined]
+    functional = ModuleType(f"{HUB_PACKAGE}.functional.triton_kernels")
+    functional.routing = SimpleNamespace(  # type: ignore[attr-defined]
+        fn=SimpleNamespace(__name__="routing", __module__=functional.__name__),
+        keys=["N"],
+        configs=[],
+        cache={},
+    )
+    vendored = {m.__name__: m for m in (quack, gemm, functional)}
+    path = str(tmp_path / "b200.json")
+    with patch.dict(sys.modules, {**vendored, "quack.gemm_interface": None}):
+        assert autotune_cache.install_timing_capture() == 2
+        # 0.6.1 stringifies every key element
+        signature = ("swiglu", "False", "torch.Size([8192, 5120])", "torch.bfloat16")
+        tuner.benchmark(signature, [float("inf"), 0.4, 0.2])
+        autotune_cache.AutotuneCacheCallback(path, sonicmoe=True).on_save(
+            None, None, None
+        )
+    data = json.loads(Path(autotune_cache.quack_cache_path(path)).read_text())
+    assert data["quack_loaded"][f"{HUB_PACKAGE}.quack"]["version"] == "0.6.1"
+    assert "quack-kernels" not in data["packages"]
+    (record,) = data["records"]
+    assert record["backend"] == "quack"
+    assert record["module_fqn"] == f"{HUB_PACKAGE}.quack.gemm_interface"
+    assert record["key"]["signature"] == list(signature)
+    assert record["failed_configs"] == 1
+    assert list(record["timings_ms"].values()) == [0.2, 0.4]
