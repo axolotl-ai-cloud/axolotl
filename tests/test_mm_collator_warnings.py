@@ -80,3 +80,34 @@ def test_warn_num_workers_zero_for_mm_is_one_shot(_reset_mm_warn_state, caplog):
     caplog.clear()
     second_msgs = _capture_warning(caplog, cfg)
     assert not any("dataloader_num_workers=0" in m for m in second_msgs)
+
+
+def test_warn_num_workers_silent_for_skip_prepare_buffered_packing(
+    _reset_mm_warn_state, caplog
+):
+    """skip_prepare buffered packing forces workers=0; don't advise raising it."""
+    cfg = _make_cfg(processor_type="qwen2_vl", dataloader_num_workers=0)
+    cfg.skip_prepare_dataset = True
+    cfg.sample_packing = True
+    msgs = _capture_warning(caplog, cfg)
+    assert not any("dataloader_num_workers=0" in m for m in msgs)
+
+
+def test_warn_num_workers_silent_for_streaming_buffered_packing(
+    _reset_mm_warn_state, caplog
+):
+    cfg = _make_cfg(processor_type="qwen2_vl", dataloader_num_workers=0)
+    cfg.streaming = True
+    cfg.sample_packing = True
+    msgs = _capture_warning(caplog, cfg)
+    assert not any("dataloader_num_workers=0" in m for m in msgs)
+
+
+def test_warn_num_workers_still_fires_for_plain_skip_prepare(
+    _reset_mm_warn_state, caplog
+):
+    """Without packing, skip_prepare eval/train can use workers; keep advising."""
+    cfg = _make_cfg(processor_type="qwen2_vl", dataloader_num_workers=0)
+    cfg.skip_prepare_dataset = True
+    msgs = _capture_warning(caplog, cfg)
+    assert any("dataloader_num_workers=0" in m for m in msgs)
