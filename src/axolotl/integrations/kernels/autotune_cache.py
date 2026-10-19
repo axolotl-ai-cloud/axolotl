@@ -35,6 +35,8 @@ from axolotl.integrations.kernels.autotune_collector import (
     collect_autotune_configs,
 )
 from axolotl.integrations.kernels.sonicmoe_autotune import (
+    _plain,
+    _quack_config,
     collect_sonicmoe_autotune_configs,
     collect_sonicmoe_records,
     quack_file_metadata,
@@ -112,35 +114,94 @@ class _TimingCache(dict):
     Triton and quack keep only the last table (``configs_timings``) and assign it right after
     the winner goes into ``cache[key]``, both after a live benchmark and on a disk-cache hit, so
     a key's table is picked up when the next key is stored or when the records are read.
+    ``bench_time`` (the sweep's wall time, compiles included) is set just before ``cache[key]``
+    by a benchmark and not refreshed by a disk-cache hit, so it counts only when it changed.
     """
 
     def __init__(self, tuner: Any, entries: dict):
         super().__init__(entries)
         self.tuner = tuner
         self.timings: dict[tuple, dict] = {}
+        self.sweep_seconds: dict[tuple, float] = {}
+        self.call_args: dict[tuple, dict] = {}
         self.seeded: set[tuple] = set()
         self.profiled: set[tuple] = set()
+        self.pinned: set[tuple] = set()
         self._pending: tuple | None = None
+        self._pending_sweep: float | None = None
         self._last_table = getattr(tuner, "configs_timings", None)
+        self._last_bench = getattr(tuner, "bench_time", None)
 
     def __setitem__(self, key, value):
         self.harvest()
         self._pending = key
-        if getattr(self.tuner, "_axolotl_profile_hit", False):
+        tuner = self.tuner
+        bench = getattr(tuner, "bench_time", None)
+        changed = isinstance(bench, (int, float)) and bench != self._last_bench
+        self._pending_sweep = float(bench) if changed else None
+        self._last_bench = bench
+        if getattr(tuner, "_axolotl_profile_hit", False):
             self.profiled.add(key)
-            self.tuner._axolotl_profile_hit = False
+            tuner._axolotl_profile_hit = False
+        if getattr(tuner, "_axolotl_skip_bench", False):
+            self.pinned.add(key)
+            tuner._axolotl_skip_bench = False
+        noted = getattr(tuner, "_axolotl_call_args", None)
+        if noted is not None:
+            self.call_args[key] = noted
+            tuner._axolotl_call_args = None
         super().__setitem__(key, value)
 
     def harvest(self) -> None:
         table = getattr(self.tuner, "configs_timings", None)
+        pending = self._pending
         if (
-            self._pending is not None
+            pending is not None
+            and pending not in self.pinned
             and table is not None
             and table is not self._last_table
         ):
-            self.timings[self._pending] = dict(table)
+            self.timings[pending] = dict(table)
+            if self._pending_sweep is not None:
+                self.sweep_seconds[pending] = self._pending_sweep
         self._last_table = table
         self._pending = None
+
+
+def note_call_args(tuner: Any, kwargs: dict[str, Any]) -> None:
+    """Remember the shapes and declared key values of the call about to be tuned.
+
+    quack's cache key lists tensor shapes without argument names; these let a key be
+    matched back by name (``autotune_profiles`` ``match``).
+    """
+    names = getattr(tuner, "arg_names", None)
+    keys = set(getattr(tuner, "keys", None) or ())
+    noted: dict[str, Any] = {}
+    for name, value in {**(getattr(tuner, "nargs", None) or {}), **kwargs}.items():
+        if names is not None and name not in names:
+            continue
+        shape = getattr(value, "shape", None)
+        if shape is not None and hasattr(value, "dtype"):
+            noted[f"{name}.shape"] = [int(d) for d in shape]
+        elif name in keys:
+            try:
+                noted[name] = _plain(value)
+            except TypeError:
+                noted[name] = str(value)
+    tuner._axolotl_call_args = noted
+
+
+def _note_quack_calls(tuner: Any) -> None:
+    if getattr(tuner, "_axolotl_notes_calls", False):
+        return
+    orig_prune = tuner.prune_configs
+
+    def prune_configs(kwargs):
+        note_call_args(tuner, kwargs)
+        return orig_prune(kwargs)
+
+    tuner.prune_configs = prune_configs
+    tuner._axolotl_notes_calls = True
 
 
 def install_timing_capture() -> int:
@@ -151,9 +212,11 @@ def install_timing_capture() -> int:
     up by a later call.
     """
     installed = 0
-    tuners = [tuner for _name, _module, tuner in _autotuners()]
-    tuners += [tuner for _name, _module, tuner, _quack in sonicmoe_autotuners()]
-    for autotuner in tuners:
+    tuners = [(tuner, False) for _name, _module, tuner in _autotuners()]
+    tuners += [(tuner, quack) for _name, _module, tuner, quack in sonicmoe_autotuners()]
+    for autotuner, is_quack in tuners:
+        if is_quack and hasattr(autotuner, "prune_configs"):
+            _note_quack_calls(autotuner)
         if isinstance(autotuner.cache, _TimingCache):
             continue
         autotuner.cache = _TimingCache(autotuner, autotuner.cache)
@@ -161,19 +224,7 @@ def install_timing_capture() -> int:
     return installed
 
 
-def timing_fields(
-    autotuner: Any, key_tuple: tuple, serialize: Any = _config_to_dict
-) -> dict[str, Any]:
-    """How ``key_tuple``'s winner was chosen, with its benchmark table when one was recorded."""
-    cache = autotuner.cache
-    if not isinstance(cache, _TimingCache):
-        return {}
-    cache.harvest()
-    if key_tuple in cache.seeded:
-        return {"source": "seeded"}
-    table = cache.timings.get(key_tuple)
-    if table is None:
-        return {"source": "profile" if key_tuple in cache.profiled else "untimed"}
+def _timing_table(table: dict, serialize: Any) -> tuple[dict[str, float], int]:
     timings: dict[str, float] = {}
     failed = 0
     for config, value in table.items():
@@ -191,12 +242,37 @@ def timing_fields(
         except (TypeError, ValueError, AttributeError):
             continue
         timings[name] = ms
-    return {
-        "source": "measured",
-        "timings_ms": dict(sorted(timings.items(), key=lambda kv: kv[1])),
-        "configs_benchmarked": len(table),
-        "failed_configs": failed,
-    }
+    return dict(sorted(timings.items(), key=lambda kv: kv[1])), failed
+
+
+def timing_fields(
+    autotuner: Any, key_tuple: tuple, serialize: Any = _config_to_dict
+) -> dict[str, Any]:
+    """How ``key_tuple``'s winner was chosen, with its benchmark table when one was recorded."""
+    cache = autotuner.cache
+    if not isinstance(cache, _TimingCache):
+        return {}
+    cache.harvest()
+    out: dict[str, Any] = {}
+    if key_tuple in cache.call_args:
+        out["call_args"] = cache.call_args[key_tuple]
+    if key_tuple in cache.seeded:
+        return {**out, "source": "seeded"}
+    table = cache.timings.get(key_tuple)
+    if key_tuple in cache.profiled:
+        out["source"] = "profile"
+    elif table is not None:
+        out["source"] = "measured"
+    else:
+        return {**out, "source": "untimed"}
+    if table is not None:
+        timings, failed = _timing_table(table, serialize)
+        out.update(
+            timings_ms=timings, configs_benchmarked=len(table), failed_configs=failed
+        )
+    if key_tuple in cache.sweep_seconds:
+        out["sweep_seconds"] = round(cache.sweep_seconds[key_tuple], 3)
+    return out
 
 
 def _kernel_name(autotuner: Any) -> str:
@@ -307,6 +383,90 @@ def load_autotune_cache(path: str) -> int:
         LOG.debug(message, *args)
     else:
         LOG.info(message, *args)
+    return applied
+
+
+def seed_quack_caches(records: list[dict[str, Any]]) -> tuple[int, Counter]:
+    """Insert measured quack winners whose exact key can be rebuilt; returns (applied, skipped).
+
+    Only string keys round-trip through JSON exactly, which is what quack <= 0.6.1 builds (the
+    vendored copy in the hub sonic-moe kernel); later releases keep tuples and dtypes.
+    """
+    skipped: Counter = Counter()
+    applied = 0
+    targets: dict[tuple[Any, Any], list[tuple[Any, Any]]] = {}
+    for name, module, tuner, is_quack in sonicmoe_autotuners():
+        if is_quack:
+            short = (_kernel_name(tuner), name.rsplit(".", 1)[-1])
+            targets.setdefault(short, []).append((module, tuner))
+    for record in records:
+        if record.get("backend") != "quack" or record.get("source") != "measured":
+            skipped["not a measured quack winner"] += 1
+            continue
+        found = targets.get((record.get("kernel"), record.get("module")))
+        if not found:
+            skipped["kernel not loaded"] += 1
+            continue
+        signature = (record.get("key") or {}).get("signature")
+        if not isinstance(signature, list) or not all(
+            isinstance(v, str) for v in signature
+        ):
+            skipped["key not rebuildable"] += 1
+            continue
+        key = tuple(signature)
+        for module, tuner in found:
+            try:
+                metadata = autotuner_metadata(tuner, module, _quack_config)
+            except (TypeError, ValueError, AttributeError):
+                metadata = {}
+            want_sha = record.get("candidate_configs_sha256")
+            if want_sha and metadata.get("candidate_configs_sha256") != want_sha:
+                skipped["config matrix changed"] += 1
+                continue
+            if key in tuner.cache:
+                skipped["already in cache"] += 1
+                continue
+            config = None
+            for candidate in tuner.configs:
+                try:
+                    if _plain(_quack_config(candidate)) == record.get("config"):
+                        config = candidate
+                        break
+                except TypeError:
+                    continue
+            if config is None:
+                skipped["config not a candidate"] += 1
+                continue
+            tuner.cache[key] = config
+            if isinstance(tuner.cache, _TimingCache):
+                tuner.cache.seeded.add(key)
+            applied += 1
+    return applied, skipped
+
+
+def load_quack_cache(path: str, quiet: bool = False) -> int:
+    """Seed the loaded quack autotuners from the SonicMoE cache file at ``path``."""
+    data = read_autotune_cache(path)
+    if data is None:
+        return 0
+    gpu = _gpu_identity()
+    if gpu and data.get("gpu_name") and data["gpu_name"] != gpu["gpu_name"]:
+        if not quiet:
+            LOG.warning(
+                "Not seeding quack autotune cache %s: measured on %s, this run is on %s",
+                path,
+                data["gpu_name"],
+                gpu["gpu_name"],
+            )
+        return 0
+    applied, skipped = seed_quack_caches(data.get("records", []))
+    if applied or not quiet:
+        LOG.info(
+            "Seeded %d quack autotune winner(s) from %s%s",
+            applied,
+            path,
+            "".join(f"; skipped {n} {why}" for why, n in skipped.items()),
+        )
     return applied
 
 
@@ -454,6 +614,8 @@ class AutotuneCacheCallback(TrainerCallback):
     def on_train_begin(self, args, state, control, **kwargs):
         if self.path:
             load_autotune_cache(self.path)
+            if self.sonicmoe:
+                load_quack_cache(quack_cache_path(self.path))
         if self.profiles:
             from axolotl.integrations.kernels.autotune_profiles import (
                 apply_autotune_profiles,
@@ -492,8 +654,19 @@ class AutotuneCacheCallback(TrainerCallback):
         self._last_count = self._local_count()
 
     def on_step_begin(self, args, state, control, **kwargs):
-        if self.path and state.global_step <= self.early_steps:
+        # SonicMoE's quack autotuners can be imported by the first forward
+        if state.global_step > self.early_steps:
+            return
+        if self.path:
             install_timing_capture()
+            if self.sonicmoe:
+                load_quack_cache(quack_cache_path(self.path), quiet=True)
+        if self.profiles:
+            from axolotl.integrations.kernels.autotune_profiles import (
+                apply_autotune_profiles,
+            )
+
+            apply_autotune_profiles(self.profiles, quiet=True)
 
     def on_step_end(self, args, state, control, **kwargs):
         if state.global_step > self.early_steps:

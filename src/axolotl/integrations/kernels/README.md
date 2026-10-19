@@ -173,16 +173,76 @@ winners. Files record the GPU they were measured on and are ignored on a differe
 the winners are device-specific.
 
 Each record carries a `source`: `measured` (benchmarked in a run, with the full `timings_ms` table
-per candidate config, `configs_benchmarked`, and `failed_configs` for configs that did not compile
-or ran out of resources), `profile` (pinned by `autotune_profiles`, never benchmarked), `seeded`
-(taken from the file), or `untimed` (benchmarked before timing capture reached that kernel). A
-re-run that only seeds or pins a key keeps the measured record on file.
+per candidate config, `configs_benchmarked`, `failed_configs` for configs that did not compile or
+ran out of resources, and `sweep_seconds`, the sweep's wall time including compiles), `profile`
+(decided by `autotune_profiles`; timed only when the profile left several candidates), `seeded`
+(taken from the file), or `untimed` (benchmarked before timing capture reached that kernel, or a
+disk-cache hit). A re-run that only seeds or pins a key keeps the measured record on file.
 
 With `use_sonicmoe: true`, the SonicMoE/quack autotune winners (and any Triton kernels bundled
 with SonicMoE) are written on the same schedule to a second file next to it, `b200.quack.json`,
-with the same record layout plus the CuTe DSL version and, under `quack_loaded`, the version and
-location of every quack that was imported (the hub sonic-moe kernel vendors its own). That file is a record only; it
-is not used to seed quack.
+with the same record layout plus `call_args` (the tensor shapes and key arguments of the tuned
+call, by argument name), the CuTe DSL version and, under `quack_loaded`, the version and location
+of every quack that was imported (the hub sonic-moe kernel vendors its own). Measured winners in
+that file are seeded back into quack when its keys are plain strings, which is what the vendored
+quack 0.6.1 builds; quack 0.6.5 keys keep tuples and dtypes and are not seeded.
 
-`python scripts/autotune_report.py /shared/cache/autotune/b200.json` summarizes both files: shape
-keys, winners, and timing spread per kernel.
+`python scripts/autotune_report.py /shared/cache/autotune/b200.json` summarizes both files (shape
+keys, winners, timing spread, sweep time per kernel; `--quack-cache-dir $QUACK_CACHE_DIR` adds
+quack's own `*.autotune.json` files) and ends with an `autotune_profiles` block for the keys whose
+sweep took at least `--min-sweep-seconds` (default 60), each matched to its exact shapes and
+pinned to its winner, or to its `--top N` fastest configs.
+
+## Autotune profiles
+
+`autotune_profiles` pins or narrows a kernel's candidates. An entry applies to the loaded
+autotuners named by `kernel` (a name or glob, optionally module-qualified) on a GPU whose name
+contains `gpu`. Profiles are applied after model load, at train start, and during the first steps,
+so kernels that import late (SonicMoE's quack) are covered.
+
+```yaml
+autotune_profiles:
+  - kernel: <kernel name or glob>
+    backend: quack           # optional: triton (default) or quack
+    gpu: B200                # optional substring of the GPU name
+    match: {...}             # optional; without it every unseen key uses the profile
+    configs: [{...}, ...]    # one = no benchmark; several = a short search
+```
+
+For Triton kernels, `match` keys are the kernel's arguments (a list = any of) and each config is a
+`triton.Config` (`BLOCK_*` kwargs, `num_warps`, `num_stages`).
+
+For quack kernels, `match` is checked on each call against the tuned function's arguments:
+
+- `arg`: a scalar argument, e.g. `activation: swiglu` (a list = any of)
+- `arg.shape`: a tensor's full shape, `null` for any size
+- `arg.dimN`: one dimension of a tensor, negative `N` counting from the end (a list = any of)
+
+Each config lists `GemmConfig` fields and selects every candidate that has those values, so a
+partial config like `{tile_m: 256, tile_n: 256}` keeps all the variants of that tile. A config
+that matches no candidate is built from the autotuner's own `GemmConfig`. Calls that match no
+profile keep quack's full search. If a matched profile leaves one candidate, it is not
+benchmarked. A narrowed list changes quack's disk-cache hash, so it is swept once.
+
+On Beam (B200, EP=8) the first sweep of the large buckets costs about 400-450 s per rank, compiles
+included, while the 16k/32k-row buckets tune in under 30 s. So the profile covers only the
+65536/131072-row keys, narrowed to their measured winners and a close runner-up:
+
+```yaml
+autotune_profiles:
+  - kernel: gemm_gated_tuned          # gate_up: B is [experts, 5120, 5120]
+    backend: quack
+    gpu: B200
+    match: { "B.shape": [32, 5120, 5120], "postact_out.dim0": [65536, 131072] }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+      - { tile_m: 128, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+  - kernel: gemm_tuned                # down: B is [experts, 2560, 5120]
+    backend: quack
+    gpu: B200
+    match: { "B.shape": [32, 2560, 5120], "A.dim0": [65536, 131072] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1 }
+      - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 1 }
+      - { tile_m: 128, tile_n: 224, cluster_m: 2, cluster_n: 1 }
+```
