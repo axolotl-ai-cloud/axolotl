@@ -1,13 +1,11 @@
-"""Sample-packing and context-parallelism patch for NemotronH (Mamba2/Attention/MoE hybrid).
+"""Sample-packing patch for NemotronH (Mamba2/Attention/MoE hybrid).
 
 Threads seq_idx (derived from position_ids) into the Mamba2 SSM kernels so
 packed-sequence boundaries reset SSM state. Upstream never passes one, which
 leaks hidden state across boundaries. Attention and MoE blocks need no changes
 — transformers builds block-diagonal masks from position_ids for attention.
 
-CP correction (ring-shift of SSM state + additive output fix) is handled by
-``wrap_mamba_scan_for_cp`` from ``mamba_utils``, which wraps the chunk-scan
-call at the module level.
+Context-parallel state exchange is installed by the context-parallel plugin.
 """
 
 import functools
@@ -18,7 +16,6 @@ from axolotl.monkeypatch.models.mamba_utils import (
     get_seq_idx,
     is_cp_active,
     mamba2_seq_idx_kernels_available,
-    wrap_mamba_scan_for_cp,
 )
 from axolotl.utils.logging import get_logger
 
@@ -49,13 +46,13 @@ def guard_nemotron_h_fused_scan(mod=None):
     if getattr(mod, "_axolotl_fused_scan_guard", False):
         return
 
-    original_fused = mod.mamba2_split_conv1d_scan_combined
+    implementation = mod.mamba2_split_conv1d_scan_combined
 
-    @functools.wraps(original_fused)
+    @functools.wraps(implementation)
     def guarded_fused(*args, **kwargs):
         if is_cp_active() or _is_quantized(kwargs.get("outproj_weight")):
             return None
-        return original_fused(*args, **kwargs)
+        return implementation(*args, **kwargs)
 
     mod.mamba2_split_conv1d_scan_combined = guarded_fused
     mod._axolotl_fused_scan_guard = True
@@ -149,6 +146,5 @@ def patch_nemotron_h_modeling_packing(kernels_enabled: bool = False):
     NemotronHBlock.forward = patched_block_forward
 
     guard_nemotron_h_fused_scan(mod)
-    wrap_mamba_scan_for_cp(mod)
 
     LOG.info("Applied NemotronH sample packing patch (seq_idx threading into Mamba2)")

@@ -10,12 +10,13 @@
 
 After this runs (in `post_model_build`, before FSDP wraps), each rank's Experts
 modules hold only their local slice of the experts dim. The registered
-`deep_ep_*` forward function then handles dispatch -> local compute -> combine.
+`expert_parallel` forward then handles dispatch -> local compute -> combine.
 """
 
 from __future__ import annotations
 
 import gc
+import os
 
 import torch
 import torch.distributed as dist
@@ -53,18 +54,20 @@ def _replace_with_slice(module, attr_name: str, start: int, end: int) -> None:
     # `old` goes out of scope on return.
 
 
-def _scatter_expert_from_rank0(module, attr_name, e_local, dp_size):
+def _scatter_expert_from_rank0(module, attr_name, e_local, ep_rank_of):
     """Populate ``module.{attr_name}`` with THIS rank's real ``[e_local]`` expert slice by scattering
     GLOBAL rank-0's full expert tensor over the WORLD group. Under cpu_ram_efficient_loading only global
     rank 0 materializes real weights, so it is the single source (sourcing from an ep-subgroup's rank-0
-    would crash on the meta ranks). Each rank ``r`` receives its ep-group's slice
-    ``full[(r//dp_size)*e_local : ((r//dp_size)+1)*e_local]`` — the ``dp_size`` ranks within an ep-group
-    get the SAME ep slice (the dp axis FSDP-shards it across them later). ``dp_size == 1`` is pure EP
-    (each rank its own [e_local]); ``dp_size > 1`` is EP×dp_shard / EP×cp composition. Handles torchao
-    NVFP4Tensor (qdata/scale/per_tensor_scale) and plain tensors; runs on GPU (NCCL), result moved to
-    the param's original device."""
+    would crash on the meta ranks). Global rank ``r`` receives the slice of ep-rank ``ep_rank_of[r]``
+    — the ranks sharing an ep-rank (dp_shard / cp / dp_replicate peers) get the SAME slice, which FSDP
+    shards across them later. Handles torchao NVFP4Tensor (qdata/scale/per_tensor_scale) and plain
+    tensors; runs on GPU (NCCL), result moved to the param's original device."""
     import torch.distributed as dist
 
+    from .bnb import scatter_quantized_expert
+
+    if scatter_quantized_expert(module, attr_name, e_local, ep_rank_of):
+        return
     old = getattr(module, attr_name)
     nv = old.data
     dev = torch.device("cuda", torch.cuda.current_device())
@@ -79,12 +82,14 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, dp_size):
         out = torch.empty((e_local, *like.shape[1:]), dtype=like.dtype, device=dev)
         chunks = None
         if is_src:
-            chunks = [
-                full_comp[(r // dp_size) * e_local : (r // dp_size + 1) * e_local]
-                .contiguous()
-                .to(dev)
-                for r in range(world)
-            ]
+            # ranks that share an ep-rank (replicas, dp_shard peers) get the same slice:
+            # copy each distinct slice to the device once instead of once per rank
+            by_ep: dict[int, torch.Tensor] = {}
+            for ep in sorted(set(ep_rank_of)):
+                by_ep[ep] = (
+                    full_comp[ep * e_local : (ep + 1) * e_local].contiguous().to(dev)
+                )
+            chunks = [by_ep[ep_rank_of[r]] for r in range(world)]
         dist.scatter(out, scatter_list=chunks, src=0)
         return out
 
@@ -128,13 +133,25 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, dp_size):
     setattr(module, attr_name, new_param)
 
 
+def expert_input_proj_name(module) -> str:
+    """The experts' first projection: ``gate_up_proj`` (gated), or ``up_proj`` on a
+    non-gated module (``@use_experts_implementation(has_gate=False)``, e.g. Nemotron-H's
+    relu² experts)."""
+    from .bnb import has_expert_member
+
+    if has_expert_member(module, "gate_up_proj") or getattr(module, "has_gate", True):
+        return "gate_up_proj"
+    return "up_proj"
+
+
 def _detect_experts_modules(model):
     """Yield (name, module) pairs for every module that looks like an Experts class.
 
-    Detection: 3D `gate_up_proj` and `down_proj` parameters with experts on dim 0.
-    This is the canonical layout enforced by `@use_experts_implementation`.
-    Mixtral's `ModuleList[MixtralBlockSparseTop2MLP]` does NOT match — out of scope
-    for v1.
+    Detection: logical 3D `gate_up_proj` (or, for non-gated experts, `up_proj`) and
+    `down_proj` weights with experts on dim 0. This is the canonical layout enforced by
+    `@use_experts_implementation`. A dense MLP's `up_proj` is an `nn.Linear`, not a 3D
+    parameter, so it never matches. Mixtral's `ModuleList[MixtralBlockSparseTop2MLP]`
+    does NOT match — out of scope for v1.
     """
     for name, module in model.named_modules():
         # A PEFT ParamWrapper delegates `gate_up_proj` to its `base_layer`, so it
@@ -142,15 +159,17 @@ def _detect_experts_modules(model):
         # fully_shard). Yield only the real experts module (the wrapped base_layer).
         if _is_param_wrapper(module):
             continue
-        gp = getattr(module, "gate_up_proj", None)
-        dp = getattr(module, "down_proj", None)
+        from .bnb import expert_storage
+
+        gp, gp_shape, _ = expert_storage(module, expert_input_proj_name(module))
+        dp, dp_shape, _ = expert_storage(module, "down_proj")
         if gp is None or dp is None:
             continue
         if not (
             isinstance(gp, torch.nn.Parameter) and isinstance(dp, torch.nn.Parameter)
         ):
             continue
-        if gp.dim() != 3 or dp.dim() != 3:
+        if len(gp_shape) != 3 or len(dp_shape) != 3:
             continue
         yield name, module
 
@@ -183,12 +202,19 @@ def shard_expert_weights(model, ep_group) -> int:
         return 0
 
     ep_rank = dist.get_rank(ep_group)
+    ep_rank_of = [None] * dist.get_world_size()
+    dist.all_gather_object(ep_rank_of, ep_rank)
     sharded = 0
+    e_local_counts: set[int] = set()
     ignore_names: list[str] = []
+    ignore_params: list[torch.nn.Parameter] = []
 
     for name, module in _detect_experts_modules(model):
-        gp = module.gate_up_proj
-        E = gp.shape[0]
+        from .bnb import expert_storage
+
+        w1 = expert_input_proj_name(module)
+        _gp, gp_shape, _ = expert_storage(module, w1)
+        E = gp_shape[0]
         if E % ep_size != 0:
             raise ValueError(
                 f"Expert module {name!r}: num_experts={E} not divisible by "
@@ -200,38 +226,47 @@ def shard_expert_weights(model, ep_group) -> int:
         # Scatter global rank-0's REAL experts to every rank's ep-group slice. Under
         # cpu_ram_efficient_loading only global rank 0 has data; plain-slicing (the old path) kept
         # only rank 0's own ep-group's slice and zeroed the rest, so ep-groups 1..N had dead experts.
-        # dp_size>1 (EP×dp_shard / EP×cp) gives the dp ranks within an ep-group the same ep slice; the
-        # FSDP dp-axis shards it across them afterwards. See _scatter_expert_from_rank0.
-        dp_size = dist.get_world_size() // ep_size
+        # Which slice a global rank needs depends on the mesh order (ep is not outermost under
+        # HSDP), so every rank reports its own ep-rank instead of assuming rank // dp_size.
         with torch.no_grad():
-            _scatter_expert_from_rank0(module, "gate_up_proj", E_local, dp_size)
-            _scatter_expert_from_rank0(module, "down_proj", E_local, dp_size)
-            for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
+            _scatter_expert_from_rank0(module, w1, E_local, ep_rank_of)
+            _scatter_expert_from_rank0(module, "down_proj", E_local, ep_rank_of)
+            for bias_name in (f"{w1}_bias", "down_proj_bias"):
                 bias = getattr(module, bias_name, None)
                 if (
                     isinstance(bias, torch.nn.Parameter)
                     and bias.dim() >= 1
                     and bias.shape[0] == E
                 ):
-                    _scatter_expert_from_rank0(module, bias_name, E_local, dp_size)
+                    _scatter_expert_from_rank0(module, bias_name, E_local, ep_rank_of)
 
         # Stash metadata the registered fn needs.
         module.local_expert_offset = start
         module.num_local_experts = E_local
+        e_local_counts.add(E_local)
         module.num_experts_global = E
         # Single global expert count for the cpu_ram_efficient load path (all routed-expert modules
         # share it); used to reshape the global expert-LoRA adapter when slicing per-rank shards.
         model._ep_num_experts_global = E
         # Override the kernel's view of num_experts for grouped_mm/scattermoe bucketing.
         module.num_experts = E_local
+        module._is_expert_parallel = True
 
         # Mark sharded params as DDP-ignored — they hold rank-specific content
         # and must NOT be broadcast from rank 0 at DDP construction.
-        ignore_names.append(f"{name}.gate_up_proj")
-        ignore_names.append(f"{name}.down_proj")
-        for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
+        for parameter_name in (w1, "down_proj"):
+            parameter, _, quantization = expert_storage(module, parameter_name)
+            suffix = (
+                f"parametrizations.{parameter_name}.original"
+                if quantization is not None
+                else parameter_name
+            )
+            ignore_names.append(f"{name}.{suffix}")
+            ignore_params.append(parameter)
+        for bias_name in (f"{w1}_bias", "down_proj_bias"):
             if isinstance(getattr(module, bias_name, None), torch.nn.Parameter):
                 ignore_names.append(f"{name}.{bias_name}")
+                ignore_params.append(getattr(module, bias_name))
 
         sharded += 1
 
@@ -246,9 +281,15 @@ def shard_expert_weights(model, ep_group) -> int:
         # Append (don't overwrite) — other systems may have set this too.
         existing = list(getattr(model, "_ddp_params_and_buffers_to_ignore", []))
         model._ddp_params_and_buffers_to_ignore = existing + ignore_names
+        # wrappers applied later (PEFT ParamWrapper) rename these; keep the
+        # objects so the names can be re-resolved by identity
+        model._ep_ignored_params = (
+            list(getattr(model, "_ep_ignored_params", [])) + ignore_params
+        )
         LOG.info(
             f"Sharded {sharded} Experts module(s) along the experts dim "
-            f"(ep_rank={ep_rank}, ep_size={ep_size}). "
+            f"(ep_rank={ep_rank}, ep_size={ep_size}, "
+            f"num_local_experts={sorted(e_local_counts)}). "
             f"Marked {len(ignore_names)} param(s) as DDP-ignored."
         )
     return sharded
@@ -336,19 +377,107 @@ def ep_adapter_load_local_shard(
     return local.contiguous()
 
 
+def _ep_sliced_experts(model):
+    """(module path, offset, E_local, E_global) for every EP-sliced experts module."""
+    out = {}
+    for name, module in model.named_modules():
+        e_local = getattr(module, "num_local_experts", None)
+        e_global = getattr(module, "num_experts_global", None)
+        if e_local is not None and e_global is not None and e_local < e_global:
+            out[name] = (module.local_expert_offset, e_local, e_global)
+    return out
+
+
+def _module_lora_ranks(config, module_path: str) -> set[int]:
+    """Ranks PEFT may have given this module's parameter adapters: ``rank_pattern`` is keyed by
+    ``<module>.<parameter>`` for ``target_parameters``, falling back to ``config.r``."""
+    from peft.utils.other import get_pattern_key
+
+    rank_pattern = getattr(config, "rank_pattern", None) or {}
+    base_rank = getattr(config, "r", None)
+    ranks = set()
+    for target in getattr(config, "target_parameters", None) or ():
+        key = f"{module_path}.{str(target).rsplit('.', 1)[-1]}"
+        matched = get_pattern_key(rank_pattern.keys(), key) if rank_pattern else None
+        rank = rank_pattern.get(matched, base_rank) if matched else base_rank
+        if rank:
+            ranks.add(int(rank))
+    if base_rank:
+        ranks.add(int(base_rank))
+    return ranks
+
+
+def ep_local_adapter_dir(model, adapter_dir: str) -> str:
+    """Resume a routed-expert LoRA on an EP-sliced model.
+
+    A saved adapter holds every expert (``E_global``), but after ``shard_expert_weights`` PEFT
+    sizes the expert LoRA from this rank's ``E_local`` experts, so ``PeftModel.from_pretrained``
+    fails on the shape mismatch. Returns ``adapter_dir`` untouched when nothing is EP-sliced,
+    otherwise a temporary adapter directory whose expert-LoRA tensors are cut to this rank's
+    experts (attention/router LoRA is copied as-is; already-local tensors are left alone).
+    """
+    sliced = _ep_sliced_experts(model)
+    if not sliced:
+        return adapter_dir
+
+    import re
+    import tempfile
+
+    from peft import PeftConfig
+    from peft.utils.save_and_load import load_peft_weights
+    from safetensors.torch import save_file
+
+    config = PeftConfig.from_pretrained(adapter_dir)
+    weights = load_peft_weights(adapter_dir, device="cpu")
+    key_re = re.compile(
+        r"^(?:base_model\.model\.)?(.*?)((?:\.base_layer)*)\.lora_(A|B)\.weight$"
+    )
+    cut = 0
+    for key, tensor in list(weights.items()):
+        match = key_re.match(key)
+        if match is None or match.group(1) not in sliced:
+            continue
+        offset, e_local, e_global = sliced[match.group(1)]
+        ep_dim = 0 if match.group(3) == "A" else 1
+        # E_local*r and E_global*r' can coincide, so the rank comes from the config, not the shape
+        ranks = _module_lora_ranks(config, match.group(1))
+        packed = tensor.shape[ep_dim]
+        if not any(packed == e_global * r for r in ranks):
+            if not any(packed == e_local * r for r in ranks):
+                LOG.warning(
+                    f"expert_parallel: {key!r} has {packed} packed rows, expected "
+                    f"{sorted(e_global * r for r in ranks)} (global) or "
+                    f"{sorted(e_local * r for r in ranks)} (local); left untouched."
+                )
+            continue
+        weights[key] = ep_adapter_load_local_shard(
+            tensor, ep_dim, e_global, offset // e_local, e_global // e_local, (), 1, 0
+        ).contiguous()
+        cut += 1
+
+    out = tempfile.mkdtemp(prefix="axolotl-ep-adapter-")
+    config.save_pretrained(out)
+    save_file(weights, os.path.join(out, "adapter_model.safetensors"))
+    LOG.info(
+        f"expert_parallel: cut {cut} expert-LoRA tensor(s) of {adapter_dir!r} to this rank's "
+        f"experts before loading."
+    )
+    return out
+
+
 def shard_expert_lora(model, ep_size: int) -> int:
     """Slice PEFT ``target_parameters`` expert LoRA to each rank's local experts.
 
     PEFT sizes the LoRA for a 3D ``experts.{gate_up,down}_proj`` from the parameter's
-    own dim-0 (the *global* expert count) at adapter-application time, before EP's
-    weight slice takes effect on the parameter PEFT wrapped. Left alone, the fused
-    EP kernel (``num_experts = E_local``) and the FSDP2 parametrize merge both see a
-    full-expert LoRA against a local-expert weight -> shape mismatch. This realigns
-    the LoRA with the EP-sharded weights (same ``[offset:offset+E_local]`` slice) and
-    registers the ``1/ep_size`` expert grad-scale on the new params. Idempotent.
+    own dim-0 at adapter-application time. When the adapter was applied after the EP
+    weight slice it is already local (``E_local`` experts) and is only flagged; a
+    global-sized one (adapter applied before the slice) is cut to the same
+    ``[offset:offset+E_local]`` slice as the weights. Either way the wrapper is marked
+    ``_ep_lora_sharded`` so the save path all-gathers it back to ``E_global``, and the
+    ``1/ep_size`` expert grad-scale is registered on plain (non-FSDP) params. Idempotent.
 
     Run AFTER PEFT applies the adapter and BEFORE FSDP wraps. Returns the count of
-    LoRA params sliced.
+    LoRA params handled.
     """
     if ep_size <= 1:
         return 0
@@ -380,17 +509,67 @@ def shard_expert_lora(model, ep_size: int) -> int:
             (getattr(wrapper, "lora_B", {}), 1),
         ):
             for ad in list(adapters.keys()):
-                _slice_expert_lora_param(adapters[ad], dim, e_global, start, end)
+                r = getattr(wrapper, "r", {}).get(ad)
+                if r is None or adapters[ad].weight.shape[dim] != e_local * r:
+                    _slice_expert_lora_param(adapters[ad], dim, e_global, start, end)
                 adapters[ad].weight.register_post_accumulate_grad_hook(_scale_hook)
                 n += 1
         wrapper._ep_lora_sharded = True
 
     if n:
         LOG.info(
-            f"Sharded {n} expert-LoRA param(s) to local experts "
+            f"Aligned {n} expert-LoRA param(s) with the local experts "
             f"(ep_size={ep_size}, grad-scale=1/{ep_size})."
         )
     return n
+
+
+_CHECKPOINT_WRAPPER = "_checkpoint_wrapped_module."
+
+
+def _strip_checkpoint_wrapper(name: str) -> str:
+    """Module names keep the checkpoint-wrapper segment; state-dict keys never do."""
+    return name.replace(_CHECKPOINT_WRAPPER, "")
+
+
+def _gather_adapter_tensor(parameter: torch.Tensor) -> torch.Tensor:
+    """Gather an adapter DTensor without moving its CPU-offloaded storage."""
+    if type(parameter).__name__ != "DTensor":
+        return parameter.data.detach()
+
+    local = parameter.to_local().detach()
+    mesh = parameter.device_mesh
+    if local.device.type != "cpu" or mesh.device_type != "cuda":
+        return parameter.full_tensor().detach()
+
+    from torch.distributed.tensor import DTensor
+
+    temporary = DTensor.from_local(
+        local.to(mesh.device_type),
+        mesh,
+        parameter.placements,
+        run_check=False,
+        shape=parameter.shape,
+        stride=parameter.stride(),
+    )
+    try:
+        return temporary.full_tensor().detach()
+    finally:
+        del temporary
+
+
+_PEFT_KEY_PREFIX = "base_model.model."
+
+
+def _canonical_adapter_keys(adapter_sd: dict) -> dict:
+    """Prefix adapter keys with ``base_model.model.`` when the LoRA was saved from the
+    bare injected model (TRL builds its own ``PeftModel`` around it, so the final save
+    only sees the inner module). PEFT's loader expects the ``PeftModel``-rooted names."""
+    if all(k.startswith(_PEFT_KEY_PREFIX) for k in adapter_sd):
+        return adapter_sd
+    if any(k.startswith(_PEFT_KEY_PREFIX) for k in adapter_sd):
+        raise ValueError("adapter state dict mixes PeftModel-rooted and bare keys")
+    return {f"{_PEFT_KEY_PREFIX}{k}": v for k, v in adapter_sd.items()}
 
 
 def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
@@ -408,6 +587,13 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     from peft.utils.save_and_load import get_peft_model_state_dict
     from safetensors.torch import save_file
 
+    from axolotl.monkeypatch.peft.state_dict import (
+        patch_peft_checkpoint_wrapper_prefixes,
+    )
+
+    # without it PEFT's module-name prefixes miss every checkpoint-wrapped key: empty adapter
+    patch_peft_checkpoint_wrapper_prefixes()
+
     # The EP-sharded 3D expert params and the global expert count. Gather straight from the
     # ParamWrappers by parameter_name (chaining `base_layer` through FSDP-wrapped units to reach
     # the experts module via `_real_experts_base` is brittle once the outer wrapper is its own
@@ -421,8 +607,11 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
             and m.num_local_experts < m.num_experts_global
         ):
             e_global = m.num_experts_global
-            for pn in ("gate_up_proj", "down_proj"):
-                if hasattr(m, pn):
+            from .bnb import expert_storage
+
+            for pn in ("gate_up_proj", "up_proj", "down_proj"):
+                parameter, _, _ = expert_storage(m, pn)
+                if torch.is_tensor(parameter):
                     expert_param_names.add(pn)
     if e_global is None or not expert_param_names:
         return False
@@ -448,33 +637,32 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
 
     # Replicated (attention/router) LoRA: full tensors via FSDP all-gather, canonical PEFT keys.
     sd = {
-        name: (p.full_tensor() if type(p).__name__ == "DTensor" else p.data).detach()
+        _strip_checkpoint_wrapper(name): _gather_adapter_tensor(p)
         for name, p in model.named_parameters()
         if "lora_" in name
     }
-    adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
+    from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
+
+    add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
+    adapter_sd = _canonical_adapter_keys(
+        get_peft_model_state_dict(model, state_dict=sd)
+    )
 
     # Expert LoRA: gather each wrapper's adapter across FSDP (dp_shard) + EP, key by module name.
     gathered = 0
     for wname, wrapper in expert_wrappers:
-        # Only EP×dp_shard/cp composition physically slices the adapter to E_local (shard_expert_lora
-        # sets _ep_lora_sharded), so it must be EP-all-gathered back to E_global. Pure EP keeps the
-        # adapter GLOBAL (E_global, forward-sliced at runtime) — gathering it would replicate every
-        # expert ep_size times into an oversized adapter, so write the FSDP-gathered tensor as-is.
+        # shard_expert_lora flags adapters holding only this ep-group's E_local experts; those are
+        # EP-all-gathered back to E_global. An unflagged (global) adapter is written as-is.
         ep_sharded = getattr(wrapper, "_ep_lora_sharded", False)
         for sub, kind in (("lora_A", "A"), ("lora_B", "B")):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
-                full_local = (
-                    (w.full_tensor() if type(w).__name__ == "DTensor" else w.data)
-                    .detach()
-                    .contiguous()
-                )
+                full_local = _gather_adapter_tensor(w).contiguous()
                 full = (
                     gather_expert_lora_full(full_local, kind, e_global, ep_group)
                     if ep_sharded
                     else full_local
                 )
-                key = f"{wname}.{sub}.weight"
+                key = _strip_checkpoint_wrapper(f"{wname}.{sub}.weight")
                 target = (
                     key
                     if key in adapter_sd
@@ -526,6 +714,13 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     from peft.utils.save_and_load import get_peft_model_state_dict
     from safetensors.torch import save_file
 
+    from axolotl.monkeypatch.peft.state_dict import (
+        patch_peft_checkpoint_wrapper_prefixes,
+    )
+
+    # without it PEFT's module-name prefixes miss every checkpoint-wrapped key: empty adapter
+    patch_peft_checkpoint_wrapper_prefixes()
+
     if not any("lora_" in n for n, _ in model.named_parameters()):
         return False
 
@@ -536,11 +731,16 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     # Replicated + dp-sharded LoRA: full tensors via FSDP all-gather (collective — same iteration
     # order on every rank). Canonical PEFT keys via get_peft_model_state_dict.
     sd = {
-        name: (p.full_tensor() if type(p).__name__ == "DTensor" else p.data).detach()
+        _strip_checkpoint_wrapper(name): _gather_adapter_tensor(p)
         for name, p in model.named_parameters()
         if "lora_" in name
     }
-    adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
+    from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
+
+    add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
+    adapter_sd = _canonical_adapter_keys(
+        get_peft_model_state_dict(model, state_dict=sd)
+    )
 
     gathered = 0
     for wname, wrapper in model.named_modules():
@@ -548,10 +748,8 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
             continue
         for sub in ("lora_A", "lora_B"):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
-                full = (
-                    w.full_tensor() if type(w).__name__ == "DTensor" else w.data
-                ).detach()
-                key = f"{wname}.{sub}.weight"
+                full = _gather_adapter_tensor(w)
+                key = _strip_checkpoint_wrapper(f"{wname}.{sub}.weight")
                 target = (
                     key
                     if key in adapter_sd

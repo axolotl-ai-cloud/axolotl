@@ -1,9 +1,9 @@
 """Utilities for axolotl.loaders module"""
 
 import contextlib
+import importlib
 from typing import Type
 
-import addict
 import torch
 import transformers
 from transformers import AutoConfig, PretrainedConfig, PreTrainedModel
@@ -148,7 +148,15 @@ def check_model_config(cfg: DictDefault, model_config: PretrainedConfig):
         )
 
 
-def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
+def _resolve_config_class(name: str) -> type:
+    """A transformers config class name, or a dotted ``module.Class`` import path."""
+    if "." not in name:
+        return getattr(transformers, name)
+    module_name, _, class_name = name.rpartition(".")
+    return getattr(importlib.import_module(module_name), class_name)
+
+
+def load_model_config(cfg: DictDefault) -> PretrainedConfig:
     """Loads and configures a model configuration from HuggingFace or local sources.
 
     This function determines the appropriate model config source, loads it, applies any
@@ -181,22 +189,33 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig | addict.Dict:
 
     config_cls = AutoConfig
     if cfg.cls_model_config:
-        config_cls = getattr(transformers, cfg.cls_model_config)
+        config_cls = _resolve_config_class(cfg.cls_model_config)
 
-    try:
-        model_config = config_cls.from_pretrained(
+    model_config = config_cls.from_pretrained(
+        model_config_name,
+        trust_remote_code=trust_remote_code,
+        **config_kwargs,
+    )
+
+    # FLA registers colliding model types when imported for its attention kernels.
+    native_mamba_configs = {
+        "mamba": "MambaConfig",
+        "mamba2": "Mamba2Config",
+        "falcon_mamba": "FalconMambaConfig",
+    }
+    if (
+        config_cls is AutoConfig
+        and type(model_config).__module__.startswith("fla.")
+        and model_config.model_type in native_mamba_configs
+    ):
+        native_config = getattr(
+            transformers, native_mamba_configs[model_config.model_type]
+        )
+        model_config = native_config.from_pretrained(
             model_config_name,
             trust_remote_code=trust_remote_code,
             **config_kwargs,
         )
-    except ValueError as error:
-        if "mamba" in model_config_name:
-            return addict.Dict(
-                {
-                    "model_type": "mamba",
-                }
-            )
-        raise error
 
     if cfg.overrides_of_model_config:
         for key, val in cfg.overrides_of_model_config.items():
@@ -306,7 +325,7 @@ def materialize_trainable_meta_params(model: torch.nn.Module) -> list[str]:
 def get_linear_embedding_layers(model_type: str) -> list[str]:
     """Returns layer names of linear embeddings needed for LoRA based on model type."""
     if model_type == "gpt_neox":
-        return ["embed_in", "embed_out"]
+        return ["embed_in", "lm_head"]
     if model_type == "falcon":
         return ["word_embeddings", "lm_head"]
     if model_type == "nemotron_h":

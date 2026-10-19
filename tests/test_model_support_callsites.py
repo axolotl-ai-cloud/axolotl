@@ -453,10 +453,11 @@ def test_model_loader_places_post_build_and_post_adapter_phases(monkeypatch):
     loader._apply_post_lora_load_setup = lambda _skip: events.append(
         "post_adapter_setup"
     )
+    recording = RecordingPluginManager()
     monkeypatch.setattr(
-        model_loader_module,
-        "PLUGIN_MANAGER",
-        RecordingPluginManager(),
+        model_loader_module.PluginManager,
+        "get_instance",
+        staticmethod(lambda: recording),
     )
 
     model, lora_config = model_loader_module.ModelLoader.load.__wrapped__(loader)

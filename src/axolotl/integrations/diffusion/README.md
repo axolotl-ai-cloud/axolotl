@@ -21,8 +21,8 @@ The plugin is included with Axolotl. See our
 ## Quickstart
 
 Train with an example config (Llama‑3.2 1B):
-   - Pretrain: `axolotl train examples/llama-3/diffusion-3.2-1b-pretrain.yaml`
-   - SFT: `axolotl train examples/llama-3/diffusion-3.2-1b-sft.yaml`
+   - Pretrain: `axolotl train examples/llama-3/diffusion/pretrain-1b.yaml`
+   - SFT: `axolotl train examples/llama-3/diffusion/sft-1b.yaml`
 
 ### Basic Configuration
 

@@ -1,10 +1,72 @@
 """Tests for the mistral-common tokenizer wrapper."""
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from mistral_common.protocol.instruct.messages import UserMessage
+from mistral_common.protocol.instruct.normalize import InstructRequestNormalizerV7
+from mistral_common.protocol.instruct.request import ChatCompletionRequest
+from pydantic import BaseModel, ValidationError, create_model
 
 from axolotl.utils.mistral.mistral_tokenizer import HFMistralTokenizer
+
+
+@pytest.mark.parametrize("legacy_continuation", [False, True])
+@pytest.mark.parametrize("continue_final_message", [False, True])
+def test_normalizer_defaults_match_request_schema(
+    legacy_continuation, continue_final_message
+):
+    normalizer = InstructRequestNormalizerV7.normalizer()
+    if legacy_continuation:
+        normalizer._instruct_request_class = create_model(
+            "LegacyInstructRequest",
+            __base__=normalizer._instruct_request_class,
+            continue_final_message=(bool, ...),
+        )
+
+    class MissingDefaults(BaseModel):
+        truncate_at_max_tokens: int | None
+        continue_final_message: bool
+
+    def broken_normalize(_request):
+        MissingDefaults.model_validate({})
+
+    normalizer.from_chat_completion_request = broken_normalize
+    tokenizer = object.__new__(HFMistralTokenizer)
+    tokenizer.tokenizer = SimpleNamespace(_instruct_request_normalizer=normalizer)
+    tokenizer._patch_instruct_request_normalizer()
+    request = SimpleNamespace(
+        messages=[UserMessage(content="Hello")],
+        tools=None,
+        continue_final_message=continue_final_message,
+    )
+    result = normalizer.from_chat_completion_request(request)
+    assert result.messages == request.messages
+    assert result.truncate_at_max_tokens is None
+    if legacy_continuation:
+        assert result.continue_final_message is continue_final_message
+    else:
+        assert "continue_final_message" not in result.model_dump()
+
+
+def test_normalizer_preserves_unrelated_validation_errors():
+    normalizer = InstructRequestNormalizerV7.normalizer()
+
+    class RequiredMessages(BaseModel):
+        messages: list
+
+    def broken_normalize(_request):
+        RequiredMessages.model_validate({})
+
+    normalizer.from_chat_completion_request = broken_normalize
+    tokenizer = object.__new__(HFMistralTokenizer)
+    tokenizer.tokenizer = SimpleNamespace(_instruct_request_normalizer=normalizer)
+    tokenizer._patch_instruct_request_normalizer()
+    with pytest.raises(ValidationError, match="messages"):
+        normalizer.from_chat_completion_request(
+            ChatCompletionRequest(messages=[UserMessage(content="Hello")])
+        )
 
 
 @pytest.fixture(name="captured_init")

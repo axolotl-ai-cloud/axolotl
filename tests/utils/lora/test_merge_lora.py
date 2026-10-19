@@ -1,5 +1,8 @@
 import json
 import math
+from collections import OrderedDict
+from threading import Event
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
@@ -8,16 +11,166 @@ import torch
 
 from axolotl.cli.merge_lora import do_merge_lora
 from axolotl.cli.utils.lora_merge import (
+    _BNB_4BIT_STATE_RE,
     _build_peft_layer_and_get_delta,
     _find_param_wrapper_lora,
     _merge_tensor_with_lora,
     _resolve_lora_alpha_for_key,
+    _runtime_key,
     _scope_renaming,
+    _ShardWriteQueue,
     copy_non_model_files,
     find_lora_weights,
     merge_lora_sharded_efficient,
 )
+from axolotl.integrations.base import BasePlugin
 from axolotl.utils.dict import DictDefault
+
+
+class _PostMergeRecorder(BasePlugin):
+    def __init__(self):
+        self.calls = []
+
+    def post_lora_merge(self, cfg, adapter_path, output_path):
+        self.calls.append((cfg, adapter_path, output_path))
+
+
+def _merge_hook_cfg(tmp_path, *, local_rank=0):
+    return DictDefault(
+        {
+            "base_model": "base",
+            "lora_model_dir": str(tmp_path / "adapter"),
+            "output_dir": str(tmp_path / "output"),
+            "local_rank": local_rank,
+            "torch_dtype": torch.float32,
+            "tokenizer_save_jinja_files": False,
+            "save_safetensors": True,
+            "model_config_type": "llama",
+            "nf4_backend": "bitsandbytes",
+            "revision_of_model": None,
+        }
+    )
+
+
+def test_legacy_merge_dispatches_post_merge_hook_only_from_writer(
+    tmp_path, monkeypatch
+):
+    from axolotl.cli.merge_lora import _do_merge_lora_legacy
+    from axolotl.integrations.base import PluginManager
+
+    recorder = _PostMergeRecorder()
+    monkeypatch.setattr(
+        PluginManager.get_instance(), "plugins", OrderedDict({"record": recorder})
+    )
+    model = Mock()
+    model.merge_and_unload.return_value = model
+    model.generation_config = SimpleNamespace()
+    model.config = SimpleNamespace()
+    tokenizer = Mock()
+    monkeypatch.setattr(
+        "axolotl.cli.merge_lora.load_model_and_tokenizer",
+        lambda *, cfg: (model, tokenizer, None),
+    )
+
+    cfg = _merge_hook_cfg(tmp_path)
+    _do_merge_lora_legacy(cfg=cfg)
+    assert recorder.calls == [
+        (cfg, str(tmp_path / "adapter"), str(tmp_path / "output" / "merged"))
+    ]
+
+    recorder.calls.clear()
+    cfg.local_rank = 1
+    _do_merge_lora_legacy(cfg=cfg)
+    assert recorder.calls == []
+
+
+def test_efficient_merge_dispatches_post_merge_hook_after_success(
+    tmp_path, monkeypatch
+):
+    from axolotl.cli.merge_lora import _do_merge_lora_efficient
+    from axolotl.integrations.base import PluginManager
+
+    recorder = _PostMergeRecorder()
+    monkeypatch.setattr(
+        PluginManager.get_instance(), "plugins", OrderedDict({"record": recorder})
+    )
+    merged = []
+    monkeypatch.setattr(
+        "axolotl.cli.merge_lora.merge_lora_sharded_efficient",
+        lambda **kwargs: merged.append(kwargs),
+    )
+    cfg = _merge_hook_cfg(tmp_path)
+
+    _do_merge_lora_efficient(cfg=cfg)
+
+    assert len(merged) == 1
+    assert recorder.calls == [
+        (cfg, str(tmp_path / "adapter"), str(tmp_path / "output" / "merged"))
+    ]
+
+
+def test_efficient_merge_does_not_dispatch_post_merge_hook_after_failure(
+    tmp_path, monkeypatch
+):
+    from axolotl.cli.merge_lora import _do_merge_lora_efficient
+    from axolotl.integrations.base import PluginManager
+
+    recorder = _PostMergeRecorder()
+    monkeypatch.setattr(
+        PluginManager.get_instance(), "plugins", OrderedDict({"record": recorder})
+    )
+    monkeypatch.setattr(
+        "axolotl.cli.merge_lora.merge_lora_sharded_efficient",
+        Mock(side_effect=RuntimeError("merge failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="merge failed"):
+        _do_merge_lora_efficient(cfg=_merge_hook_cfg(tmp_path))
+    assert recorder.calls == []
+
+
+def _dispatch_merge(monkeypatch, cfg, support=None):
+    import axolotl.cli.merge_lora as merge_lora
+
+    calls = []
+    monkeypatch.setattr(merge_lora, "get_model_support", lambda _model_type: support)
+    monkeypatch.setattr(
+        merge_lora, "_do_merge_lora_legacy", lambda *, cfg: calls.append("legacy")
+    )
+    monkeypatch.setattr(
+        merge_lora,
+        "_do_merge_lora_efficient",
+        lambda *, cfg: calls.append("memory_efficient"),
+    )
+    merge_lora.do_merge_lora(cfg=cfg)
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [(None, "memory_efficient"), ("legacy", "legacy")],
+)
+def test_merge_method_defaults_without_profile_hook(
+    tmp_path, monkeypatch, configured, expected
+):
+    cfg = _merge_hook_cfg(tmp_path)
+    cfg.merge_method = configured
+    assert _dispatch_merge(monkeypatch, cfg) == [expected]
+
+
+def test_merge_method_profile_hook_receives_configured_value(tmp_path, monkeypatch):
+    seen = []
+
+    def resolve(cfg, requested):
+        seen.append(requested)
+        return "legacy"
+
+    support = SimpleNamespace(resolve_lora_merge_method=resolve)
+    cfg = _merge_hook_cfg(tmp_path)
+    cfg.merge_method = None
+
+    assert _dispatch_merge(monkeypatch, cfg, support) == ["legacy"]
+    assert seen == [None]
 
 
 class TestAdapterMergeUnmerge:
@@ -352,6 +505,399 @@ class TestEfficientMerge:
             merged["model.embed_tokens.weight"],
             base_weights["model.embed_tokens.weight"],
         )
+
+    def _make_multi_shard_merge(self, tmp_path, n_shards=3, hidden=16, r=4):
+        model_dir = tmp_path / "base_model"
+        model_dir.mkdir()
+        base, lora_state, weight_map = {}, {}, {}
+        for i in range(n_shards):
+            name = f"model-{i + 1:05d}-of-{n_shards:05d}.safetensors"
+            key = f"model.layers.{i}.self_attn.q_proj.weight"
+            shard = {key: torch.randn(hidden, hidden)}
+            if i == 0:
+                shard["model.embed_tokens.weight"] = torch.randn(10, hidden)
+            safetensors.torch.save_file(shard, model_dir / name)
+            base.update(shard)
+            weight_map.update(dict.fromkeys(shard, name))
+            module = f"base_model.model.{key.removesuffix('.weight')}"
+            lora_state[f"{module}.lora_A.weight"] = torch.randn(r, hidden)
+            lora_state[f"{module}.lora_B.weight"] = torch.randn(hidden, r)
+        (model_dir / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {}, "weight_map": weight_map})
+        )
+        (model_dir / "config.json").write_text("{}")
+        adapter_dir, _ = self._make_adapter(tmp_path, r=r, alpha=2 * r)
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+        return model_dir, adapter_dir, base, lora_state, weight_map
+
+    def test_sharded_merge_overlaps_io_without_reordering(self, tmp_path):
+        """Shards are read ahead and written behind the merge; every shard must still
+        land in its own file with its own merged tensors."""
+        model_dir, adapter_dir, base, lora_state, weight_map = (
+            self._make_multi_shard_merge(tmp_path)
+        )
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(model_dir, adapter_dir, output_dir, device="cpu")
+
+        index = json.loads((output_dir / "model.safetensors.index.json").read_text())
+        assert index["weight_map"] == weight_map
+        for key, tensor in base.items():
+            merged = safetensors.torch.load_file(output_dir / weight_map[key])[key]
+            module = f"base_model.model.{key.removesuffix('.weight')}"
+            if f"{module}.lora_A.weight" not in lora_state:
+                assert torch.equal(merged, tensor)
+                continue
+            expected = tensor + 2.0 * (
+                lora_state[f"{module}.lora_B.weight"]
+                @ lora_state[f"{module}.lora_A.weight"]
+            )
+            assert torch.allclose(merged, expected, atol=1e-5)
+
+    def test_sharded_merge_surfaces_background_write_failure(self, tmp_path):
+        model_dir, adapter_dir, *_ = self._make_multi_shard_merge(tmp_path)
+
+        def fail(*_args):
+            raise OSError("disk full")
+
+        with patch("axolotl.cli.utils.lora_merge._write_shard", side_effect=fail):
+            with pytest.raises(OSError, match="disk full"):
+                merge_lora_sharded_efficient(
+                    model_dir, adapter_dir, tmp_path / "output", device="cpu"
+                )
+        assert not (tmp_path / "output" / "model.safetensors.index.json").exists()
+
+    @pytest.mark.parametrize("write_fails", [False, True])
+    @pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+    def test_sharded_merge_drains_writes_on_processing_failure(
+        self, tmp_path, caplog, write_fails, error_type
+    ):
+        """Cleanup waits for the writer and preserves the original processing error."""
+        model_dir, adapter_dir, *_ = self._make_multi_shard_merge(tmp_path)
+        release_writer = Event()
+        writer_finished = Event()
+        processing_error = error_type("merge failed")
+        queue = _ShardWriteQueue()
+
+        def write(*_args):
+            assert release_writer.wait(timeout=10)
+            writer_finished.set()
+            if write_fails:
+                raise OSError("disk full")
+
+        def merge(weight, key, *args, **kwargs):
+            if key == "model.layers.1.self_attn.q_proj.weight":
+                release_writer.set()
+                raise processing_error
+            return _merge_tensor_with_lora(weight, key, *args, **kwargs)
+
+        try:
+            with (
+                patch(
+                    "axolotl.cli.utils.lora_merge._ShardWriteQueue", return_value=queue
+                ),
+                patch("axolotl.cli.utils.lora_merge._write_shard", side_effect=write),
+                patch(
+                    "axolotl.cli.utils.lora_merge._merge_tensor_with_lora",
+                    side_effect=merge,
+                ),
+                patch.object(
+                    queue._pool, "shutdown", wraps=queue._pool.shutdown
+                ) as shutdown,
+                pytest.raises(error_type, match="merge failed") as caught,
+            ):
+                merge_lora_sharded_efficient(
+                    model_dir, adapter_dir, tmp_path / "output", device="cpu"
+                )
+            assert caught.value is processing_error
+            shutdown.assert_called_once_with(wait=True)
+            assert writer_finished.is_set()
+            assert queue._pending is None
+            if write_fails:
+                assert "Background shard write also failed" in caplog.text
+                assert "disk full" in caplog.text
+            assert not (tmp_path / "output" / "model.safetensors.index.json").exists()
+        finally:
+            release_writer.set()
+            queue._pool.shutdown(wait=True)
+
+    def test_nf4_gate_follows_prefixed_layer_type_map(self, tmp_path):
+        """The exclusion gate must use the same prefix fallback as the layer lookup."""
+        hidden, r = 64, 8
+        base = torch.randn(hidden, hidden)
+        lora_state = {
+            "base_model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                r, hidden
+            ),
+            "base_model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                hidden, r
+            ),
+        }
+
+        merged, was_merged = _merge_tensor_with_lora(
+            base,
+            "layers.0.self_attn.q_proj.weight",
+            lora_state,
+            2.0,
+            {"r": r, "lora_alpha": 16},
+            "cpu",
+            simulate_nf4=True,
+            nf4_skips=set(),
+            layer_type_map={"model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert was_merged
+        # zero LoRA, so any difference from base is the NF4 roundtrip
+        assert not torch.equal(merged, base)
+
+    def test_non_staged_merge_keeps_roundtrip_heuristic(self):
+        """Without a skip set the pre-existing ndim heuristic decides, exclusions included."""
+        hidden, r = 64, 8
+        key = "model.embed_tokens.weight"
+        base = torch.randn(100, hidden)
+        lora_state = {
+            "base_model.model.model.embed_tokens.lora_A.weight": torch.zeros(r, hidden),
+            "base_model.model.model.embed_tokens.lora_B.weight": torch.zeros(100, r),
+        }
+        kwargs = dict(
+            lora_state=lora_state,
+            scale=2.0,
+            lora_config_dict={"r": r, "lora_alpha": 16},
+            device="cpu",
+            simulate_nf4=True,
+            layer_type_map={"model.embed_tokens": "Embedding"},
+        )
+        heuristic, _ = _merge_tensor_with_lora(base, key, nf4_skips=None, **kwargs)
+        staged, _ = _merge_tensor_with_lora(
+            base, key, nf4_skips={"lm_head", "embed_out"}, **kwargs
+        )
+        assert not torch.equal(heuristic, base)
+        assert torch.equal(staged, base)
+
+    @pytest.mark.parametrize(
+        "staged, backend, expect_skips",
+        [
+            (False, "bitsandbytes", False),
+            (True, "bitsandbytes", True),
+            (False, "torchao", True),
+        ],
+    )
+    def test_efficient_merge_scopes_exclusions_to_staged_training(
+        self, staged, backend, expect_skips
+    ):
+        from axolotl.cli.merge_lora import _do_merge_lora_efficient
+
+        cfg = DictDefault(
+            base_model="base",
+            lora_model_dir="adapter",
+            output_dir="out",
+            model_config_type="llama",
+            torch_dtype=torch.bfloat16,
+            nf4_backend="bitsandbytes",
+            _original_load_in_4bit=True,
+            _original_adapter="qlora",
+            _original_staged_nf4=staged,
+            _original_nf4_backend=backend,
+        )
+        with patch("axolotl.cli.merge_lora.merge_lora_sharded_efficient") as merge:
+            _do_merge_lora_efficient(cfg=cfg)
+        kwargs = merge.call_args.kwargs
+        assert kwargs["simulate_nf4"] is True
+        assert kwargs["staged_nf4"] is staged
+        assert kwargs["nf4_backend"] == backend
+        if expect_skips:
+            assert kwargs["nf4_skips"] == {"lm_head", "embed_out"}
+            assert kwargs["nf4_dtype"] == torch.bfloat16
+        else:
+            assert kwargs["nf4_skips"] is None
+            assert kwargs["nf4_dtype"] is None
+
+    def test_nf4_gate_classifies_renamed_checkpoint_keys(self, tmp_path):
+        """LLaVA-style checkpoints reach the type map only through weight_renamings."""
+        hidden, r = 64, 8
+        base = torch.randn(hidden, hidden)
+        lora_state = {
+            "base_model.model.model.language_model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                r, hidden
+            ),
+            "base_model.model.model.language_model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                hidden, r
+            ),
+        }
+
+        merged, was_merged = _merge_tensor_with_lora(
+            base,
+            "language_model.model.layers.0.self_attn.q_proj.weight",
+            lora_state,
+            2.0,
+            {"r": r, "lora_alpha": 16},
+            "cpu",
+            simulate_nf4=True,
+            nf4_skips=set(),
+            weight_renamings={r"^language_model\.model\.": "model.language_model."},
+            layer_type_map={"model.language_model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert was_merged
+        # zero LoRA, so any difference from base is the NF4 roundtrip
+        assert not torch.equal(merged, base)
+
+    def test_runtime_key_returns_the_prefixed_path_that_matched(self):
+        """Exclusions are spelled in runtime names, so the gate must see the prefix."""
+        from axolotl.utils.nf4 import nf4_should_quantize
+
+        runtime_key = _runtime_key(
+            "layers.0.self_attn.q_proj.weight",
+            None,
+            {"model.layers.0.self_attn.q_proj": "Linear"},
+        )
+
+        assert runtime_key == "model.layers.0.self_attn.q_proj.weight"
+        assert not nf4_should_quantize(
+            runtime_key,
+            linear=True,
+            expert=False,
+            skips={"model.layers.0.self_attn.q_proj"},
+        )
+
+    def test_runtime_key_leaves_runtime_spelling_untouched(self):
+        """A key already in runtime spelling gains no prefix."""
+        assert (
+            _runtime_key(
+                "model.layers.0.self_attn.q_proj.weight",
+                None,
+                {"model.layers.0.self_attn.q_proj": "Linear"},
+            )
+            == "model.layers.0.self_attn.q_proj.weight"
+        )
+
+    def test_bitsandbytes_merge_without_introspection(self, tmp_path):
+        """An empty layer_type_map must not raise a torchao-specific error on bnb."""
+        hidden, r, alpha = 32, 8, 16
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, _ = self._make_adapter(tmp_path, r=r, alpha=alpha)
+        safetensors.torch.save_file(
+            {
+                "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(
+                    r, hidden
+                ),
+                "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.zeros(
+                    hidden, r
+                ),
+            },
+            adapter_dir / "adapter_model.safetensors",
+        )
+        output_dir = tmp_path / "output"
+
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            device="cpu",
+            simulate_nf4=True,
+            nf4_backend="bitsandbytes",
+            nf4_skips={"lm_head", "embed_out"},
+        )
+
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        assert not torch.equal(merged[q_key], base_weights[q_key])
+
+    def test_qlora_merge_matches_bitsandbytes_training_weights(self, tmp_path):
+        """Each merged tensor equals what the bnb-quantized training model held."""
+        pytest.importorskip("transformers.models.gemma4")
+        import bitsandbytes as bnb
+        from peft import LoraConfig, get_peft_model
+        from transformers import (
+            AutoModelForCausalLM,
+            BitsAndBytesConfig,
+            Gemma4Config,
+            Gemma4ForConditionalGeneration,
+        )
+
+        from axolotl.cli.merge_lora import _do_merge_lora_efficient
+
+        config = Gemma4Config(
+            text_config=dict(
+                vocab_size=128,
+                hidden_size=64,
+                intermediate_size=128,
+                num_hidden_layers=2,
+                num_attention_heads=2,
+                num_key_value_heads=1,
+                head_dim=32,
+                global_head_dim=32,
+                vocab_size_per_layer_input=128,
+                # bnb 0.50's AVX512 CPU dequant misreads rows shorter than a block
+                hidden_size_per_layer_input=64,
+                layer_types=["sliding_attention", "full_attention"],
+                enable_moe_block=True,
+                num_experts=4,
+                top_k_experts=2,
+                moe_intermediate_size=64,
+            ),
+            vision_config=dict(
+                hidden_size=64,
+                intermediate_size=128,
+                num_hidden_layers=1,
+                num_attention_heads=2,
+                num_key_value_heads=2,
+                head_dim=32,
+                position_embedding_size=64,
+            ),
+            audio_config=None,
+        )
+        base_dir = tmp_path / "base"
+        base = Gemma4ForConditionalGeneration(config).to(torch.bfloat16)
+        base.save_pretrained(base_dir)
+        base_weights = safetensors.torch.load_file(base_dir / "model.safetensors")
+
+        adapter_dir = tmp_path / "adapter"
+        get_peft_model(
+            base,
+            LoraConfig(
+                r=4, target_modules=r".*language_model\.layers\.0\.self_attn\.q_proj"
+            ),
+        ).save_pretrained(adapter_dir)
+
+        _do_merge_lora_efficient(
+            cfg=DictDefault(
+                base_model=str(base_dir),
+                lora_model_dir=str(adapter_dir),
+                output_dir=str(tmp_path),
+                model_config_type="gemma4",
+                torch_dtype=torch.bfloat16,
+                nf4_backend="bitsandbytes",
+                _original_load_in_4bit=True,
+                _original_adapter="qlora",
+            )
+        )
+        merged = safetensors.torch.load_file(tmp_path / "merged" / "model.safetensors")
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        trained = AutoModelForCausalLM.from_pretrained(
+            base_dir,
+            dtype=torch.bfloat16,
+            device_map={"": device},
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_quant_storage=torch.bfloat16,
+            ),
+        )
+        expected = dict(base_weights)
+        for name, module in trained.named_modules():
+            if isinstance(module, bnb.nn.Linear4bit):
+                expected[f"{name}.weight"] = bnb.functional.dequantize_4bit(
+                    module.weight.data, module.weight.quant_state
+                ).cpu()
+
+        assert merged.keys() == expected.keys()
+        mismatched = [k for k in expected if not torch.equal(merged[k], expected[k])]
+        assert not mismatched
 
     def test_resolve_alpha_for_key_returns_none_without_pattern(self):
         assert (
@@ -712,6 +1258,86 @@ class TestEfficientMerge:
         expected_fused = base_fused + scale * (lora_b @ lora_a)
         assert torch.allclose(gate_up, expected_fused, atol=1e-5)
 
+    @pytest.mark.parametrize("use_rslora", [False, True])
+    @pytest.mark.parametrize("reverse_targets", [False, True])
+    def test_fused_paramwrapper_merge_matches_peft(self, use_rslora, reverse_targets):
+        from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
+        from transformers.core_model_loading import (
+            Concatenate,
+            MergeModulelist,
+            WeightConverter,
+        )
+
+        from axolotl.cli.utils.lora_merge import _fuse_and_unfuse_with_merge
+
+        class ExpertModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.experts = torch.nn.Module()
+                self.experts.gate_up_proj = torch.nn.Parameter(torch.randn(4, 48, 16))
+                self.experts.down_proj = torch.nn.Parameter(torch.randn(4, 16, 24))
+
+        torch.manual_seed(42)
+        model = ExpertModel()
+        base = {
+            name: tensor.detach().clone() for name, tensor in model.named_parameters()
+        }
+        targets = ["experts.gate_up_proj", "experts.down_proj"]
+        if reverse_targets:
+            targets.reverse()
+        config = LoraConfig(
+            r=2,
+            lora_alpha=4,
+            target_parameters=targets,
+            use_rslora=use_rslora,
+        )
+        model = get_peft_model(model, config)
+        with torch.no_grad():
+            for parameter in model.parameters():
+                if parameter.requires_grad:
+                    parameter.normal_(std=0.1)
+        adapter = get_peft_model_state_dict(model)
+        assert any(".base_layer.lora_A.weight" in name for name in adapter)
+        expected = model.merge_and_unload()
+        shards = {}
+        for index in range(4):
+            gate, up = base["experts.gate_up_proj"][index].chunk(2, dim=0)
+            shards[f"experts.{index}.gate_proj.weight"] = gate
+            shards[f"experts.{index}.up_proj.weight"] = up
+            shards[f"experts.{index}.down_proj.weight"] = base["experts.down_proj"][
+                index
+            ]
+        converters = [
+            WeightConverter(
+                source_patterns=[
+                    "experts.*.gate_proj.weight",
+                    "experts.*.up_proj.weight",
+                ],
+                target_patterns="experts.gate_up_proj",
+                operations=[MergeModulelist(dim=0), Concatenate(dim=1)],
+            ),
+            WeightConverter(
+                source_patterns="experts.*.down_proj.weight",
+                target_patterns="experts.down_proj",
+                operations=[MergeModulelist(dim=0)],
+            ),
+        ]
+        result, merged_count, processed = _fuse_and_unfuse_with_merge(
+            shards,
+            converters,
+            adapter,
+            2.0,
+            config.to_dict(),
+            "cpu",
+            expected_num_experts=4,
+        )
+        assert merged_count == 2
+        assert set(result) == set(base)
+        assert set(result) <= processed
+        for name, tensor in expected.named_parameters():
+            torch.testing.assert_close(result[name], tensor, rtol=0, atol=1e-6)
+            assert not torch.equal(result[name], base[name])
+
     def test_fuse_skipped_for_incomplete_expert_shard(self):
         """Expert lists split across shard boundaries must not be fused from a partial shard."""
         from transformers.core_model_loading import (
@@ -801,6 +1427,161 @@ class TestEfficientMerge:
         assert "model.layers.2.mlp.experts.gate_up_proj" not in result
         assert set(result.keys()) == set(quant_tensors.keys())
 
+    def _build_split_expert_case(
+        self, tmp_path, name, expert_shards, num_experts=4, hidden=16, inter=32, r=4
+    ):
+        """qwen3_moe-style per-expert base whose expert list is spread over ``expert_shards``,
+        plus a fused-parameter LoRA over gate_up_proj/down_proj."""
+        alpha = 8
+        base_dir, adapter_dir = tmp_path / f"base-{name}", tmp_path / f"ad-{name}"
+        base_dir.mkdir()
+        adapter_dir.mkdir()
+
+        gen = torch.Generator().manual_seed(1234)
+        per_expert = {}
+        for e in range(num_experts):
+            root = f"model.layers.0.mlp.experts.{e}"
+            for proj, shape in (
+                ("gate_proj", (inter, hidden)),
+                ("up_proj", (inter, hidden)),
+                ("down_proj", (hidden, inter)),
+            ):
+                per_expert[f"{root}.{proj}.weight"] = torch.randn(
+                    *shape, generator=gen, dtype=torch.float32
+                )
+
+        weight_map = {}
+        n = len(expert_shards)
+        for idx, experts in enumerate(expert_shards):
+            shard_name = f"model-{idx + 1:05d}-of-{n:05d}.safetensors"
+            shard = {
+                k: v
+                for k, v in per_expert.items()
+                if int(k.split(".experts.")[1].split(".")[0]) in experts
+            }
+            safetensors.torch.save_file(shard, base_dir / shard_name)
+            weight_map.update({k: shard_name for k in shard})
+        (base_dir / "model.safetensors.index.json").write_text(
+            json.dumps({"metadata": {"total_size": 0}, "weight_map": weight_map})
+        )
+        (base_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "model_type": "qwen3_moe",
+                    "num_experts": num_experts,
+                    "num_hidden_layers": 1,
+                    "hidden_size": hidden,
+                    "intermediate_size": inter,
+                    "moe_intermediate_size": inter,
+                    "num_attention_heads": 2,
+                    "num_key_value_heads": 2,
+                    "vocab_size": 32,
+                }
+            )
+        )
+
+        agen = torch.Generator().manual_seed(99)
+        p = "base_model.model.model.layers.0.mlp.experts"
+        adapter = {
+            f"{p}.gate_up_proj.lora_A.weight": torch.randn(
+                r, hidden, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.gate_up_proj.lora_B.weight": torch.randn(
+                inter * 2, r, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.down_proj.lora_A.weight": torch.randn(
+                r, inter, generator=agen, dtype=torch.float32
+            ),
+            f"{p}.down_proj.lora_B.weight": torch.randn(
+                hidden, r, generator=agen, dtype=torch.float32
+            ),
+        }
+        safetensors.torch.save_file(adapter, adapter_dir / "adapter_model.safetensors")
+        (adapter_dir / "adapter_config.json").write_text(
+            json.dumps({"r": r, "lora_alpha": alpha, "peft_type": "LORA"})
+        )
+        return base_dir, adapter_dir, per_expert, adapter
+
+    @pytest.mark.parametrize("simulate_nf4", [False, True])
+    def test_expert_group_split_across_shards_is_merged(self, tmp_path, simulate_nf4):
+        """An expert list split across shards must still be fused, merged and written."""
+        num_experts, hidden, inter, r = 4, 16, 32, 4
+        scale = 8 / r
+
+        def run(name, expert_shards):
+            base_dir, adapter_dir, per_expert, adapter = self._build_split_expert_case(
+                tmp_path, name, expert_shards, num_experts, hidden, inter, r
+            )
+            out = tmp_path / f"merged-{name}"
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, out, device="cpu", simulate_nf4=simulate_nf4
+            )
+            merged = {}
+            for f in sorted(out.glob("*.safetensors")):
+                merged.update(safetensors.torch.load_file(f))
+            index_path = out / "model.safetensors.index.json"
+            index = (
+                json.loads(index_path.read_text())["weight_map"]
+                if index_path.exists()
+                else {}
+            )
+            return merged, index, per_expert, adapter
+
+        split, split_index, per_expert, adapter = run("split", [[0, 1], [2, 3]])
+        whole, _, _, _ = run("whole", [[0, 1, 2, 3]])
+
+        fused_key = "model.layers.0.mlp.experts.gate_up_proj"
+        assert fused_key in split
+        # emitted in the shard that completed the group, and indexed there
+        assert split_index[fused_key] == "model-00002-of-00002.safetensors"
+        assert not (
+            tmp_path / "merged-split" / "model-00001-of-00002.safetensors"
+        ).exists()
+        assert "model.layers.0.mlp.experts.down_proj" in split
+        assert not any(".experts.0." in k for k in split)
+
+        gate = torch.stack(
+            [
+                per_expert[f"model.layers.0.mlp.experts.{e}.gate_proj.weight"]
+                for e in range(num_experts)
+            ]
+        )
+        up = torch.stack(
+            [
+                per_expert[f"model.layers.0.mlp.experts.{e}.up_proj.weight"]
+                for e in range(num_experts)
+            ]
+        )
+        base_fused = torch.cat([gate, up], dim=1)
+        p = "base_model.model.model.layers.0.mlp.experts"
+        delta = scale * (
+            adapter[f"{p}.gate_up_proj.lora_B.weight"]
+            @ adapter[f"{p}.gate_up_proj.lora_A.weight"]
+        )
+        for e in range(num_experts):
+            assert not torch.allclose(split[fused_key][e], base_fused[e], atol=1e-6)
+        if not simulate_nf4:
+            assert torch.allclose(split[fused_key], base_fused + delta, atol=1e-5)
+        else:
+            # the base went through the NF4 roundtrip before the fold
+            assert not torch.allclose(split[fused_key], base_fused + delta, atol=1e-5)
+        # splitting the expert list must not change the result
+        assert torch.equal(split[fused_key], whole[fused_key])
+        assert torch.equal(
+            split["model.layers.0.mlp.experts.down_proj"],
+            whole["model.layers.0.mlp.experts.down_proj"],
+        )
+
+    def test_expert_group_never_completing_raises(self, tmp_path):
+        """A base missing experts entirely must fail loudly, not write an unmerged group."""
+        base_dir, adapter_dir, _, _ = self._build_split_expert_case(
+            tmp_path, "broken", [[0, 1], [2]], num_experts=4
+        )
+        with pytest.raises(RuntimeError, match="mlp.experts.gate_up_proj"):
+            merge_lora_sharded_efficient(
+                base_dir, adapter_dir, tmp_path / "merged-broken", device="cpu"
+            )
+
     def test_param_wrapper_merge_math(self):
         """ParamWrapper merge via PEFT's get_delta_weight matches manual einsum."""
         num_experts = 4
@@ -831,8 +1612,8 @@ class TestEfficientMerge:
                 f"Expert {e} mismatch"
             )
 
-    def test_param_wrapper_nesting_dim_filter(self):
-        """_find_param_wrapper_lora skips wrong-dimension LoRA at outer level."""
+    def test_param_wrapper_nesting_rejects_ambiguous_shapes(self):
+        """Transposed shapes cannot identify which nested adapter owns a parameter."""
         num_experts = 4
         r = 2
 
@@ -853,19 +1634,11 @@ class TestEfficientMerge:
             ),
         }
 
-        # gate_up_proj shape [4, 8, 16] — should match outer LoRA
-        a, b, name = _find_param_wrapper_lora(
-            lora_state, "mod.experts.gate_up_proj", tensor_shape=(4, 8, 16)
-        )
-        assert a is not None and name == "gate_up_proj"
-        assert a.shape == (r * num_experts, 8)  # outer
-
-        # down_proj shape [4, 16, 8] — outer dims don't match, should find inner
-        a, b, name = _find_param_wrapper_lora(
-            lora_state, "mod.experts.down_proj", tensor_shape=(4, 16, 8)
-        )
-        assert a is not None and name == "down_proj"
-        assert a.shape == (r * num_experts, 16)  # inner (base_layer)
+        for name, shape in (("gate_up_proj", (4, 8, 16)), ("down_proj", (4, 16, 8))):
+            with pytest.raises(ValueError, match="Ambiguous ParamWrapper"):
+                _find_param_wrapper_lora(
+                    lora_state, f"mod.experts.{name}", tensor_shape=shape
+                )
 
         # shape that matches neither — should return None
         a, b, name = _find_param_wrapper_lora(
@@ -1626,7 +2399,7 @@ class TestQuantizedBaseMerge:
         torch.manual_seed(4)
         N, K = 32, 64
         w = torch.randn(N, K, dtype=torch.bfloat16) * 0.2
-        p = (w.abs().max() / (6.0 * 448.0)).reshape(1).float().clamp(min=1e-12)
+        p = (w.abs().max() / (6.0 * 448.0)).reshape(()).float().clamp(min=1e-12)
         try:
             nv = NVFP4Tensor.to_nvfp4(w, per_tensor_scale=p, is_swizzled_scales=False)
         except Exception as ex:  # pragma: no cover - torchao API / device gaps
@@ -1930,7 +2703,7 @@ class TestQuantizedBaseMerge:
         E, H, I, r, alpha = 4, 64, 16, 4, 8
 
         def quant(w2d):
-            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(()).clamp_min(1e-12)
             nv = NVFP4Tensor.to_nvfp4(
                 w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
             )
@@ -2112,7 +2885,36 @@ class TestQuantizedBaseMerge:
                 want = (base_f.float() + delta.float()).to(torch.bfloat16)
                 assert torch.allclose(merged2[key].float(), want.float(), atol=1e-2)
 
-    def test_nvfp4_merge_aware_quantizer_identity(self):
+    @pytest.mark.parametrize("num_experts", [1, 2, 3])
+    @pytest.mark.parametrize("scale_shape", ["vector", "broadcast"])
+    def test_nvfp4_reuse_per_expert_scales_match_slices(self, num_experts, scale_shape):
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+            quantize_nvfp4_merge,
+        )
+
+        torch.manual_seed(42)
+        weight = torch.randn(num_experts, 3, 32) * 0.02
+        pts = torch.linspace(0.001, 0.004, num_experts)
+        scales = torch.full((num_experts, 3, 2), 2.0).to(torch.float8_e4m3fn)
+        supplied_pts = pts if scale_shape == "vector" else pts.reshape(-1, 1, 1)
+        packed, actual_scales = quantize_nvfp4_merge(
+            weight, supplied_pts, scale_mode="reuse", base_block_scale=scales
+        )
+        for expert in range(num_experts):
+            expected_packed, expected_scales = quantize_nvfp4_merge(
+                weight[expert],
+                pts[expert],
+                scale_mode="reuse",
+                base_block_scale=scales[expert],
+            )
+            assert torch.equal(packed[expert], expected_packed)
+            assert torch.equal(
+                actual_scales[expert].view(torch.uint8),
+                expected_scales.view(torch.uint8),
+            )
+
+    @pytest.mark.parametrize("num_experts", [1, 4])
+    def test_nvfp4_merge_aware_quantizer_identity(self, num_experts):
         """The merge-aware invariant: one quantizer, bitwise, on both sides. Fresh mode
         must equal torchao's ``to_nvfp4`` (the ecosystem encoder), quantizing the fused
         ``[E, 2I, H]`` training view must equal quantizing per-projection row slices with
@@ -2136,7 +2938,7 @@ class TestQuantizedBaseMerge:
             s.view(torch.uint8), ref.scale.reshape(s.shape).view(torch.uint8)
         )
 
-        E, N, K = 4, 64, 128
+        E, N, K = num_experts, 64, 128
         wf = (torch.randn(E, N, K) * 0.02).to(torch.bfloat16)
         pts_e = torch.rand(E) * 1e-4 + 1e-5
         pf, sf = quantize_nvfp4_merge(wf, pts_e, scale_mode="fresh")
@@ -2156,7 +2958,9 @@ class TestQuantizedBaseMerge:
         assert torch.equal(fq, nv.dequantize(torch.bfloat16))
         assert torch.equal(fake_quant_nvfp4(fq, pts_e), fq)
 
-    def test_nonexpert_fresh_requant_matches_training_snap(self):
+    @pytest.mark.parametrize("scale_shape", [(), (1,), (1, 1), (1, 1, 1)])
+    @pytest.mark.parametrize("seed", [0, 719])
+    def test_nonexpert_fresh_requant_matches_training_snap(self, scale_shape, seed):
         """The non-expert (2D linear, e.g. attention) writer path: fresh-mode
         ``_requant_by_format`` on the merged bf16 weight must reproduce bitwise the
         grid the merge-aware LoRA-linear forward trained against (same
@@ -2168,9 +2972,9 @@ class TestQuantizedBaseMerge:
             quantize_nvfp4_merge,
         )
 
-        torch.manual_seed(0)
+        torch.manual_seed(seed)
         w0 = (torch.randn(32, 64) * 0.02).to(torch.bfloat16)
-        pts = (w0.float().abs().max() / (6.0 * 448.0)).reshape(())
+        pts = (w0.float().abs().max() / (6.0 * 448.0)).reshape(scale_shape)
         base_w = fake_quant_nvfp4(w0, pts)
         _, base_scale = quantize_nvfp4_merge(base_w, pts, scale_mode="fresh")
 
@@ -2189,6 +2993,10 @@ class TestQuantizedBaseMerge:
             out["_scale"].view(torch.uint8), train_scale.view(torch.uint8)
         )
         assert torch.equal(out["_scale_2"], pts)
+        reloaded = lm._dequant_nvfp4(out[""], out["_scale"], out["_scale_2"], "cpu")
+        train_view = fake_quant_nvfp4(w_eff, pts)
+        assert train_view.shape == w_eff.shape
+        assert torch.equal(reloaded, train_view)
 
     def test_nvfp4_expert_writer_fresh_mode_matches_training_grid(self):
         """``scale_mode="fresh"``: the expert writer's bytes ARE the training grid.
@@ -2201,19 +3009,18 @@ class TestQuantizedBaseMerge:
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
         from axolotl.cli.utils.lora_merge import (
-            _build_peft_layer_and_get_delta,
             _find_param_wrapper_lora,
             _Nvfp4ExpertMergeWriter,
         )
-        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
-            fake_quant_nvfp4,
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_lora import (
+            _merge_aware_wfq,
         )
 
         torch.manual_seed(3)
         E, H, I, r, alpha = 2, 64, 32, 4, 8
 
         def quant(w2d):
-            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+            p = (w2d.abs().max() / (6.0 * 448.0)).reshape(()).clamp_min(1e-12)
             nv = NVFP4Tensor.to_nvfp4(
                 w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
             )
@@ -2300,11 +3107,7 @@ class TestQuantizedBaseMerge:
                 tensor_shape=tuple(base_f.shape),
             )
             assert lora_a is not None
-            delta = _build_peft_layer_and_get_delta(
-                lora_a, lora_b, cfg, base_f, is_param_wrapper=True
-            )
-            w_eff = (base_f.float() + delta.float()).to(torch.bfloat16)
-            train_view = fake_quant_nvfp4(w_eff, pts_fused.reshape(-1))
+            train_view = _merge_aware_wfq(base_f, lora_a, lora_b, alpha / r, pts_fused)
 
             # every projection must carry the fused-max pts, so the next load
             # fuses exactly (no ratio fold, no warning)
@@ -2391,7 +3194,7 @@ class TestQuantizedBaseMerge:
     def _quant_expert(w2d):
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
-        p = (w2d.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+        p = (w2d.abs().max() / (6.0 * 448.0)).reshape(()).clamp_min(1e-12)
         nv = NVFP4Tensor.to_nvfp4(
             w2d.float(), per_tensor_scale=p, is_swizzled_scales=False
         )
@@ -2537,6 +3340,56 @@ class TestQuantizedBaseMerge:
             writer.assert_drained()
         assert any("NEAR-NO-OP" in str(c.args[0]) for c in mock_warn.call_args_list)
 
+    @pytest.mark.parametrize(
+        "scale_mode,dequant", [("fresh", False), ("reuse", False), ("reuse", True)]
+    )
+    def test_nvfp4_expert_writer_chunking_is_bitwise_invariant(
+        self, tmp_path, scale_mode, dequant
+    ):
+        """The expert writer merges in expert chunks to bound its working set; the
+        written bytes must not depend on the chunk size, and the per-expert views it
+        emits must round-trip through safetensors."""
+        pytest.importorskip("torchao")
+        from axolotl.cli.utils.lora_merge import _Nvfp4ExpertMergeWriter
+
+        torch.manual_seed(5)
+        E, H, I, r, alpha = 5, 64, 32, 4, 8  # noqa: E741
+        shard = self._make_expert_shard(E, H, I, gate_mult=3.0)
+        adapter = self._make_fused_expert_adapter(E, H, I, r)
+
+        outputs = []
+        for chunk in (E, 1, 2):
+            writer = _Nvfp4ExpertMergeWriter(
+                adapter,
+                {"r": r, "lora_alpha": alpha},
+                E,
+                "cpu",
+                dequant=dequant,
+                scale_mode=scale_mode,
+                expert_chunk=chunk,
+            )
+            remaining, emitted, merged = writer.consume(dict(shard))
+            writer.assert_drained()
+            assert merged == 2 and not remaining
+            outputs.append(emitted)
+
+        def raw(t):
+            return t.contiguous().reshape(-1).view(torch.uint8)
+
+        ref = outputs[0]
+        for emitted in outputs[1:]:
+            assert emitted.keys() == ref.keys()
+            for key, t in ref.items():
+                assert emitted[key].dtype == t.dtype
+                assert emitted[key].shape == t.shape
+                assert torch.equal(raw(emitted[key]), raw(t)), key
+
+        path = tmp_path / "chunked.safetensors"
+        safetensors.torch.save_file(outputs[-1], path)
+        reloaded = safetensors.torch.load_file(path)
+        for key, t in outputs[-1].items():
+            assert torch.equal(raw(reloaded[key]), raw(t)), key
+
     def test_fused_expert_base_no_false_positive(self, tmp_path):
         """A FUSED expert base (Mistral-Large-4 style) + fused adapter must NOT trigger the per-expert
         warning."""
@@ -2651,7 +3504,7 @@ class TestQuantizedBaseMerge:
             64,
         )  # N<128 -> swizzle pads the scale grid, so numel differs from N*K/16
         w = torch.randn(N, K, dtype=torch.bfloat16) * 0.2
-        p = (w.abs().max() / (6.0 * 448.0)).reshape(1).float().clamp(min=1e-12)
+        p = (w.abs().max() / (6.0 * 448.0)).reshape(()).float().clamp(min=1e-12)
         try:
             nv = NVFP4Tensor.to_nvfp4(w, per_tensor_scale=p, is_swizzled_scales=True)
         except Exception as ex:  # pragma: no cover
@@ -2718,3 +3571,492 @@ class TestQuantizedBaseMerge:
         assert out["a.weight"].dtype == torch.bfloat16  # dequantized
         assert out["b.weight"].dtype == torch.float8_e4m3fn  # left as-is
         assert "b.weight_scale" in out  # its scale not dropped
+
+
+@pytest.mark.parametrize("nf4_backend", ["bitsandbytes", "torchao"])
+@pytest.mark.parametrize(
+    "nf4_skips", [None, set(), {"model.model.layers.0.mlp.experts.gate_up_proj"}]
+)
+@pytest.mark.parametrize("flags", [(True, False), (False, True), (False, False)])
+def test_fused_expert_nf4_decision(nf4_backend, nf4_skips, flags, monkeypatch):
+    """The fused tensor is quantized exactly when the runtime key is an unskipped expert."""
+    from transformers.core_model_loading import (
+        Concatenate,
+        MergeModulelist,
+        WeightConverter,
+    )
+
+    from axolotl.cli.utils import lora_merge
+    from axolotl.utils.nf4 import nf4_should_quantize
+
+    simulate_nf4, simulate_nf4_experts = flags
+    fused_key = "model.layers.0.mlp.experts.gate_up_proj"
+    layer_type_map = {"model." + fused_key: "Linear"}
+    shard = {}
+    for expert in range(4):
+        for proj in ("gate_proj", "up_proj"):
+            shard[f"model.layers.0.mlp.experts.{expert}.{proj}.weight"] = torch.randn(
+                12, 8
+            )
+
+    roundtrips = []
+    monkeypatch.setattr(
+        lora_merge,
+        "_simulate_nf4_roundtrip",
+        lambda tensor, **kwargs: roundtrips.append(tuple(tensor.shape)) or tensor,
+    )
+
+    expected = simulate_nf4 or simulate_nf4_experts
+    if nf4_backend == "torchao" or nf4_skips is not None:
+        expected = nf4_should_quantize(
+            "model." + fused_key,
+            linear=False,
+            expert=simulate_nf4_experts,
+            skips=nf4_skips if nf4_skips is not None else {"lm_head", "embed_out"},
+        )
+
+    result, _, _ = lora_merge._fuse_and_unfuse_with_merge(
+        shard,
+        [
+            WeightConverter(
+                source_patterns=[
+                    "mlp.experts.*.gate_proj.weight",
+                    "mlp.experts.*.up_proj.weight",
+                ],
+                target_patterns="mlp.experts.gate_up_proj",
+                operations=[MergeModulelist(dim=0), Concatenate(dim=1)],
+            )
+        ],
+        {},
+        1.0,
+        {"r": 2, "lora_alpha": 4},
+        "cpu",
+        simulate_nf4=simulate_nf4,
+        simulate_nf4_experts=simulate_nf4_experts,
+        nf4_backend=nf4_backend,
+        nf4_skips=nf4_skips,
+        layer_type_map=layer_type_map,
+        expected_num_experts=4,
+    )
+    assert result[fused_key].shape == (4, 24, 8)
+    assert roundtrips == ([(4, 24, 8)] if expected else [])
+
+
+def _save_bnb_4bit_base(
+    path, weights, quant_storage=torch.uint8, quant_type="nf4", split_components=False
+):
+    """Write a base checkpoint in the component layout bitsandbytes serializes.
+
+    ``split_components`` reproduces a shard boundary that separates a packed weight from its
+    serialized quant state, which the hub shard splitter can produce."""
+    from axolotl.utils.nf4 import quantize_bnb_4bit
+
+    state = {}
+    components = {}
+    dequantized = {}
+    for key, value in weights.items():
+        data, quant_state = quantize_bnb_4bit(
+            value, quant_storage=quant_storage, quant_type=quant_type
+        )
+        state[key] = data
+        for name, item in quant_state.as_dict(packed=True).items():
+            components[f"{key}.{name}"] = item
+        dequantized[key] = bnb_dequantize_reference(data, quant_state)
+    path.mkdir(parents=True, exist_ok=True)
+    if split_components:
+        shards = {
+            "model-00001-of-00002.safetensors": state,
+            "model-00002-of-00002.safetensors": components,
+        }
+        for name, tensors in shards.items():
+            safetensors.torch.save_file(
+                tensors, str(path / name), metadata={"format": "pt"}
+            )
+        (path / "model.safetensors.index.json").write_text(
+            json.dumps(
+                {
+                    "metadata": {"total_size": 0},
+                    "weight_map": {
+                        key: name for name, tensors in shards.items() for key in tensors
+                    },
+                }
+            )
+        )
+    else:
+        safetensors.torch.save_file(
+            {**state, **components},
+            str(path / "model.safetensors"),
+            metadata={"format": "pt"},
+        )
+    (path / "config.json").write_text(
+        json.dumps(
+            {
+                "torch_dtype": "bfloat16",
+                "quantization_config": {
+                    "quant_method": "bitsandbytes",
+                    "load_in_4bit": True,
+                    "bnb_4bit_quant_type": quant_type,
+                    "bnb_4bit_use_double_quant": True,
+                },
+            }
+        )
+    )
+    return dequantized
+
+
+def bnb_dequantize_reference(data, quant_state):
+    from axolotl.utils.nf4 import dequantize_bnb_4bit
+
+    return dequantize_bnb_4bit(data.view(torch.uint8).reshape(-1, 1), quant_state)
+
+
+def _write_lora_adapter(path, key, lora_a, lora_b, r, alpha):
+    path.mkdir(parents=True, exist_ok=True)
+    stem = key[: -len(".weight")]
+    safetensors.torch.save_file(
+        {
+            f"base_model.model.{stem}.lora_A.weight": lora_a,
+            f"base_model.model.{stem}.lora_B.weight": lora_b,
+        },
+        str(path / "adapter_model.safetensors"),
+    )
+    (path / "adapter_config.json").write_text(
+        json.dumps({"r": r, "lora_alpha": alpha, "peft_type": "LORA"})
+    )
+
+
+class TestPrequantizedBnbBaseMerge:
+    """Merging an adapter trained on a base that ships already quantized with bitsandbytes 4-bit.
+
+    The checkpoint holds packed nibbles plus serialized quant-state components; the merge must
+    rebuild the dequantized weight training actually saw, fold the delta into it WITHOUT a second
+    NF4 roundtrip, and write a plain bf16 checkpoint.
+    """
+
+    HIDDEN = 64
+    R = 8
+    ALPHA = 16
+
+    def _build(
+        self,
+        tmp_path,
+        quant_storage,
+        quant_type="nf4",
+        simulate_nf4=False,
+        split_components=False,
+    ):
+        torch.manual_seed(7)
+        key = "model.layers.0.self_attn.q_proj.weight"
+        other = "model.layers.0.self_attn.o_proj.weight"
+        weights = {
+            key: torch.randn(self.HIDDEN, self.HIDDEN, dtype=torch.bfloat16) * 0.2,
+            other: torch.randn(self.HIDDEN, self.HIDDEN, dtype=torch.bfloat16) * 0.2,
+        }
+        deq = _save_bnb_4bit_base(
+            tmp_path / "base",
+            weights,
+            quant_storage=quant_storage,
+            quant_type=quant_type,
+            split_components=split_components,
+        )
+        lora_a = torch.randn(self.R, self.HIDDEN) * 0.1
+        lora_b = torch.randn(self.HIDDEN, self.R) * 0.1
+        _write_lora_adapter(
+            tmp_path / "adapter", key, lora_a, lora_b, self.R, self.ALPHA
+        )
+        merge_lora_sharded_efficient(
+            base_model_path=tmp_path / "base",
+            lora_adapter_path=tmp_path / "adapter",
+            output_path=tmp_path / "merged",
+            device="cpu",
+            simulate_nf4=simulate_nf4,
+        )
+        merged = {}
+        for shard in sorted((tmp_path / "merged").glob("*.safetensors")):
+            merged.update(safetensors.torch.load_file(str(shard)))
+        return key, other, deq, lora_a, lora_b, merged
+
+    @pytest.mark.parametrize("quant_storage", [torch.uint8, torch.bfloat16])
+    def test_merge_folds_into_dequantized_weight(self, tmp_path, quant_storage):
+        key, other, deq, lora_a, lora_b, merged = self._build(tmp_path, quant_storage)
+
+        scale = self.ALPHA / self.R
+        expected = (deq[key].float() + scale * (lora_b.float() @ lora_a.float())).to(
+            torch.bfloat16
+        )
+        torch.testing.assert_close(merged[key], expected, rtol=0, atol=0)
+        # every quantized weight is dequantized, not just the LoRA-targeted one
+        torch.testing.assert_close(
+            merged[other], deq[other].to(torch.bfloat16), rtol=0, atol=0
+        )
+        assert not [k for k in merged if ".absmax" in k or ".quant_map" in k]
+        assert not [k for k in merged if "quant_state" in k]
+        assert all(t.dtype == torch.bfloat16 for t in merged.values())
+        assert "quantization_config" not in json.loads(
+            (tmp_path / "merged" / "config.json").read_text()
+        )
+
+    def test_merge_skips_second_nf4_roundtrip(self, tmp_path):
+        """``adapter: qlora`` turns on simulate_nf4; a prequantized base must not be re-quantized."""
+        key, _, deq, lora_a, lora_b, merged = self._build(
+            tmp_path, torch.bfloat16, simulate_nf4=True
+        )
+        scale = self.ALPHA / self.R
+        expected = (deq[key].float() + scale * (lora_b.float() @ lora_a.float())).to(
+            torch.bfloat16
+        )
+        torch.testing.assert_close(merged[key], expected, rtol=0, atol=0)
+
+    def test_components_split_across_shards(self, tmp_path):
+        """A shard boundary inside a quant-state group must not leave a weight packed."""
+        key, other, deq, lora_a, lora_b, merged = self._build(
+            tmp_path, torch.bfloat16, split_components=True
+        )
+        scale = self.ALPHA / self.R
+        expected = (deq[key].float() + scale * (lora_b.float() @ lora_a.float())).to(
+            torch.bfloat16
+        )
+        torch.testing.assert_close(merged[key], expected, rtol=0, atol=0)
+        torch.testing.assert_close(
+            merged[other], deq[other].to(torch.bfloat16), rtol=0, atol=0
+        )
+        assert sorted(merged) == sorted([key, other])
+
+    @pytest.mark.parametrize("sharded", [False, True])
+    def test_bin_checkpoint_validation(self, tmp_path, sharded):
+        base = tmp_path / "base"
+        key = "model.layers.0.self_attn.q_proj.weight"
+        dequantized = _save_bnb_4bit_base(
+            base,
+            {key: torch.randn(self.HIDDEN, self.HIDDEN, dtype=torch.bfloat16)},
+            split_components=sharded,
+        )
+        for shard in base.glob("*.safetensors"):
+            tensors = safetensors.torch.load_file(str(shard))
+            name = shard.name.replace("model", "pytorch_model").replace(
+                ".safetensors", ".bin"
+            )
+            torch.save(tensors, base / name)
+            shard.unlink()
+        (base / "model.safetensors.index.json").unlink(missing_ok=True)
+        lora_a = torch.randn(self.R, self.HIDDEN)
+        lora_b = torch.randn(self.HIDDEN, self.R)
+        adapter = tmp_path / "adapter"
+        output = tmp_path / "merged"
+        _write_lora_adapter(adapter, key, lora_a, lora_b, self.R, self.ALPHA)
+        kwargs = dict(
+            base_model_path=base,
+            lora_adapter_path=adapter,
+            output_path=output,
+            device="cpu",
+        )
+        if sharded:
+            with pytest.raises(ValueError, match="Convert the base to safetensors"):
+                merge_lora_sharded_efficient(**kwargs)
+            assert not output.exists()
+        else:
+            merge_lora_sharded_efficient(**kwargs)
+            merged = {}
+            for shard in output.glob("*.safetensors"):
+                merged.update(safetensors.torch.load_file(str(shard)))
+            expected = (
+                dequantized[key].float() + self.ALPHA / self.R * (lora_b @ lora_a)
+            ).to(torch.bfloat16)
+            torch.testing.assert_close(merged[key], expected, rtol=0, atol=0)
+
+    def test_fp4_base_merges(self, tmp_path):
+        key, _, deq, lora_a, lora_b, merged = self._build(
+            tmp_path, torch.uint8, quant_type="fp4"
+        )
+        scale = self.ALPHA / self.R
+        expected = (deq[key].float() + scale * (lora_b.float() @ lora_a.float())).to(
+            torch.bfloat16
+        )
+        torch.testing.assert_close(merged[key], expected, rtol=0, atol=0)
+
+    def test_8bit_base_rejected(self, tmp_path):
+        base = tmp_path / "base"
+        base.mkdir()
+        key = "model.layers.0.self_attn.q_proj.weight"
+        safetensors.torch.save_file(
+            {key: torch.zeros(8, 8, dtype=torch.int8)},
+            str(base / "model.safetensors"),
+        )
+        (base / "config.json").write_text(
+            json.dumps(
+                {
+                    "quantization_config": {
+                        "quant_method": "bitsandbytes",
+                        "load_in_8bit": True,
+                    }
+                }
+            )
+        )
+        _write_lora_adapter(
+            tmp_path / "adapter",
+            key,
+            torch.randn(2, 8),
+            torch.randn(8, 2),
+            2,
+            4,
+        )
+        with pytest.raises(ValueError, match="8-bit"):
+            merge_lora_sharded_efficient(
+                base_model_path=base,
+                lora_adapter_path=tmp_path / "adapter",
+                output_path=tmp_path / "merged",
+                device="cpu",
+            )
+
+    @pytest.mark.slow
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a GPU")
+    def test_merge_cli_on_prequantized_hub_base(self, tmp_path):
+        """Train one step on a real prequantized base, then ``axolotl merge-lora`` and run it."""
+        from transformers import AutoModelForCausalLM
+
+        from axolotl.cli.merge_lora import do_cli as merge_cli
+        from axolotl.cli.train import do_cli as train_cli
+
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "base_model: axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16",
+                    "adapter: qlora",
+                    "load_in_4bit: true",
+                    f"lora_r: {self.R}",
+                    f"lora_alpha: {self.ALPHA}",
+                    "lora_dropout: 0.05",
+                    "lora_target_linear: true",
+                    "lora_mlp_kernel: false",
+                    "lora_qkv_kernel: false",
+                    "lora_o_kernel: false",
+                    "sequence_len: 512",
+                    "special_tokens:",
+                    '  pad_token: "<|endoftext|>"',
+                    "datasets:",
+                    "  - path: tatsu-lab/alpaca",
+                    "    type: alpaca",
+                    '    split: "train[:1%]"',
+                    "num_epochs: 1",
+                    "max_steps: 1",
+                    "micro_batch_size: 2",
+                    "learning_rate: 0.0001",
+                    "attn_implementation: sdpa",
+                    "save_first_step: false",
+                    f"output_dir: {tmp_path / 'out'}",
+                    f"dataset_prepared_path: {tmp_path / 'prepared'}",
+                ]
+            )
+        )
+
+        train_cli(config=str(config_path))
+        merge_cli(config=str(config_path))
+
+        merged_dir = tmp_path / "out" / "merged"
+        assert "quantization_config" not in json.loads(
+            (merged_dir / "config.json").read_text()
+        )
+        merged = safetensors.torch.load_file(str(merged_dir / "model.safetensors"))
+        assert not [k for k in merged if _BNB_4BIT_STATE_RE.search(k) or ".absmax" in k]
+        assert all(t.dtype == torch.bfloat16 for t in merged.values())
+        model = AutoModelForCausalLM.from_pretrained(
+            merged_dir, dtype=torch.bfloat16
+        ).cuda()
+        logits = model(input_ids=torch.tensor([[1, 2, 3, 4]], device="cuda")).logits
+        assert torch.isfinite(logits).all()
+
+
+def test_merge_aware_bf16_writer_widens_standard_and_paramwrapper_factors():
+    torch.manual_seed(915)
+    rank, scaling = 4, 1.25
+    base = torch.randn(128, 64, dtype=torch.bfloat16)
+    a = torch.randn(rank, 64, dtype=torch.bfloat16)
+    b = torch.randn(128, rank, dtype=torch.bfloat16)
+    expected = (b.float() @ a.float()) * scaling
+    delta = _build_peft_layer_and_get_delta(
+        a,
+        b,
+        {"r": rank, "lora_alpha": rank * scaling},
+        base,
+        canonical_fp32=True,
+    )
+    assert torch.equal(delta, expected)
+
+    merged, did_merge = _merge_tensor_with_lora(
+        base,
+        "proj.weight",
+        {
+            "base_model.model.proj.lora_A.weight": a,
+            "base_model.model.proj.lora_B.weight": b,
+        },
+        scaling,
+        {"r": rank, "lora_alpha": rank * scaling},
+        "cpu",
+        canonical_fp32=True,
+    )
+    assert did_merge
+    assert torch.equal(merged, (base.float() + expected.float()).to(base.dtype))
+
+    experts = 2
+    expert_base = torch.randn(experts, 128, 64, dtype=torch.bfloat16)
+    expert_a = torch.randn(experts * rank, 64, dtype=torch.bfloat16)
+    expert_b = torch.randn(128, experts * rank, dtype=torch.bfloat16)
+    expected_expert = (
+        torch.bmm(
+            expert_b.reshape(128, rank, experts).permute(2, 0, 1).float(),
+            expert_a.reshape(experts, rank, 64).float(),
+        )
+        * scaling
+    )
+    delta_expert = _build_peft_layer_and_get_delta(
+        expert_a,
+        expert_b,
+        {"r": rank, "lora_alpha": rank * scaling},
+        expert_base,
+        is_param_wrapper=True,
+        canonical_fp32=True,
+    )
+    assert torch.equal(delta_expert, expected_expert)
+
+    param_base = torch.randn(128, 64, dtype=torch.bfloat16)
+    param_delta = _build_peft_layer_and_get_delta(
+        a,
+        b,
+        {"r": rank, "lora_alpha": rank * scaling},
+        param_base,
+        is_param_wrapper=True,
+        canonical_fp32=True,
+    )
+    assert param_delta.shape == param_base.shape
+    assert torch.equal(param_delta, expected)
+
+    square = 64
+    square_base = torch.randn(experts, square, square, dtype=torch.bfloat16)
+    square_a = torch.randn(experts * rank, square, dtype=torch.bfloat16)
+    square_b = torch.randn(square, experts * rank, dtype=torch.bfloat16)
+    square_a_by_expert = square_a.reshape(experts, rank, square).float()
+    square_b_by_expert = square_b.reshape(square, rank, experts).float()
+    for is_transposed, expected_square in (
+        (
+            False,
+            torch.einsum("ore,eri->eoi", square_b_by_expert, square_a_by_expert)
+            * scaling,
+        ),
+        (
+            True,
+            torch.einsum("ore,eri->eio", square_b_by_expert, square_a_by_expert)
+            * scaling,
+        ),
+    ):
+        square_delta = _build_peft_layer_and_get_delta(
+            square_a,
+            square_b,
+            {"r": rank, "lora_alpha": rank * scaling},
+            square_base,
+            is_param_wrapper=True,
+            is_transposed=is_transposed,
+            canonical_fp32=True,
+        )
+        assert square_delta.shape == square_base.shape
+        assert torch.equal(square_delta, expected_square)

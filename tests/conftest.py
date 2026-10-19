@@ -1,10 +1,10 @@
 """Shared pytest fixtures"""
 
-import collections
 import functools
 import importlib
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -13,8 +13,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
+import httpx
 import pytest
-import requests
 
 from axolotl.utils.dict import DictDefault
 
@@ -24,6 +24,20 @@ from tests.hf_offline_utils import (
 )
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
+
+
+@pytest.fixture(autouse=True)
+def _propagate_axolotl_logs():
+    """configure_logging() sets propagate=False on the axolotl logger, hiding its records from caplog.
+
+    Importing axolotl.cli runs it at collection time, so any session that collects a CLI
+    test would otherwise break every caplog assertion on an axolotl.* logger.
+    """
+    ax_logger = logging.getLogger("axolotl")
+    old_propagate = ax_logger.propagate
+    ax_logger.propagate = True
+    yield
+    ax_logger.propagate = old_propagate
 
 
 @contextmanager
@@ -69,15 +83,6 @@ def _apply_transformers_test_shims():
 def pytest_configure(config):  # pylint: disable=unused-argument
     _apply_transformers_test_shims()
 
-    # Tests that call `from_pretrained` directly never reach PatchManager, and
-    # `lazy_import_flash_attention` caches by implementation string, so the first FA2
-    # load in a worker pins the kernel major for every later test in that process.
-    from axolotl.monkeypatch.attention.fa2_hub_kernel import (
-        patch_fa2_hub_kernel_version,
-    )
-
-    patch_fa2_hub_kernel_version()
-
 
 # A device-side assert / illegal access poisons the process-wide CUDA context, so
 # every later GPU test errors at setup. Abort the session instead of cascading.
@@ -88,6 +93,41 @@ _CUDA_FATAL_MARKERS = (
 )
 _cuda_context_poisoned = False
 
+GPU_SKIP_REASON_RE = re.compile(r"\b(?:cuda|gpu)s?\b", re.IGNORECASE)
+_GPU_MARKER_PROPERTY = "axolotl_gpu_marker_missing"
+_gpu_marker_missing: dict[str, str] = {}
+
+
+def is_gpu_skip_reason(reason) -> bool:
+    return bool(reason) and GPU_SKIP_REASON_RE.search(str(reason)) is not None
+
+
+def skip_marker_text(mark) -> str:
+    parts = [str(mark.kwargs.get("reason", ""))]
+    parts.extend(arg for arg in mark.args if isinstance(arg, str))
+    return " ".join(parts)
+
+
+def item_is_cuda_gated(item) -> bool:
+    return any(
+        mark.name in ("skipif", "skip") and is_gpu_skip_reason(skip_marker_text(mark))
+        for mark in item.iter_markers()
+    )
+
+
+def skip_reason_from_report(report) -> str:
+    longrepr = getattr(report, "longrepr", None)
+    if isinstance(longrepr, tuple) and len(longrepr) == 3:
+        return str(longrepr[2])
+    return str(longrepr or "")
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config, items):  # pylint: disable=unused-argument
+    for item in items:
+        if item.get_closest_marker("gpu") is None and item_is_cuda_gated(item):
+            item.add_marker(pytest.mark.gpu)
+
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):  # pylint: disable=unused-argument
@@ -97,6 +137,41 @@ def pytest_runtest_makereport(item, call):  # pylint: disable=unused-argument
     if report.failed and call.excinfo is not None:
         if any(marker in str(call.excinfo.value) for marker in _CUDA_FATAL_MARKERS):
             _cuda_context_poisoned = True
+    if (
+        report.skipped
+        and not _cuda_context_poisoned
+        and item.get_closest_marker("gpu") is None
+    ):
+        reason = skip_reason_from_report(report)
+        if is_gpu_skip_reason(reason):
+            report.user_properties.append((_GPU_MARKER_PROPERTY, reason))
+
+
+def pytest_runtest_logreport(report):
+    for key, reason in report.user_properties:
+        if key == _GPU_MARKER_PROPERTY:
+            _gpu_marker_missing[report.nodeid] = reason
+
+
+def pytest_sessionfinish(session, exitstatus):  # pylint: disable=unused-argument
+    if hasattr(session.config, "workerinput") or not _gpu_marker_missing:
+        return
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    lines = [
+        f"[gpu-marker] {nodeid}: {reason}"
+        for nodeid, reason in sorted(_gpu_marker_missing.items())
+    ]
+    header = (
+        f"[gpu-marker] {len(lines)} CUDA-gated test(s) skipped without @pytest.mark.gpu"
+    )
+    if reporter is not None:
+        reporter.write_sep("-", header)
+        for line in lines:
+            reporter.write_line(line)
+    else:
+        print(header, *lines, sep="\n")
+    if os.environ.get("AXOLOTL_CI_ENFORCE_GPU_MARKER") == "1":
+        session.exitstatus = 1
 
 
 def pytest_runtest_setup(item):
@@ -112,13 +187,16 @@ def retry_on_request_exceptions(max_retries=3, delay=1):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
+
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
+                # snapshot_download reports network errors and hub outages as LocalEntryNotFoundError
                 except (
-                    requests.exceptions.ReadTimeout,
-                    requests.exceptions.ConnectionError,
-                    requests.exceptions.HTTPError,
+                    httpx.TransportError,
+                    HfHubHTTPError,
+                    LocalEntryNotFoundError,
                 ) as exc:
                     if attempt < max_retries - 1:
                         wait = 2**attempt * delay  # in seconds
@@ -162,6 +240,13 @@ def download_ds_fixture_bundle():
 def download_smollm2_135m_model():
     # download the model
     snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_smollm2_135m_bnb_nf4_model():
+    snapshot_download_w_retry(
+        "axolotl-ai-co/SmolLM2-135M-bnb-nf4-bf16", repo_type="model"
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -617,10 +702,7 @@ def _clear_plugin_manager():
     from axolotl.integrations.base import PluginManager
 
     PluginManager._cfg = None
-    # Don't reset _instance to None — module-level PLUGIN_MANAGER references
-    # in train.py, model.py, etc. would become stale
-    if PluginManager._instance is not None:
-        PluginManager._instance.plugins = collections.OrderedDict()
+    PluginManager._instance = None
 
 
 @pytest.fixture(scope="function", autouse=True)

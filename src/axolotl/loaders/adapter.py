@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import types
 from pathlib import Path
 from typing import Any
@@ -20,15 +21,20 @@ from peft import (
     get_peft_model,
 )
 from transformers import PreTrainedModel
+from transformers.trainer_utils import set_seed
 
 from axolotl.integrations.base import PluginManager
+from axolotl.integrations.mixlora.constants import (
+    MIXLORA_FFN_MODULE_NAMES,
+    MIXLORA_WEIGHTS_NAME,
+)
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.lora_tying import tie_lora_output_embeddings
 
 LOG = get_logger(__name__)
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_quantized_meta_for_peft(model: torch.nn.Module):
@@ -134,6 +140,12 @@ def _get_peft_task_type(model: PreTrainedModel) -> TaskType:
         return TaskType.SEQ_CLS
     if "TokenClassification" in model_cls:
         return TaskType.TOKEN_CLS
+    if getattr(getattr(model, "config", None), "model_type", None) in {
+        "diffusion_gemma",
+        "Dream",
+        "nemotron_labs_diffusion",
+    }:
+        return None
     return TaskType.CAUSAL_LM
 
 
@@ -182,7 +194,7 @@ def _build_peft_lora_config(
         lora_target_modules = list(set(lora_target_modules_as_list + linear_names))
 
     lora_config_kwargs = _build_lora_config_kwargs(cfg)
-    lora_config_kwargs.update(PLUGIN_MANAGER.get_lora_config_kwargs(cfg))
+    lora_config_kwargs.update(PluginManager.get_instance().get_lora_config_kwargs(cfg))
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
@@ -297,13 +309,84 @@ def _patch_peft_param_wrapper_dropout():
     ParamWrapper._axolotl_dropout_patched = True
 
 
+def reinit_lora_from_seed(model: torch.nn.Module, seed: int | None) -> int:
+    """Re-draw every fresh ``lora_A`` from a generator seeded by the module name.
+
+    PEFT draws the adapters from the process RNG in module order, so a value depends on
+    everything drawn before it: the rank, the parallel layout (expert parallelism sizes the
+    expert adapter locally, shifting the stream for every later module) and the model's
+    module order. Seeding per module makes the init a function of the seed alone. Expert
+    (``target_parameters``) adapters are drawn over the GLOBAL expert count and sliced to
+    this rank's experts. Returns the number of adapters re-initialised.
+    """
+    import hashlib
+    import math
+
+    from peft.tuners.lora.layer import LoraLayer, ParamWrapper
+
+    base_seed = int(seed) if seed is not None else 0
+    n = 0
+    for name, module in model.named_modules():
+        if not isinstance(module, LoraLayer) or not getattr(module, "lora_A", None):
+            continue
+        is_expert = isinstance(module, ParamWrapper) and module.num_experts > 1
+        if is_expert:
+            base = module.get_base_layer()
+            e_global = getattr(base, "num_experts_global", None) or module.num_experts
+            offset = getattr(base, "local_expert_offset", 0) or 0
+        for adapter_name, linear in module.lora_A.items():
+            weight = getattr(linear, "weight", None)
+            if weight is None or weight.is_meta or weight.dim() != 2:
+                continue
+            digest = hashlib.sha256(f"{name}.{adapter_name}".encode()).digest()
+            gen = torch.Generator().manual_seed(
+                (base_seed + int.from_bytes(digest[:4], "little")) % (2**63 - 1)
+            )
+            if is_expert:
+                r = module.r[adapter_name]
+                full = torch.empty(e_global * r, weight.shape[1], dtype=torch.float32)
+                torch.nn.init.kaiming_uniform_(full, a=math.sqrt(5), generator=gen)
+                local = full[offset * r : (offset + module.num_experts) * r]
+            else:
+                local = torch.empty(weight.shape, dtype=torch.float32)
+                torch.nn.init.kaiming_uniform_(local, a=math.sqrt(5), generator=gen)
+            with torch.no_grad():
+                weight.copy_(local.to(device=weight.device, dtype=weight.dtype))
+            n += 1
+    if n:
+        LOG.debug(f"Re-initialised {n} LoRA adapter(s) from seed {base_seed}.")
+    return n
+
+
+def read_saved_adapter_config(
+    lora_model_dir: str | Path, from_hub: bool = False
+) -> dict | None:
+    """The adapter config saved under `lora_model_dir`, or None when it is not readable.
+
+    A hub id has no local file; with `from_hub` the config is fetched the way PEFT will.
+    """
+    path = Path(lora_model_dir) / "adapter_config.json"
+    if not path.exists() and from_hub and not Path(lora_model_dir).exists():
+        from huggingface_hub import hf_hub_download
+
+        try:
+            path = Path(
+                hf_hub_download(
+                    repo_id=str(lora_model_dir), filename="adapter_config.json"
+                )
+            )
+        except Exception:  # noqa: BLE001  # proxy errors escape the hub's OSError family
+            return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
 def _warn_if_patterns_differ_from_saved_adapter(cfg: DictDefault) -> None:
     """Warn when cfg rank/alpha patterns differ from the saved adapter's, which governs under lora_model_dir."""
-    try:
-        saved = json.loads(
-            (Path(cfg.lora_model_dir) / "adapter_config.json").read_text()
-        )
-    except (OSError, ValueError):
+    saved = read_saved_adapter_config(cfg.lora_model_dir)
+    if saved is None:
         # Adapter config not readable locally (e.g. hub id): can't compare, so warn generically.
         LOG.warning(
             "lora_rank_pattern/lora_alpha_pattern are ignored when loading an "
@@ -375,13 +458,22 @@ def load_lora(
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
             model_kwargs["device_map"] = {"": "cpu"}
-        model = PeftModel.from_pretrained(
-            model,
-            cfg.lora_model_dir,
-            is_trainable=(not inference),
-            **model_kwargs,
-        )
+        from axolotl.integrations.expert_parallel.shard import ep_local_adapter_dir
+
+        adapter_dir = ep_local_adapter_dir(model, cfg.lora_model_dir)
+        try:
+            model = PeftModel.from_pretrained(
+                model,
+                adapter_dir,
+                is_trainable=(not inference),
+                **model_kwargs,
+            )
+        finally:
+            if adapter_dir != cfg.lora_model_dir:
+                shutil.rmtree(adapter_dir, ignore_errors=True)
     else:
+        if cfg.seed is not None:
+            set_seed(cfg.seed)
         model = get_peft_model(model, lora_config, **model_kwargs)
 
     # FP8 models: LoRA A/B inherit FP8 dtype from base weights, but training
@@ -395,6 +487,13 @@ def load_lora(
     for _name, param in model.named_parameters():
         if param.requires_grad and param.dtype == torch.float8_e4m3fn:
             param.data = param.data.to(_fp8_cast_dtype)
+
+    if cfg.lora_fp32_gradients and not cfg.deepspeed:
+        from axolotl.utils.lora_precision import upcast_lora_parameters
+
+        upcast_lora_parameters(model)
+
+    tie_lora_output_embeddings(model)
 
     if rank == 0:
         try:
@@ -431,6 +530,39 @@ def load_adapter(
             model, cfg, inference=inference, config_only=config_only
         )
         return peft_model, lora_config
+    if adapter == "mixlora":
+        _validate_mixlora_lora_target_modules(cfg)
+        # First, load standard LoRA for attention layers (q, k, v, o projections)
+        peft_model, lora_config = load_lora(
+            model, cfg, inference=inference, config_only=config_only
+        )
+        if config_only:
+            return peft_model, lora_config
+        # Then, apply MixLoRA patching to FFN layers (router + LoRA experts)
+        import safetensors.torch
+
+        from axolotl.integrations.mixlora.model import load_mixlora_state_dict
+        from axolotl.integrations.mixlora.patching import patch_model_with_mixlora
+
+        patch_model_with_mixlora(peft_model, cfg)
+
+        if cfg.lora_model_dir:
+            mixlora_weights_path = os.path.join(
+                cfg.lora_model_dir, MIXLORA_WEIGHTS_NAME
+            )
+            if os.path.exists(mixlora_weights_path):
+                load_mixlora_state_dict(
+                    peft_model,
+                    safetensors.torch.load_file(mixlora_weights_path),
+                    strict=True,
+                )
+                LOG.info("Loaded MixLoRA router/expert weights from checkpoint")
+            else:
+                LOG.warning(
+                    "MixLoRA checkpoint is missing mixlora_model.safetensors; "
+                    "router/expert weights were initialized from scratch."
+                )
+        return peft_model, lora_config
     if adapter == "llama-adapter":
         if config_only:
             _, lora_config = load_llama_adapter(model, cfg, config_only=True)
@@ -438,7 +570,7 @@ def load_adapter(
         peft_model, lora_config = load_llama_adapter(model, cfg)
         return peft_model, lora_config
 
-    plugin_loaded = PLUGIN_MANAGER.load_adapter(
+    plugin_loaded = PluginManager.get_instance().load_adapter(
         model,
         cfg,
         inference=inference,
@@ -447,14 +579,14 @@ def load_adapter(
     if plugin_loaded is not None:
         return plugin_loaded
 
-    adapter_capability = PLUGIN_MANAGER.get_adapter_capability(adapter)
+    adapter_capability = PluginManager.get_instance().get_adapter_capability(adapter)
     if adapter_capability and adapter_capability.lora_like:
         peft_model, lora_config = load_lora(
             model, cfg, inference=inference, config_only=config_only
         )
         return peft_model, lora_config
 
-    registered = sorted(PLUGIN_MANAGER.adapter_capabilities())
+    registered = sorted(PluginManager.get_instance().adapter_capabilities())
     registered_msg = ", ".join(registered) if registered else "none"
     raise NotImplementedError(
         f"Adapter '{adapter}' is not built in and was not registered by a plugin "
@@ -487,3 +619,24 @@ def load_llama_adapter(
     peft_model.print_trainable_parameters()
 
     return peft_model, peft_config
+
+
+def _validate_mixlora_lora_target_modules(cfg: DictDefault) -> None:
+    """Prevent overlapping LoRA targets with MixLoRA-patched FFN modules."""
+    if cfg.lora_target_linear:
+        raise ValueError(
+            "MixLoRA is incompatible with lora_target_linear=true because FFN "
+            "gate_proj/up_proj/down_proj are patched by MixLoRA. "
+            "Set explicit attention-only lora_target_modules instead."
+        )
+
+    target_modules = cfg.lora_target_modules or []
+    if isinstance(target_modules, str):
+        target_modules = [target_modules]
+
+    overlap = sorted(set(MIXLORA_FFN_MODULE_NAMES).intersection(target_modules))
+    if overlap:
+        raise ValueError(
+            "MixLoRA cannot be combined with LoRA targets on FFN modules. "
+            f"Remove overlapping lora_target_modules entries: {overlap}"
+        )

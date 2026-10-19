@@ -43,7 +43,7 @@ class MarlinW4A16Linear(nn.Module):
         # Per-tensor scale needed for accuracy (rel err ~0.10 two-level vs ~0.25 without):
         # pts = amax / (F4_E2M1_MAX * F8E4M3_MAX) = amax / (6 * 448).
         w_bf16 = weight.to(torch.bfloat16)
-        pts = (w_bf16.abs().max() / (6.0 * 448.0)).reshape(1).float()
+        pts = (w_bf16.abs().max() / (6.0 * 448.0)).reshape(1, 1, 1).float()
         nv = NVFP4Tensor.to_nvfp4(
             w_bf16[None], per_tensor_scale=pts, is_swizzled_scales=False
         )

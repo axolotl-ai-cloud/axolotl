@@ -71,6 +71,5 @@ warmup_ratio: 0.1
 weight_decay: 0.0
 debug:
 deepspeed:
-fsdp:
 fsdp_config:
 special_tokens:

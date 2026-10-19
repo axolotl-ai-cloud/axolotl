@@ -310,6 +310,7 @@ def test_mistral_chat_template(
 
 def test_mistral_normalizer_fills_instruct_request_defaults(
     magistral_tokenizer: "HFMistralTokenizer",
+    monkeypatch,
 ):
     from pydantic import BaseModel
 
@@ -322,8 +323,10 @@ def test_mistral_normalizer_fills_instruct_request_defaults(
     def broken_from_chat_completion_request(_request):
         _MissingDefaults()
 
-    normalizer.from_chat_completion_request = broken_from_chat_completion_request
-    normalizer._axolotl_instruct_defaults_patched = False
+    monkeypatch.setattr(
+        normalizer, "from_chat_completion_request", broken_from_chat_completion_request
+    )
+    monkeypatch.setattr(normalizer, "_axolotl_instruct_defaults_patched", False)
     magistral_tokenizer._patch_instruct_request_normalizer()
 
     input_ids = magistral_tokenizer.apply_chat_template(

@@ -41,30 +41,31 @@ ds_sample_rate = ds[0]["audio"]["sampling_rate"]
 model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz")
 model = model.to("mps")
 
+
 def tokenise_audio(waveform):
-  waveform = torch.from_numpy(waveform).unsqueeze(0)
-  waveform = waveform.to(dtype=torch.float32)
-  resample_transform = T.Resample(orig_freq=ds_sample_rate, new_freq=24000)
-  waveform = resample_transform(waveform)
+    waveform = torch.from_numpy(waveform).unsqueeze(0)
+    waveform = waveform.to(dtype=torch.float32)
+    resample_transform = T.Resample(orig_freq=ds_sample_rate, new_freq=24000)
+    waveform = resample_transform(waveform)
 
-  waveform = waveform.unsqueeze(0).to("cuda")
+    waveform = waveform.unsqueeze(0).to("cuda")
 
-  #generate the codes from snac
-  with torch.inference_mode():
-    codes = model.encode(waveform)
+    # generate the codes from snac
+    with torch.inference_mode():
+        codes = model.encode(waveform)
 
-  all_codes = []
-  for i in range(codes[0].shape[1]):
-    all_codes.append(codes[0][0][i].item()+128266)
-    all_codes.append(codes[1][0][2*i].item()+128266+4096)
-    all_codes.append(codes[2][0][4*i].item()+128266+(2*4096))
-    all_codes.append(codes[2][0][(4*i)+1].item()+128266+(3*4096))
-    all_codes.append(codes[1][0][(2*i)+1].item()+128266+(4*4096))
-    all_codes.append(codes[2][0][(4*i)+2].item()+128266+(5*4096))
-    all_codes.append(codes[2][0][(4*i)+3].item()+128266+(6*4096))
+    all_codes = []
+    for i in range(codes[0].shape[1]):
+        all_codes.append(codes[0][0][i].item() + 128266)
+        all_codes.append(codes[1][0][2 * i].item() + 128266 + 4096)
+        all_codes.append(codes[2][0][4 * i].item() + 128266 + (2 * 4096))
+        all_codes.append(codes[2][0][(4 * i) + 1].item() + 128266 + (3 * 4096))
+        all_codes.append(codes[1][0][(2 * i) + 1].item() + 128266 + (4 * 4096))
+        all_codes.append(codes[2][0][(4 * i) + 2].item() + 128266 + (5 * 4096))
+        all_codes.append(codes[2][0][(4 * i) + 3].item() + 128266 + (6 * 4096))
 
+    return all_codes
 
-  return all_codes
 
 def add_codes(example):
     # Always initialize codes_list to None
@@ -83,9 +84,10 @@ def add_codes(example):
 
     return example
 
+
 ds = ds.map(add_codes, remove_columns=["audio"])
 
-#@title Load Tokenizer
+# @title Load Tokenizer
 tokeniser_length = 128256
 start_of_text = 128000
 end_of_text = 128009
@@ -97,7 +99,7 @@ start_of_human = tokeniser_length + 3
 end_of_human = tokeniser_length + 4
 
 start_of_ai = tokeniser_length + 5
-end_of_ai =  tokeniser_length + 6
+end_of_ai = tokeniser_length + 6
 pad_token = tokeniser_length + 7
 
 audio_tokens_start = tokeniser_length + 10
@@ -111,7 +113,8 @@ num_proc = os.cpu_count() - 2
 ds = ds.filter(lambda x: x["codes_list"] is not None)
 ds = ds.filter(lambda x: len(x["codes_list"]) > 0)
 
-#@title Create Input Ids
+
+# @title Create Input Ids
 def remove_duplicate_frames(example):
     vals = example["codes_list"]
     if len(vals) % 7 != 0:
@@ -126,7 +129,7 @@ def remove_duplicate_frames(example):
         previous_first = result[-7]
 
         if current_first != previous_first:
-            result.extend(vals[i:i+7])
+            result.extend(vals[i : i + 7])
         else:
             removed_frames += 1
 
@@ -134,11 +137,12 @@ def remove_duplicate_frames(example):
 
     return example
 
+
 ds = ds.map(remove_duplicate_frames, num_proc=num_proc)
 
 
 def create_input_ids(example):
-    text_ids = tokenizer.encode({example['text']},  add_special_tokens=True)
+    text_ids = tokenizer.encode({example["text"]}, add_special_tokens=True)
     text_ids.append(end_of_text)
     example["text_tokens"] = text_ids
     input_ids = (
@@ -157,9 +161,10 @@ def create_input_ids(example):
 
     return example
 
+
 ds = ds.map(create_input_ids, num_proc=num_proc, remove_columns=["text", "codes_list"])
 
-#@title Remove unnecessary columns
+# @title Remove unnecessary columns
 columns_to_keep = ["input_ids", "labels", "attention_mask"]
 columns_to_remove = [col for col in ds.column_names if col not in columns_to_keep]
 
@@ -202,30 +207,31 @@ ds_sample_rate = ds[0]["audio"]["sampling_rate"]
 model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz")
 model = model.to("mps")
 
+
 def tokenise_audio(waveform):
-  waveform = torch.from_numpy(waveform).unsqueeze(0)
-  waveform = waveform.to(dtype=torch.float32)
-  resample_transform = T.Resample(orig_freq=ds_sample_rate, new_freq=24000)
-  waveform = resample_transform(waveform)
+    waveform = torch.from_numpy(waveform).unsqueeze(0)
+    waveform = waveform.to(dtype=torch.float32)
+    resample_transform = T.Resample(orig_freq=ds_sample_rate, new_freq=24000)
+    waveform = resample_transform(waveform)
 
-  waveform = waveform.unsqueeze(0).to("cuda")
+    waveform = waveform.unsqueeze(0).to("cuda")
 
-  #generate the codes from snac
-  with torch.inference_mode():
-    codes = model.encode(waveform)
+    # generate the codes from snac
+    with torch.inference_mode():
+        codes = model.encode(waveform)
 
-  all_codes = []
-  for i in range(codes[0].shape[1]):
-    all_codes.append(codes[0][0][i].item()+128266)
-    all_codes.append(codes[1][0][2*i].item()+128266+4096)
-    all_codes.append(codes[2][0][4*i].item()+128266+(2*4096))
-    all_codes.append(codes[2][0][(4*i)+1].item()+128266+(3*4096))
-    all_codes.append(codes[1][0][(2*i)+1].item()+128266+(4*4096))
-    all_codes.append(codes[2][0][(4*i)+2].item()+128266+(5*4096))
-    all_codes.append(codes[2][0][(4*i)+3].item()+128266+(6*4096))
+    all_codes = []
+    for i in range(codes[0].shape[1]):
+        all_codes.append(codes[0][0][i].item() + 128266)
+        all_codes.append(codes[1][0][2 * i].item() + 128266 + 4096)
+        all_codes.append(codes[2][0][4 * i].item() + 128266 + (2 * 4096))
+        all_codes.append(codes[2][0][(4 * i) + 1].item() + 128266 + (3 * 4096))
+        all_codes.append(codes[1][0][(2 * i) + 1].item() + 128266 + (4 * 4096))
+        all_codes.append(codes[2][0][(4 * i) + 2].item() + 128266 + (5 * 4096))
+        all_codes.append(codes[2][0][(4 * i) + 3].item() + 128266 + (6 * 4096))
 
+    return all_codes
 
-  return all_codes
 
 def add_codes(example):
     # Always initialize codes_list to None
@@ -244,9 +250,10 @@ def add_codes(example):
 
     return example
 
+
 ds = ds.map(add_codes, remove_columns=["audio"])
 
-#@title Load Tokenizer
+# @title Load Tokenizer
 tokeniser_length = 128256
 start_of_text = 128000
 end_of_text = 128009
@@ -258,7 +265,7 @@ start_of_human = tokeniser_length + 3
 end_of_human = tokeniser_length + 4
 
 start_of_ai = tokeniser_length + 5
-end_of_ai =  tokeniser_length + 6
+end_of_ai = tokeniser_length + 6
 pad_token = tokeniser_length + 7
 
 audio_tokens_start = tokeniser_length + 10
@@ -272,7 +279,8 @@ num_proc = os.cpu_count() - 2
 ds = ds.filter(lambda x: x["codes_list"] is not None)
 ds = ds.filter(lambda x: len(x["codes_list"]) > 0)
 
-#@title Create Input Ids
+
+# @title Create Input Ids
 def remove_duplicate_frames(example):
     vals = example["codes_list"]
     if len(vals) % 7 != 0:
@@ -287,7 +295,7 @@ def remove_duplicate_frames(example):
         previous_first = result[-7]
 
         if current_first != previous_first:
-            result.extend(vals[i:i+7])
+            result.extend(vals[i : i + 7])
         else:
             removed_frames += 1
 
@@ -295,16 +303,20 @@ def remove_duplicate_frames(example):
 
     return example
 
+
 ds = ds.map(remove_duplicate_frames, num_proc=num_proc)
 
-tok_info = '''*** HERE you can modify the text prompt
+tok_info = """*** HERE you can modify the text prompt
 i.e. if you wanted a multispeaker model like canopylabs/orpheus-3b-0.1-ft, you can pass:
 f"{example["source"]}:  {example["text"]}", as is passed.
-'''
+"""
 print(tok_info)
 
+
 def create_input_ids(example):
-    text_ids = tokenizer.encode(f"{example['speaker_id']}: {example['text']}",  add_special_tokens=True)
+    text_ids = tokenizer.encode(
+        f"{example['speaker_id']}: {example['text']}", add_special_tokens=True
+    )
     text_ids.append(end_of_text)
     example["text_tokens"] = text_ids
     input_ids = (
@@ -323,9 +335,10 @@ def create_input_ids(example):
 
     return example
 
+
 ds = ds.map(create_input_ids, num_proc=num_proc, remove_columns=["text", "codes_list"])
 
-#@title Remove unnecessary columns
+# @title Remove unnecessary columns
 columns_to_keep = ["input_ids", "labels", "attention_mask"]
 columns_to_remove = [col for col in ds.column_names if col not in columns_to_keep]
 

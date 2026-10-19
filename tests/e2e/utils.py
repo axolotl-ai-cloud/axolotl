@@ -50,15 +50,26 @@ def flash_attn_available() -> bool:
     try:
         from transformers.utils import is_flash_attn_2_available
 
-        from axolotl.monkeypatch.attention.fa2_hub_kernel import (
-            is_fa2_hub_kernel_available,
-        )
+        if is_flash_attn_2_available(kernels_fallback_ok=True):
+            return True
+    except Exception:  # pylint: disable=broad-except
+        pass
+    # transformers' probe lists hub refs over the network and caches a False on
+    # any error; the validator's check also accepts a cached snapshot
+    try:
+        from transformers.integrations.hub_kernels import allow_all_hub_kernels
 
-        # transformers probes the hub at v1, which has no build for newer torch; ask
-        # about the version we pin or these tests silently skip instead of running.
-        return is_flash_attn_2_available() or is_fa2_hub_kernel_available()
+        from axolotl.utils.schemas.validation import _flash_attn_kernel_failure
+
+        with allow_all_hub_kernels():
+            available = _flash_attn_kernel_failure("flash_attention_2") is None
     except Exception:  # pylint: disable=broad-except
         return False
+    if available:
+        cache_clear = getattr(is_flash_attn_2_available, "cache_clear", None)
+        if cache_clear is not None:
+            cache_clear()
+    return available
 
 
 # pytest.mark works on plain (non-TestCase) classes; unittest.skipUnless does not.

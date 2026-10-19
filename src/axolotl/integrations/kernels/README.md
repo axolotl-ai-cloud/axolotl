@@ -7,7 +7,7 @@ class ExpertsInterface(GeneralInterface):
     _global_mapping = {
         "batched_mm": batched_mm_experts_forward,
         "grouped_mm": grouped_mm_experts_forward,
-        "sonicmoe":   sonicmoe_experts_forward,   # upstream HF integration
+        "sonicmoe": sonicmoe_experts_forward,  # upstream HF integration
     }
 ```
 
@@ -124,8 +124,11 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `hunyuan_v1_moe`  |    Yes    |   Yes    |  -  |  -  |
 | `gemma4_text`     |    Yes    |   Yes    | Yes |  -  |
 | `gpt_oss`         |    Yes    |   No     |  -  |  -  |
+| `nemotron_h`      |    Yes    |   Yes¹   | Yes | Yes¹ |
 
 NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its own fused-kernel path), so it is not a row above.
+
+¹ `nemotron_h` covers Nemotron-3 latentmoe: **non-gated** relu² experts (`up_proj`/`down_proj`, no gate), operating in `moe_latent_size` when set (tokens arrive pre-projected by the block's `fc1/fc2_latent_proj`). ScatterMoE handles that layout natively; SonicMoE routes it through a `torch._grouped_mm` MLP because the current sonic-moe op layer only allows gated epilogues, and `AXOLOTL_SONICMOE_NONGATED_FUSED=1` switches to the exact REGLU rewrite (`relu²(h) == h·relu(h)`) once a build relaxes that assert. Nemotron-3 NVFP4 checkpoints (modelopt `MIXED_PRECISION`) keep the routed experts packed NVFP4 and dequantize every other quantized linear to bf16 at load; quantization there is per layer, not per module name, so one converter per suffix picks its branch from the keys each layer ships.
 
 `gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a clamped sigmoid-GLU activation. The ScatterMoE forward handles the transposed/interleaved/biased layout and that epilogue via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM).
 
@@ -149,3 +152,22 @@ Axolotl now probes each model's declared `_apply_gate` numerically at load and r
 ## Note on MegaBlocks
 
 We tested [MegaBlocks](https://huggingface.co/kernels-community/megablocks) but were unable to ensure numerical accuracy, so we did not integrate it. It was also incompatible with many newer model architectures in transformers.
+
+## Autotune warm-start cache
+
+Triton keeps each `@triton.autotune` winner only in the process, so every run re-benchmarks every
+(shape, dtype) key. Under expert parallelism that benchmark lands at different moments on different
+ranks, which DeepEP's combine barrier reads as a straggler. `autotune_cache_path` persists the winners:
+
+```yaml
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+use_scattermoe: true
+autotune_cache_path: /shared/cache/autotune/b200.json
+```
+
+After the kernels load, the file is read and every record whose kernel is loaded, whose candidate
+config matrix still matches, and whose key is not yet measured is inserted into that autotuner's
+cache. The file is rewritten at every checkpoint and at train end with the union of all ranks'
+winners. Files record the GPU they were measured on and are ignored on a different GPU model, since
+the winners are device-specific.

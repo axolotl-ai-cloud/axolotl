@@ -8,6 +8,7 @@ datasets.
 
 from datasets import Dataset, IterableDataset
 
+from axolotl.utils.data.work_queue import tokenize_with_work_queue
 from axolotl.utils.logging import get_logger
 
 from .prompt_tokenizers import PromptTokenizingStrategy
@@ -42,13 +43,6 @@ class TokenizedPromptDataset(Dataset):
         )
 
     def process(self, dataset):
-        features = dataset.features.keys()
-
-        map_kwargs = {}
-        if self.prompt_tokenizer.supports_batched:
-            map_kwargs["batched"] = True
-            map_kwargs["batch_size"] = 1_000
-
         if (
             hasattr(self.prompt_tokenizer, "filter_rows")
             and self.prompt_tokenizer.filter_rows
@@ -58,6 +52,21 @@ class TokenizedPromptDataset(Dataset):
                 num_proc=self.process_count,
                 desc="Strategy Filtering Rows",
             )
+
+        num_proc = min(self.process_count or 1, len(dataset))
+        if num_proc > 1:
+            return tokenize_with_work_queue(
+                self.prompt_tokenizer,
+                dataset,
+                num_proc=num_proc,
+                keep_in_memory=self.keep_in_memory,
+            )
+
+        features = dataset.features.keys()
+        map_kwargs = {}
+        if self.prompt_tokenizer.supports_batched:
+            map_kwargs["batched"] = True
+            map_kwargs["batch_size"] = 1_000
 
         return dataset.map(
             self.prompt_tokenizer.tokenize_prompt,

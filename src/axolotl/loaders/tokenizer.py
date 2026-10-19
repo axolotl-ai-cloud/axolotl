@@ -10,7 +10,6 @@ from transformers import (
     PreTrainedTokenizer,
 )
 
-from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers, load_model_config
 from axolotl.prompt_tokenizers import LLAMA_DEFAULT_EOS_TOKEN
 from axolotl.telemetry.errors import send_errors
@@ -24,7 +23,6 @@ from axolotl.utils.distributed import (
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def modify_tokenizer_files(

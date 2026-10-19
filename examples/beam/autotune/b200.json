@@ -1,0 +1,1329 @@
+{
+ "version": 1,
+ "gpu_name": "NVIDIA B200",
+ "gpu_compute_capability": "10.0",
+ "torch": "2.14.1+cu130",
+ "written_at": "2026-10-14T20:03:46Z",
+ "records": [
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 131072,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 262144,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 8192,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 5,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 8192,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 12288,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 12288,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 32,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 5120,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 32,
+    "BLOCK_K": 64,
+    "num_warps": 8,
+    "num_stages": 5,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 5120,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 32,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 9216,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 32,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 5,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 9216,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 10240,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 10240,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 32,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 6144,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 6144,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 11264,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 11264,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 7168,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 7168,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 5,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 4096,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 5,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 4096,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 128,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 13312,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 13312,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 128,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 3072,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 32,
+    "BLOCK_K": 64,
+    "num_warps": 8,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 3072,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 128,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 14336,
+    "N": 256,
+    "K": 256,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 14336,
+    "N": 256,
+    "K": 128,
+    "BLOCK_R": 16,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_N": 64,
+    "BLOCK_K": 128,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 16384,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 15360,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 14336,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 13312,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 64,
+    "num_warps": 4,
+    "num_stages": 4,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "1ce6597631aa7c426a5d7b6ec9081b5044de5a4fd3e962d517f060582e6e9c4f",
+   "candidate_config_count": 108
+  },
+  {
+   "kernel": "_scatter2scatter_lora_dX_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 131072,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_K": 64,
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 2,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "5fc528e00e1c05b1b07702336cd4ebc6c3c0e7dad2358dd76d66f7d4d04af71f",
+   "candidate_config_count": 16
+  },
+  {
+   "kernel": "_scatter2scatter_lora_dX_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 131072,
+    "N": 5120,
+    "K": 5120,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_K": 64,
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 2,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "5fc528e00e1c05b1b07702336cd4ebc6c3c0e7dad2358dd76d66f7d4d04af71f",
+   "candidate_config_count": 16
+  },
+  {
+   "kernel": "_scatter2scatter_lora_dX_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 262144,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_K": 64,
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 2,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "5fc528e00e1c05b1b07702336cd4ebc6c3c0e7dad2358dd76d66f7d4d04af71f",
+   "candidate_config_count": 16
+  },
+  {
+   "kernel": "_scatter2scatter_lora_dX_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 262144,
+    "N": 5120,
+    "K": 5120,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_K": 64,
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 2,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "5fc528e00e1c05b1b07702336cd4ebc6c3c0e7dad2358dd76d66f7d4d04af71f",
+   "candidate_config_count": 16
+  },
+  {
+   "kernel": "_scatter2scatter_lora_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 131072,
+    "N": 5120,
+    "K": 5120,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "75286b6c667701e7303b6265134e7712424d74230a14ceb0ca14adc4ad0a6bc3",
+   "candidate_config_count": 144
+  },
+  {
+   "kernel": "_scatter2scatter_lora_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 131072,
+    "N": 5120,
+    "K": 2560,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "75286b6c667701e7303b6265134e7712424d74230a14ceb0ca14adc4ad0a6bc3",
+   "candidate_config_count": 144
+  },
+  {
+   "kernel": "_scatter2scatter_lora_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 262144,
+    "N": 5120,
+    "K": 5120,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "75286b6c667701e7303b6265134e7712424d74230a14ceb0ca14adc4ad0a6bc3",
+   "candidate_config_count": 144
+  },
+  {
+   "kernel": "_scatter2scatter_lora_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 262144,
+    "N": 5120,
+    "K": 2560,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "75286b6c667701e7303b6265134e7712424d74230a14ceb0ca14adc4ad0a6bc3",
+   "candidate_config_count": 144
+  },
+  {
+   "kernel": "_scatter2scatter_lora_dX_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 16384,
+    "N": 5120,
+    "K": 2560,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_K": 64,
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 2,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "5fc528e00e1c05b1b07702336cd4ebc6c3c0e7dad2358dd76d66f7d4d04af71f",
+   "candidate_config_count": 16
+  },
+  {
+   "kernel": "_scatter2scatter_lora_dX_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 16384,
+    "N": 5120,
+    "K": 5120,
+    "BLOCK_R": 32,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 64,
+    "BLOCK_K": 64,
+    "BLOCK_N": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "5fc528e00e1c05b1b07702336cd4ebc6c3c0e7dad2358dd76d66f7d4d04af71f",
+   "candidate_config_count": 16
+  },
+  {
+   "kernel": "_scatter2scatter_lora_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 16384,
+    "N": 5120,
+    "K": 5120,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "75286b6c667701e7303b6265134e7712424d74230a14ceb0ca14adc4ad0a6bc3",
+   "candidate_config_count": 144
+  },
+  {
+   "kernel": "_scatter2scatter_lora_mx",
+   "module": "lora_ops",
+   "module_fqn": "axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops",
+   "key": {
+    "M_BUCKET": 16384,
+    "N": 5120,
+    "K": 2560,
+    "_extra": [
+     "torch.bfloat16",
+     "torch.uint8",
+     "torch.float32",
+     "torch.float32",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.bfloat16",
+     "torch.int32",
+     "torch.int64"
+    ]
+   },
+   "config": {
+    "BLOCK_M": 128,
+    "BLOCK_N": 64,
+    "BLOCK_K": 32,
+    "num_warps": 4,
+    "num_stages": 3,
+    "num_ctas": 1
+   },
+   "module_source_sha256": "98c0c4cb365ab7f2fd5dec57876f929cd3c99df2c4a9945ca1805a6bc9da124d",
+   "candidate_configs_sha256": "75286b6c667701e7303b6265134e7712424d74230a14ceb0ca14adc4ad0a6bc3",
+   "candidate_config_count": 144
+  }
+ ]
+}

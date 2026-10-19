@@ -1,0 +1,32 @@
+provider: nebius
+
+# Validated on H100; check GPU driver compatibility before changing the image.
+image: axolotlai/axolotl@sha256:a667b20750d07944468192d0c1b7c75222df6cc179cfc77061abc959aff7e9ab
+platform: gpu-h100-sxm
+preset: 1gpu-16vcpu-200gb
+timeout: 3600
+
+# The CLI mounts a managed project bucket at /outputs.
+output: auto
+
+# Optional Nebius CLI profile and resource selection.
+# profile: training
+# parent_id: project-...
+# subnet_id: vpcsubnet-...
+# disk_size: 250Gi
+
+# Secrets are Nebius secret references, not values or local environment lookups.
+# With CLI 0.12.265, use a secret ID whose payload contains the HF_TOKEN key.
+# env_secret:
+#   HF_TOKEN: mbsec-YOUR_SECRET_ID
+
+# volumes:
+#   - source: storagebucket-...
+#     mount: /data
+#     mode: ro
+
+# Local packaging preview only; never submits a job.
+# show_context: true
+
+# Server-side request validation without creating a job.
+# dry_run: true

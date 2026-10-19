@@ -88,7 +88,7 @@ Watch for: loss never decreasing (check `train_on_inputs`, dataset, LR), loss go
 | Label masking wrong | Run `axolotl preprocess config.yaml --debug` and inspect labels |
 | Loss NaN | Use `bf16: auto`, lower LR, check data for empty samples |
 | Tokenizer pad token / infinite loss | Set `special_tokens: pad_token: "<\|end_of_text\|>"` |
-| FSDP save hangs | Use `fsdp_state_dict_type: FULL_STATE_DICT` |
+| FSDP save hangs | Set `state_dict_type: FULL_STATE_DICT` in `fsdp_config` |
 | DeepSpeed CheckpointError | Set `use_reentrant: true` in `gradient_checkpointing_kwargs` |
 
 ## Profiling
@@ -116,6 +116,11 @@ The trace shows per-kernel CUDA times, memory allocations, and operator-level br
 - **Gaps between kernels**: pipeline bubbles from CPU overhead
 
 Full troubleshooting: [training_stability.qmd](../training_stability.qmd), [debugging.qmd](../debugging.qmd)
+
+## Label balancing
+
+See [label_balancing.md](label_balancing.md) for sampler objectives, metric scopes,
+collator requirements, distributed ordering, and checkpoint-resume invariants.
 
 ## File Map
 
