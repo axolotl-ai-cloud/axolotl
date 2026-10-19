@@ -232,3 +232,20 @@ class TestGenerateDatasetHashFromConfig:
         h2 = generate_dataset_hash_from_config(cfg, _datasets(), "some/other-model")
 
         assert h1 != h2
+
+
+class TestChatTemplateKwargsHash:
+    def _hash(self, **ds_fields):
+        datasets = _datasets()
+        datasets[0].update(ds_fields)
+        return generate_dataset_hash_from_config(_base_cfg(), datasets, "tok")
+
+    def test_dataset_chat_template_kwargs_change_hash(self):
+        base = self._hash()
+        effort_128 = self._hash(chat_template_kwargs={"reasoning_effort": 128})
+        effort_256 = self._hash(chat_template_kwargs={"reasoning_effort": 256})
+        assert len({base, effort_128, effort_256}) == 3
+        assert effort_128 == self._hash(chat_template_kwargs={"reasoning_effort": 128})
+
+    def test_field_chat_template_kwargs_changes_hash(self):
+        assert self._hash() != self._hash(field_chat_template_kwargs="template_kwargs")

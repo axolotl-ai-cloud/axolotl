@@ -16,7 +16,10 @@ from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import remove_none_values
 from axolotl.utils.logging import get_logger
-from axolotl.utils.schemas.datasets import DatasetConfig
+from axolotl.utils.schemas.datasets import (
+    DatasetConfig,
+    validate_chat_template_kwargs,
+)
 
 if TYPE_CHECKING:
     from axolotl.utils.mistral import HFMistralTokenizer
@@ -57,6 +60,7 @@ class ChatTemplatePrompter(Prompter):
         template_thinking_key: str | None = "reasoning_content",
         chat_template_kwargs: dict[str, Any] | None = None,
         drop_system_message: bool = False,
+        field_chat_template_kwargs: str | None = None,
     ):
         # check if message_property_mappings is None or empty dict
         if message_property_mappings is None or (not message_property_mappings):
@@ -89,6 +93,7 @@ class ChatTemplatePrompter(Prompter):
         self.field_system = field_system
         self.field_tools = field_tools
         self.field_thinking = field_thinking
+        self.field_chat_template_kwargs = field_chat_template_kwargs
         self.tokenizer = tokenizer
         self.processor: ProcessorMixin | None = processor
         self.chat_template = chat_template
@@ -101,6 +106,22 @@ class ChatTemplatePrompter(Prompter):
     def chat_template_msg_variables(self) -> Set[str]:
         return self._chat_template_msg_variables
 
+    def _render_kwargs(
+        self,
+        add_generation_prompt: bool,
+        tools: list[dict] | None,
+        template_kwargs: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        kwargs = {
+            "chat_template": self.chat_template,
+            "add_generation_prompt": add_generation_prompt,
+            **self.chat_template_kwargs,
+            **(template_kwargs or {}),
+        }
+        if tools:
+            kwargs["tools"] = tools
+        return kwargs
+
     def build_prompt(
         self,
         conversation: list[dict],
@@ -108,6 +129,7 @@ class ChatTemplatePrompter(Prompter):
         images=None,
         tools=None,
         real_last_index=None,
+        template_kwargs: dict[str, Any] | None = None,
     ):
         """
         Build a prompt from a conversation.
@@ -117,15 +139,12 @@ class ChatTemplatePrompter(Prompter):
             add_generation_prompt: Whether to add a generation prompt.
             images: A list of images. (optional)
             tools: A list of tools. (optional)
+            template_kwargs: Per-row template kwargs merged over
+                ``chat_template_kwargs``. (optional)
         """
-        chat_template_kwargs = {
-            "chat_template": self.chat_template,
-            "add_generation_prompt": add_generation_prompt,
-            **self.chat_template_kwargs,
-        }
-
-        if tools:
-            chat_template_kwargs["tools"] = tools
+        chat_template_kwargs = self._render_kwargs(
+            add_generation_prompt, tools, template_kwargs
+        )
 
         if real_last_index:
             chat_template_kwargs["real_last_index"] = real_last_index
@@ -171,6 +190,7 @@ class ChatTemplatePrompter(Prompter):
         self,
         conversation: list[dict],
         tools=None,
+        template_kwargs: dict[str, Any] | None = None,
     ) -> str | None:
         """Render a conversation to text without tokenizing.
 
@@ -180,14 +200,7 @@ class ChatTemplatePrompter(Prompter):
         if self.processor:
             return None
 
-        chat_template_kwargs = {
-            "chat_template": self.chat_template,
-            "add_generation_prompt": False,
-            **self.chat_template_kwargs,
-        }
-
-        if tools:
-            chat_template_kwargs["tools"] = tools
+        chat_template_kwargs = self._render_kwargs(False, tools, template_kwargs)
 
         text = self.tokenizer.apply_chat_template(
             conversation,
@@ -480,12 +493,16 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         ):
             turns = self.get_conversation_thread(prompt)
             images = self._get_images(prompt)
+            template_kwargs = self._get_chat_template_kwargs(prompt)
             prompt_ids = self.prompter.build_prompt(  # type: ignore
                 turns[:-1],
                 add_generation_prompt=True,
                 images=images,
+                template_kwargs=template_kwargs,
             )
-            tokenized_res = self.prompter.build_prompt(turns, images=images)  # type: ignore
+            tokenized_res = self.prompter.build_prompt(  # type: ignore
+                turns, images=images, template_kwargs=template_kwargs
+            )
             tokenized_prompt = {}
             if isinstance(tokenized_res, list):
                 input_ids = prompt_ids + tokenized_res[len(prompt_ids) :]
@@ -510,13 +527,18 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         turns = self.get_conversation_thread(prompt)
         tools = self._get_tools(prompt)
-        result = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
+        template_kwargs = self._get_chat_template_kwargs(prompt)
+        result = self.prompter.build_prompt(  # type: ignore
+            turns, tools=tools, template_kwargs=template_kwargs
+        )
         if not isinstance(result, dict):
             result = {"input_ids": result}
         input_ids = result["input_ids"]
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
-        locator = self._build_turn_locator(turns, tools, input_ids)
+        locator = self._build_turn_locator(
+            turns, tools, input_ids, template_kwargs=template_kwargs
+        )
 
         last_eos_idx = -1
         last_eot_idx = -1
@@ -570,6 +592,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 tools=tools,
                 content_only=use_content_only,
                 locator=locator,
+                template_kwargs=template_kwargs,
             )
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
@@ -616,6 +639,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                     tools=tools,
                     reasoning_only=True,
                     locator=locator,
+                    template_kwargs=template_kwargs,
                 )
 
                 if reasoning_start != -1 and reasoning_end != -1:
@@ -705,7 +729,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             )
 
     def _build_turn_locator(
-        self, turns: list[dict], tools: list[dict] | None, input_ids: list[int]
+        self,
+        turns: list[dict],
+        tools: list[dict] | None,
+        input_ids: list[int],
+        template_kwargs: dict[str, Any] | None = None,
     ) -> tuple[str, list[int], list[int]] | None:
         """Render and tokenize the conversation once so turns can be located in char space.
 
@@ -716,7 +744,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             self._log_fallback_once("tokenizer is not a fast tokenizer")
             return None
 
-        full_text = self.prompter.build_prompt_text(turns, tools=tools)  # type: ignore
+        full_text = self.prompter.build_prompt_text(  # type: ignore
+            turns, tools=tools, template_kwargs=template_kwargs
+        )
         if not full_text:
             self._log_fallback_once("no plain-text render (processor or empty)")
             return None
@@ -770,6 +800,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         reasoning_only: bool,
         tools: list[dict] | None,
         locator: tuple[str, list[int], list[int]],
+        template_kwargs: dict[str, Any] | None = None,
     ) -> tuple[int, int] | None:
         """Locate a turn by diffing the real render against placeholder renders.
 
@@ -788,7 +819,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 turns[turn_idx], content_only, reasoning_only, sentinel
             )
             dummy_text = self.prompter.build_prompt_text(  # type: ignore
-                turns[:turn_idx] + [dummy_turn] + turns[turn_idx + 1 :], tools=tools
+                turns[:turn_idx] + [dummy_turn] + turns[turn_idx + 1 :],
+                tools=tools,
+                template_kwargs=template_kwargs,
             )
             if not dummy_text:
                 return None
@@ -816,6 +849,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turn_idx: int,
         dummy_turn: dict,
         tools: list[dict] | None,
+        template_kwargs: dict[str, Any] | None = None,
     ) -> tuple[int, int] | None:
         """Locate a turn by re-tokenizing the conversation prefix twice.
 
@@ -830,11 +864,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 turns[:turn_idx] + [dummy_turn],
                 tools=tools,
                 real_last_index=real_last_index,
+                template_kwargs=template_kwargs,
             )
         )
         full_ids = _extract_input_ids(
             self.prompter.build_prompt(  # type: ignore
-                turns[: turn_idx + 1], tools=tools, real_last_index=real_last_index
+                turns[: turn_idx + 1],
+                tools=tools,
+                real_last_index=real_last_index,
+                template_kwargs=template_kwargs,
             )
         )
 
@@ -897,6 +935,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         content_only: bool = False,
         reasoning_only: bool = False,
         locator: tuple[str, list[int], list[int]] | None = None,
+        template_kwargs: dict[str, Any] | None = None,
     ):
         """
         Locate the starting and ending indices of the specified turn in a conversation.
@@ -911,6 +950,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 reasoning_content field boundaries.
             locator: Prepared render from ``_build_turn_locator``. When supplied,
                 boundaries are diffed in char space instead of by re-tokenizing.
+            template_kwargs: The row's template kwargs; the placeholder renders must
+                use the same ones as the full render or the diff shifts.
         """
 
         if turn_idx >= len(turns):
@@ -927,13 +968,21 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         span = None
         if locator is not None:
             span = self._find_turn_from_text(
-                turns, turn_idx, content_only, reasoning_only, tools, locator
+                turns,
+                turn_idx,
+                content_only,
+                reasoning_only,
+                tools,
+                locator,
+                template_kwargs=template_kwargs,
             )
         if span is None:
             dummy_turn = self._build_dummy_turn(
                 turns[turn_idx], content_only, reasoning_only, self._SENTINELS[0]
             )
-            span = self._find_turn_from_tokens(turns, turn_idx, dummy_turn, tools)
+            span = self._find_turn_from_tokens(
+                turns, turn_idx, dummy_turn, tools, template_kwargs=template_kwargs
+            )
         if span is None:
             return -1, -1
 
@@ -1253,6 +1302,27 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             f"Current format: {type(tools)}"
         )
 
+    def _get_chat_template_kwargs(self, prompt) -> dict[str, Any] | None:
+        """Get the row's template kwargs, if `field_chat_template_kwargs` is set."""
+        field = self.prompter.field_chat_template_kwargs
+        if not field:
+            return None
+        value = prompt.get(field)
+        if isinstance(value, str):
+            if not value.strip():
+                return None
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"`{field}` is a string but not valid JSON: {value!r}"
+                ) from e
+        if value is None:
+            return None
+        kwargs = validate_chat_template_kwargs(value, f"Row field `{field}`")
+        # Arrow fills keys missing from a row's struct with null; treat them as unset.
+        return {key: val for key, val in kwargs.items() if val is not None} or None
+
     def _get_messages(self, prompt):
         messages = prompt.get(self.prompter.field_messages, None)
         if messages is None:
@@ -1410,7 +1480,17 @@ class StrategyLoader:
         prompter_params = {
             "tokenizer": tokenizer,
             "chat_template": chat_template_string,
-            "chat_template_kwargs": cfg.get("chat_template_kwargs", {}),
+            "chat_template_kwargs": {
+                **(cfg.get("chat_template_kwargs") or {}),
+                **validate_chat_template_kwargs(
+                    dataset_config.get("chat_template_kwargs") or {},
+                    "datasets[].chat_template_kwargs",
+                ),
+            },
+            "field_chat_template_kwargs": dataset_config.get(
+                "field_chat_template_kwargs"
+            ),
+            "field_tools": dataset_config.get("field_tools") or "tools",
             "message_property_mappings": dataset_config.get(
                 "message_property_mappings", {}
             ),

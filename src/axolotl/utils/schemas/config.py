@@ -1460,7 +1460,7 @@ class AxolotlInputConfig(
     chat_template_kwargs: dict[str, Any] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Additional kwargs to pass to the chat template. This is useful for customizing the chat template. For example, you can pass `thinking=False` to add a generation prompt to the chat template."
+            "description": "Additional kwargs to pass to the chat template. This is useful for customizing the chat template. For example, you can pass `thinking=False` to add a generation prompt to the chat template. For `type: chat_template` datasets, `datasets[].chat_template_kwargs` and per-row `datasets[].field_chat_template_kwargs` override these."
         },
     )
     eot_tokens: list[str] | None = Field(

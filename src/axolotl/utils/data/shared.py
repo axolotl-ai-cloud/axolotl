@@ -65,10 +65,12 @@ DATASET_HASH_CONFIG_EXTRA_FIELDS = (
 DATASET_HASH_DATASET_EXTRA_FIELDS = (
     "chat_template",
     "chat_template_jinja",
+    "chat_template_kwargs",
     "data_files",
     "drop_system_message",
     "ds_type",
     "field",
+    "field_chat_template_kwargs",
     "field_chosen",
     "field_human",
     "field_messages",

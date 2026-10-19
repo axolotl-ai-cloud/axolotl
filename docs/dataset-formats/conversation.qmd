@@ -248,6 +248,40 @@ datasets:
 Look into the `chat_template` you are using to see if it supports `tools` and what the expected role is for the tool answer. In the example above, the tool answer is expected to be in the `tool` or `ipython` role for `llama4` template.
 :::
 
+#### Per-dataset and per-row chat template kwargs
+
+Top-level `chat_template_kwargs` are passed to every render. A `chat_template` dataset can override them with its own `chat_template_kwargs`, and individual rows can override both through the column named by `field_chat_template_kwargs`. Precedence is global < dataset < row, and a row's values apply to that row only.
+
+For example, Reflection Beam's template writes `Reasoning effort: N` into the system header from the `reasoning_effort` kwarg (an int, or one of the labels `minimal`/`low`/`medium`/`high`/`xhigh`/`max`):
+
+```{.json filename="data.jsonl"}
+{"messages": [...], "template_kwargs": {"reasoning_effort": 128}}
+{"messages": [...], "template_kwargs": {"reasoning_effort": 256, "enable_thinking": false}}
+{"messages": [...]}
+```
+
+```yaml
+chat_template_kwargs:
+  reasoning_effort: 32            # global default
+datasets:
+  - path: data.jsonl
+    type: chat_template
+    field_chat_template_kwargs: template_kwargs
+  - path: effort_512.jsonl
+    type: chat_template
+    chat_template_kwargs:
+      reasoning_effort: 512       # every row of this dataset, unless the row overrides it
+```
+
+The third row above renders with `reasoning_effort: 32`. The same kwargs are used for the label-masking renders, so assistant turns stay correctly masked when the header changes.
+
+- Values keep their JSON types: `128` reaches the template as an int, `"128"` as a string.
+- A missing column, a `null` value, or a `null` key means "not set", so the dataset or global value applies. Arrow merges dict columns into one struct and fills keys a row lacks with `null`, so these rows still fall back correctly.
+- A struct column cannot hold different types under the same key, for example `128` in one row and `"high"` in another. Depending on how the dataset is loaded, this fails or coerces the values. For such a column, store the value as a JSON-encoded string instead, for example `"template_kwargs": "{\"reasoning_effort\": 128}"`. Axolotl decodes the string, and the decoded value keeps its JSON types.
+- The value must be a dict with string keys. It may not set arguments that Axolotl controls, such as `tools`, `add_generation_prompt`, `chat_template`, `tokenize`, or `real_last_index`. Use `field_tools` for tools. A row that breaks these rules raises an error during preprocessing.
+
+Changing `chat_template_kwargs` or `field_chat_template_kwargs` on a dataset changes the prepared-dataset hash, so the dataset is tokenized again. Changing values inside the data files does not change the hash. To pick up edited rows, delete the prepared dataset or point `dataset_prepared_path` at a new directory.
+
 
 #### Using fine-grained control over token masking
 

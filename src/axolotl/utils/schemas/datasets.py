@@ -1,11 +1,51 @@
 """Pydantic models for datasets-related configuration"""
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from axolotl.utils.schemas.enums import ChatTemplate
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
+
+# apply_chat_template arguments the chat_template strategy controls itself; per-dataset
+# and per-row template kwargs may not set them.
+RESERVED_CHAT_TEMPLATE_KWARGS = frozenset(
+    {
+        "add_generation_prompt",
+        "chat_template",
+        "continue_final_message",
+        "conversation",
+        "max_length",
+        "messages",
+        "padding",
+        "real_last_index",
+        "return_assistant_tokens_mask",
+        "return_dict",
+        "return_tensors",
+        "tokenize",
+        "tokenizer_kwargs",
+        "tools",
+        "truncation",
+    }
+)
+
+
+def validate_chat_template_kwargs(value: Any, source: str) -> dict[str, Any]:
+    """Check a template-kwargs mapping and return it as a plain dict."""
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"{source} must be a dict of chat template kwargs, got {type(value).__name__}: {value!r}"
+        )
+    bad_keys = [key for key in value if not isinstance(key, str)]
+    if bad_keys:
+        raise ValueError(f"{source} keys must be strings, got {bad_keys!r}")
+    reserved = sorted(RESERVED_CHAT_TEMPLATE_KWARGS.intersection(value))
+    if reserved:
+        raise ValueError(
+            f"{source} may not set {reserved}; the chat_template strategy controls "
+            "these (use `field_tools` for tools)."
+        )
+    return dict(value)
 
 
 class UserDefinedPrompterType(BaseModel):
@@ -124,6 +164,18 @@ class SFTDataset(BaseModel):
             "description": 'Key containing the reasoning trace (default: "reasoning_content").'
         },
     )
+    field_chat_template_kwargs: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": 'Key containing per-row chat template kwargs (e.g. `{"reasoning_effort": 128}`). The value is a dict, or a JSON-encoded string of a dict for columns whose types vary across rows. Merged over the global and dataset `chat_template_kwargs` for that row only; null, missing, and null-valued keys fall back to them. Only for `type: chat_template`.'
+        },
+    )
+    chat_template_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Chat template kwargs for this dataset only, merged over the top-level `chat_template_kwargs` and under per-row `field_chat_template_kwargs` values. Only for `type: chat_template`."
+        },
+    )
     template_thinking_key: str | None = Field(
         default=None,
         json_schema_extra={
@@ -211,6 +263,13 @@ class SFTDataset(BaseModel):
             "If not set, the entire dataset is used (equivalent to weight=1.0)."
         },
     )
+
+    @field_validator("chat_template_kwargs")
+    @classmethod
+    def check_dataset_chat_template_kwargs(cls, value):
+        if value is None:
+            return value
+        return validate_chat_template_kwargs(value, "datasets[].chat_template_kwargs")
 
     @model_validator(mode="before")
     @classmethod
