@@ -21,6 +21,7 @@ from axolotl.integrations.kernels.libs.sonicmoe import experts
 def default_padding():
     yield
     experts.configure_ep_row_padding()
+    experts.configure_ep_compact_routing()
 
 
 def test_pow2_is_the_default():
@@ -111,6 +112,54 @@ class _PaddedLayer(torch.nn.Module):
         rows = x.shape[0]
         padded = F.pad(x, (0, 0, 0, experts.ep_padded_rows(rows, True) - rows))
         return (padded @ self.weight).square()[:rows]
+
+
+def test_seeded_marks_pad_the_first_step_to_one_size():
+    experts.configure_ep_row_padding("highwater", granule=32768)
+    experts.configure_ep_compact_routing(True, granule=32768)
+    experts.seed_ep_padding_marks(rows=131072, pairs=360000)
+    assert experts.ep_padded_rows(5000, True) == 131072
+    assert experts.ep_padded_rows(90000, True) == 131072
+    # pairs round up to the granule; eval keeps its own unseeded mark (pow2-capped)
+    assert experts._EP_PAIR_MARKS.frozen == {True: 360448}
+    assert experts.ep_padded_rows(5000, False) == 8192
+
+
+def test_seed_never_lowers_a_mark_and_marks_still_grow():
+    experts.configure_ep_row_padding("highwater", granule=32768)
+    experts.ep_padded_rows(200000, True)
+    experts.promote_ep_padding_marks()
+    experts.seed_ep_padding_marks(rows=32768)
+    assert experts.ep_padded_rows(1000, True) == 229376
+    experts.ep_padded_rows(240000, True)
+    experts.promote_ep_padding_marks()
+    assert experts.ep_padded_rows(1000, True) == 262144
+
+
+@pytest.mark.parametrize(
+    "factor, expected_pairs", [(None, None), (2.75, int(131072 * 8 / 8 * 2.75))]
+)
+def test_plugin_seeds_the_token_cap_and_scaled_pairs(
+    monkeypatch, factor, expected_pairs
+):
+    from axolotl.integrations.kernels import plugin
+
+    seeded = {}
+    monkeypatch.setattr(
+        experts,
+        "seed_ep_padding_marks",
+        lambda rows=None, pairs=None: seeded.update(rows=rows, pairs=pairs),
+    )
+    cfg = SimpleNamespace(
+        sequence_len=16384,
+        micro_batch_size=1,
+        expert_parallel_size=8,
+        sonicmoe_ep_compact_routing=True,
+        sonicmoe_ep_pair_seed_factor=factor,
+    )
+    model = SimpleNamespace(config=SimpleNamespace(num_experts_per_tok=8))
+    plugin._seed_ep_padding(cfg, model)
+    assert seeded == {"rows": 131072, "pairs": expected_pairs}
 
 
 def test_checkpoint_recompute_after_a_larger_layer_does_not_raise():

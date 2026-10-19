@@ -87,6 +87,14 @@ class KernelsArgs(BaseModel):
     # sonicmoe_ep_pair_padding_granule pairs (default 32768) with the row-padding headroom.
     sonicmoe_ep_compact_routing: bool | None = None
     sonicmoe_ep_pair_padding_granule: int | None = None
+    # Start the training padding marks at the per-rank token cap (sequence_len x micro_batch_size x
+    # expert_parallel_size) instead of zero, so the first step pads every MoE layer to one size
+    # rather than producing a quack shape per layer. With sonicmoe_ep_compact_routing, also start
+    # the pair mark at sonicmoe_ep_pair_seed_factor x the average pairs per rank (cap x top_k /
+    # expert_parallel_size); routing imbalance puts the busiest rank well above the average (about
+    # 2.75x on Beam at EP=8). Unset factor: only the token mark is seeded. Marks still grow.
+    sonicmoe_ep_padding_seed: bool | None = None
+    sonicmoe_ep_pair_seed_factor: float | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
     use_dsv4_kernels: bool | None = None
     # GLM-5.2 (glm_moe_dsa) DSA fused attention: MLA-absorption head-batched sparse-gather attn
@@ -157,6 +165,21 @@ class KernelsArgs(BaseModel):
             LOG.warning(
                 "sonicmoe_ep_pair_padding_granule only applies with "
                 "sonicmoe_ep_compact_routing: true"
+            )
+        factor = data.get("sonicmoe_ep_pair_seed_factor")
+        if factor is not None and factor <= 0:
+            raise ValueError("sonicmoe_ep_pair_seed_factor must be positive")
+        if data.get("sonicmoe_ep_padding_seed") and not (highwater or compact):
+            LOG.warning(
+                "sonicmoe_ep_padding_seed only applies with "
+                "sonicmoe_ep_row_padding: highwater or sonicmoe_ep_compact_routing"
+            )
+        if factor is not None and not (
+            data.get("sonicmoe_ep_padding_seed") and compact
+        ):
+            LOG.warning(
+                "sonicmoe_ep_pair_seed_factor only applies with sonicmoe_ep_padding_seed "
+                "and sonicmoe_ep_compact_routing"
             )
         return data
 
