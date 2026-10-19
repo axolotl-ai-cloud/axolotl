@@ -318,11 +318,14 @@ dx_out, postact_out, colvec_scale, activation, colvec_reduce, cu_seqlens_m, A_id
 ### Pinning the large training buckets (Beam B200)
 
 The filter above still sweeps every new shape. For the training buckets, whose first sweep is the
-expensive one, a range `match` pins the measured winners for every routed-row count from 262144
-up, while smaller shapes (eval, short batches) keep the filtered search. With
-`sonicmoe_ep_row_padding: highwater`, training sees a few shapes that are not powers of two,
-which is exactly what a threshold covers and a list of exact sizes would miss. List these entries
-before the `allow` entries: the first matching entry for a call decides.
+expensive one, a range `match` pins the measured winners for every row count from 262144 up,
+while smaller shapes (eval, short batches) keep the filtered search. The rows these GEMMs see are
+expert slots, tokens x top_k: `postact_out`, `A` of the down-projection forward and `PreAct` hold
+1048576 rows when a rank pads to 131072 received tokens, sentinel slots included. With
+`sonicmoe_ep_row_padding: highwater` and its 4096-token granule, training rows land on multiples
+of 32768 (4096 x 8), roughly 0.7M to 1.0M, which a threshold covers and a list of exact sizes
+would miss. List these entries before the `allow` entries: the first matching entry for a call
+decides.
 
 ```yaml
 autotune_profiles:
@@ -332,10 +335,10 @@ autotune_profiles:
     match: { "postact_out.dim0": { ge: 262144 } }
     configs:
       - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
-  - kernel: gemm_tuned                # 256x256 c2x1; 128x256 c1x1 also won at 1M rows
+  - kernel: gemm_tuned                # down projection forward: 256x256 c2x1; 128x256 c1x1 also won at 1M rows
     backend: quack
     gpu: B200
-    match: { "A.dim0": { ge: 262144 } }
+    match: { "A.dim0": { ge: 262144 }, "B.shape": [32, 2560, 5120] }
     configs:
       - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1 }
       - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 1 }
@@ -349,5 +352,12 @@ autotune_profiles:
 
 The `gemm_gated_tuned` and `gemm_dgated_tuned` configs give every field that varies on SM100
 except `swap_ab`, which validity pruning removes for these gathered GEMMs, so each resolves to one
-candidate and is not benchmarked at all. The `gemm_tuned` entries leave `is_dynamic_persistent`
-open, so that kernel runs a 4-config search.
+candidate and is not benchmarked at all. The `gemm_tuned` entry leaves `is_dynamic_persistent`
+open, so that kernel runs a 4-config search. `gemm_tuned` also runs other GEMMs, and the pin
+leaves them alone on purpose, since its winners were measured on the down-projection forward:
+- the `B.shape` match keeps it off other weights;
+- the weight-gradient calls have `A` as `[5120, tokens]`, so `A.dim0` is 5120 and the threshold
+  does not catch them.
+
+Those keep the `allow` filter and their own search until their winners are measured. A dW pin
+would match on `"A.dim1": { ge: 32768 }`.
