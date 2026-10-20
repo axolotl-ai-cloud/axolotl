@@ -44,6 +44,8 @@ class TestTensorParallel:
                 "flash_attention": True,
                 "use_tensorboard": True,
                 "bf16": True,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
             }
         )
 
