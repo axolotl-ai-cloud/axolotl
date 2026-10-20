@@ -36,7 +36,19 @@ class UserDefinedPrompterType(BaseModel):
     )
 
 
-class SFTDataset(BaseModel):
+class EvaluationDatasetConfig(BaseModel):
+    """Optional grouping for evaluation metrics."""
+
+    eval_name: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z][A-Za-z0-9_]*$",
+        json_schema_extra={
+            "description": "Optional test dataset group. Datasets with the same eval_name are evaluated together, alongside aggregate metrics."
+        },
+    )
+
+
+class SFTDataset(EvaluationDatasetConfig):
     """SFT configuration subset"""
 
     path: str | None = Field(
@@ -268,7 +280,7 @@ class UserDefinedDPOType(BaseModel):
     rejected_format: str | None = None
 
 
-class DPODataset(BaseModel):
+class DPODataset(EvaluationDatasetConfig):
     """DPO configuration subset"""
 
     path: str | None = None
@@ -281,7 +293,7 @@ class DPODataset(BaseModel):
     field_rejected: str | None = None
 
 
-class StepwiseSupervisedDataset(BaseModel):
+class StepwiseSupervisedDataset(EvaluationDatasetConfig):
     """Stepwise supervised dataset configuration subset"""
 
     path: str | None = None
@@ -304,7 +316,7 @@ class UserDefinedKTOType(BaseModel):
     completion_format: str | None = None
 
 
-class KTODataset(BaseModel):
+class KTODataset(EvaluationDatasetConfig):
     """KTO configuration subset"""
 
     path: str | None = None
@@ -315,7 +327,7 @@ class KTODataset(BaseModel):
     revision: str | None = None
 
 
-class SyntheticDataset(BaseModel):
+class SyntheticDataset(EvaluationDatasetConfig):
     """Synthetic dataset configuration for benchmarking and testing.
 
     Generates datasets with configurable sequence length, dataset size, and token ID
