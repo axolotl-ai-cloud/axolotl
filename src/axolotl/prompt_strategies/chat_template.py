@@ -368,6 +368,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             self.roles_to_train = [
                 prompter.roles.get(role, role) for role in roles_to_train
             ]
+        if self.generation_tags and (
+            self.train_on_inputs
+            or any(role != "assistant" for role in self.roles_to_train)
+        ):
+            LOG.warning(
+                "generation_tags only labels assistant turns; using the turn locator "
+                "because train_on_inputs is set or roles_to_train has other roles"
+            )
+            self.generation_tags = False
 
         self.train_on_eos = train_on_eos
         # Backward compatibility, load from train_on_eos
@@ -519,19 +528,16 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turns disagree or a case needs the diff locator (part-level training detail,
         training non-assistant roles, ``train_on_inputs``).
         """
-        if self.train_on_inputs or any(
-            role != "assistant" for role in self.roles_to_train
-        ):
-            LOG.warning_once(
-                "generation_tags only labels assistant turns; falling back to the turn locator"
-            )
-            return None
         if any(
             turn.get("training_detail") is not None
             or turn.get("reasoning_training_detail") is not None
             or (turn.get("role") != "assistant" and turn.get("training"))
             for turn in turns
         ):
+            LOG.warning_once(
+                "generation_tags: rows with training_detail or a trainable non-assistant "
+                "turn use the turn locator"
+            )
             return None
 
         result = self.prompter.build_prompt_with_assistant_mask(turns, tools=tools)
@@ -554,8 +560,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
         if len(blocks) != len(assistant_turns):
             LOG.warning_once(
-                f"generation_tags: {len(blocks)} generation blocks for "
-                f"{len(assistant_turns)} assistant turns; falling back to the turn locator"
+                "generation_tags: generation blocks don't match the assistant turns "
+                "one to one; those rows use the turn locator"
             )
             return None
 
