@@ -3,6 +3,7 @@ HF Chat Templates prompt strategy
 """
 
 import json
+import re
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
 # Configure the logger
 LOG = get_logger(__name__)
 LOG.setLevel("INFO")
+
+_GENERATION_MARKER = re.compile(r"\{%[-+]?\s*generation\s*[-+]?%\}")
 
 
 def _extract_input_ids(result):
@@ -350,11 +353,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         self.prompter: ChatTemplatePrompter = prompter
 
         self.generation_tags = bool(generation_tags)
-        if self.generation_tags and "{% generation %}" not in (
+        if self.generation_tags and not _GENERATION_MARKER.search(
             prompter.chat_template or ""
-        ).replace("{%- generation %}", "{% generation %}").replace(
-            "{% generation -%}", "{% generation %}"
-        ).replace("{%- generation -%}", "{% generation %}"):
+        ):
             raise ValueError(
                 "generation_tags requires a chat template with {% generation %} markers"
             )
