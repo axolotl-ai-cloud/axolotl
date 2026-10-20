@@ -134,8 +134,7 @@ def test_structural_tokens_are_labeled(smollm2_tokenizer):
     row = Dataset.from_list([_conversation()]).map(strategy.tokenize_prompt)[0]
     ids, labels, trained, masked = _split(smollm2_tokenizer, row)
 
-    full = smollm2_tokenizer.decode(ids)
-    assert full == smollm2_tokenizer.decode(row["input_ids"])
+    assert trained.startswith("<|channel|>analysis<|message|>")
     # the empty analysis block, its close and the handoff into the tool call are generated
     assert (
         "<|channel|>analysis<|message|><|end|><|start|>assistant to=get_alert<|channel|>analysis<|message|>"
@@ -182,7 +181,9 @@ def test_train_on_eot_applies_inside_blocks(
     return_id = smollm2_tokenizer.convert_tokens_to_ids("<|return|>")
     assert any(l == call_id for l in labels) is expect_call
     assert any(l == return_id for l in labels) is expect_return
-    # everything else inside the blocks stays labeled
+    # everything else inside the blocks stays labeled, including the mid-turn <|end|>
+    end_id = smollm2_tokenizer.convert_tokens_to_ids("<|end|>")
+    assert labels.count(end_id) == 2
     assert '"alert_id": "A1"' in smollm2_tokenizer.decode(
         [t for t, l in zip(ids, labels, strict=True) if l != -100]
     )
@@ -224,7 +225,7 @@ def test_matches_diff_locator_on_field_content(smollm2_tokenizer):
 
 @pytest.mark.parametrize(
     "train_on_eos, expect_return",
-    [("turn", True), ("last", True), ("none", False), ("all", True)],
+    [("turn", True), ("last", True), ("none", False)],
 )
 def test_train_on_eos_applies_when_eos_is_not_an_eot_token(
     smollm2_tokenizer, train_on_eos, expect_return
@@ -277,3 +278,101 @@ def test_mistral_strategy_rejects_generation_tags():
             sequence_len=512,
             generation_tags=True,
         )
+
+
+# the terminator sits after the block, as when a template wraps only the content
+CONTENT_ONLY_TEMPLATE = """{%- for message in messages -%}
+<|start|>{{ message.role }}<|message|>
+{%- if message.role == 'assistant' -%}
+{% generation %}{{ message.content }}{% endgeneration %}
+{%- else -%}
+{{ message.content }}
+{%- endif -%}
+<|end|>
+{%- endfor -%}
+"""
+
+
+def _chat(*contents, **extra):
+    messages = [
+        {"role": "user" if idx % 2 == 0 else "assistant", "content": content}
+        for idx, content in enumerate(contents)
+    ]
+    for idx, fields in extra.items():
+        messages[int(idx.removeprefix("m"))].update(fields)
+    return {"messages": messages}
+
+
+def _labels(strategy, conversation):
+    return Dataset.from_list([conversation]).map(strategy.tokenize_prompt)[0]["labels"]
+
+
+def _uses_generation_tags(strategy, conversation):
+    turns = strategy.get_conversation_thread(conversation)
+    return (
+        strategy.generation_tags
+        and strategy._tokenize_with_generation_tags(turns, None) is not None
+    )
+
+
+@pytest.mark.parametrize("train_on_eot", ["turn", "last", "none", "all"])
+def test_terminator_after_block_matches_locator(smollm2_tokenizer, train_on_eot):
+    conversation = _chat("Hi", "Hello there.", "Bye", "See you.")
+    kwargs = {
+        "template": CONTENT_ONLY_TEMPLATE,
+        "eot_tokens": ("<|end|>",),
+        "train_on_eot": train_on_eot,
+    }
+    tagged = _strategy(smollm2_tokenizer, **kwargs)
+    plain = _strategy(smollm2_tokenizer, generation_tags=None, **kwargs)
+    assert _uses_generation_tags(tagged, conversation)
+    assert _labels(tagged, conversation) == _labels(plain, conversation)
+
+
+def test_train_on_eos_all_labels_eos_of_untrained_blocks(smollm2_tokenizer):
+    strategy = _strategy(
+        smollm2_tokenizer,
+        eot_tokens=("<|end|>", "<|call|>"),
+        train_on_eot="turn",
+        train_on_eos="all",
+    )
+    labels = _labels(strategy, _conversation(train_last=False))
+    assert smollm2_tokenizer.convert_tokens_to_ids("<|return|>") in labels
+
+
+@pytest.mark.parametrize(
+    "marker", ["{%generation%}", "{%- generation -%}", "{%+ generation %}"]
+)
+def test_accepts_marker_spellings(smollm2_tokenizer, marker):
+    template = GENERATION_TEMPLATE.replace("{% generation %}", marker)
+    assert _strategy(smollm2_tokenizer, template=template).generation_tags
+
+
+@pytest.mark.parametrize(
+    "conversation, ds_overrides",
+    [
+        # an empty assistant turn renders no block
+        (_chat("Hi", "", "Bye", "See you."), {}),
+        (_chat("Hi", "Hello there.", m0={"train": True}), {}),
+        (
+            _chat(
+                "Hi",
+                "Hello there.",
+                m1={
+                    "train_detail": [
+                        {"begin_offset": 0, "end_offset": 4, "train": True}
+                    ]
+                },
+            ),
+            {"message_field_training_detail": "train_detail"},
+        ),
+        (_chat("Hi", "Hello there."), {"roles_to_train": ["user", "assistant"]}),
+    ],
+    ids=["block_count_mismatch", "trainable_user_turn", "training_detail", "roles"],
+)
+def test_falls_back_to_locator(smollm2_tokenizer, conversation, ds_overrides):
+    kwargs = {"template": CONTENT_ONLY_TEMPLATE, "eot_tokens": ("<|end|>",)}
+    tagged = _strategy(smollm2_tokenizer, **kwargs, **ds_overrides)
+    plain = _strategy(smollm2_tokenizer, generation_tags=None, **kwargs, **ds_overrides)
+    assert not _uses_generation_tags(tagged, conversation)
+    assert _labels(tagged, conversation) == _labels(plain, conversation)
