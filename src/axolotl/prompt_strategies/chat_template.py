@@ -575,17 +575,26 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             (self._eot_token_ids, self.train_on_eot),
             (eos_token_ids, self.train_on_eos),
         ):
-            if train_option in ("none", "last") and trained_blocks:
-                keep_from = (
-                    trained_blocks[-1][0] if train_option == "last" else len(labels)
-                )
-                for idx in range(keep_from):
-                    if labels[idx] != IGNORE_TOKEN_ID and input_ids[idx] in token_ids:
-                        labels[idx] = IGNORE_TOKEN_ID
-            elif train_option == "all":
+            if train_option == "all":
                 for idx, token in enumerate(input_ids):
                     if token in token_ids:
                         labels[idx] = token
+            elif train_option in ("turn", "last", "none"):
+                terminators = [
+                    idx
+                    for _, block_end in trained_blocks
+                    if (
+                        idx := self._find_block_terminator(
+                            input_ids, block_end, token_ids
+                        )
+                    )
+                    != -1
+                ]
+                keep = {"turn": terminators, "last": terminators[-1:]}.get(
+                    train_option, []
+                )
+                for idx in terminators:
+                    labels[idx] = input_ids[idx] if idx in keep else IGNORE_TOKEN_ID
 
         tokenized = {
             "input_ids": input_ids,
@@ -593,6 +602,19 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             "labels": labels,
         }
         return tokenized
+
+    @staticmethod
+    def _find_block_terminator(
+        input_ids: list[int], block_end: int, token_ids: set[int]
+    ) -> int:
+        """Index of the token ending a generation block: its last token, or one up to
+        3 tokens after it (same slack as the locator); ``-1`` if neither."""
+        if input_ids[block_end - 1] in token_ids:
+            return block_end - 1
+        for idx in range(block_end, min(block_end + 4, len(input_ids))):
+            if input_ids[idx] in token_ids:
+                return idx
+        return -1
 
     def _tokenize_single_prompt(self, prompt: dict) -> Dict[str, List[int]]:
         # Old simple legacy behavior that works reliably.
