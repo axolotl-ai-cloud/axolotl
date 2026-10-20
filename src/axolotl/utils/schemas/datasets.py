@@ -181,7 +181,7 @@ class SFTDataset(BaseModel):
     generation_tags: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Label assistant turns from the chat template's {% generation %} markers (every token the model generates, including channel headers and empty reasoning blocks) instead of locating each turn's fields by diffing renders. Per-turn train flags still apply; requires a template with generation markers."
+            "description": "Label assistant turns from the chat template's {% generation %} blocks, including the template structure inside them, instead of locating each turn's fields. Needs one block per assistant turn; rows that don't match use the turn locator. Not supported with a processor, mistral-common or slow tokenizers."
         },
     )
     roles: dict[str, list[str]] | None = Field(
