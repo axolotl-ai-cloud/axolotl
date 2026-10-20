@@ -476,6 +476,164 @@ def test_records_serialize_with_bucketed_key_and_actual_shapes(quack, tmp_path):
     json.dumps(callback._collect_configs(), default=str)
 
 
+def test_seeded_bucket_winner_outside_the_profile_retunes_the_bucket(quack, tmp_path):
+    tuner = quack.add("gemm_tuned")
+    autotune_cache.install_timing_capture()
+    quack_autotune_policy.install_quack_key_policy("shape")
+    assert weight_grad(tuner, 300_000, n=64).is_dynamic_persistent
+    path = str(tmp_path / "b200.json")
+    autotune_cache.AutotuneCacheCallback(path, sonicmoe=True).on_save(None, None, None)
+    fresh = quack.add("gemm_tuned")
+    autotune_cache.install_timing_capture()
+    assert autotune_cache.load_quack_cache(autotune_cache.quack_cache_path(path)) == 1
+    autotune_profiles.apply_autotune_profiles(
+        [
+            {
+                "kernel": "gemm_tuned",
+                "backend": "quack",
+                "match": {"out.shape": [32, 5120, 64]},
+                "configs": [
+                    {"tile_m": 128, "tile_n": 64, "cluster_m": 2, "cluster_n": 1,
+                     "is_dynamic_persistent": False},
+                    {"tile_m": 256, "tile_n": 256, "cluster_m": 2, "cluster_n": 1,
+                     "is_dynamic_persistent": False},
+                ],
+            }
+        ]
+    )  # fmt: skip
+    quack_autotune_policy.install_quack_key_policy("shape")
+    first = weight_grad(fresh, 400_000, n=64)
+    assert not first.is_dynamic_persistent and len(fresh.benched) == 2
+    for k in (500_000, 600_000, 700_000):
+        assert weight_grad(fresh, k, n=64) == first
+    assert len(fresh.benched) == 2 and len(fresh.cache) == 1
+    assert not fresh.cache.exact_fallbacks
+
+
+def _read_records(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)["records"]
+
+
+def _strip_fingerprints(path):
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    for record in data["records"]:
+        record.pop("swept_configs_sha256", None)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(data, handle)
+
+
+def test_seeded_bucket_winner_without_a_fingerprint_heals_through_the_bucket_check(
+    quack, tmp_path
+):
+    tuner = quack.add("gemm_tuned")
+    autotune_cache.install_timing_capture()
+    quack_autotune_policy.install_quack_key_policy("shape")
+    weight_grad(tuner, 300_000, n=64)
+    path = str(tmp_path / "b200.json")
+    autotune_cache.AutotuneCacheCallback(path, sonicmoe=True).on_save(None, None, None)
+    quack_path = autotune_cache.quack_cache_path(path)
+    _strip_fingerprints(quack_path)
+
+    fresh = quack.add("gemm_tuned")
+    autotune_cache.install_timing_capture()
+    assert autotune_cache.load_quack_cache(quack_path) == 1
+    assert not getattr(fresh.cache, "unverified", None)
+    autotune_profiles.apply_autotune_profiles(
+        [{"kernel": "gemm_tuned", "backend": "quack",
+          "allow": {"is_dynamic_persistent": [False]}}]
+    )  # fmt: skip
+    quack_autotune_policy.install_quack_key_policy("shape")
+    first = weight_grad(fresh, 400_000, n=64)
+    assert not first.is_dynamic_persistent
+    swept = len(fresh.benched)
+    assert swept > 0
+    weight_grad(fresh, 500_000, n=64)
+    assert len(fresh.benched) == swept and not fresh.cache.exact_fallbacks
+
+    autotune_cache.AutotuneCacheCallback(path, sonicmoe=True).on_save(None, None, None)
+    (record,) = _read_records(quack_path)
+    assert record["source"] == "measured"
+    assert record["config"]["config"]["is_dynamic_persistent"] is False
+    assert record["swept_configs_sha256"]
+
+
+def test_seeded_winner_swept_over_other_candidates_is_retuned(quack, tmp_path):
+    """The seeded winner is still a candidate, but this run's profiles offer others."""
+    tuner = quack.add("gemm_gated_tuned")
+    autotune_cache.install_timing_capture()
+    autotune_profiles.apply_autotune_profiles(
+        [{"kernel": "gemm_gated_tuned", "backend": "quack", "allow": {"tile_m": [256]}}]
+    )
+    quack_autotune_policy.install_quack_key_policy("shape")
+    winner = gated(tuner, 600_000)
+    narrow = len(tuner.benched)
+    path = str(tmp_path / "b200.json")
+    quack_path = autotune_cache.quack_cache_path(path)
+    autotune_cache.AutotuneCacheCallback(path, sonicmoe=True).on_save(None, None, None)
+    (old,) = _read_records(quack_path)
+    assert old["source"] == "measured" and old["configs_benchmarked"] == narrow
+
+    fresh = quack.add("gemm_gated_tuned")
+    autotune_cache.install_timing_capture()
+    assert autotune_cache.load_quack_cache(quack_path) == 1
+    quack_autotune_policy.install_quack_key_policy("shape")
+    assert gated(fresh, 700_000) == winner
+    full = len(fresh.benched)
+    assert full > narrow
+    gated(fresh, 800_000)
+    assert len(fresh.benched) == full and len(fresh.cache) == 1
+
+    autotune_cache.AutotuneCacheCallback(path, sonicmoe=True).on_save(None, None, None)
+    (new,) = _read_records(quack_path)
+    assert new["configs_benchmarked"] == full
+    assert new["swept_configs_sha256"] != old["swept_configs_sha256"]
+
+    again = quack.add("gemm_gated_tuned")
+    autotune_cache.install_timing_capture()
+    assert autotune_cache.load_quack_cache(quack_path) == 1
+    quack_autotune_policy.install_quack_key_policy("shape")
+    assert gated(again, 900_000) == winner
+    assert again.benched == [] and not again.cache.unverified
+
+
+def test_seeded_exact_key_swept_over_other_candidates_is_retuned(quack, tmp_path):
+    tuner = quack.add("gemm_tuned")
+    autotune_cache.install_timing_capture()
+    autotune_profiles.apply_autotune_profiles(
+        [{"kernel": "gemm_tuned", "backend": "quack", "allow": {"tile_m": [128]}}]
+    )
+    assert dense(tuner, 4096).tile_m == 128
+    path = str(tmp_path / "b200.json")
+    quack_path = autotune_cache.quack_cache_path(path)
+    autotune_cache.AutotuneCacheCallback(path, sonicmoe=True).on_save(None, None, None)
+
+    fresh = quack.add("gemm_tuned")
+    autotune_cache.install_timing_capture()
+    assert autotune_cache.load_quack_cache(quack_path) == 1
+    assert quack_autotune_policy.install_quack_key_policy("none") == 1
+    retuned = dense(fresh, 4096)
+    assert retuned.tile_m == 256 and fresh.benched
+    swept = len(fresh.benched)
+    assert dense(fresh, 4096) == retuned and len(fresh.benched) == swept
+
+    autotune_cache.AutotuneCacheCallback(path, sonicmoe=True).on_save(None, None, None)
+    (record,) = _read_records(quack_path)
+    assert record["config"]["config"]["tile_m"] == 256
+
+
+def test_merge_replaces_a_record_swept_over_other_candidates():
+    old = {"source": "measured", "config": {"a": 1}, "timings_ms": {"x": 1.0},
+           "swept_configs_sha256": "old"}  # fmt: skip
+    pinned = {"source": "profile", "config": {"a": 1}, "swept_configs_sha256": "new"}
+    assert autotune_cache._merge_record(old, pinned) is pinned
+    same = {"source": "profile", "config": {"a": 1}, "swept_configs_sha256": "old"}
+    assert autotune_cache._merge_record(old, same) is old
+    seeded = {"source": "seeded", "config": {"a": 2}}
+    assert autotune_cache._merge_record(old, seeded) is old
+
+
 def test_gpu_warmup_is_skipped(quack):
     tuner = quack.add("gemm_gated_tuned")
     quack_autotune_policy.install_quack_key_policy("pow2")
