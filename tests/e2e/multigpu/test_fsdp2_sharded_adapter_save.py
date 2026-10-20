@@ -36,7 +36,7 @@ def test_nccl_sharded_adapter_matches_gathered_adapter(tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.count("PASS sharded-") == 10, result.stdout
+    assert result.stdout.count("PASS sharded-") == 13, result.stdout
 
 
 def adapter_mismatches(left, right) -> list[str]:

@@ -34,6 +34,9 @@ CASES = (
     "modules-to-save",
     "modules-to-save-tied",
     "replicated-wrapper",
+    "final-fsdp-only",
+    "final-ep",
+    "final-ep-fsdp",
 )
 
 
@@ -328,6 +331,14 @@ def test_default_format_keeps_the_gather_path():
             "FULL_STATE_DICT",
         ),
         ({"load_best_model_at_end": True}, "load_best_model_at_end"),
+        ({"adapter_final_save_format": "gather"}, None),
+        (
+            {
+                "adapter_checkpoint_format": "gather",
+                "adapter_final_save_format": "sharded",
+            },
+            "adapter_final_save_format: sharded requires",
+        ),
     ],
 )
 def test_sharded_format_validation(min_base_cfg, overrides, message):
@@ -353,3 +364,110 @@ def test_sharded_format_validation(min_base_cfg, overrides, message):
         return
     with pytest.raises(ValueError, match=message):
         validate_config(cfg)
+
+
+def _final_save_trainer(tmp_path, **cfg):
+    from axolotl.core.trainers.mixins.distributed_parallel import (
+        DistributedParallelMixin,
+    )
+    from axolotl.core.trainers.mixins.sharded_adapter_save import (
+        ShardedAdapterSaveMixin,
+    )
+    from axolotl.utils.dict import DictDefault
+
+    class Final(ShardedAdapterSaveMixin, DistributedParallelMixin):
+        axolotl_cfg = property(lambda self: self._axolotl_cfg)
+
+    trainer = object.__new__(Final)
+    trainer._axolotl_cfg = DictDefault(
+        {"adapter": "lora", "adapter_checkpoint_format": "sharded", **cfg}
+    )
+    trainer.model = SimpleNamespace(peft_config={"default": None})
+    trainer.accelerator = SimpleNamespace(
+        state=SimpleNamespace(
+            fsdp_plugin=SimpleNamespace(
+                fsdp_version=2, state_dict_type="StateDictType.FULL_STATE_DICT"
+            )
+        )
+    )
+    trainer.args = SimpleNamespace(output_dir=str(tmp_path), push_to_hub=False)
+    return trainer
+
+
+@pytest.fixture
+def final_save(monkeypatch):
+    """Record which writer the save paths reach, without collectives."""
+    from axolotl.core.trainers.mixins import distributed_parallel, sharded_adapter_save
+
+    calls = []
+    sharded_result = {"value": True}
+
+    def sharded(self, output_dir, final=False):
+        calls.append(("sharded", output_dir, final))
+        return sharded_result["value"]
+
+    def gather(self, output_dir=None, _internal_call=False):
+        calls.append(("gather", output_dir))
+
+    monkeypatch.setattr(sharded_adapter_save, "_distributed", lambda: True)
+    monkeypatch.setattr("accelerate.utils.modeling.is_peft_model", lambda model: True)
+    monkeypatch.setattr(
+        sharded_adapter_save.ShardedAdapterSaveMixin, "_save_sharded_adapter", sharded
+    )
+    monkeypatch.setattr(
+        distributed_parallel.DistributedParallelMixin, "_save_model_native", gather
+    )
+    return SimpleNamespace(calls=calls, sharded_result=sharded_result)
+
+
+def test_final_save_goes_through_the_sharded_writer(tmp_path, final_save):
+    trainer = _final_save_trainer(tmp_path)
+    assert trainer.save_final_adapter(str(tmp_path / "out"))
+    assert final_save.calls == [("sharded", str(tmp_path / "out"), True)]
+    # a later plain save_model (merge, export, callbacks) keeps the gather
+    trainer.save_model(str(tmp_path / "other"))
+    assert final_save.calls[1:] == [("gather", str(tmp_path / "other"))]
+    assert not trainer._final_adapter_save()
+
+
+def test_final_save_fallback_leaves_the_save_to_the_caller(tmp_path, final_save):
+    final_save.sharded_result["value"] = False
+    trainer = _final_save_trainer(tmp_path)
+    assert not trainer.save_final_adapter(str(tmp_path / "out"))
+    # nothing was gathered into output_dir: save_trained_model's own path saves it
+    assert final_save.calls == [("sharded", str(tmp_path / "out"), True)]
+
+
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        {"adapter_final_save_format": "gather"},
+        {"adapter_checkpoint_format": "gather"},
+    ],
+)
+def test_final_save_follows_the_final_format(tmp_path, final_save, cfg):
+    trainer = _final_save_trainer(tmp_path, **cfg)
+    assert not trainer.save_final_adapter(str(tmp_path / "out"))
+    assert final_save.calls == []
+
+
+def test_save_trained_model_routes_the_final_export(tmp_path):
+    from axolotl.train import save_trained_model
+    from axolotl.utils.dict import DictDefault
+
+    calls = []
+    trainer = SimpleNamespace(
+        save_final_adapter=lambda output_dir: calls.append(output_dir) or True,
+        save_model=lambda *a, **k: pytest.fail("saved through the gather"),
+    )
+    model = SimpleNamespace(named_modules=lambda: [])
+    cfg = DictDefault(
+        {
+            "adapter": "lora",
+            "adapter_checkpoint_format": "sharded",
+            "expert_parallel_size": 4,
+            "output_dir": str(tmp_path),
+        }
+    )
+    save_trained_model(cfg, trainer, model)
+    assert calls == [str(tmp_path)]

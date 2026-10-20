@@ -5,6 +5,7 @@ import filecmp
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -559,6 +560,7 @@ def check_ep_fsdp(root):
             experts
         )
     dist.barrier()
+    return model
 
 
 def modules_to_save_model(flat, tie=False, replicated=()):
@@ -668,6 +670,73 @@ def check_replicated_wrapper(flat, root):
     dist.barrier()
 
 
+def check_final_save(model, root, label):
+    """The end-of-training export goes through the sharded writer, matches the gather path's
+    bytes, and returns only once it and any earlier checkpoint are consolidated."""
+    from axolotl.train import save_trained_model
+
+    rank0 = dist.get_rank() == 0
+    gathered, sharded = root / f"{label}-final-gather", root / f"{label}-final"
+    run = root / f"{label}-final-run"
+    if _model_needs_ownership(model):
+        # what save_trained_model does for EP under the gather format
+        make_trainer(model, gathered).save_model(str(gathered))
+    else:
+        state = full_model_state(model, adapter_only=True)
+        if rank0:
+            make_trainer(model, gathered)._save(str(gathered), state_dict=state)
+    if rank0:
+        # left behind by a run that died mid-consolidation
+        stale = sharded / SHARD_DIRNAME
+        stale.mkdir(parents=True)
+        (stale / "manifest.json").write_text("{}")
+        (stale / fsdp2_sharded_adapter.shard_name(0)).write_bytes(b"junk")
+    dist.barrier()
+
+    def slow(shard_dir, *args, **kwargs):
+        time.sleep(0.5)
+        return consolidate(shard_dir, *args, **kwargs)
+
+    trainer = make_trainer(model, run, "sharded")
+    checkpoint = run / "checkpoint-1"
+    cfg = DictDefault(
+        {
+            "adapter": "lora",
+            "adapter_checkpoint_format": "sharded",
+            "output_dir": str(sharded),
+        }
+    )
+    error = None
+    with patch.object(fsdp2_sharded_adapter, "consolidate", slow):
+        trainer.save_model(str(checkpoint), _internal_call=True)
+        save_trained_model(cfg, trainer, model)
+        if rank0:
+            try:
+                assert CONSOLIDATIONS.pending() == []
+                for directory in (checkpoint, sharded):
+                    assert (directory / "adapter_model.safetensors").is_file()
+                    assert not (directory / SHARD_DIRNAME).exists(), directory
+                assert not (sharded / "pytorch_model_fsdp.bin").exists()
+            except AssertionError as exc:
+                error = f"final save returned early: {exc!r}"
+    _check_errors(error)
+    assert trainer._axolotl_final_adapter_saved
+    # the final export is never held back like a checkpoint
+    assert os.path.abspath(sharded) not in trainer._axolotl_unconsolidated
+    expect_identical(f"final-{label}", gathered, sharded)
+
+    # adapter_final_save_format: gather keeps the final export off the sharded writer
+    trainer = make_trainer(model, run, "sharded")
+    trainer._axolotl_cfg["adapter_final_save_format"] = "gather"
+    with patch.object(
+        fsdp2_sharded_adapter,
+        "write_adapter_shards",
+        side_effect=AssertionError("final export went through the sharded writer"),
+    ):
+        assert not trainer.save_final_adapter(str(root / f"{label}-final-forced"))
+    dist.barrier()
+
+
 def main():
     root = Path(sys.argv[1])
     if DEVICE == "cuda":
@@ -677,12 +746,15 @@ def main():
         dist.init_process_group("gloo")
     flat = init_device_mesh(DEVICE, (4,), mesh_dim_names=("flat",))
     mesh = init_device_mesh(DEVICE, (2, 2), mesh_dim_names=("dp", "ep"))
-    check_fsdp_only(flat, mesh, root)
+    fsdp_model = check_fsdp_only(flat, mesh, root)
     model = check_ep(mesh, root)
     check_regular_checkpoint_resume(model, root)
     check_torch_consolidation(model, root)
     check_interrupted_resume(model, root)
-    check_ep_fsdp(root)
+    ep_fsdp = check_ep_fsdp(root)
+    check_final_save(fsdp_model, root, "fsdp-only")
+    check_final_save(model, root, "ep")
+    check_final_save(ep_fsdp, root, "ep-fsdp")
     check_modules_to_save(flat, root)
     check_modules_to_save_tied(flat, root)
     check_replicated_wrapper(flat, root)

@@ -5,6 +5,10 @@ background. Until that finishes the checkpoint is incomplete, so this mixin hold
 treats it as complete: the ``on_save`` callbacks (checkpoint mirror, publishers) and
 ``save_total_limit`` rotation run once rank 0 reports the consolidation done, polled at step
 ends, and training end waits for every outstanding consolidation.
+
+The end-of-training export (:meth:`ShardedAdapterSaveMixin.save_final_adapter`) goes
+through the same writer into ``output_dir`` but consolidates synchronously: it returns
+only once ``adapter_model.safetensors`` is in place.
 """
 
 import contextlib
@@ -69,12 +73,22 @@ class ShardedAdapterSaveMixin(Trainer):
         cfg = getattr(self, "axolotl_cfg", None)
         return getattr(cfg, "adapter_checkpoint_format", None) == "sharded"
 
+    def _sharded_final_save(self) -> bool:
+        cfg = getattr(self, "axolotl_cfg", None)
+        final = getattr(cfg, "adapter_final_save_format", None)
+        return (final or getattr(cfg, "adapter_checkpoint_format", None)) == "sharded"
+
+    def _final_adapter_save(self) -> bool:
+        return getattr(self, "_axolotl_final_adapter_save", False)
+
     def _sharded_adapter_save_applies(self) -> bool:
-        if not (
-            self._sharded_adapter_checkpoints()
-            and getattr(self, "_axolotl_saving_checkpoint", False)
-            and _distributed()
-        ):
+        if self._final_adapter_save():
+            enabled = self._sharded_final_save()
+        else:
+            enabled = self._sharded_adapter_checkpoints() and getattr(
+                self, "_axolotl_saving_checkpoint", False
+            )
+        if not (enabled and _distributed()):
             return False
         from accelerate.utils.modeling import is_peft_model
 
@@ -94,16 +108,43 @@ class ShardedAdapterSaveMixin(Trainer):
             self._axolotl_deferred_rotation = None
             self._axolotl_last_checkpoint = None
 
+    def save_final_adapter(self, output_dir: str | None = None) -> bool:
+        """Collective: the end-of-training adapter export through the sharded writer.
+
+        Returns once ``adapter_model.safetensors`` is consolidated in ``output_dir``, or
+        ``False`` without saving anything when the sharded path does not apply, so the
+        caller can save through the gather.
+        """
+        self._axolotl_final_adapter_save = True
+        self._axolotl_final_adapter_saved = False
+        try:
+            if not self._sharded_adapter_save_applies():
+                return False
+            self.save_model(output_dir or self.args.output_dir)
+        finally:
+            self._axolotl_final_adapter_save = False
+        return self._axolotl_final_adapter_saved
+
     def _save_model_native(
         self, output_dir: str | None = None, _internal_call: bool = False
     ):
-        if self._sharded_adapter_save_applies() and self._save_sharded_adapter(
-            output_dir or self.args.output_dir
-        ):
-            return None
+        if self._sharded_adapter_save_applies():
+            final = self._final_adapter_save()
+            if self._save_sharded_adapter(output_dir or self.args.output_dir, final):
+                if final:
+                    self._axolotl_final_adapter_saved = True
+                    if getattr(self.args, "push_to_hub", False) and not _internal_call:
+                        self.push_to_hub(
+                            commit_message="Model save",
+                            revision=self.args.hub_revision,
+                        )
+                return None
+            if final:
+                # save_final_adapter's caller saves through its own gather path
+                return None
         return super()._save_model_native(output_dir, _internal_call)
 
-    def _save_sharded_adapter(self, output_dir) -> bool:
+    def _save_sharded_adapter(self, output_dir, final=False) -> bool:
         from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import _adapter_values
         from axolotl.monkeypatch.accelerate.fsdp2_sharded_adapter import (
             CONSOLIDATIONS,
@@ -119,8 +160,11 @@ class ShardedAdapterSaveMixin(Trainer):
         self._consolidation_state()
         rank0 = dist.get_rank() == 0
         if rank0:
-            CONSOLIDATIONS.wait(output_dir)
-            CONSOLIDATIONS.wait_for_capacity()
+            if final:
+                CONSOLIDATIONS.wait()
+            else:
+                CONSOLIDATIONS.wait(output_dir)
+                CONSOLIDATIONS.wait_for_capacity()
         shards = write_adapter_shards(self.model, output_dir)
         if shards is None:
             LOG.warning_once(
@@ -141,14 +185,24 @@ class ShardedAdapterSaveMixin(Trainer):
                 self._save(str(export), state_dict=placeholder)
                 persist_native_metadata_after_save(self.model, str(export))
                 move_export(export, output_dir)
-                CONSOLIDATIONS.submit(shards.directory)
+                future = CONSOLIDATIONS.submit(shards.directory)
+                if final:
+                    future.result()
             except Exception as exc:  # pylint: disable=broad-except
                 error = f"{type(exc).__name__}: {exc}"
+                if final:
+                    error += (
+                        f"; the adapter shards stay in {shards.directory}, "
+                        "complete_interrupted_consolidation() in "
+                        "axolotl.monkeypatch.accelerate.fsdp2_sharded_adapter finishes them"
+                    )
         errors = [None] * dist.get_world_size()
         dist.all_gather_object(errors, error)
         error = next((item for item in errors if item is not None), None)
         if error is not None:
             raise RuntimeError(f"Distributed adapter export failed: {error}")
+        if final:
+            return True
         mark_sharded_export(output_dir)
         self._axolotl_unconsolidated.add(os.path.abspath(output_dir))
         return True

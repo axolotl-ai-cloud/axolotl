@@ -313,6 +313,17 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
+    # adapter_checkpoint_format: sharded: every rank writes its slices, consolidated before
+    # this returns; falls back to the gather paths below when it does not apply
+    final_format = cfg.adapter_final_save_format or cfg.adapter_checkpoint_format
+    if (
+        cfg.adapter
+        and final_format == "sharded"
+        and hasattr(trainer, "save_final_adapter")
+    ):
+        if trainer.save_final_adapter(cfg.output_dir):
+            return
+
     # EP-sharded expert LoRA: the adapter is split across the EP axis, so the normal
     # FSDP/PEFT save would persist only the local rank's experts. Gather across EP and
     # write a complete adapter.

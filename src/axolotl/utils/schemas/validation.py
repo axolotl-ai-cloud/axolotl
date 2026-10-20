@@ -2425,6 +2425,11 @@ class DistributedValidationMixin:
     @model_validator(mode="after")
     def check_sharded_adapter_checkpoints(self):
         if self.adapter_checkpoint_format != "sharded":
+            if self.adapter_final_save_format == "sharded":
+                raise ValueError(
+                    "adapter_final_save_format: sharded requires "
+                    "adapter_checkpoint_format: sharded"
+                )
             return self
         problems = []
         if not self.adapter:

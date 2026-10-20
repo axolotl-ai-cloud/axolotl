@@ -8,7 +8,8 @@
 #   "Wrote ... GiB of adapter shards in ...s (slowest rank, 8 files) to .../.adapter_shards"
 #   "Consolidated .../adapter_model.safetensors in the background: ... GiB in ...s"
 # Afterwards every remaining checkpoint-N has adapter_model.safetensors and no
-# .adapter_shards/, and save_total_limit leaves checkpoint-4 and checkpoint-6.
+# .adapter_shards/, and save_total_limit leaves checkpoint-4 and checkpoint-6. The final
+# export to output_dir is sharded too and consolidated before training returns.
 # Set adapter_checkpoint_format: gather (and AXOLOTL_CHECKPOINT_TIMING=1) to compare the
 # save stall against the rank 0 gather. tests/e2e/multigpu/test_fsdp2_sharded_adapter_save.py
 # checks the consolidated file against the gathered one byte for byte on 4 GPUs.
