@@ -189,9 +189,14 @@ def test_train_on_eot_applies_inside_blocks(
     )
 
 
-def test_requires_generation_markers(smollm2_tokenizer):
+@pytest.mark.parametrize(
+    "template",
+    [NO_MARKER_TEMPLATE, NO_MARKER_TEMPLATE + "{# {% generation %} #}"],
+    ids=["no_marker", "marker_only_in_comment"],
+)
+def test_requires_generation_markers(smollm2_tokenizer, template):
     with pytest.raises(ValueError, match="generation"):
-        _strategy(smollm2_tokenizer, template=NO_MARKER_TEMPLATE)
+        _strategy(smollm2_tokenizer, template=template)
 
 
 def test_matches_diff_locator_on_field_content(smollm2_tokenizer):

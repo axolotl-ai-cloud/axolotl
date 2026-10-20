@@ -27,6 +27,7 @@ LOG = get_logger(__name__)
 LOG.setLevel("INFO")
 
 _GENERATION_MARKER = re.compile(r"\{%[-+]?\s*generation\s*[-+]?%\}")
+_JINJA_COMMENT = re.compile(r"\{#.*?#\}", re.DOTALL)
 
 
 def _extract_input_ids(result):
@@ -351,7 +352,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         self.generation_tags = bool(generation_tags)
         if self.generation_tags and not _GENERATION_MARKER.search(
-            prompter.chat_template or ""
+            _JINJA_COMMENT.sub("", prompter.chat_template or "")
         ):
             raise ValueError(
                 "generation_tags requires a chat template with {% generation %} markers"
