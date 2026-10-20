@@ -55,6 +55,7 @@ chat_template: tokenizer_default
 datasets:
   - path: mlabonne/FineTome-100k
     type: chat_template
+    generation_tags: true
     split: train[:2%]
     field_messages: conversations
     message_property_mappings:
