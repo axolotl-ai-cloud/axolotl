@@ -30,6 +30,21 @@ _GENERATION_MARKER = re.compile(r"\{%[-+]?\s*generation\s*[-+]?%\}")
 _JINJA_COMMENT = re.compile(r"\{#.*?#\}", re.DOTALL)
 
 
+def _true_runs(mask: list[int]) -> list[tuple[int, int]]:
+    """``[start, end)`` of each run of truthy values."""
+    runs: list[tuple[int, int]] = []
+    start = None
+    for idx, flag in enumerate(mask):
+        if flag and start is None:
+            start = idx
+        elif not flag and start is not None:
+            runs.append((start, idx))
+            start = None
+    if start is not None:
+        runs.append((start, len(mask)))
+    return runs
+
+
 def _extract_input_ids(result):
     """Return the ``input_ids`` from a ``build_prompt`` result.
 
@@ -350,33 +365,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.prompter: ChatTemplatePrompter = prompter
 
-        self.generation_tags = bool(generation_tags)
-        if self.generation_tags and not _GENERATION_MARKER.search(
-            _JINJA_COMMENT.sub("", prompter.chat_template or "")
-        ):
-            raise ValueError(
-                "generation_tags requires a chat template with {% generation %} markers"
-            )
-        if self.generation_tags and prompter.processor is not None:
-            raise ValueError("generation_tags is not supported with a processor")
-        if self.generation_tags and not getattr(tokenizer, "is_fast", False):
-            raise ValueError("generation_tags requires a fast tokenizer")
-
         self.roles_to_train = []
         if roles_to_train:
             # map roles if exist in prompter.roles else use the role as is
             self.roles_to_train = [
                 prompter.roles.get(role, role) for role in roles_to_train
             ]
-        if self.generation_tags and (
-            self.train_on_inputs
-            or any(role != "assistant" for role in self.roles_to_train)
-        ):
-            LOG.warning(
-                "generation_tags only labels assistant turns; using the turn locator "
-                "because train_on_inputs is set or roles_to_train has other roles"
-            )
-            self.generation_tags = False
+        self.generation_tags = self._use_generation_tags(generation_tags)
 
         self.train_on_eos = train_on_eos
         # Backward compatibility, load from train_on_eos
@@ -515,6 +510,28 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         return dict(res)
 
+    def _use_generation_tags(self, requested: bool | None) -> bool:
+        if not requested:
+            return False
+        template = _JINJA_COMMENT.sub("", self.prompter.chat_template or "")
+        if not _GENERATION_MARKER.search(template):
+            raise ValueError(
+                "generation_tags requires a chat template with {% generation %} markers"
+            )
+        if self.prompter.processor is not None:
+            raise ValueError("generation_tags is not supported with a processor")
+        if not getattr(self.tokenizer, "is_fast", False):
+            raise ValueError("generation_tags requires a fast tokenizer")
+        if self.train_on_inputs or any(
+            role != "assistant" for role in self.roles_to_train
+        ):
+            LOG.warning(
+                "generation_tags only labels assistant turns; using the turn locator "
+                "because train_on_inputs is set or roles_to_train has other roles"
+            )
+            return False
+        return True
+
     def _tokenize_with_generation_tags(
         self, turns: list[dict], tools: list[dict] | None
     ) -> Dict[str, List[int]] | None:
@@ -534,21 +551,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         result = self.prompter.build_prompt_with_assistant_mask(turns, tools=tools)
         input_ids = result["input_ids"]
-        mask = result.get("assistant_masks")
-        if not mask:
-            return None
-
-        blocks: list[tuple[int, int]] = []
-        start = None
-        for idx, flag in enumerate(mask):
-            if flag and start is None:
-                start = idx
-            elif not flag and start is not None:
-                blocks.append((start, idx))
-                start = None
-        if start is not None:
-            blocks.append((start, len(mask)))
-
+        blocks = _true_runs(result.get("assistant_masks") or [])
         assistant_turns = [turn for turn in turns if turn.get("role") == "assistant"]
         if len(blocks) != len(assistant_turns):
             LOG.warning_once(
@@ -567,12 +570,24 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 continue
             labels[block_start:block_end] = input_ids[block_start:block_end]
             trained_blocks.append((block_start, block_end))
+        self._label_terminators(input_ids, labels, trained_blocks)
 
-        eos_token_ids = (
-            {self.tokenizer.eos_token_id}
-            if self.tokenizer.eos_token_id is not None
-            else set()
-        )
+        return {
+            "input_ids": input_ids,
+            "attention_mask": result.get("attention_mask") or [1] * len(input_ids),
+            "labels": labels,
+        }
+
+    def _label_terminators(
+        self,
+        input_ids: list[int],
+        labels: list[int],
+        trained_blocks: list[tuple[int, int]],
+    ):
+        eos_token_ids = set()
+        if self.tokenizer.eos_token_id is not None:
+            eos_token_ids.add(self.tokenizer.eos_token_id)
+
         for token_ids, train_option in (
             (self._eot_token_ids, self.train_on_eot),
             (eos_token_ids, self.train_on_eos),
@@ -581,29 +596,23 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 for idx, token in enumerate(input_ids):
                     if token in token_ids:
                         labels[idx] = token
-            elif train_option in ("turn", "last", "none"):
-                terminators = [
-                    idx
-                    for _, block_end in trained_blocks
-                    if (
-                        idx := self._find_block_terminator(
-                            input_ids, block_end, token_ids
-                        )
-                    )
-                    != -1
-                ]
-                keep = {"turn": terminators, "last": terminators[-1:]}.get(
-                    train_option, []
-                )
-                for idx in terminators:
-                    labels[idx] = input_ids[idx] if idx in keep else IGNORE_TOKEN_ID
+                continue
+            if train_option not in ("turn", "last", "none"):
+                continue
 
-        tokenized = {
-            "input_ids": input_ids,
-            "attention_mask": result.get("attention_mask") or [1] * len(input_ids),
-            "labels": labels,
-        }
-        return tokenized
+            terminators = []
+            for _, block_end in trained_blocks:
+                idx = self._find_block_terminator(input_ids, block_end, token_ids)
+                if idx != -1:
+                    terminators.append(idx)
+            if train_option == "turn":
+                kept = terminators
+            elif train_option == "last":
+                kept = terminators[-1:]
+            else:
+                kept = []
+            for idx in terminators:
+                labels[idx] = input_ids[idx] if idx in kept else IGNORE_TOKEN_ID
 
     @staticmethod
     def _find_block_terminator(
