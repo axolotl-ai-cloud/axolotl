@@ -75,9 +75,10 @@ class KernelsArgs(BaseModel):
     autotune_neighborhood: int | None = None
     # SonicMoE: round the routed row/pair dims of quack's autotune key for grouped GEMMs up to a
     # power of two, so one sweep serves every count in a bucket ("pow2", the default with
-    # use_sonicmoe), or key on exact shapes ("none"). A reused winner is checked against quack's
+    # use_sonicmoe), drop them so one sweep per weight shape serves every token count ("shape"), or
+    # key on exact shapes ("none"). A reused winner is checked against quack's
     # validity pruning for the actual call; a rejected one tunes that exact shape instead.
-    quack_autotune_key_buckets: Literal["pow2", "none"] | None = None
+    quack_autotune_key_buckets: Literal["pow2", "shape", "none"] | None = None
     # SonicMoE: false = never benchmark quack configs; each GEMM key gets one config from a fixed
     # per-kernel rule (by output width and reduction size; autotune_profiles still decide when they
     # match), so a new shape costs at most a compile. Default true (sweep).
@@ -133,8 +134,10 @@ class KernelsArgs(BaseModel):
     def check_quack_autotune(cls, data):
         data = cls._canonicalize_expert_backend(data)
         buckets = data.get("quack_autotune_key_buckets")
-        if buckets is not None and buckets not in ("pow2", "none"):
-            raise ValueError("quack_autotune_key_buckets must be 'pow2' or 'none'")
+        if buckets is not None and buckets not in ("pow2", "shape", "none"):
+            raise ValueError(
+                "quack_autotune_key_buckets must be 'pow2', 'shape' or 'none'"
+            )
         tune = data.get("quack_autotune")
         if tune is not None and not isinstance(tune, bool):
             raise ValueError("quack_autotune must be true or false")

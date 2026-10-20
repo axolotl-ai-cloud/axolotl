@@ -383,6 +383,10 @@ writes to its disk cache, so one sweep serves the bucket:
   gather source, which is bucketed too);
 - with `cu_seqlens_k`: the total-K dim (`A`'s last dim, `B`'s first) and the length of `A_idx`.
 
+`quack_autotune_key_buckets: shape` replaces those dims with `-1` instead, so each kernel sweeps once
+per weight shape and every token count, sequence length or EP size reuses that winner (keys end
+with `axolotl_bucket=shape`). The first call of a shape is the one benchmarked.
+
 Weight and feature dims, the expert count and blockscaled calls keep their exact keys. Bucketed
 keys end with `axolotl_bucket=pow2`. Before a winner is reused for another shape in its bucket,
 quack's validity pruning (plus any matching `autotune_profiles`) runs for the actual call; a winner
@@ -408,7 +412,7 @@ valid candidate is used, logged once per kernel.
 
 ```yaml
 use_sonicmoe: true
-quack_autotune_key_buckets: pow2   # default with use_sonicmoe; none = exact shapes
+quack_autotune_key_buckets: pow2   # default with use_sonicmoe; shape = no token dims; none = exact shapes
 quack_autotune: false              # default true (sweep)
 ```
 
