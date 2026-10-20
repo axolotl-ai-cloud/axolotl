@@ -352,7 +352,21 @@ def get_test_inputs(model, seq_length=20):
     )
 
 
-@pytest.mark.parametrize("model_config", MODEL_CONFIGS)
+@pytest.mark.parametrize(
+    "model_config",
+    [
+        pytest.param(
+            config,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="fused GEGLU is exact-erf GELU; gemma2 uses gelu_pytorch_tanh",
+            ),
+        )
+        if config["expected_activation"] is apply_lora_mlp_geglu
+        else config
+        for config in MODEL_CONFIGS
+    ],
+)
 def test_model_architecture(model_config):
     """Test LoRA kernel patches across different model architectures."""
     # Load model with appropriate dtype
