@@ -26,7 +26,8 @@ def test_geglu_forward_shape():
     "torch_seed",
     [0, 42],
 )
-def test_geglu_forward_values(torch_seed):
+@pytest.mark.parametrize("approximate", ["none", "tanh"])
+def test_geglu_forward_values(torch_seed, approximate):
     """Test GEGLU forward pass matches PyTorch reference implementation."""
     torch.manual_seed(torch_seed)
 
@@ -34,10 +35,10 @@ def test_geglu_forward_values(torch_seed):
     up = torch.randn(2, 3, 64, device="cuda")
 
     # Custom implementation
-    triton_out = geglu_forward(gate.clone(), up.clone())
+    triton_out = geglu_forward(gate.clone(), up.clone(), approximate == "tanh")
 
     # PyTorch reference
-    torch_out = F.gelu(gate) * up
+    torch_out = F.gelu(gate, approximate=approximate) * up
 
     assert torch.allclose(triton_out, torch_out, rtol=1e-3)
 
@@ -47,7 +48,8 @@ def test_geglu_forward_values(torch_seed):
     "torch_seed",
     [0, 42],
 )
-def test_geglu_backward(torch_seed):
+@pytest.mark.parametrize("approximate", ["none", "tanh"])
+def test_geglu_backward(torch_seed, approximate):
     """Test GEGLU backward pass matches PyTorch autograd."""
     torch.manual_seed(torch_seed)
 
@@ -56,7 +58,7 @@ def test_geglu_backward(torch_seed):
     grad_output = torch.randn(2, 3, 64, device="cuda")
 
     # PyTorch reference - compute intermediates
-    gelu_gate = F.gelu(gate)
+    gelu_gate = F.gelu(gate, approximate=approximate)
     torch_out = gelu_gate * up
     torch_out.backward(grad_output)
 
@@ -65,7 +67,9 @@ def test_geglu_backward(torch_seed):
     up_clone = up.clone().detach()
     grad_output_clone = grad_output.clone()
 
-    h, grad_gate, grad_up = geglu_backward(grad_output_clone, gate_clone, up_clone)
+    h, grad_gate, grad_up = geglu_backward(
+        grad_output_clone, gate_clone, up_clone, approximate == "tanh"
+    )
 
     # Compare outputs and gradients
     assert torch.allclose(h, torch_out, rtol=1e-3)
