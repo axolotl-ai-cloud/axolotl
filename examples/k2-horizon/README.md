@@ -32,6 +32,7 @@ is required.
 - `sample_packing: true` is supported.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+- The chat template requires a thinking field on every assistant message (`reasoning_content`, `reasoning`, `think`, `think_fast` or `think_faster`); map yours with `field_thinking`, as the examples do for `thinking`.
 
 ## Limitations
 
