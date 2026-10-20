@@ -163,12 +163,58 @@ def _check_errors(error):
         )
 
 
-def _transfer_device():
-    # FULL_STATE_DICT inits the group as "cuda:nccl,cpu:gloo"; an exact "nccl" match
-    # sends every chunk through gloo over TCP
-    if "nccl" in str(dist.get_backend()):
+def _device_backends(group=None) -> dict[str, str]:
+    """``{device type: backend name}`` registered on ``group`` (default: WORLD)."""
+    try:
+        config = str(dist.get_backend_config(group))
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        config = ""
+    backends = dict(
+        item.strip().split(":", 1) for item in config.split(",") if ":" in item
+    )
+    if backends:
+        return {device: name.lower() for device, name in backends.items()}
+    for device_type in ("cuda", "cpu"):
+        try:
+            pg = group or dist.distributed_c10d._get_default_group()
+            backend = pg._get_backend(torch.device(device_type))
+        except Exception:  # noqa: BLE001  pylint: disable=broad-except
+            backend = None
+        if backend is not None:
+            backends[device_type] = (
+                type(backend).__name__.removeprefix("ProcessGroup").lower()
+            )
+    return backends
+
+
+def collective_device(group=None) -> torch.device:
+    """The device to stage tensors on for collectives over ``group``.
+
+    ``dist.get_backend()`` is not usable for this: a default group created implicitly by
+    ``init_device_mesh`` (no backend given) reports ``"undefined"`` while registering only
+    the accelerator backend (``cuda:nccl``), so CPU tensors fail with "No backend type
+    associated with device type cpu".
+    """
+    backends = _device_backends(group)
+    if not backends:
+        try:
+            name = str(dist.get_backend(group))
+        except Exception:  # noqa: BLE001  pylint: disable=broad-except
+            name = ""
+        backends = {"cuda": "nccl"} if "nccl" in name else {"cpu": name or "gloo"}
+    cuda = backends.get("cuda")
+    # gloo registers for cuda too, but over CPU tensors it skips the device round trip
+    if (
+        cuda is not None
+        and torch.cuda.is_available()
+        and (cuda != "gloo" or "cpu" not in backends)
+    ):
         return torch.device("cuda", torch.cuda.current_device())
     return torch.device("cpu")
+
+
+def _transfer_device():
+    return collective_device()
 
 
 _STAGING: dict = {}

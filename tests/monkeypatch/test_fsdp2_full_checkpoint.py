@@ -128,22 +128,70 @@ def test_full_model_file_written_without_optimizer(
         torch.testing.assert_close(saved[name], value, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize(
-    "backend, device",
-    [("nccl", "cuda"), ("cuda:nccl,cpu:gloo", "cuda"), ("gloo", "cpu")],
-)
-def test_transfer_stages_on_cuda_whenever_nccl_is_bound(backend, device):
-    from unittest.mock import patch
+class _Group:
+    """A process group with ``backends`` ({device type: backend name}) registered."""
 
+    def __init__(self, backends):
+        self.backends = backends
+
+    def _get_backend(self, device):
+        if device.type not in self.backends:
+            raise RuntimeError(f"No backend type associated with device type {device}")
+        name = self.backends[device.type]
+        return type(f"ProcessGroup{name.capitalize()}", (), {})()
+
+
+@pytest.mark.parametrize(
+    "backend, config, registered, device",
+    [
+        ("nccl", "cuda:nccl", {"cuda": "nccl"}, "cuda"),
+        ("cuda:nccl,cpu:gloo", "cuda:nccl,cpu:gloo", None, "cuda"),
+        # the default group init_device_mesh creates when no backend was given
+        ("undefined", "cuda:nccl", {"cuda": "nccl"}, "cuda"),
+        ("undefined", None, {"cuda": "nccl"}, "cuda"),
+        ("gloo", "cpu:gloo,cuda:gloo", None, "cpu"),
+        ("gloo", None, {"cpu": "gloo", "cuda": "gloo"}, "cpu"),
+        ("nccl", None, {}, "cuda"),
+    ],
+)
+def test_transfer_stages_on_cuda_whenever_a_cuda_backend_is_registered(
+    monkeypatch, backend, config, registered, device
+):
     import torch
 
     from axolotl.monkeypatch.accelerate import fsdp2_checkpoint
 
-    with (
-        patch.object(fsdp2_checkpoint.dist, "get_backend", return_value=backend),
-        patch.object(torch.cuda, "current_device", return_value=0),
-    ):
-        assert fsdp2_checkpoint._transfer_device().type == device
+    dist = fsdp2_checkpoint.dist
+
+    def get_backend_config(group=None):
+        if config is None:
+            raise ValueError("no backend config")
+        return config
+
+    group = _Group(registered or {})
+    monkeypatch.setattr(dist, "get_backend", lambda group=None: backend)
+    monkeypatch.setattr(dist, "get_backend_config", get_backend_config)
+    monkeypatch.setattr(dist.distributed_c10d, "_get_default_group", lambda: group)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
+    assert fsdp2_checkpoint.collective_device(group).type == device
+    assert fsdp2_checkpoint._transfer_device().type == device
+
+
+def test_transfer_stages_on_cpu_over_a_gloo_group(tmp_path):
+    import torch.distributed as dist
+
+    from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import _transfer_device
+
+    if dist.is_initialized():
+        pytest.skip("a process group is already initialized")
+    dist.init_process_group(
+        "gloo", init_method=f"file://{tmp_path / 'store'}", rank=0, world_size=1
+    )
+    try:
+        assert _transfer_device().type == "cpu"
+    finally:
+        dist.destroy_process_group()
 
 
 @pytest.mark.parametrize("rank", [0, 1])
