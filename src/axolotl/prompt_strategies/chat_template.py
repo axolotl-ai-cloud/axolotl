@@ -526,6 +526,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if any(
             turn.get("training_detail") is not None
             or turn.get("reasoning_training_detail") is not None
+            or (turn.get("role") != "assistant" and turn.get("training"))
             for turn in turns
         ):
             return None
