@@ -440,7 +440,7 @@ After split, it will look like:
 
 #### Labeling from generation markers
 
-If your chat template wraps each assistant turn in `{% generation %}...{% endgeneration %}`, set `generation_tags: true` to label everything inside those blocks instead of locating each turn's fields. This also trains template structure the model has to generate, such as Harmony channel headers and empty reasoning blocks, and is faster on long multi-turn conversations.
+If your chat template wraps assistant output in `{% generation %}...{% endgeneration %}`, set `generation_tags: true` to label those blocks directly. This also trains template structure inside them, such as Harmony channel headers, and is faster on long conversations.
 
 ```yaml
 datasets:
@@ -449,14 +449,10 @@ datasets:
     generation_tags: true
 ```
 
-- The template needs exactly one generation block per assistant turn. Per-turn `train` flags apply to the blocks in order.
-- `train_on_eot` and `train_on_eos` apply to the token that ends each block: its last token, or one rendered right after `{% endgeneration %}`. EOT tokens in the middle of a block (e.g. Harmony's `<|end|>` closing the analysis channel) stay labeled.
-- Rows fall back to the turn locator, with a warning, when the blocks don't match the assistant turns, a turn has `training_detail`, or a non-assistant turn is trainable. `train_on_inputs`, or `roles_to_train` with roles other than `assistant`, turns it off for the whole dataset.
-- Not supported with a processor (multimodal), mistral-common tokenizers, or slow tokenizers.
-
-::: {.callout-note}
-Labels come from HF's character-to-token mapping, so a token that straddles a block edge is labeled whole, e.g. one merging trailing whitespace with the next turn's header. Keep special tokens at block edges to avoid this.
-:::
+- The template needs one generation block per assistant turn. Per-turn `train` flags still apply.
+- `train_on_eot` and `train_on_eos` apply to the token ending each block, inside it or right after it.
+- Rows with `training_detail`, a trainable non-assistant turn, or blocks that don't match the turns use the default labeling. `train_on_inputs` or non-assistant `roles_to_train` turn it off.
+- Not supported with a processor, mistral-common, or slow tokenizers.
 
 
 ## sharegpt
