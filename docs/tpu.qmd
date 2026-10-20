@@ -59,17 +59,17 @@ See `examples/tpu/` for complete, ready-to-run configs.
 
 ## Supported features
 
-| Feature | Status |
+| Feature |
 |---|---|
-| SFT (supervised fine-tuning) | ✅ |
-| LoRA | ✅ |
-| Full fine-tuning | ✅ |
-| bf16 | ✅ |
-| Data parallel (all chips on one host) | ✅ |
-| `gradient_checkpointing: true` | ✅ |
-| Resume from checkpoint | ✅ |
-| `merge-lora` / `inference` (on CPU) | ✅ |
-| `preprocess` | ✅ |
+| SFT |
+| LoRA |
+| Full fine-tuning |
+| bf16 |
+| Data parallel (all chips on one host) |
+| `gradient_checkpointing: true` |
+| Resume from checkpoint |
+| `merge-lora` / `inference` (on CPU) |
+| `preprocess` |
 
 ## Not yet supported
 
@@ -78,11 +78,11 @@ See `examples/tpu/` for complete, ready-to-run configs.
 | QLoRA / bitsandbytes | BnB requires CUDA |
 | Flash Attention | CUDA kernel; use `attn_implementation: sdpa` |
 | DeepSpeed | Not applicable on TPU |
-| FSDP / FSDPv2 | Planned follow-up |
+| FSDP / FSDPv2 | Not in this PR |
 | Sample packing | Dynamic shapes cause recompilation |
-| RL training (DPO, GRPO, …) | Planned follow-up |
+| RL training (DPO, GRPO, …) | Not in this PR |
 | `torch_compile` | XLA is already a compiler |
-| Multi-host TPU pods | Planned follow-up |
+| Multi-host TPU pods | Not in this PR |
 | Trainium (AWS) | Separate effort |
 
 Axolotl will raise a clear error at config-validation time if you use an unsupported feature.
