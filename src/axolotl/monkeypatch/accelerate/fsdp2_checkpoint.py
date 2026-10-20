@@ -641,12 +641,17 @@ def _adapter_export_names(model, values, adapter):
     return mapping
 
 
-def _adapter_model_state(model):
+def _adapter_model_state(model, exports=None):
+    """Canonical name -> parameter/buffer of every tensor the PEFT export holds; ``exports``
+    (when given) receives each adapter's export-key mapping."""
     values = _adapter_values(model)
     selected, error = set(), None
     try:
         for adapter in model.peft_config:
-            for names in _adapter_export_names(model, values, adapter).values():
+            mapping = _adapter_export_names(model, values, adapter)
+            if exports is not None:
+                exports[adapter] = mapping
+            for names in mapping.values():
                 selected.update(names)
     except Exception as exc:  # pylint: disable=broad-except
         error = f"Adapter checkpoint selection failed: {exc}"
@@ -696,6 +701,9 @@ def _load_referenced_adapter(model, directory):
                 raise ValueError(
                     "An adapter-reference checkpoint restores a single-adapter PEFT model"
                 )
+            from .fsdp2_sharded_adapter import complete_interrupted_consolidation
+
+            complete_interrupted_consolidation(directory)
             (adapter,) = model.peft_config
             # PEFT saves a non-default adapter in a subdirectory named after it
             folders = [directory] + (
@@ -1246,7 +1254,16 @@ def patch_fsdp2_full_checkpoint():
                     f"{basename}_{index}.bin" if index else f"{basename}.bin"
                 )
                 if "save" in operation:
-                    if packed:
+                    reference = None
+                    if not optimizer_operation and adapter_only:
+                        from .fsdp2_sharded_adapter import is_sharded_export
+
+                        # the adapter file being consolidated beside it holds this state
+                        if is_sharded_export(path):
+                            reference = adapter_reference(model)
+                    if reference is not None:
+                        state = reference
+                    elif packed:
                         from .fsdp2_bnb_checkpoint import full_packed_model_state
 
                         state = full_packed_model_state(model, packed)

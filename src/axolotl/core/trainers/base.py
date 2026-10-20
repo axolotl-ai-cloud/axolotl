@@ -50,6 +50,7 @@ from axolotl.core.trainers.mixins import (
     PackingMixin,
     RngLoaderMixin,
     SchedulerMixin,
+    ShardedAdapterSaveMixin,
 )
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
@@ -119,6 +120,7 @@ class AxolotlTrainer(
     CheckpointSaveMixin,
     LayerOffloadingMixin,
     ActivationOffloadingMixin,
+    ShardedAdapterSaveMixin,
     DistributedParallelMixin,
     Trainer,
 ):

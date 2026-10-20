@@ -1350,6 +1350,12 @@ class AxolotlInputConfig(
             "description": "Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints."
         },
     )
+    adapter_checkpoint_format: Literal["gather", "sharded"] | None = Field(
+        default="gather",
+        json_schema_extra={
+            "description": "How FSDP2 writes PEFT adapter checkpoints (checkpoint-N saves; the final export always gathers). 'gather' assembles every adapter tensor on rank 0 before writing adapter_model.safetensors. 'sharded' has every rank write the slices it holds to checkpoint-N/.adapter_shards/ with no cross-rank tensor transfer, then rank 0 consolidates them into the same adapter_model.safetensors on a background thread while training continues. One consolidation runs at a time; a save that finds one running and one queued waits. Until a checkpoint is consolidated, its on_save callbacks (checkpoint mirror, publishers) and save_total_limit rotation are held back, and training end waits for it; a resume from an unconsolidated checkpoint finishes the consolidation first. Requires an adapter, fsdp_version 2 with state_dict_type FULL_STATE_DICT (with or without expert_parallel_size), and a single adapter; anything else falls back to 'gather'."
+        },
+    )
     use_tensorboard: bool | None = Field(
         default=None, json_schema_extra={"description": "Use tensorboard for logging"}
     )

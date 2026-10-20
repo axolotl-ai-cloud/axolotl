@@ -2422,6 +2422,29 @@ class DistributedValidationMixin:
             )
         return self
 
+    @model_validator(mode="after")
+    def check_sharded_adapter_checkpoints(self):
+        if self.adapter_checkpoint_format != "sharded":
+            return self
+        problems = []
+        if not self.adapter:
+            problems.append("an adapter (lora/qlora)")
+        if not self.fsdp_config or (self.fsdp_version or 2) != 2:
+            problems.append("fsdp_version: 2")
+        elif self.fsdp_config.state_dict_type != "FULL_STATE_DICT":
+            problems.append("fsdp_config.state_dict_type: FULL_STATE_DICT")
+        if (self.tensor_parallel_size or 1) > 1:
+            problems.append("tensor_parallel_size: 1")
+        if self.load_best_model_at_end:
+            # the best checkpoint may still be consolidating when training ends
+            problems.append("load_best_model_at_end: false")
+        if problems:
+            raise ValueError(
+                "adapter_checkpoint_format: sharded writes PEFT adapter-only checkpoints "
+                "under FSDP2 and requires " + ", ".join(problems)
+            )
+        return self
+
 
 class EBFTValidationMixin:
     """Validation for EBFT (Energy-Based Fine-Tuning) configuration."""
