@@ -402,6 +402,21 @@ class DatasetValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_generation_tags_needs_prepare(cls, data):
+        if data.get("skip_prepare_dataset") and any(
+            ds.get("generation_tags")
+            if isinstance(ds, dict)
+            else getattr(ds, "generation_tags", None)
+            for ds in (data.get("datasets") or []) + (data.get("test_datasets") or [])
+        ):
+            raise ValueError(
+                "generation_tags labels during dataset preparation and has no effect "
+                "with skip_prepare_dataset"
+            )
+        return data
+
 
 class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
