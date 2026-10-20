@@ -114,7 +114,7 @@ class FlashAttnVarlenFunc(torch.autograd.Function):
     def forward(ctx, q, k, v, cu_seqlens_q, cu_seqlens_k, seqused_q=None,
                 seqused_k=None, page_table=None, softmax_scale=None, causal=False,
                 window_size=(None, None), learnable_sink=None, softcap=0.0,
-                pack_gqa=None):
+                pack_gqa=None, max_seqlen_q=None, max_seqlen_k=None):
         CALLS["fwd"] += 1
         scale = q.shape[-1] ** -0.5 if softmax_scale is None else softmax_scale
         bounds = cu_seqlens_q.tolist()
@@ -129,6 +129,7 @@ class FlashAttnVarlenFunc(torch.autograd.Function):
         ctx.causal = causal
         ctx.window_size = window_size
         ctx.softcap = softcap
+        ctx.max_seqlen_q = max_seqlen_q
         return out, lse
 
     @staticmethod
@@ -143,7 +144,7 @@ class FlashAttnVarlenFunc(torch.autograd.Function):
             for a, b in zip(bounds[:-1], bounds[1:])
         ]
         dq, dk, dv = (torch.cat(g) for g in zip(*grads))
-        return dq, dk, dv, *((None,) * 11)
+        return dq, dk, dv, *((None,) * 13)
 
 
 def flash_attn_func(q, k, v, softmax_scale=None, causal=False,
@@ -156,10 +157,12 @@ def flash_attn_func(q, k, v, softmax_scale=None, causal=False,
 def flash_attn_varlen_func(q, k, v, cu_seqlens_q=None, cu_seqlens_k=None,
                            seqused_q=None, seqused_k=None, page_table=None,
                            softmax_scale=None, causal=False, window_size=(None, None),
-                           learnable_sink=None, softcap=0.0, pack_gqa=None):
+                           learnable_sink=None, softcap=0.0, pack_gqa=None,
+                           max_seqlen_q=None, max_seqlen_k=None):
     return FlashAttnVarlenFunc.apply(q, k, v, cu_seqlens_q, cu_seqlens_k, seqused_q,
                                      seqused_k, page_table, softmax_scale, causal,
-                                     window_size, learnable_sink, softcap, pack_gqa)
+                                     window_size, learnable_sink, softcap, pack_gqa,
+                                     max_seqlen_q, max_seqlen_k)
 """
 
 HEADS, KV_HEADS, HEAD_DIM, HIDDEN = 4, 2, 8, 16
@@ -283,6 +286,25 @@ def test_saved_fa4_forward_is_not_recomputed(cute, op_calls, varlen):
     assert state.saved_op_names == {name}
     _assert_exact(grads, reference)
     assert not fa4_ops._PENDING
+
+
+def test_tensor_max_seqlen_is_saved_like_an_int(cute, op_calls):
+    cu = torch.tensor([0, 5, 12], dtype=torch.int32)
+    longest = cu.diff().max()
+    block = _varlen_block(cute, max_seqlen_q=longest, max_seqlen_k=longest)
+    _, _, reference = _run(cute, block, checkpointed=False)
+    forward, calls, grads = _run(cute, block, build_sac_context_fn(["attention"]))
+    assert forward == 1 and calls == {"fwd": 1, "bwd": 1}
+    assert op_calls["fwd"] == 1
+    _assert_exact(grads, reference)
+    assert not fa4_ops._PENDING
+
+
+def test_non_scalar_max_seqlen_calls_fa4_directly(cute, op_calls):
+    block = _varlen_block(cute, max_seqlen_q=torch.tensor([5, 7]))
+    _, calls, _ = _run(cute, block, build_sac_context_fn(["attention"]))
+    assert calls == {"fwd": 2, "bwd": 1}
+    assert op_calls["fwd"] == 0
 
 
 @pytest.mark.parametrize("varlen", [False, True])

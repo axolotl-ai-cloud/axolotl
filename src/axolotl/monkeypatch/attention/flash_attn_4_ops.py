@@ -37,6 +37,8 @@ _TENSOR_SLOTS = {
     VARLEN: ("q", "k", "v", "cu_seqlens_q", "cu_seqlens_k", "seqused_q", "seqused_k"),
 }
 _PRIMITIVES = (bool, int, float, str, type(None))
+# transformers passes these as 0-dim device tensors (``cu_seqlens.diff().max()``)
+_SCALAR_LENGTHS = ("max_seqlen_q", "max_seqlen_k")
 
 # forward-call token -> how to rebuild FA4's ctx in backward; bounded because a forward
 # whose graph is dropped (or a recomputed call) never reaches backward to pop its entry
@@ -333,6 +335,12 @@ if _REGISTERED:
         _REGISTERED = False
 
 
+def _scalar_length(value: torch.Tensor) -> int | None:
+    if value.numel() != 1 or value.is_floating_point() or value.is_complex():
+        return None
+    return int(value.item())
+
+
 def _window(params: dict[str, Any]) -> tuple[int, int] | None:
     if "window_size" in params:
         window = params["window_size"]
@@ -379,6 +387,10 @@ class _Route:
         statics: dict[str, Any] = {}
         tuples = []
         for name, value in bound.arguments.items():
+            if torch.is_tensor(value) and name in _SCALAR_LENGTHS:
+                value = _scalar_length(value)
+                if value is None:
+                    return None
             if torch.is_tensor(value):
                 if name not in slots:
                     return None
