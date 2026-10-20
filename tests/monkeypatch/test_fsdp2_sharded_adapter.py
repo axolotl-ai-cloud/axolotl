@@ -30,6 +30,10 @@ CASES = (
     "regular-checkpoint-resume",
     "torch-dcp-consolidation",
     "interrupted-consolidation",
+    "ep-fsdp",
+    "modules-to-save",
+    "modules-to-save-tied",
+    "replicated-wrapper",
 )
 
 

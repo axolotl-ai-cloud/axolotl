@@ -19,6 +19,7 @@ from torch.distributed.tensor.placement_types import _StridedShard
 from axolotl.monkeypatch.accelerate import fsdp2_sharded_adapter
 from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
     _check_errors,
+    _model_needs_ownership,
     full_model_state,
 )
 from axolotl.monkeypatch.accelerate.fsdp2_sharded_adapter import (
@@ -426,6 +427,247 @@ def check_interrupted_resume(model, root):
         print("PASS sharded-interrupted-consolidation", flush=True)
 
 
+def fill_unique(model):
+    """Per-rank values on FSDP shards, identical values on plain (replicated) tensors."""
+    rank = dist.get_rank()
+    fill(
+        model,
+        lambda name: (
+            sum(map(ord, name)) * 16
+            + (rank if isinstance(model.get_parameter(name), DTensor) else 0)
+        ),
+    )
+
+
+def save_both(model, root, label, spy_names=("_transfer", "_gather_tensor")):
+    """Gather-path and sharded saves of ``model``; returns the spy calls and each shard file's
+    keys as consolidation saw them."""
+    gathered, sharded = root / f"{label}-gather", root / f"{label}-sharded"
+    if _model_needs_ownership(model):
+        make_trainer(model, gathered).save_model(_internal_call=True)
+    else:
+        # without expert ownership the trainer's gather goes through accelerate's state dict
+        state = full_model_state(model, adapter_only=True)
+        if dist.get_rank() == 0:
+            make_trainer(model, gathered)._save(str(gathered), state_dict=state)
+    dist.barrier()
+    shard_keys: dict = {}
+
+    def recording(shard_dir, *args, **kwargs):
+        from safetensors import safe_open
+
+        for path in sorted(Path(shard_dir).glob("shard-*.safetensors")):
+            with safe_open(path, "pt") as handle:
+                shard_keys[path.name] = sorted(handle.keys())
+        return consolidate(shard_dir, *args, **kwargs)
+
+    with (
+        Spy(*spy_names) as spy,
+        patch.object(fsdp2_sharded_adapter, "consolidate", recording),
+    ):
+        make_trainer(model, sharded, "sharded").save_model(_internal_call=True)
+        if dist.get_rank() == 0:
+            CONSOLIDATIONS.wait()
+    expect_identical(label, gathered, sharded)
+    return spy.calls, shard_keys, sharded
+
+
+def ep_fsdp_model():
+    """Tiny Mixtral laid out the way ``fsdp2_prepare_model`` composes EP with dp_shard: experts
+    sliced over ``ep``, expert LoRA wrappers FSDP2-sharded on ``dp_shard``, the rest on the
+    flattened ``dp_shard x ep`` mesh."""
+    from peft import LoraConfig, get_peft_model
+    from torch.distributed.fsdp import fully_shard
+    from transformers import MixtralConfig, MixtralForCausalLM
+
+    from axolotl.integrations.expert_parallel import shard
+    from axolotl.integrations.expert_parallel.plugin import (
+        ExpertParallelPlugin,
+        expert_fsdp_mesh,
+    )
+
+    torch.manual_seed(11)
+    model = MixtralForCausalLM(
+        MixtralConfig(
+            vocab_size=50,
+            hidden_size=16,
+            intermediate_size=10,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            num_local_experts=6,
+            num_experts_per_tok=2,
+            max_position_embeddings=32,
+        )
+    ).to(DEVICE)
+    mesh = init_device_mesh(DEVICE, (2, 2), mesh_dim_names=("dp_shard", "ep"))
+    ep_group = mesh["ep"].get_group()
+    dense = mesh[("dp_shard", "ep")]._flatten("dp_shard_ep")
+    ep_rank = dist.get_rank(ep_group)
+
+    def slice_local(module, name, count, _ranks):
+        shard._replace_with_slice(module, name, ep_rank * count, (ep_rank + 1) * count)
+
+    with patch.object(shard, "_scatter_expert_from_rank0", slice_local):
+        assert shard.shard_expert_weights(model, ep_group) == 2
+    decoder = model.model
+    model = get_peft_model(
+        model,
+        LoraConfig(
+            r=3,
+            lora_alpha=6,
+            target_modules=["q_proj", "o_proj"],
+            target_parameters=["mlp.experts.gate_up_proj", "mlp.experts.down_proj"],
+        ),
+    )
+    model._ep_lora_group = ep_group
+    assert shard.shard_expert_lora(model, mesh["ep"].size()) == 8
+    ExpertParallelPlugin.fully_shard_experts(model, expert_fsdp_mesh(mesh), {})
+    for layer in decoder.layers:
+        fully_shard(layer, mesh=dense)
+    fully_shard(model, mesh=dense)
+    fill_unique(model)
+    return model
+
+
+def check_ep_fsdp(root):
+    model = ep_fsdp_model()
+    # 3 local experts x r 3 = 9 lora_A rows over dp_shard 2: uneven FSDP shards
+    expert_a = next(
+        p
+        for n, p in model.named_parameters()
+        if "experts" in n and "lora_A" in n and p.requires_grad
+    )
+    assert isinstance(expert_a, DTensor) and expert_a.device_mesh.mesh_dim_names == (
+        "dp_shard",
+    ), expert_a.device_mesh
+    assert expert_a.shape[0] == 9, expert_a.shape
+    calls, shard_keys, sharded = save_both(model, root, "ep-fsdp")
+    assert calls == {"_transfer": 0, "_gather_tensor": 0}, calls
+    if dist.get_rank() == 0:
+        from safetensors.torch import load_file
+
+        assert len(shard_keys) == 4, shard_keys
+        exported = load_file(sharded / "adapter_model.safetensors")
+        experts = {k: v.shape for k, v in exported.items() if "experts" in k}
+        assert len(experts) == 8, experts
+        # full EP size: lora_A [r * E, in], lora_B [out, r * E]
+        assert all(shape[0] == 18 for k, shape in experts.items() if "lora_A" in k), (
+            experts
+        )
+        assert all(shape[1] == 18 for k, shape in experts.items() if "lora_B" in k), (
+            experts
+        )
+    dist.barrier()
+
+
+def modules_to_save_model(flat, tie=False, replicated=()):
+    """Tiny Llama with trained ``lm_head`` / ``embed_tokens`` copies; the copies of the
+    ``replicated`` modules are left out of FSDP and held whole on every rank."""
+    from peft import LoraConfig, get_peft_model
+    from torch.distributed.fsdp import fully_shard
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    torch.manual_seed(5)
+    base = LlamaForCausalLM(
+        LlamaConfig(
+            vocab_size=66,  # 17/17/17/15 rows over 4 ranks
+            hidden_size=16,
+            intermediate_size=24,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            max_position_embeddings=32,
+            tie_word_embeddings=tie,
+        )
+    ).to(DEVICE)
+    model = get_peft_model(
+        base,
+        LoraConfig(
+            r=4,
+            target_modules=["q_proj", "v_proj"],
+            modules_to_save=["lm_head", "embed_tokens"],
+            ensure_weight_tying=tie,
+        ),
+    )
+    ignored = {
+        parameter
+        for name, parameter in model.named_parameters()
+        if any(f"{module}.modules_to_save." in name for module in replicated)
+    }
+    for layer in base.model.layers:
+        fully_shard(layer, mesh=flat)
+    fully_shard(model, mesh=flat, ignored_params=ignored or None)
+    fill_unique(model)
+    return model
+
+
+EMBED = "base_model.model.model.embed_tokens.weight"
+LM_HEAD = "base_model.model.lm_head.weight"
+
+
+def copies(model):
+    return {
+        name: parameter
+        for name, parameter in model.named_parameters(remove_duplicate=False)
+        if ".modules_to_save." in name
+    }
+
+
+def check_modules_to_save(flat, root):
+    model = modules_to_save_model(flat)
+    trained = copies(model)
+    assert len(trained) == 2, list(trained)
+    assert all(
+        isinstance(p, DTensor) and p.placements == (Shard(0),) for p in trained.values()
+    )
+    calls, shard_keys, sharded = save_both(model, root, "modules-to-save")
+    assert calls == {"_transfer": 0, "_gather_tensor": 0}, calls
+    if dist.get_rank() == 0:
+        from safetensors.torch import load_file
+
+        assert all(EMBED in keys and LM_HEAD in keys for keys in shard_keys.values())
+        exported = load_file(sharded / "adapter_model.safetensors")
+        assert exported[EMBED].shape == exported[LM_HEAD].shape == (66, 16)
+        assert not torch.equal(exported[EMBED], exported[LM_HEAD])
+    dist.barrier()
+
+
+def check_modules_to_save_tied(flat, root):
+    model = modules_to_save_model(flat, tie=True)
+    trained = copies(model)
+    # one trained tensor reachable under both modules' names
+    assert len(trained) == 2 and len({id(p) for p in trained.values()}) == 1, list(
+        trained
+    )
+    assert isinstance(next(iter(trained.values())), DTensor)
+    calls, shard_keys, sharded = save_both(model, root, "modules-to-save-tied")
+    assert calls == {"_transfer": 0, "_gather_tensor": 0}, calls
+    if dist.get_rank() == 0:
+        from safetensors.torch import load_file
+
+        assert len(shard_keys) == 4, shard_keys
+        exported = load_file(sharded / "adapter_model.safetensors")
+        assert exported[EMBED].shape == (66, 16)
+        assert torch.equal(exported[EMBED], exported[LM_HEAD])
+    dist.barrier()
+
+
+def check_replicated_wrapper(flat, root):
+    model = modules_to_save_model(flat, replicated=("lm_head",))
+    trained = copies(model)
+    head = next(p for n, p in trained.items() if "lm_head" in n)
+    embed = next(p for n, p in trained.items() if "embed_tokens" in n)
+    assert not isinstance(head, DTensor) and isinstance(embed, DTensor)
+    calls, shard_keys, sharded = save_both(model, root, "replicated-wrapper")
+    assert calls == {"_transfer": 0, "_gather_tensor": 0}, calls
+    if dist.get_rank() == 0:
+        holders = [name for name, keys in shard_keys.items() if LM_HEAD in keys]
+        assert holders == [fsdp2_sharded_adapter.shard_name(0)], shard_keys
+        assert sum(EMBED in keys for keys in shard_keys.values()) == 4, shard_keys
+    dist.barrier()
+
+
 def main():
     root = Path(sys.argv[1])
     if DEVICE == "cuda":
@@ -440,6 +682,10 @@ def main():
     check_regular_checkpoint_resume(model, root)
     check_torch_consolidation(model, root)
     check_interrupted_resume(model, root)
+    check_ep_fsdp(root)
+    check_modules_to_save(flat, root)
+    check_modules_to_save_tied(flat, root)
+    check_replicated_wrapper(flat, root)
     dist.barrier()
     dist.destroy_process_group()
 

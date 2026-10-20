@@ -14,6 +14,7 @@ import shutil
 from collections import deque
 from pathlib import Path
 
+import torch
 import torch.distributed as dist
 from transformers import Trainer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
@@ -103,6 +104,7 @@ class ShardedAdapterSaveMixin(Trainer):
         return super()._save_model_native(output_dir, _internal_call)
 
     def _save_sharded_adapter(self, output_dir) -> bool:
+        from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import _adapter_values
         from axolotl.monkeypatch.accelerate.fsdp2_sharded_adapter import (
             CONSOLIDATIONS,
             EXPORT_DIRNAME,
@@ -131,8 +133,12 @@ class ShardedAdapterSaveMixin(Trainer):
             try:
                 export = shards.directory / EXPORT_DIRNAME
                 # adapter_config.json, README.md, tokenizer, training args: everything
-                # save_pretrained writes beside the weights
-                self._save(str(export), state_dict={})
+                # save_pretrained writes beside the weights. PEFT looks modules_to_save
+                # copies up by name, so every name needs an (empty) entry.
+                placeholder = {
+                    name: torch.empty(0) for name in _adapter_values(self.model)
+                }
+                self._save(str(export), state_dict=placeholder)
                 persist_native_metadata_after_save(self.model, str(export))
                 move_export(export, output_dir)
                 CONSOLIDATIONS.submit(shards.directory)
