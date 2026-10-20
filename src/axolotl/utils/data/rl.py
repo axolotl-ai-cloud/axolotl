@@ -346,10 +346,16 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     Returns:
         Combined and processed dataset for the specified split.
     """
-    datasets_configs = cfg.datasets if split == "train" else cfg.test_datasets
+    datasets_configs = list(
+        datasets_with_name_generator(
+            cfg.datasets if split == "train" else cfg.test_datasets
+        )
+    )
+    strategy_cfg = DictDefault(dict(cfg))
+    strategy_cfg.datasets = datasets_configs
     split_datasets: list[Dataset | DatasetDict] = []
 
-    for dataset_config in datasets_with_name_generator(datasets_configs):
+    for dataset_config in datasets_configs:
         dataset: Dataset | DatasetDict = load_dataset_with_config(
             dataset_config, cfg.hf_use_auth_token, streaming=False
         )
@@ -363,13 +369,13 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             if isinstance(_type, DictDefault):
                 _type = "user_defined.default"
             if cfg.rl is RLType.ORPO:
-                ds_transform_fn = load_orpo(_type, cfg, dataset_idx=i)
+                ds_transform_fn = load_orpo(_type, strategy_cfg, dataset_idx=i)
             elif cfg.rl is RLType.KTO:
-                ds_transform_fn = load_kto(_type, cfg, dataset_idx=i)
+                ds_transform_fn = load_kto(_type, strategy_cfg, dataset_idx=i)
             elif cfg.rl is RLType.EBFT:
-                ds_transform_fn = load_ebft(_type, cfg, dataset_idx=i)
+                ds_transform_fn = load_ebft(_type, strategy_cfg, dataset_idx=i)
             else:
-                ds_transform_fn = load_dpo(_type, cfg, dataset_idx=i)
+                ds_transform_fn = load_dpo(_type, strategy_cfg, dataset_idx=i)
 
             if ds_transform_fn is None:
                 raise ValueError(
@@ -498,12 +504,20 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
 
         # Save preprocessed dataset
-        dataset_hash = generate_dataset_hash_from_config(
-            cfg, datasets_configs, tokenizer.name_or_path
-        )
+        dataset_hash = _preference_dataset_hash(cfg, tokenizer, split)
         save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
     return dataset
+
+
+def _preference_dataset_hash(cfg, tokenizer, split):
+    """Version caches when preference transformation semantics change."""
+    datasets_config = cfg.datasets if split == "train" else cfg.test_datasets
+    dataset_hash = generate_dataset_hash_from_config(
+        cfg, datasets_config, tokenizer.name_or_path
+    )
+    # Older caches may use training mappings or unexpanded indices for eval rows.
+    return f"{dataset_hash}-rl-v2"
 
 
 def _load_or_create_dataset_split(
@@ -519,13 +533,7 @@ def _load_or_create_dataset_split(
     Returns:
         Tuple of (dataset, is_preprocessed).
     """
-    # Select correct dataset configuration based on split
-    datasets_config = cfg.datasets if split == "train" else cfg.test_datasets
-
-    # Generate dataset hash for caching
-    dataset_hash = generate_dataset_hash_from_config(
-        cfg, datasets_config, tokenizer.name_or_path
-    )
+    dataset_hash = _preference_dataset_hash(cfg, tokenizer, split)
 
     # Try loading from hub if push_dataset_to_hub is configured
     dataset = None
