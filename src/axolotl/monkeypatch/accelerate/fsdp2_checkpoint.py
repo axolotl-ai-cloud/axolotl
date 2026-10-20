@@ -280,7 +280,7 @@ def _copy_threads():
             torch.set_num_threads(before)
 
 
-# AXOLOTL_CHECKPOINT_TIMING=1: rank 0 logs where assembly time goes (per phase, slowest tensors)
+# AXOLOTL_CHECKPOINT_TIMING=1: rank 0 debug-logs where assembly time goes (per phase, slowest tensors)
 _TIMING: dict | None = None
 
 
@@ -300,7 +300,7 @@ def _log_timing(total):
         f"{phase} {seconds:.1f}s/{_TIMING['bytes'][phase] / 2**30:.1f}GiB"
         for phase, seconds in sorted(_TIMING["seconds"].items(), key=lambda kv: -kv[1])
     )
-    LOG.info(
+    LOG.debug(
         "checkpoint assembly %.1fs over %d tensors (%d copy threads): %s",
         total,
         len(_TIMING["tensors"]),
@@ -308,7 +308,7 @@ def _log_timing(total):
         phases,
     )
     for row in sorted(_TIMING["tensors"], key=lambda r: -r[0])[:8]:
-        LOG.info("checkpoint assembly slowest: %.2fs %s", row[0], row[1])
+        LOG.debug("checkpoint assembly slowest: %.2fs %s", row[0], row[1])
 
 
 def _write(out, start, data):

@@ -10,7 +10,7 @@
 # Afterwards every remaining checkpoint-N has adapter_model.safetensors and no
 # .adapter_shards/, and save_total_limit leaves checkpoint-4 and checkpoint-6. The final
 # export to output_dir is sharded too and consolidated before training returns.
-# Set adapter_checkpoint_format: gather (and AXOLOTL_CHECKPOINT_TIMING=1) to compare the
+# Set adapter_checkpoint_format: gather (and AXOLOTL_CHECKPOINT_TIMING=1 AXOLOTL_LOG_LEVEL=DEBUG) to compare the
 # save stall against the rank 0 gather. tests/e2e/multigpu/test_fsdp2_sharded_adapter_save.py
 # checks the consolidated file against the gathered one byte for byte on 4 GPUs.
 base_model: axolotl-ai-co/tiny-mixtral-30m
