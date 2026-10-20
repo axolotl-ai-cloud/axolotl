@@ -314,6 +314,36 @@ def test_one_sweep_per_pow2_bucket(quack):
     assert len(tuner.cache) == 2
 
 
+def test_shape_buckets_drop_token_dims(quack):
+    tuner = quack.add("gemm_gated_tuned")
+    assert quack_autotune_policy.install_quack_key_policy("shape") == 1
+    first = gated(tuner, 600_000, tokens=70_000, gather=True)
+    swept = len(tuner.benched)
+    assert swept > 0
+    assert gated(tuner, 1_100_000, tokens=150_000, gather=True) == first
+    assert gated(tuner, 20_000, tokens=4_000, gather=True) == first
+    assert len(tuner.benched) == swept
+    (bucket,) = tuner.cache
+    assert "torch.Size([-1, 5120])" in bucket and "torch.Size([-1])" in bucket
+    assert bucket[-1] == "axolotl_bucket=shape"
+
+    gated(tuner, 600_000, n=3000, tokens=70_000, gather=True)
+    assert len(tuner.benched) == 2 * swept
+
+
+def test_shape_buckets_drop_the_varlen_k_dim(quack):
+    tuner = quack.add("gemm_tuned")
+    quack_autotune_policy.install_quack_key_policy("shape")
+    weight_grad(tuner, 600_000)
+    swept = len(tuner.benched)
+    weight_grad(tuner, 90_000)
+    assert len(tuner.benched) == swept
+    (bucket,) = tuner.cache
+    assert (
+        "torch.Size([5120, -1])" in bucket and "torch.Size([32, 5120, 128])" in bucket
+    )
+
+
 def test_weight_dims_are_never_bucketed(quack):
     tuner = quack.add("gemm_gated_tuned")
     quack_autotune_policy.install_quack_key_policy("pow2")
@@ -581,6 +611,10 @@ def test_kernels_args_validation():
         }
     )
     assert ok.quack_autotune_key_buckets == "none" and ok.quack_autotune is False
+    shape = KernelsArgs.model_validate(
+        {"use_sonicmoe": True, "quack_autotune_key_buckets": "shape"}
+    )
+    assert shape.quack_autotune_key_buckets == "shape"
     with pytest.raises(ValueError, match="pow2"):
         KernelsArgs.model_validate(
             {"use_sonicmoe": True, "quack_autotune_key_buckets": "pow3"}

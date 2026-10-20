@@ -8,7 +8,8 @@ quack keys its winners on every tensor's exact shape, so each new routed row cou
 (``cu_seqlens_m``/``cu_seqlens_k``) GEMM starts a full sweep. ``quack_autotune_key_buckets: pow2``
 rounds the variable-length dims of the key up to a power of two, so one sweep serves a bucket. A
 winner reused from a bucket goes through quack's validity pruning for the actual call first; a
-winner it rejects sends that call to a sweep of its own exact key.
+winner it rejects sends that call to a sweep of its own exact key. ``shape`` drops those dims from
+the key entirely, so one sweep per kernel and weight shape serves every token count.
 
 ``quack_autotune: false`` never benchmarks: each key gets one config from a fixed rule (by kernel,
 output width N and reduction size K), measured on B200, or the first valid candidate when the rule's
@@ -33,7 +34,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-KEY_BUCKETS = ("pow2", "none")
+KEY_BUCKETS = ("pow2", "shape", "none")
 
 _VARLEN_M_ROWS = (
     "A",
@@ -55,8 +56,12 @@ _NOTED_ATTRS = (
 _CAPTURING: dict[type, type] = {}
 
 
-def _pow2(n: int) -> int:
+def _pow2_count(n: int) -> int:
     return n if n <= 1 else 1 << (n - 1).bit_length()
+
+
+def _any_count(n: int) -> int:
+    return -1
 
 
 def _shape_slot_matches(slot: Any, shape: torch.Size) -> bool:
@@ -73,22 +78,25 @@ def _format_shape(slot: Any, dims: list[int]) -> Any:
     return type(slot)(dims)
 
 
-def _bucketed_dims(name: str, shape: torch.Size, varlen_m: bool, varlen_k: bool):
+def _bucketed_dims(
+    name: str, shape: torch.Size, varlen_m: bool, varlen_k: bool, mode: str = "pow2"
+):
     dims = list(shape)
+    count = _any_count if mode == "shape" else _pow2_count
     if varlen_m and name in _VARLEN_M_ROWS and len(dims) in (1, 2):
-        dims[0] = _pow2(dims[0])
+        dims[0] = count(dims[0])
     if varlen_k:
         if name == "A" and len(dims) == 2:
-            dims[1] = _pow2(dims[1])
+            dims[1] = count(dims[1])
         elif name == "B" and len(dims) == 2:
-            dims[0] = _pow2(dims[0])
+            dims[0] = count(dims[0])
         elif name == "A_idx" and len(dims) == 1:
-            dims[0] = _pow2(dims[0])
+            dims[0] = count(dims[0])
     return dims
 
 
 def bucket_key(
-    tuner: Any, raw: tuple, args: dict[str, Any], marker: str
+    tuner: Any, raw: tuple, args: dict[str, Any], marker: str, mode: str = "pow2"
 ) -> tuple | None:
     """``raw`` with its variable-length dims bucketed, or None for a call that is not grouped.
 
@@ -115,7 +123,7 @@ def bucket_key(
         slot = scalars + i * per
         if not _shape_slot_matches(key[slot], tensor.shape):
             return None
-        dims = _bucketed_dims(name, tensor.shape, varlen_m, varlen_k)
+        dims = _bucketed_dims(name, tensor.shape, varlen_m, varlen_k, mode)
         if dims != list(tensor.shape):
             key[slot] = _format_shape(key[slot], dims)
     return tuple(key) + (marker,)
@@ -234,7 +242,7 @@ class QuackKeyPolicy:
             return raw, True
         if self.buckets == "none":
             return raw, False
-        bucket = bucket_key(self.tuner, raw, self._args(), self.marker)
+        bucket = bucket_key(self.tuner, raw, self._args(), self.marker, self.buckets)
         if bucket is None:
             return raw, False
         if not dict.__contains__(cache, bucket):
