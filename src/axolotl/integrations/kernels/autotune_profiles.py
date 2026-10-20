@@ -33,6 +33,7 @@ from axolotl.integrations.kernels.autotune_cache import (
     _autotuners,
     _kernel_name,
     note_call_args,
+    note_candidates,
 )
 from axolotl.integrations.kernels.autotune_collector import _config_to_dict
 from axolotl.integrations.kernels.sonicmoe_autotune import _plain, sonicmoe_autotuners
@@ -379,7 +380,7 @@ def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
         configs, pinned = _decide(kwargs)
         autotuner._axolotl_profile_hit = pinned
         autotuner._axolotl_skip_bench = pinned and len(configs) == 1
-        autotuner._axolotl_candidate_count = len(configs)
+        note_candidates(autotuner, configs)
         return configs
 
     def _bench(*args, config, **meta):

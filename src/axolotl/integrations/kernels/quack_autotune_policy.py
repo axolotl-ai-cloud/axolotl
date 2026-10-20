@@ -11,6 +11,10 @@ winner reused from a bucket goes through quack's validity pruning for the actual
 winner it rejects sends that call to a sweep of its own exact key. ``shape`` drops those dims from
 the key entirely, so one sweep per kernel and weight shape serves every token count.
 
+A winner seeded from the cache file is re-tuned at its first lookup when the candidates this run
+sweeps (after ``autotune_profiles``) differ from the ones it was measured against, or, for a
+bucket, when it is not among this call's candidates.
+
 ``quack_autotune: false`` never benchmarks: each key gets one config from a fixed rule (by kernel,
 output width N and reduction size K), measured on B200, or the first valid candidate when the rule's
 config is not one (other GPUs).
@@ -24,6 +28,7 @@ from axolotl.integrations.kernels.autotune_cache import (
     _kernel_name,
     _note_quack_calls,
     _TimingCache,
+    quack_candidates_sha256,
 )
 from axolotl.integrations.kernels.autotune_profiles import (
     _quack_fields,
@@ -52,6 +57,7 @@ _NOTED_ATTRS = (
     "_axolotl_profile_hit",
     "_axolotl_skip_bench",
     "_axolotl_candidate_count",
+    "_axolotl_candidate_sha256",
 )
 _CAPTURING: dict[type, type] = {}
 
@@ -223,22 +229,48 @@ class QuackKeyPolicy:
         if current is not None and self.in_call() and key == current[1]:
             cache.origins[key] = current[0]
 
-    def _valid(self, winner: Any) -> bool:
+    def _candidates(self) -> list | None:
+        """This call's candidates (quack's pruning plus any profiles), without side effects."""
         tuner = self.tuner
         kwargs = dict(getattr(tuner, "_axolotl_call_kwargs", None) or {})
         saved = {name: getattr(tuner, name, None) for name in _NOTED_ATTRS}
         try:
-            candidates = list(tuner.prune_configs(kwargs))
+            return list(tuner.prune_configs(kwargs))
         except Exception as exc:  # pylint: disable=broad-exception-caught
             LOG.debug("quack bucket check for %s failed: %s", _kernel_name(tuner), exc)
-            return False
+            return None
         finally:
             for name, value in saved.items():
                 setattr(tuner, name, value)
-        return any(c == winner for c in candidates)
+
+    def _seed_is_stale(
+        self, cache: _TimingCache, key: tuple, candidates: list | None
+    ) -> bool:
+        """Whether the seeded ``key`` was swept over other candidates than this call's.
+
+        Checked once per seeded key; a stale one stops counting as seeded so it is re-tuned.
+        """
+        want = cache.unverified.pop(key, None)
+        if want is None or candidates is None:
+            return False
+        if quack_candidates_sha256(candidates) == want:
+            return False
+        cache.seeded.discard(key)
+        LOG.info(
+            "quack %s: the seeded winner for %s was measured over other candidates than "
+            "this run's %d (autotune_profiles changed); re-tuning it",
+            _kernel_name(self.tuner),
+            getattr(self.tuner, "_axolotl_call_args", None) or key,
+            len(candidates),
+        )
+        return True
 
     def _resolve(self, cache: _TimingCache, raw: tuple) -> tuple[tuple, bool]:
         if dict.__contains__(cache, raw):
+            if raw in cache.unverified and self._seed_is_stale(
+                cache, raw, self._candidates()
+            ):
+                return raw, False
             return raw, True
         if self.buckets == "none":
             return raw, False
@@ -253,15 +285,32 @@ class QuackKeyPolicy:
         known = cache.aliases.get(raw)
         if known is not None and known[0] == bucket and known[1] is winner:
             return bucket, True
-        if self._valid(winner):
+        candidates = self._candidates()
+        if bucket in cache.unverified and self._seed_is_stale(
+            cache, bucket, candidates
+        ):
+            return bucket, False
+        if candidates is not None and any(c == winner for c in candidates):
             cache.aliases[raw] = (bucket, winner)
             return bucket, True
+        call = getattr(self.tuner, "_axolotl_call_args", None) or raw
+        if bucket in cache.seeded:
+            cache.seeded.discard(bucket)
+            LOG.info(
+                "quack %s: the seeded %s bucket winner is not among this run's candidates "
+                "for %s; re-tuning the bucket",
+                _kernel_name(self.tuner),
+                self.buckets,
+                call,
+            )
+            return bucket, False
         cache.exact_fallbacks.add(raw)
         LOG.info(
-            "quack %s: the %s bucket winner is not valid for %s; tuning its exact key",
+            "quack %s: the %s bucket winner tuned in this run is not among the candidates "
+            "for %s; tuning its exact key",
             _kernel_name(self.tuner),
             self.buckets,
-            getattr(self.tuner, "_axolotl_call_args", None) or raw,
+            call,
         )
         return raw, False
 
@@ -350,7 +399,9 @@ def install_quack_key_policy(buckets: str = "pow2", tune: bool = True) -> int:
         if policy is not None:
             policy.buckets, policy.tune = buckets, tune
             continue
-        if buckets == "none" and tune:
+        # exact keys need a policy only to check seeded winners' candidate fingerprints
+        cache = tuner.cache
+        if buckets == "none" and tune and not getattr(cache, "unverified", None):
             continue
         if not isinstance(tuner.cache, _TimingCache):
             tuner.cache = _TimingCache(tuner, tuner.cache)

@@ -42,7 +42,7 @@ from axolotl.integrations.kernels.sonicmoe_autotune import (
     quack_file_metadata,
     sonicmoe_autotuners,
 )
-from axolotl.kernels.autotune_reporting import autotuner_metadata
+from axolotl.kernels.autotune_reporting import _fingerprint, autotuner_metadata
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -125,7 +125,10 @@ class _TimingCache(dict):
         self.sweep_seconds: dict[tuple, float] = {}
         self.call_args: dict[tuple, dict] = {}
         self.candidate_counts: dict[tuple, int] = {}
+        self.candidate_shas: dict[tuple, str] = {}
         self.seeded: set[tuple] = set()
+        # seeded key -> the swept-candidate fingerprint on file, until a call checks it
+        self.unverified: dict[tuple, str] = {}
         self.profiled: set[tuple] = set()
         self.pinned: set[tuple] = set()
         self.heuristic: set[tuple] = set()
@@ -176,6 +179,10 @@ class _TimingCache(dict):
         if count is not None:
             self.candidate_counts[key] = count
             tuner._axolotl_candidate_count = None
+        sha = getattr(tuner, "_axolotl_candidate_sha256", None)
+        if sha is not None:
+            self.candidate_shas[key] = sha
+            tuner._axolotl_candidate_sha256 = None
         super().__setitem__(key, value)
 
     def harvest(self) -> None:
@@ -217,6 +224,24 @@ def note_call_args(tuner: Any, kwargs: dict[str, Any]) -> None:
     tuner._axolotl_call_args = noted
 
 
+def quack_candidates_sha256(configs: list) -> str | None:
+    """Order-independent fingerprint of a quack candidate list, or None if not serializable."""
+    try:
+        items = sorted(
+            json.dumps(_plain(_quack_config(c)), sort_keys=True, default=str)
+            for c in configs
+        )
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return _fingerprint(items)
+
+
+def note_candidates(tuner: Any, configs: list) -> None:
+    """Remember the size and fingerprint of the candidate list this call will sweep."""
+    tuner._axolotl_candidate_count = len(configs)
+    tuner._axolotl_candidate_sha256 = quack_candidates_sha256(configs)
+
+
 def _note_quack_calls(tuner: Any) -> None:
     if getattr(tuner, "_axolotl_notes_calls", False):
         return
@@ -225,7 +250,7 @@ def _note_quack_calls(tuner: Any) -> None:
     def prune_configs(kwargs):
         note_call_args(tuner, kwargs)
         configs = orig_prune(kwargs)
-        tuner._axolotl_candidate_count = len(configs)
+        note_candidates(tuner, configs)
         return configs
 
     tuner.prune_configs = prune_configs
@@ -286,6 +311,8 @@ def timing_fields(
         out["call_args"] = cache.call_args[key_tuple]
     if key_tuple in cache.candidate_counts:
         out["candidate_config_count"] = cache.candidate_counts[key_tuple]
+    if key_tuple in cache.candidate_shas:
+        out["swept_configs_sha256"] = cache.candidate_shas[key_tuple]
     reuses = sum(1 for bucket, _w in cache.aliases.values() if bucket == key_tuple)
     if reuses:
         out["bucket_reuses"] = reuses
@@ -428,6 +455,10 @@ def seed_quack_caches(records: list[dict[str, Any]]) -> tuple[int, Counter]:
 
     Only string keys round-trip through JSON exactly, which is what quack <= 0.6.1 builds (the
     vendored copy in the hub sonic-moe kernel); later releases keep tuples and dtypes.
+
+    A record's ``swept_configs_sha256`` (the candidates left after profiles and pruning) depends
+    on the call, so it is checked at the key's first lookup (``QuackKeyPolicy``): a winner swept
+    over other candidates than this run's is re-tuned.
     """
     skipped: Counter = Counter()
     applied = 0
@@ -477,6 +508,9 @@ def seed_quack_caches(records: list[dict[str, Any]]) -> tuple[int, Counter]:
             tuner.cache[key] = config
             if isinstance(tuner.cache, _TimingCache):
                 tuner.cache.seeded.add(key)
+                swept = record.get("swept_configs_sha256")
+                if isinstance(swept, str):
+                    tuner.cache.unverified[key] = swept
             applied += 1
     return applied, skipped
 
@@ -532,7 +566,8 @@ def gather_autotune_records(
 ) -> list[dict[str, Any]]:
     """This rank's winners, merged with every other rank's when distributed.
 
-    A key benchmarked on one rank and seeded on another keeps the benchmarked record.
+    A key benchmarked (or re-tuned) on one rank and seeded on another keeps the benchmarked
+    record.
     """
     local = collect()
     if not (torch.distributed.is_available() and torch.distributed.is_initialized()):
@@ -546,8 +581,13 @@ def gather_autotune_records(
         for rank_record in rank_records or []:
             identity = _record_identity(rank_record)
             have = merged.get(identity)
-            if have is None or (
-                not have.get("timings_ms") and rank_record.get("timings_ms")
+            if (
+                have is None
+                or (not have.get("timings_ms") and rank_record.get("timings_ms"))
+                or (
+                    have.get("source") == "seeded"
+                    and rank_record.get("source") != "seeded"
+                )
             ):
                 merged[identity] = rank_record
     return list(merged.values())
@@ -564,11 +604,17 @@ def package_versions(names: tuple[str, ...]) -> dict[str, str]:
 
 
 def _merge_record(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
-    """A seeded or untimed re-collection of a key must not drop the measurement on file."""
+    """A seeded or untimed re-collection of a key must not drop the measurement on file.
+
+    A key swept over another candidate set (profiles changed) replaces the record either way.
+    """
     if old is None:
         return new
     if new.get("source") == "seeded":
         return old
+    swept = new.get("swept_configs_sha256")
+    if swept and swept != old.get("swept_configs_sha256"):
+        return new
     if (
         not new.get("timings_ms")
         and old.get("timings_ms")

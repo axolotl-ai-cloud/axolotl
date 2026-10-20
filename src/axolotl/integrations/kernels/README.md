@@ -177,7 +177,8 @@ per candidate config, `configs_benchmarked`, `failed_configs` for configs that d
 ran out of resources, and `sweep_seconds`, the sweep's wall time including compiles), `profile`
 (decided by `autotune_profiles`; timed only when the profile left several candidates), `seeded`
 (taken from the file), or `untimed` (benchmarked before timing capture reached that kernel, or a
-disk-cache hit). A re-run that only seeds or pins a key keeps the measured record on file.
+disk-cache hit). A re-run that only seeds a key, or pins it over the same candidates, keeps the
+measured record on file.
 
 With `use_sonicmoe: true`, the SonicMoE/quack autotune winners (and any Triton kernels bundled
 with SonicMoE) are written on the same schedule to a second file next to it, `b200.quack.json`,
@@ -393,6 +394,17 @@ quack's validity pruning (plus any matching `autotune_profiles`) runs for the ac
 it rejects sends that call to a sweep of its own exact key (`bucket_fallback: true` in its record).
 Records of bucketed keys carry `bucket_reuses`, the number of other shapes that reused the winner;
 `call_args` keeps the shapes of the call that was tuned.
+
+Each quack record also carries `swept_configs_sha256`, a fingerprint of the candidates that key
+was swept over after `autotune_profiles` and quack's pruning. A winner seeded from the file is
+checked at its first lookup in the run: when this run's profiles resolve to a different candidate
+set, the key (or bucket) is swept again, since the old winner was chosen among other configs. A
+seeded bucket winner that is not among the call's candidates at all also re-tunes the bucket
+instead of falling back to exact keys. Either way the new sweep overwrites the stale record at the
+next save (a record swept over a different candidate set always replaces the one on file), so a
+profile change heals the file once instead of turning the bucket back into per-token-count keys
+every run. Records written before the fingerprint existed skip the first check. With
+`quack_autotune_key_buckets: none` the check still runs for seeded keys that carry a fingerprint.
 
 `quack_autotune: false` never benchmarks: each key gets one config by a fixed rule, so a new shape
 costs at most a compile of that config (`source: heuristic` in the records). Matching
