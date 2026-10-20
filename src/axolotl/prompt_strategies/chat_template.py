@@ -175,8 +175,6 @@ class ChatTemplatePrompter(Prompter):
     ) -> dict:
         """Render and tokenize, returning HF's ``assistant_masks`` from the template's
         ``{% generation %}`` markers alongside ``input_ids``."""
-        if self.processor:
-            raise ValueError("generation_tags is not supported with a processor")
         chat_template_kwargs = {
             "chat_template": self.chat_template,
             "add_generation_prompt": False,
@@ -359,6 +357,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             raise ValueError(
                 "generation_tags requires a chat template with {% generation %} markers"
             )
+        if self.generation_tags and prompter.processor is not None:
+            raise ValueError("generation_tags is not supported with a processor")
+        if self.generation_tags and not getattr(tokenizer, "is_fast", False):
+            raise ValueError("generation_tags requires a fast tokenizer")
 
         self.roles_to_train = []
         if roles_to_train:
