@@ -81,7 +81,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-662d3ee3579756b0f9849fbd391b8c40.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -1224,8 +1224,9 @@ elections and hangs. <code>nvidia-cutlass-dsl</code> 4.6.2 reverted the change, 
 4.6.2 and later. Do not install the
 <a href="https://github.com/Dao-AILab/flash-attention/pull/2689">Dao-AILab/flash-attention#2689</a> patch
 there: it removes elections that are needed again. Hopper (H100, H200) is unaffected.</p>
-<p>Axolotl still warns about this hang on Blackwell with any <code>nvidia-cutlass-dsl&gt;=4.6.0</code> and skips
-the automatic upgrade to FA4; set <code>attn_implementation: flash_attention_4</code> explicitly.</p>
+<p>On Blackwell with <code>nvidia-cutlass-dsl</code> 4.6.0 or 4.6.1, Axolotl warns about this hang and skips
+the automatic upgrade to FA4. When FA4 serves attention, the training log shows
+<code>Flash Attention 4 in use: first flash_attn_varlen_func call</code> with the installed versions.</p>
 </div>
 </div>
 <div class="callout callout-style-default callout-warning callout-titled">
