@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-662d3ee3579756b0f9849fbd391b8c40.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -962,6 +962,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
   <li><a href="#axolotl.utils.schemas.datasets.DPODataset" id="toc-axolotl.utils.schemas.datasets.DPODataset" class="nav-link" data-scroll-target="#axolotl.utils.schemas.datasets.DPODataset">DPODataset</a></li>
+  <li><a href="#axolotl.utils.schemas.datasets.EvaluationDatasetConfig" id="toc-axolotl.utils.schemas.datasets.EvaluationDatasetConfig" class="nav-link" data-scroll-target="#axolotl.utils.schemas.datasets.EvaluationDatasetConfig">EvaluationDatasetConfig</a></li>
   <li><a href="#axolotl.utils.schemas.datasets.KTODataset" id="toc-axolotl.utils.schemas.datasets.KTODataset" class="nav-link" data-scroll-target="#axolotl.utils.schemas.datasets.KTODataset">KTODataset</a></li>
   <li><a href="#axolotl.utils.schemas.datasets.PretrainingDataset" id="toc-axolotl.utils.schemas.datasets.PretrainingDataset" class="nav-link" data-scroll-target="#axolotl.utils.schemas.datasets.PretrainingDataset">PretrainingDataset</a></li>
   <li><a href="#axolotl.utils.schemas.datasets.SFTDataset" id="toc-axolotl.utils.schemas.datasets.SFTDataset" class="nav-link" data-scroll-target="#axolotl.utils.schemas.datasets.SFTDataset">SFTDataset</a></li>
@@ -1000,34 +1001,38 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>DPO configuration subset</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.utils.schemas.datasets.EvaluationDatasetConfig">EvaluationDatasetConfig</a></td>
+<td>Optional grouping for evaluation metrics.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.utils.schemas.datasets.KTODataset">KTODataset</a></td>
 <td>KTO configuration subset</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.schemas.datasets.PretrainingDataset">PretrainingDataset</a></td>
 <td>Pretraining dataset configuration subset</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.schemas.datasets.SFTDataset">SFTDataset</a></td>
 <td>SFT configuration subset</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.schemas.datasets.StepwiseSupervisedDataset">StepwiseSupervisedDataset</a></td>
 <td>Stepwise supervised dataset configuration subset</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.schemas.datasets.SyntheticDataset">SyntheticDataset</a></td>
 <td>Synthetic dataset configuration for benchmarking and testing.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.schemas.datasets.UserDefinedDPOType">UserDefinedDPOType</a></td>
 <td>User defined typing for DPO</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.schemas.datasets.UserDefinedKTOType">UserDefinedKTOType</a></td>
 <td>User defined typing for KTO</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.schemas.datasets.UserDefinedPrompterType">UserDefinedPrompterType</a></td>
 <td>Structure for user defined prompt types</td>
 </tr>
@@ -1038,19 +1043,24 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.DPODataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>DPO configuration subset</p>
 </section>
+<section id="axolotl.utils.schemas.datasets.EvaluationDatasetConfig" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.EvaluationDatasetConfig">EvaluationDatasetConfig</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.EvaluationDatasetConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Optional grouping for evaluation metrics.</p>
+</section>
 <section id="axolotl.utils.schemas.datasets.KTODataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.KTODataset">KTODataset</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.KTODataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.KTODataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>KTO configuration subset</p>
 </section>
 <section id="axolotl.utils.schemas.datasets.PretrainingDataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.PretrainingDataset">PretrainingDataset</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.PretrainingDataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.PretrainingDataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Pretraining dataset configuration subset</p>
 </section>
 <section id="axolotl.utils.schemas.datasets.SFTDataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.SFTDataset">SFTDataset</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.SFTDataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.SFTDataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>SFT configuration subset</p>
 <section id="methods" class="level4">
 <h4 class="anchored" data-anchor-id="methods">Methods</h4>
@@ -1070,19 +1080,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.utils.schemas.datasets.SFTDataset.handle_legacy_message_fields" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.SFTDataset.handle_legacy_message_fields">handle_legacy_message_fields</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.SFTDataset.handle_legacy_message_fields(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.SFTDataset.handle_legacy_message_fields(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Handle backwards compatibility between legacy message field mapping and new property mapping system.</p>
 </section>
 </section>
 </section>
 <section id="axolotl.utils.schemas.datasets.StepwiseSupervisedDataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.StepwiseSupervisedDataset">StepwiseSupervisedDataset</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.StepwiseSupervisedDataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.StepwiseSupervisedDataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Stepwise supervised dataset configuration subset</p>
 </section>
 <section id="axolotl.utils.schemas.datasets.SyntheticDataset" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.SyntheticDataset">SyntheticDataset</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.SyntheticDataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.SyntheticDataset()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Synthetic dataset configuration for benchmarking and testing.</p>
 <p>Generates datasets with configurable sequence length, dataset size, and token ID
 ranges. Useful for benchmarking memory usage and speed by sequence length, and for
@@ -1090,17 +1100,17 @@ validating weighted dataset mixes.</p>
 </section>
 <section id="axolotl.utils.schemas.datasets.UserDefinedDPOType" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.UserDefinedDPOType">UserDefinedDPOType</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.UserDefinedDPOType()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.UserDefinedDPOType()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>User defined typing for DPO</p>
 </section>
 <section id="axolotl.utils.schemas.datasets.UserDefinedKTOType" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.UserDefinedKTOType">UserDefinedKTOType</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.UserDefinedKTOType()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.UserDefinedKTOType()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>User defined typing for KTO</p>
 </section>
 <section id="axolotl.utils.schemas.datasets.UserDefinedPrompterType" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.datasets.UserDefinedPrompterType">UserDefinedPrompterType</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.UserDefinedPrompterType()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.datasets.UserDefinedPrompterType()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Structure for user defined prompt types</p>
 
 

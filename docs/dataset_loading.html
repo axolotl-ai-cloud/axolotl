@@ -81,7 +81,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-662d3ee3579756b0f9849fbd391b8c40.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -990,6 +990,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#https" id="toc-https" class="nav-link" data-scroll-target="#https">HTTPS</a></li>
   </ul></li>
   <li><a href="#next-steps" id="toc-next-steps" class="nav-link" data-scroll-target="#next-steps">Next steps</a></li>
+  <li><a href="#named-evaluation-datasets" id="toc-named-evaluation-datasets" class="nav-link" data-scroll-target="#named-evaluation-datasets">Named evaluation datasets</a></li>
   </ul>
 </nav>
     </div>
@@ -1291,6 +1292,43 @@ Note
 <section id="next-steps" class="level2">
 <h2 class="anchored" data-anchor-id="next-steps">Next steps</h2>
 <p>Now that you know how to load datasets, you can learn more on how to load your specific dataset format into your target output format <a href="dataset-formats">dataset formats docs</a>.</p>
+</section>
+<section id="named-evaluation-datasets" class="level2">
+<h2 class="anchored" data-anchor-id="named-evaluation-datasets">Named evaluation datasets</h2>
+<p>Set an optional <code>eval_name</code> on entries in <code>test_datasets</code> to report metrics for
+individual datasets or groups alongside the aggregate evaluation metrics:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">0</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="fu">test_datasets</span><span class="kw">:</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> org/math-a</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">eval_name</span><span class="kw">:</span><span class="at"> math</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> org/math-b</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">eval_name</span><span class="kw">:</span><span class="at"> math</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> org/code</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">eval_name</span><span class="kw">:</span><span class="at"> code</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> org/general</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Entries with the same <code>eval_name</code> are combined into one group. This example
+reports <code>eval/math/loss</code> and <code>eval/code/loss</code>, while <code>eval_loss</code> evaluates all
+four datasets together, including the unnamed dataset. The aggregate is computed
+on the combined dataset, not by averaging the group losses. Other supported
+metrics use the same prefixes; causal LM evaluation also reports
+<code>eval/math/ppl</code>, <code>eval/code/ppl</code>, and <code>eval_ppl</code>.</p>
+<p>Names must start with a letter and contain only letters, digits, and underscores.
+The existing <code>name</code> field still selects a Hugging Face dataset configuration.
+Without <code>eval_name</code>, evaluation behavior is unchanged.</p>
+<p>Each group gets a separate evaluation pass in addition to the aggregate pass,
+so naming every dataset roughly doubles the evaluation workload. Preprocessing,
+sequence-length filtering, sharding, deduplication, and packing preparation run
+independently for the aggregate and each group. Each group must have enough
+examples for the configured evaluation packing; use <code>eval_sample_packing: false</code>
+for small groups.</p>
+<p>Checkpoint selection and early stopping continue to use <code>eval_loss</code> by default.
+To select checkpoints using a group, set, for example:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">metric_for_best_model</span><span class="kw">:</span><span class="at"> eval/math/loss</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="fu">greater_is_better</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
 </section>
