@@ -2,7 +2,7 @@
 # Mixtral (8 experts, ~30M params, loads in seconds), as a smoke test for
 # adapter_checkpoint_format: sharded before turning it on for Beam.
 #
-#   axolotl train examples/beam/tiny-moe-ep-sharded-adapter-save.yaml --num-processes 8
+#   axolotl train examples/expert_parallel/tiny_mixtral_ep_lora_sharded_adapter_8gpu.yaml --num-processes 8
 #
 # Saves land at steps 2, 4 and 6. Rank 0 logs, per save:
 #   "Wrote ... GiB of adapter shards in ...s (slowest rank, 8 files) to .../.adapter_shards"
