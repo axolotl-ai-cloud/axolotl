@@ -30,7 +30,7 @@ datasets:
     type: alpaca
     split: train[:1%]
 val_set_size: 0
-dataset_prepared_path: /scratch/prepared/qwen3_5-35ba3b-alpaca-1pct
+dataset_prepared_path: ./prepared/qwen3_5-35ba3b-alpaca-1pct
 output_dir: ./outputs/qwen3_5-35ba3b-ep8-sharded-adapter
 
 sequence_len: 1024

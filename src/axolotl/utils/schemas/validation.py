@@ -2443,6 +2443,9 @@ class DistributedValidationMixin:
         if self.load_best_model_at_end:
             # the best checkpoint may still be consolidating when training ends
             problems.append("load_best_model_at_end: false")
+        if self.hub_model_id and (self.hub_strategy or "every_save") != "end":
+            # Trainer pushes each checkpoint before its adapter is consolidated
+            problems.append("hub_strategy: end when hub_model_id is set")
         if problems:
             raise ValueError(
                 "adapter_checkpoint_format: sharded writes PEFT adapter-only checkpoints "

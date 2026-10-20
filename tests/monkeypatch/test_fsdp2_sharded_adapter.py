@@ -331,6 +331,9 @@ def test_default_format_keeps_the_gather_path():
             "FULL_STATE_DICT",
         ),
         ({"load_best_model_at_end": True}, "load_best_model_at_end"),
+        ({"hub_model_id": "org/model"}, "hub_strategy: end"),
+        ({"hub_model_id": "org/model", "hub_strategy": "checkpoint"}, "hub_strategy"),
+        ({"hub_model_id": "org/model", "hub_strategy": "end"}, None),
         ({"adapter_final_save_format": "gather"}, None),
         (
             {
