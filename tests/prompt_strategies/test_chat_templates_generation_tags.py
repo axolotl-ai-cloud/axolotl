@@ -9,9 +9,8 @@ from datasets import Dataset
 from axolotl.prompt_strategies.chat_template import load
 from axolotl.utils.dict import DictDefault
 
-# Harmony-style wire with the whole assistant output inside generation markers, as
-# Reflection Beam's template does: the model produces the channel headers, an empty
-# analysis block and its close, and the channel switch, not just the field contents.
+# Harmony-style template with the whole assistant output inside generation markers, so
+# channel headers and the empty analysis block are generated, not just field contents.
 GENERATION_TEMPLATE = """{%- for message in messages -%}
 {%- if message.role == 'user' -%}
 <|start|>user<|message|>{{ message.content }}<|end|>

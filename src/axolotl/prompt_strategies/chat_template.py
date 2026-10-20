@@ -173,8 +173,7 @@ class ChatTemplatePrompter(Prompter):
     def build_prompt_with_assistant_mask(
         self, conversation: list[dict], tools=None
     ) -> dict:
-        """Render and tokenize, returning HF's ``assistant_masks`` from the template's
-        ``{% generation %}`` markers alongside ``input_ids``."""
+        """Tokenize with HF's ``assistant_masks`` from the ``{% generation %}`` markers."""
         chat_template_kwargs = {
             "chat_template": self.chat_template,
             "add_generation_prompt": False,
@@ -518,16 +517,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
     def _tokenize_with_generation_tags(
         self, turns: list[dict], tools: list[dict] | None
     ) -> Dict[str, List[int]] | None:
-        """Label every token inside the template's ``{% generation %}`` blocks.
-
-        The diff locator labels a turn's fields and terminators but not the template
-        structure the model must still produce between them (channel headers, an empty
-        reasoning block and its close). The markers delimit exactly what the model
-        generates per assistant turn, one block per turn, so per-turn train flags map
-        onto the blocks in order. Returns ``None`` when the blocks and the assistant
-        turns disagree or a case needs the diff locator (part-level training detail,
-        training non-assistant roles, ``train_on_inputs``).
-        """
+        """Label each assistant turn's ``{% generation %}`` block, matched to turns in
+        order; ``None`` means the row needs the turn locator."""
         if any(
             turn.get("training_detail") is not None
             or turn.get("reasoning_training_detail") is not None
