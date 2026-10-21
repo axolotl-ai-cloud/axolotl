@@ -389,26 +389,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if self.cfg.use_wandb and training_args.run_name == training_args.output_dir:
             training_args.run_name = None
 
-        # XLA requires static shapes to avoid recompilation on every batch.
-        if is_xla():
-            data_collator_kwargs = {
-                "padding": "max_length",
-                "max_length": self.cfg.sequence_len,
-                "pad_to_multiple_of": self.cfg.sequence_len,
-            }
-        else:
-            data_collator_kwargs = {
-                "padding": True,  # True/"longest" is the default
-            }
-            multiple = getattr(self.cfg, "pad_to_multiple_of", None) or 64
-            if self.cfg.pad_to_sequence_len:
-                data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
-                    self.cfg.sequence_len / multiple
-                )
-            elif self.cfg.pad_to_sequence_len is None:
-                # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
-                # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
-                data_collator_kwargs["pad_to_multiple_of"] = multiple
+        data_collator_kwargs = self._collator_padding_kwargs()
 
         if self.cfg.use_eaft:
             from functools import partial
@@ -500,6 +481,29 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         if dispatch_batches is not None:
             return dispatch_batches
         return bool(self.cfg.streaming or self.cfg.pretraining_dataset)
+
+    def _collator_padding_kwargs(self) -> dict:
+        # XLA requires static shapes to avoid recompilation on every batch.
+        if is_xla():
+            data_collator_kwargs = {
+                "padding": "max_length",
+                "max_length": self.cfg.sequence_len,
+                "pad_to_multiple_of": self.cfg.sequence_len,
+            }
+        else:
+            data_collator_kwargs = {
+                "padding": True,  # True/"longest" is the default
+            }
+            multiple = getattr(self.cfg, "pad_to_multiple_of", None) or 64
+            if self.cfg.pad_to_sequence_len:
+                data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
+                    self.cfg.sequence_len / multiple
+                )
+            elif self.cfg.pad_to_sequence_len is None:
+                # A100 is best at 64, while others at 8. Let's use the larger so we don't have to check
+                # https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html
+                data_collator_kwargs["pad_to_multiple_of"] = multiple
+        return data_collator_kwargs
 
     def build_collator(
         self,
