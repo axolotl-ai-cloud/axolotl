@@ -1793,15 +1793,9 @@ class SystemValidationMixin:
                 f"Optimizer '{optimizer}' uses bitsandbytes which is not supported on TPU."
             )
 
-        # attention impls
-        unsupported_attn = {
-            "flash_attention_2",
-            "flash_attention_3",
-            "flash_attention_4",
-            "flash_attention_torch",
-        }
+        # attention impls: legacy flags may already be normalized into attn_implementation
         attn_impl = data.get("attn_implementation")
-        if attn_impl and attn_impl in unsupported_attn:
+        if attn_impl and attn_impl not in ("eager", "sdpa"):
             raise NotImplementedError(
                 f"attn_implementation={attn_impl!r} is not supported on TPU. "
                 "Use 'eager' or 'sdpa'."

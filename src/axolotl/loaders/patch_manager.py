@@ -35,6 +35,7 @@ from axolotl.monkeypatch.multipack import (
     patch_for_multipack,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import empty_device_cache
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -1122,7 +1123,7 @@ class PatchManager:
                     "4-bit" if self.cfg.load_in_4bit else "8-bit",
                 )
                 gc.collect()
-                torch.cuda.empty_cache()
+                empty_device_cache()
 
     def _apply_tiled_mlp(self, model_type: str):
         if self.cfg.tiled_mlp:

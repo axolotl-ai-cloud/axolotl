@@ -22,6 +22,7 @@ from axolotl.cli.utils.param_wrapper_merge import (
     ParamWrapperTarget,
     build_param_wrapper_map,
 )
+from axolotl.utils.distributed import empty_device_cache
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -3221,8 +3222,8 @@ def merge_lora_sharded_efficient(
                 total_size_bytes += tensor.numel() * tensor.element_size()
 
             del merged_tensors, shard_tensors
-            if device != "cpu" and torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if device != "cpu":
+                empty_device_cache()
             gc.collect()
     except BaseException:
         try:

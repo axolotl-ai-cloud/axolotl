@@ -36,7 +36,7 @@ from axolotl.loaders.utils import materialize_trainable_meta_params
 from axolotl.telemetry.errors import send_errors
 from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import cleanup_distributed
+from axolotl.utils.distributed import cleanup_distributed, empty_device_cache
 from axolotl.utils.freeze import freeze_layers_except, freeze_mm_modules
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
@@ -735,9 +735,7 @@ def train(
     resume_from_checkpoint = determine_last_checkpoint(cfg)
     execute_training(cfg, trainer, resume_from_checkpoint)
 
-    # clear cache
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    empty_device_cache()
 
     # Save the trained model and cleanup
     save_trained_model(cfg, trainer, model)

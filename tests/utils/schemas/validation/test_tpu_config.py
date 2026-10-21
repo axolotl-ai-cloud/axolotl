@@ -16,6 +16,11 @@ from axolotl.utils.dict import DictDefault
 XLA_PATCH = "axolotl.utils.schemas.validation.is_torch_xla_available"
 
 
+def _with(cfg, **overrides):
+    # DictDefault's `|` keeps the left-hand value on key clashes.
+    return DictDefault({**cfg, **overrides})
+
+
 @pytest.fixture()
 def tpu_cfg(min_base_cfg):
     """Minimal valid config when running on TPU (bf16, sdpa, no adapter)."""
@@ -51,25 +56,25 @@ class TestTpuValidatorNoop:
 
 class TestQuantisationRejections:
     def test_qlora_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(adapter="qlora")
+        cfg = _with(tpu_cfg, adapter="qlora")
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="qlora"):
                 validate_config(cfg)
 
     def test_load_in_4bit_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(load_in_4bit=True)
+        cfg = _with(tpu_cfg, adapter="lora", load_in_4bit=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="load_in_4bit"):
                 validate_config(cfg)
 
     def test_load_in_8bit_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(load_in_8bit=True)
+        cfg = _with(tpu_cfg, adapter="lora", load_in_8bit=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="load_in_8bit"):
                 validate_config(cfg)
 
     def test_8bit_optimizer_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(optimizer="adamw_bnb_8bit")
+        cfg = _with(tpu_cfg, optimizer="adamw_bnb_8bit")
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="adamw_bnb_8bit"):
                 validate_config(cfg)
@@ -87,28 +92,32 @@ class TestAttentionRejections:
             "flash_attention_3",
             "flash_attention_4",
             "flash_attention_torch",
+            "flex_attention",
+            "xformers",
+            "sage",
+            "kernels-community/flash-attn2",
         ],
     )
     def test_flash_attn_impl_rejected(self, tpu_cfg, attn):
-        cfg = tpu_cfg | DictDefault(attn_implementation=attn)
+        cfg = _with(tpu_cfg, attn_implementation=attn)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match=attn):
                 validate_config(cfg)
 
     def test_flash_attention_flag_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(flash_attention=True)
+        cfg = _with(tpu_cfg, attn_implementation=None, flash_attention=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="flash_attention"):
                 validate_config(cfg)
 
     def test_xformers_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(xformers_attention=True)
+        cfg = _with(tpu_cfg, attn_implementation=None, xformers_attention=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="xformers"):
                 validate_config(cfg)
 
     def test_eager_passes(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(attn_implementation="eager")
+        cfg = _with(tpu_cfg, attn_implementation="eager")
         with patch(XLA_PATCH, return_value=True):
             validated = validate_config(cfg)
         assert validated.attn_implementation == "eager"
@@ -125,31 +134,31 @@ class TestAttentionRejections:
 
 class TestParallelismRejections:
     def test_deepspeed_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(deepspeed="zero3.json")
+        cfg = _with(tpu_cfg, deepspeed="zero3.json")
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="deepspeed"):
                 validate_config(cfg)
 
     def test_fsdp_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(fsdp=["full_shard"])
+        cfg = _with(tpu_cfg, fsdp_config={"fsdp_version": 2})
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="fsdp"):
                 validate_config(cfg)
 
     def test_tensor_parallel_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(tensor_parallel_size=2)
+        cfg = _with(tpu_cfg, tensor_parallel_size=2)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="tensor_parallel_size"):
                 validate_config(cfg)
 
     def test_context_parallel_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(context_parallel_size=2)
+        cfg = _with(tpu_cfg, context_parallel_size=2)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="context_parallel_size"):
                 validate_config(cfg)
 
     def test_expert_parallel_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(expert_parallel_size=2)
+        cfg = _with(tpu_cfg, expert_parallel_size=2)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="expert_parallel_size"):
                 validate_config(cfg)
@@ -161,19 +170,19 @@ class TestParallelismRejections:
 
 class TestDynamicShapeRejections:
     def test_sample_packing_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(sample_packing=True)
+        cfg = _with(tpu_cfg, sample_packing=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="sample_packing"):
                 validate_config(cfg)
 
     def test_batch_flattening_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(batch_flattening=True)
+        cfg = _with(tpu_cfg, batch_flattening=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="batch_flattening"):
                 validate_config(cfg)
 
     def test_rl_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(rl="dpo")
+        cfg = _with(tpu_cfg, rl="dpo")
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="rl"):
                 validate_config(cfg)
@@ -185,7 +194,7 @@ class TestDynamicShapeRejections:
 
 class TestCudaOnlyKernelRejections:
     def test_liger_plugin_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(
+        cfg = _with(tpu_cfg, 
             plugins=["axolotl.integrations.liger.LigerPlugin"]
         )
         with patch(XLA_PATCH, return_value=True):
@@ -193,7 +202,7 @@ class TestCudaOnlyKernelRejections:
                 validate_config(cfg)
 
     def test_cut_cross_entropy_plugin_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(
+        cfg = _with(tpu_cfg, 
             plugins=["axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin"]
         )
         with patch(XLA_PATCH, return_value=True):
@@ -201,19 +210,19 @@ class TestCudaOnlyKernelRejections:
                 validate_config(cfg)
 
     def test_lora_mlp_kernel_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(lora_mlp_kernel=True)
+        cfg = _with(tpu_cfg, lora_mlp_kernel=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="lora_mlp_kernel"):
                 validate_config(cfg)
 
     def test_lora_qkv_kernel_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(lora_qkv_kernel=True)
+        cfg = _with(tpu_cfg, lora_qkv_kernel=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="lora_qkv_kernel"):
                 validate_config(cfg)
 
     def test_lora_o_proj_kernel_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(lora_o_proj_kernel=True)
+        cfg = _with(tpu_cfg, lora_o_proj_kernel=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="lora_o_proj_kernel"):
                 validate_config(cfg)
@@ -225,19 +234,19 @@ class TestCudaOnlyKernelRejections:
 
 class TestOffloadCompileRejections:
     def test_activation_offloading_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(activation_offloading=True)
+        cfg = _with(tpu_cfg, activation_offloading=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="activation_offloading"):
                 validate_config(cfg)
 
     def test_gc_offload_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(gradient_checkpointing="offload")
+        cfg = _with(tpu_cfg, gradient_checkpointing="offload")
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="offload"):
                 validate_config(cfg)
 
     def test_torch_compile_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(torch_compile=True)
+        cfg = _with(tpu_cfg, torch_compile=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="torch_compile"):
                 validate_config(cfg)
@@ -249,19 +258,19 @@ class TestOffloadCompileRejections:
 
 class TestPrecisionRejections:
     def test_fp16_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(fp16=True, bf16=False)
+        cfg = _with(tpu_cfg, fp16=True, bf16=False)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="fp16"):
                 validate_config(cfg)
 
     def test_tf32_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(tf32=True)
+        cfg = _with(tpu_cfg, tf32=True)
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="tf32"):
                 validate_config(cfg)
 
     def test_gpu_memory_limit_rejected(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(gpu_memory_limit="20GiB")
+        cfg = _with(tpu_cfg, gpu_memory_limit="20GiB")
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="gpu_memory_limit"):
                 validate_config(cfg)
@@ -288,7 +297,7 @@ class TestAutoDefaults:
         assert validated.dataloader_pin_memory is False
 
     def test_explicit_pad_to_sequence_len_preserved(self, tpu_cfg):
-        cfg = tpu_cfg | DictDefault(pad_to_sequence_len=True)
+        cfg = _with(tpu_cfg, pad_to_sequence_len=True)
         with patch(XLA_PATCH, return_value=True):
             validated = validate_config(cfg)
         assert validated.pad_to_sequence_len is True
