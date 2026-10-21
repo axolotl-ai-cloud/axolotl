@@ -100,6 +100,68 @@ def test_generation_logits_match_teacher_forcing(kwargs):
     torch.testing.assert_close(torch.cat(seen, dim=1), out.logits)
 
 
+def _strict_cce(e, c, targets, bias=None, reduction="none", **_):
+    """torch stand-in that enforces cut_cross_entropy's input/grad contract."""
+    assert e.dim() == 2 and targets.dim() == 1 and reduction == "none"
+    assert e.dtype in (torch.bfloat16, torch.float16) and c.dtype == e.dtype
+    logits = torch.nn.functional.linear(e.float(), c.float(), bias)
+    loss = torch.nn.functional.cross_entropy(logits, targets, reduction="none")
+    loss.register_hook(
+        lambda g: g.view(-1).sum() * 0 + g
+    )  # CCE backward views the grad
+    return loss
+
+
+@pytest.mark.parametrize("head_type", ["tied", "linear", "shared", "tokenizer"])
+def test_cut_cross_entropy_patch_tracks_dense_loss(head_type, monkeypatch):
+    """The CCE patch (kernel swapped for a strict stand-in) tracks the dense loss."""
+    pytest.importorskip("cut_cross_entropy")
+    from cut_cross_entropy.transformers.patch import PATCH_FNS
+    from cut_cross_entropy.transformers.utils import PatchOptions
+
+    from axolotl.integrations.ncm import cut_cross_entropy as ncm_cce, loading
+
+    loading._register_cce_patch(None)
+    assert PATCH_FNS["ncm"][1] == PATCH_FNS["ncm_tokenizer"][1] == "patch_ncm"
+
+    torch.manual_seed(0)
+    if head_type == "tokenizer":
+        model = NCMTokenizerModel(_tokenizer_config(fine_drop_prob=0.0)).eval()
+    else:
+        model = _generator(head_type=head_type, head_bias=True)
+    x = torch.randint(0, VOCAB, (2, LEVELS[-1]))
+    if head_type == "tokenizer":
+        x[0, -2:] = -100
+    ids = x.clamp(min=0)
+
+    def loss_and_grads():
+        model.zero_grad()
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            loss = model(ids, labels=x).loss
+        loss.backward()
+        return loss.detach(), [p.grad for p in model.parameters() if p.grad is not None]
+
+    ref_loss, ref_grads = loss_and_grads()
+    monkeypatch.setattr(ncm_cce, "cce", _strict_cce)
+    opts = PatchOptions(
+        impl="cce",
+        reduction="mean",
+        filter_eps="auto",
+        accum_e_fp32=False,
+        accum_c_fp32=False,
+        filter_e_grad=True,
+        filter_c_grad=True,
+        train_only=False,
+    )
+    ncm_cce.patch_ncm(model, opts)
+    loss, grads = loss_and_grads()
+    torch.testing.assert_close(loss, ref_loss, rtol=2e-2, atol=2e-2)
+    assert len(grads) == len(ref_grads)
+    for g, r in zip(grads, ref_grads, strict=True):
+        cos = torch.nn.functional.cosine_similarity(g.flatten(), r.flatten(), dim=0)
+        assert cos > 0.99 or r.abs().max() < 1e-6
+
+
 def test_segments_match_dense_prefix_lm_mask():
     torch.manual_seed(0)
     P, sizes = 3, [2, 4]

@@ -70,6 +70,9 @@ class NCMPreTrainedModel(PreTrainedModel):
         return (model, info) if want_info else model
 
 
+LinearParams = tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
+
+
 def _fit_length(
     input_ids: torch.Tensor, labels: torch.Tensor | None, length: int, pad_id: int
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
@@ -123,13 +126,16 @@ class NCMDecoder(nn.Module):
         self.ln_f = nn.LayerNorm(config.dim, eps=1e-6, bias=False)
         self.output_layer = nn.Linear(config.dim, config.vocab_size, bias=False)
 
-    def forward(self, z_hat: torch.Tensor) -> torch.Tensor:
+    def hidden(self, z_hat: torch.Tensor) -> torch.Tensor:
         x = z_hat.to(self.output_layer.weight.dtype)
         if self.wpe is not None:
             x = x + self.wpe(torch.arange(x.shape[1], device=x.device))
         for block in self.blocks:
             x = block(x)
-        return self.output_layer(self.ln_f(x))
+        return self.ln_f(x)
+
+    def forward(self, z_hat: torch.Tensor) -> torch.Tensor:
+        return self.output_layer(self.hidden(z_hat))
 
 
 class NCMTokenizerModel(NCMPreTrainedModel):
@@ -213,20 +219,28 @@ class NCMTokenizerModel(NCMPreTrainedModel):
         )
         with torch.autocast(input_ids.device.type, enabled=False):
             z_hat, z_hat_trunc, vq_loss = self.vq(self.encode_latents(input_ids))
-        logits = self.decoder(z_hat)
-        recon_loss = loss = None
-        if labels is not None:
-            recon_loss = F.cross_entropy(logits.float().flatten(0, 1), labels.flatten())
+        logits = recon_loss = loss = None
+        if labels is None:
+            logits = self.decoder(z_hat)
+        else:
+            recon_loss, logits = self._recon_loss(z_hat, labels)
             if z_hat_trunc is not None:
                 w_full, w_trunc = self.config.fine_drop_weights
-                trunc = F.cross_entropy(
-                    self.decoder(z_hat_trunc).float().flatten(0, 1), labels.flatten()
-                )
+                trunc, _ = self._recon_loss(z_hat_trunc, labels)
                 recon_loss = w_full * recon_loss + w_trunc * trunc
             loss = recon_loss + vq_loss
         return NCMTokenizerOutput(
             loss=loss, logits=logits, recon_loss=recon_loss, vq_loss=vq_loss
         )
+
+    def _recon_loss(self, z_hat: torch.Tensor, labels: torch.Tensor):
+        """Token CE of the decoded reconstruction and the logits; the Cut
+        Cross-Entropy patch replaces this to skip materializing logits."""
+        return self._dense_recon_loss(z_hat, labels)
+
+    def _dense_recon_loss(self, z_hat: torch.Tensor, labels: torch.Tensor):
+        logits = self.decoder(z_hat)
+        return F.cross_entropy(logits.float().flatten(0, 1), labels.flatten()), logits
 
 
 class TiedCodebookHead(nn.Module):
@@ -255,6 +269,20 @@ class TiedCodebookHead(nn.Module):
             out = out * self.log_inv_T.exp()
         return out if self.bias is None else out + self.bias
 
+    def linear(self, x: torch.Tensor) -> LinearParams:
+        """``forward`` as ``(input, weight, bias)`` of one linear layer, for CCE."""
+        E = self._codebook[0].weight.float()
+        E_sq = E.pow(2).sum(-1)
+        scale = 1.0 / E_sq.mean().clamp(min=1e-12)
+        if self.log_inv_T is not None:
+            scale = scale * self.log_inv_T.exp()
+        bias = -scale * E_sq
+        return (
+            self.proj(x),
+            2 * scale * E,
+            bias if self.bias is None else bias + self.bias,
+        )
+
 
 class SharedHeads(nn.Module):
     def __init__(self, n_embd: int, num_codes: int, num_levels: int):
@@ -266,6 +294,9 @@ class SharedHeads(nn.Module):
 
     def level(self, k: int, x: torch.Tensor) -> torch.Tensor:
         return self.head(x) + self.biases[k]
+
+    def linear(self, k: int, x: torch.Tensor) -> LinearParams:
+        return x, self.head.weight, self.biases[k]
 
 
 class NCMGeneratorModel(NCMPreTrainedModel):
@@ -365,6 +396,14 @@ class NCMGeneratorModel(NCMPreTrainedModel):
         if isinstance(self.lm_heads, SharedHeads):
             return self.lm_heads.level(i, x)
         return self.lm_heads[i](x)
+
+    def _head_linear(self, i: int, x: torch.Tensor) -> LinearParams:
+        if isinstance(self.lm_heads, SharedHeads):
+            return self.lm_heads.linear(i, x)
+        head = self.lm_heads[i]
+        if isinstance(head, TiedCodebookHead):
+            return head.linear(x)
+        return x, head.weight, head.bias
 
     def _embed_prefix(
         self, prefix_ids: torch.Tensor | None, batch_size: int, device
@@ -490,26 +529,8 @@ class NCMGeneratorModel(NCMPreTrainedModel):
         h = self._backbone(x, self.pred_levels, prefix_ids)
         h = h[:, self.config.prefix_len :]
 
-        per_level = [
-            self._head(i, hk) for i, hk in enumerate(h.split(self.pred_levels, dim=1))
-        ]
         targets = codes[:, sum(self.vq.levels[: self.first]) :]
-        logits = None
-        if len({lg.shape[-1] for lg in per_level}) == 1:
-            logits = torch.cat(per_level, dim=1)
-            ce = F.cross_entropy(
-                logits.float().transpose(1, 2), targets, reduction="none"
-            )
-        else:
-            ce = torch.cat(
-                [
-                    F.cross_entropy(lg.float().transpose(1, 2), tg, reduction="none")
-                    for lg, tg in zip(
-                        per_level, targets.split(self.pred_levels, dim=1), strict=True
-                    )
-                ],
-                dim=1,
-            )
+        ce, logits = self._level_cross_entropy(h, targets)
         loss = (ce * self.level_weights(device)).sum(1).mean()
         level_losses = torch.stack(
             [c.mean() for c in ce.detach().split(self.pred_levels, dim=1)]
@@ -517,6 +538,30 @@ class NCMGeneratorModel(NCMPreTrainedModel):
         return NCMGeneratorOutput(
             loss=loss, logits=logits, codes=codes, level_losses=level_losses
         )
+
+    def _level_cross_entropy(self, h: torch.Tensor, targets: torch.Tensor):
+        """Per-code CE ``(B, codes)`` and the logits; the Cut Cross-Entropy patch
+        (``cut_cross_entropy.py``) replaces this to skip materializing logits."""
+        return self._dense_level_cross_entropy(h, targets)
+
+    def _dense_level_cross_entropy(self, h: torch.Tensor, targets: torch.Tensor):
+        h_levels = h.split(self.pred_levels, dim=1)
+        per_level = [self._head(i, hk) for i, hk in enumerate(h_levels)]
+        if len({lg.shape[-1] for lg in per_level}) == 1:
+            logits = torch.cat(per_level, dim=1)
+            ce = F.cross_entropy(
+                logits.float().transpose(1, 2), targets, reduction="none"
+            )
+            return ce, logits
+        t_levels = targets.split(self.pred_levels, dim=1)
+        ce = torch.cat(
+            [
+                F.cross_entropy(lg.float().transpose(1, 2), tg, reduction="none")
+                for lg, tg in zip(per_level, t_levels, strict=True)
+            ],
+            dim=1,
+        )
+        return ce, None
 
     @staticmethod
     def _sample(

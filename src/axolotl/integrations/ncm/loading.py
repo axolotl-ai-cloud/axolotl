@@ -3,7 +3,12 @@
 import torch
 from transformers import AutoConfig, AutoModel, PretrainedConfig
 
-from axolotl.model_support.base import ModelSupport, Unsupported
+from axolotl.model_support.base import (
+    Capability,
+    Experimental,
+    ModelSupport,
+    Unsupported,
+)
 from axolotl.model_support.profile import (
     ModelHookContext,
     ModelHookPhase,
@@ -98,10 +103,24 @@ def _bind_tokenizer(context: ModelHookContext) -> None:
         config.null_prefix_token_id = tokenizer.eos_token_id
 
 
-_UNSUPPORTED = {
+def _register_cce_patch(_context: ModelHookContext) -> None:
+    """Point cut_cross_entropy's registry at the NCM patch.
+
+    Runs before the CCE plugin's pre_model_load, which resolves PATCH_FNS by
+    string import, so the entry only has to exist by then.
+    """
+    try:
+        from cut_cross_entropy.transformers.patch import PATCH_FNS
+    except ImportError:
+        return
+    target = ("axolotl.integrations.ncm.cut_cross_entropy", "patch_ncm")
+    for model_type in (NCMTokenizerConfig.model_type, NCMGeneratorConfig.model_type):
+        PATCH_FNS.setdefault(model_type, target)
+
+
+_CAPABILITIES: dict[str, Capability] = {
     name: Unsupported("NCM models are small in-tree transformers without these hooks.")
     for name in (
-        "cut_cross_entropy",
         "liger",
         "lora_kernels",
         "fused_attn_kernel",
@@ -110,6 +129,9 @@ _UNSUPPORTED = {
         "quantized_lora",
     )
 }
+_CAPABILITIES["cut_cross_entropy"] = Experimental(
+    "Patched in-tree (cut_cross_entropy.py); needs bf16 or fp16 training."
+)
 
 
 @register_model_support
@@ -119,9 +141,14 @@ class NCMSupport(ModelSupport):
     model_types = (NCMTokenizerConfig.model_type, NCMGeneratorConfig.model_type)
     profile = ModelProfile(
         family=VANILLA_CAUSAL_LM,
-        capabilities=_UNSUPPORTED,
+        capabilities=_CAPABILITIES,
         strategies=ModelStrategyOverrides(auto_model_cls=lambda: NCMAutoModel),
         hooks=ModelHooks(
-            by_phase={ModelHookPhase.BEFORE_MODEL_BUILD: (_bind_tokenizer,)}
+            by_phase={
+                ModelHookPhase.BEFORE_MODEL_BUILD: (
+                    _bind_tokenizer,
+                    _register_cce_patch,
+                )
+            }
         ),
     )

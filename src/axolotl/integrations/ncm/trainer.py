@@ -27,16 +27,17 @@ class NCMTrainer(AxolotlTrainer):
         prefix = "" if model.training else "eval_"
         unwrapped = self.accelerator.unwrap_model(model)
         if isinstance(unwrapped, NCMTokenizerModel):
-            # The model crops or pads the batch to its block length.
-            n = min(outputs.logits.shape[1], inputs["labels"].shape[1])
-            labels = inputs["labels"][:, :n]
-            valid = labels != -100
-            hits = (outputs.logits[:, :n].argmax(-1) == labels) & valid
             metrics = {
                 "recon_loss": outputs.recon_loss.item(),
                 "vq_loss": outputs.vq_loss.item(),
-                "recon_acc": (hits.sum() / valid.sum().clamp(min=1)).item(),
             }
+            if outputs.logits is not None:  # None under fused cross entropy
+                # The model crops or pads the batch to its block length.
+                n = min(outputs.logits.shape[1], inputs["labels"].shape[1])
+                labels = inputs["labels"][:, :n]
+                valid = labels != -100
+                hits = (outputs.logits[:, :n].argmax(-1) == labels) & valid
+                metrics["recon_acc"] = (hits.sum() / valid.sum().clamp(min=1)).item()
             if split == "train":
                 util = unwrapped.vq.codebook_utilization()
                 metrics["codebook_util"] = (sum(util) / len(util), "max")

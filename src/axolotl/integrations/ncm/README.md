@@ -46,6 +46,21 @@ Architecture and objective go in `model_config`.
 | generator | `level_loss_alpha` | 0.0 | level `k` weighs `ell_k^-alpha`; 0 weighs every code equally, 1 every level |
 | generator | `query_level0` | false | predict level 0 from learned queries instead of sampling its unigram |
 
+Attention runs one SDPA call per level block (prefix + that level), so masked-out pairs cost nothing and CUDA can use flash kernels.
+
+### Cut Cross-Entropy
+
+Both stages support axolotl's [Cut Cross-Entropy](../cut_cross_entropy/README.md) plugin, which computes the losses without materializing logits (the tokenizer's text-vocabulary logits, and the generator's `batch x codes x codebook_size` logits, about 1.3 GB in bf16 for TinyStories at batch 256). The NCM patch lives in `cut_cross_entropy.py` and registers itself, so no fork update is needed. It needs bf16 or fp16 training.
+
+```yaml
+plugins:
+  - axolotl.integrations.ncm.NCMPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
+```
+
+Training logs skip `recon_acc` while CCE is active, since no logits are produced.
+
 ## Sampling
 
 ```python

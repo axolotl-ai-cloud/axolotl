@@ -3,6 +3,8 @@ base_model: ./outputs/ncm-tinystories-tokenizer
 
 plugins:
   - axolotl.integrations.ncm.NCMPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
 ncm:
   stage: generator
   sample_every: 1000

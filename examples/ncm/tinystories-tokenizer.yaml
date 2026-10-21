@@ -4,6 +4,8 @@ tokenizer_config: openai-community/gpt2
 
 plugins:
   - axolotl.integrations.ncm.NCMPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
 ncm:
   stage: tokenizer
 
