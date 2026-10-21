@@ -1243,8 +1243,20 @@ class OptimizationValidationMixin:
     def check_adam_mini(cls, data):
         # adam-mini routes params by name, so LoRA factors under q_proj/k_proj
         # get reshaped into attention heads they don't have
-        if data.get("optimizer") == "adam_mini" and data.get("adapter"):
+        if data.get("optimizer") != "adam_mini":
+            return data
+        if data.get("adapter"):
             raise ValueError("adam_mini only supports full fine-tuning (no adapter).")
+        ignored_lrs = [
+            key
+            for key in ("lr_groups", "embedding_lr", "embedding_lr_scale")
+            if data.get(key)
+        ]
+        if ignored_lrs:
+            raise ValueError(
+                f"adam_mini builds its own parameter groups, so {ignored_lrs} would be "
+                "silently ignored. Remove them or pick a different optimizer."
+            )
         return data
 
     @model_validator(mode="before")

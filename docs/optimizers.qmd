@@ -122,7 +122,9 @@ applying the correction to normalized layers only.
 Adam with one second-moment value per parameter block (attention head, output neuron,
 or token embedding) instead of per parameter, cutting optimizer memory by ~50% vs AdamW.
 Full fine-tuning only. The block layout (`dim`, `n_heads`, `n_kv_heads`) is read from
-the model config.
+the model config and can be overridden through `optim_args`. Models with fused MoE experts
+or other >2D trainable parameters are not supported, and `lr_groups`/`embedding_lr` are
+rejected. Embeddings and the LM head get no weight decay, matching the other optimizers.
 
 GitHub: [https://github.com/zyushun/Adam-mini](https://github.com/zyushun/Adam-mini)
 Paper: [https://arxiv.org/abs/2406.16793](https://arxiv.org/abs/2406.16793)
