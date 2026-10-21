@@ -14,6 +14,10 @@ from axolotl.prompt_strategies.llama2_chat import (
     LLama2ChatTokenizingStrategy,
 )
 from axolotl.prompt_strategies.orpo.chat_template import load
+from axolotl.prompt_strategies.user_defined import (
+    UserDefinedDatasetConfig,
+    load as user_defined_load,
+)
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter, PromptStyle
 from axolotl.utils.dict import DictDefault
@@ -130,6 +134,22 @@ class TestInstructionWSystemPromptTokenizingStrategy:
         ]  # "<s>SYSTEM:"
         assert example["input_ids"][5:7] == [671, 20118]  # " use cot"
         assert example["input_ids"][8] == 11889  # USER
+
+    @enable_hf_offline
+    def test_user_defined_null_system_uses_system_prompt(
+        self, tokenizer_huggyllama_w_special_tokens
+    ):
+        strat = user_defined_load(
+            tokenizer_huggyllama_w_special_tokens,
+            DictDefault({"train_on_inputs": False, "sequence_len": 2048}),
+            UserDefinedDatasetConfig(
+                system_prompt="use cot", system_format="SYSTEM: {system}\n"
+            ),
+        )
+        sample = {"system": None, "instruction": "hello!", "output": "Hi!"}
+        example = strat.tokenize_prompt(sample)
+        decoded = tokenizer_huggyllama_w_special_tokens.decode(example["input_ids"])
+        assert "SYSTEM: use cot" in decoded
 
 
 class TestLlama2ChatTokenization:
