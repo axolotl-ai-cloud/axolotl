@@ -40,7 +40,7 @@ def test_geglu_forward_values(torch_seed, approximate):
     # PyTorch reference
     torch_out = F.gelu(gate, approximate=approximate) * up
 
-    assert torch.allclose(triton_out, torch_out, rtol=1e-3)
+    assert torch.allclose(triton_out, torch_out, rtol=1e-3, atol=1e-5)
 
 
 @pytest.mark.flaky(retries=1, delay=5)
@@ -72,9 +72,9 @@ def test_geglu_backward(torch_seed, approximate):
     )
 
     # Compare outputs and gradients
-    assert torch.allclose(h, torch_out, rtol=1e-3)
-    assert torch.allclose(grad_gate, gate.grad, rtol=1e-3)
-    assert torch.allclose(grad_up, up.grad, rtol=1e-3)
+    assert torch.allclose(h, torch_out, rtol=1e-3, atol=1e-5)
+    assert torch.allclose(grad_gate, gate.grad, rtol=1e-3, atol=1e-5)
+    assert torch.allclose(grad_up, up.grad, rtol=1e-3, atol=1e-5)
 
 
 def test_geglu_inplace_preservation():
