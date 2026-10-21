@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from typing import Any
 
 import torch
@@ -12,12 +11,11 @@ import torch
 from axolotl.integrations.diffusion_decision._util import (
     _value,
     require_diffusion_spec,
+    token_budget_eval_packing,
 )
+from axolotl.integrations.diffusion_decision.canvas import _decision_example
 from axolotl.integrations.diffusion_decision.collator import DecisionCanvasCollator
-from axolotl.integrations.diffusion_decision.loss import (
-    DecisionLabelExample,
-    decision_example_from_canvas,
-)
+from axolotl.integrations.diffusion_decision.loss import DecisionLabelExample
 from axolotl.integrations.diffusion_decision.records import DecisionCanvas
 from axolotl.model_support import (
     DiffusionLayout,
@@ -28,25 +26,6 @@ from axolotl.processing_strategies import (
     NemotronDiffusionVLMProcessingStrategy,
     pad_image_batch,
 )
-
-
-def _decision_example(
-    canvas: DecisionCanvas, row: Mapping[str, Any]
-) -> DecisionLabelExample:
-    source = row.get("decision_example")
-    if source is None:
-        source = decision_example_from_canvas(
-            canvas, source_weight=float(row.get("source_weight", 1.0))
-        )
-    if not isinstance(source, DecisionLabelExample):
-        raise TypeError("decision_example must be a DecisionLabelExample")
-    return replace(
-        source,
-        questions=tuple(
-            replace(question, position=index)
-            for index, question in enumerate(source.questions)
-        ),
-    )
 
 
 class DecisionTrainingCollator:
@@ -227,6 +206,7 @@ class DecisionTrainingCollator:
         loss: list[bool] = []
         corruptible: list[bool] = []
         pinned: list[bool] = []
+        canvas_positions: list[bool] = []
         slots: list[bool] = []
         prompt_slots: list[bool] = []
         label_positions: list[list[int]] = []
@@ -242,6 +222,7 @@ class DecisionTrainingCollator:
             loss.extend([False] * len(prompt) + output_loss)
             corruptible.extend([False] * len(prompt) + output_loss)
             pinned.extend([True] * len(prompt) + list(canvas.pinned_mask))
+            canvas_positions.extend([False] * len(prompt) + [True] * len(output))
             slots.extend([False] * len(prompt) + list(canvas.slot_mask))
             prompt_slots.extend(canvas.prompt_slot_mask or (False,) * len(prompt))
             prompt_slots.extend([False] * len(output))
@@ -273,6 +254,11 @@ class DecisionTrainingCollator:
                 "canvas_update_mask": torch.tensor(corruptible, dtype=torch.bool)[None]
                 & ~torch.tensor(pinned, dtype=torch.bool)[None],
                 "decision_slot_mask": torch.tensor(slots, dtype=torch.bool)[None],
+                # The whole canvas (pinned template tokens included): two-tower models
+                # denoise it as one block over the prompt's context states.
+                "decision_canvas_mask": torch.tensor(
+                    canvas_positions, dtype=torch.bool
+                )[None],
                 "decision_prompt_slot_mask": torch.tensor(
                     prompt_slots, dtype=torch.bool
                 )[None],
@@ -356,6 +342,8 @@ def decision_collator_for_config(cfg: Any, is_eval: bool = False):
     packed = bool(_value(cfg, "sample_packing", False)) and (
         not is_eval or _value(cfg, "eval_sample_packing", False) is not False
     )
+    if is_eval and token_budget_eval_packing(cfg):
+        packed = True
     fixed_logical_batch = bool(_value(cfg, "batch_flattening", False))
     budget = resolve_native_packing_budget(
         cfg, packed=packed or fixed_logical_batch, is_eval=is_eval

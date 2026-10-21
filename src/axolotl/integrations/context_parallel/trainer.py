@@ -3,7 +3,12 @@
 import contextlib
 from types import MethodType
 
+import torch.distributed as dist
 from ringmaster import ContextParallelContextManager
+
+from axolotl.monkeypatch.ring_attn import get_ring_attn_group
+
+from .collator import CP_SHARD_KEY
 
 
 def _cp_context(buffers=None, buffer_seq_dims=None, no_restore_buffers=None):
@@ -33,6 +38,9 @@ def _num_items(self, batch_samples, device):
         for batch in batch_samples
     ]
     count = sum(label.ne(-100).sum() for label in labels).to(device)
+    if any(CP_SHARD_KEY in batch for batch in batch_samples):
+        # each rank only sees its own shard's targets
+        dist.all_reduce(count, group=get_ring_attn_group())
     pc = self.accelerator.parallelism_config
     if self.args.average_tokens_across_devices:
         count = self.accelerator.gather(count).sum() / pc.non_data_parallel_size

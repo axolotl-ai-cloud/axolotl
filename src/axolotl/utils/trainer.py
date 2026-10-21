@@ -568,6 +568,9 @@ def setup_torch_compile_env(cfg):
             os.environ["ACCELERATE_DYNAMO_BACKEND"] = "INDUCTOR"
         else:
             os.environ["ACCELERATE_DYNAMO_BACKEND"] = cfg.torch_compile_backend.upper()
+        # HF Trainer builds TorchDynamoPlugin without this field, so accelerate reads it from the env.
+        if cfg.torch_compile_regional:
+            os.environ["ACCELERATE_DYNAMO_USE_REGIONAL_COMPILATION"] = "1"
 
 
 def setup_deepspeed_env(cfg, stage=None):

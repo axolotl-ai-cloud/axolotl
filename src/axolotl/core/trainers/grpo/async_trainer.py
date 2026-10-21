@@ -32,7 +32,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from trl.extras.profiling import profiling_decorator
 from trl.trainer import GRPOConfig, GRPOTrainer
@@ -48,6 +47,13 @@ from trl.trainer.utils import (
     split_pixel_values_by_grid,
     split_tensor_dict,
     unsplit_pixel_values_by_grid,
+)
+
+from axolotl.core.trainers.grpo.flatten import (
+    boundary_index,
+    chunk_lengths,
+    completion_gather_index,
+    to_device_async,
 )
 
 try:
@@ -2741,17 +2747,18 @@ class AsyncGRPOTrainer(GRPOTrainer):
             chunk_end = min(chunk_start + batch_size, B)
             chunk_ids = input_ids[chunk_start:chunk_end]
             chunk_mask = attention_mask[chunk_start:chunk_end]
-            n = chunk_end - chunk_start
 
-            seq_lens = chunk_mask.sum(dim=1).to(torch.int32)
-            total_tokens = seq_lens.sum().item()
-            cu_seqlens = torch.zeros(n + 1, dtype=torch.int32, device=device)
-            cu_seqlens[1:] = seq_lens.cumsum(0)
+            lens, plens, cu = chunk_lengths(
+                chunk_mask,
+                None if prompt_mask is None else prompt_mask[chunk_start:chunk_end],
+                logits_to_keep,
+            )
+            cu_seqlens = to_device_async(torch.tensor(cu, dtype=torch.int32), device)
 
-            valid = chunk_mask.bool()
-            flat_ids = chunk_ids[valid].unsqueeze(0)
-            positions = torch.arange(L, device=device).unsqueeze(0).expand(n, L)
-            flat_pos = positions[valid].unsqueeze(0)
+            # The only remaining per-chunk sync: the number of valid tokens.
+            flat_idx = chunk_mask.reshape(-1).nonzero(as_tuple=True)[0]
+            flat_ids = chunk_ids.reshape(-1)[flat_idx].unsqueeze(0)
+            flat_pos = (flat_idx % L).unsqueeze(0)
 
             with autocast_ctx:
                 logits = model(
@@ -2760,8 +2767,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     use_cache=False,
                     cu_seq_lens_q=cu_seqlens,
                     cu_seq_lens_k=cu_seqlens,
-                    max_length_q=seq_lens.max().item(),
-                    max_length_k=seq_lens.max().item(),
+                    max_length_q=max(lens),
+                    max_length_k=max(lens),
                 ).logits
                 logits = torch.nan_to_num(logits, nan=0.0)
 
@@ -2772,36 +2779,22 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     flat_logits.unsqueeze(0), flat_targets.unsqueeze(0)
                 )[0]
 
-                # Mask out cross-sequence boundary positions. In the shifted
-                # tensor, position cu_seqlens[i]-1 (for i>0) is where sequence
-                # i-1's last token "predicts" sequence i's first token — garbage.
-                for boundary in cu_seqlens[1:-1]:
-                    idx = boundary.item() - 1
-                    if 0 <= idx < flat_logps.size(0):
-                        flat_logps[idx] = 0.0
+                # Zero the cross-sequence boundary positions, where sequence i-1's
+                # last token "predicts" sequence i's first token.
+                boundaries = boundary_index(cu)
+                if boundaries.numel():
+                    flat_logps[to_device_async(boundaries, device)] = 0.0
 
-            # Gather completion logprobs per sequence.
-            # Use prompt_mask to determine exact prompt length (not logits_to_keep,
-            # which is the padded completion dimension and may exceed the actual
-            # completion length for shorter sequences).
-            for i in range(n):
-                slen = seq_lens[i].item()
-                abs_i = chunk_start + i  # absolute index in the full batch
-                if prompt_mask is not None:
-                    plen = int(prompt_mask[abs_i].sum().item())
-                else:
-                    plen = max(1, slen - logits_to_keep)
-                n_compl = slen - plen
-                start = cu_seqlens[i].item() + plen - 1
-                start = max(0, start)
-                actual = min(n_compl, total_tokens - 1 - start)
-                if actual > 0:
-                    all_logps[chunk_start + i, :actual] = flat_logps[
-                        start : start + actual
-                    ]
+            rows, cols, src = completion_gather_index(
+                lens, plens, cu, logits_to_keep, row_offset=chunk_start
+            )
+            if src.numel():
+                all_logps[
+                    to_device_async(rows, device), to_device_async(cols, device)
+                ] = flat_logps[to_device_async(src, device)].to(all_logps.dtype)
 
+            # Free this chunk's logits before the next chunk's forward allocates its own.
             del logits, flat_logits, flat_logps, flat_ids
-            torch.cuda.empty_cache()
 
         return all_logps
 
@@ -2839,14 +2832,17 @@ class AsyncGRPOTrainer(GRPOTrainer):
             chunk_mask = attention_mask[chunk_start:chunk_end]
             n = chunk_end - chunk_start
 
-            seq_lens = chunk_mask.sum(dim=1).to(torch.int32)
-            cu_seqlens = torch.zeros(n + 1, dtype=torch.int32, device=device)
-            cu_seqlens[1:] = seq_lens.cumsum(0)
+            lens, plens, cu = chunk_lengths(
+                chunk_mask,
+                None if prompt_mask is None else prompt_mask[chunk_start:chunk_end],
+                logits_to_keep,
+            )
+            cu_seqlens = to_device_async(torch.tensor(cu, dtype=torch.int32), device)
 
-            valid = chunk_mask.bool()
-            flat_ids = chunk_ids[valid].unsqueeze(0)
-            positions = torch.arange(L, device=device).unsqueeze(0).expand(n, L)
-            flat_pos = positions[valid].unsqueeze(0)
+            # The only remaining per-chunk sync: the number of valid tokens.
+            flat_idx = chunk_mask.reshape(-1).nonzero(as_tuple=True)[0]
+            flat_ids = chunk_ids.reshape(-1)[flat_idx].unsqueeze(0)
+            flat_pos = (flat_idx % L).unsqueeze(0)
 
             with autocast_ctx:
                 logits = model(
@@ -2855,59 +2851,46 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     use_cache=False,
                     cu_seq_lens_q=cu_seqlens,
                     cu_seq_lens_k=cu_seqlens,
-                    max_length_q=seq_lens.max().item(),
-                    max_length_k=seq_lens.max().item(),
+                    max_length_q=max(lens),
+                    max_length_k=max(lens),
                 ).logits
                 logits = torch.nan_to_num(logits, nan=0.0)
 
-            # Extract logprobs and entropy per-sequence (avoids cross-sequence targets,
-            # preserves gradient graph through selective_log_softmax → logits → model)
-            for i in range(n):
-                slen = seq_lens[i].item()
-                abs_i = chunk_start + i
-                if prompt_mask is not None:
-                    plen = int(prompt_mask[abs_i].sum().item())
-                else:
-                    plen = max(1, slen - logits_to_keep)
-                n_compl = slen - plen
-                s = cu_seqlens[i].item()
-
-                if n_compl <= 0:
-                    # No completion tokens — append zeros
-                    all_logps_list.append(torch.zeros(logits_to_keep, device=device))
-                    if compute_entropy:
-                        all_entropy_list.append(
-                            torch.zeros(logits_to_keep, device=device)
-                        )
-                    continue
-
+            rows, cols, src = completion_gather_index(
+                lens, plens, cu, logits_to_keep, row_offset=0
+            )
+            chunk_logps = torch.zeros(n, logits_to_keep, device=device)
+            chunk_entropy = (
+                torch.zeros(n, logits_to_keep, device=device)
+                if compute_entropy
+                else None
+            )
+            if src.numel():
+                rows_d, cols_d, src_d = (
+                    to_device_async(t, device) for t in (rows, cols, src)
+                )
                 with autocast_ctx:
-                    # Shifted logits and targets for this sequence only
-                    seq_logits = logits[0, s + plen - 1 : s + slen - 1, :]
-                    seq_logits = seq_logits / self.temperature
-                    seq_targets = flat_ids[0, s + plen : s + slen]
-
-                    # Log probs (differentiable)
+                    # Gather only the completion positions, then one log-softmax over
+                    # them; the graph still runs through logits → model.
+                    sel_logits = logits[0, src_d, :] / self.temperature
+                    sel_targets = flat_ids[0, src_d + 1]
                     lps = selective_log_softmax(
-                        seq_logits.unsqueeze(0), seq_targets.unsqueeze(0)
-                    )[0]  # (n_compl,)
+                        sel_logits.unsqueeze(0), sel_targets.unsqueeze(0)
+                    )[0]
+                    chunk_logps = chunk_logps.index_put(
+                        (rows_d, cols_d), lps.to(chunk_logps.dtype)
+                    )
+                    if chunk_entropy is not None:
+                        chunk_entropy = chunk_entropy.index_put(
+                            (rows_d, cols_d),
+                            entropy_from_logits(sel_logits).to(chunk_entropy.dtype),
+                        )
+            all_logps_list.append(chunk_logps)
+            if chunk_entropy is not None:
+                all_entropy_list.append(chunk_entropy)
 
-                    # Pad to logits_to_keep
-                    if n_compl < logits_to_keep:
-                        lps = F.pad(lps, (0, logits_to_keep - n_compl))
-                    all_logps_list.append(lps[:logits_to_keep])
-
-                    if compute_entropy:
-                        ent = entropy_from_logits(seq_logits)  # (n_compl,)
-                        if n_compl < logits_to_keep:
-                            ent = F.pad(ent, (0, logits_to_keep - n_compl))
-                        all_entropy_list.append(ent[:logits_to_keep])
-
-        # Stack per-sequence results into (B, logits_to_keep) tensors
-        all_logps = torch.stack(all_logps_list, dim=0)
-        all_entropies = (
-            torch.stack(all_entropy_list, dim=0) if compute_entropy else None
-        )
+        all_logps = torch.cat(all_logps_list, dim=0)
+        all_entropies = torch.cat(all_entropy_list, dim=0) if compute_entropy else None
         return all_logps, all_entropies
 
     @profiling_decorator

@@ -38,6 +38,7 @@ from axolotl.utils.schemas.datasets import (
     SFTDataset,
     SyntheticDataset,
 )
+from axolotl.utils.schemas.utils import is_deepspeed_zero3_config
 
 LOG = get_logger(__name__)
 
@@ -494,10 +495,17 @@ def normalize_config(cfg):
     if (
         cfg.gradient_checkpointing
         and cfg.unfrozen_parameters is None
-        and cfg.gradient_checkpointing_kwargs is None
         and cfg.rl is None
+        and "use_reentrant" not in (cfg.gradient_checkpointing_kwargs or {})
     ):
-        cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
+        # Non-reentrant is PyTorch's recommended default. DeepSpeed ZeRO-3 keeps
+        # reentrant: non-reentrant recompute sees the partitioned parameters and
+        # raises a CheckpointError. Other checkpoint kwargs the user set are kept.
+        cfg.gradient_checkpointing_kwargs = {
+            **(cfg.gradient_checkpointing_kwargs or {}),
+            "use_reentrant": is_deepspeed_zero3_config(cfg.deepspeed)
+            or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3",
+        }
 
     # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms /
     # cross-layer shared KV cause "marked ready twice" errors with reentrant

@@ -22,6 +22,7 @@ from axolotl.core.trainers import (
     AxolotlRewardTrainer,
     AxolotlTrainer,
 )
+from axolotl.core.trainers.mixins.named_eval import named_eval_trainer_class
 from axolotl.integrations.base import PluginManager
 from axolotl.model_support import get_model_support_for_cfg, resolve_model_support
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
@@ -276,6 +277,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
+        training_arguments_kwargs["batch_flattening"] = bool(self.cfg.batch_flattening)
+        training_arguments_kwargs["balance_labels"] = bool(self.cfg.balance_labels)
+        training_arguments_kwargs["label_balance_window_optim_steps"] = (
+            self.cfg.label_balance_window_optim_steps or 1
+        )
         training_arguments_kwargs["sample_packing_drop_attention_mask"] = (
             self.cfg.attn_decontaminates_packing
         )
@@ -455,6 +461,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and getattr(self.model.config, "num_labels", None) != 1
         ):
             self.model.config.num_labels = 1
+        trainer_cls = named_eval_trainer_class(trainer_cls, self.eval_dataset)
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
@@ -479,6 +486,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             ] = self.cfg.micro_batch_size
 
         return trainer
+
+    def _uses_deepspeed_sequence_parallel(self) -> bool:
+        # DeepSpeed's Ulysses dataloader adapter gathers and slices every batch tensor as
+        # [batch, seq]; the 1-D cu_seq_lens metadata has no sequence dim to slice.
+        return bool(self.cfg.deepspeed) and (self.cfg.context_parallel_size or 1) > 1
+
+    def _dispatches_batches(self) -> bool:
+        # accelerate's DataLoaderDispatcher, its default for iterable datasets, reads the batch
+        # size off the first tensor and slices every tensor along dim 0 per process, which
+        # cuts the 1-D cu_seq_lens metadata down to a single element.
+        dispatch_batches = (self.cfg.accelerator_config or {}).get("dispatch_batches")
+        if dispatch_batches is not None:
+            return dispatch_batches
+        return bool(self.cfg.streaming or self.cfg.pretraining_dataset)
 
     def build_collator(
         self,
@@ -639,12 +660,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 requested_attention_implementation=self.cfg.attn_implementation
             )
             and is_packed_mode
-            and self.cfg.torch_compile
+            and self.cfg.fa_varlen_kwargs_in_collator is not False
             and self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+            and not self._uses_deepspeed_sequence_parallel()
+            and not self._dispatches_batches()
         ):
-            # Model-agnostic: transformers consumes these FlashAttentionKwargs for any model, skipping its
-            # per-layer varlen derivation — a data-dependent op (aten.nonzero) that graph-breaks under compile.
-            # Gated on torch_compile so non-compiled runs keep the existing per-layer derivation behavior.
+            # transformers consumes these FlashAttentionKwargs for any in-tree model and skips its per-layer
+            # varlen derivation, which syncs the host several times per layer (and graph-breaks under compile).
             kwargs["emit_fa_varlen_kwargs"] = True
 
         return collator(

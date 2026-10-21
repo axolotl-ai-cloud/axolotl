@@ -18,11 +18,14 @@ from .manifest import (
     DecisionManifest,
     DecisionManifestCheckpointCallback,
     build_decision_manifest,
+    validate_read_manifest,
 )
 
 
 def _carries_images(*datasets: Any) -> bool:
     for dataset in datasets:
+        if getattr(dataset, "carries_images", False):
+            return True
         for row in getattr(dataset, "_rows", ()):
             for item in (row,) if isinstance(row, Mapping) else row:
                 if getattr(item.get("canvas"), "image_refs", ()):
@@ -130,6 +133,10 @@ class DiffusionDecisionPlugin(BasePlugin):
         decision = self._require_runtime(cfg)
         if decision is None:
             return
+        # Refuse to read (or resume) weights through a canvas or read protocol they were
+        # not trained on: codebook, canvas width/prefix/layout, questions per canvas,
+        # latent slots and read passes must match the adapter's (or merged model's) manifest.
+        validate_read_manifest(cfg, model=model)
         from .slot_runtime import (
             merge_trainable_slot_indices,
             resolve_trainable_slot_runtime,

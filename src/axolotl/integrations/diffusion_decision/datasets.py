@@ -17,50 +17,57 @@ from datasets import load_dataset
 from torch.utils.data import Dataset
 
 from axolotl.common.datasets import TrainDatasetMeta
-from axolotl.core.trainers.diffusion_lm.sampling import resolve_native_packing_budget
 from axolotl.loaders import load_tokenizer
-from axolotl.model_support import (
-    DiffusionLayout,
-    DiffusionNoise,
-)
-from axolotl.utils.dict import DictDefault
+from axolotl.model_support import DiffusionNoise  # noqa: F401  (re-exported)
 
 from ._util import (
     _value,
-    active_control_ids,
     canonical_json,
     model_config_overrides,
-    parse_token_ids,
     read_jsonl,
     require_diffusion_spec,
-    required_token_id,
-    resolve_mask_token_id,
 )
 from .adapters import normalize_record
-from .budgets import decision_budget, exceeds_budget
+from .batch_plan import (
+    DecisionBatchPlan,
+    SourcePool,
+    encode_reserve,
+)
+from .canvas import (  # noqa: F401  (canvas building lives in .canvas; re-exported)
+    _budget_limits,
+    _canvas_row,
+    _canvas_settings,
+    _canvas_width,
+    _filter_budget_rows,
+    _grouping_fits,
+    _is_canvas_overflow,
+    _prepared_segments,
+    _read_overflow_width,
+    _reserve_segments,
+    _resolve_slot_plan,
+    _scaffold_ids,
+    _thought_delimiters,
+    canvas_prefix_ids,
+)
 from .grouping import group_records
 from .hygiene import assert_split_isolation, decontaminate, family_key
 from .loss import decision_example_from_canvas
-from .mixture import (
-    DeterministicMixtureSampler,
-    MixtureSample,
-    prepare_source_pools,
-)
-from .permutation import permute_record
+from .mixture import cap_window, prepare_source_pools
 from .prepared_cache import (
     identity as prepared_cache_identity,
     load as load_prepared_cache,
+    prepared_cache_verify,
     store as store_prepared_cache,
 )
-from .preprocessing import build_decision_canvas
 from .prompts import resolve_image_refs
+from .segments import label_tables, segment_safety
 from .slot_sampling import (
     DecisionDraw,
     project_max_canvas,
     project_slot_plan,
     sample_slot_count,
 )
-from .slots import SlotInit, SlotPlan
+from .slots import SlotPlan
 from .template import SchemaError
 
 LOG = logging.getLogger(__name__)
@@ -295,147 +302,6 @@ def _family_dev_split(records: Sequence[dict[str, Any]], ratio: float = 0.2):
     )
 
 
-def _thought_delimiters(model_config: Any) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    return (
-        parse_token_ids(_value(model_config, "thought_open_ids"), "thought_open_ids"),
-        parse_token_ids(_value(model_config, "thought_close_ids"), "thought_close_ids"),
-    )
-
-
-def _resolve_slot_plan(
-    tokenizer: Any, cfg: Any, spec: Any, vocab_size: int
-) -> tuple[SlotPlan | None, tuple[int, ...], tuple[int, ...]]:
-    decision = _value(cfg, "diffusion_decision")
-    latent = _value(decision, "latent")
-    if latent is None:
-        return None, (), ()
-    mode = _value(latent, "mode", "none")
-    if mode == "none":
-        return None, (), ()
-    model_config = model_config_overrides(cfg)
-    thought_open_ids, thought_close_ids = _thought_delimiters(model_config)
-    token_ids = parse_token_ids(
-        _value(latent, "token_ids", ()) or (), "latent.token_ids"
-    )
-    mask_token_id = resolve_mask_token_id(_value(cfg, "diffusion_lm"), model_config)
-    if mode in {"pinned", "learned", "prompt"}:
-        control_ids = active_control_ids(tokenizer, model_config)
-        control_ids.update(thought_open_ids, thought_close_ids)
-        if mask_token_id is not None:
-            control_ids.add(mask_token_id)
-        collisions = sorted(set(token_ids) & control_ids)
-        if collisions:
-            raise ValueError(
-                "fixed decision slot token_ids cannot use active control IDs: "
-                f"{collisions}"
-            )
-    plan = SlotInit(
-        mode=mode,
-        token_ids=token_ids,
-        num_slots=_value(latent, "num_slots", 0),
-        vocab_size=vocab_size,
-        pad_id=required_token_id(
-            _value(tokenizer, "pad_token_id"), "tokenizer.pad_token_id"
-        ),
-        spec=spec,
-        mask_token_id=mask_token_id,
-    ).build(seed=int(_value(cfg, "seed", 0)))
-    if (
-        plan.placement == "thought"
-        and _value(spec, "layout") is DiffusionLayout.ENCODER_CANVAS
-        and (not thought_open_ids or not thought_close_ids)
-    ):
-        raise ValueError(
-            "encoder-canvas thought slots require `model_config: {thought_open_ids: "
-            "[...], thought_close_ids: [...]}` in the training config"
-        )
-    return plan, thought_open_ids, thought_close_ids
-
-
-def _canvas_row(
-    tokenizer,
-    record: dict[str, Any],
-    cfg: Any,
-    source_weight: float,
-    *,
-    spec,
-    vocab_size: int | None = None,
-    slot_plan: SlotPlan | None = None,
-    thought_open_ids: Sequence[int] = (),
-    thought_close_ids: Sequence[int] = (),
-):
-    diffusion = _value(cfg, "diffusion_lm")
-    decision = _value(cfg, "diffusion_decision")
-    model_config = model_config_overrides(cfg)
-    latent = _value(decision, "latent")
-    configured_width = _value(diffusion, "canvas_width")
-    width = 128 if configured_width is None else int(configured_width)
-    if spec.max_canvas is not None:
-        width = min(width, spec.max_canvas)
-    mask_token_id = resolve_mask_token_id(diffusion, model_config)
-    scaffold_ids = (
-        tuple(int(token) for token in (_value(latent, "token_ids", ()) or ()))
-        if slot_plan is None
-        else ()
-    )
-    record = permute_record(
-        record,
-        seed=int(_value(cfg, "seed", 0)),
-        codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
-    )
-    if vocab_size is None:
-        vocab_size = _value(model_config, "vocab_size")
-    if vocab_size is None:
-        vocab_size = len(tokenizer)
-    turn_close_id = required_token_id(
-        _value(model_config, "turn_close_token_id", _value(tokenizer, "eos_token_id")),
-        "turn_close_token_id",
-    )
-    canvas = build_decision_canvas(
-        tokenizer,
-        record,
-        scaffold_ids=scaffold_ids,
-        turn_close_id=turn_close_id,
-        pad_id=required_token_id(
-            _value(tokenizer, "pad_token_id"), "tokenizer.pad_token_id"
-        ),
-        vocab_size=int(vocab_size),
-        width=width,
-        seed=int(_value(cfg, "seed", 0)),
-        steps=int(_value(_value(diffusion, "unroll"), "k_max", 1)),
-        noise_kind="absorbing" if spec.noise is DiffusionNoise.ABSORBING else "uniform",
-        mask_token_id=mask_token_id,
-        slot_plan=slot_plan,
-        thought_open_ids=thought_open_ids,
-        thought_close_ids=thought_close_ids,
-        codebook=_value(_value(decision, "labels"), "codebook", "vendored26"),
-        prevalidated_record=True,
-        max_image_size=int(_value(decision, "max_image_size", 1400)),
-    )
-    row = {
-        "canvas": canvas,
-        "decision_example": decision_example_from_canvas(
-            canvas, source_weight=source_weight
-        ),
-        "source": record["source"],
-        "length": len(canvas.prompt_ids) + len(canvas.canvas_ids),
-        "record": record,
-        "max_questions": int(_value(decision, "max_questions_per_canvas", 20)),
-    }
-    if slot_plan is not None:
-        row["slot_plan"] = slot_plan
-        if _value(latent, "sample_num_slots", False):
-            row["slot_sampling"] = {
-                "seed": int(_value(cfg, "seed", 0)),
-                "max_slots": len(slot_plan.ids),
-                "pad_token_id": required_token_id(
-                    _value(tokenizer, "pad_token_id"), "tokenizer.pad_token_id"
-                ),
-                "padding_pinned": True,
-            }
-    return row
-
-
 _CANVAS_CHUNK_SIZE = 64
 _CANVAS_WORKER_STATE: tuple[Any, ...] | None = None
 
@@ -453,9 +319,15 @@ def _init_canvas_worker(state: tuple[Any, ...]) -> None:
     _CANVAS_WORKER_STATE = state
 
 
+# Item modes: "row" builds a canvas row; "segments" also pre-tokenizes the row's
+# segments for re-permuted training draws; "reserve" pre-tokenizes only the
+# segments of a record whose canvas is built when a later epoch draws it.
+_ROW, _ROW_SEGMENTS, _RESERVE = "row", "segments", "reserve"
+
+
 def _build_canvas_chunk(
-    items: Sequence[tuple[int, dict[str, Any], float]],
-) -> list[tuple[dict[str, Any] | None, bool]]:
+    items: Sequence[tuple[int, Mapping[str, Any], float, str, bool]],
+) -> list[tuple[dict[str, Any] | None, bool, Any, str | None]]:
     if _CANVAS_WORKER_STATE is None:
         raise RuntimeError("decision canvas worker was not initialized")
     (
@@ -466,6 +338,7 @@ def _build_canvas_chunk(
         slot_plan,
         thought_open_ids,
         thought_close_ids,
+        train,
     ) = _CANVAS_WORKER_STATE
     return [
         _build_canvas_worker(
@@ -477,13 +350,16 @@ def _build_canvas_chunk(
             slot_plan=slot_plan,
             thought_open_ids=thought_open_ids,
             thought_close_ids=thought_close_ids,
+            train=train,
         )[1:]
         for item in items
     ]
 
 
 def _build_canvas_worker(
-    item: tuple[int, dict[str, Any], float],
+    item: tuple[int, Mapping[str, Any], float]
+    | tuple[int, Mapping[str, Any], float, str]
+    | tuple[int, Mapping[str, Any], float, str, bool],
     *,
     tokenizer: Any,
     cfg: Any,
@@ -492,8 +368,29 @@ def _build_canvas_worker(
     slot_plan: SlotPlan | None,
     thought_open_ids: tuple[int, ...],
     thought_close_ids: tuple[int, ...],
-) -> tuple[int, dict[str, Any] | None, bool]:
-    index, record, source_weight = item
+    train: bool = False,
+) -> tuple[int, dict[str, Any] | None, bool, Any, str | None]:
+    """(index, row, overflowed, segments, why no segments) of one item.
+
+    An item's fifth field, when present, overrides ``train`` for that item, so
+    training and evaluation canvases can share one worker pool.
+    """
+    index, record, source_weight = item[:3]
+    mode = item[3] if len(item) > 3 else _ROW
+    if len(item) > 4:
+        train = bool(item[4])
+    if mode == _RESERVE:
+        segments, reason = _reserve_segments(
+            tokenizer,
+            record,
+            cfg,
+            spec,
+            vocab_size=vocab_size,
+            slot_plan=slot_plan,
+            thought_open_ids=thought_open_ids,
+            thought_close_ids=thought_close_ids,
+        )
+        return index, None, False, segments, reason
     try:
         row = _canvas_row(
             tokenizer,
@@ -505,12 +402,26 @@ def _build_canvas_worker(
             slot_plan=slot_plan,
             thought_open_ids=thought_open_ids,
             thought_close_ids=thought_close_ids,
+            train=train,
         )
     except SchemaError as error:
         if not _is_canvas_overflow(error):
             raise
-        return index, None, True
-    return index, row, False
+        return index, None, True, None, None
+    if mode != _ROW_SEGMENTS:
+        return index, row, False, None, None
+    segments, reason = _prepared_segments(
+        tokenizer,
+        record,
+        row,
+        cfg,
+        spec,
+        vocab_size=vocab_size,
+        slot_plan=slot_plan,
+        thought_open_ids=thought_open_ids,
+        thought_close_ids=thought_close_ids,
+    )
+    return index, row, False, segments, reason
 
 
 class DecisionDataset(Dataset):
@@ -546,33 +457,7 @@ class DecisionDataset(Dataset):
                     raise TypeError("packed decision indices must be integers")
                 rows.append(self._rows[item])
             return rows
-        maximum = self._rows[index.index]
-        recipe = maximum.get("slot_sampling")
-        plan = maximum.get("slot_plan")
-        if not isinstance(recipe, Mapping) or not isinstance(plan, SlotPlan):
-            raise ValueError("decision draw requires a sampled maximum slot row")
-        count = sample_slot_count(
-            seed=int(recipe["seed"]),
-            epoch=index.epoch,
-            global_draw_ordinal=index.global_draw_ordinal,
-            max_slots=int(recipe["max_slots"]),
-        )
-        canvas = project_max_canvas(
-            maximum["canvas"],
-            plan,
-            count,
-            pad_token_id=int(recipe["pad_token_id"]),
-            padding_pinned=bool(recipe["padding_pinned"]),
-        )
-        row = dict(maximum)
-        row["canvas"] = canvas
-        row["slot_plan"] = project_slot_plan(plan, count)
-        row["decision_example"] = decision_example_from_canvas(
-            canvas, source_weight=maximum["decision_example"].source_weight
-        )
-        row["decision_slot_count"] = count
-        row["decision_draw"] = index
-        return row
+        return _project_draw(self._rows[index.index], index)
 
     def remove_columns(self, columns: Sequence[str]) -> "DecisionDataset":
         if tuple(columns) != ("length",) or "length" not in self.column_names:
@@ -580,15 +465,102 @@ class DecisionDataset(Dataset):
         return DecisionDataset(self._rows, self.manifest, expose_lengths=False)
 
 
-def _is_canvas_overflow(error: SchemaError) -> bool:
-    message = str(error)
-    return (
-        message.startswith("answer template is ") and " canvas holds " in message
-    ) or (
-        message.startswith("question ")
-        and " alone needs " in message
-        and message.endswith(" canvas rows")
+def _project_draw(maximum: Mapping[str, Any], draw: DecisionDraw) -> dict[str, Any]:
+    """Project a maximum-slot row to the slot count sampled for ``draw``."""
+    recipe = maximum.get("slot_sampling")
+    plan = maximum.get("slot_plan")
+    if not isinstance(recipe, Mapping) or not isinstance(plan, SlotPlan):
+        raise ValueError("decision draw requires a sampled maximum slot row")
+    count = sample_slot_count(
+        seed=int(recipe["seed"]),
+        epoch=draw.epoch,
+        global_draw_ordinal=draw.global_draw_ordinal,
+        max_slots=int(recipe["max_slots"]),
     )
+    canvas = project_max_canvas(
+        maximum["canvas"],
+        plan,
+        count,
+        pad_token_id=int(recipe["pad_token_id"]),
+        padding_pinned=bool(recipe["padding_pinned"]),
+    )
+    row = dict(maximum)
+    row["canvas"] = canvas
+    row["slot_plan"] = project_slot_plan(plan, count)
+    row["decision_example"] = decision_example_from_canvas(
+        canvas, source_weight=maximum["decision_example"].source_weight
+    )
+    row["decision_slot_count"] = count
+    row["decision_draw"] = draw
+    return row
+
+
+class DecisionPlanDataset(Dataset):
+    """Training draws of a :class:`DecisionBatchPlan`, one epoch at a time.
+
+    A :class:`DecisionDraw` addresses position ``index`` of epoch ``epoch``; the
+    trainer's plan sampler yields those. Integer indices address epoch 0, so
+    index-based consumers (core multipack, plain iteration) see a fixed epoch.
+    ``set_epoch`` (called by accelerate on the dataset, also after a resume skip)
+    moves the shared plan, which the plan sampler reads.
+    """
+
+    def __init__(
+        self,
+        plan: DecisionBatchPlan,
+        manifest: Mapping[str, Any],
+        *,
+        expose_lengths: bool = True,
+    ):
+        self.batch_plan = plan
+        self.manifest = dict(manifest)
+        self.column_names = ("length",) if expose_lengths else ()
+
+    @property
+    def carries_images(self) -> bool:
+        """Whether any training record (prepared or reserve) has images."""
+        return bool(self.manifest.get("train_has_images", False))
+
+    def __len__(self) -> int:
+        return self.batch_plan.draws_per_epoch
+
+    def set_epoch(self, epoch: int) -> None:
+        self.batch_plan.set_epoch(epoch)
+
+    def _draw_row(self, epoch: int, position: int) -> dict[str, Any]:
+        if not 0 <= position < len(self):
+            raise IndexError(position)
+        return self.batch_plan.row(epoch, position)
+
+    def __getitem__(
+        self, index: int | str | DecisionDraw | Sequence[int]
+    ) -> dict[str, Any] | list[int] | list[dict[str, Any]]:
+        if isinstance(index, str):
+            if index != "length":
+                raise KeyError(index)
+            return self.batch_plan.lengths(0)
+        if isinstance(index, int):
+            return self._draw_row(0, index)
+        if isinstance(index, DecisionDraw):
+            row = self._draw_row(index.epoch, index.index)
+            if isinstance(row.get("slot_sampling"), Mapping):
+                return _project_draw(row, index)
+            return row
+        if isinstance(index, Sequence):
+            rows = []
+            for item in index:
+                if not isinstance(item, int):
+                    raise TypeError("packed decision indices must be integers")
+                rows.append(self._draw_row(0, item))
+            return rows
+        raise TypeError(f"unsupported decision dataset index {type(index)!r}")
+
+    def remove_columns(self, columns: Sequence[str]) -> "DecisionPlanDataset":
+        if tuple(columns) != ("length",) or "length" not in self.column_names:
+            raise ValueError(
+                "DecisionPlanDataset only exposes the derived length column"
+            )
+        return DecisionPlanDataset(self.batch_plan, self.manifest, expose_lengths=False)
 
 
 def _canvas_rows(
@@ -597,9 +569,87 @@ def _canvas_rows(
     cfg: Any,
     weights: Mapping[str, float],
     spec,
+    *,
+    train: bool = False,
+    aligned: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
-    rows: list[dict[str, Any]] = []
+    """Build canvases; ``aligned`` keeps a None in place of each overflowing record."""
+    prepared = _prepare_canvas_items(
+        tokenizer,
+        [(record, _ROW) for record in records],
+        cfg,
+        weights,
+        spec,
+        train=train,
+    )
+    return _collect_canvas_rows(prepared, aligned=aligned)
+
+
+def _collect_canvas_rows(
+    prepared: Sequence[tuple[dict[str, Any] | None, bool, Any, str | None]],
+    *,
+    aligned: bool = False,
+) -> tuple[list[dict[str, Any]], int]:
+    """(rows, overflow count) of prepared ``_ROW`` items; see :func:`_canvas_rows`."""
+    rows: list[Any] = []
     canvas_too_long = 0
+    for row, overflow, _, _ in prepared:
+        if row is None:
+            canvas_too_long += int(overflow)
+            if aligned:
+                rows.append(None)
+            continue
+        rows.append(row)
+    return rows, canvas_too_long
+
+
+def _warm_segment_caches(tokenizer: Any, cfg: Any) -> None:
+    """Fill the per-process tokenizer caches once, before workers fork.
+
+    The segment safety check (parses the tokenizer JSON), the label tables and
+    the compiled chat template would otherwise be rebuilt in every worker of
+    every source's pool.
+    """
+    codebook = _value(
+        _value(_value(cfg, "diffusion_decision"), "labels"), "codebook", "vendored26"
+    )
+    try:
+        if segment_safety(tokenizer) is None:
+            label_tables(tokenizer, codebook)
+        tokenizer.apply_chat_template(
+            [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except Exception:  # noqa: BLE001 - a cold cache is only slower
+        LOG.debug("Decision segment caches not warmed", exc_info=True)
+
+
+def _item_train(item: Sequence[Any], default: bool) -> bool:
+    """An item's own ``train`` flag (its third field), else ``default``."""
+    return bool(item[2]) if len(item) > 2 else default
+
+
+def _prepare_canvas_items(
+    tokenizer: Any,
+    items: Sequence[
+        tuple[Mapping[str, Any], str] | tuple[Mapping[str, Any], str, bool]
+    ],
+    cfg: Any,
+    weights: Mapping[str, float],
+    spec,
+    *,
+    train: bool = False,
+) -> list[tuple[dict[str, Any] | None, bool, Any, str | None]]:
+    """(row, overflowed, segments, why no segments) per (record, mode) item, in order.
+
+    An item may carry a third field overriding ``train`` for that item. Callers
+    pass every record of a build in one call: the worker pool (and its fork,
+    tokenizer and template state) is then started once, and small sources share
+    it instead of running serially in the parent.
+    """
+    results: list[tuple[dict[str, Any] | None, bool, Any, str | None]] = []
     vocab_size = _value(model_config_overrides(cfg), "vocab_size")
     if vocab_size is None:
         vocab_size = len(tokenizer)
@@ -607,7 +657,9 @@ def _canvas_rows(
         tokenizer, cfg, spec, int(vocab_size)
     )
     workers = _value(cfg, "dataset_num_proc", 1) or 1
-    workers = min(int(workers), max(1, len(records) // _CANVAS_CHUNK_SIZE))
+    workers = min(int(workers), max(1, len(items) // _CANVAS_CHUNK_SIZE))
+    if workers > 1 and any(item[1] != _ROW for item in items):
+        _warm_segment_caches(tokenizer, cfg)
     if workers > 1:
         # Canvas building is GIL-bound Python (template resolution, validation,
         # per-canvas tokenizer calls), so threads never scaled; worker
@@ -615,7 +667,7 @@ def _canvas_rows(
         # pool initializer, and build ordered chunks of records.
         LOG.info(
             "Preparing %s decision canvases with %s worker processes",
-            len(records),
+            len(items),
             workers,
         )
         state = (
@@ -626,17 +678,20 @@ def _canvas_rows(
             slot_plan,
             tuple(thought_open_ids),
             tuple(thought_close_ids),
+            train,
         )
         chunks = (
             [
                 (
                     index,
-                    records[index],
-                    float(weights.get(records[index]["source"], 1.0)),
+                    items[index][0],
+                    float(weights.get(items[index][0]["source"], 1.0)),
+                    items[index][1],
+                    _item_train(items[index], train),
                 )
-                for index in range(start, min(start + _CANVAS_CHUNK_SIZE, len(records)))
+                for index in range(start, min(start + _CANVAS_CHUNK_SIZE, len(items)))
             ]
-            for start in range(0, len(records), _CANVAS_CHUNK_SIZE)
+            for start in range(0, len(items), _CANVAS_CHUNK_SIZE)
         )
         with ProcessPoolExecutor(
             max_workers=workers,
@@ -646,89 +701,46 @@ def _canvas_rows(
         ) as executor:
             index = 0
             for prepared in executor.map(_build_canvas_chunk, chunks):
-                for row, overflow in prepared:
-                    record = records[index]
+                for row, overflow, segments, reason in prepared:
+                    record = items[index][0]
                     index += 1
-                    if row is None:
-                        canvas_too_long += int(overflow)
-                        continue
-                    # Rows come back unpickled; restore the sharing the serial path
-                    # has with the parent's slot plan and (large) state strings.
-                    if slot_plan is not None:
-                        row["slot_plan"] = slot_plan
-                    text = record.get("state")
-                    if isinstance(text, str) and row["record"].get("state") == text:
-                        row["record"]["state"] = text
-                    rows.append(row)
+                    if row is not None:
+                        # Rows come back unpickled; restore the sharing the serial
+                        # path has with the parent's slot plan and (large) state
+                        # strings.
+                        if slot_plan is not None:
+                            row["slot_plan"] = slot_plan
+                        text = record.get("state")
+                        if isinstance(text, str) and row["record"].get("state") == text:
+                            row["record"]["state"] = text
+                    results.append((row, overflow, segments, reason))
                 if index % (_CANVAS_CHUNK_SIZE * 40) < len(prepared):
-                    LOG.info("Preparing decision canvases: %s/%s", index, len(records))
-        return rows, canvas_too_long
-    for index, record in enumerate(records):
+                    LOG.info("Preparing decision canvases: %s/%s", index, len(items))
+        return results
+    for index, item in enumerate(items):
+        record, mode = item[0], item[1]
         if index % 1000 == 0:
-            LOG.info("Preparing decision canvases: %s/%s", index, len(records))
-        try:
-            rows.append(
-                _canvas_row(
-                    tokenizer,
+            LOG.info("Preparing decision canvases: %s/%s", index, len(items))
+        results.append(
+            _build_canvas_worker(
+                (
+                    index,
                     record,
-                    cfg,
                     float(weights.get(record["source"], 1.0)),
-                    spec=spec,
-                    vocab_size=int(vocab_size),
-                    slot_plan=slot_plan,
-                    thought_open_ids=thought_open_ids,
-                    thought_close_ids=thought_close_ids,
-                )
-            )
-        except SchemaError as error:
-            if not _is_canvas_overflow(error):
-                raise
-            canvas_too_long += 1
-    return rows, canvas_too_long
-
-
-def _filter_budget_rows(
-    rows: Sequence[dict[str, Any]], cfg: Any, spec, *, is_eval: bool = False
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    logical_limit = _value(cfg, "sequence_len")
-    sample_packed = bool(_value(cfg, "sample_packing", False)) and (
-        not is_eval or _value(cfg, "eval_sample_packing") is not False
-    )
-    packed = bool(_value(cfg, "batch_flattening", False)) or sample_packed
-    resolved = (
-        resolve_native_packing_budget(
-            DictDefault(cfg) if isinstance(cfg, Mapping) else cfg,
-            packed=packed,
-            batch_size=(
-                _value(cfg, "micro_batch_size")
-                if sample_packed
-                else _value(cfg, "eval_batch_size")
-                if is_eval
-                else _value(cfg, "micro_batch_size")
-            ),
+                    mode,
+                    _item_train(item, train),
+                ),
+                tokenizer=tokenizer,
+                cfg=cfg,
+                spec=spec,
+                vocab_size=int(vocab_size),
+                slot_plan=slot_plan,
+                thought_open_ids=thought_open_ids,
+                thought_close_ids=thought_close_ids,
+                train=train,
+            )[1:]
         )
-        if packed
-        else None
-    )
-    physical_limit = None if resolved is None else resolved.payload_capacity
-    kept: list[dict[str, Any]] = []
-    drops = {"logical": 0, "physical": 0}
-    for row in rows:
-        canvas = row["canvas"]
-        reason = exceeds_budget(
-            decision_budget(
-                prompt_tokens=len(canvas.prompt_ids),
-                canvas_tokens=len(canvas.canvas_ids),
-                layout=spec.layout,
-            ),
-            logical_limit=None if logical_limit is None else int(logical_limit),
-            physical_limit=None if physical_limit is None else int(physical_limit),
-        )
-        if reason is None:
-            kept.append(row)
-        else:
-            drops[reason] += 1
-    return kept, drops
+    return results
 
 
 def load_decision_datasets(
@@ -736,7 +748,6 @@ def load_decision_datasets(
 ) -> TrainDatasetMeta:
     """Load, normalize, decontaminate, canvasize, and return plugin-owned splits."""
     del preprocess
-    decision = _value(cfg, "diffusion_decision")
     spec = require_diffusion_spec(cfg)
     train_entries = [
         entry
@@ -765,7 +776,12 @@ def load_decision_datasets(
         )
         if source_paths is not None and image_paths is not None:
             cache_identity = prepared_cache_identity(
-                cfg, tokenizer, spec, source_paths, image_paths=image_paths
+                cfg,
+                tokenizer,
+                spec,
+                source_paths,
+                image_paths=image_paths,
+                verify=prepared_cache_verify(cfg),
             )
             if cache_identity is None:
                 LOG.warning(
@@ -776,20 +792,46 @@ def load_decision_datasets(
             LOG.info("Decision prepared-row cache bypassed: nonlocal or opaque source")
     elif isinstance(prepared_path, (str, Path)) and str(prepared_path):
         LOG.info("Decision prepared-row cache bypassed: unsupported latent mode")
+    layer = None
     if cache_identity is not None:
         cache_key, cache_payload = cache_identity
-        cached = load_prepared_cache(Path(prepared_path), cache_key, cache_payload)
+        cached = load_prepared_cache(
+            Path(prepared_path),
+            cache_key,
+            cache_payload,
+            verify=prepared_cache_verify(cfg),
+        )
         if cached is not None:
             cached_train, cached_eval, cached_manifest = cached
             LOG.info("Decision prepared-row cache hit")
-            return TrainDatasetMeta(
-                train_dataset=DecisionDataset(cached_train, cached_manifest),
-                eval_dataset=DecisionDataset(cached_eval, cached_manifest)
-                if cached_eval
-                else None,
-                total_num_steps=None,
+            layer = (cached_train, cached_eval, cached_manifest)
+        else:
+            LOG.info("Decision prepared-row cache miss")
+    if layer is None:
+        layer = _build_canvas_layer(cfg, tokenizer, spec, train_entries, test_entries)
+        if cache_identity is not None:
+            store_prepared_cache(
+                Path(prepared_path), cache_key, cache_payload, cfg, *layer
             )
-        LOG.info("Decision prepared-row cache miss")
+    return _assemble_datasets(cfg, tokenizer, spec, *layer)
+
+
+def _build_canvas_layer(
+    cfg: Any,
+    tokenizer: Any,
+    spec: Any,
+    train_entries: Sequence[Any],
+    test_entries: Sequence[Any],
+) -> tuple[list[Any], list[dict[str, Any]], dict[str, Any]]:
+    """Normalize, decontaminate, group and canvasize; no batch setting is read here.
+
+    Returns (train, eval rows, base manifest). ``train`` is a list of
+    :class:`SourcePool` (the epoch-0 capped subset prepared, the rest of each capped
+    source kept as compact reserve records), or, for premixed data, the prepared
+    draws in input order. Budget filtering and mixture draws happen in
+    :func:`_assemble_datasets`, so batch settings never invalidate this layer.
+    """
+    decision = _value(cfg, "diffusion_decision")
     train: list[dict[str, Any]] = []
     explicit_eval: list[dict[str, Any]] = []
     protected_eval: list[dict[str, Any]] = []
@@ -826,88 +868,126 @@ def load_decision_datasets(
         dev = explicit_eval
     else:
         train, dev = _family_dev_split(train)
-    LOG.info(
-        "Decontaminating %s training records against %s development and %s protected records",
-        len(train),
-        len(dev),
-        len(protected_eval),
-    )
     mixture = _value(decision, "mixture")
     premixed = bool(_value(mixture, "premixed", False))
-    retained, drops = decontaminate(train, [*dev, *protected_eval])
+    retained: Sequence[Mapping[str, Any]]
+    drops: dict[str, int]
+    if bool(_value(decision, "decontaminate", False)):
+        LOG.info(
+            "Decontaminating %s training records against %s development and %s protected records",
+            len(train),
+            len(dev),
+            len(protected_eval),
+        )
+        retained, drops = decontaminate(train, [*dev, *protected_eval])
+    else:
+        LOG.info(
+            "Skipping decontamination of %s training records (diffusion_decision.decontaminate "
+            "is off); train/dev isolation is still asserted, protected splits are not checked",
+            len(train),
+        )
+        retained, drops = train, {}
     if premixed and len(retained) != len(train):
         raise ValueError("premixed decision rows overlap an evaluation split")
     train = [dict(record) for record in retained]
     max_questions = int(_value(decision, "max_questions_per_canvas", 20))
+    fits = _grouping_fits(tokenizer, cfg, spec)
     if premixed:
         _validate_premixed_records(train)
     else:
         LOG.info("Grouping compatible decision records")
-        train = group_records(train, max_questions=max_questions)
-    dev = group_records(dev, max_questions=max_questions)
+        train = group_records(train, max_questions=max_questions, fits=fits)
+    dev = group_records(dev, max_questions=max_questions, fits=fits)
     assert_split_isolation({"train": train, "eval": dev})
     weights = _value(_value(decision, "mixture"), "loss_weight", {}) or {}
     train_canvas_too_long = 0
-    train_budget_drops = {"logical": 0, "physical": 0}
-    pools = None
-    sampled_batches: tuple[tuple[MixtureSample[dict[str, Any]], ...], ...] = ()
-    sampler = None
-    if premixed:
-        train_rows, train_canvas_too_long = _canvas_rows(
-            tokenizer, [dict(record) for record in train], cfg, weights, spec
-        )
-        train_rows, train_budget_drops = _filter_budget_rows(train_rows, cfg, spec)
-        if len(train_rows) != len(train):
-            raise ValueError(
-                "premixed decision rows must all pass canvas and budget validation"
-            )
-    else:
-        pools = prepare_source_pools(
-            train,
-            (),
-            max_examples_per_source=_value(mixture, "max_examples_per_source"),
-            seed=int(_value(cfg, "seed", 0)),
-        )
-        usable_pools: dict[str, tuple[dict[str, Any], ...]] = {}
-        for source, records in pools.records.items():
-            rows, dropped = _canvas_rows(
-                tokenizer, [dict(record) for record in records], cfg, weights, spec
-            )
-            train_canvas_too_long += dropped
-            rows, budget_drops = _filter_budget_rows(rows, cfg, spec)
-            for reason, count in budget_drops.items():
-                train_budget_drops[reason] += count
-            if rows:
-                usable_pools[source] = tuple(rows)
-        configured_weights = _value(mixture, "weights")
-        if isinstance(configured_weights, Mapping):
-            configured_weights = {
-                source: configured_weights[source]
-                for source in usable_pools
-                if source in configured_weights
-            }
-        sampler = DeterministicMixtureSampler(
-            usable_pools,
-            weights=configured_weights,
-            temperature=_value(mixture, "temperature"),
-            seed=int(_value(cfg, "seed", 0)),
-        )
-        batch_size = int(_value(cfg, "micro_batch_size", 1))
-        sampled_batches = tuple(
-            sampler.epoch_batches(
-                batch_size,
-                stratified=bool(_value(mixture, "per_batch_stratified", True)),
-            )
-        )
-        train_rows = [
-            dict(sample.record) for batch in sampled_batches for sample in batch
-        ]
-    eval_rows, eval_canvas_too_long = _canvas_rows(tokenizer, dev, cfg, weights, spec)
-    eval_rows, eval_budget_drops = _filter_budget_rows(
-        eval_rows, cfg, spec, is_eval=True
-    )
     drop_counts = dict(drops)
-    if pools is not None:
+    layer_train: list[Any]
+    # Every canvas of the build (train sources, then eval) goes through one
+    # _prepare_canvas_items call, so one worker pool serves the whole build.
+    eval_items = [(record, _ROW, False) for record in dev]
+    if premixed:
+        built = _prepare_canvas_items(
+            tokenizer,
+            [
+                *((dict(record), _ROW, True) for record in train),
+                *eval_items,
+            ],
+            cfg,
+            weights,
+            spec,
+            train=True,
+        )
+        layer_train, train_canvas_too_long = _collect_canvas_rows(built[: len(train)])
+        eval_built = built[len(train) :]
+        del built
+    else:
+        seed = int(_value(cfg, "seed", 0))
+        cap = _value(mixture, "max_examples_per_source")
+        pools = prepare_source_pools(train, (), max_examples_per_source=cap, seed=seed)
+        assert pools.candidates is not None
+        layer_train = []
+        reserve = 0
+        segment_counts: dict[str, Any] = {
+            "prepared": 0,
+            "reserve": 0,
+            "fallback": {},
+        }
+        plans: list[tuple[str, Any, Any, list[int], list[int]]] = []
+        items: list[tuple[Mapping[str, Any], str, bool]] = []
+        for source, candidates in pools.candidates.items():
+            source_cap = cap.get(source) if isinstance(cap, Mapping) else cap
+            window = cap_window(len(candidates), source_cap, seed, source)
+            prepared = set(window)
+            rest = [index for index in range(len(candidates)) if index not in prepared]
+            plans.append((source, source_cap, candidates, list(window), rest))
+            items.extend(
+                (dict(candidates[index]), _ROW_SEGMENTS, True) for index in window
+            )
+            items.extend((candidates[index], _RESERVE, True) for index in rest)
+        items.extend(eval_items)
+        built = _prepare_canvas_items(tokenizer, items, cfg, weights, spec, train=True)
+        del items
+        offset = 0
+        for source, source_cap, candidates, window, rest in plans:
+            prepared = set(window)
+            source_built = built[offset : offset + len(candidates)]
+            offset += len(candidates)
+            entries: list[Any] = [None] * len(candidates)
+            records: list[Any] = [None] * len(candidates)
+            segments: list[Any] = [None] * len(candidates)
+            for index, (row, overflow, segment, reason) in zip(
+                [*window, *rest], source_built, strict=True
+            ):
+                if index in prepared:
+                    train_canvas_too_long += int(overflow)
+                    entries[index] = row
+                    records[index] = candidates[index]
+                    if row is None:
+                        continue
+                else:
+                    entries[index] = encode_reserve(candidates[index])
+                    reserve += 1
+                segments[index] = segment
+                kind = "prepared" if index in prepared else "reserve"
+                if segment is not None:
+                    segment_counts[kind] += 1
+                else:
+                    key = f"{kind}: {reason}"
+                    segment_counts["fallback"][key] = (
+                        segment_counts["fallback"].get(key, 0) + 1
+                    )
+            layer_train.append(
+                SourcePool(
+                    source=source,
+                    cap=None if source_cap is None else int(source_cap),
+                    entries=entries,
+                    records=records,
+                    segments=segments,
+                )
+            )
+        eval_built = built[offset:]
+        del built
         drop_counts.update(
             {
                 key: value
@@ -915,9 +995,11 @@ def load_decision_datasets(
                 if key not in drop_counts
             }
         )
-    manifest = {
-        "train_rows": len(train_rows),
-        "eval_rows": len(eval_rows),
+        drop_counts["reserve"] = reserve
+        LOG.info("Pre-tokenized decision canvas segments: %s", segment_counts)
+    eval_rows, eval_canvas_too_long = _collect_canvas_rows(eval_built)
+    del eval_built
+    manifest: dict[str, Any] = {
         "protected_eval_rows": len(protected_eval),
         "train_sources": sorted({row["source"] for row in train}),
         "eval_sources": sorted({row["source"] for row in dev}),
@@ -926,16 +1008,11 @@ def load_decision_datasets(
             "train": train_canvas_too_long,
             "eval": eval_canvas_too_long,
         },
-        "budget_drops": {"train": train_budget_drops, "eval": eval_budget_drops},
-        "mixture_probabilities": dict(sampler.probabilities) if sampler else {},
         "premixed": premixed,
-        "per_batch_stratified": bool(_value(mixture, "per_batch_stratified", True)),
-        "stratified_micro_batch_size": int(_value(cfg, "micro_batch_size", 1)),
-        "mixture_seed": int(_value(cfg, "seed", 0)),
-        "stratified_epoch_batches": tuple(
-            tuple(sample.source for sample in batch) for batch in sampled_batches
-        ),
+        "train_has_images": any(record.get("images") for record in train),
     }
+    if not premixed:
+        manifest["segments"] = segment_counts
     if any(
         _value(record.get("source_metadata", {}), "official_split") is not None
         for record in [*train, *dev, *protected_eval]
@@ -944,24 +1021,199 @@ def load_decision_datasets(
         manifest["procedural_grouping_limit"] = (
             "official partitions and state decontamination only; no parent-family key"
         )
-    if cache_identity is not None:
-        store_prepared_cache(
-            Path(prepared_path),
-            cache_key,
-            cache_payload,
-            cfg,
-            train_rows,
-            eval_rows,
-            manifest,
+    return layer_train, eval_rows, manifest
+
+
+# Top-level config keys a plan row build reads (``_canvas_row`` reads the decision
+# section; ``_canvas_settings`` the rest). A pickled builder keeps only these, so a
+# DataLoader worker does not receive the whole training config.
+_ROW_BUILDER_CFG_KEYS = (
+    "seed",
+    "diffusion_decision",
+    "diffusion_lm",
+    "overrides_of_model_config",
+    "model_config",
+)
+
+
+def _row_builder_cfg(cfg: Any) -> dict[str, Any]:
+    """The config keys of ``_ROW_BUILDER_CFG_KEYS`` that ``cfg`` sets."""
+    if isinstance(cfg, Mapping):
+        return {key: cfg[key] for key in _ROW_BUILDER_CFG_KEYS if key in cfg}
+    missing = object()
+    values = {key: getattr(cfg, key, missing) for key in _ROW_BUILDER_CFG_KEYS}
+    return {key: value for key, value in values.items() if value is not missing}
+
+
+class _PlanRowBuilder:
+    """Lazily build the training row of one draw of a record (see DecisionBatchPlan).
+
+    A module-level callable rather than a closure so a DecisionPlanDataset pickles
+    into DataLoader workers (``spawn`` / ``forkserver`` start methods, the default
+    from Python 3.14). Pickling keeps the config keys a build reads, the tokenizer,
+    spec, resolved slot plan and canvas settings (computed at the first build).
+    """
+
+    def __init__(self, cfg: Any, tokenizer: Any, spec: Any) -> None:
+        decision = _value(cfg, "diffusion_decision")
+        self._weights = _value(_value(decision, "mixture"), "loss_weight", {}) or {}
+        vocab_size = _value(model_config_overrides(cfg), "vocab_size")
+        if vocab_size is None:
+            vocab_size = len(tokenizer)
+        self._cfg = cfg
+        self._tokenizer = tokenizer
+        self._spec = spec
+        self._vocab_size = vocab_size
+        (
+            self._slot_plan,
+            self._thought_open_ids,
+            self._thought_close_ids,
+        ) = _resolve_slot_plan(tokenizer, cfg, spec, int(vocab_size))
+        self._settings: Mapping[str, Any] | None = None
+        self._settings_ready = False  # computed at the first build
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = dict(self.__dict__)
+        state["_cfg"] = _row_builder_cfg(self._cfg)
+        return state
+
+    def _canvas_settings(self) -> Mapping[str, Any] | None:
+        if not self._settings_ready:
+            self._settings_ready = True
+            try:
+                self._settings = _canvas_settings(
+                    self._tokenizer,
+                    self._cfg,
+                    self._spec,
+                    int(self._vocab_size),
+                    self._slot_plan,
+                )
+            except (TypeError, ValueError):
+                self._settings = None  # _canvas_row raises it where it did before
+        return self._settings
+
+    def __call__(
+        self,
+        source: str,
+        record: Mapping[str, Any],
+        draw: tuple[int, int],
+        segments: Any = None,
+        cached_prompt: Sequence[int] | None = None,
+    ) -> dict[str, Any] | None:
+        settings = self._canvas_settings()
+        try:
+            return _canvas_row(
+                self._tokenizer,
+                dict(record),
+                self._cfg,
+                float(self._weights.get(source, 1.0)),
+                spec=self._spec,
+                vocab_size=int(self._vocab_size),
+                slot_plan=self._slot_plan,
+                thought_open_ids=self._thought_open_ids,
+                thought_close_ids=self._thought_close_ids,
+                train=True,
+                draw=draw,
+                segments=segments,
+                cached_prompt=cached_prompt,
+                settings=settings,
+            )
+        except SchemaError as error:
+            # Records outside the prepared subset were never canvasized; one that
+            # cannot be (not only overflow) is replaced rather than ending the run.
+            LOG.debug("Decision draw of %s could not be built: %s", source, error)
+            return None
+
+
+def _plan_row_builder(cfg: Any, tokenizer: Any, spec: Any) -> _PlanRowBuilder:
+    """Lazily build the training row of one draw of a record (see DecisionBatchPlan)."""
+    return _PlanRowBuilder(cfg, tokenizer, spec)
+
+
+def _assemble_datasets(
+    cfg: Any,
+    tokenizer: Any,
+    spec: Any,
+    layer_train: Sequence[Any],
+    layer_eval: Sequence[dict[str, Any]],
+    base_manifest: Mapping[str, Any],
+) -> TrainDatasetMeta:
+    """Apply the batch settings to a canvas layer: budgets, mixture plan, datasets."""
+    decision = _value(cfg, "diffusion_decision")
+    mixture = _value(decision, "mixture")
+    premixed = bool(base_manifest.get("premixed", False))
+    stratified = bool(_value(mixture, "per_batch_stratified", True))
+    micro_batch_size = int(_value(cfg, "micro_batch_size", 1))
+    seed = int(_value(cfg, "seed", 0))
+    manifest = dict(base_manifest)
+    plan = None
+    if premixed:
+        train_rows, train_budget_drops = _filter_budget_rows(
+            list(layer_train), cfg, spec
         )
+        if manifest["canvas_too_long"]["train"] or len(train_rows) != len(layer_train):
+            raise ValueError(
+                "premixed decision rows must all pass canvas and budget validation"
+            )
+        manifest.update(
+            {
+                "train_rows": len(train_rows),
+                "mixture_probabilities": {},
+                "stratified_epoch_batches": (),
+            }
+        )
+    else:
+        plan = DecisionBatchPlan(
+            layer_train,
+            seed=seed,
+            micro_batch_size=micro_batch_size,
+            stratified=stratified,
+            weights=_value(mixture, "weights"),
+            temperature=_value(mixture, "temperature"),
+            limits=_budget_limits(cfg),
+            layout=spec.layout,
+            build_row=_plan_row_builder(cfg, tokenizer, spec),
+        )
+        train_budget_drops = dict(plan.budget_drops)
+        epoch_sources = plan.epoch_sources(0)
+        manifest.update(
+            {
+                "train_rows": plan.draws_per_epoch,
+                "mixture_probabilities": dict(plan.probabilities),
+                "stratified_epoch_batches": tuple(
+                    tuple(epoch_sources[start : start + micro_batch_size])
+                    for start in range(0, len(epoch_sources), micro_batch_size)
+                ),
+                "batch_plan": {
+                    "per_epoch": True,
+                    "draws_per_epoch": plan.draws_per_epoch,
+                    "batches_per_epoch": plan.batches_per_epoch,
+                    "reserve_records": plan.reserve_records,
+                },
+            }
+        )
+    eval_rows, eval_budget_drops = _filter_budget_rows(
+        list(layer_eval), cfg, spec, is_eval=True
+    )
+    manifest.update(
+        {
+            "eval_rows": len(eval_rows),
+            "budget_drops": {"train": train_budget_drops, "eval": eval_budget_drops},
+            "per_batch_stratified": stratified,
+            "stratified_micro_batch_size": micro_batch_size,
+            "mixture_seed": seed,
+        }
+    )
     LOG.info(
-        "Prepared %s training draws and %s evaluation rows; budget drops: %s",
-        len(train_rows),
+        "Prepared %s training draws per epoch and %s evaluation rows; budget drops: %s",
+        manifest["train_rows"],
         len(eval_rows),
         manifest["budget_drops"],
     )
     return TrainDatasetMeta(
-        train_dataset=DecisionDataset(train_rows, manifest),
+        train_dataset=DecisionPlanDataset(plan, manifest)
+        if plan is not None
+        else DecisionDataset(train_rows, manifest),
         eval_dataset=DecisionDataset(eval_rows, manifest) if eval_rows else None,
         total_num_steps=None,
     )

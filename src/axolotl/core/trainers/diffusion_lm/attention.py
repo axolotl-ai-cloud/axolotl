@@ -66,6 +66,25 @@ def decoder_prefix_canvas_mask(
     return mask.unsqueeze(1)
 
 
+# Packed encoder/canvas FlexAttention compiles one graph per mask kind (encoder,
+# decoder) x window (global, sliding) x head layout x grad mode, plus the static ->
+# dynamic shape transition of each. Dynamo's default recompile_limit (8) runs out on
+# DiffusionGemma's first training step, after which flex_attention silently runs
+# unfused (dense scores): ~15 s per 2x4k micro-batch and OOM at 4x4k on 96 GB.
+FLEX_RECOMPILE_LIMIT = 64
+
+
+def ensure_flex_recompile_budget(limit: int = FLEX_RECOMPILE_LIMIT) -> None:
+    """Raise dynamo's per-function recompile limit so flex never falls back to eager."""
+    import torch._dynamo
+
+    config = torch._dynamo.config
+    for name in ("recompile_limit", "cache_size_limit"):
+        current = getattr(config, name, None)
+        if isinstance(current, int) and current < limit:
+            setattr(config, name, limit)
+
+
 def _require_flex_attention() -> None:
     if create_block_mask is None:
         raise RuntimeError(

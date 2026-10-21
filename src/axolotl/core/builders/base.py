@@ -53,6 +53,12 @@ with suppress(ImportError):
     import torch._dynamo
 
 
+def _eval_on_start(cfg) -> bool:
+    """An explicit `eval_on_start` wins; unset keeps the step-0 eval."""
+    eval_on_start = getattr(cfg, "eval_on_start", None)
+    return True if eval_on_start is None else bool(eval_on_start)
+
+
 class TrainerBuilderBase(abc.ABC):
     """Base class for trainer builder."""
 
@@ -134,6 +140,20 @@ class TrainerBuilderBase(abc.ABC):
         gc_collect_steps = self.cfg.gc_collect_steps or self.cfg.gc_steps
         if gc_collect_steps:
             callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
+
+        if self.cfg.sync_profiler_steps:
+            from axolotl.utils.callbacks.sync_profiler import SyncProfilerCallback
+
+            callbacks.append(
+                SyncProfilerCallback(
+                    start_step=(
+                        2
+                        if self.cfg.sync_profiler_start_step is None
+                        else self.cfg.sync_profiler_start_step
+                    ),
+                    num_steps=self.cfg.sync_profiler_steps,
+                )
+            )
 
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
@@ -339,10 +359,18 @@ class TrainerBuilderBase(abc.ABC):
             if training_args_kwargs.get("adam_epsilon"):
                 adam_kwargs["eps"] = training_args_kwargs.get("adam_epsilon")
 
-            if self.cfg.optimizer == "muon":
+            optimizer_cls: Any
+            if self.cfg.optimizer in ("muon", "muon_8bit"):
                 _, device_mesh = build_parallelism_config(self.cfg)
 
-                if device_mesh is not None:
+                if self.cfg.optimizer == "muon_8bit":
+                    from axolotl.utils.optimizers.muon_8bit import (
+                        Muon8bitOptimizerFactory,
+                    )
+
+                    optimizer_cls = Muon8bitOptimizerFactory
+                    optimizer_kwargs["device_mesh"] = device_mesh
+                elif device_mesh is not None:
                     from axolotl.contribs.mit.muon.dist_muon import (
                         DistMuonOptimizerFactory,
                     )
@@ -372,13 +400,16 @@ class TrainerBuilderBase(abc.ABC):
             elif self.cfg.optimizer == "sinkgd":
                 _, device_mesh = build_parallelism_config(self.cfg)
 
-                if device_mesh is not None:
+                # FSDP shards the weights into DTensors even when the parallelism config
+                # yields no mesh (pure expert parallelism shards over the ep axis)
+                if device_mesh is not None or self.cfg.fsdp_config:
                     from axolotl.utils.optimizers.sinkgd import (
                         DistSinkGDOptimizerFactory,
                     )
 
                     optimizer_cls = DistSinkGDOptimizerFactory
-                    optimizer_kwargs["device_mesh"] = device_mesh
+                    if device_mesh is not None:
+                        optimizer_kwargs["device_mesh"] = device_mesh
                 else:
                     from axolotl.utils.optimizers.sinkgd import SinkGDOptimizerFactory
 
@@ -563,10 +594,10 @@ class TrainerBuilderBase(abc.ABC):
         elif self.cfg.eval_steps:
             training_args_kwargs["eval_strategy"] = "steps"
             training_args_kwargs["eval_steps"] = self.cfg.eval_steps
-            training_args_kwargs["eval_on_start"] = True
+            training_args_kwargs["eval_on_start"] = _eval_on_start(self.cfg)
         elif self.cfg.eval_strategy:
             training_args_kwargs["eval_strategy"] = self.cfg.eval_strategy
-            training_args_kwargs["eval_on_start"] = True
+            training_args_kwargs["eval_on_start"] = _eval_on_start(self.cfg)
 
     def _configure_reporting(self, training_args_kwargs: dict):
         report_to = []
@@ -606,6 +637,21 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
             torch._dynamo.config.suppress_errors = True
             torch._dynamo.config.accumulated_cache_size_limit = 256
+            if self.cfg.gradient_checkpointing:
+                # pytorch/pytorch#166926: the checkpoint recompute must run the same Dynamo
+                # cache entry as the forward, which the LRU reordering does not guarantee.
+                eval_frame = getattr(
+                    getattr(torch._C, "_dynamo", None), "eval_frame", None
+                )
+                set_lru_cache = getattr(eval_frame, "_set_lru_cache", None)
+                if callable(set_lru_cache):
+                    set_lru_cache(False)
+            if self.cfg.torch_compile_regional:
+                # In-place regional compile sends every module through the one shared
+                # nn.Module._call_impl frame, so each module class is a recompile.
+                torch._dynamo.config.recompile_limit = max(
+                    torch._dynamo.config.recompile_limit, 64
+                )
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (
@@ -626,12 +672,15 @@ class TrainerBuilderBase(abc.ABC):
             setattr(inductor_cfg, key, value)
 
     def _configure_accelerator_config(self, training_args_kwargs: dict):
-        if self.cfg.accelerator_config:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig(
-                **self.cfg.accelerator_config
-            )
-        else:
-            training_args_kwargs["accelerator_config"] = AcceleratorConfig()
+        accelerator_config = dict(self.cfg.accelerator_config or {})
+        # Pinned host-to-device copies are stream-ordered, so non-blocking only stops the CPU
+        # from draining the previous step at every batch boundary. HF pins memory by default.
+        accelerator_config.setdefault(
+            "non_blocking", self.cfg.dataloader_pin_memory is not False
+        )
+        training_args_kwargs["accelerator_config"] = AcceleratorConfig(
+            **accelerator_config
+        )
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.layer_offloading:
@@ -689,6 +738,7 @@ class TrainerBuilderBase(abc.ABC):
             "optim_target_modules",
             # trainer
             "max_grad_norm",
+            "logging_nan_inf_filter",
             "dataloader_num_workers",
             "dataloader_pin_memory",
             "dataloader_prefetch_factor",

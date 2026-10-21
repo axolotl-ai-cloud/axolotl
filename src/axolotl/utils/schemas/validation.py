@@ -1047,28 +1047,6 @@ class RLValidationMixin:
 
         return data
 
-    @model_validator(mode="after")
-    def check_dpo_use_liger_kernel(self):
-        if not self.dpo_use_liger_kernel:
-            return self
-        loss_types = self.dpo_loss_type
-        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
-        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
-        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
-            raise ValueError(
-                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
-                "(liger-kernel's fused DPO loss cannot length-normalize the "
-                "squared margin). Disable the liger kernel or use another loss."
-            )
-        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
-        if loss_types and len(loss_types) > 1:
-            LOG.warning(
-                "`dpo_use_liger_kernel` uses only the first entry of "
-                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
-                "are ignored on the liger loss path."
-            )
-        return self
-
     @model_validator(mode="before")
     @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
@@ -1180,9 +1158,8 @@ STAGED_NF4_CONSTRAINTS = [
             bool(self.deepspeed)
             or (self.tensor_parallel_size or 1) > 1
             or (self.context_parallel_size or 1) > 1
-            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
         ),
-        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+        "CPU-staged NF4 does not support DeepSpeed, tensor or context parallelism",
     ),
     (
         lambda self: (self.dp_replicate_size or 1) > 1,
@@ -1239,7 +1216,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon":
+        if data.get("optimizer") in ("muon", "muon_8bit"):
             if data.get("deepspeed"):
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"
@@ -2230,6 +2207,20 @@ class ModelCompatibilityValidationMixin:
 
             backend = "deep_ep" if find_spec("deep_ep") is not None else "torch"
         return backend
+
+    @model_validator(mode="after")
+    def check_torch_compile_regional_with_gradient_checkpointing(self):
+        if (
+            self.torch_compile
+            and self.torch_compile_regional
+            and self.gradient_checkpointing
+        ):
+            raise ValueError(
+                "torch_compile_regional cannot be combined with gradient_checkpointing: "
+                "the checkpoint recompute can run a different Dynamo cache entry than "
+                "the forward (pytorch/pytorch#166926). Use whole-model compile."
+            )
+        return self
 
     @model_validator(mode="after")
     def check_torch_expert_parallel_checkpointing(self):

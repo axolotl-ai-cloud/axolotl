@@ -161,6 +161,11 @@ class ExpertParallelPlugin(BasePlugin):
         self._reject_transformers_distributed_model(model)
         ep_group = self._resolve_ep_group(cfg)
         ep_world = dist.get_world_size(ep_group) if ep_group is not None else 1
+        # rank zero streams every expert slice to its peers here; on a 500B MoE this
+        # takes one to five minutes with no other output
+        LOG.info(
+            f"Sharding expert weights across {ep_world} expert-parallel rank(s)..."
+        )
         sharded = shard_expert_weights(model, ep_group)
 
         if sharded == 0:
@@ -176,7 +181,8 @@ class ExpertParallelPlugin(BasePlugin):
                 raise ValueError(
                     "expert_parallel_size > 1 but no Experts modules were detected for "
                     "sharding (the model does not use transformers' canonical 3-D "
-                    "gate_up_proj/down_proj experts layout). Expert parallelism cannot run "
+                    "gate_up_proj (or non-gated up_proj)/down_proj experts layout). "
+                    "Expert parallelism cannot run "
                     "on this model; set expert_parallel_size: 1."
                 )
         else:
@@ -288,6 +294,13 @@ class ExpertParallelPlugin(BasePlugin):
         from .experts_fn import set_valid_token_mask
 
         if getattr(model, "_ep_padding_hook", False):
+            return
+        get_base_model = getattr(model, "get_base_model", None)
+        base = get_base_model() if callable(get_base_model) else model
+        if not getattr(base, "moe_tokens_match_input_ids", True):
+            # the model reshapes tokens before its MoE layers (e.g. TwoTower's
+            # per-document prompts and canvases): an input_ids mask cannot line up
+            set_valid_token_mask(None)
             return
 
         pad_id = getattr(getattr(model, "config", None), "pad_token_id", None)

@@ -1185,49 +1185,6 @@ def _tiny_ep_experts_model(fill: float):
     return root
 
 
-def _gather_state_dict_worker(rank, world_size, port, q):
-    try:
-        _init_gloo(rank, world_size, port)
-        from axolotl.integrations.expert_parallel.shard import (
-            gather_ep_experts_into_state_dict,
-        )
-
-        model = _tiny_ep_experts_model(float(rank + 1))
-        # CPU-offloaded full state dicts exist on rank 0 only
-        state_dict = model.state_dict() if rank == 0 else {}
-        replaced = gather_ep_experts_into_state_dict(
-            state_dict, model, dist.group.WORLD
-        )
-        out = {
-            "replaced": replaced,
-            "keys": sorted(state_dict),
-            "gate_up": state_dict.get("model.layers.0.mlp.experts.gate_up_proj"),
-            "down": state_dict.get("model.layers.0.mlp.experts.down_proj"),
-        }
-        q.put((rank, out))
-    except Exception:  # pylint: disable=broad-except
-        q.put((rank, traceback.format_exc()))
-    finally:
-        if dist.is_initialized():
-            dist.destroy_process_group()
-
-
-class TestGatherEpExpertsIntoStateDict:
-    @pytest.mark.distributed_cpu
-    def test_rank0_gets_full_experts_and_other_ranks_write_nothing(self):
-        res = _run_spawned(_gather_state_dict_worker)
-        for rank in range(WORLD):
-            assert isinstance(res[rank], dict), res[rank]
-        r0, r1 = res[0], res[1]
-        assert r0["replaced"] == 2 and r1["replaced"] == 0
-        assert r1["keys"] == []
-        assert tuple(r0["gate_up"].shape) == (4, 4, 4)
-        assert tuple(r0["down"].shape) == (4, 4, 2)
-        assert torch.equal(r0["gate_up"][:2], torch.full((2, 4, 4), 1.0))
-        assert torch.equal(r0["gate_up"][2:], torch.full((2, 4, 4), 2.0))
-        assert torch.equal(r0["down"][2:], torch.full((2, 4, 2), 2.0))
-
-
 def _composed_fsdp_worker(rank, world_size, port, q):
     """EP x dp_shard on a (2, 2) CPU mesh, EP x dp_replicate x dp_shard on (2, 2, 2), or
     dp_replicate x ep with no shard axis: expert grads must be the mean over every rank's

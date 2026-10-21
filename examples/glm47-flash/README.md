@@ -39,7 +39,8 @@ This model quantize expert weights on load. To learn about expert quantization, 
 ## Limitations
 
 - **lora_target_linear**: Incompatible for this model.
-- **LoRA kernels**: Incompatible with this model due to non-standard attention projections (DSA). Must be explicitly disabled (`lora_*_kernel: false`).
+- **LoRA kernels**: The q/k/v/o kernels don't apply to this model's MLA attention, and enabling `lora_qkv_kernel`/`lora_o_kernel` raises an error. The example configs set `lora_*_kernel: false`.
+- **LoRA targets**: The attention projections are `q_a_proj`, `q_b_proj`, `kv_a_proj_with_mqa`, `kv_b_proj` and `o_proj`. The usual `q_proj`/`k_proj`/`v_proj` don't exist here, so targeting them silently adapts only `o_proj`.
 
 
 ### TIPS

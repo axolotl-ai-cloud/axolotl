@@ -976,7 +976,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--cls-model-config",),
         None,
         None,
-        "transformers config class (e.g., 'LlamaConfig', 'MistralConfig'). Defaults to AutoConfig.",
+        "transformers config class (e.g., 'LlamaConfig', 'MistralConfig') or a dotted import path to a config class. Defaults to AutoConfig.",
     ),
     (
         ("--tokenizer-config",),
@@ -2013,6 +2013,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--dpo-ld-alpha",),
+        None,
+        None,
+        "LD-DPO length desensitization: weight on the log-probabilities of the tokens a response has beyond the shorter response of its pair (1.0 = unweighted, 0.0 = ignore them). Applies to every DPO loss type, including apo_zero.",
+    ),
+    (
         ("--precompute-ref-log-probs/--no-precompute-ref-log-probs",),
         None,
         None,
@@ -2477,6 +2483,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'",
     ),
     (
+        ("--balance-labels/--no-balance-labels",),
+        None,
+        None,
+        "Balance supervised tokens across causal LM packed, flattened, or padded batches. Supports streaming with sample packing.",
+    ),
+    (
+        ("--label-balance-window-optim-steps",),
+        None,
+        None,
+        "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only.",
+    ),
+    (
         ("--sample-packing-group-size",),
         None,
         None,
@@ -2505,6 +2523,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Set to 'false' if getting errors during eval with sample_packing on",
+    ),
+    (
+        ("--fa-varlen-kwargs-in-collator/--no-fa-varlen-kwargs-in-collator",),
+        None,
+        None,
+        "With sample_packing and flash attention, precompute the varlen metadata (cu_seq_lens, max_length) once per batch in the collator instead of letting transformers derive it in every attention layer, which costs several host-device syncs per layer. Not used when batches are dispatched (streaming or pretraining datasets unless accelerator_config.dispatch_batches is false) or under DeepSpeed sequence parallel, since both slice every batch tensor per rank. Set to 'false' to restore the per-layer derivation.",
     ),
     (
         ("--pad-to-sequence-len/--no-pad-to-sequence-len",),
@@ -3029,6 +3053,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--torch-compile-regional/--no-torch-compile-regional",),
+        None,
+        None,
+        "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks gradient_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without gradient checkpointing.",
+    ),
+    (
         ("--torch-compile-options",),
         None,
         None,
@@ -3071,6 +3101,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`",
     ),
     (
+        ("--eval-on-start/--no-eval-on-start",),
+        None,
+        None,
+        "Run an evaluation before the first training step. Leave empty to keep the default (on whenever evaluation is enabled); set to false to skip the step-0 eval",
+    ),
+    (
         ("--save-steps",),
         None,
         None,
@@ -3107,6 +3143,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Logging frequency",
     ),
     (
+        ("--logging-nan-inf-filter/--no-logging-nan-inf-filter",),
+        None,
+        None,
+        "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss (HF default). The check reads the loss on the host every micro-step, one device sync; set to 'false' to remove it.",
+    ),
+    (
         ("--early-stopping-patience",),
         None,
         None,
@@ -3129,6 +3171,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Use tensorboard for logging",
+    ),
+    (
+        ("--sync-profiler-steps",),
+        None,
+        None,
+        "Debugging aid, separate from profiler_steps (the torch profiler timeline): count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the call sites and write sync_profile.json to output_dir.",
+    ),
+    (
+        ("--sync-profiler-start-step",),
+        None,
+        None,
+        "Optimizer step at which the sync profiler starts (after warm-up).",
     ),
     (
         ("--profiler-steps",),

@@ -9,6 +9,8 @@ load_in_8bit: true
 load_in_4bit: false
 
 chat_template: phi_3
+eot_tokens:
+  - "<|end|>"
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template

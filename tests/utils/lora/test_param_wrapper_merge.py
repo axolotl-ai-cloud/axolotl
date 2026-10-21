@@ -187,10 +187,11 @@ def test_invalid_adapter_fails_before_output_creation(
     assert not output.exists()
 
 
-def test_adapter_from_another_peft_release_still_reconstructs():
+@pytest.mark.parametrize("recorded_version", ["0.20.0", "0.21.3.dev0@" + "e8" * 20])
+def test_adapter_from_another_peft_release_still_reconstructs(recorded_version):
     _, meta, config, state, _ = make_adapter([(4, 8, 8)] * 3)
     reference = build_param_wrapper_map(meta, config, state)
-    config["peft_version"] = "0.20.0"
+    config["peft_version"] = recorded_version
     assert build_param_wrapper_map(meta, config, state) == reference
 
 

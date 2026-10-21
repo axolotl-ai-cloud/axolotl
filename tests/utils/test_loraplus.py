@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from axolotl.utils.optimizers.loraplus import apply_loraplus_lr_groups
@@ -366,3 +367,95 @@ def test_optimizer_mixin_routes_lora_embedding_factors_to_embedding_lr():
     assert groups[id(named["embed.lora_embedding_A.default"])]["lr"] == 1e-4
     assert groups[id(named["embed.lora_embedding_B.default"])]["lr"] == 1e-4
     assert groups[id(named["layer.lora_B.default.weight"])]["lr"] == 2e-4
+
+
+def _trainable_tokens_untied_head_model():
+    """Embed rows + an untied output head with a non-standard name, as PEFT names them."""
+
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layer = torch.nn.Module()
+            self.layer.lora_A = torch.nn.ModuleDict(
+                {"default": torch.nn.Linear(4, 2, bias=False)}
+            )
+            self.layer.lora_B = torch.nn.ModuleDict(
+                {"default": torch.nn.Linear(2, 4, bias=False)}
+            )
+            self.layer.norm = torch.nn.LayerNorm(4)
+            for head in ("embed_tokens", "diffusion_head"):
+                module = torch.nn.Module()
+                module.token_adapter = torch.nn.Module()
+                module.token_adapter.trainable_tokens_delta = torch.nn.ParameterDict(
+                    {"default": torch.nn.Parameter(torch.randn(7, 4))}
+                )
+                setattr(self, head, module)
+
+    return Model()
+
+
+def test_optimizer_mixin_routes_untied_head_trainable_tokens_to_embedding_lr():
+    module = _optimizer_mixin_module()
+    model = _trainable_tokens_untied_head_model()
+    stub = _optimizer_stub(module, model, embedding_lr_scale=10.0)
+    stub.args.loraplus_lr_ratio = None
+    stub.args.weight_decay = 0.0
+    optimizer = stub.create_optimizer()
+    named = dict(model.named_parameters())
+    groups = _params_to_groups(optimizer.param_groups)
+
+    embed = named["embed_tokens.token_adapter.trainable_tokens_delta.default"]
+    head = named["diffusion_head.token_adapter.trainable_tokens_delta.default"]
+    assert groups[id(embed)]["lr"] == pytest.approx(2.5e-4)
+    assert groups[id(head)]["lr"] == pytest.approx(2.5e-4)
+    assert groups[id(head)] is groups[id(embed)]
+    assert groups[id(head)]["weight_decay"] == 0.0
+    assert groups[id(named["layer.lora_A.default.weight"])]["lr"] == 2.5e-5
+    assert groups[id(named["layer.lora_B.default.weight"])]["lr"] == 2.5e-5
+    assert groups[id(named["layer.norm.weight"])]["lr"] == 2.5e-5
+    assert set(groups) == {id(p) for p in model.parameters()}
+
+    # any LambdaLR schedule (cosine / warmup_stable_decay) keeps the 10x ratio
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: 0.1 + step)
+    for _ in range(3):
+        optimizer.step()
+        scheduler.step()
+        groups = _params_to_groups(optimizer.param_groups)
+        assert groups[id(head)]["lr"] == pytest.approx(
+            10 * groups[id(named["layer.lora_A.default.weight"])]["lr"]
+        )
+
+
+def test_embedding_param_matcher():
+    module = _optimizer_mixin_module()
+    match = module._is_embedding_param
+    assert match(
+        "base_model.model.diffusion_head.token_adapter.trainable_tokens_delta.default"
+    )
+    assert match(
+        "base_model.model.encoder.embed_tokens.token_adapter.trainable_tokens_delta.default"
+    )
+    assert match("base_model.model.score.modules_to_save.default.weight")
+    assert not match(
+        "base_model.model.encoder.layers.0.self_attn.q_proj.lora_A.default.weight"
+    )
+    assert not match("base_model.model.diffusion_head.lora_B.default.weight")
+
+
+def test_optimizer_mixin_logs_param_groups(monkeypatch):
+    module = _optimizer_mixin_module()
+    lines = []
+    monkeypatch.setattr(module.LOG, "info", lambda msg, *a, **k: lines.append(msg % a))
+    stub = _optimizer_stub(
+        module, _trainable_tokens_untied_head_model(), embedding_lr_scale=10.0
+    )
+    stub.args.loraplus_lr_ratio = None
+    stub.create_optimizer()
+    group_lines = [line for line in lines if line.startswith("optimizer param group")]
+    assert any(
+        "lr=0.00025" in line and "'trainable_tokens_delta': 2" in line
+        for line in group_lines
+    )
+    assert any(
+        "diffusion_head.token_adapter.trainable_tokens_delta" in l for l in lines
+    )
