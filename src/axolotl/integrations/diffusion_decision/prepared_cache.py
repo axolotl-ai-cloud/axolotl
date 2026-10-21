@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import gc
+import hashlib
+import io
 import json
 import logging
+import os
+import pickle  # nosec B403 - only our own cache files, read through an allowlist
 import re
+import struct
+import tempfile
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -18,17 +25,27 @@ from axolotl import processing_strategies
 
 from ._util import (
     _value,
-    atomic_write_text,
     canonical_sha256,
     model_config_overrides,
     sha256_file,
 )
-from .loss import decision_example_from_canvas
-from .records import DecisionCanvas, OrdinalMetadata
-from .slots import SlotPlan
+from .records import DecisionCanvas
 
-SCHEMA_VERSION = 1
-PRODUCER = "decision-prepared-rows-v2"
+SCHEMA_VERSION = 3
+PRODUCER = "decision-canvas-layer-v5"
+CACHE_DIR = "diffusion_decision_cache"
+CACHE_SUFFIX = ".pkl"
+# File layout: MAGIC | rows pickle | header JSON | u64 header length | MAGIC.
+# The rows section is one pickle (protocol 5) of {"train", "eval", "manifest"}: the
+# canvas layer (per-source pools, or premixed rows), unfiltered eval rows and the
+# base manifest. Pools carry each training record's pre-tokenized canvas segments
+# (segments.py) so re-permuted draws are assembled without the tokenizer. Batch settings are not part of the key; they only shape the batch
+# plan built over the layer at startup (batch_plan.py).
+# The trailing header carries the identity hash and the rows section's length and
+# sha256, so identity is checked before any rows are deserialized and a truncated
+# file is rejected by its size alone.
+MAGIC = b"AXDDPC02"
+_TRAILER = struct.Struct("<Q8s")
 LOG = logging.getLogger(__name__)
 
 
@@ -66,6 +83,11 @@ def _json_value(value: Any) -> Any:
     raise TypeError(f"cannot serialize decision preparation value {type(value)!r}")
 
 
+# Read only by the batch plan (mixture draws, grouping, budget filter), never by
+# canvas preparation, so changing them reuses the canvas layer.
+_PLAN_ONLY_MIXTURE_FIELDS = ("weights", "temperature", "per_batch_stratified")
+
+
 def _semantic_config(cfg: Any) -> dict[str, Any]:
     fields = (
         "base_model",
@@ -73,13 +95,7 @@ def _semantic_config(cfg: Any) -> dict[str, Any]:
         "model_config_type",
         "seed",
         "sequence_len",
-        "micro_batch_size",
-        "eval_batch_size",
-        "gradient_accumulation_steps",
         "attn_implementation",
-        "sample_packing",
-        "eval_sample_packing",
-        "batch_flattening",
     )
     result = {
         name: _json_value(value)
@@ -90,7 +106,29 @@ def _semantic_config(cfg: Any) -> dict[str, Any]:
         value = _value(cfg, name)
         if value is not None:
             result[name] = _json_value(value)
+    decision = result.get("diffusion_decision")
+    if isinstance(decision, dict):
+        # How a cache is checked does not change what it holds.
+        decision.pop("prepared_cache_verify", None)
+        mixture = decision.get("mixture")
+        if isinstance(mixture, dict):
+            for name in _PLAN_ONLY_MIXTURE_FIELDS:
+                mixture.pop(name, None)
     return result
+
+
+def prepared_cache_verify(cfg: Any) -> bool:
+    return bool(
+        _value(_value(cfg, "diffusion_decision"), "prepared_cache_verify", False)
+    )
+
+
+def _source_identity(path: Path, verify: bool) -> tuple[Any, ...]:
+    resolved = path.resolve()
+    if verify:
+        return (str(resolved), sha256_file(path))
+    stat = resolved.stat()
+    return (str(resolved), stat.st_size, stat.st_mtime_ns)
 
 
 def _entry_identity(
@@ -226,7 +264,13 @@ def identity(
     selected_entries: Sequence[tuple[str, int, Any]] | None = None,
     scope: Mapping[str, Any] | None = None,
     image_paths: Sequence[Path] = (),
+    verify: bool = False,
 ) -> tuple[str, dict[str, Any]] | None:
+    """Cache key and identity payload, or None when the inputs cannot be pinned.
+
+    Sources are keyed by content sha256 when ``verify`` is set, else by resolved
+    path, size and mtime (hashing multi-GB sources dominated cache hits).
+    """
     backend = getattr(getattr(tokenizer, "backend_tokenizer", None), "to_str", None)
     vocabulary = getattr(tokenizer, "get_vocab", None)
     resolved_root = _tokenizer_root(cfg, tokenizer)
@@ -271,13 +315,7 @@ def identity(
         "config": semantic_config,
         "entries": _entry_identity(cfg, selected_entries),
         "scope": dict(scope or {}),
-        "preparation": {
-            "model_config": model_config_overrides(cfg),
-            "sample_packing": _value(cfg, "sample_packing"),
-            "eval_sample_packing": _value(cfg, "eval_sample_packing"),
-            "batch_flattening": _value(cfg, "batch_flattening"),
-            "eval_batch_size": _value(cfg, "eval_batch_size"),
-        },
+        "preparation": {"model_config": model_config_overrides(cfg)},
         "spec": spec_value,
         "tokenizer": {
             "files": [
@@ -305,7 +343,8 @@ def identity(
             "tokenizers_version": tokenizers.__version__,
             "transformers_version": transformers.__version__,
         },
-        "sources": [(str(path.resolve()), sha256_file(path)) for path in source_paths],
+        "source_identity": "sha256" if verify else "stat",
+        "sources": [_source_identity(path, verify) for path in source_paths],
         "images": [(str(path.resolve()), sha256_file(path)) for path in image_paths],
     }
     if hub_identity is not None:
@@ -314,109 +353,174 @@ def identity(
 
 
 def _canvas_to_json(canvas: DecisionCanvas) -> dict[str, Any]:
-    data = asdict(canvas)
-    return data
+    return asdict(canvas)
 
 
-def _canvas_from_json(data: Mapping[str, Any]) -> DecisionCanvas:
-    ordinal = tuple(
-        None
-        if item is None
-        else OrdinalMetadata(
-            levels=tuple(item["levels"]),
-            source_ids=tuple(item["source_ids"]),
-            candidate_ranks=tuple(item["candidate_ranks"]),
+_PACKAGE = __name__.rpartition(".")[0]
+_SAFE_PREFIXES = (f"{_PACKAGE}.", "axolotl.integrations.diffusion_lm.")
+_SAFE_GLOBALS = {
+    "builtins": {
+        "bool",
+        "bytearray",
+        "bytes",
+        "complex",
+        "dict",
+        "float",
+        "frozenset",
+        "int",
+        "list",
+        "range",
+        "set",
+        "slice",
+        "str",
+        "tuple",
+    },
+    "collections": {"OrderedDict", "defaultdict", "deque"},
+    "pathlib": {"Path", "PosixPath", "PurePosixPath", "PureWindowsPath", "WindowsPath"},
+    "numpy": {"dtype", "ndarray"},
+    "numpy.core.multiarray": {"_reconstruct", "scalar"},
+    "numpy._core.multiarray": {"_reconstruct", "scalar"},
+    "numpy.core.numeric": {"_frombuffer"},
+    "numpy._core.numeric": {"_frombuffer"},
+}
+
+
+class _CacheUnpickler(pickle.Unpickler):  # nosec B301
+    """Resolve only plain containers, numpy arrays and this plugin's own types."""
+
+    def find_class(self, module: str, name: str) -> Any:
+        if name in _SAFE_GLOBALS.get(module, ()):
+            return super().find_class(module, name)
+        if module.startswith(_SAFE_PREFIXES):
+            value = super().find_class(module, name)
+            if isinstance(value, type):
+                return value
+        raise pickle.UnpicklingError(
+            f"prepared-row cache references disallowed global {module}.{name}"
         )
-        for item in data.get("ordinal_metadata", ())
-    )
-    return DecisionCanvas(
-        prompt_ids=tuple(data["prompt_ids"]),
-        canvas_ids=tuple(data["canvas_ids"]),
-        label_positions=tuple(data["label_positions"]),
-        allowed_ids=tuple(tuple(value) for value in data["allowed_ids"]),
-        question_ids=tuple(data["question_ids"]),
-        targets=tuple(data["targets"]),
-        pinned_mask=tuple(data["pinned_mask"]),
-        semantic_mask=tuple(data["semantic_mask"]),
-        slot_mask=tuple(data["slot_mask"]),
-        template_length=int(data["template_length"]),
-        prompt_slot_mask=tuple(data.get("prompt_slot_mask", ())),
-        ordinal_metadata=ordinal,
-        image_refs=tuple(data.get("image_refs", ())),
-        image_sizes=tuple(
-            (int(height), int(width)) for height, width in data.get("image_sizes", ())
-        ),
-    )
 
 
-def _row_to_json(row: Mapping[str, Any]) -> dict[str, Any]:
-    value = {
-        key: item
-        for key, item in row.items()
-        if key not in {"canvas", "decision_example", "slot_plan"}
-    }
-    value["canvas"] = _canvas_to_json(row["canvas"])
-    example = row.get("decision_example")
-    if example is not None:
-        value["_decision_example_source_weight"] = example.source_weight
-    plan = row.get("slot_plan")
-    if plan is not None:
-        value["slot_plan"] = asdict(plan)
-    return value
+class _HashingWriter(io.RawIOBase):
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
+        self.digest = hashlib.sha256()
+        self.length = 0
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, data: Any) -> int:
+        view = memoryview(data)
+        self.digest.update(view)
+        self._handle.write(view)
+        self.length += view.nbytes
+        return view.nbytes
 
 
-def _row_from_json(data: Mapping[str, Any]) -> dict[str, Any]:
-    row = dict(data)
-    if isinstance(row.get("record"), dict) and "grouped_record_ids" in row["record"]:
-        row["record"] = dict(row["record"])
-        row["record"]["grouped_record_ids"] = tuple(row["record"]["grouped_record_ids"])
-    row["canvas"] = _canvas_from_json(row["canvas"])
-    if "slot_plan" in row:
-        plan = row["slot_plan"]
-        row["slot_plan"] = SlotPlan(
-            ids=tuple(plan["ids"]),
-            placement=plan["placement"],
-            pinned_mask=tuple(plan["pinned_mask"]),
-            update_mask=tuple(plan["update_mask"]),
-            loss_mask=tuple(plan["loss_mask"]),
-            trainable_token_ids=tuple(plan["trainable_token_ids"]),
-        )
-    source_weight = float(
-        row.pop("_decision_example_source_weight", row.get("source_weight", 1.0))
-    )
-    row["decision_example"] = decision_example_from_canvas(
-        row["canvas"], source_weight=source_weight
-    )
-    return row
+def _cache_path(root: Path, key: str) -> Path:
+    return root / CACHE_DIR / f"{key}{CACHE_SUFFIX}"
+
+
+def _read_header(handle: Any, size: int) -> dict[str, Any] | None:
+    if size < 2 * len(MAGIC) + _TRAILER.size or handle.read(len(MAGIC)) != MAGIC:
+        return None
+    handle.seek(size - _TRAILER.size)
+    header_length, magic = _TRAILER.unpack(handle.read(_TRAILER.size))
+    header_start = size - _TRAILER.size - header_length
+    if magic != MAGIC or header_start < len(MAGIC):
+        return None
+    handle.seek(header_start)
+    header = json.loads(handle.read(header_length).decode("utf-8"))
+    if not isinstance(header, dict) or header.get("rows_length") != (
+        header_start - len(MAGIC)
+    ):
+        return None
+    return header
+
+
+def _rows_sha256(handle: Any, length: int) -> str:
+    digest = hashlib.sha256()
+    handle.seek(len(MAGIC))
+    remaining = length
+    while remaining:
+        chunk = handle.read(min(remaining, 1 << 24))
+        if not chunk:
+            raise EOFError("prepared-row cache rows section is truncated")
+        digest.update(chunk)
+        remaining -= len(chunk)
+    return digest.hexdigest()
 
 
 def load(
     root: Path,
     key: str,
     identity_payload: Mapping[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]] | None:
-    path = root / "diffusion_decision_cache" / f"{key}.json"
+    *,
+    verify: bool = False,
+) -> tuple[list[Any], list[dict[str, Any]], dict[str, Any]] | None:
+    """Return the cached canvas layer (train, eval, manifest), or None on a miss.
+
+    The identity is always compared. ``verify`` additionally hashes the rows
+    section against the sha256 recorded at store time; without it a damaged file
+    is still rejected when its size, framing or pickle stream does not hold up.
+    """
+    path = _cache_path(root, key)
     try:
-        payload = json.loads(path.read_text())
-        if _sha(payload["content"]) != payload["sha256"]:
-            return None
-        metadata = payload["content"]
-        if _sha(metadata["identity"]) != _sha(identity_payload):
-            LOG.info("Decision prepared-row cache identity mismatch")
-            return None
-        rows = metadata["rows"]
-        train = [_row_from_json(row) for row in rows["train"]]
-        eval_rows = [_row_from_json(row) for row in rows["eval"]]
-        manifest = dict(metadata["manifest"])
-        if "stratified_epoch_batches" in manifest:
-            manifest["stratified_epoch_batches"] = tuple(
-                tuple(batch) for batch in manifest["stratified_epoch_batches"]
-            )
-        if _sha(rows) != metadata["rows_sha256"]:
-            LOG.info("Decision prepared-row cache payload validation mismatch")
+        with path.open("rb", buffering=1 << 24) as handle:
+            size = os.fstat(handle.fileno()).st_size
+            header = _read_header(handle, size)
+            if (
+                header is None
+                or header.get("schema_version") != SCHEMA_VERSION
+                or header.get("producer") != PRODUCER
+            ):
+                LOG.info("Decision prepared-row cache format mismatch")
+                return None
+            if header.get("identity_sha256") != _sha(identity_payload):
+                LOG.info("Decision prepared-row cache identity mismatch")
+                return None
+            if verify and _rows_sha256(handle, header["rows_length"]) != header.get(
+                "rows_sha256"
+            ):
+                LOG.info("Decision prepared-row cache payload validation mismatch")
+                return None
+            handle.seek(len(MAGIC))
+            # Millions of long-lived acyclic containers: cyclic GC passes during the
+            # load, and the first full pass after it, find nothing. Load with GC off,
+            # then move what is tracked to the permanent generation so later passes
+            # skip the rows (refcounting still frees them when the dataset goes).
+            gc_enabled = gc.isenabled()
+            gc.disable()
+            try:
+                content = _CacheUnpickler(handle).load()
+                gc.freeze()
+            finally:
+                if gc_enabled:
+                    gc.enable()
+            if handle.tell() != len(MAGIC) + header["rows_length"]:
+                return None
+        train, eval_rows, manifest = (
+            content["train"],
+            content["eval"],
+            content["manifest"],
+        )
+        if not (
+            isinstance(train, list)
+            and isinstance(eval_rows, list)
+            and isinstance(manifest, dict)
+            and len(train) == header.get("train_rows")
+            and len(eval_rows) == header.get("eval_rows")
+        ):
             return None
         return train, eval_rows, manifest
-    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    except FileNotFoundError:
+        return None
+    except Exception as error:  # noqa: BLE001 - any damage means re-prepare
+        LOG.warning(
+            "Decision prepared-row cache unreadable (%s: %s); re-preparing",
+            type(error).__name__,
+            error,
+        )
         return None
 
 
@@ -425,28 +529,54 @@ def store(
     key: str,
     identity_payload: Mapping[str, Any],
     cfg: Any,
-    train: Sequence[Mapping[str, Any]],
+    train: Sequence[Any],
     eval_rows: Sequence[Mapping[str, Any]],
     manifest: Mapping[str, Any],
 ) -> None:
-    rows = {
-        "train": [_row_to_json(row) for row in train],
-        "eval": [_row_to_json(row) for row in eval_rows],
-    }
-    content = {
-        "identity": identity_payload,
-        "config": _semantic_config(cfg),
-        "manifest": manifest,
-        "rows_sha256": _sha(rows),
-        "rows": rows,
-    }
-    parent = root / "diffusion_decision_cache"
+    """Write the canvas layer: ``train`` holds source pools (or premixed rows)."""
+    parent = root / CACHE_DIR
     parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(
-        parent / f"{key}.json",
-        json.dumps(
-            {"sha256": _sha(content), "content": content},
-            sort_keys=True,
-            default=_json_default,
-        ),
+    path = _cache_path(root, key)
+    content = {
+        "train": list(train),
+        "eval": list(eval_rows),
+        "manifest": dict(manifest),
+    }
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=parent
     )
+    try:
+        with os.fdopen(descriptor, "wb", buffering=1 << 24) as handle:
+            handle.write(MAGIC)
+            writer = _HashingWriter(handle)
+            pickle.dump(content, writer, protocol=5)
+            header = json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "producer": PRODUCER,
+                    "key": key,
+                    "identity_sha256": _sha(identity_payload),
+                    "config": _semantic_config(cfg),
+                    "train_rows": len(content["train"]),
+                    "eval_rows": len(content["eval"]),
+                    "rows_length": writer.length,
+                    "rows_sha256": writer.digest.hexdigest(),
+                },
+                sort_keys=True,
+                default=_json_default,
+            ).encode("utf-8")
+            handle.write(header)
+            handle.write(_TRAILER.pack(len(header), MAGIC))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException as error:
+        Path(temporary).unlink(missing_ok=True)
+        if not isinstance(error, (pickle.PicklingError, TypeError, AttributeError)):
+            raise
+        # A row the cache cannot hold costs a re-preparation next run, not this run.
+        LOG.warning(
+            "Decision prepared-row cache not written (%s: %s)",
+            type(error).__name__,
+            error,
+        )

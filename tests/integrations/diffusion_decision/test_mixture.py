@@ -1,9 +1,14 @@
+import math
+import random
 from collections import Counter
 
 import pytest
 
+from axolotl.integrations.diffusion_decision._util import stable_seed
 from axolotl.integrations.diffusion_decision.mixture import (
     DeterministicMixtureSampler,
+    MixtureSample,
+    _SourceCursor,
     prepare_source_pools,
 )
 
@@ -249,3 +254,96 @@ def test_prepare_rejects_when_decontamination_removes_every_source():
 
     with pytest.raises(ValueError, match="no nonempty"):
         prepare_source_pools(training, evaluation)
+
+
+class _ReferenceSampler(DeterministicMixtureSampler):
+    """The pre-numpy stratified selection, kept verbatim as an equivalence oracle."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._fractional_credit = {source: 0.0 for source in self.sources}
+
+    def epoch_batches(self, batch_size, *, stratified=True, batch_count=None):
+        epoch_seed = self._source_random.randrange(1 << 63)
+        cursors = {
+            source: _SourceCursor(records, stable_seed(epoch_seed, source))
+            for source, records in self._pools.items()
+        }
+        credit = {source: 0.0 for source in self.sources}
+        seen = {source: 0 for source in self.sources}
+        yielded = 0
+        while (
+            yielded < batch_count
+            if batch_count is not None
+            else not all(
+                seen[source] >= len(self._pools[source]) for source in self.sources
+            )
+        ):
+            if stratified:
+                sources = self._stratified_sources(batch_size, credit)
+                random.Random(epoch_seed).shuffle(sources)
+            else:
+                sources = self._source_random.choices(
+                    self.sources, weights=self._probability_values, k=batch_size
+                )
+            epoch_seed += 1
+            batch = tuple(
+                MixtureSample(source, cursors[source].next()) for source in sources
+            )
+            for source in sources:
+                seen[source] += 1
+            yielded += 1
+            yield batch
+
+    def _stratified_sources(self, batch_size, fractional_credit=None):
+        credit = (
+            self._fractional_credit if fractional_credit is None else fractional_credit
+        )
+        expected = {
+            source: self.probabilities[source] * batch_size for source in self.sources
+        }
+        fixed = {source: math.floor(value) for source, value in expected.items()}
+        remaining = batch_size - sum(fixed.values())
+        selected = [source for source in self.sources for _ in range(fixed[source])]
+        for source in self.sources:
+            credit[source] += expected[source] - fixed[source]
+        for _ in range(remaining):
+            source = max(
+                enumerate(self.sources),
+                key=lambda item: (credit[item[1]], -item[0]),
+            )[1]
+            selected.append(source)
+            credit[source] -= 1.0
+        return selected
+
+
+@pytest.mark.parametrize("seed", [0, 7, 44])
+@pytest.mark.parametrize("batch_size", [1, 3, 8, 16])
+@pytest.mark.parametrize("stratified", [True, False])
+def test_stratified_selection_matches_reference_implementation(
+    seed, batch_size, stratified
+):
+    rng = random.Random(seed)
+    # Repeated sizes and equal weights give exactly tied credits.
+    sizes = [rng.choice([1, 2, 3, 5, 5, 5, 40, 40]) for _ in range(rng.randint(2, 30))]
+    pools = {f"s{index:02d}": tuple(range(size)) for index, size in enumerate(sizes)}
+    for options in (
+        {"temperature": 1.0},
+        {"temperature": 0.5},
+        {"weights": None},
+        {"weights": dict.fromkeys(pools, 1.0)},
+    ):
+        new = DeterministicMixtureSampler(pools, seed=seed, **options)
+        old = _ReferenceSampler(pools, seed=seed, **options)
+        for epoch in range(3):
+            count = None if epoch == 0 else 5
+            new_batches = list(
+                new.epoch_batches(batch_size, stratified=stratified, batch_count=count)
+            )
+            old_batches = list(
+                old.epoch_batches(batch_size, stratified=stratified, batch_count=count)
+            )
+            assert new_batches == old_batches
+        assert list(new.batches(batch_size, 25, stratified=stratified)) == list(
+            old.batches(batch_size, 25, stratified=stratified)
+        )

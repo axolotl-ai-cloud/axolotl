@@ -2,6 +2,7 @@
 
 import os
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -43,10 +44,14 @@ class TestParallelConfigKwargs:
 
 class TestParallelismEnvs:
     @pytest.fixture(autouse=True)
-    def _clean_env(self, monkeypatch):
-        for key in list(os.environ):
-            if key.startswith("PARALLELISM_CONFIG_") or key.startswith("ACCELERATE_"):
-                monkeypatch.delenv(key, raising=False)
+    def _clean_env(self):
+        with patch.dict(os.environ):
+            for key in list(os.environ):
+                if key.startswith("PARALLELISM_CONFIG_") or key.startswith(
+                    "ACCELERATE_"
+                ):
+                    del os.environ[key]
+            yield
 
     def test_deepspeed_exports_sp_axis(self, monkeypatch):
         from axolotl.utils import trainer as trainer_utils

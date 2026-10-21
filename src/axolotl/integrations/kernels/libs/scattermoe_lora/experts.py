@@ -180,6 +180,24 @@ def _ep_factor_access_reason(experts):
 
 def _ep_local_peft_lora(experts):
     """Return this rank's PEFT-layout LoRA factors for both expert projections."""
+    # the SonicMoE ParamWrapper fast path hands the factors to the raw base module
+    handed = getattr(experts, "_sonicmoe_lora", None)
+    if handed is not None:
+        factors = []
+        for name in (_w1_name(experts), "down_proj"):
+            entry = handed.get(name)
+            if entry is None:
+                factors.append(None)
+                continue
+            lora_A, lora_B, scaling = entry
+            wrapper = (getattr(experts, "_sonicmoe_lora_wrappers", None) or {}).get(
+                name
+            )
+            local_A, local_B, _, _ = _ep_local_expert_lora(
+                lora_A, lora_B, experts, wrapper
+            )
+            factors.append((local_A, local_B, scaling))
+        return factors[0], factors[1]
     try:
         from peft.tuners.param_wrapper import ParamWrapper
     except ImportError:
@@ -200,6 +218,56 @@ def _ep_local_peft_lora(experts):
         local_A, local_B, _, _ = _ep_local_expert_lora(lora_A, lora_B, experts, param)
         factors.append((local_A, local_B, scaling))
     return factors[0], factors[1]
+
+
+def _handed_lora_as_scattermoe(experts):
+    """ScatterMoE-layout factors from the SonicMoE fast path's PEFT-layout handoff, if any.
+
+    The SonicMoE EP forward delegates NVFP4 experts to the ScatterMoE EP forward with the raw
+    base module, whose only LoRA is the ``_sonicmoe_lora`` dict the ParamWrapper fast path set.
+    """
+    handed = getattr(experts, "_sonicmoe_lora", None)
+    if not handed:
+        return None
+    from .layers import peft_lora_to_scattermoe
+
+    converted = {}
+    for name in (_w1_name(experts), "down_proj"):
+        entry = handed.get(name)
+        if entry is None:
+            continue
+        lora_A, lora_B, scaling = entry
+        wrapper = (getattr(experts, "_sonicmoe_lora_wrappers", None) or {}).get(name)
+        a, b, n_local, rank = _ep_local_expert_lora(lora_A, lora_B, experts, wrapper)
+        sm_A, sm_B = peft_lora_to_scattermoe(a, b, n_local, rank)
+        converted[name] = (sm_A, sm_B, scaling)
+    return converted or None
+
+
+def _legacy_mx_kernel_selected(experts, w1_attr, fp4_grouped_mode, gup_lora, down_lora):
+    """True when NVFP4 experts with LoRA are about to run on the legacy fused-MX Triton kernel."""
+    return (
+        fp4_grouped_mode is None
+        and gup_lora is not None
+        and down_lora is not None
+        and torch.cuda.is_available()
+        and is_nvfp4_param(_get_base_param(getattr(experts, w1_attr)))
+    )
+
+
+def _warn_legacy_mx_kernel(experts) -> None:
+    """Once per module: the fused-MX kernel is the fallback, not the fast NVFP4 LoRA path."""
+    if getattr(experts, "_axolotl_legacy_mx_warning_emitted", False):
+        return
+    experts._axolotl_legacy_mx_warning_emitted = True
+    warnings.warn(
+        "NVFP4 experts with LoRA are running on the legacy fused-MX Triton kernel "
+        "(scatter2scatter_lora_mx). It is the slowest NVFP4 LoRA path; prefer "
+        "nvfp4_merge_aware: true (SonicMoE) or dsv4_fp4_grouped_mode: nvfp4 where the "
+        "grouped fp4 GEMM is available for this GPU.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
 
 
 def _warn_merge_aware_ep_unsupported(experts, reason: str) -> None:
@@ -299,6 +367,28 @@ def _get_base_param(param):
     except ImportError:
         pass
     return param
+
+
+def _fp4_weight_cache(module, gate_up_base) -> dict:
+    """Persistent grouped-fp4 weight cache for ``module``, shared by tied experts.
+
+    The cache outlives FSDP re-gathers by living on the module. Single-GPU, the marlin
+    backend frees the NVFP4 ``qdata`` after repacking and keeps the repacked weight in this
+    cache, so modules that hold the *same* expert tensor (DiffusionGemma ties its encoder
+    and decoder experts) must share one cache or the second module finds ``qdata`` gone.
+    The first module stashes its cache on the weight tensor; a tied module adopts it.
+    """
+    cache = module.__dict__.get("_dg_mxfp4_cache")
+    if cache is None:
+        cache = getattr(gate_up_base, "_dg_mxfp4_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            try:
+                gate_up_base._dg_mxfp4_cache = cache
+            except (AttributeError, RuntimeError):
+                pass
+        module.__dict__["_dg_mxfp4_cache"] = cache
+    return cache
 
 
 def _parallel_linear_maybe_lora(
@@ -646,7 +736,7 @@ def scattermoe_experts_forward(
             )
             # persistent per-module cache so the backend requantizes the frozen weight to mxfp4
             # once, surviving FSDP re-gathers (the gathered param is fresh each step).
-            cache = self.__dict__.setdefault("_dg_mxfp4_cache", {})
+            cache = _fp4_weight_cache(self, gu_base)
             return grouped_fp4_moe_train(
                 hidden_states,
                 top_k_index,
@@ -667,19 +757,16 @@ def scattermoe_experts_forward(
     # _prepare_weights_and_lora -> selective_nvfp4_weights_fwd -> scatter2scatter_lora_mx, which
     # SIGSEGVs on Blackwell. Turn that silent crash into an actionable error (the grouped path is the
     # supported route for NVFP4+LoRA); non-Blackwell archs keep the legacy path.
-    if (
-        _fp4_grouped_mode is None
-        and gup_lora is not None
-        and down_lora is not None
-        and torch.cuda.is_available()
-        and torch.cuda.get_device_capability()[0] >= 10
-        and is_nvfp4_param(_get_base_param(getattr(self, w1_attr)))
+    if _legacy_mx_kernel_selected(
+        self, w1_attr, _fp4_grouped_mode, gup_lora, down_lora
     ):
-        raise RuntimeError(
-            "NVFP4 experts with LoRA require the grouped fp4 MoE path on Blackwell (sm100/sm120): "
-            "the legacy fused-MX kernel (scatter2scatter_lora_mx) SIGSEGVs on this arch. Set "
-            "dsv4_fp4_grouped_mode: nvfp4 in your config to enable the supported grouped GEMM path."
-        )
+        if torch.cuda.get_device_capability()[0] >= 10:
+            raise RuntimeError(
+                "NVFP4 experts with LoRA require the grouped fp4 MoE path on Blackwell (sm100/sm120): "
+                "the legacy fused-MX kernel (scatter2scatter_lora_mx) SIGSEGVs on this arch. Set "
+                "dsv4_fp4_grouped_mode: nvfp4 in your config to enable the supported grouped GEMM path."
+            )
+        _warn_legacy_mx_kernel(self)
 
     # BnB-4bit experts have no 4-bit-read kernel; the naive path full-dequants all E experts every
     # forward (~2.7x VRAM). Route to the chunked-dequant grouped MoE (bounded transient). Detect
@@ -916,12 +1003,40 @@ def scattermoe_experts_forward_ep(
     _has_gate = getattr(self, "has_gate", True)
     _w1_attr = _w1_name(self)
     _gup_lora_g, _down_lora_g = None, None
-    _sm_lora_g = getattr(self, "_scattermoe_lora", None)
+    _sm_lora_g = getattr(self, "_scattermoe_lora", None) or _handed_lora_as_scattermoe(
+        self
+    )
     if _sm_lora_g:
         _gup_lora_g = _sm_lora_g.get(_w1_attr)
         _down_lora_g = _sm_lora_g.get("down_proj")
     elif _has_peft_wrapper(self):
         _, _gup_lora_g, _down_lora_g = _unwrap_experts_lora(self)
+
+    # bnb-4bit experts: reading the parametrized attribute dequantizes every local expert to
+    # bf16 and autograd would hold that copy per layer, so take the chunked-dequant path on the
+    # routed rows (DeepEP's -1 sentinels are dropped there); checked before any weight access
+    if (
+        hasattr(self, "parametrizations")
+        and _w1_attr in self.parametrizations
+        and "down_proj" in self.parametrizations
+    ):
+        if not _has_gate:
+            raise NotImplementedError(
+                "bnb-4bit non-gated experts are not supported by the chunked-bnb MoE path"
+            )
+        from .chunked_bnb import chunked_bnb_moe
+
+        return chunked_bnb_moe(
+            hidden_states,
+            top_k_index,
+            top_k_weights.to(hidden_states.dtype),
+            self,
+            _gup_lora_g,
+            _down_lora_g,
+            self.num_experts,
+            act_type=_detect_act_type(self),
+            limit=getattr(self, "limit", None),
+        )
 
     _fp4_grouped_mode_g = RUNTIME.fp4_grouped_mode
     if (
@@ -939,7 +1054,7 @@ def scattermoe_experts_forward_ep(
                     _get_base_param(getattr(self, p)),
                     _get_base_param(self.down_proj),
                 )
-                _cache_g = self.__dict__.setdefault("_dg_mxfp4_cache", {})
+                _cache_g = _fp4_weight_cache(self, _gu_base_g)
                 return _grouped_fp4_ep_maybe_tiled(
                     hidden_states,
                     top_k_index,
@@ -955,6 +1070,21 @@ def scattermoe_experts_forward_ep(
                     _cache_g,
                     RUNTIME.fp4_dx_prefer_fp8,
                 )
+
+    # same guard as the non-EP forward: on Blackwell the legacy fused-MX kernel is the wrong
+    # path for NVFP4 + LoRA (SIGSEGV on some layouts, 10x slower on others); the supported
+    # routes are the merge-aware grouped GEMM or dsv4_fp4_grouped_mode
+    if _legacy_mx_kernel_selected(
+        self, _w1_attr, _fp4_grouped_mode_g, _gup_lora_g, _down_lora_g
+    ):
+        if torch.cuda.get_device_capability()[0] >= 10:
+            raise RuntimeError(
+                "NVFP4 experts with LoRA under expert parallelism need the grouped fp4 MoE path on "
+                "Blackwell (sm100/sm120): the legacy fused-MX kernel (scatter2scatter_lora_mx) is "
+                "unsafe and an order of magnitude slower on this arch. Set nvfp4_merge_aware: true "
+                "(SonicMoE) or dsv4_fp4_grouped_mode: nvfp4."
+            )
+        _warn_legacy_mx_kernel(self)
 
     N = hidden_states.size(0)
     K = top_k_index.shape[1]
@@ -979,7 +1109,9 @@ def scattermoe_experts_forward_ep(
     ss = torch.arange(M, device=hidden_states.device, dtype=torch.int32)
 
     gup_lora, down_lora = None, None
-    sm_lora = getattr(self, "_scattermoe_lora", None)
+    sm_lora = getattr(self, "_scattermoe_lora", None) or _handed_lora_as_scattermoe(
+        self
+    )
     if sm_lora:
         gup_lora = sm_lora.get(_w1_attr)
         down_lora = sm_lora.get("down_proj")

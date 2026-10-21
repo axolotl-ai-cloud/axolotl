@@ -1108,9 +1108,6 @@ class TestRuleFunctional:
         assert state.saved_op_names == {"shape:aten::addmm", "shape:aten::mm"}
 
     @requires_cuda
-    @pytest.mark.skipif(
-        not hasattr(torch, "_grouped_mm"), reason="requires torch._grouped_mm"
-    )
     def test_grouped_mm_shape_rule(self):
         n_experts, tokens, k, n = 4, 64, 512, 64
         gen = torch.Generator(device="cpu").manual_seed(3)
@@ -1616,3 +1613,11 @@ class TestHigherOrderOps:
         ):
             assert cls.supports_higher_order_operators is True
             assert cls.ignore_compile_internals() is True
+
+
+def test_attention_group_includes_torch_varlen_custom_op():
+    """varlen_attn is a custom op opaque to dispatch modes; the attention group must name it."""
+    pytest.importorskip("torch.nn.attention.varlen")
+    from axolotl.monkeypatch.selective_checkpointing import _aten_attention_ops
+
+    assert torch.ops.torch_attn._varlen_attn.default in _aten_attention_ops()

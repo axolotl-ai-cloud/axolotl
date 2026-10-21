@@ -100,7 +100,9 @@ by the largest quantized tensor; this peak is smaller than the wrapped-layer req
 above.
 
 `offload_params` controls FSDP parameter offloading after loading. This path supports
-a single FSDP2 data-parallel mesh; DeepSpeed, tensor/context/expert parallelism,
+a single FSDP2 data-parallel mesh, optionally combined with expert parallelism
+(`expert_parallel_size`, whose expert slices are cut from rank zero's packed weights
+without requantizing); DeepSpeed, tensor/context parallelism,
 DoRA, `modules_to_save` and value-dependent LoRA inits (pissa, olora, loftq, corda, eva) are unsupported.
 olora remains available on the non-staged bitsandbytes loader with
 `cpu_ram_efficient_loading: false` (the torchao backend is always staged); pissa and

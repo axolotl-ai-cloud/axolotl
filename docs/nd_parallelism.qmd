@@ -148,6 +148,8 @@ fsdp_config:
   cpu_ram_efficient_loading: true
 ```
 
+With EP active, `dp_shard_size` is only the extra FSDP split applied to the expert modules inside an EP group; the dense (non-expert) weights always shard over the flattened `dp_shard x cp x ep` axes. On a node of 8 GPUs, `expert_parallel_size: 8, dp_shard_size: 1` therefore means dense weights sharded 8 ways within the node and each rank keeping its experts whole, and adding `dp_replicate_size: 2` replicates that layout on a second node (HSDP) so only gradients cross the inter-node fabric. The startup log prints this effective layout.
+
 `expert_parallel_backend` defaults to `auto` (DeepEP when installed, else the torch all-to-all backend); LoRA on the experts works with `lora_target_parameters` in either layout. A fresh LoRA adapter is drawn per module from `seed`, so the init (and a one-step gradient check) is identical whether or not the experts are sharded.
 
 ## Support Matrix

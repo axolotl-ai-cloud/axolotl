@@ -322,6 +322,24 @@ class TestValidationCheckDatasetConfig(BaseValidation):
 
         validate_config(cfg)
 
+    def test_generation_tags_rejects_skip_prepare_dataset(self, minimal_cfg):
+        cfg = DictDefault(
+            minimal_cfg
+            | {
+                "skip_prepare_dataset": True,
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "chat_template",
+                        "generation_tags": True,
+                    }
+                ],
+            }
+        )
+
+        with pytest.raises(ValueError, match="skip_prepare_dataset"):
+            validate_config(cfg)
+
 
 class TestOptimizerValidation(BaseValidation):
     """

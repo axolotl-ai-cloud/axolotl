@@ -976,7 +976,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--cls-model-config",),
         None,
         None,
-        "transformers config class (e.g., 'LlamaConfig', 'MistralConfig'). Defaults to AutoConfig.",
+        "transformers config class (e.g., 'LlamaConfig', 'MistralConfig') or a dotted import path to a config class. Defaults to AutoConfig.",
     ),
     (
         ("--tokenizer-config",),
@@ -1974,7 +1974,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--dynamic-checkpoint.check-interval",),
         "dynamic_checkpoint__check_interval",
         "int",
-        "Check for trigger file every N steps (reduces I/O overhead). Default: 100",
+        "Check for trigger file every N steps (reduces I/O overhead). Default: 10",
     ),
     (
         ("--dynamic-checkpoint.trigger-file-path",),
@@ -2011,6 +2011,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         None,
+    ),
+    (
+        ("--dpo-ld-alpha",),
+        None,
+        None,
+        "LD-DPO length desensitization: weight on the log-probabilities of the tokens a response has beyond the shorter response of its pair (1.0 = unweighted, 0.0 = ignore them). Applies to every DPO loss type, including apo_zero.",
     ),
     (
         ("--precompute-ref-log-probs/--no-precompute-ref-log-probs",),
@@ -3093,6 +3099,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`",
+    ),
+    (
+        ("--eval-on-start/--no-eval-on-start",),
+        None,
+        None,
+        "Run an evaluation before the first training step. Leave empty to keep the default (on whenever evaluation is enabled); set to false to skip the step-0 eval",
     ),
     (
         ("--save-steps",),

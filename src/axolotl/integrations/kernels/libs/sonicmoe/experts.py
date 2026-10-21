@@ -114,6 +114,7 @@ class _LoRAExpertsFacade:
         "gate_up_proj_bias",
         "has_bias",
         "has_gate",
+        "has_post_expert_norm",
         "is_concatenated",
         "is_transposed",
         "num_experts",
@@ -137,6 +138,9 @@ class _LoRAExpertsFacade:
         self.has_bias = b1 is not None or b2 is not None
         self.gate_up_proj_bias = b1
         self.down_proj_bias = b2
+        self.has_post_expert_norm = getattr(
+            experts_module, "has_post_expert_norm", False
+        )
         self.is_transposed = getattr(experts_module, "is_transposed", False)
         self.is_concatenated = concat
         self.num_experts = experts_module.num_experts
@@ -192,6 +196,23 @@ def _sonicmoe_ep_forward(
         and is_nvfp4_param(_get_base_param(w1))
         and is_nvfp4_param(_get_base_param(w2))
     ):
+        # the grouped LoRA path whether or not the fake-quant has started: it is the fast
+        # NVFP4 route on Blackwell, where the ScatterMoE fallback would refuse the legacy kernel
+        from ..scattermoe_lora.experts import (
+            _ep_merge_aware_forward,
+            _warn_merge_aware_ep_unsupported,
+        )
+
+        output, unsupported_reason = _ep_merge_aware_forward(
+            self,
+            hidden_states,
+            top_k_index.masked_fill(top_k_index >= self.num_experts, -1),
+            top_k_weights,
+        )
+        if output is not None:
+            return output
+        if unsupported_reason is not None:
+            _warn_merge_aware_ep_unsupported(self, unsupported_reason)
         return scattermoe_experts_forward_ep(
             self, hidden_states, top_k_index, top_k_weights
         )

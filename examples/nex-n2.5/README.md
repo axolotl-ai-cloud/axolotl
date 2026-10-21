@@ -11,7 +11,7 @@
 3. Install FLA for sample packing support with the Gated DeltaNet linear attention layers:
 
     ```bash
-    uv pip uninstall causal-conv1d && uv pip install flash-linear-attention==0.4.1
+    uv pip uninstall causal-conv1d && uv pip install flash-linear-attention==0.5.2
     ```
 
 4. Run the finetuning example:

@@ -1,6 +1,6 @@
 """Native DiffusionGemma descriptor."""
 
-from axolotl.model_support.base import ModelSupport, Unsupported
+from axolotl.model_support.base import Experimental, ModelSupport, Unsupported
 from axolotl.model_support.diffusion import (
     DiffusionLayout,
     DiffusionNoise,
@@ -103,6 +103,13 @@ class DiffusionGemmaSupport(ModelSupport):
             ),
             "lora_kernels": Unsupported("Native tied LoRA uses ordinary PEFT layers."),
             "fsdp": Unsupported("Native tied LoRA has no FSDP validation."),
+            # Overrides the native-diffusion template's Unsupported: ScatterMoE matches the
+            # stock experts fwd+bwd with tied expert LoRA
+            # (tests/integrations/kernels/test_diffusion_gemma_scattermoe.py).
+            "expert_kernels": Experimental(
+                "ScatterMoE is validated against the stock experts with tied expert LoRA; "
+                "the NVFP4 expert path is a frozen-base W4A16 LoRA without merge parity."
+            ),
             "quantized_lora": Unsupported(
                 "Native tied LoRA has no quantized validation."
             ),

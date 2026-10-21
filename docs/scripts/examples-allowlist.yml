@@ -2,6 +2,8 @@ examples:
   # October 2026
   - name: kolibri
     title: Kolibri-1
+  - name: beam
+    title: Beam
 
   # September 2026
   - name: k2-horizon
@@ -91,6 +93,8 @@ examples:
     title: Gemma 3n
 
   # Z.ai
+  - name: glm53-flash
+    title: GLM-5.3-Flash
   - name: glm47-flash
     title: GLM-4.7-Flash
   - name: glm46v

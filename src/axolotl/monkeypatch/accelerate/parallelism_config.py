@@ -67,6 +67,26 @@ def log_mesh_placement(mesh):
         + ", ".join(parts),
         main_process_only=True,
     )
+    if "ep" in report:
+        # the config's dp_shard_size is only the extra split inside an EP group; the dense
+        # weights shard over every dp_shard/cp/ep rank, which is easy to misread from the config
+        sizes = {name: size for name, (size, _cross) in report.items()}
+        dense = 1
+        for name in ("dp_shard", "cp", "ep"):
+            dense *= sizes.get(name, 1)
+        LOG.info(
+            "effective layout: dense (non-expert) weights FSDP-sharded over %d rank(s) "
+            "(dp_shard x cp x ep = %d x %d x %d); experts EP-sharded %d-way, each rank's "
+            "experts FSDP-split over dp_shard=%d; everything replicated over dp_replicate=%d",
+            dense,
+            sizes.get("dp_shard", 1),
+            sizes.get("cp", 1),
+            sizes["ep"],
+            sizes["ep"],
+            sizes.get("dp_shard", 1),
+            sizes.get("dp_replicate", 1),
+            main_process_only=True,
+        )
 
 
 def _patched_post_init(self):

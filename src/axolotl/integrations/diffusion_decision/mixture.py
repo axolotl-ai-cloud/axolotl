@@ -9,6 +9,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
+import numpy as np
+
 from ._util import stable_seed
 from .hygiene import decontaminate
 
@@ -21,6 +23,9 @@ class PreparedSourcePools:
 
     records: Mapping[str, tuple[Mapping[str, Any], ...]]
     counts: Mapping[str, int]
+    # Every decontaminated record of each nonempty source, in input order; the
+    # capped ``records`` are ``cap_window(..., epoch=0)`` of these.
+    candidates: Mapping[str, tuple[Mapping[str, Any], ...]] | None = None
 
 
 @dataclass(frozen=True)
@@ -73,7 +78,9 @@ class DeterministicMixtureSampler(Generic[T]):
             source: _SourceCursor(records, stable_seed(seed, source))
             for source, records in self._pools.items()
         }
-        self._fractional_credit = {source: 0.0 for source in self.sources}
+        # Per-source carried fractional slot credit, indexed like ``self.sources``.
+        self._fractional_credit = np.zeros(len(self.sources), dtype=np.float64)
+        self._stratified_plans: dict[int, tuple[tuple[str, ...], np.ndarray, int]] = {}
 
     def draw(self, count: int) -> tuple[MixtureSample[T], ...]:
         """Draw examples by source probability, cycling deterministically within sources."""
@@ -103,23 +110,41 @@ class DeterministicMixtureSampler(Generic[T]):
                 yield self.draw(batch_size)
 
     def epoch_batches(
-        self, batch_size: int, *, stratified: bool = True
+        self,
+        batch_size: int,
+        *,
+        stratified: bool = True,
+        batch_count: int | None = None,
     ) -> Iterator[tuple[MixtureSample[T], ...]]:
-        """Yield batches until every capped source record is seen once."""
+        """Yield batches until every capped source record is seen once.
+
+        ``batch_count`` instead yields exactly that many batches, so later epochs can
+        keep the first epoch's length (sources keep cycling past a full pass).
+        """
         _validate_count(batch_size, "batch_size", positive=True)
+        if batch_count is not None:
+            _validate_count(batch_count, "batch_count")
         epoch_seed = self._source_random.randrange(1 << 63)  # nosec B311 - Reproducible seed.
         cursors = {
             source: _SourceCursor(records, stable_seed(epoch_seed, source))
             for source, records in self._pools.items()
         }
-        credit = {source: 0.0 for source in self.sources}
+        credit = np.zeros(len(self.sources), dtype=np.float64)
+        order_random = random.Random()  # nosec B311 - Reseeded per batch below.
         seen = {source: 0 for source in self.sources}
-        while not all(
-            seen[source] >= len(self._pools[source]) for source in self.sources
+        yielded = 0
+        while (
+            yielded < batch_count
+            if batch_count is not None
+            else not all(
+                seen[source] >= len(self._pools[source]) for source in self.sources
+            )
         ):
             if stratified:
                 sources = self._stratified_sources(batch_size, credit)
-                random.Random(epoch_seed).shuffle(sources)  # nosec B311 - Reproducible order.
+                # Reseeding equals a fresh random.Random(epoch_seed) per batch.
+                order_random.seed(epoch_seed)
+                order_random.shuffle(sources)
             else:
                 sources = self._source_random.choices(
                     self.sources, weights=self._probability_values, k=batch_size
@@ -130,29 +155,59 @@ class DeterministicMixtureSampler(Generic[T]):
             )
             for source in sources:
                 seen[source] += 1
+            yielded += 1
             yield batch
 
+    def _stratified_plan(
+        self, batch_size: int
+    ) -> tuple[tuple[str, ...], np.ndarray, int]:
+        """(fixed sources in source order, fractional credit per batch, slots left).
+
+        Constant for a sampler and batch size, so it is computed once.
+        """
+        plan = self._stratified_plans.get(batch_size)
+        if plan is None:
+            expected = [
+                self.probabilities[source] * batch_size for source in self.sources
+            ]
+            fixed = [math.floor(value) for value in expected]
+            plan = (
+                tuple(
+                    source
+                    for source, count in zip(self.sources, fixed, strict=True)
+                    for _ in range(count)
+                ),
+                np.array(
+                    [
+                        value - floor
+                        for value, floor in zip(expected, fixed, strict=True)
+                    ],
+                    dtype=np.float64,
+                ),
+                batch_size - sum(fixed),
+            )
+            self._stratified_plans[batch_size] = plan
+        return plan
+
     def _stratified_sources(
-        self, batch_size: int, fractional_credit: dict[str, float] | None = None
+        self, batch_size: int, fractional_credit: np.ndarray | None = None
     ) -> list[str]:
+        """Each source's whole expected slots, then the rest by largest credit.
+
+        ``fractional_credit`` (indexed like ``self.sources``) is updated in place.
+        Ties go to the earliest source; a source may take more than one of the
+        remaining slots.
+        """
         credit = (
             self._fractional_credit if fractional_credit is None else fractional_credit
         )
-        expected = {
-            source: self.probabilities[source] * batch_size for source in self.sources
-        }
-        fixed = {source: math.floor(value) for source, value in expected.items()}
-        remaining = batch_size - sum(fixed.values())
-        selected = [source for source in self.sources for _ in range(fixed[source])]
-        for source in self.sources:
-            credit[source] += expected[source] - fixed[source]
+        fixed, fraction, remaining = self._stratified_plan(batch_size)
+        selected = list(fixed)
+        credit += fraction
         for _ in range(remaining):
-            source = max(
-                enumerate(self.sources),
-                key=lambda item: (credit[item[1]], -item[0]),
-            )[1]
-            selected.append(source)
-            credit[source] -= 1.0
+            index = int(np.argmax(credit))
+            selected.append(self.sources[index])
+            credit[index] -= 1.0
         return selected
 
 
@@ -165,9 +220,19 @@ def prepare_source_pools(
     seed: int = 0,
 ) -> PreparedSourcePools:
     """Decontaminate records, then deterministically cap each nonempty source pool."""
-    retained, counts = decontaminate(
-        training, evaluation, exclude_families=exclude_families
-    )
+    if evaluation:
+        retained, counts = decontaminate(
+            training, evaluation, exclude_families=exclude_families
+        )
+    else:
+        # Nothing to decontaminate against: keep every record without fingerprinting states.
+        retained = list(training)
+        counts = {
+            "input": len(retained),
+            "state_overlap": 0,
+            "family_overlap": 0,
+            "kept": len(retained),
+        }
     grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for record in retained:
         grouped[record["source"]].append(record)
@@ -178,6 +243,9 @@ def prepare_source_pools(
         )
         for source, records in grouped.items()
     }
+    candidates = {
+        source: tuple(grouped[source]) for source, pool in pools.items() if pool
+    }
     records = {source: pool for source, pool in pools.items() if pool}
     if not records:
         raise ValueError("no nonempty source pools remain after decontamination")
@@ -185,7 +253,9 @@ def prepare_source_pools(
     result_counts = dict(counts)
     result_counts["capped"] = capped
     result_counts["sources"] = len(records)
-    return PreparedSourcePools(records=records, counts=result_counts)
+    return PreparedSourcePools(
+        records=records, counts=result_counts, candidates=candidates
+    )
 
 
 def source_counts(samples: Sequence[MixtureSample[object]]) -> Mapping[str, int]:
@@ -266,16 +336,34 @@ def _cap_for_source(cap: int | Mapping[str, int] | None, source: str) -> int | N
     return cap
 
 
+def cap_window(
+    count: int, cap: int | None, seed: int, source: str, epoch: int = 0
+) -> list[int]:
+    """Indices of the capped subset of a source's ``count`` records for ``epoch``.
+
+    One seeded shuffle of the source is cut into consecutive ``cap``-sized windows,
+    one per epoch (wrapping around), so successive epochs see different records
+    before any repeats. Epoch 0 is the first window. Uncapped sources keep every
+    record in input order.
+    """
+    _validate_count(epoch, "epoch")
+    if cap is None or count <= cap:
+        return list(range(count))
+    order = list(range(count))
+    random.Random(stable_seed(seed, source)).shuffle(order)  # nosec B311
+    start = (epoch * cap) % count
+    return [order[(start + offset) % count] for offset in range(cap)]
+
+
 def _cap_records(
     records: Sequence[Mapping[str, Any]], cap: int | None, seed: int
 ) -> tuple[Mapping[str, Any], ...]:
-    if cap is None or len(records) <= cap:
-        return tuple(records)
-    order = list(range(len(records)))
-    random.Random(stable_seed(seed, records[0]["source"])).shuffle(  # nosec B311
-        order
+    if not records:
+        return ()
+    return tuple(
+        records[index]
+        for index in cap_window(len(records), cap, seed, records[0]["source"])
     )
-    return tuple(records[index] for index in order[:cap])
 
 
 def _positive_finite(value: float, name: str) -> float:

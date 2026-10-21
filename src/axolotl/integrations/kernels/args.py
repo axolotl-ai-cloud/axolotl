@@ -54,6 +54,20 @@ class KernelsArgs(BaseModel):
     # False to force the chunked path (bounds the per-pass transient for large-expert MoEs / tiny GPUs).
     moe_bnb_fast: bool | None = None
 
+    # JSON file of Triton autotune winners (kernel, shape key, chosen tile). When it exists and
+    # was measured on this GPU model, the kernels' autotune caches are seeded from it before the
+    # first forward, so no training step benchmarks configs (and EP ranks stay in lockstep). It is
+    # rewritten at every checkpoint and at train end with the merged winners of all ranks.
+    autotune_cache_path: str | None = None
+    # Pin or narrow Triton autotune search spaces per kernel: a list of
+    # {kernel, gpu?, match?, configs} entries (see integrations/kernels/autotune_profiles.py).
+    # One config = no benchmarking for any unseen key; several = a short search.
+    autotune_profiles: list[dict] | None = None
+    # Narrow a kernel's autotune search for a new size bucket to configs within this many
+    # parameter changes of its winner for the same shape (1 = one of BLOCK_M/N/K, warps, stages;
+    # 2 = pairs). Only applies once that kernel has a measured or seeded winner.
+    autotune_neighborhood: int | None = None
+
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
     use_sonicmoe: bool | None = None
@@ -112,6 +126,17 @@ class KernelsArgs(BaseModel):
             )
             data["nvfp4_merge_aware_start_step"] = None
             return data
+        if data.get("use_sonicmoe") and data.get("quantize_moe_experts"):
+            raise ValueError(
+                "use_sonicmoe has no bitsandbytes expert path: quantize_moe_experts "
+                "(NF4/int8 experts) needs the ScatterMoE backend (use_scattermoe: true)."
+            )
+        if data.get("nvfp4_merge_aware") and data.get("use_scattermoe"):
+            raise ValueError(
+                "nvfp4_merge_aware requires the SonicMoE expert backend (use_sonicmoe: "
+                "true); ScatterMoE has no merge-aware forward and would silently train "
+                "ordinary LoRA that the NVFP4 merge then rounds away."
+            )
         if data.get("nvfp4_merge_aware") and data.get("adapter") not in (
             "lora",
             "multilora",

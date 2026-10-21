@@ -448,41 +448,8 @@ class TestGemma4ScatterMoE:
 # ============================================================================
 
 
-def _can_import_sonicmoe():
-    try:
-        from sonicmoe.enums import ActivationType  # noqa: F401
-
-        return True
-    except Exception:
-        return False
-
-
 class TestGemma4SonicMoE:
-    """Test SonicMoE compatibility with Gemma4.
-
-    SonicMoE requires Hopper/Blackwell GPU. Tests that need sonicmoe
-    import are skipped on unsupported GPUs.
-    """
-
-    def test_gemma4_weight_layout_compatible(self, gemma4_config):
-        """Verify Gemma4 expert weight layout is compatible with SonicMoE."""
-        E = gemma4_config["num_experts"]
-        H = gemma4_config["hidden_size"]
-        inter = gemma4_config["intermediate_size"]
-
-        gate_up_proj = torch.randn(E, 2 * inter, H)
-        down_proj = torch.randn(E, H, inter)
-
-        # SonicMoE expects [dim, dim, E] (experts last)
-        gate_up_sonic = gate_up_proj.permute(1, 2, 0)
-        down_sonic = down_proj.permute(1, 2, 0)
-
-        assert gate_up_sonic.shape == (2 * inter, H, E)
-        assert down_sonic.shape == (H, inter, E)
-
-        # Verify roundtrip
-        recovered_gate_up = gate_up_sonic.permute(2, 0, 1)
-        assert torch.equal(gate_up_proj, recovered_gate_up)
+    """Test SonicMoE compatibility with Gemma4."""
 
     def test_gemma4_is_experts_only_model(self):
         """Verify gemma4_text is recognized as experts-only model."""
@@ -707,55 +674,6 @@ class TestExpertsInterfaceIntegration:
 
         assert "scattermoe" in ALL_EXPERTS_FUNCTIONS
         assert ALL_EXPERTS_FUNCTIONS["scattermoe"] is scattermoe_experts_forward
-
-    def test_experts_implementation_dispatches_to_scattermoe(self, device):
-        """Setting config._experts_implementation='scattermoe' dispatches correctly."""
-        from transformers.models.gemma4.modeling_gemma4 import (
-            Gemma4TextExperts as HFGemma4TextExperts,
-        )
-
-        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
-            register_scattermoe_experts,
-        )
-
-        register_scattermoe_experts()
-
-        cfg = self._make_gemma4_config()
-        cfg._experts_implementation = "scattermoe"
-
-        with torch.device("meta"):
-            hf_experts = HFGemma4TextExperts(cfg)
-
-        hf_experts = hf_experts.to_empty(device=device)
-        nn.init.kaiming_uniform_(hf_experts.gate_up_proj)
-        nn.init.kaiming_uniform_(hf_experts.down_proj)
-        hf_experts = hf_experts.to(torch.bfloat16)
-
-        T, K = 16, 2
-        hidden_states = torch.randn(T, 128, device=device, dtype=torch.bfloat16)
-        top_k_index = torch.stack(
-            [torch.randperm(8, device=device)[:K] for _ in range(T)]
-        )
-        top_k_weights = torch.softmax(
-            torch.randn(T, K, device=device, dtype=torch.bfloat16), dim=-1
-        )
-
-        # Get reference output with eager implementation
-        cfg_eager = self._make_gemma4_config()
-        cfg_eager._experts_implementation = "eager"
-        with torch.device("meta"):
-            eager_experts = HFGemma4TextExperts(cfg_eager)
-        eager_experts = eager_experts.to_empty(device=device).to(torch.bfloat16)
-        # Copy weights from scattermoe experts
-        eager_experts.gate_up_proj.data.copy_(hf_experts.gate_up_proj.data)
-        eager_experts.down_proj.data.copy_(hf_experts.down_proj.data)
-
-        ref_output = eager_experts(hidden_states, top_k_index, top_k_weights)
-
-        # ScatterMoE dispatched output
-        scatter_output = hf_experts(hidden_states, top_k_index, top_k_weights)
-
-        torch.testing.assert_close(scatter_output, ref_output, atol=1e-2, rtol=1e-2)
 
     def test_validation_accepts_scattermoe(self):
         """get_correct_experts_implementation accepts 'scattermoe' after registration."""

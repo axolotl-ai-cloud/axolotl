@@ -1228,95 +1228,33 @@ class TestValidation(BaseValidation):
             assert new_cfg["dpo_beta"] is None
             assert len(self._caplog.records) == 1
 
-    def test_dpo_liger_kernel_rejects_ipo(self, minimal_cfg):
+    def test_dpo_liger_kernel_keeps_every_loss_type(self, minimal_cfg):
+        """TRL's liger DPO path only swaps in the chunked log-prob kernel; the loss list, ipo
+        included, goes through the regular dpo_loss unchanged."""
         cfg = (
             DictDefault(
                 {
                     "rl": "dpo",
                     "dpo_use_liger_kernel": True,
-                    "dpo_loss_type": ["ipo"],
+                    "dpo_loss_type": ["apo_zero", "hinge", "ipo"],
+                    "dpo_loss_weights": [1.0, 0.5, 0.5],
                 }
             )
             | minimal_cfg
         )
-
-        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
-            validate_config(cfg)
-
-    def test_dpo_liger_kernel_rejects_rl_ipo(self, minimal_cfg):
-        cfg = DictDefault({"rl": "ipo", "dpo_use_liger_kernel": True}) | minimal_cfg
-
-        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
-            validate_config(cfg)
-
-    def test_dpo_liger_kernel_allows_ignored_ipo_entry(self, minimal_cfg):
-        cfg = (
-            DictDefault(
-                {
-                    "rl": "dpo",
-                    "dpo_use_liger_kernel": True,
-                    "dpo_loss_type": ["sigmoid", "ipo"],
-                }
-            )
-            | minimal_cfg
-        )
-
         with self._caplog.at_level("WARNING"):
             validate_config(cfg)
-            assert any(
-                "only the first entry" in record.message
-                for record in self._caplog.records
+            assert not [
+                r for r in self._caplog.records if "liger" in r.getMessage().lower()
+            ]
+
+    def test_dpo_ld_alpha_range(self, minimal_cfg):
+        cfg = DictDefault({"rl": "dpo", "dpo_ld_alpha": 0.3}) | minimal_cfg
+        assert validate_config(cfg).dpo_ld_alpha == 0.3
+        with pytest.raises(ValueError):
+            validate_config(
+                DictDefault({"rl": "dpo", "dpo_ld_alpha": 1.5}) | minimal_cfg
             )
-
-    def test_dpo_liger_kernel_warns_on_multiple_loss_types(self, minimal_cfg):
-        cfg = (
-            DictDefault(
-                {
-                    "rl": "dpo",
-                    "dpo_use_liger_kernel": True,
-                    "dpo_loss_type": ["hinge", "sigmoid"],
-                }
-            )
-            | minimal_cfg
-        )
-
-        with self._caplog.at_level("WARNING"):
-            validate_config(cfg)
-            assert any(
-                "only the first entry" in record.message
-                for record in self._caplog.records
-            )
-
-    def test_dpo_liger_kernel_rejects_ipo_in_coerced_set(self, minimal_cfg):
-        cfg = (
-            DictDefault(
-                {
-                    "rl": "dpo",
-                    "dpo_use_liger_kernel": True,
-                    "dpo_loss_type": {"ipo"},
-                }
-            )
-            | minimal_cfg
-        )
-
-        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
-            validate_config(cfg)
-
-    @pytest.mark.parametrize("truthy", ["true", 1])
-    def test_dpo_liger_kernel_coerced_true_still_guards_ipo(self, minimal_cfg, truthy):
-        cfg = (
-            DictDefault(
-                {
-                    "rl": "dpo",
-                    "dpo_use_liger_kernel": truthy,
-                    "dpo_loss_type": ["ipo"],
-                }
-            )
-            | minimal_cfg
-        )
-
-        with pytest.raises(ValueError, match=r"does not support the `ipo` loss type"):
-            validate_config(cfg)
 
     def test_dpo_liger_kernel_quoted_false_not_treated_as_enabled(self, minimal_cfg):
         cfg = (

@@ -37,8 +37,15 @@ LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
-    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.0-rc0"`'
+    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.1"`'
 )
+
+# logit transforms the generic (Llama) CCE forward drops, mapped to their no-op value
+_LOGIT_TRANSFORM_IDENTITY = {
+    "final_logit_softcapping": None,
+    "logit_scale": 1.0,
+    "logits_scaling": 1.0,
+}
 
 
 class CutCrossEntropyPlugin(BasePlugin):
@@ -98,6 +105,7 @@ class CutCrossEntropyPlugin(BasePlugin):
             if getattr(cfg, "adapter", None) == "multilora":
                 LOG.info("Multi-LoRA will apply Cut Cross Entropy per adapter")
                 return
+            self._check_generic_patch_applies(cfg)
             self.patch_llama_like(cfg.model_config_type)
 
             from cut_cross_entropy.transformers.patch import cce_patch
@@ -120,6 +128,32 @@ class CutCrossEntropyPlugin(BasePlugin):
 
             # The patch checks model_type internally
             cce_patch(cfg.model_config_type, **patch_kwargs)
+
+    def _check_generic_patch_applies(self, cfg) -> None:
+        """Refuse the generic patch for models whose logit transform it would drop."""
+        from cut_cross_entropy.transformers.patch import PATCH_FNS
+
+        if cfg.model_config_type in PATCH_FNS:
+            return
+
+        from axolotl.loaders.utils import load_model_config
+
+        model_config = load_model_config(cfg)
+        if hasattr(model_config, "get_text_config"):
+            model_config = model_config.get_text_config()
+        transforms = {
+            attr: value
+            for attr, identity in _LOGIT_TRANSFORM_IDENTITY.items()
+            if (value := getattr(model_config, attr, None)) not in (None, identity)
+        }
+        if transforms:
+            raise ValueError(
+                f"The installed cut_cross_entropy has no patch for model type "
+                f"`{cfg.model_config_type}`, and the generic patch would drop its logit "
+                f"transform ({transforms}), training on the wrong loss. Set "
+                "`cut_cross_entropy: false`, or, if the installed fork is out of date, "
+                "update it. " + _CCE_INSTALL_MESSAGE
+            )
 
     def _resolve_c_grad_chunk_size(self, cfg) -> int:
         chunk = cfg.cut_cross_entropy_c_grad_chunk_size

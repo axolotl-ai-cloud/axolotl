@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import copy
+import gc
 import json
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
+
+Fits = Callable[[Mapping[str, Mapping[str, Any]]], bool]
+# Optional ``fits.many``: ``fits`` of each mapping in a batch, None where it raises.
+FitsMany = Callable[[Sequence[Mapping[str, Mapping[str, Any]]]], Sequence[bool | None]]
 
 
 def group_records(
-    records: Sequence[Mapping[str, Any]], *, max_questions: int
+    records: Sequence[Mapping[str, Any]],
+    *,
+    max_questions: int,
+    fits: Fits | None = None,
 ) -> list[dict[str, Any]]:
     """Combine only records with identical serving context and split without loss.
 
@@ -20,19 +28,205 @@ def group_records(
     as a shallow copy (nested ``questions``/``labels``/metadata are shared with
     the input, so do not mutate them in place); merged or split canvases are
     built from deep copies.
+
+    ``fits`` (optional) takes a canvas's ``{question id: question}`` mapping and
+    says whether its answer template fits one canvas. With it, a canvas closes
+    when it reaches ``max_questions`` or when the next question would not fit,
+    so groups that would overflow are split instead; a single question that does
+    not fit alone still gets its own canvas (and is dropped at canvas build).
+    Without it, grouping counts questions only (the historical behaviour).
+    When ``fits`` has a ``many`` method (a batched ``fits`` returning None where
+    ``fits`` would raise), the canvases ``fits`` would be asked about are measured
+    in batches up front: every lone record in one call, then the greedy packing
+    of all other groups in rounds (one call per round, each round the next
+    canvas of every group). The output is the same as calling ``fits`` on each.
+    The cyclic garbage collector is paused while grouping runs.
     """
     if max_questions <= 0:
         raise ValueError("max_questions must be positive")
+    # Grouping allocates millions of small acyclic containers next to every
+    # loaded record; the cyclic collector's full passes over that heap cost more
+    # than the grouping itself, and it has nothing to collect here.
+    collecting = gc.isenabled()
+    gc.disable()
+    try:
+        return _group_records(records, max_questions, fits)
+    finally:
+        if collecting:
+            gc.enable()
+
+
+def _group_records(
+    records: Sequence[Mapping[str, Any]],
+    max_questions: int,
+    fits: Fits | None,
+) -> list[dict[str, Any]]:
     # Plain dicts keep insertion order; the key holds the original state and
     # instruction strings by reference, so grouping costs no extra copy of the
     # state text and dict equality (not the hash alone) decides every merge.
     groups: dict[_GroupKey, list[Mapping[str, Any]]] = {}
     for record in records:
         groups.setdefault(_key(record), []).append(record)
+    group_list = list(groups.values())
+    many: FitsMany | None = getattr(fits, "many", None) if fits is not None else None
+    alone = _alone_fits(group_list, max_questions, many) if many else {}
+    merges = _merge_fits(group_list, max_questions, many, alone) if many else {}
     result: list[dict[str, Any]] = []
-    for group in groups.values():
-        result.extend(_split_group(group, max_questions))
+    for index, group in enumerate(group_list):
+        result.extend(
+            _split_group(
+                group, max_questions, fits, alone.get(index), merges.get(index)
+            )
+        )
     return result
+
+
+def _alone_fits(
+    groups: Iterable[Sequence[Mapping[str, Any]]],
+    max_questions: int,
+    many: FitsMany,
+) -> dict[int, bool]:
+    """``fits`` of every record alone in its group that ``_split_group`` measures whole.
+
+    Keyed by group position. Covers exactly the records that pass the checks
+    ``_split_group`` makes before its whole-record ``fits`` call; a record whose
+    batched result is None is left out, so ``_split_group`` calls ``fits`` on it
+    (and raises there, in input order).
+    """
+    positions: list[int] = []
+    batch: list[Mapping[str, Mapping[str, Any]]] = []
+    for position, group in enumerate(groups):
+        if len(group) != 1:
+            continue
+        questions = group[0].get("questions")
+        labels = group[0].get("labels")
+        if (
+            isinstance(questions, Mapping)
+            and isinstance(labels, Mapping)
+            and questions
+            and set(questions) == set(labels)
+            and len(questions) <= max_questions
+        ):
+            positions.append(position)
+            batch.append(questions)
+    if not batch:
+        return {}
+    results = many(batch)
+    if len(results) != len(batch):
+        raise ValueError("fits.many must return one result per canvas")
+    return {
+        position: fit
+        for position, fit in zip(positions, results, strict=True)
+        if fit is not None
+    }
+
+
+# A planned packing decision: (stream index of the canvas's first question,
+# stream index of the question to add) -> (fits result, output id it was added as).
+MergePlan = dict[tuple[int, int], tuple[bool, str]]
+
+
+def _merge_fits(
+    groups: Sequence[Sequence[Mapping[str, Any]]],
+    max_questions: int,
+    many: FitsMany,
+    alone: Mapping[int, bool],
+) -> dict[int, MergePlan]:
+    """The ``fits`` answers ``_split_group``'s packing loop asks for, batched.
+
+    Replays the loop's greedy packing over each group's question stream (records
+    in order, questions in order): a canvas starting at stream index ``s`` asks
+    ``fits`` about its questions ``s..k`` for each next question ``k`` while it
+    holds fewer than ``max_questions``, with the output ids the loop assigns.
+    All groups' prefixes of their current canvas go into one ``many`` call per
+    round; a canvas ends at the first prefix that does not fit (the next canvas
+    starts there) or at ``max_questions``. Prefixes past the end of a canvas are
+    measured but never used. A group stops being planned at a None result, and
+    groups with a record the loop would reject are not planned, so the loop
+    calls ``fits`` itself wherever the plan has no answer.
+    """
+    streams: dict[int, list[tuple[str, Mapping[str, Any]]]] = {}
+    for position, group in enumerate(groups):
+        if len(group) == 1:
+            questions = group[0].get("questions")
+            whole = alone.get(position)
+            if not isinstance(questions, Mapping) or not (
+                whole is False or (whole is None and len(questions) > max_questions)
+            ):
+                continue
+        stream = _question_stream(group)
+        if stream is not None and len(stream) > 1:
+            streams[position] = stream
+    plans: dict[int, MergePlan] = {position: {} for position in streams}
+    starts = dict.fromkeys(streams, 0)
+    while starts:
+        batch: list[dict[str, Mapping[str, Any]]] = []
+        asked: list[tuple[int, int, int, str]] = []
+        for position, start in starts.items():
+            stream = streams[position]
+            used: set[str] = set()
+            canvas: dict[str, Mapping[str, Any]] = {}
+            for index in range(start, min(start + max_questions, len(stream))):
+                question_id, question = stream[index]
+                output_id = _unique_id(question_id, used)
+                used.add(output_id)
+                canvas[output_id] = question
+                if index > start:
+                    batch.append(dict(canvas))
+                    asked.append((position, start, index, output_id))
+        results = many(batch) if batch else []
+        if len(results) != len(batch):
+            raise ValueError("fits.many must return one result per canvas")
+        next_starts: dict[int, int] = {}
+        stopped: set[int] = set()
+        for (position, start, index, output_id), fit in zip(
+            asked, results, strict=True
+        ):
+            if position in stopped:
+                continue
+            if fit is None:
+                stopped.add(position)
+                continue
+            plans[position][(start, index)] = (fit, output_id)
+            if not fit:
+                next_starts[position] = index
+                stopped.add(position)
+        for position, start in starts.items():
+            full = start + max_questions
+            if position not in stopped and full < len(streams[position]):
+                next_starts[position] = full
+        starts = next_starts
+    return {position: plan for position, plan in plans.items() if plan}
+
+
+def _question_stream(
+    group: Sequence[Mapping[str, Any]],
+) -> list[tuple[str, Mapping[str, Any]]] | None:
+    """(question id, question) in packing order, or None if the loop would raise."""
+    stream: list[tuple[str, Mapping[str, Any]]] = []
+    seen_ids: set[str] = set()
+    for position, record in enumerate(group):
+        questions = record.get("questions")
+        labels = record.get("labels")
+        record_id = record.get("id")
+        if record_id is None:
+            record_id = f"{record.get('group')}#record{position}"
+        elif not isinstance(record_id, str) or not record_id:
+            return None
+        if (
+            not isinstance(questions, Mapping)
+            or not isinstance(labels, Mapping)
+            or not questions
+            or record_id in seen_ids
+            or set(questions) != set(labels)
+        ):
+            return None
+        seen_ids.add(record_id)
+        for question_id, question in questions.items():
+            if not isinstance(question_id, str) or not question_id:
+                return None
+            stream.append((question_id, question))
+    return stream
 
 
 _GroupKey = tuple[str, str, str, str, str, str]
@@ -95,8 +289,17 @@ def _copy(value: Any) -> Any:
 
 
 def _split_group(
-    records: Sequence[Mapping[str, Any]], max_questions: int
+    records: Sequence[Mapping[str, Any]],
+    max_questions: int,
+    fits: Fits | None = None,
+    alone_fits: bool | None = None,
+    plan: MergePlan | None = None,
 ) -> list[dict[str, Any]]:
+    """Canvases of one group.
+
+    ``alone_fits``: a lone record's precomputed ``fits``; ``plan``: precomputed
+    packing answers from ``_merge_fits``, used only where the output id agrees.
+    """
     if len(records) == 1:
         record = records[0]
         questions = record.get("questions")
@@ -107,7 +310,9 @@ def _split_group(
             raise ValueError("decision record requires at least one question")
         if set(questions) != set(labels):
             raise ValueError("decision record question and label ids differ")
-        if len(questions) <= max_questions:
+        if len(questions) <= max_questions and (
+            fits is None or (fits(questions) if alone_fits is None else alone_fits)
+        ):
             # Unchanged records are returned as a new top-level dict that shares
             # its nested values with the input; deep-copying every record
             # dominated preprocessing time and doubled label memory, and the
@@ -117,6 +322,8 @@ def _split_group(
     current: dict[str, Any] | None = None
     used: set[str] = set()
     seen_ids: set[str] = set()
+    stream_index = -1  # position of the question in the group's packing order
+    canvas_start = 0  # stream index of the current canvas's first question
     for position, record in enumerate(records):
         questions = record.get("questions")
         labels = record.get("labels")
@@ -133,11 +340,29 @@ def _split_group(
         for question_id, question in questions.items():
             if not isinstance(question_id, str) or not question_id:
                 raise ValueError("decision question ids must be nonempty strings")
+            stream_index += 1
+            output_id = None
+            if current is not None and fits is not None:
+                if len(current["questions"]) < max_questions:
+                    output_id = _unique_id(question_id, used)
+                    planned = (
+                        None if plan is None else plan.get((canvas_start, stream_index))
+                    )
+                    if planned is not None and planned[1] == output_id:
+                        fit = planned[0]
+                    else:
+                        fit = fits({**current["questions"], output_id: question})
+                    if not fit:
+                        output_id = None
+                        current = None
             if current is None or len(current["questions"]) == max_questions:
                 current = _new_chunk(records[0], len(chunks))
                 chunks.append(current)
                 used = set()
-            output_id = _unique_id(question_id, used)
+                output_id = None
+                canvas_start = stream_index
+            if output_id is None:
+                output_id = _unique_id(question_id, used)
             used.add(output_id)
             current["questions"][output_id] = _copy(question)
             current["labels"][output_id] = _copy(labels[question_id])

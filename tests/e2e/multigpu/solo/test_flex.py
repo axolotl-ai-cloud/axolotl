@@ -13,7 +13,7 @@ from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_2_6_0
+from tests.e2e.utils import check_tensorboard
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -29,7 +29,6 @@ class TestPackedFlex:
     Test case for Packed training of llama models
     """
 
-    @require_torch_2_6_0
     def test_loss_llama(self, temp_dir):
         cfg = DictDefault(
             {

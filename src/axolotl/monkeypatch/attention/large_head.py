@@ -137,3 +137,87 @@ def unpatch_sdpa_large_head() -> None:
     original = getattr(current, _SDPA_ORIG_ATTR, None)
     if original is not None:
         ALL_ATTENTION_FUNCTIONS.register("sdpa", original)
+
+
+_FLEX_ORIG_ATTR = "_axolotl_large_head_flex_original"
+
+
+def segment_kernel_enabled() -> bool:
+    """Whether packed FlexAttention masks should carry segment metadata for the kernel."""
+    return _POLICY in ("auto", "triton_flash")
+
+
+def flash_d512_segment_route(module, query, key, value, attention_mask, **kwargs):
+    """Run a head_dim>256 FlexAttention call through the segment-masked Triton kernel when its
+    BlockMask carries :data:`SEGMENTS_ATTR` metadata; return None to fall back to flex.
+
+    Inputs are ``[B, H, S, D]``; on success returns ``(attn_output [B, M, Hq, D], None)``."""
+    import torch
+
+    from axolotl.monkeypatch.attention.segment_mask import SEGMENTS_ATTR
+
+    meta = getattr(attention_mask, SEGMENTS_ATTR, None)
+    head_dim = query.shape[-1]
+    if (
+        meta is None
+        or not segment_kernel_enabled()
+        or head_dim <= _LARGE_HEAD_MIN_DIM
+        or head_dim & (head_dim - 1)
+        or not query.is_cuda
+        # 16-bit only: fp32 tiles exceed sm120's shared memory at head_dim 512.
+        or query.dtype not in (torch.bfloat16, torch.float16)
+        or key.dtype != query.dtype
+        or value.dtype != query.dtype
+        or kwargs.get("softcap") is not None
+        or kwargs.get("s_aux") is not None
+        or kwargs.get("position_bias") is not None
+        or kwargs.get("dropout", 0.0)
+        or meta.q_ranges.shape[:2] != (query.shape[0], query.shape[2])
+        or meta.kv_valid.shape != (key.shape[0], key.shape[2])
+        or query.shape[1] % key.shape[1]
+    ):
+        return None
+    from axolotl.monkeypatch.attention.flash_attn_d512_segments import (
+        flash_d512_segments,
+    )
+
+    out = flash_d512_segments(query, key, value, meta, kwargs.get("scaling"))
+    return out.transpose(1, 2), None
+
+
+def patch_flex_large_head() -> bool:
+    """Wrap the ``flex_attention`` interface so calls whose BlockMask carries segment metadata
+    (packed encoder/canvas global layers) run the Triton kernel (idempotent). Masks without
+    metadata, and every other layer, go to stock FlexAttention."""
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    current = ALL_ATTENTION_FUNCTIONS["flex_attention"]
+    if getattr(current, _FLEX_ORIG_ATTR, None) is not None:
+        return True
+    original = current
+
+    def flex_large_head_forward(module, query, key, value, attention_mask, **kwargs):
+        routed = flash_d512_segment_route(
+            module, query, key, value, attention_mask, **kwargs
+        )
+        if routed is not None:
+            return routed
+        return original(module, query, key, value, attention_mask, **kwargs)
+
+    setattr(flex_large_head_forward, _FLEX_ORIG_ATTR, original)
+    ALL_ATTENTION_FUNCTIONS.register("flex_attention", flex_large_head_forward)
+    LOG.info(
+        "large_head_attention: wrapped flex_attention to route segment-masked head_dim>256 "
+        "layers through Triton flash (%s)",
+        get_large_head_policy(),
+    )
+    return True
+
+
+def unpatch_flex_large_head() -> None:
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    current = ALL_ATTENTION_FUNCTIONS["flex_attention"]
+    original = getattr(current, _FLEX_ORIG_ATTR, None)
+    if original is not None:
+        ALL_ATTENTION_FUNCTIONS.register("flex_attention", original)

@@ -21,7 +21,7 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import require_torch_2_7_0, requires_flash_attn
+from tests.e2e.utils import requires_flash_attn
 
 pytestmark = requires_flash_attn
 
@@ -102,7 +102,6 @@ def _run_training(temp_dir: str, cfg: DictDefault, dump_path: Path) -> None:
 class TestFSDP2Fp32Norms:
     """Verifies the fp32_norms FSDP2 path end-to-end across 2 GPUs."""
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "cpu_ram_efficient_loading",
         [False, True],

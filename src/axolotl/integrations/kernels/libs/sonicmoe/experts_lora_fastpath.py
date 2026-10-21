@@ -92,6 +92,8 @@ def patch_paramwrapper_sonicmoe_fastpath() -> None:
             lora[name] = (lora_A, lora_B, scaling)
 
         base._sonicmoe_lora = lora
+        # the EP delegate needs each wrapper for the true LoRA rank and its sharding flag
+        base._sonicmoe_lora_wrappers = wrappers
         # Loading can create multiple ExpertsInterface registries; the experts forward binds one as
         # a closure default that may differ from the one register_sonicmoe_experts() populated, so
         # register into the one THIS module dispatches through.
@@ -112,6 +114,7 @@ def patch_paramwrapper_sonicmoe_fastpath() -> None:
             return base(x, *args, **kwargs)
         finally:
             base._sonicmoe_lora = None
+            base._sonicmoe_lora_wrappers = None
 
     forward._sonicmoe_fastpath = True  # type: ignore[attr-defined]
     ParamWrapper.forward = forward

@@ -1079,6 +1079,8 @@ class AxolotlTrainer(
         train_eval = "train" if "loss" in logs else "eval"
         metric_ndigits = int(os.getenv("AXOLOTL_METRIC_NDIGITS", "5"))
 
+        eval_prefix = getattr(self, "_eval_metric_key_prefix", None) or "eval"
+
         for key, metric_data in self._stored_metrics[train_eval].items():
             values = torch.tensor(metric_data["values"])  # type: ignore[arg-type]
             reduction_type = metric_data["reduction"]
@@ -1088,6 +1090,8 @@ class AxolotlTrainer(
                 raise NotImplementedError(
                     "Metric reduction must be one of [mean, min, max, sum]"
                 )
+            if train_eval == "eval" and key.startswith("eval_"):
+                key = eval_prefix + key[len("eval") :]
             logs[key] = round(fn(values).item(), metric_ndigits)
 
         if self.reports_token_perplexity and "loss" in logs:
@@ -1095,11 +1099,13 @@ class AxolotlTrainer(
                 logs["ppl"] = round(math.exp(logs["loss"]), metric_ndigits)
             except OverflowError:
                 logs["ppl"] = float("inf")
-        if self.reports_token_perplexity and "eval_loss" in logs:
+        if self.reports_token_perplexity and f"{eval_prefix}_loss" in logs:
             try:
-                logs["eval_ppl"] = round(math.exp(logs["eval_loss"]), metric_ndigits)
+                logs[f"{eval_prefix}_ppl"] = round(
+                    math.exp(logs[f"{eval_prefix}_loss"]), metric_ndigits
+                )
             except OverflowError:
-                logs["eval_ppl"] = float("inf")
+                logs[f"{eval_prefix}_ppl"] = float("inf")
 
         if is_main_process():
             # Add memory usage

@@ -35,6 +35,7 @@ class ContextParallelPlugin(BasePlugin):
         self._gather_outputs = False
         self._restore_trainer = None
         self._restore_recurrent = None
+        self._restore_collator = None
         self._original_caches = []
         self._attention_configs = []
 
@@ -258,8 +259,7 @@ class ContextParallelPlugin(BasePlugin):
                             )
                 model.set_attn_implementation(self._runtime.attn_implementation)
 
-        # The mamba/SSM CP corrections and the GRPO trainer resolve the CP group
-        # through this registry.
+        # ``is_cp_active`` and the GRPO trainer resolve the CP group through this registry.
         from axolotl.monkeypatch.ring_attn import set_ring_attn_group
 
         set_ring_attn_group(self._runtime.cp_group)
@@ -298,6 +298,23 @@ class ContextParallelPlugin(BasePlugin):
             trainer, gather_outputs=self._gather_outputs
         )
         self._install_hooks(models, cfg)
+        if self._shards_in_collator(cfg, cp):
+            from .collator import attach_collator_sharding
+
+            self._restore_collator = attach_collator_sharding(trainer, self._runtime)
+
+    @staticmethod
+    def _shards_in_collator(cfg, cp) -> bool:
+        from .collator import dispatches_batches
+
+        if not getattr(cp, "shard_in_collator", True):
+            return False
+        if dispatches_batches(cfg):
+            LOG.info(
+                "accelerate dispatches batches for this run; sharding in the forward pre-hook"
+            )
+            return False
+        return True
 
     @staticmethod
     def _glm_dsa_requires_contiguous(cfg) -> bool:
@@ -318,6 +335,9 @@ class ContextParallelPlugin(BasePlugin):
         if self._restore_recurrent is not None:
             self._restore_recurrent()
             self._restore_recurrent = None
+        if self._restore_collator is not None:
+            self._restore_collator()
+            self._restore_collator = None
         if self._restore_trainer is not None:
             self._restore_trainer()
             self._restore_trainer = None
