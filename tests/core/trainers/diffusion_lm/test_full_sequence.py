@@ -1371,6 +1371,7 @@ def test_shared_unroll_retains_only_final_step_by_default_and_updates_selected_t
 ):
     class Runner:
         _run_native_unroll = AxolotlDiffusionTrainer._run_native_unroll
+        _native_unroll_steps = AxolotlDiffusionTrainer._native_unroll_steps
 
         @staticmethod
         def _native_unroll_settings():
@@ -1519,6 +1520,7 @@ def test_full_sequence_unroll_preserves_clean_targets_and_pinned_state(
 def test_k2_self_conditioning_uses_recurrent_eligibility_not_k1_gate(k1_gate):
     class Runner:
         _run_native_unroll = AxolotlDiffusionTrainer._run_native_unroll
+        _native_unroll_steps = AxolotlDiffusionTrainer._native_unroll_steps
 
         @staticmethod
         def _native_unroll_settings():

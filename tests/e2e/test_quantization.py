@@ -29,7 +29,6 @@ from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig
 
 from tests.e2e.utils import (
-    require_torch_2_8_0,
     requires_cuda_ge_8_9,
     requires_sm_ge_100,
 )
@@ -127,14 +126,12 @@ class TestQuantization:
         ptq_config_test_cases,
     )
     @requires_cuda_ge_8_9
-    @require_torch_2_8_0
     def test_get_ptq_config(
         self, weight_dtype, activation_dtype, group_size, expected_type
     ):
         config = get_quantization_config(weight_dtype, activation_dtype, group_size)
         assert isinstance(config, expected_type)
 
-    @require_torch_2_8_0
     @requires_sm_ge_100
     def test_get_ptq_config_mxfp4(self):
         from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
@@ -144,7 +141,6 @@ class TestQuantization:
         assert config.weight_dtype == torch.float4_e2m1fn_x2
         assert config.block_size == 32
 
-    @require_torch_2_8_0
     @requires_sm_ge_100
     def test_get_ptq_config_mxfp4_invalid_group_size(self):
         with pytest.raises(
@@ -153,7 +149,6 @@ class TestQuantization:
             get_quantization_config(TorchAOQuantDType.mxfp4, None, 16)
 
     @requires_cuda_ge_8_9
-    @require_torch_2_8_0
     def test_get_ptq_config_int4_weight_only(self):
         from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
@@ -165,7 +160,6 @@ class TestQuantization:
         ptq_test_cases,
     )
     @requires_cuda_ge_8_9
-    @require_torch_2_8_0
     def test_quantize_model_for_ptq(
         self,
         model,
@@ -208,7 +202,6 @@ class TestQuantization:
             for child in _linears(model):
                 assert isinstance(child.weight, expected_tensor_class)
 
-    @require_torch_2_8_0
     @requires_sm_ge_100
     def test_quantize_model_for_ptq_fp8(
         self,
@@ -231,7 +224,6 @@ class TestQuantization:
                 child.weight.act_quant_kwargs, QuantizeTensorToFloat8Kwargs
             )
 
-    @require_torch_2_8_0
     @requires_sm_ge_100
     def test_quantize_model_for_ptq_nvfp4(
         self,
@@ -265,7 +257,6 @@ class TestQuantization:
             (TorchAOQuantDType.int4, TorchAOQuantDType.float8_e4m3fn, None, True),
         ],
     )
-    @require_torch_2_8_0
     @requires_cuda_ge_8_9
     def test_prepare_model_for_qat(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
@@ -305,7 +296,6 @@ class TestQuantization:
             (TorchAOQuantDType.mxfp4, None, 32, False),
         ],
     )
-    @require_torch_2_8_0
     @requires_sm_ge_100
     def test_prepare_model_for_qat_mxfp4(
         self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
@@ -328,7 +318,6 @@ class TestQuantization:
             assert isinstance(child, MXFakeQuantizedLinear)
             assert hasattr(child, "weight_config")
 
-    @require_torch_2_8_0
     @requires_cuda_ge_8_9
     def test_convert_qat_model(self, model):
         config = QATConfig(
@@ -391,7 +380,6 @@ class TestMXQuantizeSaveLoad:
         model = AutoModelForCausalLM.from_config(config).to(torch.bfloat16)
         return model
 
-    @require_torch_2_8_0
     def test_mxfp4_quantize_save_pretrained(self, tmp_path):
         """quantize_model(mxfp4) -> save_pretrained -> from_pretrained round-trip."""
         from torchao.prototype.mx_formats.mx_tensor import MXTensor
@@ -428,14 +416,12 @@ class TestMXQuantizeSaveLoad:
             f"extra={loaded_keys - original_keys}"
         )
 
-    @require_torch_2_8_0
     def test_mxfp4_is_mx_flag_set(self):
         """quantize_model sets _is_mx_quantized for MX configs."""
         model = self._make_tiny_model()
         quantize_model(model, TorchAOQuantDType.mxfp4, 32)
         assert getattr(model, "_is_mx_quantized", False)
 
-    @require_torch_2_8_0
     @requires_cuda_ge_8_9
     def test_non_mx_uses_torchao_quantizer(self):
         """Non-MX quantization attaches TorchAoHfQuantizer, not _is_mx_quantized."""
@@ -447,7 +433,6 @@ class TestMXQuantizeSaveLoad:
         assert not getattr(model, "_is_mx_quantized", False)
         assert hasattr(model, "hf_quantizer")
 
-    @require_torch_2_8_0
     def test_mxfp4_qat_then_ptq_save_pretrained(self, tmp_path):
         """Full QAT -> convert -> PTQ -> save_pretrained -> from_pretrained."""
         from torchao.prototype.mx_formats.mx_tensor import MXTensor
@@ -481,7 +466,6 @@ class TestMXQuantizeSaveLoad:
         loaded_keys = set(loaded.state_dict().keys())
         assert original_keys == loaded_keys
 
-    @require_torch_2_8_0
     def test_mxfp4_cross_process_load(self, tmp_path):
         """A saved MX checkpoint loads in a fresh interpreter that never quantized.
 
@@ -545,7 +529,6 @@ class TestQuantizationCallback:
             global_step=0,
         )
 
-    @require_torch_2_8_0
     def test_qat_callback_fake_quant_after_n_steps(self, model, trainer_state):
         cfg = QATConfig(
             weight_dtype="int4",
@@ -604,7 +587,6 @@ class TestQuantizationCallback:
             assert model.model.embed_tokens.weight_fake_quantizer.enabled
             assert model.lm_head.weight_fake_quantizer.enabled
 
-    @require_torch_2_8_0
     def test_qat_callback_fake_quant_after_n_steps_is_none(self, model, trainer_state):
         cfg = QATConfig(
             weight_dtype="int4",

@@ -191,9 +191,6 @@ def test_dtype_is_preserved(dtype):
     assert model.p.data_ptr() != 0
 
 
-@pytest.mark.skipif(
-    not hasattr(torch, "float4_e2m1fn_x2"), reason="torch build lacks float4_e2m1fn_x2"
-)
 def test_fp4_dtype_falls_back_to_empty_like():
     model = torch.nn.Module()
     model.p = torch.nn.Parameter(

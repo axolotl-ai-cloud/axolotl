@@ -488,3 +488,66 @@ def test_balanced_random_sampler_ignores_rank_local_rng():
     assert Counter(
         i for shard in shards for batch in shard for bin_ in batch for i in bin_
     ) == Counter(range(128))
+
+
+def test_label_metrics_log_summary_and_debug_stages(caplog):
+    sampler = make_sampler(
+        [8] * 16,
+        [7, 1] * 8,
+        dp_count=2,
+        batches_per_optimizer_step=4,
+        label_balance_window_optim_steps=2,
+    )
+    with caplog.at_level("DEBUG", logger="axolotl.utils.samplers.multipack"):
+        sampler.generate_batches(set_stats=True)
+        sampler.generate_batches(set_stats=True)
+    info = [
+        r.message
+        for r in caplog.records
+        if r.levelname == "INFO" and "Packed batch balancing:" in r.message
+    ]
+    assert len(info) == 1
+    assert "2 DP ranks x GAS 2; refinement window 2 steps" in info[0]
+    assert "16 microbatches (16 packed rows) -> 4 complete optimizer steps" in info[0]
+    assert "Mean unpadded row length: 8 / 8 (100.0%)" in info[0]
+    assert "Before rank sharding/truncation" in info[0]
+    assert "Per global optimizer step" in info[0]
+    assert "before_accumulation" not in info[0]
+    assert "excluded" not in info[0]
+    debug = [r.message for r in caplog.records if r.levelname == "DEBUG"]
+    assert any("before_accumulation" in message for message in debug)
+
+
+@pytest.mark.parametrize("size", [0, 5])
+def test_label_metrics_log_zero_spread_and_tail(caplog, size):
+    sampler = make_sampler(
+        np.full(size, 8, dtype=int),
+        np.zeros(size, dtype=int),
+        batches_per_optimizer_step=4,
+    )
+    with caplog.at_level("INFO", logger="axolotl.utils.samplers.multipack"):
+        sampler.generate_batches(set_stats=True)
+    message = next(
+        r.message for r in caplog.records if "Packed batch balancing:" in r.message
+    )
+    assert "0.0%" in message
+    assert "nan" not in message and "inf" not in message
+    assert ("Microbatches excluded from optimizer-step metrics: 1" in message) == bool(
+        size
+    )
+    assert "Packed label metrics by stage" not in caplog.text
+
+
+def test_empty_label_metrics_zero_capacity(caplog):
+    sampler = MultipackBatchSampler(
+        sampler=[],
+        lengths=np.array([], dtype=int),
+        label_counts=np.array([], dtype=int),
+        batch_size=1,
+        batch_max_len=0,
+        bin_size=8,
+        num_processes=1,
+    )
+    with caplog.at_level("INFO", logger="axolotl.utils.samplers.multipack"):
+        assert sampler.generate_batches(set_stats=True) == []
+    assert "Mean unpadded row length: 0 / 0 (n/a)" in caplog.text

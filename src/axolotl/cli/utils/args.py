@@ -11,7 +11,7 @@ from pydantic import BaseModel
 ConfigOption = tuple[tuple[str, ...], str | None, str | None, str | None]
 
 
-def _strip_optional_type(field_type: type | str | None):
+def _strip_optional_type(field_type: object):
     """
     Extracts the non-`None` type from an `Optional` / `Union` type.
 

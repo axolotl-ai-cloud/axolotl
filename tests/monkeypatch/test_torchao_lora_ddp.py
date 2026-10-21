@@ -14,12 +14,9 @@ import torch
     reason="two CUDA GPUs required",
 )
 def test_native_nvfp4_lora_ddp(tmp_path):
-    try:
-        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
-    except ImportError:
-        pytest.skip("TorchAO NVFP4 unavailable")
-    if NVFP4Tensor is None:
-        pytest.skip("TorchAO NVFP4 unavailable")
+    pytest.importorskip(
+        "torchao.prototype.mx_formats.nvfp4_tensor", reason="TorchAO NVFP4 unavailable"
+    )
     env = os.environ | {"TORCHAO_LORA_DDP_TMP": str(tmp_path), "OMP_NUM_THREADS": "1"}
     worker = Path(__file__).with_name("_torchao_lora_ddp.py")
     result = subprocess.run(

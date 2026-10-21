@@ -27,7 +27,9 @@ class TestTrainCommand(BaseCliTest):
     ):
         """Test basic successful execution without accelerate"""
         config_path = tmp_path / "config.yml"
-        config_path.write_text(valid_test_config)
+        config_path.write_text(
+            valid_test_config + f"output_dir: {tmp_path / 'model-out'}\n"
+        )
 
         with patch("axolotl.cli.train.train") as mock_train:
             mock_train.return_value = (MagicMock(), MagicMock(), MagicMock())

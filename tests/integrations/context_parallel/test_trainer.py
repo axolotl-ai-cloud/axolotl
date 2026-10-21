@@ -158,7 +158,12 @@ def test_recurrent_wiring_visits_reference_model(monkeypatch, rl):
         rm,
         "setup",
         lambda config, **kwargs: SimpleNamespace(
-            config=config, cp_group=None, attn_implementation="ringmaster_ulysses"
+            config=config,
+            cp_group=None,
+            cp_rank=0,
+            cp_size=2,
+            shard_load_balance="contiguous",
+            attn_implementation="ringmaster_ulysses",
         ),
     )
     plugin.post_trainer_create(cfg, trainer)

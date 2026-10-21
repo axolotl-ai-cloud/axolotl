@@ -37,7 +37,7 @@ class DecisionMixtureConfig(BaseModel):
     max_examples_per_source: int | dict[str, int] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Cap on training rows kept per source, as one integer or a per-source mapping."
+            "description": "Cap on training rows drawn per source and epoch, as one integer or a per-source mapping; each epoch takes the next window of one seeded shuffle of the source."
         },
     )
     loss_weight: dict[str, float] = Field(
@@ -136,11 +136,22 @@ class DecisionLabelsConfig(BaseModel):
             "description": "Fraction of a one-hot CE target spread uniformly over the valid answer tokens."
         },
     )
-    codebook: Literal["vendored26", "expanded52", "expanded128"] = Field(
+    codebook: Literal["vendored26", "expanded52", "expanded128", "expanded255"] = Field(
         default="vendored26",
         json_schema_extra={
-            "description": "Answer-label codebook: djev letters A-Z (26 options), A-Z plus a-z (52), or those plus "
-            "selected Greek and Cyrillic letters (128); every label is one token in the model's tokenizer."
+            "description": "Answer-label codebook: djev letters A-Z (26 options), A-Z plus a-z (52), those plus "
+            "selected Greek and Cyrillic letters (128), or those plus kana, Hangul, Hebrew, Devanagari, Thai and "
+            "Georgian letters (255); every label is one token in the model's tokenizer."
+        },
+    )
+    label_shuffle_prob: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        json_schema_extra={
+            "description": "Training only: probability that a choice question's options get a random subset of "
+            "the codebook (kept in codebook order) instead of its first N labels, so late labels are trained on "
+            "small questions too. Deterministic per seed, record and question; evaluation rows never shuffle."
         },
     )
 
@@ -235,12 +246,40 @@ class DiffusionDecisionConfig(BaseModel):
             "description": "Decision layout recorded in the adapter manifest."
         },
     )
+    decontaminate: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Drop training records whose state (or held-out family) also appears in a dev or "
+                "protected (test/calibration/ood) split before grouping. Off by default for data "
+                "decontaminated upstream. When off, train-vs-dev isolation is still asserted after "
+                "grouping (overlap fails the build), but overlap with protected splits is not checked."
+            )
+        },
+    )
     max_questions_per_canvas: int = Field(
         default=20,
         ge=1,
         le=MAX_QUESTIONS,
         json_schema_extra={
-            "description": "Maximum questions grouped into one canvas; capped by the template."
+            "description": (
+                "Maximum questions grouped into one canvas; capped by the template. Above 10, set "
+                "answer_format: lines (the auto format switches to indexed there)."
+            )
+        },
+    )
+    answer_format: Literal["auto", "lines", "indexed"] = Field(
+        default="auto",
+        json_schema_extra={
+            "description": (
+                "Answer template format. auto (default) is the vendored djev rule: lines "
+                "(`id: label` per line) for up to 10 questions, indexed (`idLABEL` space-separated) "
+                "above. lines or indexed forces that format for every canvas and makes grouping "
+                "width-aware: a canvas takes as many questions as fit in diffusion_lm.canvas_width "
+                "(up to max_questions_per_canvas) and larger groups are split instead of dropped. "
+                "Indexed merges digit-ending or noul ids with their label in some tokenizers, so "
+                "use lines to go above 10 questions."
+            )
         },
     )
     read_fraction: float = Field(
@@ -261,6 +300,53 @@ class DiffusionDecisionConfig(BaseModel):
         ge=0,
         json_schema_extra={
             "description": "Normalized image tensors each collator (and dataloader worker) keeps in an LRU; 0 disables the cache."
+        },
+    )
+    read_overflow_canvas_width: int | None = Field(
+        default=None,
+        ge=2,
+        json_schema_extra={
+            "description": (
+                "Read-time only (evaluation and student reads; never training rows): when a record's "
+                "answer template does not fit diffusion_lm.canvas_width, rebuild that one canvas at this "
+                "wider width instead of dropping it. Canvases that fit keep the trained width, so their "
+                "reads are unchanged. Wider canvases are outside the training distribution (the adapter "
+                "only saw canvas_width), so treat their probabilities as unvalidated. Full-sequence "
+                "layouts without latent slots only. Default: unset, overflowing canvases are dropped."
+            )
+        },
+    )
+    allow_manifest_mismatch: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Warn instead of refusing when the loaded adapter's (or merged checkpoint's) "
+                "decision manifest disagrees with this config. Only for deliberately continuing "
+                "training under a new canvas or codebook; reads should leave it off."
+            )
+        },
+    )
+    prepared_cache_verify: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Fully verify the prepared-row cache under dataset_prepared_path. Off "
+                "(default): source files are keyed by path, size and mtime, and a cache hit "
+                "checks the identity and the file's framing but not a content hash of the "
+                "rows. On: sources are keyed by content sha256 and a hit re-hashes the rows "
+                "section before loading. The two modes key sources differently, so switching "
+                "it prepares (and caches) once more."
+            )
+        },
+    )
+    canvas_prefix_ids: list[int] = Field(
+        default_factory=list,
+        json_schema_extra={
+            "description": (
+                "Clean token IDs pinned at the start of every decision canvas, before the "
+                "answer template, at train and read time alike (for example DiffusionGemma's "
+                "empty `<|channel>thought\\n<channel|>` block, its native output regime)."
+            )
         },
     )
     mixture: DecisionMixtureConfig = Field(
@@ -292,6 +378,8 @@ class DiffusionDecisionConfig(BaseModel):
             raise ValueError("read_fraction must be in [0, 1]")
         if self.max_image_size % 28:
             raise ValueError("max_image_size must be a multiple of 28")
+        if any(token_id < 0 for token_id in self.canvas_prefix_ids):
+            raise ValueError("canvas_prefix_ids must be nonnegative")
         return self
 
 

@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+# Blackwell (sm_100) kernel stack on top of the cloud image: DeepEP for expert parallelism,
+# flash-attn-4 and the quack / cutlass DSL kernels behind SonicMoE. linux/amd64 only.
+ARG BASE_TAG=main-py3.12-cu130-2.14.1
+FROM axolotlai/axolotl-cloud-uv:$BASE_TAG
+
+ARG DEEP_EP_REF=v1.2.1
+ARG TORCH_CUDA_ARCH_LIST="10.0"
+ARG MAX_JOBS=16
+
+# DeepEP main needs CUDA 13.1; v1.2.1 builds on this image's CUDA 13.0 once
+# CUDA 13's relocated cuda/std headers are on the include path. It links torch's
+# nvidia-nvshmem-cu13 wheel, which setup.py finds on its own. The tag's build backend fails
+# under `pip install .`, so build the wheel with setuptools directly.
+RUN git clone --depth 1 --branch $DEEP_EP_REF https://github.com/deepseek-ai/DeepEP.git /tmp/DeepEP && \
+    cd /tmp/DeepEP && \
+    TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST MAX_JOBS=$MAX_JOBS \
+    CFLAGS=-I/usr/local/cuda/include/cccl CXXFLAGS=-I/usr/local/cuda/include/cccl \
+    NVCC_PREPEND_FLAGS=-I/usr/local/cuda/include/cccl \
+    python setup.py bdist_wheel -d /tmp/wheels && \
+    uv pip install --no-deps /tmp/wheels/deep_ep-*.whl && \
+    cd /workspace && rm -rf /tmp/DeepEP /tmp/wheels && \
+    python -c "import deep_ep; print(deep_ep.Buffer)"
+
+# flash-attn-4 is still a pre-release; it pulls quack-kernels and the cutlass DSL, which SonicMoE
+# needs too, and the [cu13] extra selects the CUDA 13 cutlass runtime libraries.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install "flash-attn-4[cu13]==4.0.0b35" "quack-kernels[cu13]==0.6.5" && \
+    python -c "import importlib.metadata as m; [print(p, m.version(p)) for p in ('flash-attn-4', 'quack-kernels', 'nvidia-cutlass-dsl', 'deep-ep')]"

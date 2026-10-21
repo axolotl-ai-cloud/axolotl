@@ -12,6 +12,7 @@ ENTRY_POINT_GROUP = "axolotl.cloud_providers"
 
 # Entry-point registrations are authoritative; this fallback covers missing or stale metadata.
 BUILTIN_PROVIDERS = {
+    "coreweave": "axolotl.integrations.coreweave.cloud:CoreWeaveCloud",
     "nebius": "axolotl.integrations.nebius.cloud:NebiusCloud",
     "modal": "axolotl.integrations.modal.cloud:ModalCloud",
     "baseten": "axolotl.integrations.baseten.cloud:BasetenCloud",

@@ -79,7 +79,8 @@ def build_param_wrapper_map(
     recorded_version = config_dict.get("peft_version")
     if (
         recorded_version
-        and Version(recorded_version).base_version != Version(peft_version).base_version
+        and Version(recorded_version.split("@", 1)[0]).base_version
+        != Version(peft_version.split("@", 1)[0]).base_version
     ):
         LOG.warning(
             "Adapter was saved by PEFT %s and is being reconstructed with PEFT %s; "

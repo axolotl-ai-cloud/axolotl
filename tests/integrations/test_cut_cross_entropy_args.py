@@ -83,6 +83,7 @@ class TestCutCrossEntropyPluginPatchKwargs:
     def _skip_requirement_checks(self):
         with (
             patch.object(CutCrossEntropyPlugin, "_check_requirements"),
+            patch.object(CutCrossEntropyPlugin, "_check_generic_patch_applies"),
             patch.object(CutCrossEntropyPlugin, "patch_llama_like"),
         ):
             yield
@@ -146,5 +147,68 @@ class TestCutCrossEntropyPluginPatchKwargs:
             cut_cross_entropy_accum_c_fp32=True,
             cut_cross_entropy_c_grad_chunk_size=256,
         )
-        with pytest.raises(ImportError, match="ml-cross-entropy.git@v0.1.0-rc0"):
+        with pytest.raises(ImportError, match="ml-cross-entropy.git@v0.1.1"):
             self._run(cfg, _cce_patch_stub(with_chunk=False))
+
+
+class TestGenericPatchGuard:
+    def _check(self, model_type, model_config, patch_fns=None):
+        cfg = _cfg(model_config_type=model_type)
+        with (
+            patch.dict(
+                "cut_cross_entropy.transformers.patch.PATCH_FNS",
+                patch_fns or {},
+                clear=True,
+            ),
+            patch(
+                "axolotl.loaders.utils.load_model_config", return_value=model_config
+            ) as load,
+        ):
+            CutCrossEntropyPlugin()._check_generic_patch_applies(cfg)
+        return load
+
+    def test_rejects_softcapped_model_without_dedicated_patch(self):
+        config = SimpleNamespace(final_logit_softcapping=30.0)
+        with pytest.raises(ValueError, match="final_logit_softcapping"):
+            self._check("beam", config)
+
+    def test_rejects_logit_scale(self):
+        config = SimpleNamespace(logit_scale=0.0625)
+        with pytest.raises(ValueError, match="logit_scale"):
+            self._check("cohere_like", config)
+
+    def test_checks_text_config_of_multimodal_models(self):
+        text = SimpleNamespace(final_logit_softcapping=30.0)
+        config = SimpleNamespace(get_text_config=lambda: text)
+        with pytest.raises(ValueError, match="final_logit_softcapping"):
+            self._check("beam_vl", config)
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            SimpleNamespace(),
+            SimpleNamespace(final_logit_softcapping=None, logit_scale=1.0),
+            SimpleNamespace(logits_scaling=1),
+        ],
+    )
+    def test_allows_plain_llama_like_models(self, config):
+        self._check("my_llama", config)
+
+    def test_dedicated_patch_skips_the_check(self):
+        config = SimpleNamespace(final_logit_softcapping=30.0)
+        load = self._check("beam", config, patch_fns={"beam": object()})
+        load.assert_not_called()
+
+    def test_pre_model_load_refuses_before_patching(self):
+        config = SimpleNamespace(final_logit_softcapping=30.0)
+        with (
+            patch.object(CutCrossEntropyPlugin, "_check_requirements"),
+            patch.dict(
+                "cut_cross_entropy.transformers.patch.PATCH_FNS", {}, clear=True
+            ),
+            patch("axolotl.loaders.utils.load_model_config", return_value=config),
+            patch("cut_cross_entropy.transformers.patch.cce_patch") as cce_patch,
+            pytest.raises(ValueError, match="final_logit_softcapping"),
+        ):
+            CutCrossEntropyPlugin().pre_model_load(_cfg(model_config_type="beam"))
+        cce_patch.assert_not_called()
