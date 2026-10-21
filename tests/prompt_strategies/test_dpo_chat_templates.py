@@ -415,6 +415,7 @@ class TestDPOChatTemplateToolRole:
         )
         result = transform_fn(dataset[0], tokenizer=llama3_tokenizer)
         assert "and?" in result["prompt"]
+        assert '"name": "f"' in result["prompt"]
 
 
 class TestDPOChatTemplateVision:

@@ -154,6 +154,12 @@ class TestInstructionWSystemPromptTokenizingStrategy:
         decoded = tokenizer_huggyllama_w_special_tokens.decode(example["input_ids"])
         assert "SYSTEM: use cot" in decoded
 
+        sample = {"system": "be brief", "instruction": "hello!", "output": "Hi!"}
+        example = strat.tokenize_prompt(sample)
+        decoded = tokenizer_huggyllama_w_special_tokens.decode(example["input_ids"])
+        assert "SYSTEM: be brief" in decoded
+        assert "use cot" not in decoded
+
 
 class TestLlama2ChatTokenization:
     """
