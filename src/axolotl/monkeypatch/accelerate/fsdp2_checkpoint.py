@@ -615,8 +615,6 @@ def _adapter_values(model):
 
 def _base_config_dir(model):
     """Local directory holding the base model's config.json, without a Hub request."""
-    import os
-
     configs = getattr(model, "peft_config", {}).values()
     model_id = next((c.base_model_name_or_path for c in configs), None)
     if not model_id:
