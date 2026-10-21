@@ -1,0 +1,47 @@
+# On-policy distillation (GKD): a small student learns from a larger same-vocab
+# teacher on its own rollouts. See src/axolotl/integrations/gkd/README.md.
+base_model: Qwen/Qwen3-0.6B
+
+plugins:
+  - axolotl.integrations.gkd.GKDPlugin
+
+gkd_trainer: true
+gkd_teacher: Qwen/Qwen3-4B        # must share the student's tokenizer/vocab
+gkd_lmbda: 1.0                    # fully on-policy (student rollouts)
+gkd_beta: 0.5                     # 0=forward-KL, 1=reverse-KL, between=JSD
+gkd_temperature: 0.9
+gkd_max_new_tokens: 256
+
+chat_template: qwen3
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:2000]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+
+# on-policy generation requires an unpacked, prompt/completion-separable batch
+sample_packing: false
+train_on_inputs: false
+
+val_set_size: 0.0
+sequence_len: 2048
+output_dir: ./outputs/gkd-qwen3-out
+
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1.0e-5
+
+bf16: auto
+gradient_checkpointing: true
+flash_attention: true
+
+logging_steps: 1
+warmup_ratio: 0.03
+
+wandb_project:
