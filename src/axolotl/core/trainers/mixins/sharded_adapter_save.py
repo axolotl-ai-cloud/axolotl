@@ -142,7 +142,7 @@ class ShardedAdapterSaveMixin(Trainer):
                         )
                 return None
             if self._final_adapter_save():
-                # save_final_adapter's caller saves through its own gather path
+                # nothing saved: save_final_adapter returns False so the gather runs instead
                 return None
         return super()._save_model_native(output_dir, _internal_call)
 
@@ -178,9 +178,7 @@ class ShardedAdapterSaveMixin(Trainer):
         if rank0:
             try:
                 export = shards.directory / EXPORT_DIRNAME
-                # adapter_config.json, README.md, tokenizer, training args: everything
-                # save_pretrained writes beside the weights. PEFT looks modules_to_save
-                # copies up by name, so every name needs an (empty) entry.
+                # PEFT looks modules_to_save copies up by name: every name needs an entry
                 placeholder = {
                     name: torch.empty(0) for name in _adapter_values(self.model)
                 }

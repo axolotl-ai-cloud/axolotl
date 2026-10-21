@@ -313,8 +313,7 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
-    # adapter_checkpoint_format: sharded: every rank writes its slices, consolidated before
-    # this returns; falls back to the gather paths below when it does not apply
+    # falls through to the gather paths below when the sharded writer does not apply
     final_format = cfg.adapter_final_save_format or cfg.adapter_checkpoint_format
     if (
         cfg.adapter
