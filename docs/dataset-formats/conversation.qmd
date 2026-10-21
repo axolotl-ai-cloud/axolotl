@@ -12,9 +12,7 @@ Chat Template strategy uses a jinja2 template that converts a list of messages i
 {"messages": [{"role": "...", "content": "..."}, {"role": "...", "content": "..."}, ...]}
 ```
 
-An optional top-level `system` column is prepended when `messages` does not already
-start with a system turn. Missing or null values omit that turn, including during
-batched preprocessing. Non-null values, including an empty string, are preserved.
+An optional top-level `system` field is prepended as a system turn unless `messages` already starts with one. Null values are skipped.
 
 See [configs](../config-reference.qmd) for full configs and supported templates.
 

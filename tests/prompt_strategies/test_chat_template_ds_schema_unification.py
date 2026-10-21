@@ -80,6 +80,7 @@ class TestSchemaUnification:
         expected = dataset.map(tokenize, remove_columns=dataset.column_names)
         without_system = tokenize({"messages": dataset[1]["messages"]})
         assert expected[1] == without_system
+        assert expected[2] != tokenize({"messages": dataset[2]["messages"]})
 
         actual = dataset.map(
             tokenize,
