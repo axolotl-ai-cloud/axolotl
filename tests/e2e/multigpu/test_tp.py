@@ -66,10 +66,12 @@ class TestTensorParallel:
             ]
         )
 
+        # Both GPUs share one batch (dp=1), so 20 steps only show a small loss drop
         check_tensorboard_loss_decreased(
             temp_dir + "/runs",
             initial_window=10,
             final_window=10,
             max_initial=5.0,
             max_final=4.7,
+            max_loss_ratio=1.0,
         )
