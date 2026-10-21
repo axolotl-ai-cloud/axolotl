@@ -12,6 +12,8 @@ Chat Template strategy uses a jinja2 template that converts a list of messages i
 {"messages": [{"role": "...", "content": "..."}, {"role": "...", "content": "..."}, ...]}
 ```
 
+An optional top-level `system` field is prepended as a system turn unless `messages` already starts with one. Null values are skipped.
+
 See [configs](../config-reference.qmd) for full configs and supported templates.
 
 ### Migrating from sharegpt
@@ -437,6 +439,22 @@ After split, it will look like:
   "content": "Output after thinking..."
 }
 ```
+
+#### Labeling from generation markers
+
+If your chat template wraps assistant output in `{% generation %}...{% endgeneration %}`, set `generation_tags: true` to label those blocks directly. This also trains template structure inside them, such as Harmony channel headers, and is faster on long conversations.
+
+```yaml
+datasets:
+  - path: ...
+    type: chat_template
+    generation_tags: true
+```
+
+- The template needs one generation block per assistant turn. Per-turn `train` flags still apply.
+- `train_on_eot` and `train_on_eos` apply to the token ending each block, inside it or right after it.
+- Rows with `training_detail`, a trainable non-assistant turn, or blocks that don't match the turns use the default labeling. `train_on_inputs` or non-assistant `roles_to_train` turn it off.
+- Not supported with a processor, mistral-common, or slow tokenizers.
 
 
 ## sharegpt

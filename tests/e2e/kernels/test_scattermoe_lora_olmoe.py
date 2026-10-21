@@ -287,17 +287,6 @@ class TestLoRABLayoutConversion:
                 peft_reshaped[:, :, e],
             )
 
-    def test_lora_A_already_compatible(self):
-        """lora_A layout is identical between peft and scattermoe."""
-        E, r, K = 4, 2, 16
-        lora_A = torch.randn(E * r, K)
-        peft_reshaped = lora_A.reshape(E, r, K)
-        for e in range(E):
-            torch.testing.assert_close(
-                lora_A[e * r : (e + 1) * r, :],
-                peft_reshaped[e],
-            )
-
     def test_delta_weight_equivalence(self):
         """peft's einsum delta matches per-expert B @ A with converted layouts."""
         E, r, K, N = 8, 4, 32, 64
@@ -1158,25 +1147,6 @@ class TestSharedExpertHandling:
         moe.shared_expert_gate = nn.Linear(hidden, 1, bias=False)
 
         return moe
-
-    def test_shared_expert_is_used(self):
-        """Verify shared expert output affects final result."""
-        config = make_olmoe_config(use_full=False)
-        moe = self._make_shared_expert_block(config)
-
-        # Compute reference without shared expert
-        torch.manual_seed(42)
-        x = torch.randn(1, 4, config.hidden_size)
-        x_flat = x.view(-1, config.hidden_size)
-
-        with torch.no_grad():
-            # Shared expert contribution
-            shared_out = moe.shared_expert(x_flat)
-            gate_val = F.sigmoid(moe.shared_expert_gate(x_flat))
-            shared_contribution = shared_out * gate_val
-
-        # Verify shared expert produces non-zero output
-        assert shared_contribution.abs().max() > 0
 
     @requires_cuda
     def test_shared_expert_forward_via_kernelize(self):

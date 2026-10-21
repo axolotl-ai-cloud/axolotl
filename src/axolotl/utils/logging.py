@@ -4,14 +4,21 @@ import functools
 import logging
 import warnings
 
-from axolotl.utils.distributed import is_main_process
-
 # Suppress noisy bitsandbytes warnings about dtype casting during quantization
 warnings.filterwarnings(
     "ignore",
     message=".*MatMul8bitLt: inputs will be cast from.*",
     category=UserWarning,
 )
+
+
+def is_main_process() -> bool:
+    # Imported on first log call: axolotl.utils.distributed pulls in torch.distributed
+    # and accelerate, which light importers of get_logger (model_support) must not need.
+    from axolotl.utils.distributed import is_main_process as _is_main_process
+
+    return _is_main_process()
+
 
 # Adapted from Accelerate
 # https://github.com/huggingface/accelerate/blob/main/src/accelerate/logging.py

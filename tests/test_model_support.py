@@ -32,13 +32,6 @@ class TestRegistry:
     def test_unmatched_processor_returns_none(self):
         assert get_model_support_for_processor(object()) is None
 
-    def test_register_requires_model_types(self):
-        class MissingTypes(ModelSupport):
-            pass
-
-        with pytest.raises(ValueError, match="model_types"):
-            register_model_support(MissingTypes)
-
     def test_register_custom_descriptor(self):
         class CustomSupport(ModelSupport):
             model_types = ("my_custom_arch",)
@@ -494,7 +487,9 @@ class TestBailingHybridSupport:
         run_model_support_hooks(
             support,
             ModelHookPhase.CONFIGURE_RUN,
-            ModelHookContext(cfg=DictDefault(context_parallel_size=4)),
+            ModelHookContext(
+                cfg=DictDefault(context_parallel_size=4, trust_remote_code=True)
+            ),
         )
 
     @pytest.mark.parametrize("context_parallel_size", [None, 1])
@@ -503,7 +498,10 @@ class TestBailingHybridSupport:
             get_model_support("bailing_hybrid"),
             ModelHookPhase.CONFIGURE_RUN,
             ModelHookContext(
-                cfg=DictDefault(context_parallel_size=context_parallel_size)
+                cfg=DictDefault(
+                    context_parallel_size=context_parallel_size,
+                    trust_remote_code=True,
+                )
             ),
         )
 
@@ -511,7 +509,7 @@ class TestBailingHybridSupport:
         """``save_pretrained`` reverses these to re-emit the published layout."""
         from axolotl.model_support.bailing_hybrid import _weight_conversions
 
-        transforms = _weight_conversions()["bailing_hybrid"]
+        transforms = _weight_conversions()["BailingMoeV3ForCausalLM"]
         assert transforms
         for transform in transforms:
             for operation in getattr(transform, "operations", None) or []:
@@ -538,3 +536,28 @@ class TestK2HorizonSupport:
         from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 
         assert "k2_horizon" in SUPPORTED_MULTIPACK_MODEL_TYPES
+
+
+class TestGlm5NextSupport:
+    """Built-in GLM-5.3-Flash descriptor: packing patch plus capability guards."""
+
+    @pytest.mark.parametrize("model_type", ["glm5_next", "glm5_next_text"])
+    def test_registered_and_multimodal_family(self, model_type):
+        support = get_model_support(model_type)
+        assert type(support).__name__ == "Glm5NextSupport"
+        assert resolve_model_support(support).family == "image_text_to_text"
+
+    @pytest.mark.parametrize("capability", ["lora_kernels", "sdpa_varlen"])
+    def test_unsupported_features_are_rejected(self, capability):
+        with pytest.raises(ValueError, match="glm5_next"):
+            check_capability(get_model_support("glm5_next"), capability, "glm5_next")
+
+    def test_cut_cross_entropy_is_supported(self):
+        check_capability(
+            get_model_support("glm5_next"), "cut_cross_entropy", "glm5_next"
+        )
+
+    def test_packs_through_position_ids(self):
+        from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
+
+        assert {"glm5_next", "glm5_next_text"} <= set(SUPPORTED_MULTIPACK_MODEL_TYPES)

@@ -25,7 +25,7 @@ LOG = get_logger(__name__)
 
 
 def patch_granitemoehybrid_modeling_packing():
-    """Patch Granite MoE Hybrid for sample packing: seq_idx + CP correction."""
+    """Patch Granite MoE Hybrid for sample packing (seq_idx) and context parallelism."""
     try:
         mod = importlib.import_module(
             "transformers.models.granitemoehybrid.modeling_granitemoehybrid"
@@ -44,8 +44,8 @@ def patch_granitemoehybrid_modeling_packing():
     patch_model_forward_seq_idx(GraniteMoeHybridModel)
 
     # Minimal wrapper to force slow path when CP is active.
-    # The fused mamba_split_conv1d_scan_combined doesn't return SSM state, so
-    # CP correction (handled by the scan wrapper) needs the slow path.
+    # The fused mamba_split_conv1d_scan_combined doesn't return SSM state, which
+    # context parallelism needs, so it takes the slow path.
     original_cuda_kernels_forward = GraniteMoeHybridMambaLayer.cuda_kernels_forward
 
     def patched_cuda_kernels_forward(

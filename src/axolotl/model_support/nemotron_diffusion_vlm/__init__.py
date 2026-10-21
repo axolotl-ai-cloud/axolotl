@@ -27,7 +27,6 @@ from axolotl.model_support.nemotron_diffusion import (
     lora_attention_cls_for,
     make_auto_model_class,
 )
-from axolotl.model_support.nemotron_diffusion.compat import VLM_VARIANT
 from axolotl.model_support.profile import (
     ModelHookContext,
     ModelHookPhase,
@@ -51,6 +50,8 @@ DECODER_LAYER_CLS = "Ministral3DecoderLayer"
 
 
 def _model_class() -> type:
+    from axolotl.model_support.nemotron_diffusion.compat import VLM_VARIANT
+
     return make_auto_model_class(VLM_VARIANT)
 
 
@@ -60,10 +61,15 @@ def _matches_cfg(cfg) -> bool:
         return False
     if "nemotron-labs-diffusion-vlm" in source.lower():
         return True
+    # compat imports transformers; registering the descriptor must not.
+    from axolotl.model_support.nemotron_diffusion.compat import VLM_VARIANT
+
     return (Path(source) / VLM_VARIANT.modeling_file).is_file()
 
 
 def _lora_attention_cls(cfg) -> type:
+    from axolotl.model_support.nemotron_diffusion.compat import VLM_VARIANT
+
     return lora_attention_cls_for(cfg, VLM_VARIANT)
 
 

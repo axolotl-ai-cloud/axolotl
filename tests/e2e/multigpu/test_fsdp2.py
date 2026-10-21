@@ -16,7 +16,6 @@ from tests.e2e.utils import (
     check_lora_b_fully_trained,
     check_tensorboard_loss_decreased,
     most_recent_subdir,
-    require_torch_2_7_0,
     requires_flash_attn,
 )
 
@@ -53,7 +52,6 @@ def verify_training_success(temp_dir):
 class TestFSDP2:
     """Test class for FSDP2 functionality."""
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "fsdp_cpu_ram_efficient_loading",
         [True, False],
@@ -114,7 +112,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize("peft_use_dora", [True, False])
     def test_lora_sft(self, temp_dir, peft_use_dora):
         cfg = fsdp2_training_config(
@@ -183,7 +180,6 @@ class TestFSDP2:
         verify_training_success(temp_dir)
         check_lora_b_fully_trained(temp_dir)
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "save_only_model, unfrozen_parameters",
         [
@@ -267,7 +263,6 @@ class TestFSDP2:
         verify_training_success(temp_dir)
         check_lora_b_fully_trained(temp_dir)
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "ep_backend",
         [
@@ -361,7 +356,6 @@ class TestFSDP2:
         verify_training_success(temp_dir)
         check_lora_b_fully_trained(temp_dir)
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize("adapter", [None, "lora"], ids=["fft", "lora"])
     def test_fft_sft_expert_parallel_gradient_parity(self, temp_dir, adapter):
         """One SGD step with FSDP alone and with FSDP + pure EP must apply the same update.
@@ -529,7 +523,6 @@ class TestFSDP2:
             f"EP total update norm is {total_ratio:.4f}x the FSDP total update norm"
         )
 
-    @require_torch_2_7_0
     @pytest.mark.parametrize(
         "base_model, layer_cls, expert_parallel",
         [
@@ -655,7 +648,6 @@ class TestFSDP2:
         # the probe only proves anything if nothing else initialized the process group first
         assert not facts[1]["dist_initialized_before_load"]
 
-    @require_torch_2_7_0
     def test_lora_sft_kernels(self, temp_dir):
         cfg = fsdp2_training_config(
             {
@@ -719,7 +711,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @require_torch_2_7_0
     def test_qlora_sft(self, temp_dir):
         cfg = fsdp2_training_config(
             {
@@ -782,7 +773,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @require_torch_2_7_0
     def test_qlora_sft_kernels(self, temp_dir):
         cfg = fsdp2_training_config(
             {
@@ -847,8 +837,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @pytest.mark.skip(reason="slow test w cu129 + torch 2.9.1 + py3.12")
-    @require_torch_2_7_0
     def test_dpo_fft(self, temp_dir):
         cfg = multigpu_training_config(
             {
@@ -883,8 +871,6 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
-                "sample_packing": True,
-                "pad_to_sequence_len": True,
             }
         )
 
@@ -907,8 +893,6 @@ class TestFSDP2:
 
         verify_training_success(temp_dir)
 
-    @pytest.mark.skip(reason="slow test w cu129 + torch 2.9.1 + py3.12")
-    @require_torch_2_7_0
     def test_dpo_lora(self, temp_dir):
         cfg = multigpu_training_config(
             {
@@ -947,8 +931,6 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
-                "sample_packing": True,
-                "pad_to_sequence_len": True,
             }
         )
 

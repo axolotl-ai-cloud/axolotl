@@ -13,7 +13,6 @@
 """
 
 import os
-from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -185,7 +184,9 @@ def test_deep_ep_forward_applies_token_capacity():
     )  # column 0 -> expert 0 for ALL tokens
     topk[:, 1] = 1
     w = torch.rand(ntok, K)
-    self_mod = SimpleNamespace(num_experts=e_global, num_experts_global=e_global)
+    self_mod = torch.nn.Module()
+    self_mod.num_experts = e_global
+    self_mod.num_experts_global = e_global
 
     E.set_token_capacity(4)
     try:
@@ -230,7 +231,9 @@ def test_deep_ep_forward_caps_after_padding_sentinel():
     w[n_real:, 0] = 0.9  # pads outrank every real token on expert 0
     valid = torch.zeros(ntok, dtype=torch.bool)
     valid[:n_real] = True
-    self_mod = SimpleNamespace(num_experts=e_global, num_experts_global=e_global)
+    self_mod = torch.nn.Module()
+    self_mod.num_experts = e_global
+    self_mod.num_experts_global = e_global
 
     E.set_token_capacity(cap)
     try:

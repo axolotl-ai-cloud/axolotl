@@ -82,12 +82,14 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, ep_rank_of):
         out = torch.empty((e_local, *like.shape[1:]), dtype=like.dtype, device=dev)
         chunks = None
         if is_src:
-            chunks = [
-                full_comp[ep_rank_of[r] * e_local : (ep_rank_of[r] + 1) * e_local]
-                .contiguous()
-                .to(dev)
-                for r in range(world)
-            ]
+            # ranks that share an ep-rank (replicas, dp_shard peers) get the same slice:
+            # copy each distinct slice to the device once instead of once per rank
+            by_ep: dict[int, torch.Tensor] = {}
+            for ep in sorted(set(ep_rank_of)):
+                by_ep[ep] = (
+                    full_comp[ep * e_local : (ep + 1) * e_local].contiguous().to(dev)
+                )
+            chunks = [by_ep[ep_rank_of[r]] for r in range(world)]
         dist.scatter(out, scatter_list=chunks, src=0)
         return out
 
@@ -131,13 +133,25 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, ep_rank_of):
     setattr(module, attr_name, new_param)
 
 
+def expert_input_proj_name(module) -> str:
+    """The experts' first projection: ``gate_up_proj`` (gated), or ``up_proj`` on a
+    non-gated module (``@use_experts_implementation(has_gate=False)``, e.g. Nemotron-H's
+    relu² experts)."""
+    from .bnb import has_expert_member
+
+    if has_expert_member(module, "gate_up_proj") or getattr(module, "has_gate", True):
+        return "gate_up_proj"
+    return "up_proj"
+
+
 def _detect_experts_modules(model):
     """Yield (name, module) pairs for every module that looks like an Experts class.
 
-    Detection: logical 3D `gate_up_proj` and `down_proj` weights with experts on dim 0.
-    This is the canonical layout enforced by `@use_experts_implementation`.
-    Mixtral's `ModuleList[MixtralBlockSparseTop2MLP]` does NOT match — out of scope
-    for v1.
+    Detection: logical 3D `gate_up_proj` (or, for non-gated experts, `up_proj`) and
+    `down_proj` weights with experts on dim 0. This is the canonical layout enforced by
+    `@use_experts_implementation`. A dense MLP's `up_proj` is an `nn.Linear`, not a 3D
+    parameter, so it never matches. Mixtral's `ModuleList[MixtralBlockSparseTop2MLP]`
+    does NOT match — out of scope for v1.
     """
     for name, module in model.named_modules():
         # A PEFT ParamWrapper delegates `gate_up_proj` to its `base_layer`, so it
@@ -147,7 +161,7 @@ def _detect_experts_modules(model):
             continue
         from .bnb import expert_storage
 
-        gp, gp_shape, _ = expert_storage(module, "gate_up_proj")
+        gp, gp_shape, _ = expert_storage(module, expert_input_proj_name(module))
         dp, dp_shape, _ = expert_storage(module, "down_proj")
         if gp is None or dp is None:
             continue
@@ -198,7 +212,8 @@ def shard_expert_weights(model, ep_group) -> int:
     for name, module in _detect_experts_modules(model):
         from .bnb import expert_storage
 
-        _gp, gp_shape, _ = expert_storage(module, "gate_up_proj")
+        w1 = expert_input_proj_name(module)
+        _gp, gp_shape, _ = expert_storage(module, w1)
         E = gp_shape[0]
         if E % ep_size != 0:
             raise ValueError(
@@ -214,9 +229,9 @@ def shard_expert_weights(model, ep_group) -> int:
         # Which slice a global rank needs depends on the mesh order (ep is not outermost under
         # HSDP), so every rank reports its own ep-rank instead of assuming rank // dp_size.
         with torch.no_grad():
-            _scatter_expert_from_rank0(module, "gate_up_proj", E_local, ep_rank_of)
+            _scatter_expert_from_rank0(module, w1, E_local, ep_rank_of)
             _scatter_expert_from_rank0(module, "down_proj", E_local, ep_rank_of)
-            for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
+            for bias_name in (f"{w1}_bias", "down_proj_bias"):
                 bias = getattr(module, bias_name, None)
                 if (
                     isinstance(bias, torch.nn.Parameter)
@@ -239,7 +254,7 @@ def shard_expert_weights(model, ep_group) -> int:
 
         # Mark sharded params as DDP-ignored — they hold rank-specific content
         # and must NOT be broadcast from rank 0 at DDP construction.
-        for parameter_name in ("gate_up_proj", "down_proj"):
+        for parameter_name in (w1, "down_proj"):
             parameter, _, quantization = expert_storage(module, parameter_name)
             suffix = (
                 f"parametrizations.{parameter_name}.original"
@@ -248,7 +263,7 @@ def shard_expert_weights(model, ep_group) -> int:
             )
             ignore_names.append(f"{name}.{suffix}")
             ignore_params.append(parameter)
-        for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
+        for bias_name in (f"{w1}_bias", "down_proj_bias"):
             if isinstance(getattr(module, bias_name, None), torch.nn.Parameter):
                 ignore_names.append(f"{name}.{bias_name}")
                 ignore_params.append(getattr(module, bias_name))
@@ -543,6 +558,20 @@ def _gather_adapter_tensor(parameter: torch.Tensor) -> torch.Tensor:
         del temporary
 
 
+_PEFT_KEY_PREFIX = "base_model.model."
+
+
+def _canonical_adapter_keys(adapter_sd: dict) -> dict:
+    """Prefix adapter keys with ``base_model.model.`` when the LoRA was saved from the
+    bare injected model (TRL builds its own ``PeftModel`` around it, so the final save
+    only sees the inner module). PEFT's loader expects the ``PeftModel``-rooted names."""
+    if all(k.startswith(_PEFT_KEY_PREFIX) for k in adapter_sd):
+        return adapter_sd
+    if any(k.startswith(_PEFT_KEY_PREFIX) for k in adapter_sd):
+        raise ValueError("adapter state dict mixes PeftModel-rooted and bare keys")
+    return {f"{_PEFT_KEY_PREFIX}{k}": v for k, v in adapter_sd.items()}
+
+
 def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     """Write a complete LoRA adapter when experts are EP-sharded.
 
@@ -580,7 +609,7 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
             e_global = m.num_experts_global
             from .bnb import expert_storage
 
-            for pn in ("gate_up_proj", "down_proj"):
+            for pn in ("gate_up_proj", "up_proj", "down_proj"):
                 parameter, _, _ = expert_storage(m, pn)
                 if torch.is_tensor(parameter):
                     expert_param_names.add(pn)
@@ -615,7 +644,9 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
 
     add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
-    adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
+    adapter_sd = _canonical_adapter_keys(
+        get_peft_model_state_dict(model, state_dict=sd)
+    )
 
     # Expert LoRA: gather each wrapper's adapter across FSDP (dp_shard) + EP, key by module name.
     gathered = 0
@@ -707,7 +738,9 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
 
     add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
-    adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
+    adapter_sd = _canonical_adapter_keys(
+        get_peft_model_state_dict(model, state_dict=sd)
+    )
 
     gathered = 0
     for wname, wrapper in model.named_modules():

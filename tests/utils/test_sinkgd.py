@@ -450,3 +450,75 @@ def test_fused_epilogue_size_gate():
         sinkgd_fused_min_numel=0,
     )
     assert opt0._fused_ok(w, epilogue=True)
+
+
+# ---- sharded (DTensor) parameters -------------------------------------------------------
+
+
+@pytest.fixture()
+def cpu_mesh(tmp_path):
+    import torch.distributed as dist
+    from torch.distributed.device_mesh import init_device_mesh
+
+    owned = not dist.is_initialized()
+    if owned:
+        dist.init_process_group(
+            "gloo", init_method=(tmp_path / "rendezvous").as_uri(), world_size=1, rank=0
+        )
+    yield init_device_mesh("cpu", (1,), mesh_dim_names=("ep",))
+    if owned:
+        dist.destroy_process_group()
+
+
+def test_single_device_sinkgd_rejects_dtensor(cpu_mesh):
+    """A DTensor has no storage of its own: the single-device class must refuse it instead
+    of handing a dangling pointer to the fused kernel (seen as a CUDA illegal memory access
+    under expert parallelism, where FSDP shards over the ep axis and no mesh reaches the
+    optimizer builder)."""
+    from torch.distributed.tensor import Shard, distribute_tensor
+
+    from axolotl.utils.optimizers.sinkgd import SinkGD
+
+    w = torch.nn.Parameter(distribute_tensor(torch.randn(16, 8), cpu_mesh, [Shard(0)]))
+    opt = SinkGD([{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}], lr=1e-2)
+    w.grad = distribute_tensor(torch.randn(16, 8), cpu_mesh, [Shard(0)])
+    with pytest.raises(TypeError, match="DistSinkGD"):
+        opt.step()
+
+
+def test_dist_factory_without_mesh_reads_group_from_param(cpu_mesh):
+    """The dist factory builds without a device mesh (pure EP); the reduce group is then read
+    off each parameter's mesh, and a size-1 shard axis is treated as fully local."""
+    from torch.distributed.tensor import Shard, distribute_tensor
+
+    from axolotl.utils.optimizers.sinkgd import (
+        DistSinkGD,
+        DistSinkGDOptimizerFactory,
+        _matrix_shard_group,
+    )
+
+    w = torch.nn.Parameter(distribute_tensor(torch.randn(16, 8), cpu_mesh, [Shard(0)]))
+    model = torch.nn.Module()
+    model.w = w
+    opt = DistSinkGDOptimizerFactory()(model, lr=1e-2, weight_decay=0.0)
+    assert isinstance(opt, DistSinkGD) and opt._process_group is None
+    assert _matrix_shard_group(w) is None  # mesh axis of size 1 -> shard-local norms
+    assert _matrix_shard_group(torch.randn(4, 4)) is None
+    before = w.detach().full_tensor().clone()
+    w.grad = distribute_tensor(torch.randn(16, 8), cpu_mesh, [Shard(0)])
+    opt.step()
+    assert not torch.equal(w.detach().full_tensor(), before)
+
+
+@pytest.mark.distributed_cpu
+def test_matrix_shard_groups_and_optimizer_parity(tmp_path, monkeypatch):
+    """Multi-axis reductions match a flat mesh without mixing experts or replicas."""
+    import sys
+
+    import torch.multiprocessing as mp
+
+    from tests.utils._sinkgd_distributed import check_matrix_shards
+
+    if sys.platform == "darwin":
+        monkeypatch.setenv("GLOO_SOCKET_IFNAME", "lo0")
+    mp.spawn(check_matrix_shards, args=((tmp_path / "multi_axis").as_uri(),), nprocs=4)

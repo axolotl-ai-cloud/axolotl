@@ -11,6 +11,7 @@ from axolotl.core.trainers import (
 )
 from axolotl.core.trainers.dpo import DPOStrategy
 from axolotl.core.trainers.dpo.args import AxolotlDPOConfig
+from axolotl.core.trainers.mixins.named_eval import named_eval_trainer_class
 from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import ensure_dtype
 from axolotl.utils.callbacks.qat import QATCallback
@@ -39,6 +40,28 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
     def get_post_trainer_create_callbacks(self, trainer):
         callbacks = super().get_post_trainer_create_callbacks(trainer=trainer)
         return callbacks
+
+    def hook_post_create_trainer(self, trainer):
+        """Attach the fused LoRA kernels to the adapter TRL built inside the trainer."""
+        from peft import PeftModel
+
+        from axolotl.loaders.patch_manager import rl_trainer_builds_adapter
+
+        if (
+            (
+                self.cfg.lora_mlp_kernel
+                or self.cfg.lora_qkv_kernel
+                or self.cfg.lora_o_kernel
+            )
+            and rl_trainer_builds_adapter(self.cfg)
+            and isinstance(trainer.model, PeftModel)
+        ):
+            from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
+
+            # the kernels fall back to the plain forward while adapters are disabled, so
+            # the reference-model pass through the same module stays unpatched
+            apply_lora_kernel_patches(model=trainer.model, cfg=self.cfg)
+        return trainer
 
     def _get_trainer_cls(self, trainer_kwargs: dict):
         """
@@ -393,6 +416,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         trainer_kwargs, trainer_cls = self.hook_pre_create_trainer(
             trainer_kwargs, trainer_cls
         )
+        trainer_cls = named_eval_trainer_class(trainer_cls, self.eval_dataset)
 
         # Allow FP8-quantized models to be fine-tuned with LoRA adapters.
         # transformers' validate_quantization_for_training blocks FP8 because

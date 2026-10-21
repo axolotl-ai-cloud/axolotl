@@ -36,7 +36,19 @@ class UserDefinedPrompterType(BaseModel):
     )
 
 
-class SFTDataset(BaseModel):
+class EvaluationDatasetConfig(BaseModel):
+    """Optional grouping for evaluation metrics."""
+
+    eval_name: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z][A-Za-z0-9_]*$",
+        json_schema_extra={
+            "description": "Optional test dataset group. Datasets with the same eval_name are evaluated together, alongside aggregate metrics."
+        },
+    )
+
+
+class SFTDataset(EvaluationDatasetConfig):
     """SFT configuration subset"""
 
     path: str | None = Field(
@@ -178,6 +190,12 @@ class SFTDataset(BaseModel):
             "description": "Which EOT (end-of-turn) tokens to train on. Same values as train_on_eos. Defaults to the train_on_eos setting when unset."
         },
     )
+    generation_tags: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Label assistant turns from the chat template's {% generation %} blocks, including the template structure inside them, instead of locating each turn's fields. Needs one block per assistant turn; rows that don't match use the turn locator. Not supported with a processor, mistral-common or slow tokenizers."
+        },
+    )
     roles: dict[str, list[str]] | None = Field(
         default=None,
         json_schema_extra={
@@ -268,7 +286,7 @@ class UserDefinedDPOType(BaseModel):
     rejected_format: str | None = None
 
 
-class DPODataset(BaseModel):
+class DPODataset(EvaluationDatasetConfig):
     """DPO configuration subset"""
 
     path: str | None = None
@@ -281,7 +299,7 @@ class DPODataset(BaseModel):
     field_rejected: str | None = None
 
 
-class StepwiseSupervisedDataset(BaseModel):
+class StepwiseSupervisedDataset(EvaluationDatasetConfig):
     """Stepwise supervised dataset configuration subset"""
 
     path: str | None = None
@@ -304,7 +322,7 @@ class UserDefinedKTOType(BaseModel):
     completion_format: str | None = None
 
 
-class KTODataset(BaseModel):
+class KTODataset(EvaluationDatasetConfig):
     """KTO configuration subset"""
 
     path: str | None = None
@@ -315,7 +333,7 @@ class KTODataset(BaseModel):
     revision: str | None = None
 
 
-class SyntheticDataset(BaseModel):
+class SyntheticDataset(EvaluationDatasetConfig):
     """Synthetic dataset configuration for benchmarking and testing.
 
     Generates datasets with configurable sequence length, dataset size, and token ID
