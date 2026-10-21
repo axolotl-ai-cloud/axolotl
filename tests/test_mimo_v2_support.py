@@ -270,3 +270,13 @@ def test_published_layout_check_reads_configured_revision(monkeypatch):
     )
     get_model_support("mimo_v2").resolve_lora_merge_method(cfg, None)
     assert calls == [{"revision": "v1"}]
+
+
+@pytest.mark.parametrize(
+    "attn", ["flash_attention_2", "kernels-community/flash-attn2", "sdpa"]
+)
+def test_attention_without_sinks_is_rejected(attn):
+    support = get_model_support("mimo_v2")
+    with pytest.raises(ValueError, match="attention sinks"):
+        support.validate_cfg(DictDefault(attn_implementation=attn))
+    support.validate_cfg(DictDefault(attn_implementation="flash_attention_4"))
