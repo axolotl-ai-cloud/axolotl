@@ -256,7 +256,8 @@ for quantization, memory, and mesh compatibility limits.
   `resume_from_checkpoint` and best-model loading. Trainer LoRA/QLoRA checkpoints
   include PEFT export state, including frozen adapter factors, saved modules, and
   required embeddings; the frozen base model is loaded separately. In model-only
-  checkpoints of a single-adapter PEFT model, this file only references the
+  checkpoints of a single-adapter PEFT model, and in every checkpoint written with
+  `adapter_checkpoint_format: sharded`, this file only references the
   `adapter_model.safetensors` beside it, and restore reads the adapter from there.
   Full-parameter and multi-adapter checkpoints, and checkpoints from earlier
   versions, hold the complete state in this file.
