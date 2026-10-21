@@ -2,10 +2,13 @@ base_model: IFM/K2-Horizon-MoVA-36B-A4B
 trust_remote_code: true
 
 chat_template: tokenizer_default
+eot_tokens:
+  - "<|ifm|im_end|>"
 datasets:
-  - path: fozziethebeat/alpaca_messages_2k_test
+  - path: HuggingFaceH4/Multilingual-Thinking
     type: chat_template
     split: train
+    field_thinking: thinking
 
 val_set_size: 0.05
 output_dir: ./outputs/k2-horizon-mova-36b-a4b-qlora

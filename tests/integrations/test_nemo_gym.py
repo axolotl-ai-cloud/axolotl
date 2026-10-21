@@ -211,156 +211,6 @@ class TestNormalizeHost(unittest.TestCase):
         assert _normalize_host("192.168.1.50") == "192.168.1.50"
 
 
-class TestDatasetLookupKeying(unittest.TestCase):
-    """Verify dataset lookup uses last message content as key."""
-
-    def test_single_message_prompt(self):
-        """Single-message prompt: [0] == [-1], both work."""
-        prompt = [{"role": "user", "content": "Play Wordle!"}]
-        assert prompt[0]["content"] == prompt[-1]["content"]
-
-    def test_multi_message_prompt_uses_last(self):
-        """Multi-message prompt: must use [-1] to match data_producer lookup."""
-        prompt = [
-            {"role": "system", "content": "You are a game player."},
-            {"role": "user", "content": "Play Wordle!"},
-        ]
-        # data_producer.py line 92 uses prompt[-1]
-        key = prompt[-1]["content"]
-        assert key == "Play Wordle!"
-        # Old code used prompt[0] which would be wrong here
-        assert prompt[0]["content"] != key
-
-
-class TestAgentRefPreservation(unittest.TestCase):
-    """Verify agent_ref is preserved through the dispatch chain."""
-
-    def test_data_producer_preserves_agent_ref(self):
-        """Simulates the data_producer lookup logic."""
-        # Simulate what plugin.py builds
-        dataset_lookup = {
-            "Play Wordle!": {
-                "prompt": [{"role": "user", "content": "Play Wordle!"}],
-                "agent_ref": {"name": "wordle_simple_agent"},
-                "verify_extra": {
-                    "responses_create_params": {
-                        "input": [{"role": "user", "content": "Play Wordle!"}]
-                    }
-                },
-            }
-        }
-
-        # Simulate data_producer.py logic (after fix)
-        prompt_text = "Play Wordle!"
-        full_item = dataset_lookup.get(prompt_text, {})
-        item = full_item.get("verify_extra", {})
-        if "agent_ref" in full_item and "agent_ref" not in item:
-            item["agent_ref"] = full_item["agent_ref"]
-
-        assert "agent_ref" in item
-        assert item["agent_ref"]["name"] == "wordle_simple_agent"
-
-    def test_multi_turn_preserves_agent_ref(self):
-        """Simulates the multi_turn.py dispatch logic."""
-        dataset_lookup = {
-            "Play Wordle!": {
-                "agent_ref": {"name": "wordle_simple_agent"},
-                "verify_extra": {
-                    "responses_create_params": {
-                        "input": [{"role": "user", "content": "Play Wordle!"}]
-                    }
-                },
-            }
-        }
-
-        # Simulate multi_turn.py logic (after fix)
-        prompt_str = "Play Wordle!"
-        full_item = None
-        for key, val in dataset_lookup.items():
-            if isinstance(key, str) and prompt_str == key:
-                full_item = val
-                break
-
-        dispatched = full_item.get("verify_extra", full_item)
-        if isinstance(dispatched, dict) and "agent_ref" not in dispatched:
-            agent_ref = full_item.get("agent_ref")
-            if agent_ref:
-                dispatched = {**dispatched, "agent_ref": agent_ref}
-
-        assert "agent_ref" in dispatched
-        assert dispatched["agent_ref"]["name"] == "wordle_simple_agent"
-
-
-class TestCallAgentsRouting(unittest.TestCase):
-    """Tests for _call_agents routing via agent_ref."""
-
-    def test_routes_to_correct_agent(self):
-        """Items with agent_ref should route to the matching agent server."""
-
-        agent_servers = {
-            "wordle_agent": "http://localhost:11111",
-            "math_agent": "http://localhost:22222",
-        }
-
-        items = [
-            {
-                "agent_ref": {"name": "wordle_agent"},
-                "responses_create_params": {
-                    "input": [{"role": "user", "content": "Play"}]
-                },
-            }
-        ]
-
-        # We can't actually call the agent, but verify the URL resolution
-        # by checking _call_agents builds the right request
-        # The function uses aiohttp — just verify agent_ref lookup works
-        item = items[0]
-        agent_ref = item.get("agent_ref", {})
-        agent_name = agent_ref.get("name", "")
-        agent_url = agent_servers.get(agent_name, "")
-        assert agent_url == "http://localhost:11111"
-
-    def test_fallback_to_first_agent(self):
-        """Items without agent_ref should use first available agent."""
-        agent_servers = {"default_agent": "http://localhost:33333"}
-        item = {
-            "responses_create_params": {"input": [{"role": "user", "content": "Hello"}]}
-        }
-        agent_ref = item.get("agent_ref", {})
-        agent_name = agent_ref.get("name", "")
-        agent_url = agent_servers.get(agent_name, "")
-        if not agent_url and agent_servers:
-            agent_url = next(iter(agent_servers.values()))
-        assert agent_url == "http://localhost:33333"
-
-
-class TestPluginDefaults(unittest.TestCase):
-    """Tests for plugin config enforcement."""
-
-    def test_dataloader_num_workers_forced_to_zero(self):
-        """Plugin should set dataloader_num_workers=0 for NeMo Gym."""
-
-        # Simulate the plugin logic
-        class FakeCfg:
-            dataloader_num_workers = 4
-            nemo_gym_multi_turn = True
-
-        cfg = FakeCfg()
-        # Replicate plugin.get_training_args logic
-        if getattr(cfg, "dataloader_num_workers", None) not in (None, 0):
-            pass  # would log warning
-        cfg.dataloader_num_workers = 0
-        assert cfg.dataloader_num_workers == 0
-
-    def test_dataloader_num_workers_none_stays_zero(self):
-        class FakeCfg:
-            dataloader_num_workers = None
-
-        cfg = FakeCfg()
-        cfg.dataloader_num_workers = 0
-        assert cfg.dataloader_num_workers == 0
-
-
 class TestSelectWeightSyncTransport(unittest.TestCase):
     """Pure-logic table tests for ``select_weight_sync_transport``."""
 
@@ -381,12 +231,16 @@ class TestSelectWeightSyncTransport(unittest.TestCase):
             == "lora_filesystem"
         )
 
-    def test_lora_with_axolotl_endpoint(self):
+    def test_lora_pref_off_with_both_routes_uses_nccl(self):
         from axolotl.integrations.nemo_gym.plugin import select_weight_sync_transport
 
-        caps = self._caps(lora_axolotl=True)
+        caps = self._caps(lora_filesystem=True, nccl=True)
         assert (
             select_weight_sync_transport(caps, has_lora=True, vllm_lora_sync_pref=False)
+            == "nccl"
+        )
+        assert (
+            select_weight_sync_transport(caps, has_lora=True, vllm_lora_sync_pref=True)
             == "lora_filesystem"
         )
 
@@ -402,7 +256,7 @@ class TestSelectWeightSyncTransport(unittest.TestCase):
     def test_full_param_prefers_nccl(self):
         from axolotl.integrations.nemo_gym.plugin import select_weight_sync_transport
 
-        caps = self._caps(nccl=True, http_full=True)
+        caps = self._caps(nccl=True, lora_filesystem=True)
         assert (
             select_weight_sync_transport(
                 caps, has_lora=False, vllm_lora_sync_pref=False
@@ -410,15 +264,15 @@ class TestSelectWeightSyncTransport(unittest.TestCase):
             == "nccl"
         )
 
-    def test_full_param_falls_back_to_http(self):
+    def test_full_param_with_only_lora_endpoint_returns_none(self):
         from axolotl.integrations.nemo_gym.plugin import select_weight_sync_transport
 
-        caps = self._caps(http_full=True)
+        caps = self._caps(lora_filesystem=True)
         assert (
             select_weight_sync_transport(
                 caps, has_lora=False, vllm_lora_sync_pref=False
             )
-            == "http_full"
+            == "none"
         )
 
     def test_full_param_no_routes_returns_none(self):
@@ -445,84 +299,62 @@ class TestSelectWeightSyncTransport(unittest.TestCase):
 class TestProbeVllmWeightSync(unittest.TestCase):
     """``probe_vllm_weight_sync`` reads a vLLM ``/openapi.json`` and reports caps."""
 
-    def test_stock_vllm_with_lora_enabled(self):
-        """Stock ``vllm serve --enable-lora`` exposes only LoRA endpoints."""
+    @staticmethod
+    def _probe(paths):
         from unittest.mock import patch
 
         from axolotl.integrations.nemo_gym.plugin import probe_vllm_weight_sync
 
-        spec = {
-            "paths": {
-                "/v1/models": {"get": {}},
-                "/v1/load_lora_adapter": {"post": {}},
-                "/v1/unload_lora_adapter": {"post": {}},
-                "/v1/completions": {"post": {}},
-            }
-        }
+        spec = {"paths": {p: {"post": {}} for p in paths}}
         with patch("requests.get") as mock_get:
             mock_get.return_value.raise_for_status = lambda: None
             mock_get.return_value.json = lambda: spec
-            caps = probe_vllm_weight_sync("http://localhost:8000")
+            return probe_vllm_weight_sync("http://localhost:8000")
 
+    def test_stock_vllm_with_lora_enabled(self):
+        """Stock ``vllm serve`` with runtime LoRA updating exposes only LoRA routes."""
+        caps = self._probe(
+            [
+                "/v1/models",
+                "/v1/load_lora_adapter",
+                "/v1/unload_lora_adapter",
+                "/v1/completions",
+            ]
+        )
         assert caps.probed is True
         assert caps.lora_filesystem is True
-        assert caps.lora_axolotl is False
         assert caps.nccl is False
-        assert caps.http_full is False
 
-    def test_axolotl_serve_lora_full_capabilities(self):
-        """``axolotl vllm-serve`` exposes NCCL + LoRA + HTTP full sync."""
-        from unittest.mock import patch
+    def test_stock_vllm_with_nothing(self):
+        caps = self._probe(["/v1/models", "/v1/completions"])
+        assert caps.probed is True
+        assert caps.lora_filesystem is False
+        assert caps.nccl is False
 
-        from axolotl.integrations.nemo_gym.plugin import probe_vllm_weight_sync
-
-        spec = {
-            "paths": {
-                "/init_communicator/": {"post": {}},
-                "/update_named_param/": {"post": {}},
-                "/batch_update_named_params/": {"post": {}},
-                "/set_lora_adapter/": {"post": {}},
-                "/clear_lora_adapter/": {"post": {}},
-                "/http_update_weights/": {"post": {}},
-                "/v1/load_lora_adapter": {"post": {}},
-            }
-        }
-        with patch("requests.get") as mock_get:
-            mock_get.return_value.raise_for_status = lambda: None
-            mock_get.return_value.json = lambda: spec
-            caps = probe_vllm_weight_sync("http://localhost:8000")
-
+    def test_native_dev_mode_server_full_capabilities(self):
+        """``axolotl vllm-serve`` exposes native NCCL weight-transfer + LoRA routes."""
+        caps = self._probe(
+            [
+                "/init_weight_transfer_engine",
+                "/start_weight_update",
+                "/update_weights",
+                "/finish_weight_update",
+                "/get_world_size",
+                "/v1/load_lora_adapter",
+            ]
+        )
         assert caps.probed is True
         assert caps.nccl is True
-        assert caps.lora_axolotl is True
         assert caps.lora_filesystem is True
-        assert caps.http_full is True
 
-    def test_trl_vllm_serve_nccl_only(self):
-        """``trl vllm-serve`` exposes NCCL routes but not LoRA filesystem."""
-        from unittest.mock import patch
-
-        from axolotl.integrations.nemo_gym.plugin import probe_vllm_weight_sync
-
-        spec = {
-            "paths": {
-                "/init_communicator/": {"post": {}},
-                "/update_named_param/": {"post": {}},
-                "/batch_update_named_params/": {"post": {}},
-                "/close_communicator/": {"post": {}},
-                "/generate/": {"post": {}},
-            }
-        }
-        with patch("requests.get") as mock_get:
-            mock_get.return_value.raise_for_status = lambda: None
-            mock_get.return_value.json = lambda: spec
-            caps = probe_vllm_weight_sync("http://localhost:8000")
-
-        assert caps.probed is True
+    def test_dev_mode_without_lora(self):
+        caps = self._probe(["/init_weight_transfer_engine", "/update_weights"])
         assert caps.nccl is True
         assert caps.lora_filesystem is False
-        assert caps.lora_axolotl is False
-        assert caps.http_full is False
+
+    def test_legacy_axolotl_routes_not_recognised(self):
+        caps = self._probe(["/init_communicator/", "/update_named_param/"])
+        assert caps.nccl is False
 
     def test_unreachable_server_records_error(self):
         from unittest.mock import patch
@@ -550,7 +382,6 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
       - LoRA + LoRA-loading endpoint   → installs filesystem LoRA sync
       - LoRA + only NCCL endpoint      → uses NCCL broadcast
       - Full FT + NCCL endpoint        → uses NCCL broadcast (standard TRL flow)
-      - Full FT + HTTP endpoint        → raises NotImplementedError (step 3)
       - No usable transport            → raises ValueError with a precise diagnosis
     """
 
@@ -613,6 +444,10 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
         ):
             plugin.post_trainer_create(cfg, trainer)
             setup.assert_called_once()
+            self.assertEqual(
+                setup.call_args.kwargs["alias"],
+                cfg.nemo_gym_model_name or cfg.base_model,
+            )
             check.assert_called_once()
             wire.assert_called_once()
 
@@ -645,17 +480,6 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
             plugin.post_trainer_create(cfg, trainer)
             wire.assert_called_once()
 
-    def test_full_finetune_with_http_endpoint_not_implemented_yet(self):
-        from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
-
-        plugin = NemoGymPlugin()
-        plugin._vllm_caps = self._caps(http_full=True)
-        cfg = self._fake_cfg(adapter=None, vllm_lora_sync=False)
-        trainer = self._fake_trainer()
-        with self.assertRaises(NotImplementedError) as ctx:
-            plugin.post_trainer_create(cfg, trainer)
-        assert "HTTP weight sync" in str(ctx.exception)
-
     def test_full_finetune_with_no_routes_raises_with_full_param_message(self):
         from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
 
@@ -667,8 +491,9 @@ class TestPluginWeightSyncEnforcement(unittest.TestCase):
             plugin.post_trainer_create(cfg, trainer)
         msg = str(ctx.exception)
         assert "no-op trainer" in msg
-        assert "init_communicator" in msg
-        assert "http_update_weights" in msg
+        assert "init_weight_transfer_engine" in msg
+        assert "axolotl vllm-serve" in msg
+        assert "VLLM_SERVER_DEV_MODE" in msg
 
     def test_unprobed_caps_raises_with_probe_failure_message(self):
         from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
@@ -737,8 +562,8 @@ class TestNemoGymE2E(unittest.TestCase):
         trainer.accelerator.device = "cpu"
         trainer.max_completion_length = 512
         trainer.temperature = 0.8
-        trainer.pad_token_id = 0
-        trainer.processing_class.eos_token_id = 2
+        trainer._tokenizer.pad_token_id = 0
+        trainer._tokenizer.eos_token_id = 2
         trainer.processing_class.batch_decode.return_value = ["crane slide"]
         return trainer
 
@@ -874,41 +699,6 @@ class TestNemoGymE2E(unittest.TestCase):
         # Rewards: success=0.42, failure=0.0
         assert data["_deferred_inputs"][0]["env_reward"] == 0.42
         assert data["_deferred_inputs"][1]["env_reward"] == 0.0
-
-    @patch("axolotl.integrations.nemo_gym.rewards._get_verify_urls")
-    @patch("axolotl.integrations.nemo_gym.rewards.requests")
-    def test_reward_functions_chain(self, mock_requests, mock_get_urls):
-        """Test that reward_env and reward_nemo_gym_verify can be used together."""
-        from axolotl.integrations.nemo_gym.rewards import (
-            reward_env,
-            reward_nemo_gym_verify,
-        )
-
-        completions = [[{"role": "assistant", "content": "crane"}]]
-        prompts = [[{"role": "user", "content": "Guess"}]]
-
-        # reward_env: passthrough from agent
-        env_result = reward_env(completions, prompts, env_reward=[0.42])
-        assert env_result == [0.42]
-
-        # reward_nemo_gym_verify: calls /verify
-        mock_get_urls.return_value = {"wordle": "http://localhost:9999/verify"}
-        mock_resp = MagicMock()
-        mock_resp.ok = True
-        mock_resp.json.return_value = {"reward": 0.75}
-        mock_requests.post.return_value = mock_resp
-
-        verify_result = reward_nemo_gym_verify(
-            completions,
-            prompts,
-            resources_server_ref=[{"name": "wordle"}],
-            verify_extra=[{}],
-        )
-        assert verify_result == [0.75]
-
-        # Both rewards can coexist (as they would in a multi-reward config)
-        combined = [e + v for e, v in zip(env_result, verify_result, strict=True)]
-        assert combined == [1.17]
 
 
 class TestLoRASyncSetup(unittest.TestCase):

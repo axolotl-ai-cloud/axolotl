@@ -9,8 +9,8 @@ Terminal 1 (GPU 0)                    Terminal 2 (GPU 1)
 ┌──────────────────────┐              ┌──────────────────────────────────┐
 │  vLLM Server         │   HTTP       │  Trainer                         │
 │  Serves base model   │◄────────────►│  1. Send prompts to vLLM         │
-│  + LoRA adapter      │  /generate   │  2. Score completions (rewards)  │
-│                      │  /set_lora   │  3. Compute advantages           │
+│  + LoRA adapter      │  /v1/*       │  2. Score completions (rewards)  │
+│                      │  LoRA load   │  3. Compute advantages           │
 │  Punica kernels for  │              │  4. PPO-clip gradient update     │
 │  LoRA inference      │              │  5. Sync LoRA weights to vLLM    │
 └──────────────────────┘              └──────────────────────────────────┘
@@ -20,7 +20,7 @@ Terminal 1 (GPU 0)                    Terminal 2 (GPU 1)
 
 1. A YAML config with `rl: grpo`
 2. A reward module (Python file with reward functions)
-3. A running vLLM server (`axolotl vllm-serve config.yaml`)
+3. A vLLM backend: a running server (`axolotl vllm-serve config.yaml`, `vllm_mode: server`), or `vllm_mode: colocate` to host the engine on the training GPU (single-GPU; configure via the `vllm:` block and set `vllm.max_model_len`)
 
 ## Reward Function Signature
 
@@ -32,6 +32,8 @@ def my_reward(completions, **kwargs) -> list[float]:
 ```
 
 Multiple rewards: `reward_funcs: [r1, r2]` with `reward_weights: [1.0, 0.5]`.
+
+Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also work; rewards receive the loaded images as the `images` kwarg (one list per sample, for either column). See [rlhf.qmd](../rlhf.qmd#multimodal).
 
 ## Key Async Features
 
@@ -58,12 +60,11 @@ See [training_stability.qmd](../training_stability.qmd) for detailed diagnostics
 ```
 src/axolotl/
   cli/train.py                     # Entry point
-  cli/vllm_serve.py                # Entry point for vLLM server
+  cli/vllm_serve.py                # Launches vLLM's native OpenAI server (dev mode, NCCL weight transfer, optional LoRA)
   core/trainers/grpo/
     trainer.py                     # AxolotlGRPOTrainer
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
-  scripts/vllm_serve_lora.py       # vLLM serve script with LoRA sync support
   utils/schemas/trl.py             # TRL config schema (all trl: options)
 
 docs/grpo.qmd                     # Full user docs: async, rewards, scaling, config reference

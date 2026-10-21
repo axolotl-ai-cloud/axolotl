@@ -7,15 +7,15 @@ with bias, dropout, and DoRA enabled.
 
 from pathlib import Path
 
+import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
 
-from axolotl.utils.dict import DictDefault
+from tests.e2e.multigpu.utils import multigpu_training_config
+from tests.e2e.utils import requires_flash_attn
 
-from tests.e2e.utils import require_torch_2_7_0, requires_flash_attn
-
-pytestmark = requires_flash_attn
+pytestmark = [pytest.mark.gpu, requires_flash_attn]
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -83,34 +83,30 @@ def _base_lora_fsdp2_config(temp_dir, **overrides):
         "save_safetensors": True,
     }
     cfg.update(overrides)
-    return DictDefault(cfg)
+    return multigpu_training_config(cfg)
 
 
 class TestFSDP2LoRAKernels:
     """Test LoRA kernels under FSDP2."""
 
-    @require_torch_2_7_0
     def test_lora_kernels_basic(self, temp_dir):
         """Basic LoRA + kernels + FSDP2: no dropout, no bias, no DoRA."""
         cfg = _base_lora_fsdp2_config(temp_dir)
         _run_training(temp_dir, cfg)
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
 
-    @require_torch_2_7_0
     def test_lora_kernels_with_dropout(self, temp_dir):
         """LoRA kernels + dropout + FSDP2."""
         cfg = _base_lora_fsdp2_config(temp_dir, lora_dropout=0.1)
         _run_training(temp_dir, cfg)
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
 
-    @require_torch_2_7_0
     def test_lora_kernels_with_dora(self, temp_dir):
         """LoRA kernels + DoRA + FSDP2."""
         cfg = _base_lora_fsdp2_config(temp_dir, peft_use_dora=True)
         _run_training(temp_dir, cfg)
         assert (Path(temp_dir) / "adapter_model.safetensors").exists()
 
-    @require_torch_2_7_0
     def test_lora_kernels_with_dora_and_dropout(self, temp_dir):
         """LoRA kernels + DoRA + dropout + FSDP2."""
         cfg = _base_lora_fsdp2_config(

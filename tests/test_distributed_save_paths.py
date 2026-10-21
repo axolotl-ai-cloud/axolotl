@@ -15,7 +15,7 @@ from axolotl.core.trainers.mixins.distributed_parallel import (
 )
 
 
-def _tp_trainer(state_dict_type, is_fsdp_enabled=True):
+def _tp_trainer(state_dict_type, is_fsdp_enabled=True, native_joined=False):
     calls = []
     trainer = object.__new__(DistributedParallelMixin)
     trainer.axolotl_cfg = SimpleNamespace(
@@ -33,7 +33,12 @@ def _tp_trainer(state_dict_type, is_fsdp_enabled=True):
         ),
         unwrap_model=lambda _m: unwrapped,
     )
-    trainer._save_model_native = lambda *a: calls.append(("native", a))
+
+    def native(*a):
+        calls.append(("native", a))
+        trainer._axolotl_save_joined_all_ranks = native_joined
+
+    trainer._save_model_native = native
     return trainer, calls
 
 
@@ -63,6 +68,12 @@ def test_tp_without_fsdp_gathers_on_every_rank():
         "save_pretrained",
         {"state_dict": None, "is_main_process": False},
     )
+
+
+def test_tp_skips_second_gather_when_transformers_saved_on_every_rank():
+    trainer, calls = _tp_trainer(None, is_fsdp_enabled=False, native_joined=True)
+    trainer.save_model("out")
+    assert calls == [("native", ("out", False))]
 
 
 def test_tp_save_joins_all_ranks_helper():
@@ -142,6 +153,8 @@ def test_non_ep_bf16_lora_checkpoint_uses_default_save(monkeypatch, tmp_path):
 
 def _count_trainer(*, tp_size, cp_size, average_tokens_across_devices=False):
     trainer = object.__new__(AxolotlTrainer)
+    trainer.model = SimpleNamespace(_tp_size=tp_size)
+    trainer.is_deepspeed_enabled = False
     trainer.model_accepts_loss_kwargs = True
     trainer.compute_loss_func = None
     trainer._loss_shifts_labels = True
@@ -152,7 +165,10 @@ def _count_trainer(*, tp_size, cp_size, average_tokens_across_devices=False):
     )
     trainer.accelerator = SimpleNamespace(
         parallelism_config=SimpleNamespace(
-            tp_size=tp_size, non_data_parallel_size=tp_size * cp_size
+            tp_size=tp_size,
+            cp_size=cp_size,
+            sp_size=1,
+            non_data_parallel_size=tp_size * cp_size,
         )
     )
     return trainer

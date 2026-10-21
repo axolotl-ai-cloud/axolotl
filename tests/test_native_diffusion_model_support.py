@@ -819,6 +819,56 @@ def test_trainable_token_adapter_routes_to_efficient_merge(monkeypatch, tmp_path
         adapter_has_trainable_token_deltas(missing_delta)
 
 
+def test_merged_export_preserves_valid_decision_manifest(tmp_path, monkeypatch):
+    from collections import OrderedDict
+    from types import SimpleNamespace
+
+    from axolotl.integrations.base import PluginManager
+    from axolotl.integrations.diffusion_decision.manifest import build_decision_manifest
+    from axolotl.integrations.diffusion_decision.plugin import DiffusionDecisionPlugin
+
+    adapter = tmp_path / "adapter"
+    adapter.mkdir()
+    cfg = DictDefault(
+        {
+            "base_model": "nvidia/Nemotron-Labs-Diffusion-3B",
+            "revision_of_model": "0d51902da1f8869f83413ce642fab402fa5641e0",
+            "model_config_type": "nemotron_labs_diffusion",
+            "output_dir": str(tmp_path),
+            "diffusion_lm": {"canvas_width": 128, "mask_token_id": 100},
+            "diffusion_decision": {
+                "layout": "prompt_slots",
+                "latent": {"mode": "none", "num_slots": 0},
+            },
+        }
+    )
+    tokenizer = SimpleNamespace(
+        bos_token_id=1,
+        eos_token_id=2,
+        pad_token_id=0,
+        unk_token_id=3,
+        mask_token_id=100,
+        all_special_ids=[0, 1, 2, 3, 100],
+    )
+    model = SimpleNamespace(
+        config=SimpleNamespace(
+            mask_token_id=100,
+            _commit_hash="0d51902da1f8869f83413ce642fab402fa5641e0",
+        )
+    )
+    manifest = build_decision_manifest(cfg, tokenizer=tokenizer, model=model)
+    source = manifest.write_to(adapter)
+    merged = tmp_path / "merged"
+    merged.mkdir()
+    monkeypatch.setattr(
+        PluginManager.get_instance(),
+        "plugins",
+        OrderedDict({"diffusion_decision": DiffusionDecisionPlugin()}),
+    )
+    PluginManager.get_instance().post_lora_merge(cfg, str(adapter), str(merged))
+    assert (merged / source.name).read_bytes() == source.read_bytes()
+
+
 def test_native_generation_dispatches_and_preserves_legacy_seam():
     from types import SimpleNamespace
 
@@ -1620,3 +1670,173 @@ def test_diffusion_gemma_lora_targets_may_be_listed_per_path():
             ),
             model_name="DiffusionGemma",
         )
+
+
+_EXPERT_PARAMS = ["experts.gate_up_proj", "experts.down_proj"]
+_ATTN_TARGET = (
+    r".*\.(encoder\.language_model|decoder)\.layers\.\d+\."
+    r"(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)"
+)
+
+
+def _expert_peft(model=None, r=2):
+    return get_peft_model(
+        _tiny_model() if model is None else model,
+        LoraConfig(
+            r=r,
+            lora_alpha=r,
+            target_modules=_ATTN_TARGET,
+            target_parameters=_EXPERT_PARAMS,
+            lora_dropout=0.0,
+            task_type=None,
+        ),
+    )
+
+
+def test_diffusion_gemma_expert_lora_validation_keeps_router_frozen():
+    validate_native_diffusion_lora(
+        _native_cfg(lora_target_parameters=_EXPERT_PARAMS),
+        model_name="DiffusionGemma",
+    )
+    for bad in (["router.proj.weight"], ["experts.gate_up_proj", "router.scale"]):
+        with pytest.raises(ValueError, match="router stays frozen"):
+            validate_native_diffusion_lora(
+                _native_cfg(lora_target_parameters=bad), model_name="DiffusionGemma"
+            )
+    with pytest.raises(ValueError, match="linear module targets"):
+        validate_native_diffusion_lora(
+            _native_cfg(lora_target_parameters=_EXPERT_PARAMS), model_name="Nemotron"
+        )
+
+
+def test_tied_expert_lora_shares_param_wrapper_factors_and_freezes_router():
+    peft = _expert_peft()
+    enc = peft.get_submodule("base_model.model.model.encoder.language_model.layers.0")
+    dec = peft.get_submodule("base_model.model.model.decoder.layers.0")
+    # one ParamWrapper per targeted 3D tensor, nested on the experts module
+    enc_wrappers = {enc.experts.parameter_name: enc.experts}
+    enc_wrappers[enc.experts.base_layer.parameter_name] = enc.experts.base_layer
+    dec_wrappers = {dec.experts.parameter_name: dec.experts}
+    dec_wrappers[dec.experts.base_layer.parameter_name] = dec.experts.base_layer
+    assert set(enc_wrappers) == {"gate_up_proj", "down_proj"}
+    assert (
+        enc_wrappers["down_proj"].lora_A["default"]
+        is not (dec_wrappers["down_proj"].lora_A["default"])
+    )
+
+    share_diffusion_gemma_tied_lora(peft)
+
+    for name in ("gate_up_proj", "down_proj"):
+        assert (
+            enc_wrappers[name].lora_A["default"] is dec_wrappers[name].lora_A["default"]
+        )
+        assert (
+            enc_wrappers[name].lora_B["default"] is dec_wrappers[name].lora_B["default"]
+        )
+        assert enc_wrappers[name].merged_adapters is dec_wrappers[name].merged_adapters
+    trainable = {
+        name: param for name, param in peft.named_parameters() if param.requires_grad
+    }
+    assert trainable
+    assert not [name for name in trainable if "router" in name or "vision" in name]
+    assert all("lora_" in name for name in trainable)
+    # every trainable tensor is reachable under an encoder name (decoder aliases dedupe)
+    assert all(".encoder.language_model." in name for name in trainable)
+
+    # tied factors receive gradient from both the encoder and the decoder pass
+    gate_up = enc_wrappers["gate_up_proj"]
+    gate_up.lora_B["default"].weight.data.normal_()
+    args = _forward_args()
+    output = peft(
+        input_ids=args["input_ids"],
+        attention_mask=args["attention_mask"],
+        position_ids=args["position_ids"],
+        decoder_input_ids=args["decoder_input_ids"],
+        decoder_attention_mask=args["decoder_attention_mask"],
+        decoder_position_ids=args["decoder_position_ids"],
+    )
+    output.logits.sum().backward()
+    assert gate_up.lora_A["default"].weight.grad is not None
+    assert peft.base_model.model.model.decoder.layers[0].router.proj.weight.grad is None
+
+
+def test_tied_expert_lora_matches_merged_reference_and_rejects_unequal_reload():
+    torch.manual_seed(0)
+    base = _tiny_model().eval()
+    reference = DiffusionGemmaForBlockDiffusion(base.config).eval()
+    reference.load_state_dict(base.state_dict())
+    peft = _expert_peft(base)
+    share_diffusion_gemma_tied_lora(peft)
+    with torch.no_grad():
+        for _, module in peft.named_modules():
+            if getattr(module, "parameter_name", None) is not None:
+                module.lora_B["default"].weight.normal_(std=0.05)
+                module.lora_A["default"].weight.normal_(std=0.05)
+    enc = peft.get_submodule("base_model.model.model.encoder.language_model.layers.0")
+    for wrapper in (enc.experts, enc.experts.base_layer):
+        delta = wrapper.get_delta_weight("default")
+        name = wrapper.parameter_name
+        with torch.no_grad():
+            getattr(
+                reference.model.encoder.language_model.layers[0].experts, name
+            ).add_(delta)
+    # the reference's encoder/decoder experts are tied, so one add updates both
+    assert (
+        reference.model.encoder.language_model.layers[0].experts.gate_up_proj
+        is reference.model.decoder.layers[0].experts.gate_up_proj
+    )
+    args = _forward_args()
+
+    def run(model):
+        return model(
+            input_ids=args["input_ids"],
+            attention_mask=args["attention_mask"],
+            position_ids=args["position_ids"],
+            decoder_input_ids=args["decoder_input_ids"],
+            decoder_attention_mask=args["decoder_attention_mask"],
+            decoder_position_ids=args["decoder_position_ids"],
+        ).logits
+
+    with torch.no_grad():
+        torch.testing.assert_close(run(peft), run(reference), rtol=1e-5, atol=1e-5)
+
+    reloaded = _expert_peft()
+    dec_gate_up = reloaded.get_submodule(
+        "base_model.model.model.decoder.layers.0.experts.base_layer"
+    )
+    with torch.no_grad():
+        dec_gate_up.lora_A["default"].weight.add_(1)
+    with pytest.raises(ValueError, match="unequal LoRA factors"):
+        share_diffusion_gemma_tied_lora(reloaded, validate_saved=True)
+
+
+def test_packed_diffusion_gemma_can_skip_encoder_logits():
+    from axolotl.model_support.diffusion_gemma.modeling import (
+        AxolotlDiffusionGemmaForBlockDiffusion,
+    )
+
+    base = _tiny_model().eval()
+    model = AxolotlDiffusionGemmaForBlockDiffusion(base.config).eval()
+    model.load_state_dict(base.state_dict())
+    args = _forward_args()
+    kwargs = dict(
+        encoder_input_ids=args["input_ids"],
+        encoder_attention_mask=args["attention_mask"],
+        encoder_position_ids=args["position_ids"],
+        decoder_input_ids=args["decoder_input_ids"],
+        decoder_attention_mask=args["decoder_attention_mask"],
+        decoder_position_ids=args["decoder_position_ids"],
+    )
+    with torch.no_grad():
+        full = model(**kwargs)
+        lean = model(**kwargs, return_encoder_logits=False)
+        unrolled = model(
+            **kwargs,
+            return_encoder_logits=False,
+            unroll_steps=1,
+            update_mask=torch.zeros((1, 2), dtype=torch.bool),
+        )
+    assert full.encoder_logits is not None
+    assert lean.encoder_logits is None and unrolled.encoder_logits is None
+    assert lean.encoder_last_hidden_state is not None
+    torch.testing.assert_close(lean.logits, full.logits)

@@ -307,7 +307,7 @@ class AxolotlInputConfig(
     dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Configuration for dynamic checkpointing (trigger by file or signal). "
+            "description": "Configuration for dynamic checkpointing (trigger by file). "
             "Set 'enabled: true' to activate this feature."
         },
     )
@@ -333,6 +333,16 @@ class AxolotlInputConfig(
         },
     )
     dpo_label_smoothing: float | None = None
+    dpo_ld_alpha: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        json_schema_extra={
+            "description": "LD-DPO length desensitization: weight on the log-probabilities of the tokens a "
+            "response has beyond the shorter response of its pair (1.0 = unweighted, 0.0 = ignore them). "
+            "Applies to every DPO loss type, including apo_zero."
+        },
+    )
     precompute_ref_log_probs: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -722,6 +732,20 @@ class AxolotlInputConfig(
             "description": "Use efficient multi-packing with block diagonal attention and per sequence position_ids. Recommend set to 'true'"
         },
     )
+    balance_labels: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Balance supervised tokens across causal LM packed, flattened, or padded batches. Supports streaming with sample packing."
+        },
+    )
+    label_balance_window_optim_steps: int = Field(
+        default=1,
+        ge=1,
+        strict=True,
+        json_schema_extra={
+            "description": "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only."
+        },
+    )
     sample_packing_group_size: int | None = Field(
         default=100_000,
         json_schema_extra={
@@ -748,6 +772,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Set to 'false' if getting errors during eval with sample_packing on"
+        },
+    )
+    fa_varlen_kwargs_in_collator: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "With sample_packing and flash attention, precompute the varlen metadata (cu_seq_lens, max_length) once per batch in the collator instead of letting transformers derive it in every attention layer, which costs several host-device syncs per layer. Not used when batches are dispatched (streaming or pretraining datasets unless accelerator_config.dispatch_batches is false) or under DeepSpeed sequence parallel, since both slice every batch tensor per rank. Set to 'false' to restore the per-layer derivation."
         },
     )
     pad_to_sequence_len: bool | None = Field(
@@ -1206,6 +1236,12 @@ class AxolotlInputConfig(
     torch_compile_mode: Literal["default", "reduce-overhead", "max-autotune"] | None = (
         None
     )
+    torch_compile_regional: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks gradient_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without gradient checkpointing."
+        },
+    )
     torch_compile_options: dict[str, bool | int | float | str] | None = Field(
         default=None,
         json_schema_extra={
@@ -1257,6 +1293,12 @@ class AxolotlInputConfig(
             "description": "Set to `no` to skip evaluation, `epoch` at end of each epoch, leave empty to infer from `eval_steps`"
         },
     )
+    eval_on_start: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Run an evaluation before the first training step. Leave empty to keep the default (on whenever evaluation is enabled); set to false to skip the step-0 eval"
+        },
+    )
 
     save_steps: int | float | None = Field(
         default=None,
@@ -1289,6 +1331,12 @@ class AxolotlInputConfig(
     logging_steps: int | None = Field(
         default=None, json_schema_extra={"description": "Logging frequency"}
     )
+    logging_nan_inf_filter: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": "HF Trainer option that replaces a NaN/inf loss with the running average in the logged loss (HF default). The check reads the loss on the host every micro-step, one device sync; set to 'false' to remove it."
+        },
+    )
     early_stopping_patience: int | None = Field(
         default=None,
         json_schema_extra={
@@ -1304,6 +1352,18 @@ class AxolotlInputConfig(
     )
     use_tensorboard: bool | None = Field(
         default=None, json_schema_extra={"description": "Use tensorboard for logging"}
+    )
+    sync_profiler_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Debugging aid, separate from profiler_steps (the torch profiler timeline): count host-device synchronizations per micro-step for this many optimizer steps using torch.cuda.set_sync_debug_mode, then log the call sites and write sync_profile.json to output_dir."
+        },
+    )
+    sync_profiler_start_step: int = Field(
+        default=2,
+        json_schema_extra={
+            "description": "Optimizer step at which the sync profiler starts (after warm-up)."
+        },
     )
     profiler_steps: int | None = Field(
         default=None,
@@ -1687,6 +1747,40 @@ class AxolotlInputConfig(
         return value
 
     @model_validator(mode="after")
+    def check_label_balanced_packing(self):
+        """Label balancing requires static token-level labels and reorderable samples."""
+        if self.balance_labels and (
+            (
+                not self.sample_packing
+                and (self.streaming or self.pretraining_dataset or self.group_by_length)
+            )
+            or self.sample_packing_sequentially
+            or self.curriculum_sampling
+            or self.diffusion_lm
+            or self.rl
+            or self.reward_model
+            or self.process_reward_model
+        ):
+            raise ValueError(
+                "balance_labels requires causal LM "
+                "sample_packing or map-style fixed-count batching without sequential, curriculum, or conflicting length-grouped sampling"
+            )
+        if self.label_balance_window_optim_steps > 1:
+            if not self.balance_labels:
+                raise ValueError(
+                    "label_balance_window_optim_steps requires balance_labels"
+                )
+            if self.streaming or self.pretraining_dataset:
+                raise ValueError(
+                    "label_balance_window_optim_steps > 1 requires non-streaming training"
+                )
+        if self.balance_labels and (self.accelerator_config or {}).get("split_batches"):
+            raise ValueError(
+                "balance_labels requires split_batches=False for optimizer-step grouping"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_torch_compile_options_requires_compile(self):
         """Require torch_compile enabled when torch_compile_options is set."""
         if self.torch_compile_options is not None and not self.torch_compile:
@@ -2023,9 +2117,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_beta_and_trl_beta_match(cls, data):
-        if data.get("beta") and data.get("trl", {}).get("beta"):
-            if data["beta"] != data["trl"]["beta"]:
-                raise ValueError("beta and trl.beta must match or one must be removed")
+        trl_beta = (data.get("trl") or {}).get("beta")
+        if data.get("rl_beta") and trl_beta and data["rl_beta"] != trl_beta:
+            raise ValueError("rl_beta and trl.beta must match or one must be removed")
         return data
 
     @model_validator(mode="after")

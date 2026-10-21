@@ -7,12 +7,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
+import torch._dynamo.config as _dynamo_cfg
 import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
-from axolotl.core.trainers import AxolotlTrainer
+from axolotl.core.trainers import AxolotlKTOTrainer, AxolotlTrainer
 from axolotl.model_support import ModelStrategies
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -78,6 +79,41 @@ class TestSaveAndEvalStrategy:
         assert kwargs["eval_on_start"] is True
         if eval_steps:
             assert kwargs["eval_steps"] == eval_steps
+
+    @pytest.mark.parametrize(
+        ("eval_strategy", "eval_steps"), [("epoch", None), ("steps", 5)]
+    )
+    def test_explicit_eval_on_start_false_skips_initial_eval(
+        self, eval_strategy, eval_steps
+    ):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=eval_strategy,
+                eval_steps=eval_steps,
+                eval_on_start=False,
+            )
+        )
+
+        assert kwargs["eval_on_start"] is False
+
+    def test_explicit_eval_on_start_true_is_kept(self):
+        kwargs = _save_and_eval_kwargs(
+            SimpleNamespace(
+                save_steps=None,
+                save_strategy=None,
+                save_total_limit=None,
+                val_set_size=0,
+                eval_strategy=None,
+                eval_steps=5,
+                eval_on_start=True,
+            )
+        )
+
+        assert kwargs["eval_on_start"] is True
 
 
 class TestGradientCheckpointingConfig:
@@ -385,25 +421,21 @@ class TestTrainerClsPlugin:
 
     def test_trainer_cls_is_not_none_with_plugin(self, kto_cfg, model, tokenizer):
         """
-        Test that the trainer cls is not none with plugin
+        Test that the trainer cls is not none when a plugin returns no trainer cls
 
         Fixes #2693
         """
-        cfg = kto_cfg.copy()
-        cfg.plugins = ["axolotl.integrations.liger.LigerPlugin"]
+        plugin_manager = MagicMock()
+        plugin_manager.get_trainer_cls.return_value = None
+        with patch(
+            "axolotl.core.builders.rl.PluginManager.get_instance",
+            return_value=plugin_manager,
+        ):
+            builder = HFRLTrainerBuilder(kto_cfg, model, tokenizer)
+            trainer_cls, trainer_cls_args = builder._get_trainer_cls({})
 
-        # Expected AttributeError as we don't pass regular model configs to RL trainer builder
-        # If it throws `TypeError: None is not a callable object`, trainer_cls could be None
-        try:
-            builder = HFRLTrainerBuilder(cfg, model, tokenizer)
-
-            builder.build(100)
-        except TypeError as e:
-            # Error raised if trainer_cls is None
-            assert "'tuple' object has no attribute 'config'" not in str(e)
-        except Exception:
-            # Another error happens, so we passed trainer_cls to builder
-            pass
+        assert trainer_cls is AxolotlKTOTrainer
+        assert trainer_cls_args[0] is model
 
 
 @pytest.fixture(name="inductor_config_snapshot")
@@ -458,6 +490,58 @@ class TestApplyTorchCompileOptions:
         TrainerBuilderBase._apply_torch_compile_options({})
         for k, v in inductor_config_snapshot.items():
             assert getattr(_inductor_cfg, k) == v
+
+    @pytest.mark.parametrize(
+        ("accelerator_config", "pin_memory", "expected"),
+        [
+            (None, None, True),
+            (None, True, True),
+            (None, False, False),
+            ({"split_batches": False}, None, True),
+            ({"non_blocking": False}, None, False),
+            ({"non_blocking": True}, False, True),
+        ],
+    )
+    def test_configure_accelerator_config_non_blocking(
+        self, accelerator_config, pin_memory, expected
+    ):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(
+            accelerator_config=accelerator_config, dataloader_pin_memory=pin_memory
+        )
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_accelerator_config(builder, training_args_kwargs)
+
+        config = training_args_kwargs["accelerator_config"]
+        assert config.non_blocking is expected
+        if accelerator_config:
+            for key, value in accelerator_config.items():
+                assert getattr(config, key) is value
+
+    def test_configure_torch_compile_disables_dynamo_lru_under_checkpointing(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=True)
+        with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+        set_lru.assert_called_once_with(False)
+
+    def test_configure_torch_compile_keeps_dynamo_lru_without_checkpointing(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=False)
+        with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+        set_lru.assert_not_called()
+
+    def test_configure_torch_compile_raises_recompile_limit_for_regional(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = DictDefault(torch_compile=True, torch_compile_regional=True)
+        before = _dynamo_cfg.recompile_limit
+        try:
+            TrainerBuilderBase._configure_torch_compile(builder, {})
+            assert _dynamo_cfg.recompile_limit >= 64
+        finally:
+            _dynamo_cfg.recompile_limit = before
 
     def test_configure_torch_compile_invokes_apply_when_options_set(self):
         builder = MagicMock(spec=TrainerBuilderBase)
@@ -514,7 +598,7 @@ def test_packed_collator_flash_attention_metadata(
         DictDefault(
             attn_implementation=attn_implementation,
             model_config_type="llama",
-            torch_compile=True,
+            torch_compile=False,
         ),
         model=None,
         tokenizer=MagicMock(),
@@ -546,22 +630,70 @@ def test_packed_collator_flash_attention_metadata(
 
 
 @pytest.mark.parametrize("is_eval", [False, True])
+def test_packed_collator_flash_attention_metadata_streaming_without_dispatch(is_eval):
+    builder = HFCausalTrainerBuilder(
+        DictDefault(
+            attn_implementation="flash_attention_2",
+            model_config_type="llama",
+            streaming=True,
+            accelerator_config={"dispatch_batches": False},
+        ),
+        model=None,
+        tokenizer=MagicMock(),
+    )
+    training_args = SimpleNamespace(
+        pretraining=False, sample_packing=not is_eval, eval_sample_packing=is_eval
+    )
+
+    collator = builder.build_collator(training_args, is_eval=is_eval)
+
+    assert collator.emit_fa_varlen_kwargs is True
+
+
+@pytest.mark.parametrize("is_eval", [False, True])
 @pytest.mark.parametrize(
-    ("torch_compile", "packing", "model_type", "collator_cls"),
+    ("fa_varlen_kwargs_in_collator", "packing", "model_type", "collator_cls", "extra"),
     [
-        (False, True, "llama", V2BatchSamplerDataCollatorForSeq2Seq),
-        (True, False, "llama", DataCollatorForSeq2Seq),
-        (True, True, "gpt2", BatchSamplerDataCollatorForSeq2Seq),
+        (False, True, "llama", V2BatchSamplerDataCollatorForSeq2Seq, {}),
+        (True, False, "llama", DataCollatorForSeq2Seq, {}),
+        (True, True, "gpt2", BatchSamplerDataCollatorForSeq2Seq, {}),
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {"accelerator_config": {"dispatch_batches": True}},
+        ),
+        # DeepSpeed Ulysses slices every batch tensor as [batch, seq]
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {
+                "deepspeed": "deepspeed_configs/zero3_bf16.json",
+                "context_parallel_size": 2,
+            },
+        ),
+        # accelerate dispatches iterable-dataset batches by slicing every tensor on dim 0
+        (
+            True,
+            True,
+            "llama",
+            V2BatchSamplerDataCollatorForSeq2Seq,
+            {"streaming": True},
+        ),
     ],
 )
-def test_collator_flash_attention_metadata_requires_supported_packed_compile(
-    torch_compile, packing, model_type, collator_cls, is_eval
+def test_collator_flash_attention_metadata_requires_supported_packed(
+    fa_varlen_kwargs_in_collator, packing, model_type, collator_cls, extra, is_eval
 ):
     builder = HFCausalTrainerBuilder(
         DictDefault(
             attn_implementation="flash_attention_2",
             model_config_type=model_type,
-            torch_compile=torch_compile,
+            fa_varlen_kwargs_in_collator=fa_varlen_kwargs_in_collator,
+            **extra,
         ),
         model=None,
         tokenizer=MagicMock(),

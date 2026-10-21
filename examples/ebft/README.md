@@ -47,7 +47,7 @@ For **unstructured text** without prompt/completion splits (e.g., raw code, pros
 ### Structured Mode (QA data + vLLM)
 
 ```bash
-# 1. Start vLLM server (LoRA serve module auto-selected when vllm_lora_sync: true)
+# 1. Start vLLM server (native OpenAI server; LoRA loading enabled when vllm_lora_sync: true)
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve examples/ebft/qwen3-4b-ebft-structured-async.yaml
 
 # 2. Train on a separate GPU

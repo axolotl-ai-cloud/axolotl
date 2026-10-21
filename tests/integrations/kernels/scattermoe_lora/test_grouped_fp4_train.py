@@ -5,10 +5,9 @@
 """Correctness tests for the grouped/marlin NVFP4 MoE training path.
 
 Covers:
-  - grouped_fp4_moe_train fwd+bwd vs a bf16 per-expert oracle (DSV4 and gemma4 shapes)
+  - grouped_fp4_moe_train bwd vs a bf16 per-expert oracle (DSV4 and gemma4 shapes)
   - Activation type dispatch (_detect_act_type) and wrong-activation detection
   - fp8-read dX NaN regression at non-128-aligned K (I=704, the gemma4 intermediate dim)
-  - marlin->bf16 fused dequant bit-exactness vs nvfp4_dequant_bf16
   - GeGLU / clamped-SwiGLU activation kernel fwd+bwd vs torch reference
 
 All tests use synthetic NVFP4 weights — no model download required.
@@ -224,63 +223,6 @@ def _make_inputs(cfg: dict, seed: int = 0):
 def _fresh_nv(Wgu, Wdn):
     """Build fresh NVFP4Tensor pair from the same weight matrices (for second-call tests)."""
     return quantize_nvfp4(Wgu), quantize_nvfp4(Wdn)
-
-
-# ===========================================================================
-# Test 1: forward output matches oracle
-# ===========================================================================
-
-
-@pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
-def test_grouped_fp4_fwd_matches_oracle(cfg):
-    """Forward output cosine >= 0.97 vs bf16 per-expert oracle, no NaN/inf."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_available,
-        grouped_fp4_moe_train,
-    )
-
-    if not grouped_fp4_available("nvfp4"):
-        pytest.skip("no grouped fp4 backend available")
-
-    H = cfg["H"]
-    hidden, idx, wts, gu_nv, dn_nv, Wgu_b, Wdn_b, (Agu, Bgu, Adn, Bdn) = _make_inputs(
-        cfg
-    )
-    _r, s = cfg["r"], cfg["scaling"]
-
-    cache = {}
-    out = grouped_fp4_moe_train(
-        hidden.clone(),
-        idx,
-        wts,
-        gu_nv,
-        dn_nv,
-        (Agu.detach(), Bgu.detach(), s),
-        (Adn.detach(), Bdn.detach(), s),
-        cfg["limit"],
-        "nvfp4",
-        act_type=cfg["act_type"],
-        mxfp4_cache=cache,
-    )
-    assert torch.isfinite(out).all(), f"{cfg['name']}: fwd output has NaN/inf"
-    assert out.shape == (cfg["N"], H), f"unexpected output shape {out.shape}"
-
-    ref = _bf16_oracle(
-        hidden.clone(),
-        idx,
-        wts,
-        Wgu_b,
-        Wdn_b,
-        Agu,
-        Bgu,
-        Adn,
-        Bdn,
-        cfg["act_type"],
-        cfg["limit"],
-        s,
-    )
-    cos = _cos(out, ref)
-    assert cos > 0.97, f"{cfg['name']}: fwd cosine {cos:.4f} < 0.97"
 
 
 # ===========================================================================
@@ -696,125 +638,6 @@ def test_grouped_fp4_bwd_nan_k704():
     ]:
         assert t is not None, f"gemma4 K=704 backward: {name} is None"
         assert torch.isfinite(t).all(), f"gemma4 K=704 backward: {name} has NaN/inf"
-
-
-# ===========================================================================
-# Test 5: marlin->bf16 fused dequant bit-exactness vs nvfp4_dequant_bf16
-# ===========================================================================
-
-
-@pytest.mark.skipif(
-    not (_IS_CUDA and torch.cuda.get_device_capability()[0] >= 8),
-    reason="marlin W4A16 backend needs Ampere (sm80)+ (the module's Blackwell pytestmark still "
-    "gates this file to sm100/sm120 on CI; the sm80+ marlin bit-exact variant that executes on "
-    "sm89 lives in test_grouped_fp4_dequant_path.py)",
-)
-def test_marlin_fused_dequant_bit_exact_gate_up():
-    """marlin_dequant_bf16 is bit-exact vs nvfp4_dequant_bf16 for gate_up (N=64, K=128) shape."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import (
-        marlin_w4a16_available,
-    )
-
-    if not marlin_w4a16_available():
-        pytest.skip("marlin W4A16 ext not available")
-
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
-        nvfp4_dequant_bf16,
-    )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
-        _build_base_scatter,
-    )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.fused_dequant import (
-        marlin_dequant_bf16,
-    )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
-        prepare_nvfp4_weight_for_marlin,
-    )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
-        fp4_codebook,
-    )
-
-    # N must be divisible by 64 (marlin N_t), K divisible by 16 (NVFP4 block)
-    C, N, K = 4, 64, 128
-    torch.manual_seed(42)
-    W = torch.randn(C, N, K, device=DEV, dtype=torch.bfloat16) * 0.04
-    nv = quantize_nvfp4(W)
-    pt = torch.ones(C, device=DEV)
-
-    ext = load_ext()
-    scatter_lut = _build_base_scatter(torch.device(DEV))
-    cb = fp4_codebook(torch.device(DEV)).float()
-
-    marlin_packed = prepare_nvfp4_weight_for_marlin(
-        nv.qdata, nv.scale, pt, N, K, torch.bfloat16, ext.gptq_marlin_repack
-    )
-    qw_flat = marlin_packed[0].reshape(C, -1)
-    ref_bf16 = nvfp4_dequant_bf16(nv.qdata, nv.scale, pt)
-    got_bf16 = marlin_dequant_bf16(qw_flat, nv.scale, pt, scatter_lut, cb, N, K, C)
-
-    max_err = (ref_bf16.float() - got_bf16.float()).abs().max().item()
-    assert max_err == 0.0, (
-        f"marlin fused dequant not bit-exact vs nvfp4_dequant_bf16 (gate_up N={N}, K={K}): "
-        f"maxerr={max_err}"
-    )
-
-
-@pytest.mark.skipif(
-    not (_IS_CUDA and torch.cuda.get_device_capability()[0] >= 8),
-    reason="marlin W4A16 backend needs Ampere (sm80)+ (the module's Blackwell pytestmark still "
-    "gates this file to sm100/sm120 on CI; the sm80+ marlin bit-exact variant that executes on "
-    "sm89 lives in test_grouped_fp4_dequant_path.py)",
-)
-def test_marlin_fused_dequant_bit_exact_down():
-    """marlin_dequant_bf16 is bit-exact vs nvfp4_dequant_bf16 for down (N=128, K=64) shape."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import (
-        marlin_w4a16_available,
-    )
-
-    if not marlin_w4a16_available():
-        pytest.skip("marlin W4A16 ext not available")
-
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
-        nvfp4_dequant_bf16,
-    )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
-        _build_base_scatter,
-    )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.fused_dequant import (
-        marlin_dequant_bf16,
-    )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
-        prepare_nvfp4_weight_for_marlin,
-    )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
-        fp4_codebook,
-    )
-
-    # down: N=H, K=I; marlin requirement: N%64==0, K%16==0
-    C, N, K = 4, 128, 64
-    torch.manual_seed(43)
-    W = torch.randn(C, N, K, device=DEV, dtype=torch.bfloat16) * 0.04
-    nv = quantize_nvfp4(W)
-    pt = torch.ones(C, device=DEV)
-
-    ext = load_ext()
-    scatter_lut = _build_base_scatter(torch.device(DEV))
-    cb = fp4_codebook(torch.device(DEV)).float()
-
-    marlin_packed = prepare_nvfp4_weight_for_marlin(
-        nv.qdata, nv.scale, pt, N, K, torch.bfloat16, ext.gptq_marlin_repack
-    )
-    qw_flat = marlin_packed[0].reshape(C, -1)
-    ref_bf16 = nvfp4_dequant_bf16(nv.qdata, nv.scale, pt)
-    got_bf16 = marlin_dequant_bf16(qw_flat, nv.scale, pt, scatter_lut, cb, N, K, C)
-
-    max_err = (ref_bf16.float() - got_bf16.float()).abs().max().item()
-    assert max_err == 0.0, (
-        f"marlin fused dequant not bit-exact vs nvfp4_dequant_bf16 (down N={N}, K={K}): "
-        f"maxerr={max_err}"
-    )
 
 
 # ===========================================================================

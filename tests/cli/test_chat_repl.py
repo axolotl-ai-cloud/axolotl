@@ -26,10 +26,12 @@ class FakeCache:
         self.length = length
         self.croppable = croppable
 
-    def crop(self, max_length):
+    def crop(self, tokens_to_remove):
         if not self.croppable:
             raise NotImplementedError("cannot crop")
-        self.length = max_length
+        if tokens_to_remove > 0:
+            raise ValueError("crop takes a negative count of tokens to remove")
+        self.length += tokens_to_remove
 
     def get_seq_length(self):
         return self.length

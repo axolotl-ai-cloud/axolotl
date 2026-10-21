@@ -598,7 +598,51 @@ class ModelLoader:
             and self.model.config.eos_token_id
             and self.model.config.eos_token_id != self.tokenizer.eos_token_id
         ):
-            self.model.config.eos_token_id = self.tokenizer.eos_token_id
+            if not isinstance(self.model.config.eos_token_id, list):
+                self.model.config.eos_token_id = self.tokenizer.eos_token_id
+            elif (
+                self.tokenizer.eos_token_id is not None
+                and self.tokenizer.eos_token_id not in self.model.config.eos_token_id
+            ):
+                self.model.config.eos_token_id = [
+                    *self.model.config.eos_token_id,
+                    self.tokenizer.eos_token_id,
+                ]
+
+        self._sync_generation_config_eos()
+
+    def _sync_generation_config_eos(self):
+        """Make generation stop on the tokenizer eos and the configured eot tokens."""
+        generation_config = getattr(self.model, "generation_config", None)
+        if generation_config is None or self.tokenizer.eos_token_id is None:
+            return
+
+        existing = generation_config.eos_token_id
+        if existing is None:
+            existing = []
+        elif isinstance(existing, int):
+            existing = [existing]
+        eos_ids = list(existing)
+
+        candidates = [self.tokenizer.eos_token_id]
+        # mistral-common strategies ignore eot_tokens, so they are not trained
+        if not self.cfg.tokenizer_use_mistral_common:
+            for token in self.cfg.eot_tokens or []:
+                token_ids = self.tokenizer.encode(token, add_special_tokens=False)
+                if len(token_ids) == 1:
+                    candidates.append(token_ids[0])
+        for token_id in candidates:
+            if token_id not in eos_ids:
+                eos_ids.append(token_id)
+
+        if eos_ids != existing:
+            LOG.info(
+                f"Setting generation_config.eos_token_id from "
+                f"{generation_config.eos_token_id} to {eos_ids}"
+            )
+            generation_config.eos_token_id = (
+                eos_ids[0] if len(eos_ids) == 1 else eos_ids
+            )
 
     def _should_convert_embedding_dtypes(self) -> bool:
         """Whether the post-quantization pass converts modules back to `torch_dtype`."""
@@ -1075,9 +1119,12 @@ class ModelLoader:
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32
-            if self.cfg.model_config_type == "falcon_h1":
-                # output projection cannot be quantized for Falcon-H1 models
-                bnb_config["llm_int8_skip_modules"] = ["out_proj"]
+            from axolotl.utils.nf4 import bnb_4bit_skip_modules
+
+            # An explicit skip list replaces the default output-head skip.
+            skip_modules = bnb_4bit_skip_modules(self.cfg.model_config_type)
+            if skip_modules is not None:
+                bnb_config["llm_int8_skip_modules"] = skip_modules
 
             if self.cfg.bnb_config_kwargs:
                 bnb_config.update(self.cfg.bnb_config_kwargs)

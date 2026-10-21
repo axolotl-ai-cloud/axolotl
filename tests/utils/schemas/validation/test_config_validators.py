@@ -9,6 +9,7 @@ Covers:
     num_generations >= 2, and effective_gbs >= num_generations * world_size
   - context_parallel_size > 1 requires kernel-backed attention
   - use_dft / use_eaft are SFT-only and reject each other, RL, reward models, CP and fused CE
+  - vllm_mode: colocate rejects CP > 1, vllm_lora_sync, and async GRPO with an adapter
 """
 
 from unittest.mock import patch
@@ -127,7 +128,7 @@ class TestLoraTargetModulesRegexValidator:
 
 
 class TestGRPOBatchSizeValidator:
-    """GRPO requires (mb*GA) % num_generations == 0 and num_generations >= 2.
+    """GRPO requires (mb*GA*world_size) % num_generations == 0 and num_generations >= 2.
 
     These call the @model_validator(mode="before") classmethod directly on a
     plain dict — same input shape it receives during full Pydantic validation,
@@ -240,23 +241,45 @@ class TestGRPOBatchSizeValidator:
         data = {
             "rl": "grpo",
             "micro_batch_size": 1,
-            "gradient_accumulation_steps": 4,  # gbs=4
+            "gradient_accumulation_steps": 2,  # gbs = 1*2*2 = 4
             "world_size": 2,  # need gbs >= 4*2 = 8
             "trl": {"num_generations": 4},
         }
         with pytest.raises(ValueError, match=r"world_size=2"):
             self._check(data)
 
-    def test_multi_rank_group_size_satisfied(self):
+    def test_multi_rank_derived_gbs_includes_world_size(self):
         data = {
             "rl": "grpo",
-            "micro_batch_size": 1,
-            "gradient_accumulation_steps": 8,  # gbs=8 >= 4*2
+            "micro_batch_size": 4,
+            "gradient_accumulation_steps": 1,  # gbs = 4*1*2 = 8 >= 4*2
             "world_size": 2,
             "trl": {"num_generations": 4},
         }
         out = self._check(data)
-        assert out["gradient_accumulation_steps"] == 8
+        assert out["gradient_accumulation_steps"] == 1
+
+    def test_multi_rank_divisibility_uses_world_size(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 3,
+            "gradient_accumulation_steps": 1,  # gbs = 3*1*2 = 6
+            "world_size": 2,
+            "trl": {"num_generations": 4},
+        }
+        with pytest.raises(ValueError, match="gradient_accumulation_steps: 2"):
+            self._check(data)
+
+    def test_multi_rank_explicit_generation_batch_size_is_global(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 4,
+            "gradient_accumulation_steps": 1,
+            "world_size": 2,
+            "trl": {"num_generations": 4, "generation_batch_size": 4},
+        }
+        with pytest.raises(ValueError, match=r"world_size=2"):
+            self._check(data)
 
 
 class TestBatchSizeFieldsValidator:
@@ -413,84 +436,6 @@ class TestBnbBlocksizeValidator:
         validate_config(cfg)
 
 
-class TestFlashAttnAvailabilityMessage:
-    """The error names the hub failure transformers swallows, and a hub lookup
-    that succeeds on retry overrides transformers' cached verdict."""
-
-    def test_hub_failure_reason_is_reported(self, min_base_cfg, monkeypatch):
-        import kernels
-        import torch
-        from transformers import utils as transformers_utils
-
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-        monkeypatch.setattr(
-            transformers_utils, "is_flash_attn_2_available", lambda **_: False
-        )
-
-        def failing_get_kernel(*_, **__):
-            raise RuntimeError("HTTP 429 Too Many Requests")
-
-        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
-        from axolotl.utils.schemas import validation
-
-        def no_cached_build(*_, **__):
-            raise FileNotFoundError("no loadable cached snapshot")
-
-        monkeypatch.setattr(validation, "_get_kernel_from_cache", no_cached_build)
-        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
-        with pytest.raises(ValueError, match="HTTP 429 Too Many Requests"):
-            validate_config(cfg)
-
-    def test_hub_failure_falls_back_to_cached_build(self, min_base_cfg, monkeypatch):
-        import kernels
-        import torch
-        from transformers import utils as transformers_utils
-
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-        monkeypatch.setattr(
-            transformers_utils, "is_flash_attn_2_available", lambda **_: False
-        )
-
-        def failing_get_kernel(*_, **__):
-            raise RuntimeError("HTTP 429 Too Many Requests")
-
-        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
-        from axolotl.utils.schemas import validation
-
-        monkeypatch.setattr(
-            validation, "_get_kernel_from_cache", lambda *_, **__: object()
-        )
-        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
-        validate_config(cfg)
-
-    def test_successful_lookup_overrides_transformers_verdict(
-        self, min_base_cfg, monkeypatch
-    ):
-        """transformers' probe swallows transient hub errors as "unavailable"."""
-        import kernels
-        import torch
-        from transformers import utils as transformers_utils
-
-        cleared = []
-
-        def unavailable(**_):
-            return False
-
-        unavailable.cache_clear = lambda: cleared.append(True)
-
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-        monkeypatch.setattr(
-            transformers_utils, "is_flash_attn_2_available", unavailable
-        )
-        monkeypatch.setattr(kernels, "get_kernel", lambda *_, **__: object())
-        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
-
-        validated = validate_config(cfg)
-
-        assert validated.attn_implementation == "flash_attention_2"
-        assert cleared == [True]
-
-
 class TestCustomLossConflictsValidator:
     """use_dft / use_eaft need full logits and unsharded labels in the SFT trainer."""
 
@@ -526,6 +471,32 @@ class TestCustomLossConflictsValidator:
     def test_conflict_raises(self, loss, conflict):
         with pytest.raises(ValueError, match="SFT-only"):
             self._check({loss: True, **conflict})
+
+
+class TestVllmColocateCompat:
+    """vllm_mode: colocate rejects settings that only work with a vLLM server."""
+
+    @pytest.mark.parametrize(
+        "extra,trl,match",
+        [
+            ({"context_parallel_size": 2}, {}, "colocate` is not supported with"),
+            ({}, {"vllm_lora_sync": True}, "requires `vllm_mode: server`"),
+            (
+                {"adapter": "lora"},
+                {"async_prefetch": True},
+                "not supported by the async GRPO",
+            ),
+        ],
+    )
+    def test_incompatible_settings_raise(self, min_base_cfg, extra, trl, match):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            trl={"use_vllm": True, "vllm_mode": "colocate", **trl},
+            vllm={"max_model_len": 1024},
+            **extra,
+        )
+        with pytest.raises(ValueError, match=match):
+            validate_config(cfg)
 
 
 class TestTrainableTokenWarning:

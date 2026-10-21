@@ -9,6 +9,7 @@ dispatcher-visible.
 from __future__ import annotations
 
 import fnmatch
+import importlib
 import inspect
 from collections import Counter
 from contextlib import ExitStack
@@ -74,13 +75,34 @@ _RULE_MATMUL_K: dict[str, tuple[int, int]] = {
 _RULE_MATMUL_OPS = frozenset(_RULE_MATMUL_K)
 
 
+# custom attention ops whose forward is opaque to dispatch modes: SAC's policy
+# sees the custom op itself, never the aten flash/cuDNN kernel it calls inside
+# (torch.nn.attention.varlen.varlen_attn -> torch_attn::_varlen_attn)
+_CUSTOM_ATTENTION_PACKETS = (
+    ("torch.nn.attention.varlen", "torch_attn", "_varlen_attn"),
+)
+
+
+def _custom_attention_ops() -> set:
+    ops = set()
+    for module_name, namespace, packet_name in _CUSTOM_ATTENTION_PACKETS:
+        try:
+            importlib.import_module(module_name)  # registers the custom op
+        except ImportError:
+            continue
+        packet = getattr(getattr(torch.ops, namespace), packet_name, None)
+        if packet is not None:
+            ops.add(packet.default)
+    return ops
+
+
 def _aten_attention_ops() -> set:
     ops = set()
     for packet_name in _ATEN_ATTENTION_PACKETS:
         packet = getattr(torch.ops.aten, packet_name, None)
         if packet is not None:
             ops.add(packet.default)
-    return ops
+    return ops | _custom_attention_ops()
 
 
 def _op_name(op: Any) -> str:

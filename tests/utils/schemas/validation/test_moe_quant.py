@@ -162,6 +162,28 @@ class TestPeftPatchIdempotency:
             patch_peft_target_parameters_matching._axolotl_patched = False
 
 
+@pytest.mark.parametrize(
+    "kwargs, expected", [({}, True), ({"bnb_4bit_use_double_quant": False}, False)]
+)
+def test_expert_double_quant_follows_bnb_config_kwargs(monkeypatch, kwargs, expected):
+    import transformers.core_model_loading
+    import transformers.modeling_utils
+
+    from axolotl.monkeypatch import moe_quant
+
+    monkeypatch.setattr(
+        moe_quant, "_moe_load_state", {**moe_quant._moe_load_state, "patched": False}
+    )
+    for module, name in [
+        (transformers.core_model_loading, "set_param_for_module"),
+        (transformers.modeling_utils, "caching_allocator_warmup"),
+    ]:
+        monkeypatch.setattr(module, name, getattr(module, name))
+
+    moe_quant.patch_moe_quantization_on_load(DictDefault(bnb_config_kwargs=kwargs))
+    assert moe_quant._moe_load_state["compress_statistics"] is expected
+
+
 @pytest.mark.gpu
 class TestMoeAdapterTrainMergeRoundtrip:
     """E2E: train adapter on quantized MoE experts, then merge onto plain model.

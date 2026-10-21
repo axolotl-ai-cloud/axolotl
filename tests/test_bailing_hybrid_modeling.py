@@ -7,9 +7,6 @@ import torch
 pytest.importorskip("fla.ops.kda", reason="Ling 3.0 linear attention needs fla-core")
 
 from safetensors.torch import load_file, save_file  # noqa: E402
-from transformers.conversion_mapping import (  # noqa: E402
-    register_checkpoint_conversion_mapping,
-)
 
 from axolotl.model_support.bailing_hybrid import _weight_conversions  # noqa: E402
 from axolotl.model_support.bailing_hybrid.configuration_bailing_moe_v3 import (  # noqa: E402
@@ -20,6 +17,7 @@ from axolotl.model_support.bailing_hybrid.modeling_bailing_moe_v3 import (  # no
     BailingMoeV3KimiDeltaAttention,
     cu_seqlens_from_position_ids,
 )
+from axolotl.utils.weight_conversions import register_weight_conversions  # noqa: E402
 
 CONFIG_KWARGS = dict(
     vocab_size=64,
@@ -88,7 +86,7 @@ class TestBailingHybridModeling:
     @pytest.fixture(autouse=True)
     def register_conversions(self):
         for key, entries in _weight_conversions().items():
-            register_checkpoint_conversion_mapping(key, list(entries), overwrite=True)
+            register_weight_conversions(key, list(entries))
 
     def test_layer_types_alternate_kda_and_mla(self, config, model):
         assert config.layer_types == [

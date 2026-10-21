@@ -15,6 +15,11 @@ class Message(BaseModel):
     role: str
     content: str
     label: Optional[bool] = None
+    # rendered by templates with a thinking channel; absent otherwise
+    reasoning_content: Optional[str] = None
+
+    def to_chat(self) -> Dict[str, Any]:
+        return self.model_dump(exclude={"label"}, exclude_none=True)
 
 
 class MessageList(BaseModel):
@@ -55,7 +60,10 @@ class ORPODatasetParsingStrategy:
         )
         messages.append(
             Message(
-                role="assistant", content=prompt["chosen"][1]["content"], label=True
+                role="assistant",
+                content=prompt["chosen"][1]["content"],
+                reasoning_content=prompt["chosen"][1].get("reasoning_content"),
+                label=True,
             )
         )
         return MessageList(messages=messages)
@@ -71,7 +79,10 @@ class ORPODatasetParsingStrategy:
         )
         messages.append(
             Message(
-                role="assistant", content=prompt["rejected"][1]["content"], label=True
+                role="assistant",
+                content=prompt["rejected"][1]["content"],
+                reasoning_content=prompt["rejected"][1].get("reasoning_content"),
+                label=True,
             )
         )
         return MessageList(messages=messages)
@@ -113,7 +124,10 @@ class ORPODatasetParsingStrategy:
         res = self.get_prompt(prompt)
         res.messages.append(
             Message(
-                role="assistant", content=prompt["chosen"][-1]["content"], label=True
+                role="assistant",
+                content=prompt["chosen"][-1]["content"],
+                reasoning_content=prompt["chosen"][-1].get("reasoning_content"),
+                label=True,
             )
         )
         return res
@@ -122,7 +136,10 @@ class ORPODatasetParsingStrategy:
         res = self.get_prompt(prompt)
         res.messages.append(
             Message(
-                role="assistant", content=prompt["rejected"][-1]["content"], label=True
+                role="assistant",
+                content=prompt["rejected"][-1]["content"],
+                reasoning_content=prompt["rejected"][-1].get("reasoning_content"),
+                label=True,
             )
         )
         return res
@@ -215,7 +232,7 @@ class ORPOPrompter(Prompter):
     ) -> Generator[Tuple[str, bool], None, None]:
         conversation = []
         for message in message_list.messages:
-            conversation.append(message.model_dump())
+            conversation.append(message.to_chat())
             if message.role == "system":
                 yield (
                     self.tokenizer.apply_chat_template(
@@ -259,20 +276,20 @@ def argilla(cfg, **kwargs):
         )
 
         res["prompt"] = tokenizer.apply_chat_template(
-            [msg.model_dump() for msg in dataset_parser.get_prompt(sample).messages],
+            [msg.to_chat() for msg in dataset_parser.get_prompt(sample).messages],
             add_generation_prompt=True,
             chat_template=chat_template_string,
             tokenize=False,
         )
         prompt_str_len = len(res["prompt"])
         res["chosen"] = tokenizer.apply_chat_template(
-            [msg.model_dump() for msg in dataset_parser.get_chosen(sample).messages],
+            [msg.to_chat() for msg in dataset_parser.get_chosen(sample).messages],
             add_generation_prompt=False,
             chat_template=chat_template_string,
             tokenize=False,
         )[prompt_str_len:]
         res["rejected"] = tokenizer.apply_chat_template(
-            [msg.model_dump() for msg in dataset_parser.get_rejected(sample).messages],
+            [msg.to_chat() for msg in dataset_parser.get_rejected(sample).messages],
             add_generation_prompt=False,
             chat_template=chat_template_string,
             tokenize=False,
@@ -280,4 +297,6 @@ def argilla(cfg, **kwargs):
 
         return res
 
-    return transform_fn
+    # the source chosen/rejected columns are message lists; datasets keeps a column's
+    # feature when a map returns the same name, so rebuild them from the rendered strings
+    return transform_fn, {"remove_columns": ["chosen", "rejected"]}

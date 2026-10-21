@@ -211,7 +211,7 @@ class PackedEncoderCanvasBatch:
             **{
                 name: (
                     {
-                        key: value.to(*args, **kwargs)
+                        key: _mask_to(value, *args, **kwargs)
                         for key, value in getattr(self, name).items()
                     }
                     if name.endswith("attention_mask")
@@ -221,6 +221,17 @@ class PackedEncoderCanvasBatch:
                 if name != "batch"
             },
         )
+
+
+def _mask_to(mask, *args, **kwargs):
+    """Move a mask, keeping the segment-kernel metadata a BlockMask may carry."""
+    from axolotl.monkeypatch.attention.segment_mask import SEGMENTS_ATTR
+
+    moved = mask.to(*args, **kwargs)
+    meta = getattr(mask, SEGMENTS_ATTR, None)
+    if meta is not None:
+        setattr(moved, SEGMENTS_ATTR, meta.to(*args, **kwargs))
+    return moved
 
 
 @dataclass(frozen=True)

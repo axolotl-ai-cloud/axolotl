@@ -43,6 +43,10 @@ source .venv/bin/activate
 uv pip install --no-build-isolation axolotl[deepspeed]
 ```
 
+### Offline or Air-Gapped Install {#sec-offline-install}
+
+For a machine without internet access, including Slurm compute nodes where only the login node is online, build a bundle on a connected host and install from it. See [Offline and Air-Gapped Deployment](airgapped.qmd).
+
 ### Edge/Development Build {#sec-edge-build}
 
 For the latest features between releases:
@@ -81,7 +85,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
 :::
 
 ::: {.callout-important}
-For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.12-cu130-2.13.0` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.13.0`.
+For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.12-cu130-2.13.0` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.13.0`. For expert-parallel MoE training on B200 (DeepEP, flash-attn-4, SonicMoE), use `axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.14.1-blackwell`, which ships those kernels prebuilt; see the [Docker documentation](docker.qmd#cloud-blackwell).
 :::
 
 Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.

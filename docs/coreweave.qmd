@@ -1,0 +1,179 @@
+---
+title: CoreWeave
+description: Train on CoreWeave SUNK and publish checkpoints to Dedicated Inference
+---
+
+Axolotl integrates with CoreWeave in three ways:
+
+- **Train on SUNK**: submit an Axolotl job to an existing SUNK (Slurm) cluster.
+- **Publish checkpoints**: hot-load each saved checkpoint into a Dedicated
+  Inference deployment as a compressed delta.
+- **GRPO rollouts**: generate GRPO rollouts on a Dedicated Inference deployment
+  instead of vLLM.
+
+## Setup
+
+```bash
+uv pip install 'axolotl[coreweave]'
+```
+
+The container image used on SUNK must include Axolotl (and `axolotl[coreweave]`
+if you publish checkpoints).
+
+## Train on SUNK
+
+1. Copy [`examples/cloud/coreweave.yaml`][cloud-yaml] and set your cluster details:
+
+    ```yaml
+    provider: coreweave
+    ssh_host: sunk                        # omit when running on the login node
+    shared_dir: /mnt/shared/axolotl-jobs
+    image: /mnt/shared/images/axolotl.sqsh
+
+    partition: h100
+    nodes: 1
+    gpus_per_node: 8
+    # account: your-slurm-account
+    # qos: your-qos
+    ```
+
+2. Submit the job:
+
+    ```bash
+    axolotl train train.yaml --cloud coreweave.yaml --launcher torchrun
+    ```
+
+3. Manage it from the login node with `squeue -j JOB_ID`, `sacct -j JOB_ID`, or
+   `scancel JOB_ID`. The submit command prints the job ID and log path.
+
+Add `dry_run: true` to the cloud YAML to preview the submission without
+allocating resources.
+
+::: {.callout-note}
+- Local files are not uploaded. Datasets, checkpoints, and reward modules must be
+  in the image or on shared storage (`shared_dir` or `mounts`), referenced by
+  absolute paths.
+- Set the topology with `nodes` and `gpus_per_node`, not launcher flags.
+- Your local environment is not forwarded. For secrets such as `HF_TOKEN`, write
+  `KEY=value` lines to a file on shared storage and set `env_file` to its
+  absolute path; it is sourced inside the container. Set other variables (e.g.
+  NCCL) under `env` in the cloud YAML.
+:::
+
+## Train on CKS
+
+The same provider submits to a CoreWeave Kubernetes Service cluster with `backend: cks`:
+one indexed Job with a pod per node, a headless Service for the rendezvous address, and a
+ConfigMap carrying the training YAML and the launcher. Pods request `rdma/ib` and carry
+CoreWeave's InfiniBand NCCL settings; a ReadWriteMany PVC (storage class `shared-vast`)
+holds datasets, the Hugging Face cache and outputs; AI Object Storage is reached through
+workload identity (a projected service-account token), so no access keys are stored.
+
+1. Copy [`examples/cloud/coreweave-cks.yaml`](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/cloud/coreweave-cks.yaml) and set the namespace, PVC, node count and secrets:
+
+    ```yaml
+    provider: coreweave
+    backend: cks
+    image: axolotlai/axolotl-cloud:main-latest
+    namespace: my-tenant-namespace
+    nodes: 2
+    gpus_per_node: 8
+    pvc: training-shared          # mounted at /data; relative output_dir lands under /data/axolotl-jobs/<job>/
+    memory_request: 1600Gi
+    secret_env:
+      HF_TOKEN: hf-token/token    # kubectl create secret generic hf-token --from-literal=token=...
+    object_storage:
+      org_id: my-org-id
+      region: US-EAST-15A
+    ```
+
+2. Submit with the ambient `kubectl` context (or `kubeconfig` / `context` in the YAML):
+
+    ```bash
+    axolotl train train.yaml --cloud coreweave-cks.yaml --launcher torchrun
+    ```
+
+   The command prints the job name, a `kubectl logs -f job/<name>` line, and the delete
+   command. `dry_run: true` prints the manifests instead of applying them.
+
+::: {.callout-note}
+- Topology comes from `nodes` and `gpus_per_node`; pod 0 is the rendezvous host.
+- `setup_commands` run in the container before the launcher (extra wheels from the PVC, for example).
+- The Hugging Face cache is pointed at `<pvc_mount>/hf` because the image pins `HF_HUB_CACHE` to the container's overlay disk; the Triton cache stays on node-local scratch, which must not be shared over NFS.
+- `memory_request` has to hold the whole checkpoint in host RAM on rank 0 when `cpu_ram_efficient_loading` is on.
+:::
+
+## Publish checkpoints to Dedicated Inference
+
+Requires an existing Dedicated Inference deployment with hot-loading enabled.
+Export `CW_API_TOKEN` (an Inference Admin token) and configure AWS credentials
+for CoreWeave AI Object Storage. Then add to your training config:
+
+```yaml
+plugins:
+  - axolotl.integrations.coreweave.CoreWeavePlugin
+
+coreweave:
+  deployment_id: your-deployment-id
+  gateway_url: https://your-gateway-endpoint
+  model: your-deployment-model-name
+  bucket: your-checkpoint-bucket   # must match the deployment's hot-load bucket
+  path_prefix: training/run-001    # must match the deployment's hot-load prefix
+  s3_profile: cw
+
+save_safetensors: true
+save_steps: 100
+```
+
+LoRA checkpoints work too (`adapter: lora` with `bf16: true`). The base model
+must be an unquantized BF16 safetensors checkpoint; QLoRA, DoRA, and
+`modules_to_save` are not supported.
+
+## GRPO rollouts on Dedicated Inference
+
+Add `rollouts: true` to the `coreweave` block above and disable vLLM:
+
+```yaml
+rl: grpo
+coreweave:
+  # ...deployment and storage settings from above
+  rollouts: true
+trl:
+  use_vllm: false
+  num_generations: 4
+  max_completion_length: 256
+  # reward_funcs as usual
+```
+
+Requirements:
+
+- Full-model training (no adapters), text-only conversational prompts,
+  synchronous GRPO.
+- The deployment must use the same tokenizer and support token-ID completions
+  (`return_tokens_as_token_ids`).
+- Only `temperature` and `top_p` sampling are supported. Liger loss kernels and
+  context parallelism are not.
+
+## Notes
+
+- **Delta format**: the first checkpoint is published in full, then later ones
+  as [Slime-compatible][slime] XOR deltas. A new full checkpoint starts every
+  `max_deltas` saves (default 128) or when the trainer restarts.
+- **Background publishing**: checkpoints publish in order while training
+  continues. Queued checkpoints use local disk until published. Set
+  `async_publish: false` to block on each save.
+- **Object storage**: do not delete the full baseline or its deltas; inference
+  needs the whole chain.
+- **LoRA**: each adapter is merged into the base on CPU before computing the
+  delta. CPU memory scales with shard size, but local disk must hold the base
+  plus merged copies.
+- **Rollouts**: before each rollout round, the current weights are published and
+  hot-loaded, so each round samples from the current policy.
+- See [Run veRL on SUNK][verl-sunk] for shared storage and container setup, and
+  [CoreWeave RL Rollouts][cw-rollouts] for deployment prerequisites and
+  recovering from a failed hot-load.
+
+[cloud-yaml]: https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/cloud/coreweave.yaml
+[slime]: https://github.com/THUDM/slime/blob/main/docs/en/advanced/delta-weight-sync.md
+[verl-sunk]: https://docs.coreweave.com/products/sunk/tutorials/verl-on-sunk
+[cw-rollouts]: https://docs.coreweave.com/products/inference/rl-rollouts

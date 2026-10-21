@@ -12,6 +12,7 @@ from axolotl.prompt_strategies.dpo import load as load_dpo
 from axolotl.prompt_strategies.ebft import load as load_ebft
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
+from axolotl.utils.data.evaluation import EvalDataset, load_eval_datasets
 from axolotl.utils.data.lock import FileLockLoader
 from axolotl.utils.data.shared import (
     create_train_validation_split,
@@ -25,6 +26,7 @@ from axolotl.utils.data.shared import (
 )
 from axolotl.utils.data.utils import (
     deduplicate_and_log_datasets,
+    is_vision_dataset,
     retry_on_request_exceptions,
 )
 from axolotl.utils.dict import DictDefault
@@ -37,7 +39,7 @@ LOG = get_logger(__name__)
 @retry_on_request_exceptions(max_retries=3, delay=5)
 def prepare_preference_datasets(
     cfg: DictDefault, tokenizer: PreTrainedTokenizer
-) -> tuple[Dataset, Dataset | None]:
+) -> tuple[Dataset, EvalDataset]:
     """Load and prepare preference datasets for RL training.
 
     Loads training and evaluation datasets, handling preprocessing, caching, and
@@ -57,9 +59,14 @@ def prepare_preference_datasets(
         train_dataset = _load_or_create_dataset_split(cfg, tokenizer, split="train")
 
         # Load or create evaluation dataset
-        eval_dataset: Dataset | None = None
+        eval_dataset: EvalDataset = None
         if cfg.test_datasets:
-            eval_dataset = _load_or_create_dataset_split(cfg, tokenizer, split="test")
+            eval_dataset = load_eval_datasets(
+                cfg,
+                lambda group_cfg: _load_or_create_dataset_split(
+                    group_cfg, tokenizer, split="test"
+                ),
+            )
         elif cfg.val_set_size:
             # Create validation split from training data
             train_dataset, eval_dataset = create_train_validation_split(
@@ -77,11 +84,33 @@ def prepare_preference_datasets(
 
     # Apply deduplication if configured
     if cfg.dataset_exact_deduplication:
-        train_dataset, eval_dataset = deduplicate_and_log_datasets(
-            dataset=train_dataset, other_dataset=eval_dataset
-        )
+        if isinstance(eval_dataset, dict):
+            eval_dataset = DatasetDict(
+                {
+                    name: deduplicate_and_log_datasets(train_dataset, dataset)[1]
+                    for name, dataset in eval_dataset.items()
+                }
+            )
+            train_dataset, _ = deduplicate_and_log_datasets(train_dataset)
+        else:
+            train_dataset, eval_dataset = deduplicate_and_log_datasets(
+                dataset=train_dataset, other_dataset=eval_dataset
+            )
 
     return train_dataset, eval_dataset
+
+
+def _with_source_columns(transform: Callable[..., Any], sources: dict[str, str]):
+    """Hand ``transform`` the sample with the renamed source columns under their original names."""
+
+    def wrapped(sample, **kwargs):
+        restored = dict(sample)
+        for name, renamed in sources.items():
+            if renamed in restored:
+                restored[name] = restored.pop(renamed)
+        return transform(restored, **kwargs)
+
+    return wrapped
 
 
 def _map_dataset(
@@ -111,6 +140,20 @@ def _map_dataset(
 
     if isinstance(dataset, DatasetDict):
         dataset = dataset["train"]
+
+    # a transform that re-emits a column it also removes must get a fresh column:
+    # datasets keeps the input feature for a same-named output (a message list typed
+    # List(Json) turns the rendered string into a list of characters), so the sources
+    # are renamed out of the way and dropped after the map
+    sources = {
+        name: f"_axolotl_source_{name}"
+        for name in map_kwargs.get("remove_columns") or []
+        if name in dataset.column_names
+    }
+    if sources:
+        dataset = dataset.rename_columns(sources)
+        ds_transform_fn = _with_source_columns(ds_transform_fn, sources)
+        map_kwargs["remove_columns"] = list(sources.values())
 
     dataset = dataset.map(
         ds_transform_fn,
@@ -303,10 +346,16 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     Returns:
         Combined and processed dataset for the specified split.
     """
-    datasets_configs = cfg.datasets if split == "train" else cfg.test_datasets
+    datasets_configs = list(
+        datasets_with_name_generator(
+            cfg.datasets if split == "train" else cfg.test_datasets
+        )
+    )
+    strategy_cfg = DictDefault(dict(cfg))
+    strategy_cfg.datasets = datasets_configs
     split_datasets: list[Dataset | DatasetDict] = []
 
-    for dataset_config in datasets_with_name_generator(datasets_configs):
+    for dataset_config in datasets_configs:
         dataset: Dataset | DatasetDict = load_dataset_with_config(
             dataset_config, cfg.hf_use_auth_token, streaming=False
         )
@@ -320,13 +369,13 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             if isinstance(_type, DictDefault):
                 _type = "user_defined.default"
             if cfg.rl is RLType.ORPO:
-                ds_transform_fn = load_orpo(_type, cfg, dataset_idx=i)
+                ds_transform_fn = load_orpo(_type, strategy_cfg, dataset_idx=i)
             elif cfg.rl is RLType.KTO:
-                ds_transform_fn = load_kto(_type, cfg, dataset_idx=i)
+                ds_transform_fn = load_kto(_type, strategy_cfg, dataset_idx=i)
             elif cfg.rl is RLType.EBFT:
-                ds_transform_fn = load_ebft(_type, cfg, dataset_idx=i)
+                ds_transform_fn = load_ebft(_type, strategy_cfg, dataset_idx=i)
             else:
-                ds_transform_fn = load_dpo(_type, cfg, dataset_idx=i)
+                ds_transform_fn = load_dpo(_type, strategy_cfg, dataset_idx=i)
 
             if ds_transform_fn is None:
                 raise ValueError(
@@ -362,7 +411,12 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             # "prompt", "chosen", and "rejected" already preprocessed
             split_datasets[i] = dataset
 
-        if not cfg.skip_prepare_dataset:
+        if is_vision_dataset(split_datasets[i].column_names):
+            # Image token counts depend on the processor; TRL truncates at collate time.
+            LOG.info(
+                f"Skipping sequence length filtering for multimodal dataset index {i}"
+            )
+        elif not cfg.skip_prepare_dataset:
             excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
 
             if excess_length_strategy == "truncate":
@@ -435,6 +489,12 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
                         f"Dropped {dropped} long samples from dataset index {i}"
                     )
 
+    has_images = [is_vision_dataset(ds.column_names) for ds in split_datasets]
+    if any(has_images) and not all(has_images):
+        raise ValueError(
+            "Multimodal RL does not support mixing image and text-only datasets."
+        )
+
     # Merge datasets
     dataset = merge_datasets(split_datasets, cfg)
 
@@ -444,12 +504,20 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
 
         # Save preprocessed dataset
-        dataset_hash = generate_dataset_hash_from_config(
-            cfg, datasets_configs, tokenizer.name_or_path
-        )
+        dataset_hash = _preference_dataset_hash(cfg, tokenizer, split)
         save_preprocessed_dataset(cfg, dataset, dataset_hash, split)
 
     return dataset
+
+
+def _preference_dataset_hash(cfg, tokenizer, split):
+    """Version caches when preference transformation semantics change."""
+    datasets_config = cfg.datasets if split == "train" else cfg.test_datasets
+    dataset_hash = generate_dataset_hash_from_config(
+        cfg, datasets_config, tokenizer.name_or_path
+    )
+    # Older caches may use training mappings or unexpanded indices for eval rows.
+    return f"{dataset_hash}-rl-v2"
 
 
 def _load_or_create_dataset_split(
@@ -465,13 +533,7 @@ def _load_or_create_dataset_split(
     Returns:
         Tuple of (dataset, is_preprocessed).
     """
-    # Select correct dataset configuration based on split
-    datasets_config = cfg.datasets if split == "train" else cfg.test_datasets
-
-    # Generate dataset hash for caching
-    dataset_hash = generate_dataset_hash_from_config(
-        cfg, datasets_config, tokenizer.name_or_path
-    )
+    dataset_hash = _preference_dataset_hash(cfg, tokenizer, split)
 
     # Try loading from hub if push_dataset_to_hub is configured
     dataset = None

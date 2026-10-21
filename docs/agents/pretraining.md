@@ -62,6 +62,11 @@ Full streaming docs: [streaming.qmd](../streaming.qmd)
 - No adapter — typically full fine-tune for pretraining
 - `train_on_inputs: true` — default for completion (all tokens trained on)
 
+## Label balancing
+
+See [label_balancing.md](label_balancing.md) for the chunk-local streaming packing
+path and its distinction from map-style optimizer-step balancing.
+
 ## File Map
 
 ```
