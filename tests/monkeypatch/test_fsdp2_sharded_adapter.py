@@ -149,6 +149,8 @@ def _checkpoint(run_dir, step, *, consolidating=False, mtime=0):
 
 @pytest.fixture
 def gated(tmp_path):
+    import transformers.trainer as hf_trainer
+    from transformers import Trainer
     from transformers.trainer_callback import (
         CallbackHandler,
         TrainerControl,
@@ -179,39 +181,50 @@ def gated(tmp_path):
     mirror = Mirror(tmp_path / "mirror-queue")
     trainer = object.__new__(Gated)
     trainer.axolotl_cfg = SimpleNamespace(adapter_checkpoint_format="sharded")
-    trainer.args = SimpleNamespace(output_dir=str(run_dir))
+    trainer.args = SimpleNamespace(output_dir=str(run_dir), save_total_limit=1)
+    trainer.hp_search_backend = None
     trainer.state = TrainerState()
     trainer.control = TrainerControl()
     trainer.callback_handler = CallbackHandler([mirror], None, None, None, None)
+
+    def hf_save_checkpoint(self, model, trial):
+        """``Trainer._save_checkpoint``: the model save, then rotation."""
+        self.save_model(
+            str(run_dir / f"checkpoint-{self.state.global_step}"), _internal_call=True
+        )
+        hf_trainer.rotate_checkpoints(
+            output_dir=str(run_dir),
+            save_total_limit=self.args.save_total_limit,
+            best_model_checkpoint=None,
+            use_mtime=True,
+        )
+
     queue = ConsolidationQueue()
     with (
         patch.object(fsdp2_sharded_adapter, "CONSOLIDATIONS", queue),
         patch.object(fsdp2_sharded_adapter, "consolidate", slow_consolidate),
+        patch.object(Trainer, "_save_checkpoint", hf_save_checkpoint),
     ):
-        trainer._consolidation_state()
-        trainer._install_consolidation_gate()
 
-        def save(step, *, sharded=True, limit=1):
-            """What ``Trainer._save_checkpoint`` does around a sharded save."""
-            directory = run_dir / f"checkpoint-{step}"
-            if sharded:
-                gates[directory.name] = {"release": threading.Event()}
-                _checkpoint(run_dir, step, consolidating=True, mtime=step)
-                queue.submit(directory / SHARD_DIRNAME)
-                trainer._axolotl_unconsolidated.add(os.path.abspath(directory))
-            else:
-                _checkpoint(run_dir, step, mtime=step)
-            trainer._axolotl_last_checkpoint = os.path.abspath(directory)
+        def save(step, *, sharded=True):
+            """A checkpoint save; ``sharded`` saves register what ``_save_sharded_adapter``
+            does."""
+
+            def save_model(output_dir, _internal_call=False):
+                assert trainer._checkpoint_save()
+                directory = Path(output_dir)
+                if sharded:
+                    gates[directory.name] = {"release": threading.Event()}
+                    _checkpoint(run_dir, step, consolidating=True, mtime=step)
+                    queue.submit(directory / SHARD_DIRNAME)
+                    trainer._axolotl_unconsolidated.add(os.path.abspath(directory))
+                else:
+                    _checkpoint(run_dir, step, mtime=step)
+
+            trainer.save_model = save_model
             trainer.state.global_step = step
-            import transformers.trainer as hf_trainer
-
-            with trainer._gated_rotation():
-                hf_trainer.rotate_checkpoints(
-                    output_dir=str(run_dir),
-                    save_total_limit=limit,
-                    best_model_checkpoint=None,
-                    use_mtime=True,
-                )
+            trainer._save_checkpoint(None, None)
+            assert not trainer._checkpoint_save()
             trainer.control = trainer.callback_handler.on_save(
                 trainer.args, trainer.state, trainer.control
             )
