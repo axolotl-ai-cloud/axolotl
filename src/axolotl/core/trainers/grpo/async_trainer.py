@@ -432,10 +432,10 @@ class AsyncDataProducer:
             _dp_logger.info(
                 f"AsyncDataProducer: sync warmup rollout (remaining={self._warmup_remaining})"
             )
-            return self._inner.produce(model, global_step, **kwargs)
+            return self._produce_sync(model, global_step, **kwargs)
 
         if not self._initialized:
-            dataset = self._inner.produce(model, global_step, **kwargs)
+            dataset = self._produce_sync(model, global_step, **kwargs)
             bg_kwargs = {**kwargs, **self._background_kwargs}
             # With FSDP (multi-process), only submit BG tasks on rank 0.
             # Non-rank-0 processes will receive data via broadcast.
@@ -465,6 +465,19 @@ class AsyncDataProducer:
             self._executor.submit(self._locked_produce, model, next_step, **bg_kwargs)
         )
         return dataset
+
+    def _produce_sync(self, model: Any, global_step: int, **kwargs) -> Dataset:
+        trainer = getattr(self._inner, "_trainer", None)
+        if getattr(trainer, "_routing_replay", None) is None:
+            return self._inner.produce(model, global_step, **kwargs)
+        # Only the background generation path returns vLLM's routed experts.
+        kwargs = {**kwargs, **self._background_kwargs}
+        if (self._num_processes or 1) > 1:
+            kwargs["_rank0_only"] = True
+            return self._broadcast_dataset(
+                self._inner.produce(model, global_step, **kwargs)
+            )
+        return self._inner.produce(model, global_step, **kwargs)
 
     def _broadcast_dataset(self, dataset) -> Dataset:
         """Broadcast a prefetched dataset from rank 0 to all ranks (main thread).
@@ -951,6 +964,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
     def _replaying(self, routed_experts):
         if self._routing_replay is None:
             return nullcontext()
+        if routed_experts is None and self.model.training:
+            raise RuntimeError("routing_replay: rollout has no routed_experts")
         return self._routing_replay.replay(routed_experts)
 
     def training_step(self, *args, **kwargs):
@@ -1565,6 +1580,15 @@ class AsyncGRPOTrainer(GRPOTrainer):
             inputs: list of dicts (one per sample), as yielded by the DataLoader
                     with ``identity`` collate_fn.
         """
+        if self._routing_replay is not None:
+            if self.rollout_func is not None or self.tools:
+                raise ValueError(
+                    "trl.routing_replay does not support rollout_func or tools"
+                )
+            if not rank0_only and self.accelerator.num_processes > 1:
+                raise ValueError(
+                    "trl.routing_replay with multiple processes needs rank-0 rollouts"
+                )
         device = self.accelerator.device
 
         prompts = [x["prompt"] for x in inputs]

@@ -4,7 +4,9 @@ The replayed top-k *selection* comes from vLLM; the gate *weights* are recompute
 the training router's logits so the router still receives gradients.
 """
 
+import base64
 import copy
+import io
 import re
 from contextlib import contextmanager
 
@@ -12,9 +14,30 @@ import numpy as np
 import torch
 from torch import nn
 
-from axolotl.utils.routed_experts import decode_routed_experts
-
 _LAYER_IDX = re.compile(r"layers\.(\d+)\.")
+
+# Architectures whose top-k weights ``replay_weights`` reproduces exactly.
+SUPPORTED_MODEL_TYPES = frozenset(
+    {
+        "afmoe",
+        "deepseek_v3",
+        "dots1",
+        "ernie4_5_moe",
+        "exaone_moe",
+        "glm4_moe",
+        "glm4_moe_lite",
+        "gpt_oss",
+        "hunyuan_v1_moe",
+        "minimax",
+        "minimax_m2",
+        "mixtral",
+        "olmoe",
+        "qwen2_moe",
+        "qwen3_5_moe_text",
+        "qwen3_moe",
+        "qwen3_next",
+    }
+)
 
 
 class _CapturingSession:
@@ -32,27 +55,23 @@ class _CapturingSession:
         resp = self._session.post(*args, **kwargs)
         if resp.status_code == 200:
             payload = resp.json()
-            # vLLM OpenAI server: per choice; axolotl /generate/ server: parallel list.
-            pairs = [
-                (c.get("token_ids"), c.get("routed_experts"))
-                for c in payload.get("choices", [])
-            ]
-            if payload.get("routed_experts") is not None:
-                pairs += zip(
-                    payload["completion_ids"], payload["routed_experts"], strict=True
-                )
-            for ids, routes in pairs:
+            for choice in payload.get("choices", []):
+                ids, routes = choice.get("token_ids"), choice.get("routed_experts")
                 if ids is not None and routes is not None:
                     self._routes[id(ids)] = (ids, routes)
             resp.json = lambda: payload
         return resp
 
-    def routes_for(self, completion_ids) -> list[str] | None:
+    def routes_for(self, completion_ids) -> list[str]:
         routes = []
         for ids in completion_ids:
             hit = self._routes.get(id(ids))
             if hit is None:
-                return None
+                raise RuntimeError(
+                    "routing_replay: vLLM returned no routed_experts. Start the server "
+                    "with `axolotl vllm-serve` on a config with trl.routing_replay: "
+                    "true (passes --enable-return-routed-experts)."
+                )
             routes.append(hit[1])
         return routes
 
@@ -69,12 +88,14 @@ def capturing_client(client):
 
 
 def pad_routed_experts(encoded, prompt_lens, P, C) -> torch.Tensor:
-    """Align vLLM's per-sequence ``[p + c - 1, layers, k]`` to ``[B, P + C, layers, k]``.
+    """Align vLLM's per-sequence ``[p + c - 1, moe_layers, k]`` to ``[B, P + C, moe_layers, k]``.
 
     Prompts are left-padded to ``P`` and completions right-padded to ``C``, so each
     sequence occupies a contiguous span starting at ``P - p``. ``-1`` means no replay.
     """
-    arrs = [decode_routed_experts(e) for e in encoded]
+    arrs = [
+        np.load(io.BytesIO(base64.b64decode(e)), allow_pickle=False) for e in encoded
+    ]
     out = torch.full((len(arrs), P + C, *arrs[0].shape[1:]), -1, dtype=torch.int16)
     for i, (arr, p) in enumerate(zip(arrs, prompt_lens, strict=True)):
         arr = torch.from_numpy(arr.astype(np.int16))[: p + C]
@@ -90,20 +111,35 @@ class RoutingReplay:
         # Kept until after backward so gradient-checkpoint recompute replays the same routes.
         self.tokens: torch.Tensor | None = None
         self.matched = self.total = 0
+        model_type = model.config.get_text_config().model_type
+        if model_type not in SUPPORTED_MODEL_TYPES:
+            raise ValueError(
+                f"routing_replay does not support model_type '{model_type}'; "
+                f"supported: {sorted(SUPPORTED_MODEL_TYPES)}"
+            )
         self.num_blocks = 0
         for name, block in model.named_modules():
             gate = getattr(block, "gate", None) or getattr(block, "router", None)
             experts = getattr(block, "experts", None)
-            m = _LAYER_IDX.search(name + ".")
-            if m and isinstance(gate, nn.Module) and isinstance(experts, nn.Module):
-                self._hook(block, gate, experts, int(m.group(1)))
+            if (
+                _LAYER_IDX.search(name + ".")
+                and isinstance(gate, nn.Module)
+                and isinstance(experts, nn.Module)
+            ):
+                # vLLM's layer axis counts MoE layers only, in depth order.
+                self._hook(block, gate, experts, self.num_blocks)
                 self.num_blocks += 1
         if self.num_blocks == 0:
             raise ValueError("routing_replay: no MoE blocks found in model")
 
     @contextmanager
     def replay(self, routed_experts: torch.Tensor | None):
-        """Set the padded ``[B, S, layers, k]`` routes aligned with the forward's input_ids."""
+        """Set the padded ``[B, S, moe_layers, k]`` routes aligned with the forward's input_ids."""
+        if routed_experts is not None and routed_experts.shape[2] != self.num_blocks:
+            raise ValueError(
+                f"routing_replay: routes cover {routed_experts.shape[2]} MoE layers, "
+                f"model has {self.num_blocks}"
+            )
         self.batch = routed_experts
         try:
             yield
@@ -131,7 +167,7 @@ class RoutingReplay:
         self.matched = self.total = 0
         return rate
 
-    def _hook(self, block, gate, experts, layer_idx):
+    def _hook(self, block, gate, experts, moe_idx):
         logits = {}
 
         def gate_hook(_mod, _args, out):
@@ -141,10 +177,10 @@ class RoutingReplay:
             if self.tokens is None:
                 return None
             hidden, idx, weights = args[:3]
-            replay = self.tokens[:, layer_idx].to(idx.device, torch.long)
+            replay = self.tokens[:, moe_idx].to(idx.device, torch.long)
             if replay.shape != idx.shape:
                 raise ValueError(
-                    f"routing_replay: layer {layer_idx} expects {tuple(idx.shape)} "
+                    f"routing_replay: layer {moe_idx} expects {tuple(idx.shape)} "
                     f"routes, got {tuple(replay.shape)}"
                 )
             valid = (replay >= 0).all(-1, keepdim=True)

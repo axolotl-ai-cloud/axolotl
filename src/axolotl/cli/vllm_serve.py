@@ -61,6 +61,7 @@ class VllmServeArguments:
     max_lora_rank: int = 64
     max_loras: int = 2
     worker_extension_cls: str | None = None
+    enable_return_routed_experts: bool = False
 
 
 AxolotlScriptArguments = VllmServeArguments
@@ -129,6 +130,8 @@ def build_command(script_args: VllmServeArguments) -> list[str]:
         ]
     if script_args.worker_extension_cls:
         command += ["--worker-extension-cls", script_args.worker_extension_cls]
+    if script_args.enable_return_routed_experts:
+        command += ["--enable-return-routed-experts"]
     # Same fixed flags as TRL's `trl vllm-serve`: scale-out adds the render and
     # generate routes used for multimodal prompts, the NCCL transfer engine
     # receives merged weights, and processed logprobs feed importance sampling.
@@ -233,6 +236,7 @@ def do_vllm_serve(
         enable_lora=bool(getattr(cfg.trl, "vllm_lora_sync", False)),
         max_lora_rank=_max_lora_rank(cfg) or VllmServeArguments.max_lora_rank,
         worker_extension_cls=worker_extension_cls,
+        enable_return_routed_experts=bool(getattr(cfg.trl, "routing_replay", False)),
     )
 
     if serve_module is None:

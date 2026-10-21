@@ -1,14 +1,34 @@
+import base64
+import io
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 import torch
-from transformers import AutoModelForCausalLM, DeepseekV3Config, Qwen3MoeConfig
+from transformers import (
+    AutoModelForCausalLM,
+    DeepseekV3Config,
+    GraniteMoeConfig,
+    Qwen3MoeConfig,
+)
+from trl.generation.vllm_client import VLLMClient
 
+from axolotl.core.trainers.grpo.async_trainer import AsyncDataProducer, AsyncGRPOTrainer
 from axolotl.core.trainers.grpo.routing_replay import (
     RoutingReplay,
     capturing_client,
     pad_routed_experts,
 )
-from axolotl.utils.routed_experts import encode_routed_experts
+from axolotl.utils.schemas.trl import TRLConfig
+
+
+def _encode(arr):
+    """vLLM's ``numpy2base64`` wire format."""
+    buf = io.BytesIO()
+    np.save(buf, arr, allow_pickle=False)
+    return base64.b64encode(buf.getvalue()).decode()
+
 
 COMMON = dict(
     vocab_size=64,
@@ -47,7 +67,7 @@ CONFIGS = {
 
 
 def _native_routes(model, ids):
-    """[B, S, layers, k] routes the model picks on its own, -1 for dense layers."""
+    """[B, S, moe_layers, k] routes the model picks on its own, like vLLM returns them."""
     routes = {}
     handles = []
     for name, mod in model.named_modules():
@@ -62,10 +82,7 @@ def _native_routes(model, ids):
         model(ids)
     for h in handles:
         h.remove()
-    k = next(iter(routes.values())).shape[-1]
-    out = torch.full((ids.numel(), model.config.num_hidden_layers, k), -1)
-    for layer, idx in routes.items():
-        out[:, layer] = idx
+    out = torch.stack([routes[layer] for layer in sorted(routes)], 1)
     return out.view(*ids.shape, *out.shape[1:]).to(torch.int16)
 
 
@@ -93,9 +110,8 @@ def test_replay(kind):
 
     # Forced routes change the output, still train the router, and survive
     # gradient-checkpoint recompute.
-    forced = native.clone()
-    moe = native[0, 0, :, 0] >= 0
-    forced[..., moe, :] = torch.tensor([3, 5], dtype=torch.int16)
+    forced = torch.empty_like(native)
+    forced[...] = torch.tensor([3, 5], dtype=torch.int16)
     grads = []
     for gc in (False, True):
         model.zero_grad()
@@ -116,13 +132,26 @@ def test_replay(kind):
     assert rr.pop_agreement() < 1.0
 
 
+def test_rejects_unsupported_architecture():
+    cfg = GraniteMoeConfig(**COMMON, intermediate_size=16, num_local_experts=4)
+    with pytest.raises(ValueError, match="granitemoe"):
+        RoutingReplay(AutoModelForCausalLM.from_config(cfg))
+
+
+def test_rejects_routes_with_wrong_layer_count():
+    rr = RoutingReplay(AutoModelForCausalLM.from_config(CONFIGS["sigmoid_grouped"]()))
+    with pytest.raises(ValueError, match="3 MoE layers, model has 2"):
+        with rr.replay(torch.zeros(1, 4, 3, 2, dtype=torch.int16)):
+            pass
+
+
 def test_pad_routed_experts():
     seqs = [
-        np.arange(4 * 2 * 2).reshape(4, 2, 2),
-        np.arange(6 * 2 * 2).reshape(6, 2, 2),
+        np.arange(4 * 2 * 2, dtype=np.uint8).reshape(4, 2, 2),
+        np.arange(6 * 2 * 2, dtype=np.uint8).reshape(6, 2, 2),
     ]
     # prompt lens 2 and 3, completion lens 3 and 4 → vLLM returns p + c - 1 rows
-    out = pad_routed_experts([encode_routed_experts(s) for s in seqs], [2, 3], 3, 4)
+    out = pad_routed_experts([_encode(s) for s in seqs], [2, 3], 3, 4)
     assert out.shape == (2, 7, 2, 2)
     assert (out[0, :1] == -1).all() and (out[0, 5:] == -1).all()
     torch.testing.assert_close(out[0, 1:5], torch.from_numpy(seqs[0]).to(torch.int16))
@@ -130,42 +159,105 @@ def test_pad_routed_experts():
     assert (out[1, 6:] == -1).all()
 
 
-def test_capturing_client_matches_routes_by_completion():
-    class Resp:
-        status_code = 200
+class _Resp:
+    status_code = 200
 
-        def __init__(self, payload):
-            self._payload = payload
+    def __init__(self, payload):
+        self._payload = payload
 
-        def json(self):
-            return self._payload
+    def json(self):
+        return self._payload
 
-    class Session:
-        def post(self, url, json):
-            # vLLM OpenAI-style choice carrying its own routes
-            return Resp(
-                {
-                    "choices": [
-                        {"token_ids": [json["i"]], "routed_experts": f"r{json['i']}"}
-                    ]
-                }
-            )
 
-    class Client:
-        session = Session()
+class _VllmSession:
+    """vLLM's native ``/v1/completions``: per-choice ``token_ids`` and ``routed_experts``."""
 
-        def chat(self, order):
-            # Like trl's concurrent chat: requests finish out of order, results are reordered.
-            responses = {
-                i: self.session.post("/v1/chat/completions", json={"i": i}).json()
-                for i in order
+    def __init__(self, with_routes=True):
+        self.with_routes = with_routes
+
+    def post(self, url, json):
+        assert url.endswith("/v1/completions")
+        choices = [
+            {
+                "prompt_token_ids": prompt,
+                "token_ids": [p * 10 + g],
+                "logprobs": None,
+                "routed_experts": f"r{p}{g}" if self.with_routes else None,
             }
-            return {
-                "completion_ids": [
-                    responses[i]["choices"][0]["token_ids"] for i in sorted(order)
-                ]
-            }
+            for p, prompt in enumerate(json["prompt"])
+            for g in range(json["n"])
+        ]
+        return _Resp({"choices": choices})
 
-    client = capturing_client(Client())
-    out = client.chat([2, 0, 1])
-    assert client.session.routes_for(out["completion_ids"]) == ["r0", "r1", "r2"]
+
+def _trl_client(session):
+    client = VLLMClient.__new__(VLLMClient)
+    client.base_url, client.model, client.session = "http://vllm", "m", session
+    return client
+
+
+def test_capturing_client_reads_trl_completions():
+    client = capturing_client(_trl_client(_VllmSession()))
+    out = client.generate(prompts=[[1], [2]], n=2)
+    assert client.session.routes_for(out["completion_ids"]) == [
+        "r00",
+        "r01",
+        "r10",
+        "r11",
+    ]
+
+
+def test_capturing_client_raises_without_routes():
+    client = capturing_client(_trl_client(_VllmSession(with_routes=False)))
+    out = client.generate(prompts=[[1]], n=2)
+    with pytest.raises(RuntimeError, match="enable-return-routed-experts"):
+        client.session.routes_for(out["completion_ids"])
+
+
+def _r3_trainer(**kw):
+    return SimpleNamespace(
+        _routing_replay=object(),
+        rollout_func=None,
+        tools=None,
+        model=SimpleNamespace(training=True),
+        accelerator=SimpleNamespace(num_processes=1),
+        **kw,
+    )
+
+
+@pytest.mark.parametrize("kw", [{"rollout_func": lambda *a: {}}, {"tools": [print]}])
+def test_generate_rejects_rollout_func_and_tools(kw):
+    trainer = _r3_trainer()
+    vars(trainer).update(kw)
+    with pytest.raises(ValueError, match="rollout_func or tools"):
+        AsyncGRPOTrainer._generate_only(trainer, [{"prompt": "hi"}])
+
+
+def test_training_forward_without_routes_raises():
+    with pytest.raises(RuntimeError, match="no routed_experts"):
+        AsyncGRPOTrainer._replaying(_r3_trainer(), None)
+
+
+def test_sync_rollouts_use_routed_generation():
+    inner = MagicMock()
+    inner._trainer = _r3_trainer()
+    inner.config.sync_warmup_rollouts = 1
+    producer = AsyncDataProducer(inner, {"skip_policy_logps": True})
+    producer.produce(None, 0)
+    assert inner.produce.call_args.kwargs["skip_policy_logps"] is True
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"use_vllm": False},
+        {"vllm_mode": "colocate"},
+        {"async_prefetch": False, "use_data_producer": True},
+        {"rollout_func": "my_module.rollout"},
+    ],
+)
+def test_config_rejects_unsupported_rollout_paths(kw):
+    base = {"routing_replay": True, "use_vllm": True, "async_prefetch": True}
+    TRLConfig(**base)
+    with pytest.raises(ValueError, match="routing_replay"):
+        TRLConfig(**{**base, **kw})

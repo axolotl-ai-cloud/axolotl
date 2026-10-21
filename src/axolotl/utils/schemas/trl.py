@@ -331,8 +331,8 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Rollout Routing Replay (R3) for MoE: replay vLLM's per-token expert "
-            "choices in the training forward. Requires use_vllm with the axolotl vllm-serve "
-            "server and async_prefetch."
+            "choices in the training forward. Requires use_vllm with `axolotl vllm-serve`, "
+            "async_prefetch, and a supported MoE architecture; no rollout_func or tools."
         },
     )
     off_policy_mask_threshold: float | None = Field(
@@ -407,10 +407,11 @@ class TRLConfig(BaseModel):
         if self.routing_replay and (
             not self.use_vllm
             or self.vllm_mode == "colocate"
-            or not (self.async_prefetch or self.use_data_producer)
+            or not self.async_prefetch
+            or self.rollout_func
         ):
             raise ValueError(
                 "trl.routing_replay requires use_vllm in server mode with "
-                "async_prefetch or use_data_producer"
+                "async_prefetch, and does not support rollout_func"
             )
         return self

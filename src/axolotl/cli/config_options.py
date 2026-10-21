@@ -1632,7 +1632,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.routing-replay/--no-trl.routing-replay",),
         "trl__routing_replay",
         None,
-        "Rollout Routing Replay (R3) for MoE: replay vLLM's per-token expert choices in the training forward. Requires use_vllm with the axolotl vllm-serve server and async_prefetch.",
+        "Rollout Routing Replay (R3) for MoE: replay vLLM's per-token expert choices in the training forward. Requires use_vllm with `axolotl vllm-serve`, async_prefetch, and a supported MoE architecture; no rollout_func or tools.",
     ),
     (
         ("--trl.off-policy-mask-threshold",),
