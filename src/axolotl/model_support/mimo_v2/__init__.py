@@ -33,7 +33,7 @@ def _is_published_layout(cfg) -> bool:
     from transformers import PretrainedConfig
 
     config, _ = PretrainedConfig.get_config_dict(
-        cfg.base_model_config or cfg.base_model
+        cfg.base_model_config or cfg.base_model, revision=cfg.revision_of_model
     )
     return "quantization_config" in config
 
