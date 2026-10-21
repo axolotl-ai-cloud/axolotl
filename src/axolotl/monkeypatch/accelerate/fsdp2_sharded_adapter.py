@@ -518,7 +518,9 @@ def consolidate(shard_dir, threads: int = CONSOLIDATE_THREADS):
     finally:
         os.close(fd)
     target = shard_dir.parent / manifest["target"]
-    target.parent.mkdir(parents=True, exist_ok=True)
+    # never recreate a checkpoint that rotation deleted mid-consolidation
+    if target.parent != shard_dir.parent:
+        target.parent.mkdir(exist_ok=True)
     os.replace(tmp, target)
     _fsync_directory(target.parent)
     # a crash inside rmtree must not leave a manifest that resume would consolidate again
