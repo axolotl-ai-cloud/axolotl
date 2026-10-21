@@ -4,8 +4,7 @@ The checkpoints ship no transformers modeling code, so the pre-load hooks
 register the in-tree port with the transformers auto classes.
 """
 
-import json
-import os
+import functools
 
 from axolotl.model_support.base import ModelSupport, Unsupported
 from axolotl.model_support.profile import (
@@ -21,15 +20,22 @@ from axolotl.model_support.registry import register_model_support
 from axolotl.model_support.templates import VANILLA_CAUSAL_LM
 
 
+@functools.lru_cache(maxsize=32)
+def _checkpoint_model_type(source: str, revision: str | None) -> str | None:
+    from transformers import PretrainedConfig
+
+    try:
+        config, _ = PretrainedConfig.get_config_dict(source, revision=revision)
+    except Exception:  # noqa: BLE001  # proxy errors escape the hub's OSError family
+        return None
+    return config.get("model_type")
+
+
 def _matches_kolibri_cfg(cfg) -> bool:
-    name = cfg.base_model_config or cfg.base_model or ""
-    if "kolibri" in name.lower():
-        return True
-    config_path = os.path.join(name, "config.json")
-    if not os.path.isfile(config_path):
+    source = cfg.base_model_config or cfg.base_model
+    if not isinstance(source, str):
         return False
-    with open(config_path, encoding="utf-8") as f:
-        return json.load(f).get("model_type") == "kolibri1"
+    return _checkpoint_model_type(source, cfg.revision_of_model) == "kolibri1"
 
 
 def register_kolibri1(_context: ModelHookContext | None = None) -> None:

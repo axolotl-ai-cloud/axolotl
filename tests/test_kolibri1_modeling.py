@@ -68,11 +68,15 @@ def published_layout(model):
     return checkpoint
 
 
-def test_registered_and_matched_by_name():
+def test_matched_by_checkpoint_model_type(tmp_path):
     support = get_model_support("kolibri1")
-    assert support is not None
-    cfg = DictDefault(base_model="Aleph-Alpha/Kolibri-1-BF16")
-    assert get_model_support_for_cfg(cfg) is support
+    finetune = tmp_path / "my-finetune"
+    AutoConfig.for_model("kolibri1", **CONFIG_KWARGS).save_pretrained(finetune)
+    lookalike = tmp_path / "kolibri-lookalike"
+    AutoConfig.for_model("llama").save_pretrained(lookalike)
+
+    assert get_model_support_for_cfg(DictDefault(base_model=str(finetune))) is support
+    assert get_model_support_for_cfg(DictDefault(base_model=str(lookalike))) is None
 
 
 def test_experts_implementation_is_settable(model):
@@ -99,9 +103,6 @@ def test_rope_only_on_sliding_layers(model):
 def test_published_checkpoint_round_trips(model, tmp_path):
     save_file(published_layout(model), tmp_path / "model.safetensors")
     model.config.save_pretrained(tmp_path)
-    assert get_model_support_for_cfg(DictDefault(base_model=str(tmp_path))) is (
-        get_model_support("kolibri1")
-    )
 
     reloaded = AutoModelForCausalLM.from_pretrained(tmp_path, dtype=torch.float32)
     expected = model.state_dict()
