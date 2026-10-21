@@ -96,6 +96,8 @@ class MiMoV2Support(ModelSupport):
     """Descriptor for MiMo-V2.6 (`mimo_v2`) sparse MoE checkpoints, text only."""
 
     model_types = ("mimo_v2",)
+    # save_pretrained writes self-contained remote code for the bf16 native layout
+    merged_model_saves_native_layout = True
 
     @staticmethod
     def resolve_lora_merge_method(cfg, requested: str | None) -> str:

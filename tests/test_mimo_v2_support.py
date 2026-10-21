@@ -238,3 +238,19 @@ def test_save_under_fsdp_generated_subclass_keeps_auto_map(tmp_path, monkeypatch
     assert (tmp_path / "modeling_mimo_v2.py").exists()
     assert not list(tmp_path.glob("_fsdp*.py"))
     assert MiMoV2ForCausalLM._auto_class == "AutoModelForCausalLM"
+
+
+def test_legacy_merge_cast_keeps_router_bias_fp32():
+    from axolotl.cli.merge_lora import _cast_keeping_fp32_modules
+    from axolotl.model_support.mimo_v2.modeling_mimo_v2 import MiMoV2ForCausalLM
+
+    assert get_model_support("mimo_v2").merged_model_saves_native_layout
+    model = MiMoV2ForCausalLM(MiMoV2Config(**HUB_CONFIG)).float()
+
+    _cast_keeping_fp32_modules(model, torch.bfloat16)
+
+    fp32 = {n for n, t in model.state_dict().items() if t.dtype == torch.float32}
+    assert fp32 == {
+        f"model.layers.{i}.mlp.gate.e_score_correction_bias" for i in (1, 2)
+    }
+    assert model.lm_head.weight.dtype == torch.bfloat16

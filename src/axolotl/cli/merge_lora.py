@@ -60,12 +60,17 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
     Loads the full model into memory before merging.
     """
     LOG.debug("Using legacy LoRA merging method...")
+    support = get_model_support(getattr(cfg, "model_config_type", None))
+    native_save = getattr(support, "merged_model_saves_native_layout", False)
     model, tokenizer, processor = load_model_and_tokenizer(cfg=cfg)
 
     LOG.info("Running merge of LoRA with base model...")
     model = model.merge_and_unload(progressbar=True)
     try:
-        _cast_keeping_fp32_modules(model, cfg.torch_dtype)
+        if native_save:
+            _cast_keeping_fp32_modules(model, cfg.torch_dtype)
+        else:
+            model.to(dtype=cfg.torch_dtype)
     except ValueError as e:
         LOG.warning("Failed to convert model to dtype %s", cfg.torch_dtype)
         LOG.warning("Ignore this if the base_model is pre-quantized.")
@@ -87,7 +92,11 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
             and base_model_path is not None
             and base_model_path.is_dir()
         ):
-            _copy_remote_code_files(base_model_path, Path(cfg.output_dir) / "merged")
+            _copy_remote_code_files(
+                base_model_path,
+                Path(cfg.output_dir) / "merged",
+                overwrite=not native_save,
+            )
         tokenizer.save_pretrained(
             str(Path(cfg.output_dir) / "merged"),
             save_jinja_files=cfg.tokenizer_save_jinja_files,
@@ -103,32 +112,18 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
 
 
 def _cast_keeping_fp32_modules(model, dtype: torch.dtype) -> None:
-    """Cast to ``dtype`` except the model's strict keep-in-fp32 tensors.
-
-    noaux_tc routers (e.g. ``e_score_correction_bias``) collapse onto a handful of
-    distinct values in bf16, which reroutes the experts.
-    """
-    attrs = ["_keep_in_fp32_modules_strict"]
-    if dtype == torch.float16:
-        attrs.append("_keep_in_fp32_modules")
-    keep: set[str] = set()
-    for attr in attrs:
-        names = getattr(model, attr, None)
-        if isinstance(names, (list, tuple, set, frozenset)):
-            keep.update(names)
-    if not keep:
-        model.to(dtype=dtype)
-        return
     from transformers.core_model_loading import build_glob_alternation
 
-    keep_pattern = build_glob_alternation(sorted(keep))[0]
-    tensors = [*model.named_parameters(), *model.named_buffers()]
-    for name, tensor in tensors:
-        if tensor.is_floating_point() and not keep_pattern.search(name):
+    # noaux_tc router biases collapse in bf16, which reroutes the experts
+    keep = build_glob_alternation(sorted(model._keep_in_fp32_modules_strict))[0]
+    for name, tensor in [*model.named_parameters(), *model.named_buffers()]:
+        if tensor.is_floating_point() and not keep.search(name):
             tensor.data = tensor.data.to(dtype)
 
 
-def _copy_remote_code_files(base_model_path: Path, output_path: Path) -> None:
+def _copy_remote_code_files(
+    base_model_path: Path, output_path: Path, overwrite: bool = True
+) -> None:
     base_model_path = base_model_path.resolve()
     output_path = output_path.resolve()
     for source in base_model_path.rglob("*.py"):
@@ -136,8 +131,9 @@ def _copy_remote_code_files(base_model_path: Path, output_path: Path) -> None:
         if any(part in {".git", "__pycache__"} for part in relative.parts):
             continue
         target = output_path / relative
-        # save_pretrained already wrote the code of the class actually loaded
-        if source == target or output_path in source.parents or target.exists():
+        if source == target or output_path in source.parents:
+            continue
+        if not overwrite and target.exists():
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
