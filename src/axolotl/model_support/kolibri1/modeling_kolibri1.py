@@ -45,8 +45,15 @@ class Kolibri1Config(Qwen3MoeConfig):
     use_sliding_window: bool = True
     sliding_window: int | None = 513
     layer_types: list[str] | None = None
+    router_aux_loss_coef: float = 0.0
 
     def __post_init__(self, **kwargs):
+        if self.output_router_logits or self.router_aux_loss_coef:
+            raise ValueError(
+                "Kolibri-1 balances experts with a routing bias; the inherited softmax "
+                "load-balancing loss does not apply, so output_router_logits and "
+                "router_aux_loss_coef are unsupported."
+            )
         if self.layer_types is None:
             self.layer_types = [
                 "full_attention" if (i + 1) % 5 == 0 else "sliding_attention"

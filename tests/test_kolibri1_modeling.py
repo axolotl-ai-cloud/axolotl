@@ -79,6 +79,12 @@ def test_experts_implementation_is_settable(model):
     assert model.config._experts_implementation == "grouped_mm"
 
 
+def test_router_aux_loss_rejected():
+    assert AutoConfig.for_model("kolibri1").router_aux_loss_coef == 0.0
+    with pytest.raises(ValueError, match="output_router_logits"):
+        AutoConfig.for_model("kolibri1", output_router_logits=True)
+
+
 def test_rope_only_on_sliding_layers(model):
     assert [layer.self_attn.use_rope for layer in model.model.layers] == [
         True,

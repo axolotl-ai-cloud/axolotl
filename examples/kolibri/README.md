@@ -31,6 +31,7 @@ The shared expert uses `nn.Linear`, so uncomment `gate_proj`, `up_proj` and `dow
 - Fine-tune `Aleph-Alpha/Kolibri-1-BF16`; `Aleph-Alpha/Kolibri-1` is an FP8 serving checkpoint.
 - transformers has no Kolibri-1 implementation, so Axolotl ships its own and `trust_remote_code` is not needed. Axolotl detects the model when `base_model` contains `kolibri` or points to a local directory whose `config.json` has `model_type: kolibri1`.
 - Cut Cross Entropy is not supported for this model.
+- Kolibri-1 balances its experts with a routing bias, so the MoE load-balancing auxiliary loss (`output_router_logits`, `router_aux_loss_coef`) is not supported.
 - For inference hyperparameters and reasoning modes, please see the model card.
 - Read more on loading your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
