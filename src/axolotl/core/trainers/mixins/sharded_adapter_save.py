@@ -274,6 +274,12 @@ class ShardedAdapterSaveMixin(Trainer):
 
         def gated_on_train_end(args, state, control, **kwargs):
             control = self._release_consolidated(on_save, args, control, wait=True)
+            if self._axolotl_failed_consolidations:
+                LOG.error(
+                    "These checkpoints have no consolidated adapter: "
+                    f"{', '.join(sorted(self._axolotl_failed_consolidations))}. Their "
+                    "shards are kept; resuming from one consolidates it first."
+                )
             return on_train_end(args, state, control, **kwargs)
 
         handler.on_save = gated_on_save
