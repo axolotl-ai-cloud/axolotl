@@ -96,7 +96,11 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
 
         if processor:
             processor.save_pretrained(str(Path(cfg.output_dir) / "merged"))
-        copy_mtp_weights(cfg.base_model, Path(cfg.output_dir) / "merged")
+        copy_mtp_weights(
+            cfg.base_model,
+            Path(cfg.output_dir) / "merged",
+            revision=cfg.revision_of_model,
+        )
         PluginManager.get_instance().post_lora_merge(
             cfg,
             str(cfg.lora_model_dir),
