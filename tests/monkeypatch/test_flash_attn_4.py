@@ -45,6 +45,8 @@ class TestSm100ElectGate:
             ("4.5.3", True, True),
             ("4.6.0", True, False),
             ("4.6.1", True, False),
+            ("4.6.2", True, True),  # 4.6.2 reverted the internal election
+            ("4.8.0", True, True),
             ("4.6.0", False, True),  # patched FA4
         ],
     )
@@ -95,6 +97,33 @@ class TestConfigureFa4:
             fa4.configure_fa4()
         mock_log.warning.assert_called_once()
         assert "0.5.3" in str(mock_log.warning.call_args)
+
+
+class TestFirstCallLog:
+    def test_logs_first_fa4_call_once(self, monkeypatch):
+        import sys
+        import types
+
+        calls = []
+        cute = types.ModuleType("flash_attn.cute")
+        cute.flash_attn_func = lambda *a, **k: calls.append("f") or "out"
+        cute.flash_attn_varlen_func = lambda *a, **k: calls.append("v") or "out"
+        parent = types.ModuleType("flash_attn")
+        parent.cute = cute
+        monkeypatch.setitem(sys.modules, "flash_attn", parent)
+        monkeypatch.setitem(sys.modules, "flash_attn.cute", cute)
+        info = MagicMock()
+        monkeypatch.setattr(fa4.LOG, "info", info)
+
+        fa4._log_first_fa4_call()
+        fa4._log_first_fa4_call()  # idempotent: no double wrapping
+        assert cute.flash_attn_varlen_func(1) == "out"
+        assert cute.flash_attn_varlen_func(2) == "out"
+        assert cute.flash_attn_func(3) == "out"
+
+        assert calls == ["v", "v", "f"]
+        assert info.call_count == 2
+        assert info.call_args_list[0].args[1] == "flash_attn_varlen_func"
 
 
 class TestResolveFlashAttention4:

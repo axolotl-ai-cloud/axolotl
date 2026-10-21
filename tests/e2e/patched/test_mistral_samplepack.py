@@ -12,7 +12,6 @@ from axolotl.utils.dict import DictDefault
 from ..utils import (
     check_model_output_exists,
     check_tensorboard_loss_decreased,
-    require_torch_2_6_0,
     requires_flash_attn,
     with_temp_dir,
 )
@@ -25,7 +24,6 @@ class TestMistral(unittest.TestCase):
     Test case for Llama models using LoRA
     """
 
-    @require_torch_2_6_0
     @with_temp_dir
     def test_lora_packing(self, temp_dir):
         cfg = DictDefault(

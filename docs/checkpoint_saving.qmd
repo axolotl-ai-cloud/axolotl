@@ -22,13 +22,13 @@ Enable in your config:
 ```yaml
 dynamic_checkpoint:
   enabled: true
-  check_interval: 100  # Optional: check every N steps (default: 100)
+  check_interval: 10  # Optional: check every N steps (default: 10)
   trigger_file_path: "axolotl_checkpoint.save"  # Optional: custom filename
 ```
 
 **Options:**
 - `enabled`: `true` to enable (required)
-- `check_interval`: Steps between file checks. Default: 100. Lower = faster response, higher I/O overhead.
+- `check_interval`: Steps between file checks. Default: 10. Lower = faster response, higher I/O overhead.
 - `trigger_file_path`: Custom trigger filename. Default: `axolotl_checkpoint.save`
 
 ### How It Works
@@ -68,7 +68,7 @@ Pressing `Ctrl+C` during training saves the model state and exits gracefully. **
 
 ## Best Practices
 
-- **Check interval**: Lower values (10-50) for fast training, default 100 for slower training
+- **Check interval**: Lower values (10-50) for fast training, higher values (e.g. 100) for slower training
 - **Distributed training**: Create trigger file once; rank 0 handles synchronization
 - **Resume**: Dynamic checkpoints can be resumed like regular checkpoints via `resume_from_checkpoint`
 

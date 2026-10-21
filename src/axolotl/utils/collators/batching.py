@@ -1,7 +1,7 @@
 """Data collators for axolotl to pad labels and position_ids for packed sequences"""
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, Callable, List
 
 import numpy as np
 from transformers import PreTrainedTokenizerBase
@@ -45,6 +45,10 @@ class DataCollatorForSeq2Seq:
             The id to use when padding the labels (-100 will be automatically ignored by PyTorch loss functions).
         return_tensors (`str`):
             The type of Tensor to return. Allowable values are "np", "pt" and "tf".
+        cp_shard (`Callable`, *optional*):
+            Cuts this rank's context-parallel shard out of the padded batch (see
+            ``axolotl.integrations.context_parallel.collator``). When set, the collator
+            returns the shard and leaves the packed varlen metadata to the CP runtime.
     """
 
     tokenizer: PreTrainedTokenizerBase
@@ -56,6 +60,7 @@ class DataCollatorForSeq2Seq:
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
     emit_fa_varlen_kwargs: bool = False
+    cp_shard: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
     def __call__(self, features, return_tensors=None):
         has_attn_mask = "attention_mask" in features[0].keys()
@@ -126,6 +131,10 @@ class DataCollatorForSeq2Seq:
                 labels=features["labels"]
             )
             features["decoder_input_ids"] = decoder_input_ids
+
+        if self.cp_shard is not None:
+            # Global cu_seqlens cannot describe a local shard; the CP runtime derives its own.
+            return self.cp_shard(dict(features))
 
         if (
             self.emit_fa_varlen_kwargs

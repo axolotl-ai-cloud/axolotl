@@ -184,9 +184,6 @@ def test_sliding_window_mask_builder_is_not_patched(restore_gemma4_module):
     modeling_gemma4 = restore_gemma4_module
     from axolotl.monkeypatch.gemma4_hybrid_mask import patch_gemma4_hybrid_mask
 
-    if not hasattr(modeling_gemma4, "create_sliding_window_causal_mask"):
-        pytest.skip("transformers version has no create_sliding_window_causal_mask")
-
     sliding_before = modeling_gemma4.create_sliding_window_causal_mask
     patch_gemma4_hybrid_mask()
     sliding_after = modeling_gemma4.create_sliding_window_causal_mask

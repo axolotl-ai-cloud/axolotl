@@ -20,7 +20,7 @@ import torch.distributed as dist
 from .attention_mla_absorb import absorb_query
 from .dispatch import mla_attn
 
-_COMM_STREAM = {}
+_COMM_STREAM: dict[torch.device, torch.cuda.Stream] = {}
 
 
 def _comm_stream(dev):

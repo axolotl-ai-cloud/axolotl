@@ -54,13 +54,13 @@ try:
     from fla.ops.kda import chunk_kda, fused_recurrent_kda
     from fla.ops.kda.gate import fused_kda_gate
 except ImportError as err:
-    raise ImportError("Please run `pip install fla-core==0.4.1`") from err
+    raise ImportError("Please run `pip install fla-core==0.5.2`") from err
 
 LOG = get_logger(__name__)
 
 
 class BailingMoeV3RotaryEmbedding(DeepseekV3RotaryEmbedding):
-    def __init__(self, config: BailingMoeV3Config, device=None):
+    def __init__(self, config: BailingMoeV3Config):
         rope_config = copy.deepcopy(config)
         # `head_dim` sizes the linear-attention heads; rope only covers the MLA rope split
         rope_config.head_dim = config.qk_rope_head_dim
@@ -68,7 +68,7 @@ class BailingMoeV3RotaryEmbedding(DeepseekV3RotaryEmbedding):
             **config.rope_parameters,
             "partial_rotary_factor": 1.0,
         }
-        super().__init__(rope_config, device=device)
+        super().__init__(rope_config)
 
 
 class BailingMoeV3MultiLatentAttention(nn.Module):

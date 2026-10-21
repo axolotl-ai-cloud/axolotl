@@ -113,8 +113,10 @@ def test_fsdp2_adapter_save_ignores_frozen_base_parameters(monkeypatch, tmp_path
     )
 
     assert save_fsdp2_lora_adapter(model, str(tmp_path))
-    assert saved.keys() == {"lora_A.default.weight"}
-    torch.testing.assert_close(saved["lora_A.default.weight"], adapter.detach())
+    assert saved.keys() == {"base_model.model.lora_A.default.weight"}
+    torch.testing.assert_close(
+        saved["base_model.model.lora_A.default.weight"], adapter.detach()
+    )
 
 
 def test_fsdp2_adapter_save_strips_checkpoint_wrapper_names(monkeypatch, tmp_path):
@@ -158,3 +160,16 @@ def test_fsdp2_adapter_save_strips_checkpoint_wrapper_names(monkeypatch, tmp_pat
     assert saved.keys() == expected.keys()
     for key, value in expected.items():
         torch.testing.assert_close(saved[key], value)
+
+
+def test_canonical_adapter_keys_prefixes_bare_injected_model_keys():
+    from axolotl.integrations.expert_parallel.shard import _canonical_adapter_keys
+
+    bare = {"model.layers.0.self_attn.q_proj.lora_A.weight": torch.zeros(1)}
+    assert list(_canonical_adapter_keys(bare)) == [
+        "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight"
+    ]
+    rooted = {
+        "base_model.model.model.layers.0.mlp.experts.lora_B.weight": torch.zeros(1)
+    }
+    assert _canonical_adapter_keys(rooted) is rooted

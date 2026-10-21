@@ -25,11 +25,14 @@ is required.
 
 ### Tips
 
+- For the MoE checkpoints, prefer an explicit `lora_target_modules` list over `lora_target_linear: true`
+  to keep the adapter count manageable; note MoVA attention has `v_experts` instead of `v_proj`.
 - Use `lora_target_modules` or `lora_target_linear: true` to target the MoE layers; the experts are
   plain `nn.Linear` modules.
 - `sample_packing: true` is supported.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
+- The chat template requires a thinking field on every assistant message (`reasoning_content`, `reasoning`, `think`, `think_fast` or `think_faster`); map yours with `field_thinking`, as the examples do for `thinking`.
 
 ## Limitations
 

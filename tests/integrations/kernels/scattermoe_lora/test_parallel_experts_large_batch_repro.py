@@ -194,6 +194,9 @@ def test_scatter2scatter_no_corruption_at_overflow_shape():
             f"(overflow_threshold_row={overflow_threshold_row}, "
             f"L_scattered={L_scattered}, y_dim={y_dim})"
         )
+    assert torch.isfinite(output).all().item(), (
+        "int64 kernel produced non-finite values at overflow shape"
+    )
 
 
 @_requires_cuda()

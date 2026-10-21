@@ -402,6 +402,21 @@ class DatasetValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_generation_tags_needs_prepare(cls, data):
+        if data.get("skip_prepare_dataset") and any(
+            ds.get("generation_tags")
+            if isinstance(ds, dict)
+            else getattr(ds, "generation_tags", None)
+            for ds in (data.get("datasets") or []) + (data.get("test_datasets") or [])
+        ):
+            raise ValueError(
+                "generation_tags labels during dataset preparation and has no effect "
+                "with skip_prepare_dataset"
+            )
+        return data
+
 
 class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
@@ -1047,28 +1062,6 @@ class RLValidationMixin:
 
         return data
 
-    @model_validator(mode="after")
-    def check_dpo_use_liger_kernel(self):
-        if not self.dpo_use_liger_kernel:
-            return self
-        loss_types = self.dpo_loss_type
-        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
-        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
-        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
-            raise ValueError(
-                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
-                "(liger-kernel's fused DPO loss cannot length-normalize the "
-                "squared margin). Disable the liger kernel or use another loss."
-            )
-        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
-        if loss_types and len(loss_types) > 1:
-            LOG.warning(
-                "`dpo_use_liger_kernel` uses only the first entry of "
-                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
-                "are ignored on the liger loss path."
-            )
-        return self
-
     @model_validator(mode="before")
     @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
@@ -1180,9 +1173,8 @@ STAGED_NF4_CONSTRAINTS = [
             bool(self.deepspeed)
             or (self.tensor_parallel_size or 1) > 1
             or (self.context_parallel_size or 1) > 1
-            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
         ),
-        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+        "CPU-staged NF4 does not support DeepSpeed, tensor or context parallelism",
     ),
     (
         lambda self: (self.dp_replicate_size or 1) > 1,
@@ -1239,7 +1231,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon":
+        if data.get("optimizer") in ("muon", "muon_8bit"):
             if data.get("deepspeed"):
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"
@@ -1310,7 +1302,7 @@ class OptimizationValidationMixin:
                 "silently ignored. Remove them or pick a different optimizer."
             )
 
-        if data.get("relora_steps"):
+        if data.get("relora"):
             raise ValueError(
                 "relora resets optimizer state through Optimizer.state, which polora "
                 "does not use, so its momentum would survive every merge."

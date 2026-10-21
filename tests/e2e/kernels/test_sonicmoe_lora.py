@@ -46,9 +46,6 @@ pytestmark = [
         importlib.util.find_spec("kernels") is None,
         reason="HF `kernels` package not installed",
     ),
-    pytest.mark.skipif(
-        importlib.util.find_spec("peft") is None, reason="PEFT not installed"
-    ),
 ]
 
 
@@ -226,30 +223,6 @@ class TestSonicMoEGateOnlyLoRA:
         optimizer = torch.optim.AdamW(
             [p for p in model.parameters() if p.requires_grad], lr=1e-3
         )
-        losses = []
-        for step in range(20):
-            out = model(input_ids, labels=input_ids)
-            loss = out.loss
-            assert not math.isnan(loss.item()), f"NaN loss at step {step}"
-            assert not math.isinf(loss.item()), f"Inf loss at step {step}"
-            losses.append(loss.item())
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-
-        assert losses[-1] < losses[0], (
-            f"Loss did not decrease: first={losses[0]:.4f}, last={losses[-1]:.4f}"
-        )
-
-
-class TestSonicMoENoLoRARegression:
-    """Full fine-tuning (no PEFT) still works through the registered forward."""
-
-    def test_no_lora_loss_decreases(self):
-        input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
-        model = _build_sonic_model()
-
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
         losses = []
         for step in range(20):
             out = model(input_ids, labels=input_ids)

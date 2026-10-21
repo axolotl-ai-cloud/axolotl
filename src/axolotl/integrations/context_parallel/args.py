@@ -34,6 +34,9 @@ class ContextParallelConfig(BaseModel):
     ring_impl: Literal["auto", "torch_native", "hf_kernels"] = "auto"
     """Ring block-kernel provider. auto -> hf_kernels (FA2/3/4 via HF kernels) when
     the model uses a flash kernel, else torch_native (SDPA/flex)."""
+    shard_in_collator: bool = True
+    """Cut each rank's shard in the dataloader collator instead of the forward
+    pre-hook, which also moves the packed-document boundary scan off the device."""
 
     @model_validator(mode="after")
     def _validate(self):

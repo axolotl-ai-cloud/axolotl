@@ -141,11 +141,7 @@ def rewrite_readme_links(
                         target_output = "index.qmd"
                     else:
                         # subdir/README.md
-                        parent_dir = parts[0]
-                        if parent_dir in parent_index_only:
-                            target_output = f"{parent_dir}/index.qmd"
-                        else:
-                            target_output = f"{parent_dir}.qmd"
+                        target_output = f"{parts[0]}.qmd"
                 else:
                     # Deeper nesting: parent/subdir/README.md
                     # Build the full path like "parent/subdir"
@@ -155,12 +151,8 @@ def rewrite_readme_links(
                         # This is a sub-entry with its own entry -> use .qmd
                         target_output = f"{full_path}.qmd"
                     elif parts[0] == ".":
-                        # ./subdir/README.md -> check if subdir has own entry
-                        subdir = parts[1]
-                        if subdir in parent_index_only:
-                            target_output = f"{subdir}/index.qmd"
-                        else:
-                            target_output = f"{subdir}.qmd"
+                        # ./subdir/README.md
+                        target_output = f"{parts[1]}.qmd"
                     else:
                         # parent/subdir where parent doesn't have own entry
                         target_output = f"{full_path}/index.qmd"

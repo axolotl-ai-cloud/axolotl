@@ -5,16 +5,14 @@ E2E tests for multigpu lora tinyllama
 from pathlib import Path
 
 import pytest
-import transformers
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from huggingface_hub import snapshot_download
-from packaging import version
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_2_6_0, requires_flash_attn
+from tests.e2e.utils import check_tensorboard, requires_flash_attn
 
 pytestmark = pytest.mark.gpu
 
@@ -25,10 +23,6 @@ AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 def download_model():
     # download the model
     snapshot_download("HuggingFaceTB/SmolLM2-135M")
-
-
-def transformers_version_eq(required_version):
-    return version.parse(transformers.__version__) == version.parse(required_version)
 
 
 class TestMultiGPULlama:
@@ -468,7 +462,6 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
-    @require_torch_2_6_0
     @pytest.mark.parametrize(
         "attention_backend",
         [pytest.param("flash", marks=requires_flash_attn), "flex"],

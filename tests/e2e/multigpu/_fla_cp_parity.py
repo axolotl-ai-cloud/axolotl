@@ -270,7 +270,7 @@ def main():
         print(f"rank={rank} CP backward", flush=True)
         (actual.float() * grad.chunk(world, dim=1)[rank]).sum().backward()
         target_grad = ref_x.grad.chunk(world, dim=1)[rank]
-        if family == "gdn":
+        if family == "gdn" and not packed:
             torch.testing.assert_close(local_x.grad, target_grad, atol=1e-2, rtol=5e-2)
         else:
             assert_bf16_close(local_x.grad, target_grad, "input gradient")

@@ -17,29 +17,6 @@ class TestTokenizers:
     test class for the load_tokenizer fn
     """
 
-    @pytest.mark.skip("LlamaTokenizer no longer has a Fast/Slow tokenizer")
-    @enable_hf_offline
-    def test_default_use_fast(self):
-        cfg = DictDefault(
-            {
-                "tokenizer_config": "huggyllama/llama-7b",
-            }
-        )
-        tokenizer = load_tokenizer(cfg)
-        assert "Fast" in tokenizer.__class__.__name__
-
-    @pytest.mark.skip("LlamaTokenizer no longer has a Fast/Slow tokenizer")
-    @enable_hf_offline
-    def test_dont_use_fast(self):
-        cfg = DictDefault(
-            {
-                "tokenizer_config": "huggyllama/llama-7b",
-                "tokenizer_use_fast": False,
-            }
-        )
-        tokenizer = load_tokenizer(cfg)
-        assert "Fast" not in tokenizer.__class__.__name__
-
     @enable_hf_offline
     def test_special_tokens_modules_to_save(self):
         # setting special_tokens to new token

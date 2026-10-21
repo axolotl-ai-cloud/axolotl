@@ -75,6 +75,7 @@ def _find_lora_ops_module() -> ModuleType | None:
 _KERNEL_MODULE_HINTS: tuple[str, ...] = (
     "lora_ops",
     "scattermoe_lora",
+    "cut_cross_entropy",
     "axolotl.monkeypatch.attention.flash_attn_d512",
     "libs.dsv4.attention",
     "libs.dsv4.attention_csa",

@@ -4,14 +4,19 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import click
+import yaml
 from click.testing import CliRunner
 from pydantic import BaseModel, Field
 
+from axolotl.cli.config import load_cfg
+from axolotl.cli.generate_config_options import _option_for_nested, _option_for_scalar
 from axolotl.cli.utils.args import (
-    add_options_from_config,
+    add_options_from_config_options,
     add_options_from_dataclass,
     filter_none_kwargs,
 )
+
+from tests.cli.test_load_cfg_capabilities import _patch_load_cfg_dependencies
 
 
 class InnerConfig(BaseModel):
@@ -46,6 +51,16 @@ class OuterConfig(BaseModel):
         default=None,
         description="Model name.",
     )
+
+
+OUTER_CONFIG_OPTIONS = (
+    _option_for_scalar("learning_rate", OuterConfig.model_fields["learning_rate"]),
+    *(
+        _option_for_nested("inner", sub_name, sub_field)
+        for sub_name, sub_field in InnerConfig.model_fields.items()
+    ),
+    _option_for_scalar("name", OuterConfig.model_fields["name"]),
+)
 
 
 @dataclass
@@ -100,8 +115,8 @@ class TestAddOptionsFromDataclass:
         assert " ".join(result.output.split()).count("--undocumented TEXT") == 1
 
 
-class TestAddOptionsFromConfigNested:
-    """Test that add_options_from_config handles nested BaseModel fields."""
+class TestAddOptionsFromConfigOptionsNested:
+    """Test that add_options_from_config_options handles nested BaseModel fields."""
 
     def setup_method(self):
         self.runner = CliRunner()
@@ -110,7 +125,7 @@ class TestAddOptionsFromConfigNested:
         """Nested model fields should create --parent.child CLI options."""
 
         @click.command()
-        @add_options_from_config(OuterConfig)
+        @add_options_from_config_options(OUTER_CONFIG_OPTIONS)
         @filter_none_kwargs
         def cmd(**kwargs):
             for k, v in sorted(kwargs.items()):
@@ -125,7 +140,7 @@ class TestAddOptionsFromConfigNested:
         """Nested bool fields should support --parent.field/--no-parent.field."""
 
         @click.command()
-        @add_options_from_config(OuterConfig)
+        @add_options_from_config_options(OUTER_CONFIG_OPTIONS)
         @filter_none_kwargs
         def cmd(**kwargs):
             for k, v in sorted(kwargs.items()):
@@ -139,7 +154,7 @@ class TestAddOptionsFromConfigNested:
         """Flat and nested options should work together."""
 
         @click.command()
-        @add_options_from_config(OuterConfig)
+        @add_options_from_config_options(OUTER_CONFIG_OPTIONS)
         @filter_none_kwargs
         def cmd(**kwargs):
             for k, v in sorted(kwargs.items()):
@@ -157,7 +172,7 @@ class TestAddOptionsFromConfigNested:
         """When no nested options are passed, they should not appear in kwargs."""
 
         @click.command()
-        @add_options_from_config(OuterConfig)
+        @add_options_from_config_options(OUTER_CONFIG_OPTIONS)
         @filter_none_kwargs
         def cmd(**kwargs):
             click.echo(f"keys={sorted(kwargs.keys())}")
@@ -171,41 +186,14 @@ class TestLoadCfgNestedKwargs:
     """Test that load_cfg correctly applies nested (double-underscore) kwargs."""
 
     @staticmethod
-    def _apply_nested_kwargs(cfg, kwargs):
-        """Helper that mirrors the nested kwargs handling from load_cfg,
-        including type coercion for string CLI values."""
-        from axolotl.cli.config import _coerce_value
+    def _load_cfg(tmp_path, monkeypatch, cfg_dict, kwargs):
+        _patch_load_cfg_dependencies(monkeypatch)
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(yaml.dump(cfg_dict))
+        return load_cfg(str(config_path), **kwargs)
 
-        nested_kwargs: dict = {}
-        flat_kwargs: dict = {}
-        for key, value in kwargs.items():
-            if "__" in key:
-                parent, child = key.split("__", 1)
-                nested_kwargs.setdefault(parent, {})[child] = value
-            else:
-                flat_kwargs[key] = value
-
-        cfg_keys = cfg.keys()
-        for key, value in flat_kwargs.items():
-            if key in cfg_keys:
-                cfg[key] = _coerce_value(value, cfg.get(key))
-
-        for parent, children in nested_kwargs.items():
-            if cfg[parent] is None:
-                cfg[parent] = {}
-            if not isinstance(cfg[parent], dict):
-                cfg[parent] = {}
-            for child_key, child_value in children.items():
-                existing = cfg[parent].get(child_key)
-                cfg[parent][child_key] = _coerce_value(child_value, existing)
-
-        return cfg
-
-    def test_nested_kwargs_applied_to_cfg(self, tmp_path):
+    def test_nested_kwargs_applied_to_cfg(self, tmp_path, monkeypatch):
         """Double-underscore kwargs should set nested config values."""
-        from axolotl.utils.dict import DictDefault
-
-        cfg = DictDefault({"trl": {"beta": 0.1}, "learning_rate": 0.01})
         # CLI passes strings, so simulate that
         kwargs = {
             "trl__beta": "0.5",
@@ -213,7 +201,12 @@ class TestLoadCfgNestedKwargs:
             "learning_rate": "0.02",
         }
 
-        cfg = self._apply_nested_kwargs(cfg, kwargs)
+        cfg = self._load_cfg(
+            tmp_path,
+            monkeypatch,
+            {"trl": {"beta": 0.1}, "learning_rate": 0.01},
+            kwargs,
+        )
 
         assert cfg["learning_rate"] == 0.02
         assert isinstance(cfg["learning_rate"], float)
@@ -221,23 +214,27 @@ class TestLoadCfgNestedKwargs:
         assert isinstance(cfg["trl"]["beta"], float)
         assert cfg["trl"]["host"] == "192.168.1.1"
 
-    def test_nested_kwargs_creates_parent_if_none(self):
+    def test_nested_kwargs_creates_parent_if_none(self, tmp_path, monkeypatch):
         """If the parent key is None, nested kwargs should create the dict."""
-        from axolotl.utils.dict import DictDefault
-
-        cfg = DictDefault({"trl": None, "learning_rate": 0.01})
-        cfg = self._apply_nested_kwargs(cfg, {"trl__beta": "0.5"})
+        cfg = self._load_cfg(
+            tmp_path,
+            monkeypatch,
+            {"trl": None, "learning_rate": 0.01},
+            {"trl__beta": "0.5"},
+        )
 
         # No existing value, YAML-style inference: "0.5" -> 0.5
         assert cfg["trl"]["beta"] == 0.5
         assert isinstance(cfg["trl"]["beta"], float)
 
-    def test_nested_kwargs_overwrites_string_parent(self):
+    def test_nested_kwargs_overwrites_string_parent(self, tmp_path, monkeypatch):
         """If the parent key is a string, it should be replaced with a dict."""
-        from axolotl.utils.dict import DictDefault
-
-        cfg = DictDefault({"trl": "some_string", "learning_rate": 0.01})
-        cfg = self._apply_nested_kwargs(cfg, {"trl__beta": "0.5"})
+        cfg = self._load_cfg(
+            tmp_path,
+            monkeypatch,
+            {"trl": "some_string", "learning_rate": 0.01},
+            {"trl__beta": "0.5"},
+        )
 
         assert cfg["trl"]["beta"] == 0.5
 

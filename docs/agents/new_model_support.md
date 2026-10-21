@@ -52,7 +52,9 @@ class MyModelSupport(ModelSupport):
         family=IMAGE_TEXT_TO_TEXT,
         capabilities={
             "cut_cross_entropy": Unsupported("No conditional-generation CCE forward."),
-            "sample_packing": Experimental("Verify loss parity against unpacked batches."),
+            "sample_packing": Experimental(
+                "Verify loss parity against unpacked batches."
+            ),
         },
         strategies=ModelStrategyOverrides(
             processing_strategy_cls=_processing_strategy_cls,
