@@ -1,5 +1,6 @@
 """Registers the NCM model types with transformers and axolotl's model loader."""
 
+import torch
 from transformers import AutoConfig, AutoModel, PretrainedConfig
 
 from axolotl.model_support.base import ModelSupport, Unsupported
@@ -19,15 +20,19 @@ from .modeling import NCMGeneratorModel, NCMTokenizerModel
 
 LOG = get_logger(__name__)
 
-AutoConfig.register(NCMTokenizerConfig.model_type, NCMTokenizerConfig, exist_ok=True)
-AutoConfig.register(NCMGeneratorConfig.model_type, NCMGeneratorConfig, exist_ok=True)
-AutoModel.register(NCMTokenizerConfig, NCMTokenizerModel, exist_ok=True)
-AutoModel.register(NCMGeneratorConfig, NCMGeneratorModel, exist_ok=True)
+AutoConfig.register(NCMTokenizerConfig.model_type, NCMTokenizerConfig)
+AutoConfig.register(NCMGeneratorConfig.model_type, NCMGeneratorConfig)
+AutoModel.register(NCMTokenizerConfig, NCMTokenizerModel)
+AutoModel.register(NCMGeneratorConfig, NCMGeneratorModel)
 
 
-def checkpoint_model_type(source: str) -> str | None:
+_HUB_KWARGS = ("revision", "token", "cache_dir", "local_files_only")
+
+
+def checkpoint_model_type(source: str, **hub_kwargs) -> str | None:
+    """``model_type`` of the config at ``source``; None if it cannot be read."""
     try:
-        config_dict, _ = PretrainedConfig.get_config_dict(source)
+        config_dict, _ = PretrainedConfig.get_config_dict(source, **hub_kwargs)
     except (OSError, ValueError):
         return None
     return config_dict.get("model_type")
@@ -48,17 +53,23 @@ class NCMAutoModel:
 
     @classmethod
     def from_pretrained(cls, source, config=None, **kwargs):
-        kwargs.pop("trust_remote_code", None)
+        # Training keeps fp32 master weights under autocast, and Trainer/DDP places the model.
+        hub = {k: kwargs[k] for k in _HUB_KWARGS if kwargs.get(k) is not None}
         if isinstance(config, NCMGeneratorConfig):
-            if checkpoint_model_type(source) == NCMTokenizerConfig.model_type:
-                # From-scratch generator: keep fp32 master weights regardless of the run dtype.
+            if checkpoint_model_type(source, **hub) == NCMTokenizerConfig.model_type:
                 model = NCMGeneratorModel(config)
-                tokenizer = NCMTokenizerModel.from_pretrained(source, dtype="float32")
+                tokenizer = NCMTokenizerModel.from_pretrained(
+                    source, dtype=torch.float32, **hub
+                )
                 model.vqvae.load_state_dict(tokenizer.state_dict())
                 LOG.info("NCM: new generator over the stage-1 tokenizer at %s", source)
                 return model
-            return NCMGeneratorModel.from_pretrained(source, config=config, **kwargs)
-        return NCMTokenizerModel.from_pretrained(source, config=config, **kwargs)
+            return NCMGeneratorModel.from_pretrained(
+                source, config=config, dtype=torch.float32, **hub
+            )
+        return NCMTokenizerModel.from_pretrained(
+            source, config=config, dtype=torch.float32, **hub
+        )
 
 
 def _bind_tokenizer(context: ModelHookContext) -> None:
@@ -72,9 +83,14 @@ def _bind_tokenizer(context: ModelHookContext) -> None:
         config.tokenizer_config if isinstance(config, NCMGeneratorConfig) else config
     )
     if len(tokenizer) > tok_cfg.vocab_size:
+        fix = (
+            "use the stage-1 run's text tokenizer"
+            if isinstance(config, NCMGeneratorConfig)
+            else "raise model_config.vocab_size"
+        )
         raise ValueError(
             f"NCM tokenizer vocab_size={tok_cfg.vocab_size} is smaller than the text "
-            f"tokenizer ({len(tokenizer)}); raise model_config.vocab_size."
+            f"tokenizer ({len(tokenizer)}); {fix}."
         )
     if tok_cfg.pad_token_id is None:
         tok_cfg.pad_token_id = tokenizer.pad_token_id

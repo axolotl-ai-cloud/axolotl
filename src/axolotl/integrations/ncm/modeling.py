@@ -42,7 +42,8 @@ class NCMGeneratorOutput(ModelOutput):
 
 class NCMPreTrainedModel(PreTrainedModel):
     base_model_prefix = "ncm"
-    _keep_in_fp32_modules = ["vq"]
+    # Strict: transformers applies the non-strict list only to fp16, and EMA codebooks must stay fp32.
+    _keep_in_fp32_modules_strict = ["vq"]
     _supports_sdpa = True
     # Losses are already means; stops Trainer from skipping the grad-accumulation divide.
     accepts_loss_kwargs = False
@@ -50,6 +51,23 @@ class NCMPreTrainedModel(PreTrainedModel):
     def _init_weights(self, module):
         # Modules initialize themselves (identity-initialized samplers, EMA codebooks).
         pass
+
+    def _freeze(self):
+        """Mark the parameters that must not receive gradients."""
+
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        want_info = kwargs.pop("output_loading_info", False)
+        model, info = super().from_pretrained(*args, output_loading_info=True, **kwargs)
+        if info["missing_keys"]:
+            raise ValueError(
+                f"{cls.__name__}: checkpoint lacks {sorted(info['missing_keys'])[:8]}. "
+                "NCM does not initialize missing weights, so model_config overrides "
+                "cannot add parameters to an existing checkpoint."
+            )
+        # Loading rebuilds parameters as trainable, dropping the freeze set at construction.
+        model._freeze()
+        return (model, info) if want_info else model
 
 
 def _fit_length(
@@ -148,6 +166,9 @@ class NCMTokenizerModel(NCMPreTrainedModel):
         )
         self.decoder = NCMDecoder(config)
         self.post_init()
+
+    def _freeze(self):
+        self.vq.embeddings.requires_grad_(False)
 
     def get_input_embeddings(self):
         return self.encoder.wte
@@ -256,7 +277,6 @@ class NCMGeneratorModel(NCMPreTrainedModel):
         super().__init__(config)
         tok_cfg = config.tokenizer_config
         self.vqvae = NCMTokenizerModel(tok_cfg)
-        self.vqvae.requires_grad_(False)
         self.vqvae.eval()
 
         levels = tok_cfg.levels
@@ -323,7 +343,11 @@ class NCMGeneratorModel(NCMPreTrainedModel):
         for name, p in self.named_parameters():
             if name.endswith("c_proj.weight") and name.startswith("transformer."):
                 nn.init.normal_(p, mean=0.0, std=0.02 / (2 * config.n_layer) ** 0.5)
+        self._freeze()
         self.post_init()
+
+    def _freeze(self):
+        self.vqvae.requires_grad_(False)
 
     def train(self, mode: bool = True):
         super().train(mode)
@@ -359,7 +383,8 @@ class NCMGeneratorModel(NCMPreTrainedModel):
             raise ValueError(
                 f"prefix must hold prefix_len={P} tokens, got {prefix_ids.shape[1]}"
             )
-        return self.transformer.wte(self.vqvae.encoder.wte(prefix_ids))
+        emb = self.vqvae.encoder.wte(prefix_ids)
+        return self.transformer.wte(emb.to(self.transformer.wte.weight.dtype))
 
     def _prefix_key_bias(
         self, prefix_ids: torch.Tensor | None, total: int
@@ -375,9 +400,10 @@ class NCMGeneratorModel(NCMPreTrainedModel):
 
     def _level_inputs(self, x: torch.Tensor, i: int) -> torch.Tensor:
         """Project a predicted level's conditioning vectors to the hidden width."""
+        x = x.to(self.transformer.wte.weight.dtype)
         if self.post_upsample_convs is not None:
             x = x + self.post_upsample_convs[i](x.transpose(1, 2)).transpose(1, 2)
-        x = self.transformer.wte(x.to(self.transformer.wte.weight.dtype))
+        x = self.transformer.wte(x)
         return x + self.transformer.wle.weight[i]
 
     def _backbone(
