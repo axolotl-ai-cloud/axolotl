@@ -50,10 +50,13 @@ _TANH_GELU = (
 
 def _geglu_kind(act_fn) -> str | None:
     """GEGLU kernel kind reproducing ``act_fn``, or None when only the eager act_fn is exact."""
+    if act_fn is None:
+        # Liger's GEGLU MLPs drop act_fn and hardcode tanh GELU
+        return "geglu_tanh"
     if isinstance(act_fn, nn.GELU):
         return "geglu_tanh" if act_fn.approximate == "tanh" else "geglu"
     name = type(act_fn).__name__
-    if act_fn is None or name == "GELUActivation":
+    if name == "GELUActivation":
         return "geglu"
     return "geglu_tanh" if name in _TANH_GELU else None
 
@@ -121,7 +124,7 @@ def _projection_forward_mlp(self, X, kind):
         isinstance(self.act_fn, nn.SiLU)
         or type(self.act_fn).__name__ == "SiLUActivation"
         if kind == "swiglu"
-        else _geglu_kind(self.act_fn) == kind
+        else _geglu_kind(getattr(self, "act_fn", None)) == kind
     )
     hidden = (
         _GatedActivation.apply(gate, up, kind)
