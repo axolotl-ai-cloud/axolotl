@@ -193,15 +193,25 @@ class MultiscaleResidualQuantizer(nn.Module):
     ) -> torch.Tensor:
         return z_hat + self._up(self.embeddings[k](codes_k).to(z_hat.dtype), k)
 
-    def _distances(self, x: torch.Tensor, emb_w: torch.Tensor) -> torch.Tensor:
-        return x.pow(2).sum(1, keepdim=True) + emb_w.pow(2).sum(1) - 2 * x @ emb_w.t()
+    @torch.no_grad()
+    def _nearest(
+        self, x: torch.Tensor, emb_w: torch.Tensor, chunk: int = 16384
+    ) -> torch.Tensor:
+        """Nearest codebook rows, chunked so the (N, V) distance matrix stays small."""
+        e_sq = emb_w.pow(2).sum(1)
+        return torch.cat(
+            [
+                (c.pow(2).sum(1, keepdim=True) + e_sq - 2 * c @ emb_w.t()).argmin(1)
+                for c in x.split(chunk)
+            ]
+        )
 
     @torch.no_grad()
     def _ema_update(self, k: int, flat: torch.Tensor, indices: torch.Tensor):
         vs = self.codebook_sizes[k]
-        onehot = F.one_hot(indices, vs).to(flat.dtype)
-        counts = onehot.sum(0)
-        dw = onehot.t() @ flat
+        counts = torch.bincount(indices, minlength=vs).to(flat.dtype)
+        dw = torch.zeros(vs, flat.shape[1], dtype=flat.dtype, device=flat.device)
+        dw.index_add_(0, indices, flat)
         if dist.is_available() and dist.is_initialized():
             dist.all_reduce(counts)
             dist.all_reduce(dw)
@@ -260,7 +270,7 @@ class MultiscaleResidualQuantizer(nn.Module):
             flat_BLC = self._down(z_rest, k)
             flat = flat_BLC.reshape(-1, C)
             emb = self.embeddings[k]
-            indices = self._distances(flat, emb.weight).argmin(dim=1)
+            indices = self._nearest(flat, emb.weight)
             if self.training:
                 self._ema_update(k, flat.detach(), indices)
             q = emb(indices.view(B, ell))
@@ -299,11 +309,7 @@ class MultiscaleResidualQuantizer(nn.Module):
         out = []
         for k, ell in enumerate(self.levels):
             flat = self._down(z_rest, k).reshape(-1, C)
-            idx = (
-                self._distances(flat, self.embeddings[k].weight)
-                .argmin(dim=1)
-                .view(B, ell)
-            )
+            idx = self._nearest(flat, self.embeddings[k].weight).view(B, ell)
             out.append(idx)
             z_rest = z_rest - self._up(self.embeddings[k](idx), k)
         return torch.cat(out, dim=1)
