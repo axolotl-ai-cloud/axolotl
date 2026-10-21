@@ -246,9 +246,7 @@ def gather_scalar_from_all_ranks(fn, world_size=1):
     value_scalar = fn()
     if not is_distributed():
         return [value_scalar]
-    value_tensor = torch.tensor(
-        value_scalar, device=get_device_str()
-    ).float()
+    value_tensor = torch.tensor(value_scalar, device=get_device_str()).float()
 
     if not is_main_process():
         dist.gather(value_tensor, dst=0)
@@ -341,9 +339,7 @@ def gather_from_all_ranks(fn, world_size=1):
     - A list of computed values from all ranks if on the gathering rank, otherwise None.
     """
     value_scalar = fn()
-    value_tensor = torch.tensor(
-        value_scalar, device=get_device_str()
-    ).float()
+    value_tensor = torch.tensor(value_scalar, device=get_device_str()).float()
 
     # Placeholder tensor for gathering results
     if is_main_process():

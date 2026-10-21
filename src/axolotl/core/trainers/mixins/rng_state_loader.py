@@ -13,9 +13,9 @@ import numpy as np
 import torch
 from transformers import Trainer, is_torch_npu_available
 from transformers.trainer import safe_globals
-from transformers.utils.import_utils import is_torch_xla_available
 from transformers.trainer_pt_utils import set_rng_state_for_device
 from transformers.training_args import ParallelMode
+from transformers.utils.import_utils import is_torch_xla_available
 
 from axolotl.utils.logging import get_logger
 

@@ -15,10 +15,12 @@ import torch
 import torch.cuda
 from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers.utils import is_torch_bf16_gpu_available  # noqa: F401  (kept for any external callers)
+from transformers.utils import (
+    is_torch_bf16_gpu_available,  # noqa: F401  (kept for any external callers)
+)
 
-from axolotl.utils.dict import DictDefault
 from axolotl.utils.config import bf16_supported
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_world_size,
     init_distributed_state,

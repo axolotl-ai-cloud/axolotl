@@ -12,7 +12,10 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from transformers.utils.import_utils import is_torch_npu_available, is_torch_xla_available
+from transformers.utils.import_utils import (
+    is_torch_npu_available,
+    is_torch_xla_available,
+)
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -1781,7 +1784,9 @@ class SystemValidationMixin:
 
         # quantization
         if data.get("adapter") == "qlora":
-            raise NotImplementedError("qlora is not supported on TPU. Use adapter: lora.")
+            raise NotImplementedError(
+                "qlora is not supported on TPU. Use adapter: lora."
+            )
         for quant in ("load_in_8bit", "load_in_4bit"):
             if data.get(quant):
                 raise NotImplementedError(
@@ -1812,17 +1817,17 @@ class SystemValidationMixin:
                 raise NotImplementedError(
                     f"{key} is not supported on TPU. Remove this option."
                 )
-        for key in ("tensor_parallel_size", "context_parallel_size", "expert_parallel_size"):
+        for key in (
+            "tensor_parallel_size",
+            "context_parallel_size",
+            "expert_parallel_size",
+        ):
             if (data.get(key) or 1) > 1:
-                raise NotImplementedError(
-                    f"{key} > 1 is not supported on TPU."
-                )
+                raise NotImplementedError(f"{key} > 1 is not supported on TPU.")
 
         # RL trainers
         if data.get("rl"):
-            raise NotImplementedError(
-                "RL training (rl:) is not yet supported on TPU."
-            )
+            raise NotImplementedError("RL training (rl:) is not yet supported on TPU.")
 
         # sample packing / batch flattening (dynamic shapes)
         if data.get("sample_packing"):
@@ -1853,9 +1858,7 @@ class SystemValidationMixin:
 
         # activation / gradient-checkpoint offload
         if data.get("activation_offloading"):
-            raise NotImplementedError(
-                "activation_offloading is not supported on TPU."
-            )
+            raise NotImplementedError("activation_offloading is not supported on TPU.")
         gc_value = data.get("gradient_checkpointing")
         if isinstance(gc_value, str) and "offload" in gc_value:
             raise NotImplementedError(
@@ -1872,13 +1875,9 @@ class SystemValidationMixin:
 
         # precision
         if data.get("fp16"):
-            raise NotImplementedError(
-                "fp16 is not supported on TPU. Use bf16: true."
-            )
+            raise NotImplementedError("fp16 is not supported on TPU. Use bf16: true.")
         if data.get("tf32"):
-            raise NotImplementedError(
-                "tf32 is not supported on TPU."
-            )
+            raise NotImplementedError("tf32 is not supported on TPU.")
         if data.get("gpu_memory_limit") or data.get("max_memory"):
             raise NotImplementedError(
                 "gpu_memory_limit / max_memory is not applicable on TPU. Remove this option."

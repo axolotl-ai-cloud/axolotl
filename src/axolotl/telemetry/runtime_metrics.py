@@ -197,7 +197,9 @@ class RuntimeMetricsTracker:
         memory_used = self._get_allocated_memory()
         backend = self._get_memory_backend()
         # "xla" is a sentinel string, not a module with max_memory_allocated.
-        peak_memory = getattr(backend, "max_memory_allocated", None) if backend != "xla" else None
+        peak_memory = (
+            getattr(backend, "max_memory_allocated", None) if backend != "xla" else None
+        )
         for i, memory in memory_used.items():
             if peak_memory is not None:
                 memory = max(memory, peak_memory(i))

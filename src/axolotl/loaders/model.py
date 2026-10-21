@@ -853,7 +853,11 @@ class ModelLoader:
 
         # On XLA, get_device_count() reflects chip count before spawn — don't
         # interpret that as naive model parallelism.
-        if not is_xla() and get_device_count() > 1 and int(os.getenv("WORLD_SIZE", "1")) == 1:
+        if (
+            not is_xla()
+            and get_device_count() > 1
+            and int(os.getenv("WORLD_SIZE", "1")) == 1
+        ):
             self.model.is_parallelizable = True
             self.model.model_parallel = True
 

@@ -1106,7 +1106,6 @@ class PatchManager:
 
     def _finalize_moe_expert_quantization(self, model: PreTrainedModel):
         """Log quantization results and set model flag for downstream use."""
-        import torch
 
         model._moe_experts_quantized = False
         if self.cfg.quantize_moe_experts:

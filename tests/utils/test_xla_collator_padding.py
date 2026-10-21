@@ -1,6 +1,7 @@
 """On XLA every batch must be exactly sequence_len wide so the graph compiles once."""
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -24,7 +25,7 @@ def fixture_tokenizer():
 
 
 def _padding_kwargs(xla: bool, **cfg):
-    fake_builder = SimpleNamespace(cfg=DictDefault(sequence_len=SEQ_LEN, **cfg))
+    fake_builder: Any = SimpleNamespace(cfg=DictDefault(sequence_len=SEQ_LEN, **cfg))
     with patch("axolotl.core.builders.causal.is_xla", return_value=xla):
         return HFCausalTrainerBuilder._collator_padding_kwargs(fake_builder)
 

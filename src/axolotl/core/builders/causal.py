@@ -16,7 +16,6 @@ from transformers.utils.generic import is_flash_attention_requested
 from trl.trainer.reward_trainer import DataCollatorForPreference
 
 from axolotl.core.builders.base import TrainerBuilderBase
-from axolotl.utils.distributed import is_xla
 from axolotl.core.trainers import (
     AxolotlPRMTrainer,
     AxolotlRewardTrainer,
@@ -46,6 +45,7 @@ from axolotl.utils.collators import (
     V2BatchSamplerDataCollatorForSeq2Seq,
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
+from axolotl.utils.distributed import is_xla
 from axolotl.utils.import_helper import get_cls_from_module_str
 from axolotl.utils.logging import get_logger
 

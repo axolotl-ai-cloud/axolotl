@@ -34,6 +34,7 @@ def tpu_cfg(min_base_cfg):
 # Validator is a no-op when XLA is not available
 # ---------------------------------------------------------------------------
 
+
 class TestTpuValidatorNoop:
     def test_noop_when_xla_unavailable(self, min_base_cfg):
         """Validator must not fire on CUDA/CPU boxes."""
@@ -53,6 +54,7 @@ class TestTpuValidatorNoop:
 # ---------------------------------------------------------------------------
 # Quantisation / adapter rejections
 # ---------------------------------------------------------------------------
+
 
 class TestQuantisationRejections:
     def test_qlora_rejected(self, tpu_cfg):
@@ -83,6 +85,7 @@ class TestQuantisationRejections:
 # ---------------------------------------------------------------------------
 # Attention rejections
 # ---------------------------------------------------------------------------
+
 
 class TestAttentionRejections:
     @pytest.mark.parametrize(
@@ -132,6 +135,7 @@ class TestAttentionRejections:
 # Parallelism / framework rejections
 # ---------------------------------------------------------------------------
 
+
 class TestParallelismRejections:
     def test_deepspeed_rejected(self, tpu_cfg):
         cfg = _with(tpu_cfg, deepspeed="zero3.json")
@@ -168,6 +172,7 @@ class TestParallelismRejections:
 # Dynamic-shape / RL rejections
 # ---------------------------------------------------------------------------
 
+
 class TestDynamicShapeRejections:
     def test_sample_packing_rejected(self, tpu_cfg):
         cfg = _with(tpu_cfg, sample_packing=True)
@@ -192,18 +197,18 @@ class TestDynamicShapeRejections:
 # CUDA-only kernel / plugin rejections
 # ---------------------------------------------------------------------------
 
+
 class TestCudaOnlyKernelRejections:
     def test_liger_plugin_rejected(self, tpu_cfg):
-        cfg = _with(tpu_cfg, 
-            plugins=["axolotl.integrations.liger.LigerPlugin"]
-        )
+        cfg = _with(tpu_cfg, plugins=["axolotl.integrations.liger.LigerPlugin"])
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="LigerPlugin"):
                 validate_config(cfg)
 
     def test_cut_cross_entropy_plugin_rejected(self, tpu_cfg):
-        cfg = _with(tpu_cfg, 
-            plugins=["axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin"]
+        cfg = _with(
+            tpu_cfg,
+            plugins=["axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin"],
         )
         with patch(XLA_PATCH, return_value=True):
             with pytest.raises(NotImplementedError, match="CutCrossEntropyPlugin"):
@@ -232,6 +237,7 @@ class TestCudaOnlyKernelRejections:
 # Offload / compile rejections
 # ---------------------------------------------------------------------------
 
+
 class TestOffloadCompileRejections:
     def test_activation_offloading_rejected(self, tpu_cfg):
         cfg = _with(tpu_cfg, activation_offloading=True)
@@ -256,6 +262,7 @@ class TestOffloadCompileRejections:
 # Precision rejections
 # ---------------------------------------------------------------------------
 
+
 class TestPrecisionRejections:
     def test_fp16_rejected(self, tpu_cfg):
         cfg = _with(tpu_cfg, fp16=True, bf16=False)
@@ -279,6 +286,7 @@ class TestPrecisionRejections:
 # ---------------------------------------------------------------------------
 # Auto-defaults applied by the validator
 # ---------------------------------------------------------------------------
+
 
 class TestAutoDefaults:
     def test_pad_to_sequence_len_auto_set(self, tpu_cfg):
