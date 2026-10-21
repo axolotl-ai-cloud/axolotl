@@ -521,6 +521,8 @@ def consolidate(shard_dir, threads: int = CONSOLIDATE_THREADS):
     target.parent.mkdir(parents=True, exist_ok=True)
     os.replace(tmp, target)
     _fsync_directory(target.parent)
+    # a crash inside rmtree must not leave a manifest that resume would consolidate again
+    (shard_dir / MANIFEST).unlink()
     shutil.rmtree(shard_dir, ignore_errors=True)
     return target, time.perf_counter() - began, len(prefix) + total
 
