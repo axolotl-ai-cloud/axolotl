@@ -129,6 +129,7 @@ class CausalDecisionCollator:
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
+            "position_ids": (attention_mask.cumsum(-1) - 1).clamp(min=0),
             "decision_targets": targets,
             "decision_mask": torch.arange(targets.shape[1]) < counts[:, None],
         }

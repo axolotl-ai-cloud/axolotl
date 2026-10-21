@@ -20,6 +20,8 @@ class CausalDecisionPlugin(BasePlugin):
             )
         if cfg.get("sample_packing"):
             raise ValueError("causal_decision does not support sample_packing")
+        if cfg.get("deepspeed") or cfg.get("fsdp") or cfg.get("fsdp_config"):
+            raise ValueError("causal_decision does not support DeepSpeed or FSDP")
 
     def load_datasets(self, cfg, preprocess: bool = False):
         from .data import load_causal_decision_datasets

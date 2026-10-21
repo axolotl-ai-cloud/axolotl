@@ -545,7 +545,8 @@ letters, and a decision head reads the answer-letter logits: it starts as the
 rank-`rank` correction, so step-0 probabilities equal the base model's. The
 loss is cross-entropy against soft targets (`set` targets spread uniformly over
 the set), and `shuffle` permutes choice order per record. The head is saved as
-`decision_head.pt` next to the adapter. After training,
+`decision_head.pt` in `output_dir` and in every checkpoint, and is restored on
+resume. DeepSpeed and FSDP are not supported. After training,
 `axolotl.integrations.causal_decision.head.fit_temperatures` fits one
 temperature per question type on held-out logits.
 `examples/qwen3/decision-lora-0.6b.yaml` is the starting recipe.
