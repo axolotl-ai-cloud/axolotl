@@ -254,3 +254,19 @@ def test_legacy_merge_cast_keeps_router_bias_fp32():
         f"model.layers.{i}.mlp.gate.e_score_correction_bias" for i in (1, 2)
     }
     assert model.lm_head.weight.dtype == torch.bfloat16
+
+
+def test_published_layout_check_reads_configured_revision(monkeypatch):
+    from transformers import PretrainedConfig
+
+    calls = []
+    monkeypatch.setattr(
+        PretrainedConfig,
+        "get_config_dict",
+        lambda *args, **kwargs: calls.append(kwargs) or ({}, {}),
+    )
+    cfg = DictDefault(
+        base_model="XiaomiMiMo/MiMo-V2.6-Flash-RL", revision_of_model="v1"
+    )
+    get_model_support("mimo_v2").resolve_lora_merge_method(cfg, None)
+    assert calls == [{"revision": "v1"}]
