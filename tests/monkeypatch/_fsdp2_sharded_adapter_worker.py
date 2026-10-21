@@ -192,7 +192,9 @@ def fsdp_only_model(flat, mesh):
                 (value for key, value in placements.items() if key in full),
                 (flat, (Shard(0),)),
             )
-            value = parameter.detach().clone()
+            # seeded before distributing, so every rank's slice holds different values
+            generator = torch.Generator().manual_seed(sum(map(ord, full)))
+            value = torch.randn(parameter.shape, generator=generator)
             if "o.lora_B" in full:
                 value = value.to(torch.bfloat16)
             setattr(
@@ -200,7 +202,6 @@ def fsdp_only_model(flat, mesh):
                 name,
                 nn.Parameter(distribute_tensor(on(value), target, placement)),
             )
-    fill(model, lambda name: sum(map(ord, name)))
     return model
 
 
