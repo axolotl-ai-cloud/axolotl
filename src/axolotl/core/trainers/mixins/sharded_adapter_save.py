@@ -73,11 +73,6 @@ class ShardedAdapterSaveMixin(Trainer):
         cfg = getattr(self, "axolotl_cfg", None)
         return getattr(cfg, "adapter_checkpoint_format", None) == "sharded"
 
-    def _sharded_final_save(self) -> bool:
-        cfg = getattr(self, "axolotl_cfg", None)
-        final = getattr(cfg, "adapter_final_save_format", None)
-        return (final or getattr(cfg, "adapter_checkpoint_format", None)) == "sharded"
-
     def _final_adapter_save(self) -> bool:
         return getattr(self, "_axolotl_final_adapter_save", False)
 
@@ -85,12 +80,7 @@ class ShardedAdapterSaveMixin(Trainer):
         return getattr(self, "_axolotl_sharded_checkpoint_save", False)
 
     def _sharded_adapter_save_applies(self) -> bool:
-        # not _internal_call: push_to_hub passes it too, then uploads output_dir at once
-        if self._checkpoint_save():
-            enabled = self._sharded_adapter_checkpoints()
-        else:
-            enabled = self._sharded_final_save()
-        if not (enabled and _distributed()):
+        if not (self._sharded_adapter_checkpoints() and _distributed()):
             return False
         from accelerate.utils.modeling import is_peft_model
 
@@ -131,6 +121,7 @@ class ShardedAdapterSaveMixin(Trainer):
         self, output_dir: str | None = None, _internal_call: bool = False
     ):
         if self._sharded_adapter_save_applies():
+            # not _internal_call: push_to_hub passes it too, then uploads output_dir at once
             final = not self._checkpoint_save()
             if self._save_sharded_adapter(output_dir or self.args.output_dir, final):
                 if final:
