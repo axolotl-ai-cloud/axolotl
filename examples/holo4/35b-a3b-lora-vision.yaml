@@ -11,12 +11,10 @@ sample_packing: false
 
 chat_template: qwen3_5
 datasets:
-  # screenshot + instruction -> click point; first of 162 shards (500 rows)
-  - path: mlfoundations-cua-dev/agentnet-clicks
+  # created by examples/holo4/prepare_clicks.py
+  - path: holo4-clicks.parquet
     type: chat_template
-    data_files: data/train-00000-of-00162.parquet
 
-dataset_prepared_path: last_run_prepared
 val_set_size: 0.0
 output_dir: ./outputs/holo4-35b-a3b-lora
 
@@ -32,8 +30,9 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
-  - down_proj
+  - gate_proj
   - up_proj
+  - down_proj
 
 wandb_project:
 wandb_entity:
