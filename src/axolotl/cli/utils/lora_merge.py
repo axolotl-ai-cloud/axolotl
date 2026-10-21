@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
@@ -895,7 +895,8 @@ def _read_shard(shard_path: Path) -> tuple[Dict[str, torch.Tensor], dict]:
         return tensors, {}
     with safetensors.safe_open(shard_path, framework="pt", device="cpu") as f:
         metadata = (f.metadata() if hasattr(f, "metadata") else None) or {}
-        return {key: f.get_tensor(key) for key in f.keys()}, metadata
+        keys = f.offset_keys() if hasattr(f, "offset_keys") else f.keys()
+        return {key: f.get_tensor(key) for key in keys}, metadata
 
 
 def _write_shard(
@@ -915,12 +916,17 @@ def _prefetched_shards(model_shards: list[Path]):
 
     safetensors reads release the GIL, so the read overlaps the caller's merge."""
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="merge-read") as pool:
-        next_read = pool.submit(_read_shard, model_shards[0])
+        next_read: Optional[Future] = pool.submit(_read_shard, model_shards[0])
         for idx, shard_path in enumerate(model_shards):
-            shard_tensors, metadata = next_read.result()
-            if idx + 1 < len(model_shards):
-                next_read = pool.submit(_read_shard, model_shards[idx + 1])
-            yield shard_path, shard_tensors, metadata
+            assert next_read is not None
+            ready = [next_read.result()]
+            next_read = (
+                pool.submit(_read_shard, model_shards[idx + 1])
+                if idx + 1 < len(model_shards)
+                else None
+            )
+            # Neither the suspended generator nor a completed Future should own the shard.
+            yield shard_path, *ready.pop()
 
 
 class _ShardWriteQueue:
@@ -2452,12 +2458,15 @@ def _fuse_and_unfuse_with_merge(
     param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
     carry: Optional[_FusedExpertCarry] = None,
     canonical_fp32: bool = False,
+    inplace: bool = False,
 ) -> tuple[Dict[str, torch.Tensor], int, set]:
     """
     For tensors matching WeightConverter patterns (MoE expert weights):
     1. Fuse checkpoint-format tensors into runtime-format (e.g., per-expert → fused 3D)
     2. Apply NF4 roundtrip + LoRA merge on the fused tensor
-    3. Unfuse back to checkpoint format for saving
+    3. Save fused runtime tensors in the shard that completes each group
+
+    ``inplace`` transfers ownership of consumed source tensors out of ``shard_tensors``.
 
     Returns:
         - Updated tensor dict
@@ -2469,7 +2478,7 @@ def _fuse_and_unfuse_with_merge(
 
     from transformers.core_model_loading import Concatenate, MergeModulelist
 
-    result = dict(shard_tensors)  # Start with all tensors
+    result = shard_tensors if inplace else dict(shard_tensors)
     merged_count = 0
     processed_keys: set = set()  # Keys that were fuse/unfuse processed
 
@@ -2497,8 +2506,8 @@ def _fuse_and_unfuse_with_merge(
             pattern_regexes.append(re.compile(r"(.*\.)?" + regex_str + "$"))
 
         # Group matching keys by layer prefix and source pattern
-        # {layer_prefix: {pat_idx: {expert_idx: (key, tensor)}}}
-        layer_groups: Dict[str, Dict[int, Dict[int, tuple[str, torch.Tensor]]]] = {}
+        # Store keys only so completed groups do not retain their source tensors.
+        layer_groups: Dict[str, Dict[int, Dict[int, str]]] = {}
 
         for key in list(result.keys()):
             for pat_idx, pat_regex in enumerate(pattern_regexes):
@@ -2512,7 +2521,7 @@ def _fuse_and_unfuse_with_merge(
 
                     layer_groups.setdefault(prefix, {}).setdefault(pat_idx, {})[
                         expert_idx
-                    ] = (key, result[key])
+                    ] = key
                     break
 
         is_expert_list = any(
@@ -2556,26 +2565,28 @@ def _fuse_and_unfuse_with_merge(
                     f"per pattern{expected_str})"
                 )
             elif any(
-                t.dtype in _QUANT_DTYPES
+                result[k].dtype in _QUANT_DTYPES
                 or k + "_scale" in result
                 or k + "_scale_inv" in result
                 for g in pat_groups.values()
-                for (k, t) in g.values()
+                for k in g.values()
             ):
                 skip_reason = "tensors are still quantized (raw qdata cannot be fused)"
             if skip_reason:
                 if carry is not None and not complete:
-                    held = {k: t for g in pat_groups.values() for (k, t) in g.values()}
-                    for k in held:
-                        result.pop(k, None)
-                    carry.hold(converter_idx, prefix + tgt_patterns[0], held)
+                    held_keys = [k for g in pat_groups.values() for k in g.values()]
+                    carry.hold(
+                        converter_idx,
+                        prefix + tgt_patterns[0],
+                        {k: result.pop(k) for k in held_keys},
+                    )
                     LOG.info(
                         "Deferring fuse for '%s%s': %s; carrying %d per-expert "
                         "tensors to the shard that completes the group",
                         prefix,
                         tgt_patterns[0],
                         skip_reason,
-                        len(held),
+                        len(held_keys),
                     )
                     continue
                 LOG.info(
@@ -2590,20 +2601,14 @@ def _fuse_and_unfuse_with_merge(
             # Step 1: Fuse — MergeModulelist (stack experts) per source pattern
             fused_per_pattern = {}
             original_keys_per_pattern: Dict[int, list[str]] = {}
-            num_experts = None
-
             for pat_idx in sorted(pat_groups.keys()):
                 expert_data = pat_groups[pat_idx]
                 sorted_indices = sorted(expert_data.keys())
-                if num_experts is None:
-                    num_experts = len(sorted_indices)
-
-                sorted_tensors = [expert_data[idx][1] for idx in sorted_indices]
                 original_keys_per_pattern[pat_idx] = [
-                    expert_data[idx][0] for idx in sorted_indices
+                    expert_data[idx] for idx in sorted_indices
                 ]
                 fused_per_pattern[src_patterns[pat_idx]] = torch.stack(
-                    sorted_tensors, dim=0
+                    [result[expert_data[idx]] for idx in sorted_indices], dim=0
                 )
 
             # Apply remaining operations (Concatenate)
@@ -2626,12 +2631,19 @@ def _fuse_and_unfuse_with_merge(
                         fused_tensor = torch.cat(tensors_to_cat, dim=concat_dim)
                     elif tensors_to_cat:
                         fused_tensor = tensors_to_cat[0]
+                    del tensors_to_cat
 
             if not has_concat and len(fused_per_pattern) == 1:
                 fused_tensor = next(iter(fused_per_pattern.values()))
 
             if fused_tensor is None:
                 continue
+            del fused_per_pattern
+
+            for original_keys in original_keys_per_pattern.values():
+                for key in original_keys:
+                    result.pop(key)
+                    processed_keys.add(key)
 
             # Step 2: Build the fused key name and merge LoRA
             fused_key = prefix + tgt_patterns[0]
@@ -2662,15 +2674,9 @@ def _fuse_and_unfuse_with_merge(
             # Step 3: Save in fused format (runtime format) so that the merged
             # model can be loaded directly without needing WeightConverter
             # fusion during from_pretrained (which can OOM for large MoE models).
-            # Remove the original per-expert keys and save the fused tensor
-            # under the runtime key name.
-            for pat_idx in sorted(original_keys_per_pattern.keys()):
-                for ok in original_keys_per_pattern[pat_idx]:
-                    result.pop(ok, None)
-                    processed_keys.add(ok)
-
             result[fused_key] = fused_tensor.detach().cpu()
             processed_keys.add(fused_key)
+            del fused_tensor
 
     return result, merged_count, processed_keys
 
@@ -3058,6 +3064,7 @@ def merge_lora_sharded_efficient(
                 )
                 merged_tensors.update(expert_emitted)
                 merged_count += expert_merged
+                del expert_emitted
 
             # Step 0: dequantize quantized weights so the LoRA delta folds into the TRUE weight (a raw read
             # misses the block scale). Default (dequant=False) touches only LoRA-targeted weights and plans
@@ -3101,12 +3108,15 @@ def merge_lora_sharded_efficient(
                     expected_num_experts=expected_num_experts,
                     carry=fused_expert_carry,
                     canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
+                    inplace=True,
                 )
                 merged_count += fused_merged
 
             # Step 2: Merge remaining (non-fused) tensors with LoRA
             # Skip keys already processed by fuse/unfuse to avoid double NF4 roundtrip
-            for key, tensor in shard_tensors.items():
+            tensor = merged_tensor = None
+            for key in list(shard_tensors):
+                tensor = shard_tensors.pop(key)
                 if key in fused_keys or key in native_processed:
                     merged_tensors[key] = tensor.detach().cpu()
                     continue
@@ -3166,6 +3176,7 @@ def merge_lora_sharded_efficient(
                 merged_tensors[key] = merged_tensor
                 if was_merged:
                     merged_count += 1
+            del tensor, merged_tensor
 
             # Step 3 (format-preserving): re-quantize each merged weight back to its original format
             # (fresh block scales) so the output dtype matches the input (fp8 -> fp8, nvfp4 -> nvfp4).
@@ -3220,7 +3231,7 @@ def merge_lora_sharded_efficient(
                 total_parameters += tensor.numel()
                 total_size_bytes += tensor.numel() * tensor.element_size()
 
-            del merged_tensors, shard_tensors
+            del tensor, merged_tensors, shard_tensors
             if device != "cpu" and torch.cuda.is_available():
                 torch.cuda.empty_cache()
             gc.collect()
