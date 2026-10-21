@@ -213,15 +213,18 @@ class MultiscaleResidualQuantizer(nn.Module):
         ema_w.mul_(self.decay).add_(dw, alpha=1 - self.decay)
         self.embeddings[k].weight.data.copy_(ema_w / smoothed.unsqueeze(1))
         if self.dead_code_threshold > 0:
-            self._restart_dead_codes(k, flat, n)
+            self._restart_dead_codes(k, flat, counts, n)
 
     @torch.no_grad()
-    def _restart_dead_codes(self, k: int, flat: torch.Tensor, n: torch.Tensor):
-        """Re-seed codes whose usage fell below ``dead_code_threshold`` x the uniform
-        share with random current inputs."""
+    def _restart_dead_codes(
+        self, k: int, flat: torch.Tensor, counts: torch.Tensor, n: torch.Tensor
+    ):
+        """Re-seed codes unused this update whose usage fell below
+        ``dead_code_threshold`` x the uniform share with random current inputs."""
         ema_cs = getattr(self, f"ema_cluster_size_{k}")
-        floor = self.dead_code_threshold * n / self.codebook_sizes[k]
-        dead = (ema_cs < floor).nonzero().flatten()
+        share = n / self.codebook_sizes[k]
+        dead = ((ema_cs < self.dead_code_threshold * share) & (counts == 0)).nonzero()
+        dead = dead.flatten()
         if dead.numel() == 0:
             return
         new = flat[torch.randint(0, flat.shape[0], (dead.numel(),), device=flat.device)]
@@ -229,8 +232,9 @@ class MultiscaleResidualQuantizer(nn.Module):
             # The dead set is identical on every rank (EMA stats are all-reduced); the draws are not.
             dist.broadcast(new, src=0)
         self.embeddings[k].weight.data[dead] = new
-        getattr(self, f"ema_w_{k}")[dead] = new * floor
-        ema_cs[dead] = floor
+        # Restart at the uniform share; restarting at the floor re-kills the code next update.
+        getattr(self, f"ema_w_{k}")[dead] = new * share
+        ema_cs[dead] = share
 
     def forward(self, z: torch.Tensor):
         """Training/eval quantization of encoder latents.
@@ -270,7 +274,8 @@ class MultiscaleResidualQuantizer(nn.Module):
                 partials.append(z_hat)
             vq_loss = vq_loss + self.commitment_cost * F.mse_loss(z_hat.detach(), z)
             vq_loss = vq_loss + F.mse_loss(z_hat, z_ng)
-            getattr(self, f"codebook_hit_{k}")[indices] = 1
+            if self.training:
+                getattr(self, f"codebook_hit_{k}")[indices] = 1
         vq_loss = vq_loss / self.num_levels
 
         z_hat_trunc = None
