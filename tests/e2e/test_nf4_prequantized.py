@@ -3,10 +3,11 @@
 import pytest
 import torch
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
 from tests.hf_offline_utils import disable_hf_offline
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA GPU")
+@pytest.mark.skipif(not gpu_available(), reason="requires a GPU")
 @disable_hf_offline
 def test_cuda_staged_loading_adopts_published_prequantized_checkpoint():
     import bitsandbytes as bnb
@@ -34,7 +35,7 @@ def test_cuda_staged_loading_adopts_published_prequantized_checkpoint():
             nf4_backend="bitsandbytes",
             torch_dtype=torch.bfloat16,
         ),
-        "cuda",
+        DEVICE_TYPE,
     )
     saved = load_file(hf_hub_download(base_model, "model.safetensors"))
     key = "model.layers.0.self_attn.q_proj.weight"
@@ -45,10 +46,10 @@ def test_cuda_staged_loading_adopts_published_prequantized_checkpoint():
             for name, value in saved.items()
             if name.startswith(f"{key}.")
         },
-        device="cuda",
+        device=DEVICE_TYPE,
     )
     torch.testing.assert_close(
-        model.model.layers[0].self_attn.q_proj.weight.cuda(),
+        model.model.layers[0].self_attn.q_proj.weight.to(DEVICE_TYPE),
         bnb.functional.dequantize_4bit(reference, reference.quant_state),
         rtol=0,
         atol=0,

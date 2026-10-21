@@ -8,6 +8,8 @@ from torch import nn
 
 from axolotl.monkeypatch.lora_kernels import find_self_attn_in_layer
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 
 def test_mixer_discovery_skips_other_blocks_and_deduplicates():
     attn = nn.Module()
@@ -24,7 +26,7 @@ def test_mixer_discovery_skips_other_blocks_and_deduplicates():
     assert list(find_self_attn_in_layer(other)) == []
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.skipif(not gpu_available(), reason="GPU required")
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
 def test_tiny_nemotron_h_peft_attention_kernels(monkeypatch, dtype):
     from peft import LoraConfig, get_peft_model
@@ -59,14 +61,14 @@ def test_tiny_nemotron_h_peft_attention_kernels(monkeypatch, dtype):
                 target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
             ),
         )
-        .cuda()
+        .to(DEVICE_TYPE)
         .to(dtype)
     )
     for name, p in model.named_parameters():
         if "lora_B" in name:
             nn.init.normal_(p, std=0.02)
     reference = copy.deepcopy(model)
-    ids = torch.randint(0, 32, (2, 7), device="cuda")
+    ids = torch.randint(0, 32, (2, 7), device=DEVICE_TYPE)
     expected = reference(input_ids=ids, use_cache=False).logits
     expected.float().square().mean().backward()
     oracle = None
@@ -122,7 +124,7 @@ def test_tiny_nemotron_h_peft_attention_kernels(monkeypatch, dtype):
             del NemotronHAttention._original_forward
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.skipif(not gpu_available(), reason="GPU required")
 @pytest.mark.parametrize("checkpoint", [False, True])
 @pytest.mark.parametrize("fp32", [False, True])
 def test_nemotron_dense_relu2_mlp_kernels(checkpoint, fp32):
@@ -141,7 +143,7 @@ def test_nemotron_dense_relu2_mlp_kernels(checkpoint, fp32):
             NemotronHMLP(cfg),
             LoraConfig(r=4, lora_alpha=8, target_modules=["up_proj", "down_proj"]),
         )
-        .cuda()
+        .to(DEVICE_TYPE)
         .bfloat16()
     )
     for name, parameter in model.named_parameters():
@@ -150,7 +152,9 @@ def test_nemotron_dense_relu2_mlp_kernels(checkpoint, fp32):
     if fp32:
         upcast_lora_parameters(model)
     reference = copy.deepcopy(model)
-    x = torch.randn(2, 7, 32, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    x = torch.randn(
+        2, 7, 32, device=DEVICE_TYPE, dtype=torch.bfloat16, requires_grad=True
+    )
     ref_x = x.detach().clone().requires_grad_()
     forward = lambda inputs: apply_lora_mlp_relu2(model.base_model.model, inputs)
     actual = (
@@ -217,7 +221,7 @@ def test_nemotron_relu2_installer_dense_and_shared(block):
         assert mixer.experts.forward.__func__ is not apply_lora_mlp_relu2
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.skipif(not gpu_available(), reason="GPU required")
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
 def test_relu2_variable_lengths_share_compiled_kernels(dtype):
     import triton
@@ -226,7 +230,7 @@ def test_relu2_variable_lengths_share_compiled_kernels(dtype):
 
     forward_hashes, backward_hashes = set(), set()
     for count in (257, 513, 2049):
-        x = torch.randn(count, device="cuda", dtype=dtype, requires_grad=True)
+        x = torch.randn(count, device=DEVICE_TYPE, dtype=dtype, requires_grad=True)
         reference = x.detach().clone().requires_grad_(True)
         upstream = torch.randn_like(x)
         actual = apply_relu2(x)
