@@ -8,16 +8,15 @@ import json
 import re
 from pathlib import Path
 
-from huggingface_hub import get_safetensors_metadata, hf_hub_download
 from safetensors import safe_open
 from safetensors.torch import save_file
+from transformers.utils import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME, cached_file
 
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-INDEX_NAME = "model.safetensors.index.json"
-SINGLE_NAME = "model.safetensors"
 MTP_SHARD = "model-mtp.safetensors"
 
 
@@ -32,36 +31,67 @@ def _is_mtp_key(key: str, num_layers: int | None) -> bool:
     return bool(match and num_layers is not None and int(match.group(1)) >= num_layers)
 
 
+def _file_keys(path: str | Path) -> dict[str, str]:
+    with safe_open(path, framework="pt") as f:
+        return dict.fromkeys(f.keys(), Path(path).name)
+
+
 def _weight_map(model_dir: Path) -> dict[str, str]:
-    if (model_dir / INDEX_NAME).exists():
-        return json.loads((model_dir / INDEX_NAME).read_text())["weight_map"]
-    if (model_dir / SINGLE_NAME).exists():
-        with safe_open(model_dir / SINGLE_NAME, framework="pt") as f:
-            return dict.fromkeys(f.keys(), SINGLE_NAME)
-    return {}
+    if (model_dir / SAFE_WEIGHTS_INDEX_NAME).exists():
+        return json.loads((model_dir / SAFE_WEIGHTS_INDEX_NAME).read_text())[
+            "weight_map"
+        ]
+    weight_map: dict[str, str] = {}
+    for name in (SAFE_WEIGHTS_NAME, MTP_SHARD):
+        if (model_dir / name).exists():
+            weight_map.update(_file_keys(model_dir / name))
+    return weight_map
 
 
-def _base_files(base_model: str):
-    local = Path(base_model)
-    if local.is_dir():
-        config = json.loads((local / "config.json").read_text())
-        return _weight_map(local), config, lambda name: local / name
-    config = json.loads(Path(hf_hub_download(base_model, "config.json")).read_text())
-    weight_map = get_safetensors_metadata(base_model).weight_map
-    return weight_map, config, lambda name: hf_hub_download(base_model, name)
+def _base_files(base_model: str, revision: str | None):
+    def fetch(name: str) -> str:
+        return cached_file(base_model, name, revision=revision)
+
+    config = json.loads(Path(fetch("config.json")).read_text())
+    index = cached_file(
+        base_model,
+        SAFE_WEIGHTS_INDEX_NAME,
+        revision=revision,
+        _raise_exceptions_for_missing_entries=False,
+        _raise_exceptions_for_connection_errors=False,
+    )
+    if index:
+        weight_map = json.loads(Path(index).read_text())["weight_map"]
+    else:
+        weight_map = _file_keys(fetch(SAFE_WEIGHTS_NAME))
+    return weight_map, config, fetch
 
 
-def copy_mtp_weights(base_model: str, output_dir: str | Path) -> int:
+def maybe_copy_mtp_weights(cfg: DictDefault, output_dir: str | Path) -> int:
+    """Carry MTP weights into a full fine-tune's output; adapters and compressed outputs are skipped."""
+    if cfg.adapter or cfg.llmcompressor:
+        return 0
+    return copy_mtp_weights(cfg.base_model, output_dir, revision=cfg.revision_of_model)
+
+
+def copy_mtp_weights(
+    base_model: str, output_dir: str | Path, revision: str | None = None
+) -> int:
     """Copy MTP tensors missing from ``output_dir`` out of ``base_model``. Returns the count."""
-    output_dir = Path(output_dir)
+    try:
+        return _copy_mtp_weights(base_model, Path(output_dir), revision)
+    except Exception as exc:
+        LOG.warning(
+            "Skipping MTP carry-over from %s into %s: %s", base_model, output_dir, exc
+        )
+        return 0
+
+
+def _copy_mtp_weights(base_model: str, output_dir: Path, revision: str | None) -> int:
     out_map = _weight_map(output_dir)
     if not out_map:
         return 0
-    try:
-        base_map, config, fetch = _base_files(base_model)
-    except Exception as exc:  # noqa: BLE001
-        LOG.debug("Skipping MTP carry-over, can't read %s: %s", base_model, exc)
-        return 0
+    base_map, config, fetch = _base_files(base_model, revision)
 
     text_config = _text_config(config)
     num_layers = (
@@ -92,23 +122,20 @@ def copy_mtp_weights(base_model: str, output_dir: str | Path) -> int:
             tensors.update(
                 {k: handle.get_tensor(k) for k, f in missing.items() if f == name}
             )
-    save_file(tensors, output_dir / MTP_SHARD, metadata={"format": "pt"})
+    # write-then-rename: without an index, loaders pick up every *.safetensors, even a partial one
+    tmp = output_dir / f"{MTP_SHARD}.tmp"
+    save_file(tensors, tmp, metadata={"format": "pt"})
+    tmp.replace(output_dir / MTP_SHARD)
 
-    # transformers prefers a lone model.safetensors over an index, so a single file must be sharded
-    if (output_dir / INDEX_NAME).exists():
-        index = json.loads((output_dir / INDEX_NAME).read_text())
-    else:
-        trunk = "model-00001-of-00001.safetensors"
-        (output_dir / SINGLE_NAME).rename(output_dir / trunk)
-        index = {
-            "metadata": {"total_size": (output_dir / trunk).stat().st_size},
-            "weight_map": dict.fromkeys(out_map, trunk),
-        }
-    index["weight_map"].update(dict.fromkeys(tensors, MTP_SHARD))
-    index["metadata"]["total_size"] = int(index["metadata"].get("total_size", 0)) + sum(
-        t.numel() * t.element_size() for t in tensors.values()
-    )
-    (output_dir / INDEX_NAME).write_text(json.dumps(index, indent=2))
+    # Single-file outputs get no index, so a later save_pretrained can't leave one dangling
+    index_path = output_dir / SAFE_WEIGHTS_INDEX_NAME
+    if index_path.exists():
+        index = json.loads(index_path.read_text())
+        index["weight_map"].update(dict.fromkeys(tensors, MTP_SHARD))
+        index["metadata"]["total_size"] = int(
+            index["metadata"].get("total_size", 0)
+        ) + sum(t.numel() * t.element_size() for t in tensors.values())
+        index_path.write_text(json.dumps(index, indent=2))
 
     LOG.info(
         "Copied %d MTP tensors from %s into %s", len(tensors), base_model, output_dir
