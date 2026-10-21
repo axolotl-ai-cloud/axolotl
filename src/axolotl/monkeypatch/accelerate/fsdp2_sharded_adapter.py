@@ -22,7 +22,7 @@ import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import torch
 import torch.distributed as dist
@@ -451,6 +451,14 @@ def consolidate(shard_dir, threads: int = CONSOLIDATE_THREADS):
     manifest = json.loads((shard_dir / MANIFEST).read_text(encoding="utf-8"))
     if manifest.get("version") != _VERSION:
         raise ValueError(f"Unsupported adapter shard manifest in {shard_dir}")
+    target_parts = PurePosixPath(manifest["target"]).parts
+    if (
+        target_parts[-1:] != (ADAPTER_FILE,)
+        or len(target_parts) > 2
+        or {"/", ".", ".."} & set(target_parts)
+        or any(Path(name).name != name for name in manifest["shards"])
+    ):
+        raise ValueError(f"Adapter shard manifest in {shard_dir} points outside it")
     pieces: dict[str, list] = {entry["name"]: [] for entry in manifest["tensors"]}
     for name in manifest["shards"]:
         path = shard_dir / name
