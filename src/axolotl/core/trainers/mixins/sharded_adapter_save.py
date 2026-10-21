@@ -308,17 +308,7 @@ class ShardedAdapterSaveMixin(Trainer):
             self._axolotl_unconsolidated.discard(path)
             if not done:
                 self._axolotl_failed_consolidations.add(path)
-        if self._axolotl_deferred_rotation and finished:
-            output_dir, rotate_args, rotate_kwargs = self._axolotl_deferred_rotation
-            if not self._axolotl_unconsolidated:
-                self._axolotl_deferred_rotation = None
-            # still-consolidating checkpoints neither count toward the limit nor get deleted
-            rotate_checkpoints_excluding(
-                self._axolotl_unconsolidated | self._axolotl_failed_consolidations,
-                output_dir,
-                *rotate_args,
-                **rotate_kwargs,
-            )
+        # on_save first: rotation may delete a checkpoint whose on_save is still held back
         while self._axolotl_deferred_saves:
             path, state, kwargs = self._axolotl_deferred_saves[0]
             if path in self._axolotl_unconsolidated:
@@ -331,6 +321,17 @@ class ShardedAdapterSaveMixin(Trainer):
                 )
                 continue
             control = on_save(args, state, control, **kwargs)
+        if self._axolotl_deferred_rotation and finished:
+            output_dir, rotate_args, rotate_kwargs = self._axolotl_deferred_rotation
+            if not self._axolotl_unconsolidated:
+                self._axolotl_deferred_rotation = None
+            # still-consolidating checkpoints neither count toward the limit nor get deleted
+            rotate_checkpoints_excluding(
+                self._axolotl_unconsolidated | self._axolotl_failed_consolidations,
+                output_dir,
+                *rotate_args,
+                **rotate_kwargs,
+            )
         return control
 
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):

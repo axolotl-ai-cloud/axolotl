@@ -274,6 +274,16 @@ def test_mirror_and_rotation_wait_for_consolidation(gated):
     assert gated.queue.pending() == []
 
 
+def test_consolidations_finishing_together_publish_before_rotation(gated):
+    gated.save(1)
+    gated.save(2)
+    gated.release(1)
+    gated.release(2)
+    gated.step_end()
+    assert [event[1] for event in gated.mirror.events] == [1, 2]
+    assert gated.checkpoints() == ["checkpoint-2"]
+
+
 def test_failed_consolidation_is_never_published_or_counted(gated):
     _checkpoint(Path(gated.trainer.args.output_dir), 1, mtime=1)
     gated.save(2)
