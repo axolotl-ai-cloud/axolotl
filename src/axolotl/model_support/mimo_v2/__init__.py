@@ -38,6 +38,18 @@ def _is_published_layout(cfg) -> bool:
     return "quantization_config" in config
 
 
+def _require_sink_attention(context: ModelHookContext) -> None:
+    from axolotl.utils.schemas.enums import attn_impl_base
+
+    attn = getattr(context.cfg, "attn_implementation", None)
+    # transformers' flash path silently drops s_aux on backends without sink support
+    if attn_impl_base(attn) not in (None, "eager", "flash_attention_4"):
+        raise ValueError(
+            f"MiMo-V2.6 needs attention sinks and 192/128 q-k/v head dims; use "
+            f"attn_implementation: flash_attention_4 or eager, not {attn!r}."
+        )
+
+
 def _redirect_remote_code(_context: ModelHookContext) -> None:
     from axolotl.model_support.remote_code import redirect_dynamic_modules
 
@@ -128,6 +140,7 @@ class MiMoV2Support(ModelSupport):
         ),
         hooks=ModelHooks(
             by_phase={
+                ModelHookPhase.CONFIGURE_RUN: (_require_sink_attention,),
                 ModelHookPhase.BEFORE_CONFIG_LOAD: (_redirect_remote_code,),
                 ModelHookPhase.BEFORE_TOKENIZER_LOAD: (_redirect_remote_code,),
                 ModelHookPhase.BEFORE_MODEL_BUILD: (_redirect_remote_code,),
