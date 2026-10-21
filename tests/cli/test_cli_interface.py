@@ -25,19 +25,19 @@ def test_build_command():
     ]
 
 
-def test_invalid_command_options(cli_runner):
+def test_invalid_command_options(cli_runner, config_path):
     """Test handling of invalid command options"""
     result = cli_runner.invoke(
         cli,
         [
-            "train",
-            "config.yml",
+            "merge-lora",
+            str(config_path),
             "--invalid-option",
             "value",
         ],
     )
     assert result.exit_code != 0
-    assert "does not exist" in result.output
+    assert "No such option" in result.output
 
 
 def test_required_config_argument(cli_runner):

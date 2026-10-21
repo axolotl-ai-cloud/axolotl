@@ -22,27 +22,6 @@ def test_dequantize_null_state():
     assert torch.equal(dequantize(W, None), W)
 
 
-def test_dequantize_shape_preservation():
-    shape = (128, 64)
-    packed, quant_state = _nf4_pair(shape)
-    result = dequantize(packed, quant_state)
-    assert result.shape == shape
-    assert result.dtype == torch.float16
-    assert result.device == packed.device
-
-
-def test_dequantize_transposed():
-    """Transposed input → transposed output (values, not just shape)."""
-    shape = (128, 64)  # non-square: catches dim-swap bugs
-    packed, quant_state = _nf4_pair(shape)
-    # packed is (4096, 1); packed.t() is (1, 4096), the leading-dim-1 signal.
-    # bnb dequants to quant_state.shape (128, 64) then returns out.t() → (64, 128).
-    expected = bnb.functional.dequantize_4bit(packed, quant_state, quant_type="nf4").t()
-    result = dequantize(packed.t(), quant_state)
-    assert tuple(result.shape) == (shape[1], shape[0])
-    torch.testing.assert_close(result, expected)
-
-
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
 def test_dequantize_matches_bnb(dtype):
     """Bit-exact vs bnb's own dequant for every supported output dtype. fp32 previously

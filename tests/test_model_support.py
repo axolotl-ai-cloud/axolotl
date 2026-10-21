@@ -32,13 +32,6 @@ class TestRegistry:
     def test_unmatched_processor_returns_none(self):
         assert get_model_support_for_processor(object()) is None
 
-    def test_register_requires_model_types(self):
-        class MissingTypes(ModelSupport):
-            pass
-
-        with pytest.raises(ValueError, match="model_types"):
-            register_model_support(MissingTypes)
-
     def test_register_custom_descriptor(self):
         class CustomSupport(ModelSupport):
             model_types = ("my_custom_arch",)

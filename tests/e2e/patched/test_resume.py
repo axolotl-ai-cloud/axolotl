@@ -17,7 +17,6 @@ from axolotl.utils.dict import DictDefault
 from ..utils import (
     check_model_output_exists,
     most_recent_subdir,
-    require_torch_2_6_0,
     requires_flash_attn,
 )
 
@@ -29,7 +28,6 @@ class TestResumeLlama:
     Test case for resuming training of llama models
     """
 
-    @require_torch_2_6_0
     def test_resume_lora_packed(self, temp_dir):
         cfg = DictDefault(
             {

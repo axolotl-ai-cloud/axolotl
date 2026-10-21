@@ -1293,7 +1293,7 @@ class OptimizationValidationMixin:
                 "silently ignored. Remove them or pick a different optimizer."
             )
 
-        if data.get("relora_steps"):
+        if data.get("relora"):
             raise ValueError(
                 "relora resets optimizer state through Optimizer.state, which polora "
                 "does not use, so its momentum would survive every merge."

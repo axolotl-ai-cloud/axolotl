@@ -8,7 +8,6 @@ datasets.
 
 from datasets import Dataset, IterableDataset
 
-from axolotl.utils.data.work_queue import tokenize_with_work_queue
 from axolotl.utils.logging import get_logger
 
 from .prompt_tokenizers import PromptTokenizingStrategy
@@ -55,6 +54,9 @@ class TokenizedPromptDataset(Dataset):
 
         num_proc = min(self.process_count or 1, len(dataset))
         if num_proc > 1:
+            # Deferred: importing axolotl.utils.data at module load cycles back here.
+            from axolotl.utils.data.work_queue import tokenize_with_work_queue
+
             return tokenize_with_work_queue(
                 self.prompt_tokenizer,
                 dataset,

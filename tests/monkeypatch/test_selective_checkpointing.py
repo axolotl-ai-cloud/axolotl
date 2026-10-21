@@ -1108,9 +1108,6 @@ class TestRuleFunctional:
         assert state.saved_op_names == {"shape:aten::addmm", "shape:aten::mm"}
 
     @requires_cuda
-    @pytest.mark.skipif(
-        not hasattr(torch, "_grouped_mm"), reason="requires torch._grouped_mm"
-    )
     def test_grouped_mm_shape_rule(self):
         n_experts, tokens, k, n = 4, 64, 512, 64
         gen = torch.Generator(device="cpu").manual_seed(3)
