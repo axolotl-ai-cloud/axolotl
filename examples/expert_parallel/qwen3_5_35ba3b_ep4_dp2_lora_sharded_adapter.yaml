@@ -74,10 +74,10 @@ fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Qwen3_5MoeDecoderLayer
   state_dict_type: FULL_STATE_DICT
+  adapter_save_strategy: sharded
   reshard_after_forward: true
   activation_checkpointing: true
 
-adapter_checkpoint_format: sharded
 save_only_model: true
 save_strategy: steps
 save_steps: 4

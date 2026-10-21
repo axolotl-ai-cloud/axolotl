@@ -2891,6 +2891,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Final state dict type to use after training completion",
     ),
     (
+        ("--fsdp-config.adapter-save-strategy",),
+        "fsdp_config__adapter_save_strategy",
+        None,
+        "How FSDP2 writes PEFT adapters (unset: 'gather'), for checkpoint-N saves and the end-of-training export to output_dir. 'gather' assembles every adapter tensor on rank 0 before writing adapter_model.safetensors. 'sharded' has every rank write the slices it holds to <dir>/.adapter_shards/, with no cross-rank tensor transfer when every rank sees the output directory, then rank 0 consolidates them into the same adapter_model.safetensors. Checkpoints consolidate on a background thread while training continues: one consolidation runs at a time, and a save that finds one running and one queued waits. Until a checkpoint is consolidated, its on_save callbacks (checkpoint mirror, publishers) and save_total_limit rotation are held back, and training end waits for it; a resume from an unconsolidated checkpoint finishes the consolidation first. The final export waits for outstanding checkpoint consolidations, then consolidates its own shards before training returns. Requires an adapter, fsdp_version 2 with state_dict_type FULL_STATE_DICT (with or without expert_parallel_size), tensor_parallel_size 1, no rl, load_best_model_at_end false, and hub_strategy end when hub_model_id is set; config validation rejects anything else. Single-process runs, multiple adapters, and quantized adapter tensors fall back to 'gather' at save time.",
+    ),
+    (
         ("--fsdp-config.auto-wrap-policy",),
         "fsdp_config__auto_wrap_policy",
         None,
@@ -3165,12 +3171,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints.",
-    ),
-    (
-        ("--adapter-checkpoint-format",),
-        None,
-        None,
-        "How FSDP2 writes PEFT adapters, for checkpoint-N saves and the end-of-training export to output_dir. 'gather' assembles every adapter tensor on rank 0 before writing adapter_model.safetensors. 'sharded' has every rank write the slices it holds to <dir>/.adapter_shards/, with no cross-rank tensor transfer when every rank sees the output directory, then rank 0 consolidates them into the same adapter_model.safetensors. Checkpoints consolidate on a background thread while training continues: one consolidation runs at a time, and a save that finds one running and one queued waits. Until a checkpoint is consolidated, its on_save callbacks (checkpoint mirror, publishers) and save_total_limit rotation are held back, and training end waits for it; a resume from an unconsolidated checkpoint finishes the consolidation first. The final export waits for outstanding checkpoint consolidations, then consolidates its own shards before training returns. Requires an adapter, fsdp_version 2 with state_dict_type FULL_STATE_DICT (with or without expert_parallel_size), tensor_parallel_size 1, no rl, load_best_model_at_end false, and hub_strategy end when hub_model_id is set; config validation rejects anything else. Single-process runs, multiple adapters, and quantized adapter tensors fall back to 'gather' at save time.",
     ),
     (
         ("--use-tensorboard/--no-use-tensorboard",),

@@ -180,7 +180,9 @@ def gated(tmp_path):
 
     mirror = Mirror(tmp_path / "mirror-queue")
     trainer = object.__new__(Gated)
-    trainer.axolotl_cfg = SimpleNamespace(adapter_checkpoint_format="sharded")
+    trainer.axolotl_cfg = SimpleNamespace(
+        fsdp_config=SimpleNamespace(adapter_save_strategy="sharded")
+    )
     trainer.args = SimpleNamespace(output_dir=str(run_dir), save_total_limit=1)
     trainer.hp_search_backend = None
     trainer.state = TrainerState()
@@ -322,11 +324,9 @@ def test_default_format_keeps_the_gather_path():
 
     from axolotl.core.trainers.base import AxolotlTrainer
     from axolotl.utils.dict import DictDefault
-    from axolotl.utils.schemas.config import AxolotlInputConfig
+    from axolotl.utils.schemas.fsdp import FSDPConfig
 
-    assert AxolotlInputConfig.model_fields["adapter_checkpoint_format"].default == (
-        "gather"
-    )
+    assert FSDPConfig.model_fields["adapter_save_strategy"].default is None
     trainer = object.__new__(AxolotlTrainer)
     trainer._axolotl_cfg = DictDefault({"adapter": "lora"})
     trainer._axolotl_sharded_checkpoint_save = True
@@ -348,9 +348,14 @@ def test_default_format_keeps_the_gather_path():
     [
         ({}, None),
         ({"adapter": None}, "an adapter"),
-        ({"fsdp_config": None, "fsdp_version": None}, "fsdp_version: 2"),
+        ({"fsdp_version": 1}, "fsdp_version: 2"),
         (
-            {"fsdp_config": {"state_dict_type": "SHARDED_STATE_DICT"}},
+            {
+                "fsdp_config": {
+                    "state_dict_type": "SHARDED_STATE_DICT",
+                    "adapter_save_strategy": "sharded",
+                }
+            },
             "FULL_STATE_DICT",
         ),
         ({"load_best_model_at_end": True}, "load_best_model_at_end"),
@@ -372,14 +377,16 @@ def test_sharded_format_validation(min_base_cfg, overrides, message):
             "lora_alpha": 16,
             "lora_target_linear": True,
             "fsdp_version": 2,
-            "fsdp_config": {"state_dict_type": "FULL_STATE_DICT"},
-            "adapter_checkpoint_format": "sharded",
+            "fsdp_config": {
+                "state_dict_type": "FULL_STATE_DICT",
+                "adapter_save_strategy": "sharded",
+            },
         }
     )
     for key, value in overrides.items():
         cfg[key] = value
     if message is None:
-        assert validate_config(cfg).adapter_checkpoint_format == "sharded"
+        assert validate_config(cfg).fsdp_config.adapter_save_strategy == "sharded"
         return
     with pytest.raises(ValueError, match=message):
         validate_config(cfg)
@@ -399,7 +406,7 @@ def _final_save_trainer(tmp_path, **cfg):
 
     trainer = object.__new__(Final)
     trainer._axolotl_cfg = DictDefault(
-        {"adapter": "lora", "adapter_checkpoint_format": "sharded", **cfg}
+        {"adapter": "lora", "fsdp_config": {"adapter_save_strategy": "sharded"}, **cfg}
     )
     trainer.model = SimpleNamespace(peft_config={"default": None})
     trainer.accelerator = SimpleNamespace(
@@ -458,7 +465,9 @@ def test_final_save_fallback_leaves_the_save_to_the_caller(tmp_path, final_save)
 
 
 def test_gather_format_keeps_every_save_on_the_gather(tmp_path, final_save):
-    trainer = _final_save_trainer(tmp_path, adapter_checkpoint_format="gather")
+    trainer = _final_save_trainer(
+        tmp_path, fsdp_config={"adapter_save_strategy": "gather"}
+    )
     assert not trainer.save_final_adapter(str(tmp_path / "out"))
     assert final_save.calls == []
     trainer.save_model(str(tmp_path / "out"), _internal_call=True)
@@ -478,7 +487,7 @@ def test_save_trained_model_routes_the_final_export(tmp_path):
     cfg = DictDefault(
         {
             "adapter": "lora",
-            "adapter_checkpoint_format": "sharded",
+            "fsdp_config": {"adapter_save_strategy": "sharded"},
             "expert_parallel_size": 4,
             "output_dir": str(tmp_path),
         }

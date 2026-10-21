@@ -68,7 +68,7 @@ def make_trainer(model, output_dir, adapter_format=None):
     )
     cfg = {"adapter": "lora"}
     if adapter_format is not None:
-        cfg["adapter_checkpoint_format"] = adapter_format
+        cfg["fsdp_config"] = {"adapter_save_strategy": adapter_format}
     trainer._axolotl_cfg = DictDefault(cfg)
     return trainer
 
@@ -712,7 +712,7 @@ def check_final_save(model, root, label):
     cfg = DictDefault(
         {
             "adapter": "lora",
-            "adapter_checkpoint_format": "sharded",
+            "fsdp_config": {"adapter_save_strategy": "sharded"},
             "output_dir": str(sharded),
         }
     )

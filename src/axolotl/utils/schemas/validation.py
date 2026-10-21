@@ -2424,12 +2424,12 @@ class DistributedValidationMixin:
 
     @model_validator(mode="after")
     def check_sharded_adapter_checkpoints(self):
-        if self.adapter_checkpoint_format != "sharded":
+        if not self.fsdp_config or self.fsdp_config.adapter_save_strategy != "sharded":
             return self
         problems = []
         if not self.adapter:
             problems.append("an adapter (lora/qlora)")
-        if not self.fsdp_config or (self.fsdp_version or 2) != 2:
+        if (self.fsdp_version or 2) != 2:
             problems.append("fsdp_version: 2")
         elif self.fsdp_config.state_dict_type != "FULL_STATE_DICT":
             problems.append("fsdp_config.state_dict_type: FULL_STATE_DICT")
@@ -2446,7 +2446,7 @@ class DistributedValidationMixin:
             problems.append("hub_strategy: end when hub_model_id is set")
         if problems:
             raise ValueError(
-                "adapter_checkpoint_format: sharded writes PEFT adapter-only checkpoints "
+                "fsdp_config.adapter_save_strategy: sharded writes PEFT adapter-only checkpoints "
                 "under FSDP2 and requires " + ", ".join(problems)
             )
         return self
