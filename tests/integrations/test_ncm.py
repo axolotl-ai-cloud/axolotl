@@ -7,6 +7,7 @@ from axolotl.integrations.ncm.configuration import (
     NCMGeneratorConfig,
     NCMTokenizerConfig,
 )
+from axolotl.integrations.ncm.layers import Segments
 from axolotl.integrations.ncm.loading import NCMAutoModel
 from axolotl.integrations.ncm.modeling import (
     NCMGeneratorModel,
@@ -97,6 +98,26 @@ def test_generation_logits_match_teacher_forcing(kwargs):
     model._head = head
     out = model(None, prefix_ids=prefix, codes=codes)
     torch.testing.assert_close(torch.cat(seen, dim=1), out.logits)
+
+
+def test_segments_match_dense_prefix_lm_mask():
+    torch.manual_seed(0)
+    P, sizes = 3, [2, 4]
+    q, k, v = (torch.randn(2, 2, P + sum(sizes), 8) for _ in range(3))
+    keep = torch.tensor([[True, True, False], [True, False, False]])
+    seg = torch.cat(
+        [torch.full((P,), -1)] + [torch.full((n,), i) for i, n in enumerate(sizes)]
+    )
+    allowed = (seg[None, :] == -1) | (seg[None, :] == seg[:, None])
+    allowed = (
+        allowed[None, None]
+        & torch.cat([keep, torch.ones(2, sum(sizes), dtype=torch.bool)], dim=1)[
+            :, None, None, :
+        ]
+    )
+    dense = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=allowed)
+    out = Segments(P, sizes, keep).attend(q, k, v, dropout_p=0.0)
+    torch.testing.assert_close(out, dense)
 
 
 def test_level_weights_balance_levels():

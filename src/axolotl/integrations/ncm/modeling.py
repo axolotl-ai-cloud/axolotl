@@ -20,7 +20,7 @@ from transformers import PreTrainedModel
 from transformers.utils import ModelOutput
 
 from .configuration import NCMGeneratorConfig, NCMTokenizerConfig
-from .layers import Block, rope_cos_sin
+from .layers import Block, Segments, rope_cos_sin
 from .quantizer import MultiscaleResidualQuantizer
 
 
@@ -386,18 +386,6 @@ class NCMGeneratorModel(NCMPreTrainedModel):
         emb = self.vqvae.encoder.wte(prefix_ids)
         return self.transformer.wte(emb.to(self.transformer.wte.weight.dtype))
 
-    def _prefix_key_bias(
-        self, prefix_ids: torch.Tensor | None, total: int
-    ) -> torch.Tensor | None:
-        pad = self.config.prefix_pad_token_id
-        if prefix_ids is None or pad is None:
-            return None
-        bias = torch.zeros(prefix_ids.shape[0], 1, 1, total, device=prefix_ids.device)
-        bias[:, 0, 0, : prefix_ids.shape[1]].masked_fill_(
-            prefix_ids == pad, float("-inf")
-        )
-        return bias
-
     def _level_inputs(self, x: torch.Tensor, i: int) -> torch.Tensor:
         """Project a predicted level's conditioning vectors to the hidden width."""
         x = x.to(self.transformer.wte.weight.dtype)
@@ -407,27 +395,21 @@ class NCMGeneratorModel(NCMPreTrainedModel):
         return x + self.transformer.wle.weight[i]
 
     def _backbone(
-        self, x: torch.Tensor, attn_mask: torch.Tensor, positions: torch.Tensor
+        self, x: torch.Tensor, sizes: list[int], prefix_ids: torch.Tensor | None
     ) -> torch.Tensor:
-        """The swappable part: hidden states for prefix + target positions."""
-        rope = rope_cos_sin(
-            positions, x.shape[-1] // self.config.n_head, self.config.rope_base
-        )
-        for block in self.transformer.blocks:
-            x = block(x, attn_mask, rope)
-        return self.transformer.ln_f(x)
-
-    def _segments_mask(self, sizes: list[int], device) -> torch.Tensor:
-        """Prefix attends to itself; each level block attends to the prefix and itself."""
+        """Hidden states for prefix + level blocks of ``sizes``; the swappable seam."""
         P = self.config.prefix_len
-        seg = torch.cat(
-            [torch.full((P,), -1, device=device)]
-            + [torch.full((n,), i, device=device) for i, n in enumerate(sizes)]
+        pad = self.config.prefix_pad_token_id
+        keep = None if prefix_ids is None or pad is None else prefix_ids != pad
+        rope = rope_cos_sin(
+            self._positions(sizes, x.device),
+            x.shape[-1] // self.config.n_head,
+            self.config.rope_base,
         )
-        q, kv = seg[:, None], seg[None, :]
-        allowed = (kv == -1) | (kv == q)
-        mask = torch.zeros(allowed.shape, device=device)
-        return mask.masked_fill_(~allowed, float("-inf"))[None, None]
+        segments = Segments(P, sizes, keep)
+        for block in self.transformer.blocks:
+            x = block(x, rope, segments)
+        return self.transformer.ln_f(x)
 
     def _positions(self, sizes: list[int], device) -> torch.Tensor:
         P = self.config.prefix_len
@@ -505,11 +487,7 @@ class NCMGeneratorModel(NCMPreTrainedModel):
 
         prefix = self._embed_prefix(prefix_ids, B, device)
         x = torch.cat([prefix.to(x.dtype), x], dim=1)
-        mask = self._segments_mask(self.pred_levels, device)
-        key_bias = self._prefix_key_bias(prefix_ids, x.shape[1])
-        if key_bias is not None:
-            mask = mask + key_bias
-        h = self._backbone(x, mask, self._positions(self.pred_levels, device))
+        h = self._backbone(x, self.pred_levels, prefix_ids)
         h = h[:, self.config.prefix_len :]
 
         per_level = [
@@ -586,11 +564,7 @@ class NCMGeneratorModel(NCMPreTrainedModel):
         def run_level(i: int, x_vq: torch.Tensor) -> torch.Tensor:
             n = self.pred_levels[i]
             x = torch.cat([prefix, self._level_inputs(x_vq, i).to(prefix.dtype)], dim=1)
-            mask = self._segments_mask([n], device)
-            key_bias = self._prefix_key_bias(prefix_ids, P + n)
-            if key_bias is not None:
-                mask = mask + key_bias
-            h = self._backbone(x, mask, self._positions([n], device))[:, P:]
+            h = self._backbone(x, [n], prefix_ids)[:, P:]
             return self._sample(self._head(i, h), temperature, top_k, top_p, generator)
 
         if self.config.query_level0:
