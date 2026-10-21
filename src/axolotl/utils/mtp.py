@@ -25,10 +25,10 @@ def _text_config(config: dict) -> dict:
 
 
 def _is_mtp_key(key: str, num_layers: int | None) -> bool:
-    if re.search(r"(^|\.)mtp\.", key):
+    if re.search(r"(^|\.)mtp[._]", key):
         return True
-    match = re.match(r"model\.layers\.(\d+)\.", key)
-    return bool(match and num_layers is not None and int(match.group(1)) >= num_layers)
+    match = re.match(r"model\.(language_model\.)?layers\.(\d+)\.", key)
+    return bool(match and num_layers is not None and int(match.group(2)) >= num_layers)
 
 
 def _file_keys(path: str | Path) -> dict[str, str]:

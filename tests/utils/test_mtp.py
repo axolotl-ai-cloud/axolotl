@@ -6,7 +6,7 @@ from safetensors import safe_open
 from safetensors.torch import save_file
 from transformers import LlamaConfig, LlamaForCausalLM
 
-from axolotl.utils.mtp import MTP_SHARD, copy_mtp_weights
+from axolotl.utils.mtp import MTP_SHARD, _is_mtp_key, copy_mtp_weights
 
 
 def _write_model(path, tensors, config):
@@ -40,6 +40,20 @@ def test_selects_only_mtp_keys(tmp_path, nextn):
     )
     assert copy_mtp_weights(str(tmp_path / "base"), tmp_path / "out") == len(expected)
     assert _shard_keys(tmp_path / "out") == expected
+
+
+@pytest.mark.parametrize(
+    "key,expected",
+    [
+        ("model.mtp_block.0.mlp.gate.weight", True),
+        ("model.mtp_emb_norm.0.weight", True),
+        ("model.language_model.layers.1.eh_proj.weight", True),
+        ("model.language_model.layers.0.mlp.gate.weight", False),
+        ("model.visual.blocks.1.attn.qkv.weight", False),
+    ],
+)
+def test_mtp_key_layouts(key, expected):
+    assert _is_mtp_key(key, num_layers=1) == expected
 
 
 @pytest.mark.parametrize("max_shard_size", ["1GB", "1KB"])
