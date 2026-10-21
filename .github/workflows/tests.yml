@@ -66,11 +66,11 @@ jobs:
         run: |
           curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
-  nf4-distributed:
-    name: NF4 distributed CPU
+  distributed-cpu:
+    name: Distributed CPU
     if: ${{ !github.event.pull_request.draft }}
     needs: [prime-cdn-s3-cache, pre-commit]
-    uses: ./.github/workflows/nf4-cpu.yml
+    uses: ./.github/workflows/distributed-cpu.yml
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
@@ -87,7 +87,7 @@ jobs:
           - python_version: "3.12"
             pytorch_version: "2.13.0"
           - python_version: "3.14"
-            pytorch_version: "2.14.0"
+            pytorch_version: "2.14.1"
     timeout-minutes: 45
     env:
       AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
@@ -115,7 +115,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           prune-cache: true
@@ -142,7 +142,7 @@ jobs:
           axolotl --help
 
       - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.14' && matrix.pytorch_version == '2.14.0' }}
+        if: ${{ matrix.python_version == '3.14' && matrix.pytorch_version == '2.14.1' }}
         run: |
           axolotl generate-cli-config-options --check
 
@@ -156,12 +156,12 @@ jobs:
       - name: Run tests
         timeout-minutes: 40
         run: |
-          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          pytest -v --durations=10 -m "not slow and not nf4_distributed" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile -m "not slow and not distributed_cpu" --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 -m "not slow and not nf4_distributed and not distributed_cpu" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 -m "not gpu" --ignore=tests/integrations/kernels/ tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
@@ -186,7 +186,7 @@ jobs:
     needs: [prime-cdn-s3-cache, pre-commit]
     timeout-minutes: 45
     env:
-      PYTORCH_VERSION: "2.14.0"
+      PYTORCH_VERSION: "2.14.1"
 
     steps:
       - name: cleanup node
@@ -211,7 +211,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
           prune-cache: true
@@ -305,7 +305,7 @@ jobs:
             --output "$out/multigpu.txt"
 
       - name: Upload selection
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-selection
           path: ${{ runner.temp }}/e2e-selection
@@ -370,17 +370,17 @@ jobs:
 
   check-gpu-label:
     # Deferred so a label added while CPU jobs run is seen without a rerun
-    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist]
+    needs: [pre-commit, distributed-cpu, pytest-testmon, sdist]
     uses: ./.github/workflows/gpu-pr-gate.yml
 
   docker-e2e:
-    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist, check-gpu-label]
+    needs: [pre-commit, distributed-cpu, pytest-testmon, sdist, check-gpu-label]
     if: needs.check-gpu-label.outputs.enabled == 'true'
     uses: ./.github/workflows/docker-e2e.yml
     secrets: inherit
 
   multi-gpu-e2e:
-    needs: [pre-commit, nf4-distributed, pytest-testmon, sdist, check-gpu-label, multigpu-paths]
+    needs: [pre-commit, distributed-cpu, pytest-testmon, sdist, check-gpu-label, multigpu-paths]
     if: github.event_name == 'pull_request' && needs.check-gpu-label.outputs.enabled == 'true' && needs.multigpu-paths.outputs.run_multigpu == 'true'
     uses: ./.github/workflows/multi-gpu-e2e.yml
     secrets: inherit

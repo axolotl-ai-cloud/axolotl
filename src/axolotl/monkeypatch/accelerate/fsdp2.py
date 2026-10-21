@@ -11,6 +11,7 @@ import torch
 import torch.distributed as dist
 from torch import nn
 
+from axolotl.monkeypatch.accelerate.fsdp2_grouping import carve_trainable_dtype
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.fp32_norms import get_fp32_norm_patterns, shard_norms_fp32
 from axolotl.utils.logging import get_logger
@@ -47,14 +48,6 @@ def _rebuild_nvfp4_like(
         use_triton_kernel=reference.use_triton_kernel,
         act_quant_kwargs=reference.act_quant_kwargs,
     )
-
-
-def _state_dict_entry(value, name, parameter_requires_grad, buffer_names):
-    if name in parameter_requires_grad:
-        return nn.Parameter(value, requires_grad=parameter_requires_grad[name])
-    if name in buffer_names:
-        return value
-    raise KeyError(f"state dict entry {name!r} is neither a parameter nor a buffer")
 
 
 def _restore_non_persistent_buffers(model, original_buffers, accelerator):
@@ -222,12 +215,9 @@ def fsdp2_load_full_state_dict(
     def _is_ep_expert_param(name: str) -> bool:
         return bool(_ep_tails) and ".experts." in name and name.endswith(_ep_tails)
 
-    meta_sharded_sd = model.state_dict()
-    parameter_requires_grad = {
-        name: parameter.requires_grad
-        for name, parameter in model.named_parameters(remove_duplicate=False)
-    }
-    buffer_names = {name for name, _ in model.named_buffers(remove_duplicate=False)}
+    # keep_vars: tell params from buffers by type, since named_parameters() keys keep
+    # the `_checkpoint_wrapped_module.` segment that state_dict() strips.
+    meta_sharded_sd = model.state_dict(keep_vars=True)
     sharded_sd = {}
 
     for param_name, sharded_meta_param in meta_sharded_sd.items():
@@ -417,9 +407,11 @@ def fsdp2_load_full_state_dict(
         if offload_to_cpu:
             sharded_param = sharded_param.cpu()
 
-        sharded_sd[param_name] = _state_dict_entry(
-            sharded_param, param_name, parameter_requires_grad, buffer_names
-        )
+        if isinstance(sharded_meta_param, nn.Parameter):
+            sharded_param = nn.Parameter(
+                sharded_param, requires_grad=sharded_meta_param.requires_grad
+            )
+        sharded_sd[param_name] = sharded_param
 
         del full_tensor
         full_sd[param_name] = None
@@ -472,48 +464,34 @@ def patch_peft_param_wrapper_for_fsdp2():
     LOG.info("Patched PEFT _LoraParameterProxy.forward for FSDP2 DTensor compatibility")
 
 
-def _process_lora_module_for_fsdp(module, fsdp2_kwargs):
-    """Helper function to process LoRA modules for FSDP2."""
+def _process_lora_module_for_fsdp(module):
+    """Align a LoRA layer's base bias dtype with its weight; returns whether it had to."""
     from peft.tuners.lora.layer import ParamWrapper
-    from torch.distributed.fsdp import fully_shard
 
-    # Skip ParamWrapper — its lora_A/B must not be independently sharded.
-    # The parent decoder layer's FSDP wrapper handles unsharding them.
-    # TODO: review if we even need to shard them separately in first place.
     if isinstance(module, ParamWrapper):
         return False
 
-    log_bias_dtype_mismatch = False
+    # The adapters themselves stay inside the enclosing decoder-layer unit: FSDP2 only
+    # requires one dtype across a unit's *trainable* parameters, so fp32 factors next to
+    # frozen bf16/uint8 base weights are fine. See fsdp2_grouping for the mixed case.
+    base_layer = getattr(module, "base_layer", None)
+    bias = getattr(base_layer, "bias", None)
+    if bias is not None and base_layer.weight.dtype != bias.dtype:
+        bias.data = bias.data.to(base_layer.weight.dtype)
+        return True
+    return False
 
-    # Linear4Bit will keep it's bias term in fp32. If the weight dtype is in bf16 we are not able to
-    # wrap this. Therefore we must ensure the bias has the same dtype as the weight
-    if hasattr(module.base_layer, "bias") and module.base_layer.bias is not None:
-        if module.base_layer.weight.dtype != module.base_layer.bias.dtype:
-            log_bias_dtype_mismatch = True
-            module.base_layer.bias.data = module.base_layer.bias.data.to(
-                module.base_layer.weight.dtype
-            )
 
-    for active_adapter in module.active_adapters:
-        if module.lora_A:
-            fully_shard(module.lora_A[active_adapter], **fsdp2_kwargs)
-        if module.lora_B:
-            fully_shard(module.lora_B[active_adapter], **fsdp2_kwargs)
-        if module.lora_magnitude_vector:
-            fully_shard(module.lora_magnitude_vector[active_adapter], **fsdp2_kwargs)
+def _expert_param_leaf(name: str) -> str:
+    """The expert attribute a parameter name ends in, seen through a parametrization.
 
-    # lora_embedding_A/B are ParameterDicts containing nn.Parameter (Tensors),
-    # not nn.Module. fully_shard() only accepts nn.Module, so we cannot shard
-    # individual embedding Parameters. Instead, shard the entire LoraLayer module. fully_shard() can be used hierarchically because it does not
-    # override groups already assigned by fully_shard(), so modules
-    # where fully_shard() was already called are not affected [see https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html]
-    if module.lora_embedding_A or module.lora_embedding_B:
-        from torch.distributed.fsdp import FSDPModule
-
-        if not isinstance(module, FSDPModule):
-            fully_shard(module, **fsdp2_kwargs)
-
-    return log_bias_dtype_mismatch
+    Quantized experts live at ``...parametrizations.gate_up_proj.original``; the move to
+    meta re-creates the parameter objects, so identity cannot be relied on and the name
+    must be read as the attribute it parametrizes.
+    """
+    if name.endswith(".original") and ".parametrizations." in name:
+        return name.rsplit(".parametrizations.", 1)[1][: -len(".original")]
+    return name.rsplit(".", 1)[-1]
 
 
 def _builds_original_state_dict(staged_nf4: bool, is_main_process: bool) -> bool:
@@ -729,6 +707,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             model_has_params4bit = True
             break
 
+    ep_local_state: dict = {}
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # Context: `fully_shard` moves the model to GPU if it was on CPU, however it can also be on `meta` and then it stays there even after `fully_shard`
         # For this reason, we need to move the model to `meta` device, as then sharding happens on `meta` device
@@ -748,6 +727,13 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 if k in non_persistent_buffer_fqns
             }
         )
+        # expert-parallel expert slices are rank-local and never in rank zero's state dict
+        if staged_nf4:
+            from axolotl.monkeypatch.accelerate.fsdp2_nf4 import (
+                expert_parallel_local_state,
+            )
+
+            ep_local_state = expert_parallel_local_state(model)
         # We move the model to meta device, as then sharding happens on meta device
         model = model.to(torch.device("meta"))
         # We need to re-tie the weights, not exactly sure why, but if we don't do this, reference to `lm_head/embed_tokens` stay hanging -> more VRAM usage
@@ -816,13 +802,24 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             shard_expert_lora,
         )
 
+        ep_ignored_ids = {id(p) for p in getattr(model, "_ep_ignored_params", [])}
         ep_ignored = {
             p
             for n, p in model.named_parameters()
-            if ".experts." in n
-            and ".shared_experts." not in n
-            and n.rsplit(".", 1)[-1]
-            in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
+            if id(p) in ep_ignored_ids
+            or (
+                ".experts." in n
+                and ".shared_experts." not in n
+                and _expert_param_leaf(n)
+                in (
+                    "gate_up_proj",
+                    "up_proj",
+                    "down_proj",
+                    "gate_up_proj_bias",
+                    "up_proj_bias",
+                    "down_proj_bias",
+                )
+            )
         }
         if ep_ignored:
             # Every param must be a DTensor (foreach/fused optimizers and clip reject a
@@ -854,6 +851,12 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 # ParamWrapper reads adapter weights directly, without invoking their forward hooks.
                 nf4_unwrapped_children.update(list(module.modules())[1:])
 
+    from axolotl.utils.lora_tying import tied_lora_no_wrap_modules
+
+    tied_no_wrap = tied_lora_no_wrap_modules(model)
+    # Modules the loop leaves unwrapped read their parameters directly; a unit of their own
+    # would never gather them, so the dtype carve-out must not create one either.
+    no_carve = set(nf4_unwrapped_children) | set(tied_no_wrap)
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -907,21 +910,20 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
         if auto_wrap_policy is not None:
             for module in get_module_children_bottom_up(model)[:-1]:
-                if module in nf4_unwrapped_children:
+                if module in nf4_unwrapped_children or module in tied_no_wrap:
                     continue
-                if staged_nf4 and isinstance(
+                if isinstance(
                     module,
                     (nn.ModuleList, nn.ModuleDict, nn.ParameterList, nn.ParameterDict),
                 ):
                     continue
                 if is_peft_model and isinstance(module, LoraLayer):
-                    module_log_bias_mismatch = _process_lora_module_for_fsdp(
-                        module, fsdp2_kwargs
-                    )
-                    log_bias_dtype_mismatch |= module_log_bias_mismatch
+                    log_bias_dtype_mismatch |= _process_lora_module_for_fsdp(module)
                 if auto_wrap_policy(module) and not isinstance(module, FSDPModule):
+                    carve_trainable_dtype(module, fsdp2_kwargs, pinned=no_carve)
                     fully_shard(module, **fsdp2_kwargs)
 
+        carve_trainable_dtype(model, fsdp2_kwargs, pinned=no_carve)
         fully_shard(model, **fsdp2_kwargs)
 
     if log_bias_dtype_mismatch:
@@ -930,12 +932,20 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         )
 
     if fsdp2_plugin.cpu_ram_efficient_loading:
-        load_state = fsdp2_load_full_state_dict
         if staged_nf4:
             from axolotl.monkeypatch.accelerate.fsdp2_nf4 import load_staged_nf4_state
 
-            load_state = load_staged_nf4_state
-        load_state(accelerator, model, original_sd, offload_to_cpu=offload_to_cpu)
+            load_staged_nf4_state(
+                accelerator,
+                model,
+                original_sd,
+                offload_to_cpu=offload_to_cpu,
+                local_state=ep_local_state,
+            )
+        else:
+            fsdp2_load_full_state_dict(
+                accelerator, model, original_sd, offload_to_cpu=offload_to_cpu
+            )
 
     if fsdp2_plugin.cpu_ram_efficient_loading and not model_has_params4bit:
         # We re-register the buffers, as they may not be in the state_dict

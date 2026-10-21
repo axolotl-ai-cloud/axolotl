@@ -66,6 +66,12 @@ class AxolotlGRPOTrainer(
 
     _tag_names = ["trl", "grpo", "axolotl"]
 
+    def __init__(self, *args, data_collator=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # GRPOTrainer hardcodes an identity collator.
+        if data_collator is not None:
+            self.data_collator = data_collator
+
 
 class AxolotlAsyncGRPOTrainer(
     RngLoaderMixin,

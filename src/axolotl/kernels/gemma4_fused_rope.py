@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
 """Fused RMSNorm + (partial) RoPE Triton kernel for Gemma 4 / Qwen3 Q/K paths."""
 
 import math
@@ -13,6 +17,8 @@ from liger_kernel.ops.utils import (
 )
 from liger_kernel.utils import is_npu_available
 from torch.library import triton_op, wrap_triton
+
+from axolotl.kernels.gemma4_rope_autotune import prune_rope_bwd_configs
 
 if compare_version("triton", operator.ge, "3.0.0") and not is_npu_available():
     try:
@@ -149,9 +155,11 @@ _BWD_AUTOTUNE_CONFIGS = [
 ]
 
 
-# num_warps/num_stages optima for the latency-bound row loop vary by GPU; key on
-# n_cols (head_dim) so head_dim=128 and 256 each get their own tuned config.
-@triton.autotune(configs=_BWD_AUTOTUNE_CONFIGS, key=["n_cols"])
+@triton.autotune(
+    configs=_BWD_AUTOTUNE_CONFIGS,
+    key=["n_cols", "n_rot", "HAS_WEIGHT", "UNIT_OFFSET"],
+    prune_configs_by={"early_config_prune": prune_rope_bwd_configs},
+)
 @triton.jit
 def _rms_norm_rope_backward_kernel(
     dY_ptr,

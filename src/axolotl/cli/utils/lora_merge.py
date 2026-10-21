@@ -4,6 +4,8 @@ import math
 import os
 import re
 import shutil
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
@@ -410,6 +412,33 @@ def _build_layer_type_map(
         f"({sum(1 for v in layer_types.values() if 'Conv' in v)} conv layers)"
     )
     return layer_types
+
+
+def _bnb_quantized_modules(
+    base_model_path: Path,
+    skip_modules: Optional[list[str]],
+    trust_remote_code: bool = False,
+) -> Optional[set[str]]:
+    """Linears transformers' bitsandbytes loader quantizes; None if the model can't be built."""
+    import torch.nn as nn
+    from transformers.initialization import no_tie_weights
+    from transformers.quantizers.base import HfQuantizer
+    from transformers.quantizers.quantizers_utils import should_convert_module
+
+    # from_pretrained quantizes before tying weights, which moves the last-module skip
+    with no_tie_weights():
+        model = _build_meta_model(base_model_path, trust_remote_code=trust_remote_code)
+    if model is None:
+        return None
+
+    not_convert = HfQuantizer.get_modules_to_not_convert(
+        model, skip_modules, model._keep_in_fp32_modules
+    )
+    return {
+        name
+        for name, module in model.named_modules()
+        if type(module) is nn.Linear and should_convert_module(name, not_convert)
+    }
 
 
 def _simulate_nf4_roundtrip(
@@ -856,6 +885,66 @@ def get_model_shards(model_path: Path) -> list[Path]:
             break
 
     return sorted(shards)
+
+
+def _read_shard(shard_path: Path) -> tuple[Dict[str, torch.Tensor], dict]:
+    if shard_path.suffix != ".safetensors":
+        tensors = torch.load(  # nosec B614: loading trusted model weights
+            shard_path, map_location="cpu", weights_only=True
+        )
+        return tensors, {}
+    with safetensors.safe_open(shard_path, framework="pt", device="cpu") as f:
+        metadata = (f.metadata() if hasattr(f, "metadata") else None) or {}
+        return {key: f.get_tensor(key) for key in f.keys()}, metadata
+
+
+def _write_shard(
+    tensors: Dict[str, torch.Tensor],
+    path: Path,
+    metadata: dict,
+    use_safetensors: bool,
+) -> None:
+    if use_safetensors:
+        safetensors.torch.save_file(tensors, path, metadata=metadata)
+    else:
+        torch.save(tensors, path)
+
+
+def _prefetched_shards(model_shards: list[Path]):
+    """Yield ``(path, tensors, metadata)`` while the next shard loads in the background.
+
+    safetensors reads release the GIL, so the read overlaps the caller's merge."""
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="merge-read") as pool:
+        next_read = pool.submit(_read_shard, model_shards[0])
+        for idx, shard_path in enumerate(model_shards):
+            shard_tensors, metadata = next_read.result()
+            if idx + 1 < len(model_shards):
+                next_read = pool.submit(_read_shard, model_shards[idx + 1])
+            yield shard_path, shard_tensors, metadata
+
+
+class _ShardWriteQueue:
+    """Writes merged shards on a background thread, one in flight, so the write overlaps
+    the next shard's read and merge; ``submit`` waits on the previous write."""
+
+    def __init__(self):
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="merge-write")
+        self._pending = None
+
+    def submit(self, *args) -> None:
+        self.drain()
+        self._pending = self._pool.submit(_write_shard, *args)
+
+    def drain(self) -> None:
+        pending, self._pending = self._pending, None
+        if pending is not None:
+            pending.result()
+
+    def close(self) -> None:
+        try:
+            self.drain()
+        finally:
+            self._pool.shutdown(wait=True)
 
 
 def copy_non_model_files(
@@ -1539,7 +1628,11 @@ class _Nvfp4ExpertMergeWriter:
         scale_mode: str = "reuse",
         param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
         weight_renamings: Optional[Dict[str, str]] = None,
+        expert_chunk: int = 32,
     ):
+        if expert_chunk < 1:
+            raise ValueError(f"expert_chunk must be >= 1, got {expert_chunk}")
+        self.expert_chunk = expert_chunk
         self.lora_state = lora_state
         self.param_wrapper_map = param_wrapper_map
         self.weight_renamings = weight_renamings
@@ -1658,7 +1751,9 @@ class _Nvfp4ExpertMergeWriter:
 
         dev = self._dev
         fresh = self.scale_mode == "fresh"
+        pts_all: list = []
         pts_fused = None
+        fold: list = []
         if fresh:
             # mirror fuse_nvfp4_experts: one per-expert pts (max across projs), each
             # proj's ratio folded into its block scales -> dequant here == the fused
@@ -1675,83 +1770,130 @@ class _Nvfp4ExpertMergeWriter:
             pts_fused = pts_all[0]
             for pts_i in pts_all[1:]:
                 pts_fused = torch.maximum(pts_fused, pts_i)
-            from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
-
-            per_proj = []
-            for i, mp in enumerate(members):
-                qd = torch.stack([projs[mp][e]["weight"].to(dev) for e in range(E)])
-                sc = torch.stack(
-                    [projs[mp][e]["weight_scale"].to(dev) for e in range(E)]
-                )
-                if not torch.allclose(pts_all[i], pts_fused):
-                    sc = (sc.float() * (pts_all[i] / pts_fused)).to(torch.float8_e4m3fn)
-                nv = NVFP4Tensor(qd, sc, 16, torch.bfloat16, per_tensor_scale=pts_fused)
-                per_proj.append(nv.dequantize(torch.bfloat16))
-        else:
-            per_proj = [
-                torch.stack(
-                    [
-                        _dequant_nvfp4(
-                            projs[mp][e]["weight"],
-                            projs[mp][e]["weight_scale"],
-                            projs[mp][e]["weight_scale_2"],
-                            dev,
-                        )
-                        for e in range(E)
-                    ],
-                    dim=0,
-                )
-                for mp in members
-            ]
-        fused = per_proj[0] if len(per_proj) == 1 else torch.cat(per_proj, dim=1)
-        del per_proj
+            # decided over all experts so a chunk folds exactly when the whole group would
+            fold = [not torch.allclose(pts_i, pts_fused) for pts_i in pts_all]
         target = _param_wrapper_target(
             fused_key, self.param_wrapper_map, self.weight_renamings
         )
-        delta = _build_peft_layer_and_get_delta(
-            lora_a.to(dev),
-            lora_b.to(dev),
-            self.lora_config_dict,
-            fused,
-            is_param_wrapper=True,
-            is_transposed=target.is_transposed if target else None,
-            lora_alpha_override=target.alpha if target else None,
-            canonical_fp32=fresh,
+        r = lora_a.shape[0] // E
+        a_3d = lora_a.reshape(E, r, lora_a.shape[-1])
+        b_3d = lora_b.reshape(lora_b.shape[0], r, E)
+        fused_out = (
+            torch.empty((E, sum(row_counts), k_dim), dtype=torch.bfloat16)
+            if self.dequant
+            else None
         )
-        merged_t = (fused.to(torch.float32) + delta.to(torch.float32)).to(
-            torch.bfloat16
-        )
-        if not fresh and not self.dequant:
-            self._delta_mag_sum += float(delta.float().abs().mean())
-            self._base_mag_sum += float(fused.float().abs().mean())
-        del fused, delta
+        # full-group fp32 intermediates (dequant, PEFT's weight clone, delta, sum) peak
+        # near 100 GB for a 256-expert gate_up; every step is per-expert, so chunk them
+        for e0 in range(0, E, self.expert_chunk):
+            e1 = min(E, e0 + self.expert_chunk)
+            fused = self._dequant_chunk(
+                projs, members, e0, e1, pts_all, pts_fused, fold
+            )
+            delta = _build_peft_layer_and_get_delta(
+                a_3d[e0:e1].reshape(-1, a_3d.shape[-1]).to(dev),
+                b_3d[:, :, e0:e1].reshape(b_3d.shape[0], -1).to(dev),
+                self.lora_config_dict,
+                fused,
+                is_param_wrapper=True,
+                is_transposed=target.is_transposed if target else None,
+                lora_alpha_override=target.alpha if target else None,
+                canonical_fp32=fresh,
+            )
+            merged_t = (fused.to(torch.float32) + delta.to(torch.float32)).to(
+                torch.bfloat16
+            )
+            if not fresh and not self.dequant:
+                weight = (e1 - e0) / E
+                self._delta_mag_sum += float(delta.float().abs().mean()) * weight
+                self._base_mag_sum += float(fused.float().abs().mean()) * weight
+            del fused, delta
 
-        if self.dequant:
-            emitted[fused_key] = merged_t.detach().cpu()
-            return emitted, 1
+            if fused_out is not None:
+                fused_out[e0:e1].copy_(merged_t)
+                continue
 
-        start = 0
-        for mp, rows in zip(members, row_counts, strict=True):
-            part = merged_t[:, start : start + rows, :]
-            start += rows
-            for e in range(E):
-                leaves = projs[mp][e]
-                wkey = f"{prefix}.{e}.{mp}.weight"
-                sc2 = leaves["weight_scale_2"]
-                if pts_fused is not None:
-                    # clone: gate/up share pts_fused storage, safetensors refuses aliases
-                    sc2 = pts_fused[e].reshape(sc2.shape).to(sc2.dtype).cpu().clone()
-                requant = _requant_by_format(
-                    "nvfp4",
-                    part[e],
-                    {"_scale": leaves["weight_scale"], "_scale_2": sc2},
-                    dev,
-                    nvfp4_scale_mode=self.scale_mode,
+            start = 0
+            for mp, rows in zip(members, row_counts, strict=True):
+                part = merged_t[:, start : start + rows, :]
+                start += rows
+                emitted.update(
+                    self._requant_chunk(projs, prefix, mp, part, e0, e1, pts_fused)
                 )
-                emitted[wkey] = requant.pop("")
-                for suf, t in requant.items():
-                    emitted[wkey + suf] = t
+            del merged_t
+
+        if fused_out is not None:
+            emitted[fused_key] = fused_out
         return emitted, 1
+
+    def _dequant_chunk(self, projs, members, e0, e1, pts_all, pts_fused, fold):
+        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+        dev = self._dev
+        per_proj = []
+        for i, mp in enumerate(members):
+            if pts_fused is None:
+                per_proj.append(
+                    torch.stack(
+                        [
+                            _dequant_nvfp4(
+                                projs[mp][e]["weight"],
+                                projs[mp][e]["weight_scale"],
+                                projs[mp][e]["weight_scale_2"],
+                                dev,
+                            )
+                            for e in range(e0, e1)
+                        ],
+                        dim=0,
+                    )
+                )
+                continue
+            qd = torch.stack([projs[mp][e]["weight"].to(dev) for e in range(e0, e1)])
+            sc = torch.stack(
+                [projs[mp][e]["weight_scale"].to(dev) for e in range(e0, e1)]
+            )
+            pts = pts_fused[e0:e1]
+            if fold[i]:
+                sc = (sc.float() * (pts_all[i][e0:e1] / pts)).to(torch.float8_e4m3fn)
+            nv = NVFP4Tensor(qd, sc, 16, torch.bfloat16, per_tensor_scale=pts)
+            per_proj.append(nv.dequantize(torch.bfloat16))
+        return per_proj[0] if len(per_proj) == 1 else torch.cat(per_proj, dim=1)
+
+    def _requant_chunk(self, projs, prefix, mp, part, e0, e1, pts_fused):
+        from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+            quantize_nvfp4_merge,
+        )
+
+        dev = self._dev
+        sc2_in = [projs[mp][e]["weight_scale_2"] for e in range(e0, e1)]
+        if pts_fused is not None:
+            pts_cpu = pts_fused[e0:e1].reshape(-1).cpu()
+            # clone: gate/up share pts_fused, safetensors refuses aliased tensors
+            sc2_out = [
+                pts_cpu[i].reshape(sc2.shape).to(sc2.dtype).clone()
+                for i, sc2 in enumerate(sc2_in)
+            ]
+            pts = torch.stack([s.float().reshape(()) for s in sc2_out]).to(dev)
+            packed, scale = quantize_nvfp4_merge(part.float(), pts, scale_mode="fresh")
+        else:
+            sc2_out = sc2_in
+            pts = torch.stack([s.float().reshape(()) for s in sc2_in]).to(dev)
+            base_sc = torch.stack(
+                [projs[mp][e]["weight_scale"].to(dev) for e in range(e0, e1)]
+            )
+            packed, scale = quantize_nvfp4_merge(
+                part.float(), pts, scale_mode="reuse", base_block_scale=base_sc
+            )
+        # one transfer per chunk; per-expert rows are disjoint views, which safetensors accepts
+        packed = packed.cpu()
+        scale = scale.cpu()
+        emitted = {}
+        for i, e in enumerate(range(e0, e1)):
+            wkey = f"{prefix}.{e}.{mp}.weight"
+            emitted[wkey] = packed[i]
+            emitted[wkey + "_scale"] = scale[i]
+            emitted[wkey + "_scale_2"] = sc2_out[i]
+        return emitted
 
     def assert_drained(self) -> None:
         if self.pending:
@@ -1950,6 +2092,7 @@ def _merge_tensor_with_lora(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    nf4_modules: Optional[set[str]] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -2004,6 +2147,11 @@ def _merge_tensor_with_lora(
                 simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower()
             ),
             skips=nf4_skips if nf4_skips is not None else {"lm_head", "embed_out"},
+        )
+    elif nf4_modules is not None:
+        runtime_key = _runtime_key(key, weight_renamings, layer_type_map)
+        do_nf4 = runtime_key.removesuffix(".weight") in nf4_modules or (
+            simulate_nf4_experts and tensor.ndim >= 3 and "expert" in key.lower()
         )
 
     if lora_a is not None and lora_b is not None:
@@ -2296,6 +2444,7 @@ def _fuse_and_unfuse_with_merge(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    nf4_modules: Optional[set[str]] = None,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
     layer_type_map: Optional[Dict[str, str]] = None,
@@ -2501,6 +2650,7 @@ def _fuse_and_unfuse_with_merge(
                 nf4_backend=nf4_backend,
                 nf4_skips=nf4_skips,
                 nf4_dtype=nf4_dtype,
+                nf4_modules=nf4_modules,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
                 layer_type_map=layer_type_map,
@@ -2538,11 +2688,13 @@ def merge_lora_sharded_efficient(
     nf4_backend: str = "bitsandbytes",
     nf4_skips: Optional[set[str]] = None,
     nf4_dtype: Optional[torch.dtype] = None,
+    bnb_skip_modules: Optional[list[str]] = None,
     staged_nf4: bool = False,
     trust_remote_code: bool = False,
     dequant: bool = False,
     override_quantizer: bool = False,
     revision: Optional[str] = None,
+    shard_sink: Optional[Callable[[dict[str, torch.Tensor], Path, dict], None]] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -2556,12 +2708,16 @@ def merge_lora_sharded_efficient(
         adapter (encoder version drift); see ``_resolve_nvfp4_scale_mode``.
 
     Args:
+        shard_sink: Optional writer receiving each merged CPU shard, its destination,
+            and safetensors metadata. Replaces the default shard write.
         nf4_backend: NF4 implementation used for the training base.
         nf4_skips: Resolved module exclusions from ``nf4_skip_modules``. When provided,
             weights are selected the way the staged loader selected them (Linear
-            weights and fused experts outside the exclusions); when None, the
-            pre-existing ``_should_nf4_roundtrip`` heuristic is kept unchanged.
+            weights and fused experts outside the exclusions); when None on
+            bitsandbytes, transformers' own Linear4bit selection is reproduced.
         nf4_dtype: Training weight dtype used before quantization.
+        bnb_skip_modules: ``llm_int8_skip_modules`` the bitsandbytes training load used;
+            None means transformers' default skips.
         staged_nf4: Training used CPU-staged NF4, which has no legacy merge fallback.
         simulate_nf4: Apply NF4 roundtrip to eligible base weight tensors (for QLoRA)
         simulate_nf4_experts: Apply NF4 roundtrip only to MoE expert tensors
@@ -2644,6 +2800,16 @@ def merge_lora_sharded_efficient(
         raise ValueError(
             "torchao NF4 merge requires model introspection to identify quantized Linear weights"
         )
+    nf4_modules = None
+    if simulate_nf4 and nf4_backend == "bitsandbytes" and nf4_skips is None:
+        nf4_modules = _bnb_quantized_modules(
+            base_model_path, bnb_skip_modules, trust_remote_code
+        )
+        if nf4_modules is None:
+            LOG.warning(
+                "Could not build the model to find its bitsandbytes-quantized "
+                "modules; NF4-simulating every >=2-D tensor instead"
+            )
     unsupported_methods = []
 
     # Check for AdaLoRA (Adaptive LoRA)
@@ -2833,238 +2999,238 @@ def merge_lora_sharded_efficient(
     total_size_bytes = 0
     total_parameters = 0
 
-    for shard_path in tqdm(model_shards, desc="Merging shards"):
-        merged_tensors = {}
-        metadata = {}
+    write_queue = _ShardWriteQueue()
+    try:
+        for shard_path, shard_tensors, metadata in tqdm(
+            _prefetched_shards(model_shards),
+            total=len(model_shards),
+            desc="Merging shards",
+        ):
+            merged_tensors = {}
+            total_tensors += len(shard_tensors)
 
-        # Load all tensors from the shard
-        if shard_path.suffix == ".safetensors":
-            with safetensors.safe_open(shard_path, framework="pt", device="cpu") as f:
-                if hasattr(f, "metadata") and f.metadata():
-                    metadata = f.metadata()
-                shard_tensors = {key: f.get_tensor(key) for key in f.keys()}
-        else:
-            shard_tensors = torch.load(  # nosec B614: loading trusted model weights
-                shard_path, map_location="cpu", weights_only=True
+            from axolotl.cli.utils.native_nvfp4_merge import (
+                has_native_nvfp4_weights,
+                merge_native_nvfp4_shard,
             )
 
-        total_tensors += len(shard_tensors)
+            native_present = has_native_nvfp4_weights(metadata)
+            native_processed: set[str] = set()
 
-        from axolotl.cli.utils.native_nvfp4_merge import (
-            has_native_nvfp4_weights,
-            merge_native_nvfp4_shard,
-        )
-
-        native_present = has_native_nvfp4_weights(metadata)
-        native_processed: set[str] = set()
-
-        def merge_native_dense(weight, key, processed=native_processed):
-            result, did_merge = _merge_tensor_with_lora(
-                weight,
-                key,
-                lora_state,
-                scale,
-                lora_config_dict,
-                device,
-                use_dora=use_dora,
-                weight_renamings=weight_renamings,
-                layer_type_map=layer_type_map,
-                param_wrapper_map=param_wrapper_map,
-                canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
-            )
-            if did_merge:
-                processed.add(key)
-            return result, did_merge
-
-        shard_tensors, metadata, native_merged = merge_native_nvfp4_shard(
-            shard_tensors,
-            metadata,
-            merge_native_dense,
-            dequant=dequant,
-            quantization_device=device,
-            merge_aware_metadata=lora_config_dict.get("nvfp4_merge_aware"),
-        )
-        merged_count += native_merged
-        left_quantized = left_quantized or has_native_nvfp4_weights(metadata)
-        block_fp8_dequantized = block_fp8_dequantized or (
-            native_present and dequant and not has_native_nvfp4_weights(metadata)
-        )
-
-        # Per-expert unfused NVFP4 experts with a fused adapter: the writer claims those tensors
-        # (buffered across shard boundaries) and emits the merged per-expert keys itself, so the
-        # dequant/fuse/per-tensor passes below never see them.
-        if expert_writer is not None:
-            shard_tensors, expert_emitted, expert_merged = expert_writer.consume(
-                shard_tensors
-            )
-            merged_tensors.update(expert_emitted)
-            merged_count += expert_merged
-
-        # Step 0: dequantize quantized weights so the LoRA delta folds into the TRUE weight (a raw read
-        # misses the block scale). Default (dequant=False) touches only LoRA-targeted weights and plans
-        # to re-quantize them back to their original format after the fold; dequant=True dequants all.
-        shard_tensors, _shard_deq, _shard_left, requant_plan = (
-            _dequantize_quantized_shard(
-                shard_tensors,
-                device,
-                lora_state=lora_state,
-                weight_renamings=weight_renamings,
-                dequant_all=dequant,
-                param_wrapper_map=param_wrapper_map,
-                bnb_extra=bnb_split_components,
-            )
-        )
-        block_fp8_dequantized = block_fp8_dequantized or _shard_deq
-        left_quantized = left_quantized or _shard_left
-
-        # Step 1: Handle fused weight conversions (MoE experts) if applicable
-        fused_keys: set = set()
-        if weight_converters:
-            shard_tensors, fused_merged, fused_keys = _fuse_and_unfuse_with_merge(
-                shard_tensors,
-                weight_converters,
-                lora_state,
-                scale,
-                lora_config_dict,
-                device,
-                simulate_nf4=simulate_nf4,
-                simulate_nf4_experts=simulate_nf4_experts,
-                nf4_blocksize=nf4_blocksize,
-                nf4_double_quant=nf4_double_quant,
-                nf4_backend=nf4_backend,
-                nf4_skips=nf4_skips,
-                nf4_dtype=nf4_dtype,
-                use_dora=use_dora,
-                weight_renamings=weight_renamings,
-                layer_type_map=layer_type_map,
-                param_wrapper_map=param_wrapper_map,
-                expected_num_experts=expected_num_experts,
-                carry=fused_expert_carry,
-                canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
-            )
-            merged_count += fused_merged
-
-        # Step 2: Merge remaining (non-fused) tensors with LoRA
-        # Skip keys already processed by fuse/unfuse to avoid double NF4 roundtrip
-        for key, tensor in shard_tensors.items():
-            if key in fused_keys or key in native_processed:
-                merged_tensors[key] = tensor.detach().cpu()
-                continue
-            # Full-weight override (modules_to_save / resized embed_tokens+lm_head): replace, don't
-            # fold LoRA. Track a vocab resize so the merged config.json stays consistent.
-            override = _find_full_override(lora_state, key)
-            if override is not None:
-                merged_tensors[key] = override.to(tensor.dtype).detach().cpu()
-                merged_count += 1
-                # a resized vocab shows up as a row-count change on embed_tokens AND/OR lm_head
-                # (they may be untied); catch either so the merged config.json stays consistent.
-                if (
-                    key.endswith(("embed_tokens.weight", "lm_head.weight"))
-                    and override.shape[0] != tensor.shape[0]
-                ):
-                    resized_vocab = int(override.shape[0])
-                continue
-            if key in token_row_merges:
-                merged_tensor = tensor.clone()
-                for values, indices, _ in token_row_merges[key]:
-                    replacement = values.to(
-                        device=merged_tensor.device, dtype=merged_tensor.dtype
-                    )
-                    if not torch.isfinite(replacement).all():
-                        raise ValueError(
-                            f"Trainable token payload becomes non-finite in {key} dtype"
-                        )
-                    merged_tensor.index_copy_(
-                        0,
-                        torch.tensor(indices, device=merged_tensor.device),
-                        replacement,
-                    )
-                    merged_count += 1
-                merged_tensors[key] = merged_tensor.detach().cpu()
-                continue
-            merged_tensor, was_merged = _merge_tensor_with_lora(
-                tensor,
-                key,
-                lora_state,
-                scale,
-                lora_config_dict,
-                device,
-                simulate_nf4=simulate_nf4,
-                simulate_nf4_experts=simulate_nf4_experts,
-                nf4_blocksize=nf4_blocksize,
-                nf4_double_quant=nf4_double_quant,
-                nf4_backend=nf4_backend,
-                nf4_skips=nf4_skips,
-                nf4_dtype=nf4_dtype,
-                use_dora=use_dora,
-                weight_renamings=weight_renamings,
-                layer_type_map=layer_type_map,
-                param_wrapper_map=param_wrapper_map,
-                canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
-            )
-            merged_tensors[key] = merged_tensor
-            if was_merged:
-                merged_count += 1
-
-        # Step 3 (format-preserving): re-quantize each merged weight back to its original format
-        # (fresh block scales) so the output dtype matches the input (fp8 -> fp8, nvfp4 -> nvfp4).
-        for key, (fmt, scales) in requant_plan.items():
-            if key not in merged_tensors:
-                continue
-            try:
-                requant = _requant_by_format(
-                    fmt,
-                    merged_tensors[key],
-                    scales,
+            def merge_native_dense(weight, key, processed=native_processed):
+                result, did_merge = _merge_tensor_with_lora(
+                    weight,
+                    key,
+                    lora_state,
+                    scale,
+                    lora_config_dict,
                     device,
-                    nvfp4_scale_mode=nvfp4_scale_mode,
+                    use_dora=use_dora,
+                    weight_renamings=weight_renamings,
+                    layer_type_map=layer_type_map,
+                    param_wrapper_map=param_wrapper_map,
+                    canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
                 )
-            except (
-                Exception
-            ) as ex:  # torchao missing etc. -> keep the bf16 merge for this weight
-                LOG.warning("%s re-quant skipped for %s: %s", fmt, key, ex)
-                left_quantized = True
+                if did_merge:
+                    processed.add(key)
+                return result, did_merge
+
+            shard_tensors, metadata, native_merged = merge_native_nvfp4_shard(
+                shard_tensors,
+                metadata,
+                merge_native_dense,
+                dequant=dequant,
+                quantization_device=device,
+                merge_aware_metadata=lora_config_dict.get("nvfp4_merge_aware"),
+            )
+            merged_count += native_merged
+            left_quantized = left_quantized or has_native_nvfp4_weights(metadata)
+            block_fp8_dequantized = block_fp8_dequantized or (
+                native_present and dequant and not has_native_nvfp4_weights(metadata)
+            )
+
+            # Per-expert unfused NVFP4 experts with a fused adapter: the writer claims those tensors
+            # (buffered across shard boundaries) and emits the merged per-expert keys itself, so the
+            # dequant/fuse/per-tensor passes below never see them.
+            if expert_writer is not None:
+                shard_tensors, expert_emitted, expert_merged = expert_writer.consume(
+                    shard_tensors
+                )
+                merged_tensors.update(expert_emitted)
+                merged_count += expert_merged
+
+            # Step 0: dequantize quantized weights so the LoRA delta folds into the TRUE weight (a raw read
+            # misses the block scale). Default (dequant=False) touches only LoRA-targeted weights and plans
+            # to re-quantize them back to their original format after the fold; dequant=True dequants all.
+            shard_tensors, _shard_deq, _shard_left, requant_plan = (
+                _dequantize_quantized_shard(
+                    shard_tensors,
+                    device,
+                    lora_state=lora_state,
+                    weight_renamings=weight_renamings,
+                    dequant_all=dequant,
+                    param_wrapper_map=param_wrapper_map,
+                    bnb_extra=bnb_split_components,
+                )
+            )
+            block_fp8_dequantized = block_fp8_dequantized or _shard_deq
+            left_quantized = left_quantized or _shard_left
+
+            # Step 1: Handle fused weight conversions (MoE experts) if applicable
+            fused_keys: set = set()
+            if weight_converters:
+                shard_tensors, fused_merged, fused_keys = _fuse_and_unfuse_with_merge(
+                    shard_tensors,
+                    weight_converters,
+                    lora_state,
+                    scale,
+                    lora_config_dict,
+                    device,
+                    simulate_nf4=simulate_nf4,
+                    simulate_nf4_experts=simulate_nf4_experts,
+                    nf4_blocksize=nf4_blocksize,
+                    nf4_double_quant=nf4_double_quant,
+                    nf4_backend=nf4_backend,
+                    nf4_skips=nf4_skips,
+                    nf4_dtype=nf4_dtype,
+                    nf4_modules=nf4_modules,
+                    use_dora=use_dora,
+                    weight_renamings=weight_renamings,
+                    layer_type_map=layer_type_map,
+                    param_wrapper_map=param_wrapper_map,
+                    expected_num_experts=expected_num_experts,
+                    carry=fused_expert_carry,
+                    canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
+                )
+                merged_count += fused_merged
+
+            # Step 2: Merge remaining (non-fused) tensors with LoRA
+            # Skip keys already processed by fuse/unfuse to avoid double NF4 roundtrip
+            for key, tensor in shard_tensors.items():
+                if key in fused_keys or key in native_processed:
+                    merged_tensors[key] = tensor.detach().cpu()
+                    continue
+                # Full-weight override (modules_to_save / resized embed_tokens+lm_head): replace, don't
+                # fold LoRA. Track a vocab resize so the merged config.json stays consistent.
+                override = _find_full_override(lora_state, key)
+                if override is not None:
+                    merged_tensors[key] = override.to(tensor.dtype).detach().cpu()
+                    merged_count += 1
+                    # a resized vocab shows up as a row-count change on embed_tokens AND/OR lm_head
+                    # (they may be untied); catch either so the merged config.json stays consistent.
+                    if (
+                        key.endswith(("embed_tokens.weight", "lm_head.weight"))
+                        and override.shape[0] != tensor.shape[0]
+                    ):
+                        resized_vocab = int(override.shape[0])
+                    continue
+                if key in token_row_merges:
+                    merged_tensor = tensor.clone()
+                    for values, indices, _ in token_row_merges[key]:
+                        replacement = values.to(
+                            device=merged_tensor.device, dtype=merged_tensor.dtype
+                        )
+                        if not torch.isfinite(replacement).all():
+                            raise ValueError(
+                                f"Trainable token payload becomes non-finite in {key} dtype"
+                            )
+                        merged_tensor.index_copy_(
+                            0,
+                            torch.tensor(indices, device=merged_tensor.device),
+                            replacement,
+                        )
+                        merged_count += 1
+                    merged_tensors[key] = merged_tensor.detach().cpu()
+                    continue
+                merged_tensor, was_merged = _merge_tensor_with_lora(
+                    tensor,
+                    key,
+                    lora_state,
+                    scale,
+                    lora_config_dict,
+                    device,
+                    simulate_nf4=simulate_nf4,
+                    simulate_nf4_experts=simulate_nf4_experts,
+                    nf4_blocksize=nf4_blocksize,
+                    nf4_double_quant=nf4_double_quant,
+                    nf4_backend=nf4_backend,
+                    nf4_skips=nf4_skips,
+                    nf4_dtype=nf4_dtype,
+                    nf4_modules=nf4_modules,
+                    use_dora=use_dora,
+                    weight_renamings=weight_renamings,
+                    layer_type_map=layer_type_map,
+                    param_wrapper_map=param_wrapper_map,
+                    canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
+                )
+                merged_tensors[key] = merged_tensor
+                if was_merged:
+                    merged_count += 1
+
+            # Step 3 (format-preserving): re-quantize each merged weight back to its original format
+            # (fresh block scales) so the output dtype matches the input (fp8 -> fp8, nvfp4 -> nvfp4).
+            for key, (fmt, scales) in requant_plan.items():
+                if key not in merged_tensors:
+                    continue
+                try:
+                    requant = _requant_by_format(
+                        fmt,
+                        merged_tensors[key],
+                        scales,
+                        device,
+                        nvfp4_scale_mode=nvfp4_scale_mode,
+                    )
+                except (
+                    Exception
+                ) as ex:  # torchao missing etc. -> keep the bf16 merge for this weight
+                    LOG.warning("%s re-quant skipped for %s: %s", fmt, key, ex)
+                    left_quantized = True
+                    continue
+                merged_tensors[key] = requant.pop("")
+                for suf, t in requant.items():
+                    merged_tensors[key + suf] = t
+
+            output_shard_path = output_path / shard_path.name
+            merged_tensors = {k: v.detach().cpu() for k, v in merged_tensors.items()}
+
+            if not merged_tensors:
+                # safetensors writes an invalid header for an empty tensor dict
+                LOG.info(
+                    "%s holds only expert tensors carried to a later shard; writing no file",
+                    shard_path.name,
+                )
+                del merged_tensors, shard_tensors
+                gc.collect()
                 continue
-            merged_tensors[key] = requant.pop("")
-            for suf, t in requant.items():
-                merged_tensors[key + suf] = t
 
-        output_shard_path = output_path / shard_path.name
-        merged_tensors = {k: v.detach().cpu() for k, v in merged_tensors.items()}
-
-        if not merged_tensors:
-            # safetensors writes an invalid header for an empty tensor dict
-            LOG.info(
-                "%s holds only expert tensors carried to a later shard; writing no file",
-                shard_path.name,
-            )
-            del merged_tensors, shard_tensors
-            gc.collect()
-            continue
-
-        if safe_tensors:
-            if not str(output_shard_path).endswith(".safetensors"):
-                output_shard_path = output_path / (shard_path.stem + ".safetensors")
-            safetensors.torch.save_file(
-                merged_tensors, output_shard_path, metadata=metadata
-            )
-        else:
-            if shard_path.suffix == ".safetensors":
-                safetensors.torch.save_file(
-                    merged_tensors, output_shard_path, metadata=metadata
-                )
+            if shard_sink is not None:
+                shard_sink(merged_tensors, output_shard_path, metadata)
             else:
-                torch.save(merged_tensors, output_shard_path)
+                if safe_tensors and not str(output_shard_path).endswith(".safetensors"):
+                    output_shard_path = output_path / (shard_path.stem + ".safetensors")
+                write_queue.submit(
+                    merged_tensors,
+                    output_shard_path,
+                    metadata,
+                    safe_tensors or shard_path.suffix == ".safetensors",
+                )
 
-        for tensor_key, tensor in merged_tensors.items():
-            weight_map[tensor_key] = output_shard_path.name
-            total_parameters += tensor.numel()
-            total_size_bytes += tensor.numel() * tensor.element_size()
+            for tensor_key, tensor in merged_tensors.items():
+                weight_map[tensor_key] = output_shard_path.name
+                total_parameters += tensor.numel()
+                total_size_bytes += tensor.numel() * tensor.element_size()
 
-        del merged_tensors, shard_tensors
-        if device != "cpu" and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
+            del merged_tensors, shard_tensors
+            if device != "cpu" and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+    except BaseException:
+        try:
+            write_queue.close()
+        except Exception:  # pylint: disable=broad-exception-caught
+            LOG.warning("Background shard write also failed", exc_info=True)
+        raise
+    write_queue.close()
 
     if fused_expert_carry is not None:
         fused_expert_carry.assert_drained()
@@ -3111,6 +3277,8 @@ def merge_lora_sharded_efficient(
         _update_config_vocab_size(output_path, resized_vocab)
 
     if merged_count == 0:
+        if shard_sink is not None:
+            raise ValueError("No LoRA weights matched the base model")
         LOG.warning(
             "No LoRA weights were matched to base model tensors. "
             "This may indicate a key name mismatch between the checkpoint format "

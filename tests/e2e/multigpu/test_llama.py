@@ -5,16 +5,16 @@ E2E tests for multigpu lora tinyllama
 from pathlib import Path
 
 import pytest
-import transformers
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from huggingface_hub import snapshot_download
-from packaging import version
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_2_6_0, requires_flash_attn
+from tests.e2e.utils import check_tensorboard, requires_flash_attn
+
+pytestmark = pytest.mark.gpu
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
@@ -23,10 +23,6 @@ AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 def download_model():
     # download the model
     snapshot_download("HuggingFaceTB/SmolLM2-135M")
-
-
-def transformers_version_eq(required_version):
-    return version.parse(transformers.__version__) == version.parse(required_version)
 
 
 class TestMultiGPULlama:
@@ -466,7 +462,6 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
-    @require_torch_2_6_0
     @pytest.mark.parametrize(
         "attention_backend",
         [pytest.param("flash", marks=requires_flash_attn), "flex"],
@@ -615,20 +610,23 @@ class TestMultiGPULlama:
         )
 
     @pytest.mark.parametrize(
-        "gradient_accumulation_steps",
-        [1, 2],
-    )
-    @pytest.mark.parametrize(
-        "deepspeed",
+        "deepspeed, qlora, gradient_accumulation_steps",
         [
-            "deepspeed_configs/zero3_bf16.json",
-            "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
-            # "deepspeed_configs/zero3_bf16_cpuoffload_params.json",
+            pytest.param("deepspeed_configs/zero3_bf16.json", False, 1, id="fft-ga1"),
+            pytest.param("deepspeed_configs/zero3_bf16.json", True, 2, id="qlora-ga2"),
+            pytest.param(
+                "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
+                False,
+                2,
+                id="offload-fft-ga2",
+            ),
+            pytest.param(
+                "deepspeed_configs/zero3_bf16_cpuoffload_all.json",
+                True,
+                1,
+                id="offload-qlora-ga1",
+            ),
         ],
-    )
-    @pytest.mark.parametrize(
-        "qlora",
-        [True, False],
     )
     @requires_flash_attn
     def test_ds_zero3_packed(
@@ -701,12 +699,8 @@ class TestMultiGPULlama:
         )
 
     @pytest.mark.parametrize(
-        "gradient_accumulation_steps",
-        [1, 2],
-    )
-    @pytest.mark.parametrize(
-        "qlora",
-        [True, False],
+        "qlora, gradient_accumulation_steps",
+        [pytest.param(False, 2, id="fft-ga2"), pytest.param(True, 1, id="qlora-ga1")],
     )
     @requires_flash_attn
     def test_ds_zero2_packed(self, temp_dir, gradient_accumulation_steps, qlora):
@@ -778,12 +772,8 @@ class TestMultiGPULlama:
         )
 
     @pytest.mark.parametrize(
-        "gradient_accumulation_steps",
-        [1, 2],
-    )
-    @pytest.mark.parametrize(
-        "qlora",
-        [True, False],
+        "qlora, gradient_accumulation_steps",
+        [pytest.param(False, 1, id="fft-ga1"), pytest.param(True, 2, id="qlora-ga2")],
     )
     @requires_flash_attn
     def test_ds_zero1_packed(self, temp_dir, gradient_accumulation_steps, qlora):

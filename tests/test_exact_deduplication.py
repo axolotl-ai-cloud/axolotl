@@ -11,9 +11,8 @@ from unittest.mock import patch
 import pytest
 from datasets import Dataset
 
-from axolotl.loaders import load_processor, load_tokenizer
-from axolotl.utils.config import normalize_config, validate_config
-from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
+from axolotl.loaders import load_tokenizer
+from axolotl.utils.data import prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 
@@ -193,15 +192,21 @@ class TestDeduplicateIndividualFunctions(unittest.TestCase):
         verify_deduplication(train_dataset, expected_dataset_train, "train_dataset")
         verify_deduplication(eval_dataset, expected_dataset_eval, "eval_dataset")
 
+    def test_image_datasets_are_not_deduplicated(self):
+        dataset = Dataset.from_dict({"prompt": ["a", "a"], "images": [[], []]})
+        train_dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+        assert len(train_dataset) == 2
+
 
 class TestDeduplicateRLDataset:
     """Test a configured dataloader with deduplication."""
 
     @pytest.fixture
-    def cfg(self):
+    def cfg(self, tmp_path):
         fixture = DictDefault(
             {
                 "tokenizer_config": "huggyllama/llama-7b",
+                "dataset_prepared_path": str(tmp_path),
                 "sequence_len": 1024,
                 "rl": "dpo",
                 "chat_template": "llama3",
@@ -269,125 +274,6 @@ class TestDeduplicateRLDataset:
             assert len(train_dataset) == len(dataset) * 2, (
                 "Dataset deduplication occurred when it should not have"
             )
-
-
-class TestDeduplicateNonRL(unittest.TestCase):
-    """Test prepare_dataset function with different configurations."""
-
-    @enable_hf_offline
-    def setUp(self) -> None:
-        self.cfg_1 = DictDefault(
-            {
-                "base_model": "huggyllama/llama-7b",
-                "tokenizer_config": "huggyllama/llama-7b",
-                "sequence_len": 1024,
-                "dataset_exact_deduplication": True,
-                "datasets": [
-                    {
-                        "path": "mhenrichsen/alpaca_2k_test",
-                        "type": "alpaca",
-                    },
-                    {
-                        "path": "mhenrichsen/alpaca_2k_test",
-                        "type": "alpaca",
-                    },
-                ],
-                "val_set_size": 0.0,
-                "gradient_accumulation_steps": 2,
-                "batch_size": 10,
-                "micro_batch_size": 10,
-                "num_epochs": 1,
-            }
-        )
-        self.cfg_1 = validate_config(self.cfg_1)
-        normalize_config(self.cfg_1)
-
-    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
-    @enable_hf_offline
-    def test_prepare_dataset_with_deduplication_train(self):
-        """Verify that prepare_dataset function processes the dataset correctly with deduplication."""
-        self.cfg_1.dataset_exact_deduplication = True
-
-        # Load tokenizer and processor
-        tokenizer = load_tokenizer(self.cfg_1)
-        processor = (
-            load_processor(self.cfg_1, tokenizer=tokenizer)
-            if self.cfg_1.processor_type
-            else None
-        )
-
-        # Prepare dataset using the prepare_dataset function
-        train_dataset, _, _, _ = prepare_datasets(
-            self.cfg_1,
-            tokenizer,
-            processor=processor,
-        )
-
-        self.assertEqual(
-            len(train_dataset),
-            2000,
-            "Train dataset should have 2000 samples after deduplication.",
-        )
-
-    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
-    @enable_hf_offline
-    def test_prepare_dataset_with_deduplication_eval(self):
-        """Verify that prepare_dataset function processes the dataset correctly with deduplication."""
-        self.cfg_1.dataset_exact_deduplication = True
-        self.cfg_1.val_set_size = 0.5
-        # Load tokenizer and processor
-        tokenizer = load_tokenizer(self.cfg_1)
-        processor = (
-            load_processor(self.cfg_1, tokenizer=tokenizer)
-            if self.cfg_1.processor_type
-            else None
-        )
-
-        # Prepare dataset using the prepare_dataset function
-        _, eval_dataset, _, _ = prepare_datasets(
-            self.cfg_1,
-            tokenizer,
-            processor=processor,
-        )
-
-        self.assertEqual(
-            len(eval_dataset),
-            1000,
-            "Eval dataset should have 2000 samples after deduplication.",
-        )
-
-    @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
-    @enable_hf_offline
-    def test_prepare_dataset_without_deduplication(self):
-        """Verify that prepare_dataset function processes the dataset correctly without deduplication."""
-        self.cfg_1.dataset_exact_deduplication = False
-        self.cfg_1.val_set_size = 0.1
-        # Load tokenizer and processor
-        tokenizer = load_tokenizer(self.cfg_1)
-        processor = (
-            load_processor(self.cfg_1, tokenizer=tokenizer)
-            if self.cfg_1.processor_type
-            else None
-        )
-
-        # Prepare dataset using the prepare_dataset function
-        train_dataset, eval_dataset, _, _ = prepare_datasets(
-            self.cfg_1,
-            tokenizer,
-            processor=processor,
-        )
-
-        # Verify that the dataset has been prepared correctly
-        self.assertEqual(
-            len(train_dataset),
-            1800 * 2,
-            "Train dataset should have 3600 samples without deduplication.",
-        )
-        self.assertEqual(
-            len(eval_dataset),
-            200 * 2,
-            "Train dataset should have 400 samples after deduplication.",
-        )
 
 
 class TestWrongCollisions(unittest.TestCase):

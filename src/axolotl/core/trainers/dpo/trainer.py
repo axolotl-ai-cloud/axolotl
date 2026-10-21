@@ -1,12 +1,8 @@
 """DPO trainer for axolotl"""
 
-import gc
 import inspect
 from functools import wraps
-from typing import Any, Dict, Union
 
-import torch
-from torch import nn
 from transformers import PreTrainedTokenizerBase, ProcessorMixin
 from trl import DPOTrainer
 
@@ -89,14 +85,3 @@ class AxolotlDPOTrainer(
             result = remove_double_bos_token(result, bos_token_id)
 
         return result
-
-    def training_step(
-        self,
-        model: nn.Module,
-        inputs: Dict[str, Union[torch.Tensor, Any]],
-        num_items_in_batch=None,
-    ) -> torch.Tensor:
-        loss: torch.Tensor = super().training_step(model, inputs, num_items_in_batch)
-        gc.collect()
-        torch.cuda.empty_cache()
-        return loss

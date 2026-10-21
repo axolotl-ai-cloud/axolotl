@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
 """Tests for scattermoe autotune telemetry integration.
 
 These tests use mocking to verify the collection and reporting logic
@@ -246,25 +250,6 @@ class TestAutotuneReportCallback:
             cb.on_step_end(args=MagicMock(), state=mock_state, control=MagicMock())
             assert mock_tm.send_event.call_count == 1
 
-    def test_retries_until_step_5_then_gives_up(self):
-        """If no configs found by step 5, stop retrying."""
-        from axolotl.integrations.kernels.autotune_callback import (
-            AutotuneReportCallback,
-        )
-
-        cb = AutotuneReportCallback()
-
-        with patch(
-            "axolotl.integrations.kernels.autotune_collector.collect_autotune_configs",
-            return_value=[],
-        ):
-            for step in range(1, 7):
-                mock_state = MagicMock()
-                mock_state.global_step = step
-                cb.on_step_end(args=MagicMock(), state=mock_state, control=MagicMock())
-
-            assert cb._reported is True
-
     def test_reports_on_retry_when_data_arrives(self):
         """If step 1 has no data but step 2 does, report at step 2."""
         from axolotl.integrations.kernels.autotune_callback import (
@@ -276,7 +261,7 @@ class TestAutotuneReportCallback:
 
         call_count = 0
 
-        def _collector():
+        def _collector(**kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -386,11 +371,8 @@ class TestAutotuneReportCallback:
 class TestKernelsPluginCallbackRegistration:
     """Test that ``KernelsPlugin`` registers the callback correctly."""
 
-    def test_scattermoe_registers_callback(self):
-        """When ``use_scattermoe=True``, plugin returns the callback."""
-        from axolotl.integrations.kernels.autotune_callback import (
-            AutotuneReportCallback,
-        )
+    def test_scattermoe_does_not_duplicate_central_callback(self):
+        """Telemetry callbacks are registered by the trainer builder."""
         from axolotl.integrations.kernels.plugin import KernelsPlugin
         from axolotl.utils.dict import DictDefault
 
@@ -400,8 +382,7 @@ class TestKernelsPluginCallbackRegistration:
         model = MagicMock()
 
         callbacks = plugin.add_callbacks_pre_trainer(cfg, model)
-        assert len(callbacks) == 1
-        assert isinstance(callbacks[0], AutotuneReportCallback)
+        assert callbacks == []
 
     def test_no_scattermoe_no_callback(self):
         """When ``use_scattermoe=False``, plugin returns empty list."""

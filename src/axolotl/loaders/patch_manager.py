@@ -43,6 +43,13 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
+def rl_trainer_builds_adapter(cfg) -> bool:
+    """DPO, IPO and KTO hand TRL the LoRA config and TRL builds the PeftModel in the trainer."""
+    from axolotl.utils.schemas.enums import RLType
+
+    return bool(cfg.adapter) and cfg.rl in (RLType.DPO, RLType.IPO, RLType.KTO)
+
+
 class PatchManager:
     """Manages the application of patches during the model loading process."""
 
@@ -122,6 +129,7 @@ class PatchManager:
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
         self._deactivate_hf_async_load()
+        self._apply_parallel_weight_conversion()
         self._apply_torchao_patches()
         self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
@@ -148,7 +156,6 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
-        self._apply_voxtral_patches()
         self._apply_apertus_patches()
         self._apply_trl_vllm_patches()
 
@@ -168,9 +175,13 @@ class PatchManager:
             patch_evaluation_loop,
             patch_maybe_log_save_evaluate,
         )
+        from axolotl.monkeypatch.transformers_num_parameters import (
+            patch_num_parameters,
+        )
 
         patch_evaluation_loop()
         patch_maybe_log_save_evaluate()
+        patch_num_parameters()
 
     def apply_post_model_build_patches(self, model: PreTrainedModel):
         """Apply patches right after model build, before post-load setup."""
@@ -454,6 +465,11 @@ class PatchManager:
             )
 
             patch_accelerate_fsdp2()
+            from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+                patch_fsdp2_full_checkpoint,
+            )
+
+            patch_fsdp2_full_checkpoint()
             # FSDP2 sharding for any torchao Float8Tensor weights (no-op without torchao)
             patch_float8_fsdp()
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
@@ -900,6 +916,17 @@ class PatchManager:
         # inherit a previous run's stale auto/triton_flash policy on an sdpa run.
         set_large_head_policy(policy)
         set_large_head_packed(bool(self.cfg.sample_packing))
+        from axolotl.monkeypatch.attention.large_head import (
+            patch_flex_large_head,
+            unpatch_flex_large_head,
+        )
+
+        # FlexAttention: only BlockMasks carrying segment metadata (packed encoder/canvas global
+        # layers) are routed; everything else stays on flex.
+        if policy != "sdpa" and self.cfg.attn_implementation == "flex_attention":
+            patch_flex_large_head()
+        else:
+            unpatch_flex_large_head()
         if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
             unpatch_sdpa_large_head()
             return
@@ -1127,14 +1154,15 @@ class PatchManager:
             cfg_num_shards=self.cfg.tiled_mlp_num_shards,
         )
 
-    def _apply_voxtral_patches(self):
-        """Apply patches for Voxtral model."""
-        if self.cfg.model_config_type == "voxtral":
-            from axolotl.monkeypatch.models.voxtral.modeling import (
-                patch_voxtral_conditional_generation_forward,
-            )
+    def _apply_parallel_weight_conversion(self):
+        """Parallel stack/cat in transformers' expert-fusing converters; off with AXOLOTL_PARALLEL_CONVERT=0."""
+        if os.environ.get("AXOLOTL_PARALLEL_CONVERT", "1") == "0":
+            return
+        from axolotl.monkeypatch.parallel_weight_conversion import (
+            patch_parallel_weight_conversion,
+        )
 
-            patch_voxtral_conditional_generation_forward()
+        patch_parallel_weight_conversion()
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
@@ -1230,8 +1258,16 @@ class PatchManager:
             or self.cfg.lora_qkv_kernel
             or self.cfg.lora_o_kernel
         ):
+            from peft import PeftModel
+
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
+            if not isinstance(model, PeftModel) and rl_trainer_builds_adapter(self.cfg):
+                # TRL wraps the adapter inside the trainer; the builder patches it then
+                LOG.info(
+                    "Deferring the fused LoRA kernel patch to the RL trainer build"
+                )
+                return
             apply_lora_kernel_patches(model=model, cfg=self.cfg)
 
     def _apply_patch_deepspeed_zero3(self):
@@ -1258,15 +1294,24 @@ class PatchManager:
             patch_apertus_xielu_activation()
 
     def _apply_trl_vllm_patches(self):
-        """Apply TRL vLLM patches for batched weight sync, NaN logprobs fix, and scalar handling."""
+        """Apply TRL vLLM patches: batched weight sync, NaN logprobs fix, scalar
+        handling, and colocate engine kwargs."""
         if (
             self.cfg.rl
             and getattr(self.cfg, "trl", None)
             and getattr(self.cfg.trl, "use_vllm", False)
         ):
-            from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
+            from axolotl.monkeypatch.trainer.trl_vllm import (
+                colocate_vllm_engine_kwargs,
+                patch_trl_vllm,
+                patch_vllm_colocate_engine_kwargs,
+            )
 
             patch_trl_vllm()
+            if getattr(self.cfg.trl, "vllm_mode", None) == "colocate":
+                patch_vllm_colocate_engine_kwargs(
+                    colocate_vllm_engine_kwargs(getattr(self.cfg, "vllm", None))
+                )
 
     def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
         """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""

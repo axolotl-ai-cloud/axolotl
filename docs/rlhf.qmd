@@ -1,5 +1,5 @@
 ---
-title: "RLHF (Beta)"
+title: "RLHF"
 description: "Reinforcement Learning from Human Feedback is a method whereby a language model is optimized from data using human feedback."
 back-to-top-navigation: true
 toc: true
@@ -20,15 +20,12 @@ feedback. Various methods include, but not limited to:
 - [Group Reward-Decoupled Policy Optimization (GDPO)](#gdpo)
 - [Energy-Based Fine-Tuning (EBFT)](#ebft) — see also the [EBFT guide](ebft.qmd) for detailed mode comparisons and configuration
 - [NeMo Gym Integration](#nemo-gym-integration)
+- [Multimodal (vision) datasets](#multimodal) for DPO, KTO and GRPO
 
 For help choosing between these methods, see [Choosing a Fine-Tuning Method](choosing_method.qmd).
 
 
 ## RLHF using Axolotl
-
-::: {.callout-important}
-This is a BETA feature and many features are not fully implemented. You are encouraged to open new PRs to improve the integration and functionality.
-:::
 
 We rely on the [TRL](https://github.com/huggingface/trl) library for implementations of various RL training methods, which we wrap around to expose in axolotl. Each method has their own supported ways of loading datasets and prompt formats.
 
@@ -527,7 +524,7 @@ Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/grpo_code). Fo
 In the latest GRPO implementation, `vLLM` is used to significantly speedup trajectory generation during training. In this example, we're using 4 GPUs - 2 for training, and 2 for vLLM:
 
 ::: {.callout-important}
-Make sure you've installed the correct version of vLLM by including it as an extra when installing axolotl, e.g. `pip install axolotl[vllm]`.
+Make sure you've installed the correct version of vLLM by including it as an extra when installing axolotl, e.g. `pip install axolotl[vllm]`. This requires `vllm>=0.30.0`.
 :::
 
 ```yaml
@@ -748,7 +745,7 @@ Because the background thread generates completions with slightly stale model we
 
 ##### vLLM LoRA Sync
 
-By default, weight sync to vLLM merges the LoRA adapter into the base model and broadcasts all parameters via NCCL. LoRA sync is a faster alternative that saves only the adapter weights to the filesystem and has vLLM load them natively using Punica kernels.
+By default, weight sync to vLLM merges the LoRA adapter into the base model and broadcasts all parameters via vLLM's native NCCL weight-transfer engine. LoRA sync is a faster alternative that saves only the adapter weights to the filesystem and has vLLM load them natively using Punica kernels. The adapter directory must be readable by the vLLM server; see [LoRA Sync](vllm_serving.qmd#sec-lora-sync).
 
 ```yaml
 adapter: lora
@@ -760,7 +757,7 @@ trl:
   vllm_lora_sync: true         # Enable native LoRA sync
 ```
 
-When `vllm_lora_sync: true` is set, axolotl automatically selects the LoRA-aware vLLM serve module. Start vLLM as usual:
+When `vllm_lora_sync: true` is set, `axolotl vllm-serve` starts vLLM with LoRA loading enabled (`--enable-lora`, `--max-lora-rank` from the largest of `lora_r` and `lora_rank_pattern`). Start vLLM as usual:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml
@@ -1343,6 +1340,176 @@ CFLAGS="" uv pip install pycosat --python .venv/bin/python --no-build-isolation
 |----------|------|-------------|
 | `axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify` | Single-turn | Calls `/verify`, returns binary reward |
 | `axolotl.integrations.nemo_gym.rewards.reward_env` | Multi-turn | Passthrough reward from agent `/run` |
+
+### Multimodal (vision) datasets {#multimodal}
+
+DPO, IPO, KTO, GRPO and GDPO can train vision-language models (VLMs) on image datasets.
+
+#### Model setup
+
+Load the model the same way as for [multimodal SFT](multimodal.qmd#usage):
+
+```yaml
+base_model: Qwen/Qwen2.5-VL-3B-Instruct
+processor_type: AutoProcessor
+image_size: 448  # optional: resize images (int or [width, height])
+```
+
+#### Dataset format
+
+A dataset counts as multimodal when it has an `images` column (a list per row) or an `image` column (one per row). Each image can be a Hugging Face `Image` feature, a local path, a URL, or a base64 string (see [image keys](multimodal.qmd#image)). Images are loaded as each batch is built, so nothing is decoded ahead of time.
+
+Prompts must be lists of `role`/`content` messages. You don't need image placeholders: each image goes at the start of the first user turn. To place images yourself, add `{"type": "image"}` blocks to the message content; they are filled with the row's images in order.
+
+DPO / IPO row:
+
+```json
+{
+  "prompt": [{"role": "user", "content": "What is in this picture?"}],
+  "chosen": [{"role": "assistant", "content": "A cat on a red sofa."}],
+  "rejected": [{"role": "assistant", "content": "A dog in a park."}],
+  "images": ["images/cat.jpg"]
+}
+```
+
+KTO row (`label` marks the completion as desirable or not; KTO needs `micro_batch_size` of at least 2):
+
+```json
+{
+  "prompt": [{"role": "user", "content": "What is in this picture?"}],
+  "completion": [{"role": "assistant", "content": "A cat on a red sofa."}],
+  "label": true,
+  "images": ["images/cat.jpg"]
+}
+```
+
+GRPO / GDPO row (extra columns such as `answer` are passed to your reward functions):
+
+```json
+{
+  "prompt": [{"role": "user", "content": "What color is the cube?"}],
+  "image": "images/cube.jpg",
+  "answer": "red"
+}
+```
+
+Datasets already in these shapes need no `type`. DPO/IPO also accept `type: chat_template` with a `messages` conversation plus `chosen`/`rejected` messages. For GRPO, a dataset transform can build `prompt` and leave the image column in place, as in the example below.
+
+#### DPO example
+
+Using [HuggingFaceH4/rlaif-v_formatted](https://huggingface.co/datasets/HuggingFaceH4/rlaif-v_formatted), which is already in the DPO shape:
+
+```yaml
+base_model: Qwen/Qwen2.5-VL-3B-Instruct
+processor_type: AutoProcessor
+image_size: 448
+
+rl: dpo
+datasets:
+  - path: HuggingFaceH4/rlaif-v_formatted
+    split: train
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+# Adapt only the language model; the vision encoder stays frozen.
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+sequence_len: 2048
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+learning_rate: 5.0e-6
+num_epochs: 1
+bf16: true
+gradient_checkpointing: true
+output_dir: ./outputs/qwen2.5-vl-dpo
+```
+
+#### GRPO example
+
+Reward functions receive the loaded images as `images`: one list of PIL images per sample, whether the dataset column is `image` or `images`. This example uses [lmms-lab/multimodal-open-r1-8k-verified](https://huggingface.co/datasets/lmms-lab/multimodal-open-r1-8k-verified), which has `image`, `problem` and `solution` columns:
+
+```python
+# mm_rewards.py
+import re
+
+SYSTEM = (
+    "Answer the question about the image. Think inside <think></think>, "
+    "then give the final answer inside <answer></answer>."
+)
+
+
+def transform(cfg, *args, **kwargs):
+    def transform_fn(example, tokenizer=None):
+        return {
+            "prompt": [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": example["problem"]},
+            ],
+            "answer": example["solution"],
+        }
+
+    # The `image` column is kept, so the prompt gets its image automatically.
+    return transform_fn, {"remove_columns": ["problem", "solution"]}
+
+
+def _final_answer(text):
+    match = re.search(r"<answer>(.*?)</answer>", text, re.S)
+    return (match.group(1) if match else text).strip().lower()
+
+
+def answer_reward(completions, answer, images, **kwargs) -> list[float]:
+    # images[i] holds sample i's PIL images, for rewards that look at the image.
+    return [
+        float(_final_answer(c[0]["content"]) == _final_answer(a))
+        for c, a in zip(completions, answer)
+    ]
+```
+
+```yaml
+base_model: Qwen/Qwen2.5-VL-3B-Instruct
+processor_type: AutoProcessor
+image_size: 448
+
+rl: grpo
+trl:
+  num_generations: 4
+  max_completion_length: 256
+  reward_funcs: ["mm_rewards.answer_reward"]
+  use_vllm: true
+  vllm_mode: colocate  # vLLM shares the training GPU
+vllm:
+  max_model_len: 4096
+datasets:
+  - path: lmms-lab/multimodal-open-r1-8k-verified
+    type: mm_rewards.transform
+    split: train
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+sequence_len: 2048
+micro_batch_size: 4
+gradient_accumulation_steps: 1
+learning_rate: 5.0e-6
+num_epochs: 1
+bf16: true
+gradient_checkpointing: true
+output_dir: ./outputs/qwen2.5-vl-grpo
+```
+
+Run `axolotl train` from the directory containing `mm_rewards.py`. To generate on a separate GPU instead, set `vllm_mode: server` and start the server with `axolotl vllm-serve` as in the [GRPO](#grpo) section.
+
+#### Limitations
+
+- **Sequence length**: rows are not filtered by length ahead of time. For DPO/KTO, `sequence_len` (image tokens included) truncates each batch, and a cut through image tokens fails in the model forward, so leave headroom. GRPO prompts are not truncated.
+- **Chat template**: every row is rendered with one template (the processor's, or the top-level `chat_template`); per-dataset `chat_template` is ignored.
+- **One kind of data per run**: image and text-only datasets cannot be mixed. Exact deduplication is skipped for image datasets.
+- **Tiled-image models (SmolVLM, Idefics3)**: GRPO with `vllm_mode: server` fails because these split each image into tiles; use `vllm_mode: colocate` or no vLLM.
+- **Async GRPO** (`use_data_producer` / `async_prefetch`): InternVL (tile-based) and multiple images per row with LLaVA-style processors are not supported yet.
+- **Not supported**: ORPO, SimPO, EBFT, `tokenizer_use_mistral_common`, and GRPO with `context_parallel_size` > 1. `pad_to_multiple_of` is ignored for DPO/KTO.
 
 ### Using local dataset files
 

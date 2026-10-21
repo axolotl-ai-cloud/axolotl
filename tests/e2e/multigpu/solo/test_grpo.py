@@ -28,7 +28,19 @@ def start_vllm(
     """
     helper function to start the VLLM server in the background, mostly for testing purposes
     """
-    cmd = [sys.executable, "-m", "trl.scripts.vllm_serve", "--model", model]
+    cmd = [
+        sys.executable,
+        "-m",
+        "vllm.entrypoints.cli.main",
+        "serve",
+        model,
+        "--weight-transfer-config",
+        '{"backend": "nccl"}',
+        "--logprobs-mode",
+        "processed_logprobs",
+        "--max-logprobs",
+        "-1",
+    ]
 
     if tensor_parallel_size := kwargs.get("tensor_parallel_size"):
         cmd.extend(["--tensor-parallel-size", str(tensor_parallel_size)])
@@ -43,7 +55,7 @@ def start_vllm(
     if max_model_len := kwargs.get("max_model_len"):
         cmd.extend(["--max-model-len", str(max_model_len)])
     if kwargs.get("enable_prefix_caching"):
-        cmd.extend(["--enable-prefix-caching", "True"])
+        cmd.append("--enable-prefix-caching")
 
     # print out the command to be executed
     print(" ".join(cmd))
@@ -78,8 +90,14 @@ def start_vllm(
         )
 
     cmd_env = env.copy()
-    cmd_env.update({"VLLM_LOGGING_CONFIG_PATH": vllm_logging_json})
-    # start `trl vllm-serve` command in the background and capture the process id
+    cmd_env.update(
+        {
+            "VLLM_LOGGING_CONFIG_PATH": vllm_logging_json,
+            "VLLM_SERVER_DEV_MODE": "1",
+            "VLLM_WORKER_MULTIPROC_METHOD": "spawn",
+        }
+    )
+    # start the native vLLM server in the background and capture the process id
     process = subprocess.Popen(
         cmd,
         env=cmd_env,

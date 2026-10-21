@@ -112,15 +112,16 @@ class RoutingReplay:
             if not torch.is_grad_enabled():
                 self.tokens = None
 
-    def select(self, start: int, end: int, valid: torch.Tensor | None = None):
-        """Pick routes for rows ``start:end``; ``valid`` mirrors padding-free flattening."""
+    def select(self, start: int, end: int, flat_idx: torch.Tensor | None = None):
+        """Pick routes for rows ``start:end``; ``flat_idx`` mirrors padding-free flattening."""
         if self.batch is None:
             self.tokens = None
             return
         if torch.is_grad_enabled() and start != 0:
             raise RuntimeError("routing_replay needs one grad forward per backward")
-        r = self.batch[start:end]
-        r = r[valid.to(r.device)] if valid is not None else r.flatten(0, 1)
+        r = self.batch[start:end].flatten(0, 1)
+        if flat_idx is not None:
+            r = r.to(flat_idx.device)[flat_idx]
         self.tokens = r
 
     def pop_agreement(self) -> float | None:

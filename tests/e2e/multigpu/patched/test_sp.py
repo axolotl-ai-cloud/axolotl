@@ -21,7 +21,6 @@ class TestSequenceParallelism:
         sample_packing=True,
         micro_batch_size=1,
         pad_to_sequence_len=True,
-        ring_attn_func=None,
         threshold=2.0,
     ):
         """Helper method to run sequence parallel tests with different configurations"""
@@ -68,7 +67,6 @@ class TestSequenceParallelism:
                 "weight_decay": 0.0,
                 "use_tensorboard": True,
                 "context_parallel_size": 2,
-                "ring_attn_func": ring_attn_func,
                 "save_first_step": False,
             }
         )
@@ -99,22 +97,17 @@ class TestSequenceParallelism:
             "Train Loss (%s) is too high",
         )
 
-    @pytest.mark.skip(
-        reason="ring_flash_attn w transformers imports unmaintained upstream",
-    )
     @pytest.mark.parametrize(
-        "sample_packing, micro_batch_size, pad_to_sequence_len, ring_attn_func, threshold",
+        "sample_packing, micro_batch_size, pad_to_sequence_len, threshold",
         [
-            (True, 1, True, None, 2.5),  # defaults to varlen_llama3 ring_attn_func
-            (False, 2, True, None, 2.5),  # defaults to batch_ring ring_attn_func
-            # (False, 2, True, "batch_zigzag", 2.5),
-            # (False, 2, False, None, 2.65),  # defaults to batch_ring ring_attn_func
+            (True, 1, True, 2.5),
+            (False, 2, True, 2.5),
+            # (False, 2, False, 2.65),
         ],
         ids=[
-            "sample_packing, varlen_llama3 ring_attn_func",
-            "no sample_packing, pad_to_sequence_len, batch_ring ring_attn_func",
-            # "no sample_packing, no pad_to_sequence_len, batch_zigzag ring_attn_func",
-            # "no sample_packing, no pad_to_sequence_len, batch_ring ring_attn_func",
+            "sample_packing",
+            "no sample_packing, pad_to_sequence_len",
+            # "no sample_packing, no pad_to_sequence_len",
         ],
     )
     def test_sequence_parallel_training(
@@ -123,7 +116,6 @@ class TestSequenceParallelism:
         sample_packing,
         micro_batch_size,
         pad_to_sequence_len,
-        ring_attn_func,
         threshold,
     ):
         """Test sequence parallel training with different configurations"""
@@ -132,6 +124,5 @@ class TestSequenceParallelism:
             sample_packing=sample_packing,
             micro_batch_size=micro_batch_size,
             pad_to_sequence_len=pad_to_sequence_len,
-            ring_attn_func=ring_attn_func,
             threshold=threshold,
         )

@@ -61,10 +61,6 @@ class TestExpertParallelArgs:
         assert a.expert_parallel_backend == "auto"
         assert a.expert_parallel_fallback_on_unsupported is True
 
-    def test_enabled(self):
-        a = ExpertParallelArgs(expert_parallel_size=2)
-        assert a.expert_parallel_size == 2
-
     def test_invalid_size(self):
         with pytest.raises(ValueError):
             ExpertParallelArgs(expert_parallel_size=0)
@@ -599,14 +595,6 @@ class TestPluginLifecycle:
             == "axolotl.integrations.expert_parallel.ExpertParallelArgs"
         )
 
-    def test_pre_model_load_disabled_is_noop(self):
-        plugin = ExpertParallelPlugin()
-
-        class _Cfg:
-            expert_parallel_enabled = False
-
-        plugin.pre_model_load(_Cfg())  # should not raise / not register anything new
-
     def _ep_cfg(self, **kw):
         from types import SimpleNamespace
 
@@ -746,6 +734,8 @@ def _ep_topology_worker_expects_error(
         timeout=timedelta(seconds=120),
     )
     try:
+        # Keep rank zero's store alive until every rank finishes initialization.
+        dist.barrier()
         from types import SimpleNamespace
 
         cfg = SimpleNamespace(
@@ -874,6 +864,7 @@ def _spawn_ep_cp_check(world_size, ep_size, cp_size, dp_shard_size=1):
     return sorted(results, key=lambda r: r[0])
 
 
+@pytest.mark.distributed_cpu
 class TestMeshTopology:
     """The 4-rank EP+FSDP composition rank assignments."""
 

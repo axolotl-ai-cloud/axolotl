@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Axolotl AI
+# Licensed under the Apache License, Version 2.0
+
 import importlib
 import os
 
@@ -52,27 +56,50 @@ def _check_sonicmoe_gpu_compat():
                 f"B300 (sm_103) requires Triton 3.6.x, but found {triton.__version__}."
             )
 
-    # quack 0.6.1 pins nvidia-cutlass-dsl==4.6.0: 4.5.x lacks the CuTe API it needs
-    # (ThrMma dropped) and other majors are unvalidated, so fail fast on a mismatch
-    # instead of a cryptic MLIR/import crash.
-    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    _check_sonicmoe_cutlass_dsl()
+
+
+def _check_sonicmoe_cutlass_dsl():
+    """Fail fast when the installed cutlass DSL is outside quack's declared range, instead of a
+    cryptic MLIR/import crash (quack 0.6.1 pinned ==4.6.0, 0.6.3+ need >=4.7)."""
+    from importlib.metadata import (
+        PackageNotFoundError,
+        requires,
+        version as _pkg_version,
+    )
+
+    from packaging.requirements import InvalidRequirement, Requirement
 
     try:
         cutlass_dsl_version = _pkg_version("nvidia-cutlass-dsl")
     except PackageNotFoundError:
         cutlass_dsl_version = None
-    if cutlass_dsl_version is not None:
+    try:
+        quack_version = _pkg_version("quack-kernels")
+        quack_requires = requires("quack-kernels") or []
+    except PackageNotFoundError:
+        quack_version, quack_requires = None, []
+    cutlass_spec = None
+    for entry in quack_requires:
         try:
-            cutlass_mm = tuple(int(x) for x in cutlass_dsl_version.split(".")[:2])
-        except ValueError:
-            cutlass_mm = None
-        if cutlass_mm is not None and cutlass_mm != (4, 6):
-            raise RuntimeError(
-                f"SonicMoE (quack 0.6.1) requires nvidia-cutlass-dsl==4.6.0, but found "
-                f"{cutlass_dsl_version} (uv pip install 'nvidia-cutlass-dsl==4.6.0')."
-            )
+            requirement = Requirement(entry)
+        except InvalidRequirement:
+            continue
+        if requirement.name == "nvidia-cutlass-dsl" and requirement.marker is None:
+            cutlass_spec = requirement.specifier
+            break
+    if (
+        cutlass_dsl_version is not None
+        and cutlass_spec is not None
+        and not cutlass_spec.contains(cutlass_dsl_version, prereleases=True)
+    ):
+        raise RuntimeError(
+            f"SonicMoE (quack-kernels {quack_version}) requires "
+            f"nvidia-cutlass-dsl{cutlass_spec}, but found {cutlass_dsl_version} "
+            f"(uv pip install 'nvidia-cutlass-dsl{cutlass_spec}')."
+        )
 
-    # apache-tvm-ffi is an UNDECLARED dep of cutlass-dsl 4.6.0 (absent from its Requires-Dist, so
+    # apache-tvm-ffi is an UNDECLARED dep of cutlass-dsl (absent from its Requires-Dist, so
     # pip won't auto-pull it): <0.1.10 breaks cute.compile, >=0.2 is unvalidated.
     try:
         tvm_ffi_version = _pkg_version("apache-tvm-ffi")
@@ -85,7 +112,7 @@ def _check_sonicmoe_gpu_compat():
             tvm_ffi_v = None
         if tvm_ffi_v is not None and not (0, 1, 10) <= tvm_ffi_v < (0, 2, 0):
             raise RuntimeError(
-                f"SonicMoE (quack 0.6.1 on cutlass-dsl 4.6.0) requires "
+                f"SonicMoE (quack on cutlass-dsl {cutlass_dsl_version}) requires "
                 f"apache-tvm-ffi>=0.1.10,<0.2, but found {tvm_ffi_version}. cutlass-dsl "
                 f"does not pull it transitively; install it explicitly "
                 f"(uv pip install 'apache-tvm-ffi>=0.1.10,<0.2')."
@@ -224,6 +251,22 @@ class KernelsPlugin(BasePlugin):
             adapter.pre_lora_load(cfg, model)
 
     def post_model_load(self, cfg, model):
+        if cfg.autotune_cache_path:
+            from axolotl.integrations.kernels.autotune_cache import load_autotune_cache
+
+            load_autotune_cache(cfg.autotune_cache_path)
+        if cfg.autotune_profiles:
+            from axolotl.integrations.kernels.autotune_profiles import (
+                apply_autotune_profiles,
+            )
+
+            apply_autotune_profiles(cfg.autotune_profiles)
+        if cfg.autotune_neighborhood:
+            from axolotl.integrations.kernels.autotune_neighborhood import (
+                install_neighborhood_search,
+            )
+
+            install_neighborhood_search(cfg.autotune_neighborhood)
         if cfg.use_sonicmoe:
             from axolotl.integrations.kernels.libs.sonicmoe.epilogue import (
                 check_model_epilogues,
@@ -249,12 +292,22 @@ class KernelsPlugin(BasePlugin):
 
     def add_callbacks_pre_trainer(self, cfg, model):
         callbacks = []
-        if cfg.use_scattermoe:
-            from axolotl.integrations.kernels.autotune_callback import (
-                AutotuneReportCallback,
+        if (
+            cfg.autotune_cache_path
+            or cfg.autotune_profiles
+            or cfg.autotune_neighborhood
+        ):
+            from axolotl.integrations.kernels.autotune_cache import (
+                AutotuneCacheCallback,
             )
 
-            callbacks.append(AutotuneReportCallback())
+            callbacks.append(
+                AutotuneCacheCallback(
+                    cfg.autotune_cache_path,
+                    cfg.autotune_profiles,
+                    neighborhood=cfg.autotune_neighborhood,
+                )
+            )
         if cfg.use_sonicmoe and cfg.nvfp4_merge_aware:
             from axolotl.integrations.kernels.merge_aware_callback import (
                 MergeAwareScheduleCallback,

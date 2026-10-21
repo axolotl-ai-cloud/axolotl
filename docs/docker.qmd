@@ -143,6 +143,26 @@ contains the source code and is ephemeral.
 - `/workspace/data/axolotl-artifacts`: Directory to store Axolotl artifacts.
 - `/workspace/data/huggingface-cache`: Directory to store HuggingFace cache.
 
+## Cloud-blackwell
+
+The cloud image plus the Blackwell (sm_100) kernel stack that the expert-parallel MoE recipes use,
+for example the [Beam B200 configs](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/beam):
+
+- [DeepEP](https://github.com/deepseek-ai/DeepEP) v1.2.1 compiled for sm_100 (`expert_parallel_backend: deep_ep`)
+- `flash-attn-4` (`attn_implementation: flash_attention_4`)
+- `quack-kernels` and the `nvidia-cutlass-dsl` CUDA 13 runtime behind SonicMoE (`use_sonicmoe: true`)
+
+It is built for `linux/amd64` only, from the Python 3.12 / CUDA 13.0 / PyTorch 2.14.1 cloud image.
+
+#### Image
+
+```
+axolotlai/axolotl-cloud:{tag}-blackwell
+```
+
+Tags: `main-py3.12-cu130-2.14.1-blackwell` on push to main and
+`{version}-py3.12-cu130-2.14.1-blackwell` for a tagged release. There are no `-latest` or nightly tags.
+
 ## Cloud-no-tmux
 
 This is the same as the [`cloud` image](#sec-cloud) but without tmux.

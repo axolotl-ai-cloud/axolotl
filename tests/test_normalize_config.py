@@ -39,6 +39,74 @@ class NormalizeConfigTestCase(unittest.TestCase):
             }
         )
 
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_defaults_to_non_reentrant(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        cfg = self._get_base_cfg()
+        cfg.gradient_checkpointing = True
+        with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
+            normalize_config(cfg)
+
+        assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": False}
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_zero3_keeps_reentrant(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        for deepspeed, stage in (
+            ({"zero_optimization": {"stage": 3}}, ""),
+            (None, "3"),
+        ):
+            cfg = self._get_base_cfg()
+            cfg.gradient_checkpointing = True
+            cfg.deepspeed = deepspeed
+            with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": stage}):
+                normalize_config(cfg)
+
+            assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": True}
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_zero3_detected_from_config_file(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        for deepspeed, expected in (
+            ("deepspeed_configs/zero3_bf16.json", True),
+            ("deepspeed_configs/zero2.json", False),
+            ("/nonexistent/my_zero3.json", True),
+        ):
+            cfg = self._get_base_cfg()
+            cfg.gradient_checkpointing = True
+            cfg.deepspeed = deepspeed
+            with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
+                normalize_config(cfg)
+
+            assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": expected}
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_kwargs_without_use_reentrant_get_default(
+        self, load_config
+    ):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        for kwargs in ({}, {"determinism_check": "none"}):
+            cfg = self._get_base_cfg()
+            cfg.gradient_checkpointing = True
+            cfg.gradient_checkpointing_kwargs = dict(kwargs)
+            with patch.dict("os.environ", {"ACCELERATE_DEEPSPEED_ZERO_STAGE": ""}):
+                normalize_config(cfg)
+
+            assert cfg.gradient_checkpointing_kwargs == {
+                **kwargs,
+                "use_reentrant": False,
+            }
+
+    @patch("axolotl.utils.config.load_model_config")
+    def test_gradient_checkpointing_kwargs_kept_when_set(self, load_config):
+        load_config.return_value = SimpleNamespace(model_type="llama")
+        cfg = self._get_base_cfg()
+        cfg.gradient_checkpointing = True
+        cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
+        normalize_config(cfg)
+
+        assert cfg.gradient_checkpointing_kwargs == {"use_reentrant": True}
+
     def test_base_model_config_set_when_empty(self):
         cfg = self._get_base_cfg()
         del cfg.base_model_config

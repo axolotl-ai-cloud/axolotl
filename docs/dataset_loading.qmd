@@ -274,3 +274,50 @@ This must be publically accessible.
 ## Next steps
 
 Now that you know how to load datasets, you can learn more on how to load your specific dataset format into your target output format [dataset formats docs](dataset-formats).
+
+## Named evaluation datasets
+
+Set an optional `eval_name` on entries in `test_datasets` to report metrics for
+individual datasets or groups alongside the aggregate evaluation metrics:
+
+```yaml
+val_set_size: 0
+test_datasets:
+  - path: org/math-a
+    type: chat_template
+    eval_name: math
+  - path: org/math-b
+    type: chat_template
+    eval_name: math
+  - path: org/code
+    type: chat_template
+    eval_name: code
+  - path: org/general
+    type: chat_template
+```
+
+Entries with the same `eval_name` are combined into one group. This example
+reports `eval/math/loss` and `eval/code/loss`, while `eval_loss` evaluates all
+four datasets together, including the unnamed dataset. The aggregate is computed
+on the combined dataset, not by averaging the group losses. Other supported
+metrics use the same prefixes; causal LM evaluation also reports
+`eval/math/ppl`, `eval/code/ppl`, and `eval_ppl`.
+
+Names must start with a letter and contain only letters, digits, and underscores.
+The existing `name` field still selects a Hugging Face dataset configuration.
+Without `eval_name`, evaluation behavior is unchanged.
+
+Each group gets a separate evaluation pass in addition to the aggregate pass,
+so naming every dataset roughly doubles the evaluation workload. Preprocessing,
+sequence-length filtering, sharding, deduplication, and packing preparation run
+independently for the aggregate and each group. Each group must have enough
+examples for the configured evaluation packing; use `eval_sample_packing: false`
+for small groups.
+
+Checkpoint selection and early stopping continue to use `eval_loss` by default.
+To select checkpoints using a group, set, for example:
+
+```yaml
+metric_for_best_model: eval/math/loss
+greater_is_better: false
+```
