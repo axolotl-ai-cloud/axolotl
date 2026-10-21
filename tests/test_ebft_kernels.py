@@ -11,12 +11,14 @@ from axolotl.core.trainers.ebft.kernels import (
     fused_reinforce_loss,
 )
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 # Skip all tests if CUDA not available
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required for Triton kernels"
+    not gpu_available(), reason="GPU required for Triton kernels"
 )
 
-DEVICE = "cuda"
+DEVICE = DEVICE_TYPE
 
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from tests.accelerator import DEVICE_TYPE
+
 pytest.importorskip("triton")
 
 from axolotl.kernels.geglu import geglu_backward, geglu_forward
@@ -12,8 +14,8 @@ from axolotl.kernels.geglu import geglu_backward, geglu_forward
 def test_geglu_forward_shape():
     """Test that GEGLU forward pass preserves expected shapes."""
     batch, seq_len, hidden_dim = 2, 3, 64
-    gate = torch.randn(batch, seq_len, hidden_dim, device="cuda")
-    up = torch.randn(batch, seq_len, hidden_dim, device="cuda")
+    gate = torch.randn(batch, seq_len, hidden_dim, device=DEVICE_TYPE)
+    up = torch.randn(batch, seq_len, hidden_dim, device=DEVICE_TYPE)
 
     out = geglu_forward(gate, up)
     assert out.shape == (batch, seq_len, hidden_dim)
@@ -30,8 +32,8 @@ def test_geglu_forward_values(torch_seed):
     """Test GEGLU forward pass matches PyTorch reference implementation."""
     torch.manual_seed(torch_seed)
 
-    gate = torch.randn(2, 3, 64, device="cuda")
-    up = torch.randn(2, 3, 64, device="cuda")
+    gate = torch.randn(2, 3, 64, device=DEVICE_TYPE)
+    up = torch.randn(2, 3, 64, device=DEVICE_TYPE)
 
     # Custom implementation
     triton_out = geglu_forward(gate.clone(), up.clone())
@@ -51,9 +53,9 @@ def test_geglu_backward(torch_seed):
     """Test GEGLU backward pass matches PyTorch autograd."""
     torch.manual_seed(torch_seed)
 
-    gate = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
-    up = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
-    grad_output = torch.randn(2, 3, 64, device="cuda")
+    gate = torch.randn(2, 3, 64, device=DEVICE_TYPE, requires_grad=True)
+    up = torch.randn(2, 3, 64, device=DEVICE_TYPE, requires_grad=True)
+    grad_output = torch.randn(2, 3, 64, device=DEVICE_TYPE)
 
     # PyTorch reference - compute intermediates
     gelu_gate = F.gelu(gate)
@@ -75,9 +77,9 @@ def test_geglu_backward(torch_seed):
 
 def test_geglu_inplace_preservation():
     """Test that GEGLU backward doesn't modify original tensors unexpectedly."""
-    gate = torch.randn(2, 3, 64, device="cuda")
-    up = torch.randn(2, 3, 64, device="cuda")
-    grad_output = torch.randn(2, 3, 64, device="cuda")
+    gate = torch.randn(2, 3, 64, device=DEVICE_TYPE)
+    up = torch.randn(2, 3, 64, device=DEVICE_TYPE)
+    grad_output = torch.randn(2, 3, 64, device=DEVICE_TYPE)
 
     gate_copy = gate.clone()
     up_copy = up.clone()

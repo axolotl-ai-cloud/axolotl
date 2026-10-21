@@ -11,6 +11,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 torch.manual_seed(0)
 
 torchao = pytest.importorskip("torchao")
@@ -264,14 +266,14 @@ def test_lora_kernel_dispatch_preserves_fake_quant_and_gradients(kind):
             torch.testing.assert_close(before, after, rtol=0, atol=0)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.skipif(not gpu_available(), reason="GPU required")
 def test_mixed_merge_aware_qkv_keeps_other_projections_optimized(monkeypatch):
     from axolotl.kernels import lora as kernels
 
     model = nn.Module()
     for name in ["q_proj", "k_proj", "v_proj"]:
         _, projection = _wrapped_model(with_pts=name == "q_proj")
-        setattr(model, name, projection.cuda())
+        setattr(model, name, projection.to(DEVICE_TYPE))
     install_merge_aware_lora_linears(model)
     original = kernels.LoRA_O.apply
     calls = []
@@ -282,7 +284,7 @@ def test_mixed_merge_aware_qkv_keeps_other_projections_optimized(monkeypatch):
 
     monkeypatch.setattr(kernels.LoRA_O, "apply", apply)
     set_merge_aware_enabled(True)
-    x = torch.randn(2, 3, IN, device="cuda", dtype=torch.bfloat16)
+    x = torch.randn(2, 3, IN, device=DEVICE_TYPE, dtype=torch.bfloat16)
     reference = tuple(getattr(model, n)(x) for n in ["q_proj", "k_proj", "v_proj"])
     actual = kernels.apply_lora_qkv(model, x)
     assert len(calls) == 2
@@ -299,9 +301,9 @@ def test_mixed_merge_aware_qkv_keeps_other_projections_optimized(monkeypatch):
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("autocast", [False, True])
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("device", ["cpu", DEVICE_TYPE])
 def test_fp32_adapter_matches_export_effective_weight(autocast, device):
-    if device == "cuda" and not torch.cuda.is_available():
+    if device == DEVICE_TYPE and not gpu_available():
         pytest.skip("CUDA required")
     torch.manual_seed(918)
     model, lora = _wrapped_model()

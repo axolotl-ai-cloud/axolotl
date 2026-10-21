@@ -22,14 +22,16 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import 
     shared_dequant_across_shards,
 )
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 torchao = pytest.importorskip("torchao")
 from torchao.prototype.mx_formats.mx_tensor import MXTensor  # noqa: E402
 
-DEVICE = "cuda"
+DEVICE = DEVICE_TYPE
 DTYPE = torch.bfloat16
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required for MX kernels"
+    not gpu_available(), reason="GPU required for MX kernels"
 )
 
 

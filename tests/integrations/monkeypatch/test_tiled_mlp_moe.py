@@ -15,16 +15,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 
 def _requires_cuda():
-    return pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="CUDA not available"
-    )
+    return pytest.mark.skipif(not gpu_available(), reason="GPU not available")
 
 
 pytestmark = _requires_cuda()
 
-DEVICE = "cuda"
+DEVICE = DEVICE_TYPE
 
 
 # ────────────────────────────── Helpers ──────────────────────────────
