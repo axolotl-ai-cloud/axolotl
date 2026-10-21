@@ -10,6 +10,8 @@ from peft import LoraConfig, get_peft_model
 from torch import nn
 from transformers import AutoConfig, AutoModelForCausalLM
 
+from tests.accelerator import DEVICE_TYPE
+
 pytest.importorskip("triton")
 
 from axolotl.kernels.lora import (
@@ -27,7 +29,7 @@ from axolotl.monkeypatch.lora_kernels import (
 from axolotl.utils.dict import DictDefault
 
 MODEL_NAME = "axolotl-ai-co/tiny-qwen3-129m"
-DEVICE = "cuda"
+DEVICE = DEVICE_TYPE
 DTYPE = torch.bfloat16
 
 

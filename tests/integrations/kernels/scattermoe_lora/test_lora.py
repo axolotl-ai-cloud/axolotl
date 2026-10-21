@@ -21,6 +21,8 @@ from unittest.mock import patch
 import pytest
 import torch
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 # ============================================================================
 # 1. KernelsArgs: disable_mlp_kernel validator
 # ============================================================================
@@ -206,7 +208,7 @@ class TestParallelExpertsScaling:
 # ============================================================================
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.skipif(not gpu_available(), reason="GPU not available")
 class TestSingle2ScatterBounds:
     """Test single2scatter with non-aligned dimensions."""
 
@@ -217,9 +219,9 @@ class TestSingle2ScatterBounds:
         )
 
         E, K, N = 2, 100, 128  # K=100 not a multiple of 128
-        W = torch.randn(E, K, N, device="cuda", dtype=torch.float32)
-        X = torch.randn(1, K, device="cuda", dtype=torch.float32)
-        expert_idxs = torch.tensor([[0, 1]], device="cuda", dtype=torch.long)
+        W = torch.randn(E, K, N, device=DEVICE_TYPE, dtype=torch.float32)
+        X = torch.randn(1, K, device=DEVICE_TYPE, dtype=torch.float32)
+        expert_idxs = torch.tensor([[0, 1]], device=DEVICE_TYPE, dtype=torch.long)
 
         Y = single2scatter(X, W, expert_idxs)
         assert Y.shape == (2, N)
@@ -237,9 +239,9 @@ class TestSingle2ScatterBounds:
         )
 
         E, K, N = 2, 128, 100  # N=100 not a multiple of 128
-        W = torch.randn(E, K, N, device="cuda", dtype=torch.float32)
-        X = torch.randn(1, K, device="cuda", dtype=torch.float32)
-        expert_idxs = torch.tensor([[0, 1]], device="cuda", dtype=torch.long)
+        W = torch.randn(E, K, N, device=DEVICE_TYPE, dtype=torch.float32)
+        X = torch.randn(1, K, device=DEVICE_TYPE, dtype=torch.float32)
+        expert_idxs = torch.tensor([[0, 1]], device=DEVICE_TYPE, dtype=torch.long)
 
         Y = single2scatter(X, W, expert_idxs)
         assert Y.shape == (2, N)
@@ -256,9 +258,9 @@ class TestSingle2ScatterBounds:
         )
 
         E, K, N = 2, 100, 100  # Neither aligned to 128
-        W = torch.randn(E, K, N, device="cuda", dtype=torch.float32)
-        X = torch.randn(1, K, device="cuda", dtype=torch.float32)
-        expert_idxs = torch.tensor([[0, 1]], device="cuda", dtype=torch.long)
+        W = torch.randn(E, K, N, device=DEVICE_TYPE, dtype=torch.float32)
+        X = torch.randn(1, K, device=DEVICE_TYPE, dtype=torch.float32)
+        expert_idxs = torch.tensor([[0, 1]], device=DEVICE_TYPE, dtype=torch.long)
 
         Y = single2scatter(X, W, expert_idxs)
         assert Y.shape == (2, N)
@@ -274,7 +276,7 @@ class TestSingle2ScatterBounds:
 # ============================================================================
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.skipif(not gpu_available(), reason="GPU not available")
 class TestGroupCoeffNone:
     """Test that group() works with coeff=None."""
 
@@ -283,8 +285,10 @@ class TestGroupCoeffNone:
         from axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops import group
 
         M, K = 4, 32
-        A = torch.randn(M, K, device="cuda", dtype=torch.float32)
-        sorted_expert_idxs = torch.tensor([0, 1, 2, 3], device="cuda", dtype=torch.long)
+        A = torch.randn(M, K, device=DEVICE_TYPE, dtype=torch.float32)
+        sorted_expert_idxs = torch.tensor(
+            [0, 1, 2, 3], device=DEVICE_TYPE, dtype=torch.long
+        )
 
         # This should not raise a TypeError
         Y = group(A, sorted_expert_idxs, coeff=None, fan_out=1)
@@ -295,9 +299,11 @@ class TestGroupCoeffNone:
         from axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops import group
 
         M, K = 4, 32
-        A = torch.randn(M, K, device="cuda", dtype=torch.float32)
-        sorted_expert_idxs = torch.tensor([0, 1, 2, 3], device="cuda", dtype=torch.long)
-        coeff = torch.ones(M, device="cuda", dtype=torch.float32) * 0.5
+        A = torch.randn(M, K, device=DEVICE_TYPE, dtype=torch.float32)
+        sorted_expert_idxs = torch.tensor(
+            [0, 1, 2, 3], device=DEVICE_TYPE, dtype=torch.long
+        )
+        coeff = torch.ones(M, device=DEVICE_TYPE, dtype=torch.float32) * 0.5
 
         Y = group(A, sorted_expert_idxs, coeff=coeff, fan_out=1)
         assert Y.shape == (M, K)
