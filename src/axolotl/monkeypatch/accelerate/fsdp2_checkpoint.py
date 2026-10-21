@@ -638,7 +638,14 @@ def peft_save_embedding_layers(model):
     from peft.tuners.trainable_tokens.layer import TrainableTokensLayer
     from peft.tuners.tuners_utils import BaseTunerLayer
     from peft.utils.other import AuxiliaryTrainingWrapper
+    from peft.utils.peft_types import PeftType
 
+    # as in PEFT's "auto": trainable tokens never resize the vocabulary
+    using_trainable_tokens = any(
+        config.peft_type == PeftType.TRAINABLE_TOKENS
+        or getattr(config, "trainable_token_indices", None) is not None
+        for config in getattr(model, "peft_config", {}).values()
+    )
     for getter in ("get_input_embeddings", "get_output_embeddings"):
         try:
             layer = getattr(model, getter)()
@@ -648,7 +655,7 @@ def peft_save_embedding_layers(model):
         if layer is None or isinstance(layer, AuxiliaryTrainingWrapper):
             continue
         if isinstance(layer, BaseTunerLayer):
-            if not isinstance(layer, TrainableTokensLayer):
+            if not (isinstance(layer, TrainableTokensLayer) or using_trainable_tokens):
                 return True
         elif any(p.requires_grad for p in layer.parameters()):
             return True

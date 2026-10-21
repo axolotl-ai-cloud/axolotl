@@ -363,6 +363,7 @@ def test_transfer_writes_into_the_destination_view():
     [
         ("lora", False),
         ("lora-embedding", True),
+        ("lora-embedding-trainable-tokens", False),
         ("modules-to-save-embedding", False),
         ("unfrozen-embedding", True),
         ("resized-local-base", True),
@@ -394,6 +395,9 @@ def test_save_embedding_layers_is_explicit_without_hub_requests(
     lora = dict(target_modules=["c_attn"], r=2)
     if case == "lora-embedding":
         lora["target_modules"] = ["c_attn", "wte"]
+    if case == "lora-embedding-trainable-tokens":
+        lora["target_modules"] = ["c_attn", "lm_head"]
+        lora["trainable_token_indices"] = {"wte": [1, 2]}
     if case == "modules-to-save-embedding":
         lora["modules_to_save"] = ["wte"]
     model = get_peft_model(base, LoraConfig(**lora))
