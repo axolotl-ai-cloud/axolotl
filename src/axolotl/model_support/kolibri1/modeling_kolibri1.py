@@ -206,6 +206,12 @@ class Kolibri1PreTrainedModel(Qwen3MoePreTrainedModel):
         if isinstance(module, Kolibri1TopKRouter):
             init.zeros_(module.e_score_correction_bias)
 
+    @classmethod
+    def _can_set_experts_implementation(cls) -> bool:
+        # transformers greps the module source for @use_experts_implementation,
+        # which Qwen3MoeExperts carries but this file does not spell
+        return True
+
 
 class Kolibri1Model(Kolibri1PreTrainedModel):
     def __init__(self, config: Kolibri1Config):

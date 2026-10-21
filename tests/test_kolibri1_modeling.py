@@ -75,6 +75,10 @@ def test_registered_and_matched_by_name():
     assert get_model_support_for_cfg(cfg) is support
 
 
+def test_experts_implementation_is_settable(model):
+    assert model.config._experts_implementation == "grouped_mm"
+
+
 def test_rope_only_on_sliding_layers(model):
     assert [layer.self_attn.use_rope for layer in model.model.layers] == [
         True,
