@@ -2440,6 +2440,9 @@ class DistributedValidationMixin:
             problems.append("fsdp_config.state_dict_type: FULL_STATE_DICT")
         if (self.tensor_parallel_size or 1) > 1:
             problems.append("tensor_parallel_size: 1")
+        if self.rl:
+            # the RL trainers do not include ShardedAdapterSaveMixin
+            problems.append("rl unset")
         if self.load_best_model_at_end:
             # the best checkpoint may still be consolidating when training ends
             problems.append("load_best_model_at_end: false")
