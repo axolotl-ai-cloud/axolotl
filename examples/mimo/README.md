@@ -18,7 +18,7 @@ This config uses about 17.2 GiB VRAM. Let us know how it goes. Happy finetuning!
 
 ### MiMo-V2.6-Flash
 
-[MiMo-V2.6-Flash-RL](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL) is a 309B-A15B MoE model. Axolotl loads its text decoder into the native MiMo-V2-Flash modules and dequantizes the FP8/MXFP4 checkpoint to bf16 on load, so plan for ~620 GB of weights across the FSDP group (e.g. 8x H200).
+[MiMo-V2.6-Flash-RL](https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL) is a 309B-A15B MoE model. Axolotl loads its text decoder into the native MiMo-V2-Flash modules and dequantizes the FP8/MXFP4 checkpoint to bf16 on load, so plan for ~620 GB of bf16 weights sharded across the FSDP group (e.g. 8x H200). With `cpu_ram_efficient_loading: true`, rank 0 materializes the full ~620 GB model in host RAM before sharding, so that node needs well over 620 GB of CPU memory.
 
 ```bash
 axolotl train examples/mimo/mimo-v2.6-flash-lora-fsdp.yaml
