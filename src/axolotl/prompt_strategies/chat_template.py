@@ -8,6 +8,7 @@ from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
+from jinja2.exceptions import TemplateError
 from pydantic import BaseModel
 from transformers import ProcessorMixin
 
@@ -946,11 +947,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         spans = []
         for sentinel in self._SENTINELS:
-            dummy_turn = self._build_dummy_turn(
-                turns[turn_idx], content_only, reasoning_only, sentinel
-            )
-            dummy_text = self.prompter.build_prompt_text(  # type: ignore
-                turns[:turn_idx] + [dummy_turn] + turns[turn_idx + 1 :], tools=tools
+            dummy_text = self._render_dummy(
+                lambda dummy_turn: self.prompter.build_prompt_text(  # type: ignore
+                    turns[:turn_idx] + [dummy_turn] + turns[turn_idx + 1 :],
+                    tools=tools,
+                ),
+                turns[turn_idx],
+                content_only,
+                reasoning_only,
+                sentinel,
             )
             if not dummy_text:
                 return None
@@ -1029,8 +1034,40 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         return start_idx, end_idx
 
+    def _render_dummy(
+        self,
+        render,
+        turn: dict,
+        content_only: bool,
+        reasoning_only: bool,
+        sentinel: str,
+    ):
+        """Render with a placeholder turn. Templates that raise on an assistant turn
+        without reasoning get the reasoning swapped too, for every later row as well."""
+        swap = getattr(self, "_dummy_swaps_thinking", False)
+        try:
+            return render(
+                self._build_dummy_turn(
+                    turn, content_only, reasoning_only, sentinel, swap
+                )
+            )
+        except TemplateError:
+            thinking_key = self.prompter.template_thinking_key
+            if swap or not (thinking_key and thinking_key in turn):
+                raise
+        result = render(
+            self._build_dummy_turn(turn, content_only, reasoning_only, sentinel, True)
+        )
+        self._dummy_swaps_thinking = True
+        return result
+
     def _build_dummy_turn(
-        self, turn: dict, content_only: bool, reasoning_only: bool, sentinel: str
+        self,
+        turn: dict,
+        content_only: bool,
+        reasoning_only: bool,
+        sentinel: str,
+        swap_thinking: bool = False,
     ) -> dict:
         thinking_key = self.prompter.template_thinking_key
 
@@ -1041,8 +1078,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         else:
             dummy_turn = {"role": turn.get("role"), "content": sentinel}
             # Keep reasoning under content_only so the diff excludes it.
-            if content_only and thinking_key and thinking_key in turn:
-                dummy_turn[thinking_key] = turn[thinking_key]
+            if thinking_key and thinking_key in turn:
+                if content_only:
+                    dummy_turn[thinking_key] = turn[thinking_key]
+                elif swap_thinking:
+                    dummy_turn[thinking_key] = sentinel
 
         # Registry templates resolve a tool result's sender from these and raise without them.
         if turn.get("role") == "tool":
@@ -1092,10 +1132,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 turns, turn_idx, content_only, reasoning_only, tools, locator
             )
         if span is None:
-            dummy_turn = self._build_dummy_turn(
-                turns[turn_idx], content_only, reasoning_only, self._SENTINELS[0]
+            span = self._render_dummy(
+                lambda dummy_turn: self._find_turn_from_tokens(
+                    turns, turn_idx, dummy_turn, tools
+                ),
+                turns[turn_idx],
+                content_only,
+                reasoning_only,
+                self._SENTINELS[0],
             )
-            span = self._find_turn_from_tokens(turns, turn_idx, dummy_turn, tools)
         if span is None:
             return -1, -1
 
