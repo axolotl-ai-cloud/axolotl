@@ -215,8 +215,11 @@ class ShardedAdapterSaveMixin(Trainer):
 
         original = getattr(hf_trainer, "rotate_checkpoints", None)
         if original is None:
-            yield
-            return
+            raise RuntimeError(
+                "adapter_checkpoint_format: sharded holds back save_total_limit rotation "
+                "through transformers.trainer.rotate_checkpoints, which this transformers "
+                "version does not have"
+            )
 
         def rotate(output_dir, *args, **kwargs):
             if self._axolotl_unconsolidated:
