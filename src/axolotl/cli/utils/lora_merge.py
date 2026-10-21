@@ -1635,10 +1635,22 @@ class _Nvfp4ExpertMergeWriter:
         param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
         weight_renamings: Optional[Dict[str, str]] = None,
         expert_chunk: int = 32,
+        merge_compile: bool = False,
+        merge_compile_precision: str = "strict",
     ):
         if expert_chunk < 1:
             raise ValueError(f"expert_chunk must be >= 1, got {expert_chunk}")
         self.expert_chunk = expert_chunk
+        self.compiled_merge = None
+        if merge_compile:
+            from axolotl.cli.utils.compiled_lora_merge import CompiledExpertMerge
+
+            if scale_mode == "fresh":
+                self.compiled_merge = CompiledExpertMerge(merge_compile_precision)
+            else:
+                LOG.warning(
+                    "merge_compile requires merge-aware NVFP4 experts; using eager merging"
+                )
         self.lora_state = lora_state
         self.param_wrapper_map = param_wrapper_map
         self.weight_renamings = weight_renamings
@@ -1796,24 +1808,47 @@ class _Nvfp4ExpertMergeWriter:
             fused = self._dequant_chunk(
                 projs, members, e0, e1, pts_all, pts_fused, fold
             )
-            delta = _build_peft_layer_and_get_delta(
-                a_3d[e0:e1].reshape(-1, a_3d.shape[-1]).to(dev),
-                b_3d[:, :, e0:e1].reshape(b_3d.shape[0], -1).to(dev),
-                self.lora_config_dict,
-                fused,
-                is_param_wrapper=True,
-                is_transposed=target.is_transposed if target else None,
-                lora_alpha_override=target.alpha if target else None,
-                canonical_fp32=fresh,
-            )
-            merged_t = (fused.to(torch.float32) + delta.to(torch.float32)).to(
-                torch.bfloat16
-            )
-            if not fresh and not self.dequant:
-                weight = (e1 - e0) / E
-                self._delta_mag_sum += float(delta.float().abs().mean()) * weight
-                self._base_mag_sum += float(fused.float().abs().mean()) * weight
-            del fused, delta
+            chunk_a = a_3d[e0:e1].reshape(-1, a_3d.shape[-1]).to(dev)
+            chunk_b = b_3d[:, :, e0:e1].reshape(b_3d.shape[0], -1).to(dev)
+
+            def eager_merge(
+                fused=fused, chunk_a=chunk_a, chunk_b=chunk_b, weight=(e1 - e0) / E
+            ):
+                delta = _build_peft_layer_and_get_delta(
+                    chunk_a,
+                    chunk_b,
+                    self.lora_config_dict,
+                    fused,
+                    is_param_wrapper=True,
+                    is_transposed=target.is_transposed if target else None,
+                    lora_alpha_override=target.alpha if target else None,
+                    canonical_fp32=fresh,
+                )
+                if not fresh and not self.dequant:
+                    self._delta_mag_sum += float(delta.float().abs().mean()) * weight
+                    self._base_mag_sum += float(fused.float().abs().mean()) * weight
+                return (fused.float() + delta.float()).to(torch.bfloat16)
+
+            merged_t = None
+            if self.compiled_merge is not None and not (
+                target and target.is_transposed
+            ):
+                alpha = (
+                    target.alpha
+                    if target
+                    else self.lora_config_dict.get(
+                        "lora_alpha", self.lora_config_dict.get("r", 1)
+                    )
+                )
+                scaling = alpha / (
+                    math.sqrt(r) if self.lora_config_dict.get("use_rslora") else r
+                )
+                merged_t = self.compiled_merge(
+                    fused, chunk_a, chunk_b, scaling, eager_merge
+                )
+            if merged_t is None:
+                merged_t = eager_merge()
+            del fused, chunk_a, chunk_b, eager_merge
 
             if fused_out is not None:
                 fused_out[e0:e1].copy_(merged_t)
@@ -2701,6 +2736,8 @@ def merge_lora_sharded_efficient(
     override_quantizer: bool = False,
     revision: Optional[str] = None,
     shard_sink: Optional[Callable[[dict[str, torch.Tensor], Path, dict], None]] = None,
+    merge_compile: bool = False,
+    merge_compile_precision: str = "strict",
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -2714,6 +2751,10 @@ def merge_lora_sharded_efficient(
         adapter (encoder version drift); see ``_resolve_nvfp4_scale_mode``.
 
     Args:
+        merge_compile: Compile strict FP32 merge arithmetic for merge-aware NVFP4
+            expert chunks. Other merge paths remain eager.
+        merge_compile_precision: "strict" validates compiled chunks against PEFT;
+            "relaxed" uses compiler defaults without numerical equivalence checks.
         shard_sink: Optional writer receiving each merged CPU shard, its destination,
             and safetensors metadata. Replaces the default shard write.
         nf4_backend: NF4 implementation used for the training base.
@@ -2988,11 +3029,18 @@ def merge_lora_sharded_efficient(
                 scale_mode=nvfp4_scale_mode,
                 param_wrapper_map=param_wrapper_map,
                 weight_renamings=weight_renamings,
+                merge_compile=merge_compile,
+                merge_compile_precision=merge_compile_precision,
             )
             LOG.info(
                 "Adapter has a FUSED expert LoRA over a PER-EXPERT unfused NVFP4 base: using "
                 "the expert-merge writer (dequant -> fuse -> fold delta -> unfuse -> requant)."
             )
+
+    if merge_compile and expert_writer is None:
+        LOG.warning(
+            "merge_compile found no per-expert NVFP4 writer; using eager merging"
+        )
 
     merged_count = 0
     total_tensors = 0

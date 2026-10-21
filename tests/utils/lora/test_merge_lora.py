@@ -27,6 +27,13 @@ from axolotl.integrations.base import BasePlugin
 from axolotl.utils.dict import DictDefault
 
 
+def test_compiled_merge_rejects_legacy_method():
+    with pytest.raises(ValueError, match="merge_compile requires merge_method"):
+        do_merge_lora(
+            cfg=DictDefault(adapter="lora", merge_method="legacy", merge_compile=True)
+        )
+
+
 class _PostMergeRecorder(BasePlugin):
     def __init__(self):
         self.calls = []
@@ -699,10 +706,14 @@ class TestEfficientMerge:
             _original_adapter="qlora",
             _original_staged_nf4=staged,
             _original_nf4_backend=backend,
+            merge_compile=True,
+            merge_compile_precision="relaxed",
         )
         with patch("axolotl.cli.merge_lora.merge_lora_sharded_efficient") as merge:
             _do_merge_lora_efficient(cfg=cfg)
         kwargs = merge.call_args.kwargs
+        assert kwargs["merge_compile"] is True
+        assert kwargs["merge_compile_precision"] == "relaxed"
         assert kwargs["simulate_nf4"] is True
         assert kwargs["staged_nf4"] is staged
         assert kwargs["nf4_backend"] == backend
@@ -3389,8 +3400,9 @@ class TestQuantizedBaseMerge:
     @pytest.mark.parametrize(
         "scale_mode,dequant", [("fresh", False), ("reuse", False), ("reuse", True)]
     )
+    @pytest.mark.parametrize("merge_compile", [False, True])
     def test_nvfp4_expert_writer_chunking_is_bitwise_invariant(
-        self, tmp_path, scale_mode, dequant
+        self, tmp_path, scale_mode, dequant, merge_compile
     ):
         """The expert writer merges in expert chunks to bound its working set; the
         written bytes must not depend on the chunk size, and the per-expert views it
@@ -3413,11 +3425,27 @@ class TestQuantizedBaseMerge:
                 dequant=dequant,
                 scale_mode=scale_mode,
                 expert_chunk=chunk,
+                merge_compile=merge_compile,
             )
             remaining, emitted, merged = writer.consume(dict(shard))
             writer.assert_drained()
             assert merged == 2 and not remaining
             outputs.append(emitted)
+            if merge_compile and scale_mode == "fresh":
+                assert writer.compiled_merge is not None
+                assert not writer.compiled_merge.disabled
+                assert writer.compiled_merge.validated
+
+        if merge_compile:
+            writer = _Nvfp4ExpertMergeWriter(
+                adapter,
+                {"r": r, "lora_alpha": alpha},
+                E,
+                "cpu",
+                dequant=dequant,
+                scale_mode=scale_mode,
+            )
+            outputs.insert(0, writer.consume(dict(shard))[1])
 
         def raw(t):
             return t.contiguous().reshape(-1).view(torch.uint8)
