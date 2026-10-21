@@ -306,7 +306,7 @@ def test_default_format_keeps_the_gather_path():
     )
     trainer = object.__new__(AxolotlTrainer)
     trainer._axolotl_cfg = DictDefault({"adapter": "lora"})
-    trainer._axolotl_saving_checkpoint = True
+    trainer._axolotl_sharded_checkpoint_save = True
     assert not trainer._sharded_adapter_save_applies()
     calls = []
     with patch.object(
@@ -427,9 +427,9 @@ def test_final_save_goes_through_the_sharded_writer(tmp_path, final_save):
     trainer = _final_save_trainer(tmp_path)
     assert trainer.save_final_adapter(str(tmp_path / "out"))
     assert final_save.calls == [("sharded", str(tmp_path / "out"), True)]
-    # a later plain save_model (merge, export, callbacks) keeps the gather
-    trainer.save_model(str(tmp_path / "other"))
-    assert final_save.calls[1:] == [("gather", str(tmp_path / "other"))]
+    # push_to_hub saves with _internal_call and uploads right after: never a background save
+    trainer.save_model(str(tmp_path / "other"), _internal_call=True)
+    assert final_save.calls[1:] == [("sharded", str(tmp_path / "other"), True)]
     assert not trainer._final_adapter_save()
 
 
@@ -452,6 +452,8 @@ def test_final_save_follows_the_final_format(tmp_path, final_save, cfg):
     trainer = _final_save_trainer(tmp_path, **cfg)
     assert not trainer.save_final_adapter(str(tmp_path / "out"))
     assert final_save.calls == []
+    trainer.save_model(str(tmp_path / "out"), _internal_call=True)
+    assert final_save.calls == [("gather", str(tmp_path / "out"))]
 
 
 def test_save_trained_model_routes_the_final_export(tmp_path):

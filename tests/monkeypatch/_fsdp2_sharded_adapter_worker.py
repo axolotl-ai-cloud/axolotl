@@ -73,6 +73,15 @@ def make_trainer(model, output_dir, adapter_format=None):
     return trainer
 
 
+def save_checkpoint(trainer, output_dir=None):
+    """The model save inside ``Trainer._save_checkpoint``."""
+    trainer._axolotl_sharded_checkpoint_save = True
+    try:
+        trainer.save_model(output_dir, _internal_call=True)
+    finally:
+        trainer._axolotl_sharded_checkpoint_save = False
+
+
 def fill(model, seed_of):
     """Distinct values per element, identical on every replica of a slice."""
     with torch.no_grad():
@@ -204,7 +213,7 @@ def check_fsdp_only(flat, mesh, root):
         reference._save(str(gathered), state_dict=state)
     dist.barrier()
     with Spy("_transfer", "_gather_tensor") as spy:
-        make_trainer(model, sharded, "sharded").save_model(_internal_call=True)
+        save_checkpoint(make_trainer(model, sharded, "sharded"))
     # only the _StridedShard factor needs rank 0 to assemble it
     assert spy.calls == {"_transfer": 0, "_gather_tensor": 1}, spy.calls
     expect_identical("fsdp-only", gathered, sharded)
@@ -292,7 +301,7 @@ def check_ep(mesh, root):
         Spy("_transfer", "_gather_tensor") as spy,
         patch.object(fsdp2_sharded_adapter, "consolidate", counting),
     ):
-        make_trainer(model, sharded, "sharded").save_model(_internal_call=True)
+        save_checkpoint(make_trainer(model, sharded, "sharded"))
         if dist.get_rank() == 0:
             CONSOLIDATIONS.wait()
     assert spy.calls == {"_transfer": 0, "_gather_tensor": 0}, spy.calls
@@ -322,7 +331,7 @@ def check_ep(mesh, root):
         patch.object(fsdp2_sharded_adapter, "_probe", other_node),
         Spy("_transfer") as spy,
     ):
-        make_trainer(model, remote, "sharded").save_model(_internal_call=True)
+        save_checkpoint(make_trainer(model, remote, "sharded"))
     # every unique slice ranks 2 and 3 hold travels to rank 0; replicas stay put
     assert spy.calls["_transfer"] > 0, spy.calls
     expect_identical("ep-remote-ranks", gathered, remote)
@@ -350,7 +359,7 @@ def check_regular_checkpoint_resume(model, root):
         raise AssertionError("gathered the adapter for the FSDP model file")
 
     with patch.object(fsdp2_checkpoint, "full_model_state", no_gather):
-        trainer.save_model(_internal_call=True)
+        save_checkpoint(trainer)
         fsdp_utils.save_fsdp_model(
             trainer.accelerator.state.fsdp_plugin,
             trainer.accelerator,
@@ -466,7 +475,7 @@ def save_both(model, root, label, spy_names=("_transfer", "_gather_tensor")):
         Spy(*spy_names) as spy,
         patch.object(fsdp2_sharded_adapter, "consolidate", recording),
     ):
-        make_trainer(model, sharded, "sharded").save_model(_internal_call=True)
+        save_checkpoint(make_trainer(model, sharded, "sharded"))
         if dist.get_rank() == 0:
             CONSOLIDATIONS.wait()
     expect_identical(label, gathered, sharded)
@@ -708,7 +717,7 @@ def check_final_save(model, root, label):
     )
     error = None
     with patch.object(fsdp2_sharded_adapter, "consolidate", slow):
-        trainer.save_model(str(checkpoint), _internal_call=True)
+        save_checkpoint(trainer, str(checkpoint))
         save_trained_model(cfg, trainer, model)
         if rank0:
             try:
