@@ -35,6 +35,7 @@ sample_packing: false
 pad_to_sequence_len: true
 
 # 4096 sequences per step on one GPU; divide gradient_accumulation_steps by the GPU count.
+# EMA codebooks update once per micro-batch, so the split changes codebook dynamics.
 micro_batch_size: 512
 gradient_accumulation_steps: 8
 max_steps: 30000

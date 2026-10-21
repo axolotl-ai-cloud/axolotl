@@ -14,9 +14,9 @@ axolotl train examples/ncm/tinystories-tokenizer.yaml   # writes ./outputs/ncm-t
 axolotl train examples/ncm/tinystories-generator.yaml   # base_model: the stage-1 output
 ```
 
-Stage 1 takes its text tokenizer from `tokenizer_config` and builds the VQ-VAE from `model_config`. Stage 2 points `base_model` at a stage-1 output: the plugin starts a fresh generator (configured by `model_config`) around the trained tokenizer and freezes it. Pointing stage 2 at an existing generator continues training it.
+Stage 1 takes its text tokenizer from `tokenizer_config` and builds the VQ-VAE from `model_config`; pointing `base_model` at a stage-1 output continues it instead. Stage 2 points `base_model` at a stage-1 output: the plugin starts a fresh generator (configured by `model_config`) around the trained tokenizer and freezes it. Pointing stage 2 at an existing generator continues training it. Continued runs load in fp32 (training uses autocast), and `model_config` cannot add parameters to an existing checkpoint.
 
-Data are raw text (`type: completion`) cut into blocks of exactly `levels[-1]` tokens. Set `sequence_len` to that length with `sample_packing: false` and `pad_to_sequence_len: true`.
+Data are raw text (`type: completion`) cut into blocks of `levels[-1]` tokens, padding the last block of each document. Set `sequence_len` to that length with `pad_to_sequence_len: true`.
 
 ## Configuration
 
@@ -52,13 +52,15 @@ Architecture and objective go in `model_config`.
 from transformers import AutoModel, AutoTokenizer
 import axolotl.integrations.ncm  # registers the model types
 
+from axolotl.integrations.ncm.trainer import truncate_at_eos
+
 model = AutoModel.from_pretrained("./outputs/ncm-tinystories-generator").eval()
 tok = AutoTokenizer.from_pretrained("./outputs/ncm-tinystories-generator")
-ids = model.generate(batch_size=4, temperature=1.0)
-print(tok.batch_decode(ids, skip_special_tokens=True))
+for row in model.generate(batch_size=4, temperature=1.0).tolist():
+    print(tok.decode(truncate_at_eos(row, tok.eos_token_id), skip_special_tokens=True))
 ```
 
-Unconditional generation samples level 0 from its empirical distribution, counted during generator training.
+Generation fills the whole block; positions after the first EOS are untrained filler. Unconditional generation samples level 0 from its empirical distribution, counted during generator training.
 
 ## Released checkpoints
 
@@ -73,14 +75,15 @@ model.save_pretrained("./ncm-tinystories-ref")
 
 ## Differences from the reference
 
-The reference release has no training code, so these follow the paper:
+The reference release ships the model code (including the quantizer's EMA updates and nested dropout) but no training loop, generator loss, code corruption, or level-0 statistics; those follow the paper.
 
-- **Codebook health.** EMA cluster sizes start at 1 instead of 0, and dead codes are re-seeded from current inputs. Starting at 0, the first EMA update scales every rarely-hit code out of range, which collapsed a from-scratch tokenizer to one code per level in testing.
+- **Codebook health.** EMA cluster sizes start at 1 instead of 0, and codes unused for a while are re-seeded from current inputs (the reference's absolute `restart_threshold` is replaced by `dead_code_threshold`, relative to the uniform share). Starting at 0, the first EMA update scales every rarely-hit code out of range, which collapsed a from-scratch tokenizer to one code per level in testing.
 - **Corruption schedule.** The paper uses a linearly decreasing per-level rate with a given mean. Here the rate falls from about `2 * corruption_rate` at the coarsest corrupted level towards 0 at the finest. Level 0 is spared unless `corruption_skip_level0: false`; the finest level is never an input.
 - **Not ported yet.** Prompt-conditioned training data (translation, summarization, Sudoku), classifier-free guidance, MBR decoding, the frequency penalties used to decode LM1B and XSum, and WMT14's `predict_level0`.
 
 ## Limitations
 
-- Fixed-length blocks only; no sample packing.
-- Not validated with FSDP or DeepSpeed. EMA codebook statistics are all-reduced, so DDP works.
+- Fixed-length blocks only. `sample_packing`, FSDP, and DeepSpeed are rejected.
+- EMA codebook statistics are all-reduced across ranks, but multi-GPU runs are untested.
+- The EMA updates once per micro-batch, so gradient accumulation steps change codebook dynamics: 8 micro-batches of 512 make 8 EMA updates, 8 GPUs with 512 each make 1.
 - PyTorch's MPS backend crashes in the tokenizer's convolution backward; train on CUDA or CPU.
