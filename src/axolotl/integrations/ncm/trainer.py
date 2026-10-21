@@ -14,6 +14,9 @@ LOG = get_logger(__name__)
 class NCMTrainer(AxolotlTrainer):
     """Logs reconstruction/codebook metrics (stage 1) or per-level losses (stage 2)."""
 
+    # exp(loss) is not a token perplexity for either stage.
+    reports_token_perplexity = False
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
@@ -59,6 +62,11 @@ class NCMTrainer(AxolotlTrainer):
             unwrapped.vq.reset_utilization()
 
 
+def truncate_at_eos(ids: list[int], eos_token_id: int | None) -> list[int]:
+    """Blocks are fixed-length; positions after the first EOS are untrained filler."""
+    return ids[: ids.index(eos_token_id)] if eos_token_id in ids else ids
+
+
 class NCMSampleCallback(TrainerCallback):
     """Logs unconditional generator samples, decoded coarse to fine."""
 
@@ -79,9 +87,11 @@ class NCMSampleCallback(TrainerCallback):
                 ids = model.generate(
                     batch_size=self.num_samples, temperature=self.temperature
                 )
-            for i, text in enumerate(
-                self.tokenizer.batch_decode(ids, skip_special_tokens=True)
-            ):
-                LOG.info("NCM sample %d @ step %d: %s", i, state.global_step, text)
+            for i, row in enumerate(ids.tolist()):
+                text = self.tokenizer.decode(
+                    truncate_at_eos(row, self.tokenizer.eos_token_id),
+                    skip_special_tokens=True,
+                )
+                LOG.info("NCM sample %d @ step %d: %r", i, state.global_step, text)
         finally:
             model.train(was_training)
