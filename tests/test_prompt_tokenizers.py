@@ -8,6 +8,7 @@ from axolotl.prompt_strategies.alpaca_w_system import (
     InstructionWSystemPromptTokenizingStrategy,
     SystemDataPrompter,
 )
+from axolotl.prompt_strategies.bradley_terry.chat_template import load as bt_load
 from axolotl.prompt_strategies.llama2_chat import (
     Llama2ChatPrompter,
     LLama2ChatTokenizingStrategy,
@@ -198,3 +199,24 @@ class TestOrpoTokenization:
 
         assert res["prompt_attention_mask"][0] == 1
         assert res["prompt_attention_mask"][-1] == 0
+
+
+class TestBradleyTerryTokenization:
+    """test case for the Bradley-Terry chat_template tokenization"""
+
+    @enable_hf_offline
+    def test_bt_null_system(self, tokenizer_huggyllama_w_special_tokens):
+        strat = bt_load(
+            tokenizer_huggyllama_w_special_tokens,
+            DictDefault(
+                {
+                    "train_on_inputs": False,
+                    "sequence_len": 2048,
+                    "chat_template": "chatml",
+                    "reward_model": True,
+                }
+            ),
+        )
+        sample = {"system": None, "input": "hi", "chosen": "a", "rejected": "b"}
+        res = strat.tokenize_prompt(sample)
+        assert res["chosen_ids"] and res["rejected_ids"]
