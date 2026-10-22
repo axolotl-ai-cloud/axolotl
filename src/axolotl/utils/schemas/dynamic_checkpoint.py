@@ -18,7 +18,7 @@ class DynamicCheckpointConfig(BaseModel):
         ge=1,
         json_schema_extra={
             "description": "Check for trigger file every N steps (reduces I/O overhead). "
-            "Default: 100"
+            "Default: 10"
         },
     )
     trigger_file_path: str = Field(

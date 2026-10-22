@@ -352,11 +352,8 @@ def test_grouped_experts_function_backward_returns_none_for_nondiff_inputs():
 # Marlin fused-dequant bit-exactness on sm80+ (executes on sm89 via the Marlin ext)
 # ===========================================================================
 #
-# test_grouped_fp4_train.py also has marlin bit-exact tests, but they sit under that module's
-# Blackwell pytestmark AND a per-test capability==12 gate, so they only run on sm120. The Marlin
-# W4A16 ext is sm80+ (see marlin_w4a16/__init__: standard Ampere mma, no Blackwell intrinsics), so
-# the fused marlin->bf16 dequant is bit-exact-checkable on sm89 too. These sm80+-gated variants give
-# that numeric check real coverage on the L40S CI without touching the Blackwell module.
+# The Marlin W4A16 ext is sm80+ (see marlin_w4a16/__init__: standard Ampere mma, no Blackwell
+# intrinsics), so the fused marlin->bf16 dequant is bit-exact-checkable on sm89 too.
 
 
 def _marlin_available() -> bool:

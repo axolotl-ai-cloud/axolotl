@@ -238,16 +238,6 @@ def fixture_llama3_2_vision_with_hardcoded_date() -> str:
     return modified_template
 
 
-@pytest.fixture(name="chat_template_jinja_with_optional_fields")
-def fixture_chat_template_jinja_with_optional_fields() -> str:
-    return """{% for message in messages %}
-{{'<|im_start|>'}}{{ message['role'] }}
-{% if message['thoughts'] is defined %}[Thoughts: {{ message['thoughts'] }}]{% endif %}
-{% if message['tool_calls'] is defined %}[Tool: {{ message['tool_calls'][0]['type'] }}]{% endif %}
-{{ message['content'] }}{{'<|im_end|>'}}
-{% endfor %}"""
-
-
 @pytest.fixture(name="basic_jinja_template_analyzer")
 def basic_jinja_template_analyzer():
     return JinjaTemplateAnalyzer(

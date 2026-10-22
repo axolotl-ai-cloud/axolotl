@@ -43,6 +43,7 @@ from trl.trainer.utils import pad
 from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
 from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
+    CheckpointWriteRetryMixin,
     DistributedParallelMixin,
     RngLoaderMixin,
     SchedulerMixin,
@@ -55,6 +56,7 @@ if is_peft_available():
 
 
 class AxolotlGRPOTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,
@@ -74,6 +76,7 @@ class AxolotlGRPOTrainer(
 
 
 class AxolotlAsyncGRPOTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,

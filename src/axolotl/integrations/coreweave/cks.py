@@ -30,6 +30,7 @@ INFINIBAND_ENV = {
 }
 CONFIG_MOUNT = "/axolotl-job"
 TOKEN_MOUNT = "/var/run/caios"  # nosec B105
+SCRATCH_MOUNT = "/scratch"
 
 
 def _kubectl(cfg: CoreWeaveCloudConfig) -> list[str]:
@@ -127,7 +128,7 @@ def render_manifests(
         {"name": "data", "mountPath": cfg.pvc_mount},
         {"name": "job", "mountPath": CONFIG_MOUNT, "readOnly": True},
         {"name": "shm", "mountPath": "/dev/shm"},  # nosec B108
-        {"name": "scratch", "mountPath": "/scratch"},
+        {"name": "scratch", "mountPath": SCRATCH_MOUNT},
     ]
     for i, (host_path, mount_path) in enumerate(sorted(cfg.host_paths.items())):
         volumes.append(
@@ -232,9 +233,17 @@ def place_output_dir(cfg: CoreWeaveCloudConfig, training: dict, job_name: str) -
     if ".." in output.parts:
         raise ValueError("output_dir cannot contain '..'")
     if output.is_absolute():
-        if not output.is_relative_to(cfg.pvc_mount):
+        mirror_dir = (training.get("checkpoint_mirror") or {}).get("dir")
+        # scratch is lost with the pod, so it is only allowed when checkpoint_mirror copies to the volume
+        mirrored_scratch = (
+            output.is_relative_to(SCRATCH_MOUNT)
+            and mirror_dir is not None
+            and PurePosixPath(mirror_dir).is_relative_to(cfg.pvc_mount)
+        )
+        if not output.is_relative_to(cfg.pvc_mount) and not mirrored_scratch:
             raise ValueError(
-                f"An absolute output_dir must be under pvc_mount ({cfg.pvc_mount})"
+                f"An absolute output_dir must be under pvc_mount ({cfg.pvc_mount}), "
+                f"or under {SCRATCH_MOUNT} with checkpoint_mirror.dir under pvc_mount"
             )
         training["output_dir"] = str(output)
     else:

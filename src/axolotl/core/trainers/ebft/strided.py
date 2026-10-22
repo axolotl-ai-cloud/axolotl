@@ -31,6 +31,7 @@ from axolotl.core.trainers.ebft.rewards import (
     whiten_embeddings_batched,
 )
 from axolotl.core.trainers.mixins import (
+    CheckpointWriteRetryMixin,
     DistributedParallelMixin,
     RngLoaderMixin,
     SchedulerMixin,
@@ -310,6 +311,7 @@ def build_strided_dense_mask_and_positions(
 
 
 class AxolotlStridedEBFTTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,

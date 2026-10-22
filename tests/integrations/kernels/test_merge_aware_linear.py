@@ -16,7 +16,6 @@ from tests.accelerator import DEVICE_TYPE, gpu_available
 torch.manual_seed(0)
 
 torchao = pytest.importorskip("torchao")
-peft = pytest.importorskip("peft")
 
 from peft import LoraConfig  # noqa: E402
 from peft.tuners.lora.layer import Linear as LoraLinear  # noqa: E402

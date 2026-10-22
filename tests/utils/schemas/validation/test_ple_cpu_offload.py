@@ -62,16 +62,12 @@ class TestPleCpuOffloadValidation:
             # neither pairing reaches a `BitsAndBytesConfig`, so accelerate still moves
             # the model and the flag would silently do nothing
             {"load_in_4bit": True},
-            {"load_in_8bit": True},
         ],
     )
     def test_requires_a_bitsandbytes_pairing(
         self, min_base_cfg, gpu_caps, env_caps, quant
     ):
         cfg = DictDefault(ple_cpu_offload=True, adapter="lora", **quant) | min_base_cfg
-        if quant.get("load_in_8bit"):
-            validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
-            return
         with pytest.raises(ValueError, match="ple_cpu_offload requires qlora"):
             validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
 

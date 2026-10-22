@@ -11,7 +11,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_tensorboard, require_torch_2_6_0, with_temp_dir
+from ..utils import check_tensorboard, with_temp_dir
 
 
 class TestPackedFlex(unittest.TestCase):
@@ -19,7 +19,6 @@ class TestPackedFlex(unittest.TestCase):
     Test case for Packed training of llama models
     """
 
-    @require_torch_2_6_0
     @with_temp_dir
     def test_loss_llama(self, temp_dir):
         cfg = DictDefault(
