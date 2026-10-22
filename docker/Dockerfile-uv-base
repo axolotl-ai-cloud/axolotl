@@ -12,7 +12,6 @@ ARG PYTHON_VERSION="3.14"
 ARG PYTORCH_VERSION="2.14.1"
 ARG CUDA="130"
 ARG TORCH_BACKEND="cu130"
-ARG NV_BACKEND="cu13"
 ARG TORCH_INDEX_URL=""
 ARG TORCH_CUDA_ARCH_LIST="9.0 10.0 10.3 12.0+PTX"
 
@@ -38,13 +37,24 @@ RUN uv venv --no-project --relocatable axolotl-venv
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install packaging setuptools wheel psutil \
-    && if [ -n "$TORCH_INDEX_URL" ]; then \
-        uv pip install --index-url "$TORCH_INDEX_URL" torch==${PYTORCH_VERSION} torchvision apache-tvm-ffi nvidia-cutlass-dsl nvidia-nvshmem-${NV_BACKEND}; \
+    set -e; \
+    NV_BACKEND="${TORCH_BACKEND%?}"; \
+    if [ "$TORCH_BACKEND" = "cu132" ]; then \
+        TVM_FFI="apache-tvm-ffi"; \
     else \
-        UV_TORCH_BACKEND=$TORCH_BACKEND uv pip install torch==${PYTORCH_VERSION} torchvision apache-tvm-ffi nvidia-cutlass-dsl nvidia-nvshmem-${NV_BACKEND}; \
-    fi \
-    && uv pip install awscli pydantic
+        TVM_FFI=""; \
+    fi; \
+    uv pip install packaging setuptools wheel psutil; \
+    if [ -n "$TORCH_INDEX_URL" ]; then \
+        uv pip install --index-url "$TORCH_INDEX_URL" \
+            torch==${PYTORCH_VERSION} ${TVM_FFI} torchvision \
+            nvidia-cutlass-dsl nvidia-nvshmem-${NV_BACKEND}; \
+    else \
+        UV_TORCH_BACKEND=$TORCH_BACKEND uv pip install \
+            torch==${PYTORCH_VERSION} ${TVM_FFI} torchvision \
+            nvidia-cutlass-dsl nvidia-nvshmem-${NV_BACKEND}; \
+    fi; \
+    uv pip install awscli pydantic \
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$TARGETARCH" = "amd64" ]; then \
