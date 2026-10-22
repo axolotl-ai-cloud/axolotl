@@ -15,6 +15,22 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def merge_aware_metadata(start_step=None) -> dict:
+    """The quantizer identity a merge of a merge-aware adapter must match."""
+    try:
+        import torchao
+
+        encoder = f"torchao-{torchao.__version__}"
+    except ImportError:
+        encoder = None
+    return {
+        "scale_mode": "fresh",
+        "pts_policy": "base_fused_max",
+        "encoder": encoder,
+        "start_step": start_step,
+    }
+
+
 def write_merge_aware_metadata(adapter_dir, start_step=None) -> bool:
     """Record the quantizer identity in the adapter's adapter_config.json.
 
@@ -26,19 +42,8 @@ def write_merge_aware_metadata(adapter_dir, start_step=None) -> bool:
     path = Path(adapter_dir) / "adapter_config.json"
     if not path.exists():
         return False
-    try:
-        import torchao
-
-        encoder = f"torchao-{torchao.__version__}"
-    except ImportError:
-        encoder = None
     cfg = json.loads(path.read_text())
-    cfg["nvfp4_merge_aware"] = {
-        "scale_mode": "fresh",
-        "pts_policy": "base_fused_max",
-        "encoder": encoder,
-        "start_step": start_step,
-    }
+    cfg["nvfp4_merge_aware"] = merge_aware_metadata(start_step)
     path.write_text(json.dumps(cfg, indent=2))
     return True
 

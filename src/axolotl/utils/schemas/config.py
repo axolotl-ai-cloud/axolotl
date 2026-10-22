@@ -18,6 +18,7 @@ from pydantic import (
 
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -303,6 +304,13 @@ class AxolotlInputConfig(
     reward_model: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},
+    )
+    checkpoint_publish: CheckpointPublishConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Publish LoRA or merged weights as a full checkpoint "
+            "followed by XOR deltas, to a local directory, S3, or a destination plugin."
+        },
     )
     dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
         default=None,

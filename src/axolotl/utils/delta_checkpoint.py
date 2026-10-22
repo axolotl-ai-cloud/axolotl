@@ -37,6 +37,20 @@ def _bytes(tensor):
     return tensor.reshape(-1).view(torch.uint8).numpy()
 
 
+def encode_xor_delta(
+    current: np.ndarray, previous: np.ndarray, *, level: int = 1
+) -> tuple[np.ndarray, str] | None:
+    """Return one zstd frame of ``current ^ previous`` and the Adler-32 of ``current``.
+
+    ``None`` means the bytes are identical and the tensor is left out of the delta.
+    """
+    delta = np.bitwise_xor(current, previous)
+    if not np.any(delta):
+        return None
+    encoded = zstandard.ZstdCompressor(level=level).compress(delta)
+    return np.frombuffer(encoded, dtype=np.uint8), f"{zlib.adler32(current):08x}"
+
+
 def write_checkpoint(
     weights: Mapping[str, torch.Tensor],
     destination: Path | str,
@@ -101,14 +115,12 @@ def write_checkpoint(
                     raise ValueError(
                         f"Tensor layout changed for {name}; publish a full checkpoint"
                     )
-                current = _bytes(tensor)
-                delta = np.bitwise_xor(current, _bytes(previous.cpu().contiguous()))
-                if not np.any(delta):
-                    continue
-                digest = f"{zlib.adler32(current):08x}"
-                tensor = np.frombuffer(
-                    zstandard.ZstdCompressor(level=1).compress(delta), dtype=np.uint8
+                encoded = encode_xor_delta(
+                    _bytes(tensor), _bytes(previous.cpu().contiguous())
                 )
+                if encoded is None:
+                    continue
+                tensor, digest = encoded
                 nbytes = tensor.nbytes
             else:
                 tensor = tensor.clone()

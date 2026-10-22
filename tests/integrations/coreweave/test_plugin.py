@@ -101,10 +101,21 @@ def test_bf16_lora_save_configuration_is_supported():
     )
 
 
+def test_lora_publication_does_not_require_bf16():
+    CoreWeavePlugin().register(
+        {
+            "coreweave": config().model_dump(),
+            "adapter": "lora",
+            "base_model": "test/model",
+            "bf16": False,
+        }
+    )
+
+
 @pytest.mark.parametrize(
     "settings",
     [
-        {"bf16": False},
+        {"base_model": None},
         {"load_in_4bit": True},
         {"save_safetensors": False},
         {"trust_remote_code": True},

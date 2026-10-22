@@ -3,14 +3,17 @@
 import json
 from pathlib import Path
 
+from pydantic import BaseModel
 from safetensors.torch import load_file
 from transformers import TrainerCallback
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
 
 from .args import CoreWeaveConfig
 from .checkpoints import CheckpointPublisher
 from .client import CoreWeaveClient
+from .destination import CoreWeaveDestination
 
 
 def load_weights(directory):
@@ -48,9 +51,12 @@ def load_weights(directory):
 class CoreWeaveCheckpointCallback(TrainerCallback):
     """Publish only completed Hugging Face saves on the main process."""
 
-    def __init__(self, config, *, base_model=None, revision=None):
+    def __init__(
+        self, config, *, base_model=None, revision=None, merged_format="preserve"
+    ):
         self.config = config
         self.base_model, self.revision = base_model, revision
+        self.merged_format = merged_format
         self.publisher = None
         self.worker = None
 
@@ -62,7 +68,11 @@ class CoreWeaveCheckpointCallback(TrainerCallback):
                 from .lora import LoRACheckpointPublisher
 
                 publisher_type = LoRACheckpointPublisher
-                options = {"base_model": self.base_model, "revision": self.revision}
+                options = {
+                    "base_model": self.base_model,
+                    "revision": self.revision,
+                    "merged_format": self.merged_format,
+                }
             self.publisher = publisher_type(
                 self.config,
                 CoreWeaveClient(self.config),
@@ -129,6 +139,90 @@ class CoreWeaveCheckpointCallback(TrainerCallback):
             self.worker.close(cancel_pending=True)
 
 
+def publish_config(cfg, config):
+    """Apply ``checkpoint_publish`` to the CoreWeave destination's chain settings."""
+    settings = cfg.get("checkpoint_publish")
+    if not settings:
+        return config, None
+    if isinstance(settings, BaseModel):
+        settings = settings.model_dump()
+    if hasattr(settings, "to_dict"):
+        settings = settings.to_dict()
+    settings = CheckpointPublishConfig.model_validate(dict(settings))
+    if settings.destination is not None:
+        raise ValueError(
+            "Omit checkpoint_publish.destination when publishing to CoreWeave"
+        )
+    if cfg.get("adapter") == "lora":
+        CoreWeaveDestination.check_export(settings.export)
+    if settings.every:
+        if cfg.get("adapter") != "lora" or settings.merged_format != "preserve":
+            raise ValueError(
+                "checkpoint_publish.every publishes merged LoRA in the base's own "
+                "format; it needs adapter: lora and merged_format: preserve"
+            )
+        if cfg.get("nvfp4_merge_aware") and cfg.get("nvfp4_merge_aware_start_step"):
+            raise ValueError(
+                "checkpoint_publish.every needs merge-aware NVFP4 from the first step; "
+                "unset nvfp4_merge_aware_start_step"
+            )
+    if settings.merge_compile:
+        raise ValueError(
+            "checkpoint_publish.merge_compile is not supported by this merge path"
+        )
+    if settings.recovery is not None and cfg.get("adapter") != "lora":
+        raise ValueError("checkpoint_publish.recovery saves LoRA adapters only")
+    max_deltas = min(config.max_deltas, settings.max_deltas)
+    if not settings.delta:
+        max_deltas = 0
+    return config.model_copy(update={"max_deltas": max_deltas}), settings
+
+
+def step_publisher_factory(cfg, config, settings, revision):
+    """Build each rank's per-step publisher once training has its sharded LoRA."""
+
+    def factory(*, model, comm, pieces):
+        import torch
+
+        from axolotl.core.publishing.callback import live_adapter_config, resolve_base
+        from axolotl.core.publishing.pinned_base import pin_base
+        from axolotl.core.publishing.step_publisher import StepPublisher
+
+        output = Path(cfg.get("output_dir") or ".") / "coreweave-checkpoints"
+        workdir = Path(settings.workdir) if settings.workdir else output / "step"
+        base = pin_base(
+            resolve_base(cfg["base_model"], revision),
+            workdir / f"base-rank{comm.rank:05d}",
+            revision=revision,
+        )
+        adapter_config = live_adapter_config(model)
+        if cfg.get("use_sonicmoe") and cfg.get("nvfp4_merge_aware"):
+            from axolotl.integrations.kernels.merge_aware_callback import (
+                merge_aware_metadata,
+            )
+
+            adapter_config["nvfp4_merge_aware"] = merge_aware_metadata()
+        return StepPublisher(
+            base=base,
+            adapter_config=adapter_config,
+            pieces=pieces,
+            destination=CoreWeaveDestination(config, CoreWeaveClient(config)),
+            workdir=workdir,
+            state_dir=output / "step-state",
+            comm=comm,
+            device=(
+                f"cuda:{torch.cuda.current_device()}"
+                if torch.cuda.is_available()
+                else "cpu"
+            ),
+            max_deltas=config.max_deltas,
+            delta=settings.delta,
+            max_shard_size=config.max_shard_size,
+        )
+
+    return factory
+
+
 class CoreWeavePlugin(BasePlugin):
     """Upload full/delta checkpoints from ordinary Axolotl checkpoint saves."""
 
@@ -136,8 +230,9 @@ class CoreWeavePlugin(BasePlugin):
         return "axolotl.integrations.coreweave.args.CoreWeaveArgs"
 
     def post_train_unload(self, cfg):
-        if callback := getattr(self, "_checkpoint_callback", None):
-            callback.close()
+        for name in ("_checkpoint_callback", "_recovery_callback"):
+            if callback := getattr(self, name, None):
+                callback.close()
 
     def register(self, cfg):
         if not cfg.get("coreweave"):
@@ -148,14 +243,14 @@ class CoreWeavePlugin(BasePlugin):
             or cfg.get("load_in_8bit")
         ):
             raise ValueError(
-                "CoreWeave publishing requires full model weights or unquantized BF16 LoRA"
+                "CoreWeave publishing requires full model weights or LoRA trained on "
+                "the base checkpoint's own weights"
             )
         config = CoreWeaveConfig.model_validate(cfg["coreweave"])
+        publish_config(cfg, config)
         if cfg.get("adapter") == "lora":
-            if not cfg.get("base_model") or not cfg.get("bf16"):
-                raise ValueError(
-                    "CoreWeave LoRA publishing requires base_model and bf16: true"
-                )
+            if not cfg.get("base_model"):
+                raise ValueError("CoreWeave LoRA publishing requires base_model")
             if config.rollouts:
                 raise ValueError(
                     "CoreWeave LoRA publishing supports checkpoint saves only"
@@ -214,13 +309,41 @@ class CoreWeavePlugin(BasePlugin):
         config = CoreWeaveConfig.model_validate(cfg.coreweave)
         if config.rollouts:
             return []
+        config, settings = publish_config(cfg, config)
         revision = cfg.get("revision_of_model")
         commit = getattr(getattr(trainer.model, "config", None), "_commit_hash", None)
         if isinstance(commit, str) and commit:
             revision = commit
+        recovery = None
+        if settings is not None and settings.recovery is not None:
+            from axolotl.core.publishing.recovery import RecoverySchedule
+
+            recovery = RecoverySchedule.from_config(
+                settings.recovery,
+                output_dir=cfg.get("output_dir") or ".",
+                workdir=settings.workdir,
+            )
+        if settings is not None and settings.every:
+            from axolotl.core.publishing.callback import StepPublishCallback
+
+            self._checkpoint_callback = StepPublishCallback(
+                step_publisher_factory(cfg, config, settings, revision),
+                settings.every,
+                trainer=trainer,
+                recovery=recovery,
+            )
+            return [self._checkpoint_callback]
         self._checkpoint_callback = CoreWeaveCheckpointCallback(
             config,
             base_model=cfg.get("base_model") if cfg.get("adapter") == "lora" else None,
             revision=revision,
+            merged_format=settings.merged_format if settings else "preserve",
         )
-        return [self._checkpoint_callback]
+        if recovery is None:
+            return [self._checkpoint_callback]
+        from axolotl.core.publishing.callback import StepPublishCallback
+
+        self._recovery_callback = StepPublishCallback(
+            None, 0, trainer=trainer, recovery=recovery
+        )
+        return [self._checkpoint_callback, self._recovery_callback]

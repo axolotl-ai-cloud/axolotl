@@ -180,3 +180,31 @@ def test_base_is_pinned_and_bad_adapter_fails_before_upload(
     with pytest.raises(ValueError, match="standard LoRA"):
         publisher.publish(adapter, None, 3)
     publisher.s3.upload_file.assert_not_called()
+
+
+def test_merge_numerics_change_starts_new_chain(tmp_path, model_and_adapter):
+    base, save = model_and_adapter
+    publisher = LoRACheckpointPublisher(
+        config(),
+        MagicMock(),
+        tmp_path / "publish",
+        s3=MagicMock(),
+        base_model=str(base),
+    )
+    publisher.publish(save(1), None, 1)
+    publisher.publish(save(2), None, 2)
+    assert publisher.delta_count == 1
+    previous = torch.get_float32_matmul_precision()
+    try:
+        torch.set_float32_matmul_precision(
+            "high" if previous == "highest" else "highest"
+        )
+        identity = publisher.publish(save(3), None, 3)
+    finally:
+        torch.set_float32_matmul_precision(previous)
+    assert publisher.delta_count == 0
+    assert publisher.client.hot_load.call_args.kwargs["base_identity"] is None
+    index = json.loads(
+        (publisher.directory / identity / "model.safetensors.index.json").read_text()
+    )
+    assert index["metadata"]["merge_fingerprint"] == publisher.base.fingerprint_digest
