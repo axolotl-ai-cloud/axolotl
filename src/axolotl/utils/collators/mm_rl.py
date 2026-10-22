@@ -14,8 +14,9 @@ from transformers.image_utils import load_image
 from trl.trainer.dpo_trainer import DataCollatorForVisionPreference
 from trl.trainer.kto_trainer import DataCollatorForVisionUnpairedPreference
 
-from axolotl.processing_strategies import IMAGE_REF_KEYS, resize_image
+from axolotl.processing_strategies import IMAGE_REF_KEYS
 from axolotl.utils.dict import remove_none_values
+from axolotl.utils.images import resize_image
 
 MESSAGE_FIELDS = ("prompt", "chosen", "rejected", "completion")
 
