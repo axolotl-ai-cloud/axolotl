@@ -302,6 +302,12 @@ class LoraConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_merge_compile_method(self):
+        if self.merge_compile and self.merge_method == "legacy":
+            raise ValueError("merge_compile requires merge_method: memory_efficient")
+        return self
+
+    @model_validator(mode="after")
     def validate_mixlora(self):
         if self.adapter == "mixlora":
             if not self.lora_r:

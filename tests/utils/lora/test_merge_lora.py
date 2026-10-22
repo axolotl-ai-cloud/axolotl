@@ -25,6 +25,7 @@ from axolotl.cli.utils.lora_merge import (
 )
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.peft import LoraConfig
 
 
 def test_compiled_merge_rejects_legacy_method():
@@ -32,6 +33,16 @@ def test_compiled_merge_rejects_legacy_method():
         do_merge_lora(
             cfg=DictDefault(adapter="lora", merge_method="legacy", merge_compile=True)
         )
+
+
+def test_lora_config_rejects_explicit_legacy_merge_compile():
+    with pytest.raises(ValueError, match="merge_compile requires merge_method"):
+        LoraConfig(merge_method="legacy", merge_compile=True)
+
+
+@pytest.mark.parametrize("merge_method", [None, "memory_efficient"])
+def test_lora_config_accepts_merge_compile_without_legacy(merge_method):
+    assert LoraConfig(merge_method=merge_method, merge_compile=True).merge_compile
 
 
 class _PostMergeRecorder(BasePlugin):
