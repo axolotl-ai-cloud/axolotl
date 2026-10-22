@@ -1634,6 +1634,7 @@ class StrategyLoader:
                 None,
             ),
             "field_messages": dataset_config.get("field_messages", "messages"),
+            "field_tools": dataset_config.get("field_tools") or "tools",
             "field_thinking": dataset_config.get("field_thinking", "reasoning_content"),
             "template_thinking_key": dataset_config.get(
                 "template_thinking_key", "reasoning_content"

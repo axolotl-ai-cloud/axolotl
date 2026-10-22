@@ -82,7 +82,7 @@ def default(cfg, dataset_idx=0, **kwargs):
             # further mapped properties (e.g. reasoning_content for templates that render
             # a thinking channel) ride along when the source message carries them
             for target, source in message_property_mappings.items():
-                if target not in ("role", "content") and source in m:
+                if target not in ("role", "content") and m.get(source) is not None:
                     message[target] = m[source]
             return message
 
