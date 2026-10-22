@@ -318,12 +318,12 @@ class TestSonicmoeEPPadding:
 
         seen = {}
 
-        def fake_forward(module, x, idx, w):
+        def fake_forward(module, x, idx, w, pairs=None):
             seen.update(x=x, idx=idx, w=w)
             return x * 2
 
         monkeypatch.setattr(sonic, "_sonicmoe_forward", fake_forward)
-        module = SimpleNamespace(num_experts=4, num_experts_global=8)
+        module = SimpleNamespace(num_experts=4, num_experts_global=8, training=True)
         x = torch.randn(num_recv, 8)
         idx = torch.randint(0, 5, (num_recv, 2))
         w = torch.rand(num_recv, 2)
