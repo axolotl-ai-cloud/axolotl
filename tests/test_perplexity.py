@@ -45,3 +45,42 @@ def test_perplexity_short(model, metric):
     result = metric.compute(model, [sample_text])
     ppl = result["score"]
     assert round(ppl, 2) == 10.33
+
+
+def test_batched_references_are_not_inflated_by_padding(model, metric):
+    """Scoring several references at once pads the batch to the longest one.
+
+    Those pad positions are not part of any reference, so the pooled score must
+    still sit between the scores of the individual texts.
+    """
+    long_text = "Once upon a time, there was a little car named Beep. Beep loved to go fast and play in the sun. Beep was a healthy car because he always had good fuel. Good fuel made Beep happy and strong."
+    short_text = "Once upon a time, there was a little car named Beep."
+
+    alone_long = metric.compute(model, [long_text])["score"]
+    alone_short = metric.compute(model, [short_text])["score"]
+    batched = metric.compute(model, [long_text, short_text])["score"]
+
+    assert min(alone_long, alone_short) <= batched <= max(alone_long, alone_short)
+
+
+def test_padding_is_never_scored(model, metric, tokenizer):
+    """Pad positions must be masked out of the labels, and the mask must reach
+    the model so it does not attend across them."""
+    seen = []
+    forward = model.forward
+
+    def capture(*args, **kwargs):
+        seen.append(kwargs)
+        return forward(*args, **kwargs)
+
+    model.forward = capture
+    try:
+        metric.compute(model, ["a b c d e f g h i j k l", "a b"])
+    finally:
+        model.forward = forward
+
+    assert seen, "model was never called"
+    for kwargs in seen:
+        assert kwargs.get("attention_mask") is not None
+        labels = kwargs["labels"]
+        assert (labels[kwargs["attention_mask"] == 0] == -100).all()
