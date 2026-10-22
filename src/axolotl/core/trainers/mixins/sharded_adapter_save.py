@@ -81,15 +81,13 @@ class ShardedAdapterSaveMixin(Trainer):
     def _final_adapter_save(self) -> bool:
         return getattr(self, "_axolotl_final_adapter_save", False)
 
-    def _checkpoint_save(self) -> bool:
-        return getattr(self, "_axolotl_sharded_checkpoint_save", False)
-
     def _sharded_adapter_save_applies(self) -> bool:
-        # not _internal_call: push_to_hub passes it too, then uploads output_dir at once
-        if self._checkpoint_save():
-            enabled = self._sharded_adapter_checkpoints()
-        else:
+        if self._final_adapter_save():
             enabled = self._sharded_final_save()
+        else:
+            enabled = self._sharded_adapter_checkpoints() and getattr(
+                self, "_axolotl_saving_checkpoint", False
+            )
         if not (enabled and _distributed()):
             return False
         from accelerate.utils.modeling import is_peft_model
@@ -131,7 +129,7 @@ class ShardedAdapterSaveMixin(Trainer):
         self, output_dir: str | None = None, _internal_call: bool = False
     ):
         if self._sharded_adapter_save_applies():
-            final = not self._checkpoint_save()
+            final = self._final_adapter_save()
             if self._save_sharded_adapter(output_dir or self.args.output_dir, final):
                 if final:
                     self._axolotl_final_adapter_saved = True
@@ -141,7 +139,7 @@ class ShardedAdapterSaveMixin(Trainer):
                             revision=self.args.hub_revision,
                         )
                 return None
-            if self._final_adapter_save():
+            if final:
                 # nothing saved: save_final_adapter returns False so the gather runs instead
                 return None
         return super()._save_model_native(output_dir, _internal_call)
@@ -246,12 +244,8 @@ class ShardedAdapterSaveMixin(Trainer):
                 f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}",
             )
         )
-        self._axolotl_sharded_checkpoint_save = True
-        try:
-            with self._gated_rotation():
-                return super()._save_checkpoint(model, trial, *args, **kwargs)
-        finally:
-            self._axolotl_sharded_checkpoint_save = False
+        with self._gated_rotation():
+            return super()._save_checkpoint(model, trial, *args, **kwargs)
 
     def _install_consolidation_gate(self):
         handler = self.callback_handler
