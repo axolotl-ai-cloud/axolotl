@@ -358,6 +358,14 @@ def test_default_format_keeps_the_gather_path():
         ({"hub_model_id": "org/model"}, "hub_strategy: end"),
         ({"hub_model_id": "org/model", "hub_strategy": "checkpoint"}, "hub_strategy"),
         ({"hub_model_id": "org/model", "hub_strategy": "end"}, None),
+        ({"adapter_final_save_format": "gather"}, None),
+        (
+            {
+                "adapter_checkpoint_format": "gather",
+                "adapter_final_save_format": "sharded",
+            },
+            "adapter_final_save_format: sharded requires",
+        ),
     ],
 )
 def test_sharded_format_validation(min_base_cfg, overrides, message):
@@ -457,8 +465,15 @@ def test_final_save_fallback_leaves_the_save_to_the_caller(tmp_path, final_save)
     assert final_save.calls == [("sharded", str(tmp_path / "out"), True)]
 
 
-def test_gather_format_keeps_every_save_on_the_gather(tmp_path, final_save):
-    trainer = _final_save_trainer(tmp_path, adapter_checkpoint_format="gather")
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        {"adapter_final_save_format": "gather"},
+        {"adapter_checkpoint_format": "gather"},
+    ],
+)
+def test_final_save_follows_the_final_format(tmp_path, final_save, cfg):
+    trainer = _final_save_trainer(tmp_path, **cfg)
     assert not trainer.save_final_adapter(str(tmp_path / "out"))
     assert final_save.calls == []
     trainer.save_model(str(tmp_path / "out"), _internal_call=True)

@@ -735,6 +735,17 @@ def check_final_save(model, root, label):
     assert os.path.abspath(sharded) not in trainer._axolotl_unconsolidated
     expect_identical(f"final-{label}", gathered, sharded)
 
+    # adapter_final_save_format: gather keeps the final export off the sharded writer
+    trainer = make_trainer(model, run, "sharded")
+    trainer._axolotl_cfg["adapter_final_save_format"] = "gather"
+    with patch.object(
+        fsdp2_sharded_adapter,
+        "write_adapter_shards",
+        side_effect=AssertionError("final export went through the sharded writer"),
+    ):
+        assert not trainer.save_final_adapter(str(root / f"{label}-final-forced"))
+    dist.barrier()
+
 
 def main():
     root = Path(sys.argv[1])

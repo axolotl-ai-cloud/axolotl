@@ -4,16 +4,18 @@
 #
 #   axolotl train examples/expert_parallel/qwen3_5_35ba3b_ep8_lora_sharded_adapter.yaml --num-processes 8
 #
-# The only checkpoint lands at step 4 and consolidates in the background; the final export at
-# the same step consolidates before training returns, so the two adapter files must be
-# byte-identical:
+# The only checkpoint lands at step 4 (sharded, consolidated in the background). The final
+# export would be sharded too, but adapter_final_save_format: gather below sends it through
+# the rank 0 gather at the same step, so the two adapter files must be byte-identical:
 #
 #   python tests/e2e/multigpu/test_fsdp2_sharded_adapter_save.py \
 #     ./outputs/qwen3_5-35ba3b-ep8-sharded-adapter/checkpoint-4/adapter_model.safetensors \
 #     ./outputs/qwen3_5-35ba3b-ep8-sharded-adapter/adapter_model.safetensors
 #
-# After "Training completed! Saving trained model", rank 0 logs "Consolidated <output_dir>
-# /adapter_model.safetensors" before the run exits, and no .adapter_shards/ is left in output_dir.
+# Then check the sharded final export: rerun with --adapter-final-save-format sharded and a
+# fresh --output-dir, and compare that run's two files the same way. After "Training
+# completed! Saving trained model", rank 0 logs "Consolidated <output_dir>/adapter_model
+# .safetensors" before the run exits, and no .adapter_shards/ is left in output_dir.
 base_model: Qwen/Qwen3.5-35B-A3B
 experts_implementation: grouped_mm
 
@@ -77,6 +79,7 @@ fsdp_config:
   activation_checkpointing: true
 
 adapter_checkpoint_format: sharded
+adapter_final_save_format: gather
 save_only_model: true
 save_strategy: steps
 save_steps: 4
