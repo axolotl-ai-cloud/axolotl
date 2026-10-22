@@ -19,19 +19,26 @@ from transformers import AutoTokenizer
 
 
 def extract_boxed(text: str) -> str:
-    match = re.search(r"\\boxed\{", text)
-    if not match:
-        return ""
-    start = match.end()
-    depth = 1
-    i = start
-    while i < len(text) and depth > 0:
-        if text[i] == "{":
-            depth += 1
-        elif text[i] == "}":
-            depth -= 1
-        i += 1
-    return text[start : i - 1] if depth == 0 else ""
+    """Extract the last complete \\boxed{...} answer, handling nested braces."""
+    last = ""
+    start_at = 0
+    while True:
+        match = re.search(r"\\boxed\{", text[start_at:])
+        if not match:
+            return last
+        content_start = start_at + match.end()
+        depth = 1
+        i = content_start
+        while i < len(text) and depth > 0:
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+            i += 1
+        if depth != 0:
+            return last
+        last = text[content_start : i - 1]
+        start_at = i
 
 
 def main():
