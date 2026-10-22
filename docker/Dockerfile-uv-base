@@ -40,13 +40,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     set -e; \
     NV_BACKEND="${TORCH_BACKEND%?}"; \
     if [ "$TORCH_BACKEND" = "cu132" ]; then \
-        TVM_FFI="apache-tvm-ffi"; \
-    else \
         TVM_FFI=""; \
+    else \
+        TVM_FFI="apache-tvm-ffi"; \
     fi; \
     uv pip install packaging setuptools wheel psutil; \
     if [ -n "$TORCH_INDEX_URL" ]; then \
-        uv pip install --index-url "$TORCH_INDEX_URL" \
+        uv pip install --extra-index-url "$TORCH_INDEX_URL" \
             torch==${PYTORCH_VERSION} ${TVM_FFI} torchvision \
             nvidia-cutlass-dsl nvidia-nvshmem-${NV_BACKEND}; \
     else \
