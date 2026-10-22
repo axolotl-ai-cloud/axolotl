@@ -43,7 +43,13 @@ class QuackAutotuner:
 def modules():
     from axolotl.integrations.kernels.sonicmoe_autotune import _is_sonic_module
 
-    with patch.dict(sys.modules, {k: None for k in sys.modules if _is_sonic_module(k)}):
+    # axolotl's own sonicmoe_* modules must stay importable
+    hidden = {
+        k: None
+        for k in sys.modules
+        if _is_sonic_module(k) and not k.startswith("axolotl.")
+    }
+    with patch.dict(sys.modules, hidden):
         yield
 
 
