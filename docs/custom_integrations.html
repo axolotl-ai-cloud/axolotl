@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-662d3ee3579756b0f9849fbd391b8c40.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -1842,12 +1842,18 @@ for quantization, memory, and mesh compatibility limits.</p>
 <li><code>pytorch_model_fsdp.bin</code> is the native model checkpoint used by
 <code>resume_from_checkpoint</code> and best-model loading. Trainer LoRA/QLoRA checkpoints
 include PEFT export state, including frozen adapter factors, saved modules, and
-required embeddings; the frozen base model is loaded separately.</li>
+required embeddings; the frozen base model is loaded separately. In model-only
+checkpoints of a single-adapter PEFT model, and in every checkpoint written with
+<code>adapter_checkpoint_format: sharded</code>, this file only references the
+<code>adapter_model.safetensors</code> beside it, and restore reads the adapter from there.
+Full-parameter and multi-adapter checkpoints, and checkpoints from earlier
+versions, hold the complete state in this file.</li>
 <li><code>optimizer.bin</code> preserves every expert owner’s optimizer state. It is absent
 when <code>save_only_model: true</code>.</li>
 <li><code>adapter_model.safetensors</code> is the ordinary PEFT adapter export used by
 <code>lora_model_dir</code>. Model-only intermediate checkpoints also include the native
-resume file; final exports do not.</li>
+resume file; final exports do not. Keep it with the native resume file when
+copying model-only checkpoints, since the resume file may reference it.</li>
 </ul>
 <p>Native checkpoints and final exports need not have the same layout. For example,
 Mixtral full-model exports unpack fused expert weights, while native checkpoints
