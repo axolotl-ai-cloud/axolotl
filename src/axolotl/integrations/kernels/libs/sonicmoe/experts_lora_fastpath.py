@@ -88,6 +88,8 @@ def patch_paramwrapper_sonicmoe_fastpath() -> None:
                 lora_A_owner=wrapper.lora_A[adapter_name],
                 lora_B_owner=wrapper.lora_B[adapter_name],
             )
+            if hasattr(wrapper, "kernel_lora_factors"):
+                lora_A, lora_B = wrapper.kernel_lora_factors(lora_A, lora_B)
             lora_A, lora_B = sonicmoe_runtime_lora_factors(lora_A, lora_B, x.dtype)
             lora[name] = (lora_A, lora_B, scaling)
 
