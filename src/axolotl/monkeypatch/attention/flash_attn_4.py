@@ -193,7 +193,9 @@ def configure_fa4():
 
     Silences the harmless first-compile ``AuxData`` warning and, for an explicitly requested
     ``flash_attention_4``, surfaces the stale-quack and Blackwell nested-election warnings
-    (the auto-upgrade path checks both in ``fa4_usable`` before reaching here).
+    (the auto-upgrade path checks both in ``fa4_usable`` before reaching here). Inside
+    selective checkpointing regions FA4 then runs as a dispatcher-visible op, so
+    ``save: [attention]`` can keep its output instead of recomputing it.
     """
     import warnings
 
@@ -214,6 +216,22 @@ def configure_fa4():
             _warn_sm100_elect_hang(cutlass_version)
 
     _log_first_fa4_call()
+    _route_fa4_through_ops()
+
+
+def _route_fa4_through_ops():
+    """Make FA4's forward savable by selective checkpointing (no-op outside SAC regions)."""
+    try:
+        from axolotl.monkeypatch.attention.flash_attn_4_ops import install_fa4_ops
+
+        install_fa4_ops()
+    except Exception as exc:  # pylint: disable=broad-except
+        LOG.warning(
+            "Could not route Flash Attention 4 through axolotl's custom op (%s: %s); "
+            "selective checkpointing will recompute FA4 attention.",
+            type(exc).__name__,
+            exc,
+        )
 
 
 def _log_first_fa4_call():
