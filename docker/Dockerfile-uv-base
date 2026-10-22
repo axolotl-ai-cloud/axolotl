@@ -54,7 +54,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
             torch==${PYTORCH_VERSION} ${TVM_FFI} torchvision \
             nvidia-cutlass-dsl nvidia-nvshmem-${NV_BACKEND}; \
     fi; \
-    uv pip install awscli pydantic \
+    uv pip install awscli pydantic
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$TARGETARCH" = "amd64" ]; then \
