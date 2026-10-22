@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-662d3ee3579756b0f9849fbd391b8c40.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -1132,7 +1132,13 @@ fails fast with the fix if they disagree.</p>
 </table>
 <p>The bf16 config pins the ScatterMoE LoRA tiles with <code>autotune_profiles</code> (measured on B200 and H100,
 identical across every routed-row bucket) and enables <code>autotune_neighborhood: 1</code>, so no training or eval
-step benchmarks kernel configs while expert-parallel peers wait.</p>
+step benchmarks kernel configs while expert-parallel peers wait. It also carries the B200 quack profiles for
+<code>use_sonicmoe: true</code> (EP=8, <code>sonicmoe_ep_compact_routing</code> with <code>highwater</code> row padding): pins for the
+forward and backward expert GEMMs at training sizes, measured per routed-pair bucket from 98k to 1M rows
+(the pinned configs were within about 2% of each other wherever both ran; every other tile was at least 3%
+slower and non-persistent scheduling up to 22% slower on the weight gradients), and narrowed searches
+for everything else. The pins match Beam’s expert shapes at EP=8 (32 local experts); another EP size or
+GPU falls through to the narrowed or full search.</p>
 </section>
 </section>
 <section id="related-resources" class="level2">

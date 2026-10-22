@@ -81,7 +81,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-662d3ee3579756b0f9849fbd391b8c40.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -963,6 +963,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#merging-the-adapter" id="toc-merging-the-adapter" class="nav-link" data-scroll-target="#merging-the-adapter">Merging the adapter</a>
   <ul class="collapse">
   <li><a href="#merge-aware-training-nvfp4_merge_aware" id="toc-merge-aware-training-nvfp4_merge_aware" class="nav-link" data-scroll-target="#merge-aware-training-nvfp4_merge_aware">Merge-aware training (<code>nvfp4_merge_aware</code>)</a></li>
+  <li><a href="#compiling-expert-merges" id="toc-compiling-expert-merges" class="nav-link" data-scroll-target="#compiling-expert-merges">Compiling expert merges</a></li>
   <li><a href="#merging-without-merge-aware-training" id="toc-merging-without-merge-aware-training" class="nav-link" data-scroll-target="#merging-without-merge-aware-training">Merging without merge-aware training</a></li>
   </ul></li>
   <li><a href="#see-also" id="toc-see-also" class="nav-link" data-scroll-target="#see-also">See also</a>
@@ -1140,6 +1141,38 @@ Important
 <li>Fake quantization adds work to each protected projection. The opt-in kernel dispatch has not yet been benchmarked on a full NVFP4 training run; measure throughput and memory for your configuration.</li>
 </ul>
 <p>On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint reproduces the trained loss (recovery ~1.0 of the adapter’s improvement over base); without merge-aware training the format-preserving merge retains only ~0.1-0.4.</p>
+</section>
+<section id="compiling-expert-merges" class="level3">
+<h3 class="anchored" data-anchor-id="compiling-expert-merges">Compiling expert merges</h3>
+<p>For a merge-aware adapter over per-expert ModelOpt NVFP4 weights, opt into
+compiling the expert-chunk LoRA arithmetic:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">merge_method</span><span class="kw">:</span><span class="at"> memory_efficient</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">merge_compile</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">merge_compile_precision</span><span class="kw">:</span><span class="at"> strict</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Alternatively, run <code>axolotl merge-lora config.yaml --merge-compile</code>.
+The default is <code>false</code>. This compiles the FP32 LoRA delta and addition, preserves
+the BF16 rounding before quantization, and avoids constructing a PEFT wrapper
+for every chunk. Dequantization, NVFP4 encoding, CPU transfers, and dense linear
+merges remain eager. Transposed expert layouts and adapters without merge-aware
+metadata also retain the eager path.</p>
+<p>Compilation disables fast math and TF32 during the chunk call and preserves
+intermediate precision casts. The first chunk for each tensor shape, stride,
+dtype, device, and scaling is compared byte-for-byte with the PEFT result.
+A mismatch or compilation failure disables compilation for that writer and
+logs a warning before continuing eagerly. This check covers the first chunk of
+each specialization, not every subsequent chunk. Unsupported PyTorch compiler
+options also trigger the eager fallback.</p>
+<p>To try compiler-default numerical behavior, set
+<code>merge_compile_precision: relaxed</code> (or pass <code>--merge-compile-precision relaxed</code>).
+This permits the compiler’s usual fusion and rounding changes, retains the
+process’s matmul precision setting, and skips PEFT equivalence validation.
+It may improve throughput but can change packed NVFP4 values and no longer
+guarantees agreement with the merge-aware training recipe. The writer logs a
+warning when this option is active. Compare model quality before using its output.</p>
+<p>The first call includes compilation and validation overhead. Measure total merge
+time as well as subsequent chunk throughput before enabling this for routine
+exports. CPU tests cover arithmetic and final NVFP4 byte parity; qualify the CUDA
+path on the GPU and software stack used for the export.</p>
 </section>
 <section id="merging-without-merge-aware-training" class="level3">
 <h3 class="anchored" data-anchor-id="merging-without-merge-aware-training">Merging without merge-aware training</h3>
