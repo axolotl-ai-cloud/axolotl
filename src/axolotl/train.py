@@ -313,12 +313,44 @@ def save_trained_model(
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return
 
+    # falls through to the gather paths below when the sharded writer does not apply
+    final_format = cfg.adapter_final_save_format or cfg.adapter_checkpoint_format
+    if (
+        cfg.adapter
+        and final_format == "sharded"
+        and hasattr(trainer, "save_final_adapter")
+    ):
+        if trainer.save_final_adapter(cfg.output_dir):
+            return
+
     # EP-sharded expert LoRA: the adapter is split across the EP axis, so the normal
     # FSDP/PEFT save would persist only the local rank's experts. Gather across EP and
     # write a complete adapter.
     if cfg.adapter and (getattr(cfg, "expert_parallel_size", 1) or 1) > 1:
+        from accelerate.utils.modeling import is_peft_model
+
         from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
         from axolotl.integrations.expert_parallel.shard import save_ep_lora_adapter
+        from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+            _full,
+            _model_needs_ownership,
+        )
+
+        plugin = getattr(
+            getattr(getattr(trainer, "accelerator", None), "state", None),
+            "fsdp_plugin",
+            None,
+        )
+        if (
+            getattr(trainer, "is_fsdp_enabled", False)
+            and plugin is not None
+            and _full(plugin)
+            and is_peft_model(trainer.model)
+            and _model_needs_ownership(trainer.model)
+        ):
+            # streams to rank-0 CPU like the checkpoints; save_ep_lora_adapter gathers on GPU
+            trainer.save_model(cfg.output_dir)
+            return
 
         ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
         if save_ep_lora_adapter(model, cfg.output_dir, ep_group):

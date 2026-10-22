@@ -104,7 +104,9 @@ def test_fsdp2_adapter_save_ignores_frozen_base_parameters(monkeypatch, tmp_path
     from safetensors import torch as safetensors_torch
 
     monkeypatch.setattr(
-        save_and_load, "get_peft_model_state_dict", lambda model, state_dict: state_dict
+        save_and_load,
+        "get_peft_model_state_dict",
+        lambda model, state_dict, **kwargs: state_dict,
     )
     monkeypatch.setattr(
         safetensors_torch,

@@ -72,6 +72,25 @@ def patch_torchao_optim_state_8bit():
             x, dtype = args
             return OptimState8bit(x.codes, x.scale, x.qmap, x.signed, dtype=dtype)
 
+    gathers = {
+        torch.ops.c10d_functional.all_gather_into_tensor.default: (
+            torch.ops.c10d_functional.wait_tensor.default
+        ),
+        torch.ops._c10d_functional.all_gather_into_tensor.default: (
+            torch.ops._c10d_functional.wait_tensor.default
+        ),
+    }
+
+    # torchao issues the codes and scale gathers back to back; two functional
+    # all_gathers in flight on one gloo group corrupt the heap, so finish each one.
+    @OptimState8bit.implements(list(gathers))
+    def _(func, types, args, kwargs):
+        x = args[0]
+        wait = gathers[func]
+        codes = wait(func(x.codes, *args[1:], **kwargs))
+        scale = wait(func(x.scale, *args[1:], **kwargs))
+        return OptimState8bit(codes, scale, x.qmap.clone(), x.signed)
+
     LOG.debug("Patched OptimState8bit for torch.compile compatibility")
 
     try:

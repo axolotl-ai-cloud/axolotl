@@ -108,10 +108,12 @@ jobs:
         run: |
           pytest -v --durations=10 -n0 -m "distributed_cpu and not gpu and not slow" \
             tests/monkeypatch/test_fsdp2_full_checkpoint.py \
+            tests/monkeypatch/test_fsdp2_sharded_adapter.py \
             tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \
             tests/monkeypatch/test_fsdp2_mixed_dtype_groups.py \
             tests/integrations/test_expert_parallel_bnb.py \
             tests/integrations/expert_parallel/test_ep_checkpoint_resume.py \
+            tests/integrations/expert_parallel/test_ep_lora_adapter_save_distributed.py \
             --cov=axolotl --cov-config=.coveragerc-distributed \
             --cov-append --cov-report=xml:distributed-cpu-coverage.xml
       - name: Run other distributed CPU tests

@@ -461,21 +461,36 @@ def check_generic_packed_state(mesh, device):
                 else:
                     descriptor["entry"].row_stats.fill_(owner)
         before = snapshot(model)
+        base = model.get_base_model()
         for unwrap in (True, False):
-            try:
-                with patch.object(
+            with (
+                patch.object(
                     model,
                     "state_dict",
                     side_effect=AssertionError("Ran packed state hooks"),
-                ):
-                    Accelerator.get_state_dict(accelerator, model, unwrap=unwrap)
-            except ValueError as exc:
-                assert "packed BNB expert" in str(exc), str(exc)
-                assert "save_fsdp_model" in str(exc), str(exc)
-            else:
-                raise AssertionError(
-                    "Generic full state silently accepted packed EP owners"
-                )
+                ),
+                patch.object(
+                    base,
+                    "state_dict",
+                    side_effect=AssertionError("Ran packed state hooks"),
+                ),
+            ):
+                # A PEFT state dict is adapter-only, so packed base owners never enter it
+                adapter = Accelerator.get_state_dict(accelerator, model, unwrap=unwrap)
+                if dist.get_rank() == 0:
+                    assert adapter, "PEFT state dict is empty"
+                    assert all("lora_" in name for name in adapter), sorted(adapter)
+                else:
+                    assert adapter == {}, sorted(adapter)
+                try:
+                    Accelerator.get_state_dict(accelerator, base, unwrap=unwrap)
+                except ValueError as exc:
+                    assert "packed BNB expert" in str(exc), str(exc)
+                    assert "save_fsdp_model" in str(exc), str(exc)
+                else:
+                    raise AssertionError(
+                        "Generic full state silently accepted packed EP owners"
+                    )
         compare(snapshot(model), before)
         if dist.get_rank() == 0:
             print(
