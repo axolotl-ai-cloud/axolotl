@@ -296,6 +296,8 @@ def _check_allow(config_path, datasets, disk, within):
                     }
                     if not _quack_matches(profile["match"], args):
                         continue
+            if not times:
+                continue
             checked += 1
             best = min(times.values())
             winner = min(times, key=times.get)

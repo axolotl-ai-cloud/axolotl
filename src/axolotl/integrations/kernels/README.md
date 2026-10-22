@@ -450,7 +450,7 @@ expert slots, tokens x top_k: `postact_out`, `A` of the down-projection forward 
 `sonicmoe_ep_row_padding: highwater` and its 4096-token granule, training rows land on multiples
 of 32768 (4096 x 8), roughly 0.7M to 1.0M, which a threshold covers and a list of exact sizes
 would miss. List these entries before the `allow` entries: the first matching entry for a call
-decides.
+decides, except that a pin with no config valid for the call passes it to the next match.
 
 ```yaml
 autotune_profiles:

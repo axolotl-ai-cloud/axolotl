@@ -52,7 +52,8 @@ def _seed_ep_padding(cfg, model) -> None:
     from axolotl.integrations.kernels.libs.sonicmoe.experts import seed_ep_padding_marks
 
     ep = cfg.expert_parallel_size or 1
-    tokens = (cfg.sequence_len or 0) * (cfg.micro_batch_size or 1) * ep
+    cp = getattr(cfg, "context_parallel_size", None) or 1
+    tokens = (cfg.sequence_len or 0) * (cfg.micro_batch_size or 1) * ep // cp
     pairs = None
     if cfg.sonicmoe_ep_compact_routing and cfg.sonicmoe_ep_pair_seed_factor:
         config = getattr(model, "config", None)

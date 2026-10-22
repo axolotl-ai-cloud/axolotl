@@ -368,10 +368,10 @@ def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
             if not configs:
                 LOG.warning(
                     "autotune profile for %s: no profiled config is valid for this call; "
-                    "using the full search",
+                    "trying the next matching profile",
                     profile["kernel"],
                 )
-                break
+                continue
             return _filter(profile, configs), True
         return list(orig_prune(kwargs)), False
 
@@ -397,7 +397,7 @@ def _profiles_for(kname: str, modname: str, active: list, backend: str) -> list:
     return [
         p
         for p in active
-        if p.get("backend", backend) == backend
+        if p.get("backend", "triton") == backend
         and (
             fnmatch.fnmatchcase(kname, p["kernel"])
             or fnmatch.fnmatchcase(f"{modname}.{kname}", p["kernel"])

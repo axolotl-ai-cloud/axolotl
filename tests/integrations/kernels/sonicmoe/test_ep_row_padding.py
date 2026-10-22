@@ -137,10 +137,15 @@ def test_seed_never_lowers_a_mark_and_marks_still_grow():
 
 
 @pytest.mark.parametrize(
-    "factor, expected_pairs", [(None, None), (2.75, int(131072 * 8 / 8 * 2.75))]
+    "factor, cp, expected_rows, expected_pairs",
+    [
+        (None, None, 131072, None),
+        (2.75, None, 131072, int(131072 * 8 / 8 * 2.75)),
+        (2.75, 2, 65536, int(65536 * 8 / 8 * 2.75)),
+    ],
 )
 def test_plugin_seeds_the_token_cap_and_scaled_pairs(
-    monkeypatch, factor, expected_pairs
+    monkeypatch, factor, cp, expected_rows, expected_pairs
 ):
     from axolotl.integrations.kernels import plugin
 
@@ -154,12 +159,13 @@ def test_plugin_seeds_the_token_cap_and_scaled_pairs(
         sequence_len=16384,
         micro_batch_size=1,
         expert_parallel_size=8,
+        context_parallel_size=cp,
         sonicmoe_ep_compact_routing=True,
         sonicmoe_ep_pair_seed_factor=factor,
     )
     model = SimpleNamespace(config=SimpleNamespace(num_experts_per_tok=8))
     plugin._seed_ep_padding(cfg, model)
-    assert seeded == {"rows": 131072, "pairs": expected_pairs}
+    assert seeded == {"rows": expected_rows, "pairs": expected_pairs}
 
 
 def test_checkpoint_recompute_after_a_larger_layer_does_not_raise():

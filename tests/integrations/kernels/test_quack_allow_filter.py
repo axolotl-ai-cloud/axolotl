@@ -280,6 +280,39 @@ def test_filter_that_removes_everything_falls_back_and_warns_once(kernels, monke
     assert len(warnings) == 2
 
 
+def test_pin_with_no_valid_config_falls_through_to_the_next_profile(kernels):
+    tuner = kernels.gemm_gated_tuned
+    autotune_profiles.apply_autotune_profiles(
+        [
+            {
+                "kernel": "gemm_gated_tuned",
+                "backend": "quack",
+                "configs": [{"tile_m": 128, "tile_n": 256, "cluster_n": 2}],
+            },
+            {
+                "kernel": "gemm_gated_tuned",
+                "backend": "quack",
+                "allow": {"tile_m": 256},
+            },
+        ]
+    )
+    _call(tuner, 131072)
+    assert len(tuner.benched) == 28
+    assert {b.kwargs["config"].tile_m for b in tuner.benched} == {256}
+
+
+def test_profile_without_backend_is_not_applied_to_quack(kernels):
+    tuner = kernels.gemm_tuned
+    assert (
+        autotune_profiles.apply_autotune_profiles(
+            [{"kernel": "gemm_*", "configs": [{"BLOCK_M": 64}]}], quiet=True
+        )
+        == 0
+    )
+    _call(tuner, 65536)
+    assert len(tuner.benched) == 74
+
+
 def test_bad_allow_rules_are_rejected(kernels):
     for allow in (
         {"tile_q": [1]},
@@ -331,6 +364,23 @@ def test_check_allow_flags_pruned_winners_and_near_configs(kernels, tmp_path):
                         "use_tma_gather=False)",
                         [0.31, 0.31, 0.31],
                     ],
+                ],
+            }
+        )
+    )
+    failed = tmp_path / "quack" / "HASH2" / "gemm_tuned.autotune.json"
+    failed.parent.mkdir(parents=True)
+    failed.write_text(
+        json.dumps(
+            {
+                "key": ["False", "torch.Size([32768, 2560])"],
+                "configs_timings": [
+                    [
+                        "config: GemmConfig(tile_m=128, tile_n=64, cluster_m=1, "
+                        "cluster_n=1, swap_ab=False, is_dynamic_persistent=False, "
+                        "use_tma_gather=False)",
+                        [None, None, None],
+                    ]
                 ],
             }
         )

@@ -102,7 +102,7 @@ class KernelsArgs(BaseModel):
     sonicmoe_ep_compact_routing: bool | None = None
     sonicmoe_ep_pair_padding_granule: int | None = None
     # Start the training padding marks at the per-rank token cap (sequence_len x micro_batch_size x
-    # expert_parallel_size) instead of zero, so the first step pads every MoE layer to one size
+    # expert_parallel_size / context_parallel_size) instead of zero, so the first step pads every MoE layer to one size
     # rather than producing a quack shape per layer. With sonicmoe_ep_compact_routing, also start
     # the pair mark at sonicmoe_ep_pair_seed_factor x the average pairs per rank (cap x top_k /
     # expert_parallel_size); routing imbalance puts the busiest rank well above the average (about
