@@ -477,6 +477,37 @@ def test_final_save_follows_the_final_format(tmp_path, final_save, cfg):
     assert final_save.calls == []
 
 
+@pytest.mark.parametrize(
+    "cfg, sharded_ok, expected",
+    [
+        ({}, True, [("sharded", "OUT", True)]),
+        ({}, False, [("sharded", "OUT", True), ("gather", None)]),
+        ({"adapter_final_save_format": "gather"}, True, [("gather", None)]),
+    ],
+)
+def test_push_to_hub_uploads_after_the_save_finishes(
+    tmp_path, final_save, monkeypatch, cfg, sharded_ok, expected
+):
+    from transformers import Trainer
+
+    def hf_push_to_hub(self, *args, **kwargs):
+        """``Trainer.push_to_hub``: save with ``_internal_call``, then upload."""
+        self.save_model(_internal_call=True)
+        final_save.calls.append("upload")
+
+    monkeypatch.setattr(Trainer, "push_to_hub", hf_push_to_hub)
+    final_save.sharded_result["value"] = sharded_ok
+    trainer = _final_save_trainer(tmp_path, **cfg)
+    trainer.push_to_hub()
+    # a background consolidation would race the upload
+    expected = [
+        tuple(str(tmp_path) if item == "OUT" else item for item in call)
+        for call in expected
+    ]
+    assert final_save.calls == [*expected, "upload"]
+    assert not trainer._hub_save()
+
+
 def test_save_trained_model_routes_the_final_export(tmp_path):
     from axolotl.train import save_trained_model
     from axolotl.utils.dict import DictDefault

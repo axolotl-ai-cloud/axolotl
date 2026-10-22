@@ -81,8 +81,11 @@ class ShardedAdapterSaveMixin(Trainer):
     def _final_adapter_save(self) -> bool:
         return getattr(self, "_axolotl_final_adapter_save", False)
 
+    def _hub_save(self) -> bool:
+        return getattr(self, "_axolotl_hub_save", False)
+
     def _sharded_adapter_save_applies(self) -> bool:
-        if self._final_adapter_save():
+        if self._final_adapter_save() or self._hub_save():
             enabled = self._sharded_final_save()
         else:
             enabled = self._sharded_adapter_checkpoints() and getattr(
@@ -125,12 +128,22 @@ class ShardedAdapterSaveMixin(Trainer):
             self._axolotl_final_adapter_save = False
         return self._axolotl_final_adapter_saved
 
+    def push_to_hub(self, *args, **kwargs):
+        # its save_model passes _internal_call like a checkpoint, then uploads at once
+        self._axolotl_hub_save = True
+        try:
+            return super().push_to_hub(*args, **kwargs)
+        finally:
+            self._axolotl_hub_save = False
+
     def _save_model_native(
         self, output_dir: str | None = None, _internal_call: bool = False
     ):
         if self._sharded_adapter_save_applies():
             final = self._final_adapter_save()
-            if self._save_sharded_adapter(output_dir or self.args.output_dir, final):
+            if self._save_sharded_adapter(
+                output_dir or self.args.output_dir, final or self._hub_save()
+            ):
                 if final:
                     self._axolotl_final_adapter_saved = True
                     if getattr(self.args, "push_to_hub", False) and not _internal_call:
