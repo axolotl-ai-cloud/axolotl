@@ -1,4 +1,4 @@
-"""Sharded FSDP2 adapter checkpoints (``fsdp_config.adapter_save_strategy: sharded``).
+"""Sharded FSDP2 adapter checkpoints (``adapter_checkpoint_format: sharded``).
 
 Each rank writes its adapter slices; rank 0 consolidates ``adapter_model.safetensors`` in the
 background. Until that finishes the checkpoint is incomplete, so this mixin holds back what
@@ -70,8 +70,8 @@ class ShardedAdapterSaveMixin(Trainer):
     """Write PEFT adapter checkpoints as per-rank shards under FSDP2."""
 
     def _sharded_adapter_checkpoints(self) -> bool:
-        fsdp_config = getattr(getattr(self, "axolotl_cfg", None), "fsdp_config", None)
-        return getattr(fsdp_config, "adapter_save_strategy", None) == "sharded"
+        cfg = getattr(self, "axolotl_cfg", None)
+        return getattr(cfg, "adapter_checkpoint_format", None) == "sharded"
 
     def _final_adapter_save(self) -> bool:
         return getattr(self, "_axolotl_final_adapter_save", False)
@@ -161,7 +161,7 @@ class ShardedAdapterSaveMixin(Trainer):
         shards = write_adapter_shards(self.model, output_dir)
         if shards is None:
             LOG.warning_once(
-                "fsdp_config.adapter_save_strategy: sharded does not cover this adapter; "
+                "adapter_checkpoint_format: sharded does not cover this adapter; "
                 "saving it through the rank 0 gather"
             )
             return False
@@ -205,7 +205,7 @@ class ShardedAdapterSaveMixin(Trainer):
         original = getattr(hf_trainer, "rotate_checkpoints", None)
         if original is None:
             raise RuntimeError(
-                "fsdp_config.adapter_save_strategy: sharded holds back save_total_limit rotation "
+                "adapter_checkpoint_format: sharded holds back save_total_limit rotation "
                 "through transformers.trainer.rotate_checkpoints, which this transformers "
                 "version does not have"
             )

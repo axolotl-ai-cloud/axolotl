@@ -316,8 +316,7 @@ def save_trained_model(
     # falls through to the gather paths below when the sharded writer does not apply
     if (
         cfg.adapter
-        and cfg.fsdp_config
-        and cfg.fsdp_config.adapter_save_strategy == "sharded"
+        and cfg.adapter_checkpoint_format == "sharded"
         and hasattr(trainer, "save_final_adapter")
     ):
         if trainer.save_final_adapter(cfg.output_dir):

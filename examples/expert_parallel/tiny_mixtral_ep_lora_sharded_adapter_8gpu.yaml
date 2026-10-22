@@ -1,6 +1,6 @@
 # Sharded LoRA adapter checkpoints under FSDP2 + EP=8 on one 8-GPU node, on a tiny
 # Mixtral (8 experts, ~30M params, loads in seconds), as a smoke test for
-# fsdp_config.adapter_save_strategy: sharded before turning it on for Beam.
+# adapter_checkpoint_format: sharded before turning it on for Beam.
 #
 #   axolotl train examples/expert_parallel/tiny_mixtral_ep_lora_sharded_adapter_8gpu.yaml --num-processes 8
 #
@@ -10,7 +10,7 @@
 # Afterwards every remaining checkpoint-N has adapter_model.safetensors and no
 # .adapter_shards/, and save_total_limit leaves checkpoint-4 and checkpoint-6. The final
 # export to output_dir is sharded too and consolidated before training returns.
-# Set fsdp_config.adapter_save_strategy: gather (and AXOLOTL_CHECKPOINT_TIMING=1 AXOLOTL_LOG_LEVEL=DEBUG) to compare the
+# Set adapter_checkpoint_format: gather (and AXOLOTL_CHECKPOINT_TIMING=1 AXOLOTL_LOG_LEVEL=DEBUG) to compare the
 # save stall against the rank 0 gather. tests/e2e/multigpu/test_fsdp2_sharded_adapter_save.py
 # checks the consolidated file against the gathered one byte for byte on 4 GPUs.
 base_model: axolotl-ai-co/tiny-mixtral-30m
@@ -67,9 +67,9 @@ fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: MixtralDecoderLayer
   state_dict_type: FULL_STATE_DICT
-  adapter_save_strategy: sharded
   reshard_after_forward: true
 
+adapter_checkpoint_format: sharded
 save_only_model: true
 save_strategy: steps
 save_steps: 2
