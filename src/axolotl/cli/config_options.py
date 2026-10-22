@@ -1974,7 +1974,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--dynamic-checkpoint.check-interval",),
         "dynamic_checkpoint__check_interval",
         "int",
-        "Check for trigger file every N steps (reduces I/O overhead). Default: 100",
+        "Check for trigger file every N steps (reduces I/O overhead). Default: 10",
     ),
     (
         ("--dynamic-checkpoint.trigger-file-path",),
@@ -3129,6 +3129,54 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Checkpoints saved at a time",
+    ),
+    (
+        ("--checkpoint-save-retry.wait-seconds",),
+        "checkpoint_save_retry__wait_seconds",
+        "float",
+        "Seconds to wait before rewriting the file, for example while space is freed. Other ranks wait at their next collective meanwhile, so keep wait_seconds * retries below ddp_timeout.",
+    ),
+    (
+        ("--checkpoint-save-retry.retries",),
+        "checkpoint_save_retry__retries",
+        "int",
+        "Retries per file before the error is raised and the save fails.",
+    ),
+    (
+        ("--checkpoint-mirror.dir",),
+        "checkpoint_mirror__dir",
+        "str",
+        "Directory on a shared filesystem (e.g. NFS) that receives a copy of every checkpoint and, at the end of training, the final outputs. A checkpoint appears there only once it is complete, so it can be resumed from.",
+    ),
+    (
+        ("--checkpoint-mirror.delete",),
+        "checkpoint_mirror__delete",
+        None,
+        "`mirror` keeps as many checkpoints in `dir` as save_total_limit keeps in output_dir. `keep` never deletes from `dir`, unless checkpoint_mirror.save_total_limit is set.",
+    ),
+    (
+        ("--checkpoint-mirror.save-total-limit",),
+        "checkpoint_mirror__save_total_limit",
+        "int",
+        "With `delete: keep`, the number of newest checkpoints to keep in `dir` (the best checkpoint is always kept). Unset keeps all.",
+    ),
+    (
+        ("--checkpoint-mirror.max-pending",),
+        "checkpoint_mirror__max_pending",
+        "int",
+        "Checkpoints queued for copying at once. A save that finds the queue full is not mirrored (training never waits); the newest checkpoint is retried at the end of training. Bounds the local disk held by queued checkpoints when the shared filesystem is slower than the save interval.",
+    ),
+    (
+        ("--checkpoint-mirror.copy-threads",),
+        "checkpoint_mirror__copy_threads",
+        "int",
+        "Files copied in parallel per checkpoint.",
+    ),
+    (
+        ("--checkpoint-mirror.resume/--no-checkpoint-mirror.resume",),
+        "checkpoint_mirror__resume",
+        None,
+        "Let auto_resume_from_checkpoints resume from `dir` when it holds a newer checkpoint than output_dir, or when output_dir is local to each node of a multi-node run.",
     ),
     (
         ("--save-first-step/--no-save-first-step",),

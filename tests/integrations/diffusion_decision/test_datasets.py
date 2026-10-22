@@ -556,6 +556,7 @@ def test_multi_source_build_opens_one_canvas_pool(monkeypatch):
         )
         cfg["dataset_num_proc"] = num_proc
         result = datasets.load_decision_datasets(cfg, tokenizer=range(131072))
+        assert not isinstance(result.eval_dataset, dict)
         return (
             [(row["record"], row["train"]) for row in result.train_dataset],
             [(row["record"], row["train"]) for row in result.eval_dataset or []],

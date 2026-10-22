@@ -35,6 +35,7 @@ chat_template: tokenizer_default
 datasets:
   - path: your/chat_dataset
     type: chat_template
+    generation_tags: true
     field_messages: messages
     roles_to_train: ["assistant"]
 dataset_prepared_path: ./last_run_prepared

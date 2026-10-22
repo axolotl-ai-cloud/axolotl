@@ -402,6 +402,21 @@ class DatasetValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_generation_tags_needs_prepare(cls, data):
+        if data.get("skip_prepare_dataset") and any(
+            ds.get("generation_tags")
+            if isinstance(ds, dict)
+            else getattr(ds, "generation_tags", None)
+            for ds in (data.get("datasets") or []) + (data.get("test_datasets") or [])
+        ):
+            raise ValueError(
+                "generation_tags labels during dataset preparation and has no effect "
+                "with skip_prepare_dataset"
+            )
+        return data
+
 
 class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
@@ -544,6 +559,37 @@ class TrainingValidationMixin:
             raise ValueError(
                 "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_checkpoint_save_retry_timeout(cls, data):
+        retry = data.get("checkpoint_save_retry")
+        if not isinstance(retry, dict):
+            return data
+        total = float(retry.get("wait_seconds", 300)) * int(retry.get("retries", 1))
+        timeout = data.get("ddp_timeout") or 1800
+        if total >= timeout:
+            LOG.warning(
+                f"checkpoint_save_retry waits up to {total:g}s on the rank whose write "
+                f"failed, while the other ranks wait at a collective that times out after "
+                f"ddp_timeout={timeout}s. Lower wait_seconds or raise ddp_timeout."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_checkpoint_mirror_dir(cls, data):
+        mirror = data.get("checkpoint_mirror")
+        mirror_dir = mirror.get("dir") if isinstance(mirror, dict) else None
+        if mirror_dir and data.get("output_dir"):
+            output_dir = Path(data["output_dir"]).expanduser().resolve()
+            target = Path(mirror_dir).expanduser().resolve()
+            if target == output_dir or target.is_relative_to(output_dir):
+                raise ValueError(
+                    "checkpoint_mirror.dir must be outside output_dir; the final copy "
+                    "would otherwise copy the mirror into itself"
+                )
         return data
 
     @model_validator(mode="before")
@@ -1278,7 +1324,7 @@ class OptimizationValidationMixin:
                 "silently ignored. Remove them or pick a different optimizer."
             )
 
-        if data.get("relora_steps"):
+        if data.get("relora"):
             raise ValueError(
                 "relora resets optimizer state through Optimizer.state, which polora "
                 "does not use, so its momentum would survive every merge."

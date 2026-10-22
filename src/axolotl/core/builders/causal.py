@@ -21,6 +21,7 @@ from axolotl.core.trainers import (
     AxolotlRewardTrainer,
     AxolotlTrainer,
 )
+from axolotl.core.trainers.mixins.named_eval import named_eval_trainer_class
 from axolotl.integrations.base import PluginManager
 from axolotl.model_support import get_model_support_for_cfg, resolve_model_support
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
@@ -451,6 +452,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and getattr(self.model.config, "num_labels", None) != 1
         ):
             self.model.config.num_labels = 1
+        trainer_cls = named_eval_trainer_class(trainer_cls, self.eval_dataset)
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,

@@ -7,6 +7,7 @@ from transformers import PreTrainedTokenizerBase, ProcessorMixin
 from trl import DPOTrainer
 
 from axolotl.core.trainers.mixins import (
+    CheckpointWriteRetryMixin,
     DistributedParallelMixin,
     RngLoaderMixin,
     SchedulerMixin,
@@ -20,6 +21,7 @@ from axolotl.utils.data.utils import remove_double_bos_token
 
 
 class AxolotlDPOTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,

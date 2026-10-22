@@ -18,6 +18,8 @@ from pydantic import (
 
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.checkpoint_mirror import CheckpointMirrorConfig
+from axolotl.utils.schemas.checkpoint_save_retry import CheckpointSaveRetryConfig
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -307,7 +309,7 @@ class AxolotlInputConfig(
     dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Configuration for dynamic checkpointing (trigger by file or signal). "
+            "description": "Configuration for dynamic checkpointing (trigger by file). "
             "Set 'enabled: true' to activate this feature."
         },
     )
@@ -1321,6 +1323,18 @@ class AxolotlInputConfig(
     save_total_limit: int | None = Field(
         default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
     )
+    checkpoint_save_retry: CheckpointSaveRetryConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Retry checkpoint file writes that fail with a full disk, exceeded quota or I/O error once, after a pause, before the save fails. See https://docs.axolotl.ai/docs/checkpoint_saving.html"
+        },
+    )
+    checkpoint_mirror: CheckpointMirrorConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Copy each checkpoint from output_dir to a shared directory in the background, so output_dir can be fast local storage. See https://docs.axolotl.ai/docs/checkpoint_saving.html"
+        },
+    )
     save_first_step: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -2129,9 +2143,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_beta_and_trl_beta_match(cls, data):
-        if data.get("beta") and data.get("trl", {}).get("beta"):
-            if data["beta"] != data["trl"]["beta"]:
-                raise ValueError("beta and trl.beta must match or one must be removed")
+        trl_beta = (data.get("trl") or {}).get("beta")
+        if data.get("rl_beta") and trl_beta and data["rl_beta"] != trl_beta:
+            raise ValueError("rl_beta and trl.beta must match or one must be removed")
         return data
 
     @model_validator(mode="after")

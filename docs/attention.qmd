@@ -164,8 +164,9 @@ elections and hangs. `nvidia-cutlass-dsl` 4.6.2 reverted the change, so stock FA
 [Dao-AILab/flash-attention#2689](https://github.com/Dao-AILab/flash-attention/pull/2689) patch
 there: it removes elections that are needed again. Hopper (H100, H200) is unaffected.
 
-Axolotl still warns about this hang on Blackwell with any `nvidia-cutlass-dsl>=4.6.0` and skips
-the automatic upgrade to FA4; set `attn_implementation: flash_attention_4` explicitly.
+On Blackwell with `nvidia-cutlass-dsl` 4.6.0 or 4.6.1, Axolotl warns about this hang and skips
+the automatic upgrade to FA4. When FA4 serves attention, the training log shows
+`Flash Attention 4 in use: first flash_attn_varlen_func call` with the installed versions.
 
 :::
 

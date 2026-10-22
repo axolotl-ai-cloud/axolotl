@@ -11,7 +11,7 @@ from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import most_recent_subdir, require_torch_2_7_0
+from tests.e2e.utils import most_recent_subdir
 
 
 def _load_safetensors(directory, glob="model*.safetensors"):
@@ -31,7 +31,6 @@ def _read_grad_norm(out_dir):
 
 
 class TestExpertParallelSacOffload:
-    @require_torch_2_7_0
     def test_chunked_dispatch_offload_gradient_parity(self, temp_dir):
         """One SGD step with EP2 must apply the same update whether the dispatch runs
         unchunked without checkpointing or chunked under SAC offload with the dispatch

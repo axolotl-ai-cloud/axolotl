@@ -5,11 +5,13 @@
 """CKS backend: manifests, output placement, and submission."""
 
 import subprocess
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 import yaml
 
+from axolotl.integrations.coreweave.cks import place_output_dir
 from axolotl.integrations.coreweave.cloud import CoreWeaveCloud
 from axolotl.integrations.coreweave.cloud_runner import launch_command
 
@@ -178,8 +180,69 @@ def test_cks_rejects_outputs_off_the_volume_and_topology_args():
         )
 
 
+PVC = SimpleNamespace(pvc_mount="/data")
+
+
+def test_scratch_output_dir_is_allowed_when_mirrored_to_the_volume():
+    training = {
+        "output_dir": "/scratch/run",
+        "checkpoint_mirror": {"dir": "/data/runs/run"},
+    }
+    assert place_output_dir(PVC, training, "job")["output_dir"] == "/scratch/run"
+
+
+@pytest.mark.parametrize(
+    "training",
+    [
+        {"output_dir": "/scratch/run"},
+        {"output_dir": "/scratch/run", "checkpoint_mirror": None},
+        {"output_dir": "/scratch/run", "checkpoint_mirror": {"dir": "/mnt/nfs/run"}},
+        {"output_dir": "/tmp/run", "checkpoint_mirror": {"dir": "/data/runs/run"}},
+    ],
+)
+def test_absolute_output_dir_off_the_volume_is_rejected(training):
+    with pytest.raises(ValueError, match="checkpoint_mirror.dir under pvc_mount"):
+        place_output_dir(PVC, training, "job")
+
+
+def test_volume_and_relative_output_dirs_are_unchanged():
+    assert (
+        place_output_dir(PVC, {"output_dir": "/data/out"}, "job")["output_dir"]
+        == "/data/out"
+    )
+    assert (
+        place_output_dir(PVC, {"output_dir": "out"}, "job")["output_dir"]
+        == "/data/axolotl-jobs/job/out"
+    )
+
+
 def test_shared_validation_names_the_cks_backend():
     with pytest.raises(ValueError, match="CoreWeave CKS"):
         provider(dry_run=True).train("base_model: test\nuse_ray: true")
     with pytest.raises(ValueError, match="CoreWeave CKS"):
         provider(dry_run=True).train("base_model: test", local_dirs={"a": "b"})
+
+
+def test_host_paths_mount_read_only():
+    result = provider(
+        dry_run=True, host_paths={"/mnt/local/beam-models": "/models"}
+    ).train("base_model: /models/m\noutput_dir: outputs", launcher="torchrun")
+    pod = result["manifests"][2]["spec"]["template"]["spec"]
+    host = [v for v in pod["volumes"] if "hostPath" in v]
+    assert host == [
+        {
+            "name": "host-0",
+            "hostPath": {"path": "/mnt/local/beam-models", "type": "Directory"},
+        }
+    ]
+    mounts = {m["name"]: m for m in pod["containers"][0]["volumeMounts"]}
+    assert mounts["host-0"] == {
+        "name": "host-0",
+        "mountPath": "/models",
+        "readOnly": True,
+    }
+
+
+def test_host_paths_must_be_absolute():
+    with pytest.raises(ValueError):
+        provider(host_paths={"relative/dir": "/models"})

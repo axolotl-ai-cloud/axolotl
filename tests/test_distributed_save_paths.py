@@ -15,7 +15,7 @@ from axolotl.core.trainers.mixins.distributed_parallel import (
 )
 
 
-def _tp_trainer(state_dict_type, is_fsdp_enabled=True):
+def _tp_trainer(state_dict_type, is_fsdp_enabled=True, native_joined=False):
     calls = []
     trainer = object.__new__(DistributedParallelMixin)
     trainer.axolotl_cfg = SimpleNamespace(
@@ -33,7 +33,12 @@ def _tp_trainer(state_dict_type, is_fsdp_enabled=True):
         ),
         unwrap_model=lambda _m: unwrapped,
     )
-    trainer._save_model_native = lambda *a: calls.append(("native", a))
+
+    def native(*a):
+        calls.append(("native", a))
+        trainer._axolotl_save_joined_all_ranks = native_joined
+
+    trainer._save_model_native = native
     return trainer, calls
 
 
@@ -63,6 +68,12 @@ def test_tp_without_fsdp_gathers_on_every_rank():
         "save_pretrained",
         {"state_dict": None, "is_main_process": False},
     )
+
+
+def test_tp_skips_second_gather_when_transformers_saved_on_every_rank():
+    trainer, calls = _tp_trainer(None, is_fsdp_enabled=False, native_joined=True)
+    trainer.save_model("out")
+    assert calls == [("native", ("out", False))]
 
 
 def test_tp_save_joins_all_ranks_helper():

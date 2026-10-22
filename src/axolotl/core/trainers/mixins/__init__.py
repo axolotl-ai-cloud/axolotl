@@ -3,7 +3,11 @@
 # flake8: noqa
 
 from .activation_checkpointing import ActivationOffloadingMixin
-from .checkpoints import CheckpointSaveMixin
+from .checkpoints import (
+    CheckpointSaveMixin,
+    CheckpointWriteRetryMixin,
+    with_checkpoint_write_retry,
+)
 from .layer_offloading import LayerOffloadingMixin
 from .distributed_parallel import DistributedParallelMixin
 from .optimizer import OptimizerMixin

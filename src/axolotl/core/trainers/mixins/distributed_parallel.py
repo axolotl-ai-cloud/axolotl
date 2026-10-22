@@ -201,6 +201,12 @@ class DistributedParallelMixin(Trainer):
             )
         if state_dict is None:
             metadata = getattr(self.model, "_axolotl_native_nvfp4_metadata", None)
+            # transformers>=5.20 already runs save_pretrained on every rank for load-time TP models
+            self._axolotl_save_joined_all_ranks = (
+                getattr(self, "is_distributed_loading_by_transformers", False)
+                and not self.is_fsdp_enabled
+                and not getattr(self, "is_deepspeed_enabled", False)
+            )
             result = super().save_model(output_dir, _internal_call)
             if metadata and self.args.should_save:
                 from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
@@ -266,8 +272,12 @@ class DistributedParallelMixin(Trainer):
                 and not self._ep_full_param_experts()
                 and tp_save_joins_all_ranks(self.accelerator, self.is_fsdp_enabled)
             ):
+                self._axolotl_save_joined_all_ranks = False
                 result = self._save_model_native(output_dir, _internal_call)
-                if not self.args.should_save:
+                if (
+                    not self.args.should_save
+                    and not self._axolotl_save_joined_all_ranks
+                ):
                     # transformers gathers TP DTensors and barriers inside save_pretrained, so the
                     # non-writing ranks must call it too; under FSDP the state dict was already
                     # gathered by every rank, so they only need to join the barrier

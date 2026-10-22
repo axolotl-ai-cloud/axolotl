@@ -138,7 +138,9 @@ def evaluate(*, cfg: DictDefault, dataset_meta: TrainDatasetMeta) -> Dict[str, f
     # Evaluate datasets
     all_metrics = {}
     train_metrics = evaluate_dataset(trainer, train_dataset, "train", cfg.flash_optimum)
-    eval_metrics = evaluate_dataset(trainer, eval_dataset, "eval", cfg.flash_optimum)
+    eval_metrics = evaluate_dataset(
+        trainer, trainer.eval_dataset, "eval", cfg.flash_optimum
+    )
 
     if train_metrics:
         all_metrics.update(train_metrics)

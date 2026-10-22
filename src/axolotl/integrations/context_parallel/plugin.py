@@ -259,8 +259,7 @@ class ContextParallelPlugin(BasePlugin):
                             )
                 model.set_attn_implementation(self._runtime.attn_implementation)
 
-        # The mamba/SSM CP corrections and the GRPO trainer resolve the CP group
-        # through this registry.
+        # ``is_cp_active`` and the GRPO trainer resolve the CP group through this registry.
         from axolotl.monkeypatch.ring_attn import set_ring_attn_group
 
         set_ring_attn_group(self._runtime.cp_group)
