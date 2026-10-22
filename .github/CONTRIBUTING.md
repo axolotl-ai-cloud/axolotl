@@ -85,6 +85,12 @@ Distributed CPU tests run separately with `-m "distributed_cpu and not slow"`.
 `@pytest.mark.gpu` (or `pytestmark = pytest.mark.gpu` for a whole module). A CUDA
 `skipif` without the marker is flagged by `tests/conftest.py`, and
 `AXOLOTL_CI_ENFORCE_GPU_MARKER=1` turns that into a failure.
+A single-GPU test that cannot run on the L40S lanes (SM100+/Blackwell, e.g. NVFP4
+GEMMs) gets `gpu_blackwell`, which implies `gpu`. It is applied automatically when
+a `skipif` reason names only Blackwell archs (`sm100`, `sm>=100`, `Blackwell`);
+otherwise add `@pytest.mark.gpu_blackwell` yourself. These tests run only in
+`cicd/cicd_blackwell.sh` on a B200 and are excluded from the L40S lanes. Multi-GPU
+NVFP4 tests keep the `nvfp4` marker and run in `cicd/nvfp4.sh` instead.
 Both single-GPU lanes resume interrupted cache downloads with a shared 15-minute
 download budget, then extract the completed archive without clearing the shared
 Hub cache.

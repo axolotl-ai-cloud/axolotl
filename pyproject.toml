@@ -286,7 +286,8 @@ markers = [
     "distributed_cpu: CPU multi-process (gloo) tests unrelated to NF4 loading",
     "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
     "integration: marks tests as integration tests (real model modeling paths)",
-    "gpu: tests that require a CUDA device; auto-applied from CUDA skipif reasons (see tests/conftest.py)",
+    "gpu: tests that require a CUDA device; auto-applied from CUDA skipif reasons and to gpu_blackwell tests (see tests/conftest.py)",
+    "gpu_blackwell: single-GPU tests that cannot run on the L40S lanes (SM100+/Blackwell); auto-applied from Blackwell-only skipif reasons, run only by cicd/cicd_blackwell.sh on B200",
     "nvfp4: NVFP4 multi-GPU tests that need SM100+ GPUs; run by cicd/nvfp4.sh",
 ]
 
