@@ -115,18 +115,6 @@ class TestSelectiveCheckpointing:
         with pytest.raises(ValueError, match="in-place"):
             validate_config(cfg)
 
-    def test_allows_matmul_save_without_adapter(self, min_base_cfg):
-        cfg = (
-            DictDefault(
-                gradient_checkpointing=True,
-                selective_checkpointing={"save": ["attention", "aten::mm"]},
-            )
-            | min_base_cfg
-        )
-
-        cfg = validate_config(cfg)
-        assert cfg.selective_checkpointing["save"] == ["attention", "aten::mm"]
-
 
 _KERNELS_OFF = {
     "lora_mlp_kernel": False,

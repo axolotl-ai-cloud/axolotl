@@ -34,7 +34,7 @@ def guard_nemotron_h_fused_scan(mod=None):
 
     ``mamba_split_conv1d_scan_combined`` multiplies by ``out_proj.weight``
     itself, which fails on a bitsandbytes-quantized weight, and it never
-    surfaces the final SSM state that the CP correction needs. Returning
+    surfaces the final SSM state that context parallelism needs. Returning
     ``None`` is upstream's own "kernel unavailable" signal, so the mixer falls
     back to the separate conv / chunk-scan calls.
     """

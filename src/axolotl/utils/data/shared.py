@@ -76,6 +76,7 @@ DATASET_HASH_DATASET_EXTRA_FIELDS = (
     "field_rejected",
     "field_thinking",
     "field_tools",
+    "generation_tags",
     "input_format",
     "input_transform",
     "max_completion_length",

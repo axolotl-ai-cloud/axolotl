@@ -13,7 +13,7 @@ from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
-from axolotl.core.trainers import AxolotlTrainer
+from axolotl.core.trainers import AxolotlKTOTrainer, AxolotlTrainer
 from axolotl.model_support import ModelStrategies
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
@@ -205,6 +205,39 @@ class TestHFCausalTrainerBuilder:
         # SFT specific
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
+
+    def test_checkpoint_save_retry_reaches_training_arguments(
+        self, sft_cfg, model, tokenizer
+    ):
+        args = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100).args
+        assert args.checkpoint_save_retry_wait is None
+
+        sft_cfg["checkpoint_save_retry"] = {"wait_seconds": 120, "retries": 2}
+        args = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100).args
+        assert (args.checkpoint_save_retry_wait, args.checkpoint_save_retries) == (
+            120,
+            2,
+        )
+
+    def test_checkpoint_mirror_adds_callback(self, sft_cfg, model, tokenizer, tmp_path):
+        from axolotl.core.checkpoint_mirror import CheckpointMirrorCallback
+
+        sft_cfg["checkpoint_mirror"] = {
+            "dir": str(tmp_path / "nfs"),
+            "delete": "keep",
+            "save_total_limit": 3,
+            "max_pending": 1,
+            "copy_threads": 2,
+        }
+        trainer = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100)
+        (callback,) = [
+            cb
+            for cb in trainer.callback_handler.callbacks
+            if isinstance(cb, CheckpointMirrorCallback)
+        ]
+        assert callback.mirror_dir == str(tmp_path / "nfs")
+        assert (callback.delete, callback.save_total_limit) == ("keep", 3)
+        assert (callback.max_pending, callback.copy_threads) == (1, 2)
 
     @pytest.mark.parametrize(
         "cfg_string",
@@ -421,25 +454,21 @@ class TestTrainerClsPlugin:
 
     def test_trainer_cls_is_not_none_with_plugin(self, kto_cfg, model, tokenizer):
         """
-        Test that the trainer cls is not none with plugin
+        Test that the trainer cls is not none when a plugin returns no trainer cls
 
         Fixes #2693
         """
-        cfg = kto_cfg.copy()
-        cfg.plugins = ["axolotl.integrations.liger.LigerPlugin"]
+        plugin_manager = MagicMock()
+        plugin_manager.get_trainer_cls.return_value = None
+        with patch(
+            "axolotl.core.builders.rl.PluginManager.get_instance",
+            return_value=plugin_manager,
+        ):
+            builder = HFRLTrainerBuilder(kto_cfg, model, tokenizer)
+            trainer_cls, trainer_cls_args = builder._get_trainer_cls({})
 
-        # Expected AttributeError as we don't pass regular model configs to RL trainer builder
-        # If it throws `TypeError: None is not a callable object`, trainer_cls could be None
-        try:
-            builder = HFRLTrainerBuilder(cfg, model, tokenizer)
-
-            builder.build(100)
-        except TypeError as e:
-            # Error raised if trainer_cls is None
-            assert "'tuple' object has no attribute 'config'" not in str(e)
-        except Exception:
-            # Another error happens, so we passed trainer_cls to builder
-            pass
+        assert trainer_cls is AxolotlKTOTrainer
+        assert trainer_cls_args[0] is model
 
 
 @pytest.fixture(name="inductor_config_snapshot")

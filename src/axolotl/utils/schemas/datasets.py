@@ -190,6 +190,12 @@ class SFTDataset(EvaluationDatasetConfig):
             "description": "Which EOT (end-of-turn) tokens to train on. Same values as train_on_eos. Defaults to the train_on_eos setting when unset."
         },
     )
+    generation_tags: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Label assistant turns from the chat template's {% generation %} blocks, including the template structure inside them, instead of locating each turn's fields. Needs one block per assistant turn; rows that don't match use the turn locator. Not supported with a processor, mistral-common or slow tokenizers."
+        },
+    )
     roles: dict[str, list[str]] | None = Field(
         default=None,
         json_schema_extra={

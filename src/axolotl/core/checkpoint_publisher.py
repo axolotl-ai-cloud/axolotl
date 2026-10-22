@@ -6,7 +6,12 @@ import shutil
 import tempfile
 from collections import deque
 from collections.abc import Callable, Iterable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    Future,
+    ThreadPoolExecutor,
+    wait as wait_futures,
+)
 from pathlib import Path
 
 
@@ -65,6 +70,10 @@ def retain_checkpoint(
     return retained
 
 
+class QueueFull(RuntimeError):
+    """``submit(..., block=False)`` found ``max_pending`` publications unfinished."""
+
+
 class BackgroundCheckpointPublisher:
     """Publish retained directories in order without blocking the training thread.
 
@@ -73,7 +82,10 @@ class BackgroundCheckpointPublisher:
     must return a private directory owned by this queue. Queued directories are
     removed after publication, failure, or cancellation. Call ``check`` at training
     boundaries and ``close`` to drain work, or cancel pending work during teardown.
-    Submission and polling belong to a single producer thread.
+    Submission and polling belong to a single producer thread. With ``max_pending``,
+    ``submit`` waits while that many publications are unfinished (or raises
+    ``QueueFull`` with ``block=False``), so a slow destination bounds the retained
+    checkpoints instead of filling the local disk.
     """
 
     def __init__(
@@ -83,8 +95,12 @@ class BackgroundCheckpointPublisher:
         *,
         retain: Callable[[Path, Path], Path] = retain_checkpoint,
         thread_name_prefix: str = "checkpoint-publish",
+        max_pending: int | None = None,
     ):
+        if max_pending is not None and max_pending < 1:
+            raise ValueError("max_pending must be at least 1")
         self.publish, self.retain = publish, retain
+        self.max_pending = max_pending
         self.directory = Path(directory)
         self.executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix=thread_name_prefix
@@ -99,10 +115,17 @@ class BackgroundCheckpointPublisher:
             future.result()
             self.futures.popleft()
 
-    def submit(self, directory, step):
+    def submit(self, directory, step, *, block=True):
         if self.closed:
             raise RuntimeError("Checkpoint publisher is closed")
         self.check()
+        while self.max_pending is not None and len(self.futures) >= self.max_pending:
+            if not block:
+                raise QueueFull(
+                    f"{len(self.futures)} checkpoint publications are still pending"
+                )
+            wait_futures([self.futures[0]], return_when=FIRST_COMPLETED)
+            self.check()
         retained = self.retain(Path(directory), self.directory)
         previous = self.futures[-1] if self.futures else None
         try:
@@ -122,6 +145,12 @@ class BackgroundCheckpointPublisher:
             return self.publish(directory, step)
         finally:
             shutil.rmtree(directory)
+
+    def wait(self):
+        """Block until every submitted publication has finished."""
+        if self.futures:
+            wait_futures(list(self.futures))
+        self.check()
 
     def close(self, *, cancel_pending=False):
         self.closed = True

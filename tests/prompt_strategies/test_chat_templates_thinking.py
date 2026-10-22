@@ -122,3 +122,56 @@ class TestSplitThinking:
             assert input_ids == expected_input_ids, (
                 f"Input IDs mismatch: {input_ids} != {expected_input_ids}"
             )
+
+
+# assistant turns must carry reasoning, as K2-Horizon's template enforces
+REQUIRES_REASONING_TEMPLATE = (
+    "{%- for message in messages -%}"
+    "{%- if message.role == 'assistant' -%}"
+    "{%- if message.reasoning_content is not defined -%}"
+    "{{ raise_exception('Assistant message is missing a thinking field.') }}"
+    "{%- endif -%}"
+    "<|im_start|>assistant\n<think>{{ message.reasoning_content }}</think>"
+    "{{ message.content }}<|im_end|>\n"
+    "{%- else -%}"
+    "<|im_start|>{{ message.role }}\n{{ message.content }}<|im_end|>\n"
+    "{%- endif -%}"
+    "{%- endfor -%}"
+)
+
+
+def test_template_requiring_reasoning_labels_reasoning_and_content(smollm2_tokenizer):
+    strategy = load(
+        smollm2_tokenizer,
+        DictDefault(
+            {
+                "train_on_inputs": False,
+                "sequence_len": 512,
+                "eot_tokens": ["<|im_end|>"],
+            }
+        ),
+        DictDefault(
+            {
+                "chat_template": "jinja",
+                "chat_template_jinja": REQUIRES_REASONING_TEMPLATE,
+                "field_messages": "messages",
+            }
+        ),
+    )
+    conversation = {
+        "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello", "reasoning_content": "greet"},
+            {"role": "user", "content": "bye"},
+            {"role": "assistant", "content": "see you", "reasoning_content": "part"},
+        ]
+    }
+    res = strategy.tokenize_prompt(conversation)
+    trained = smollm2_tokenizer.decode(
+        [
+            t
+            for t, label in zip(res["input_ids"], res["labels"], strict=True)
+            if label != -100
+        ]
+    )
+    assert trained == "greet</think>hello<|im_end|>part</think>see you<|im_end|>"
