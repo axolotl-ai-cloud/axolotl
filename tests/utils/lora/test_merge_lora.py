@@ -25,6 +25,24 @@ from axolotl.cli.utils.lora_merge import (
 )
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.peft import LoraConfig
+
+
+def test_compiled_merge_rejects_legacy_method():
+    with pytest.raises(ValueError, match="merge_compile requires merge_method"):
+        do_merge_lora(
+            cfg=DictDefault(adapter="lora", merge_method="legacy", merge_compile=True)
+        )
+
+
+def test_lora_config_rejects_explicit_legacy_merge_compile():
+    with pytest.raises(ValueError, match="merge_compile requires merge_method"):
+        LoraConfig(merge_method="legacy", merge_compile=True)
+
+
+@pytest.mark.parametrize("merge_method", [None, "memory_efficient"])
+def test_lora_config_accepts_merge_compile_without_legacy(merge_method):
+    assert LoraConfig(merge_method=merge_method, merge_compile=True).merge_compile
 
 
 class _PostMergeRecorder(BasePlugin):
@@ -619,10 +637,14 @@ class TestEfficientMerge:
             _original_adapter="qlora",
             _original_staged_nf4=staged,
             _original_nf4_backend=backend,
+            merge_compile=True,
+            merge_compile_precision="relaxed",
         )
         with patch("axolotl.cli.merge_lora.merge_lora_sharded_efficient") as merge:
             _do_merge_lora_efficient(cfg=cfg)
         kwargs = merge.call_args.kwargs
+        assert kwargs["merge_compile"] is True
+        assert kwargs["merge_compile_precision"] == "relaxed"
         assert kwargs["simulate_nf4"] is True
         assert kwargs["staged_nf4"] is staged
         assert kwargs["nf4_backend"] == backend
@@ -1143,7 +1165,10 @@ class TestEfficientMerge:
 
     @pytest.mark.parametrize("use_rslora", [False, True])
     @pytest.mark.parametrize("reverse_targets", [False, True])
-    def test_fused_paramwrapper_merge_matches_peft(self, use_rslora, reverse_targets):
+    @pytest.mark.parametrize("inplace", [False, True])
+    def test_fused_paramwrapper_merge_matches_peft(
+        self, use_rslora, reverse_targets, inplace
+    ):
         from peft import LoraConfig, get_peft_model, get_peft_model_state_dict
         from transformers.core_model_loading import (
             Concatenate,
@@ -1213,6 +1238,7 @@ class TestEfficientMerge:
             config.to_dict(),
             "cpu",
             expected_num_experts=4,
+            inplace=inplace,
         )
         assert merged_count == 2
         assert set(result) == set(base)
@@ -1454,6 +1480,48 @@ class TestEfficientMerge:
             split["model.layers.0.mlp.experts.down_proj"],
             whole["model.layers.0.mlp.experts.down_proj"],
         )
+
+    def test_fused_merge_preserves_shard_membership(self, tmp_path):
+        base_dir, adapter_dir, _, _ = self._build_split_expert_case(
+            tmp_path, "layout", [[0, 1], [2, 3]]
+        )
+        index_path = base_dir / "model.safetensors.index.json"
+        index = json.loads(index_path.read_text())
+        unchanged = {}
+        for i, path in enumerate(sorted(base_dir.glob("*.safetensors"))):
+            key = f"model.layers.{i}.input_layernorm.weight"
+            unchanged[key] = (path.name, torch.full((16,), float(i + 1)))
+            tensors = safetensors.torch.load_file(path)
+            tensors[key] = unchanged[key][1]
+            safetensors.torch.save_file(tensors, path, metadata={"format": "pt"})
+            index["weight_map"][key] = path.name
+        index_path.write_text(json.dumps(index))
+
+        output = tmp_path / "merged-layout"
+        merge_lora_sharded_efficient(base_dir, adapter_dir, output, device="cpu")
+        output_index = json.loads((output / "model.safetensors.index.json").read_text())
+        expected_map = {key: name for key, (name, _) in unchanged.items()}
+        expected_map.update(
+            {
+                f"model.layers.0.mlp.experts.{proj}": "model-00002-of-00002.safetensors"
+                for proj in ("gate_up_proj", "down_proj")
+            }
+        )
+        assert output_index["weight_map"] == expected_map
+        total_size = 0
+        for path in sorted(output.glob("*.safetensors")):
+            tensors = safetensors.torch.load_file(path)
+            assert set(tensors) == {
+                key for key, name in expected_map.items() if name == path.name
+            }
+            with safetensors.safe_open(path, framework="pt") as reader:
+                assert reader.metadata() == {"format": "pt"}
+            total_size += sum(t.numel() * t.element_size() for t in tensors.values())
+            for key in tensors.keys() & unchanged.keys():
+                torch.testing.assert_close(
+                    tensors[key], unchanged[key][1], rtol=0, atol=0
+                )
+        assert output_index["metadata"]["total_size"] == total_size
 
     def test_expert_group_never_completing_raises(self, tmp_path):
         """A base missing experts entirely must fail loudly, not write an unmerged group."""
@@ -3226,8 +3294,9 @@ class TestQuantizedBaseMerge:
     @pytest.mark.parametrize(
         "scale_mode,dequant", [("fresh", False), ("reuse", False), ("reuse", True)]
     )
+    @pytest.mark.parametrize("merge_compile", [False, True])
     def test_nvfp4_expert_writer_chunking_is_bitwise_invariant(
-        self, tmp_path, scale_mode, dequant
+        self, tmp_path, scale_mode, dequant, merge_compile
     ):
         """The expert writer merges in expert chunks to bound its working set; the
         written bytes must not depend on the chunk size, and the per-expert views it
@@ -3250,11 +3319,27 @@ class TestQuantizedBaseMerge:
                 dequant=dequant,
                 scale_mode=scale_mode,
                 expert_chunk=chunk,
+                merge_compile=merge_compile,
             )
             remaining, emitted, merged = writer.consume(dict(shard))
             writer.assert_drained()
             assert merged == 2 and not remaining
             outputs.append(emitted)
+            if merge_compile and scale_mode == "fresh":
+                assert writer.compiled_merge is not None
+                assert not writer.compiled_merge.disabled
+                assert writer.compiled_merge.validated
+
+        if merge_compile:
+            writer = _Nvfp4ExpertMergeWriter(
+                adapter,
+                {"r": r, "lora_alpha": alpha},
+                E,
+                "cpu",
+                dequant=dequant,
+                scale_mode=scale_mode,
+            )
+            outputs.insert(0, writer.consume(dict(shard))[1])
 
         def raw(t):
             return t.contiguous().reshape(-1).view(torch.uint8)

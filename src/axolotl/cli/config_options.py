@@ -925,6 +925,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--merge-compile/--no-merge-compile",),
+        None,
+        None,
+        "Compile merge-aware NVFP4 expert-chunk arithmetic, using strict precision by default. Requires memory_efficient merging; other targets remain eager.",
+    ),
+    (
+        ("--merge-compile-precision",),
+        None,
+        None,
+        "Compiled merge precision: strict preserves eager rounding and validates each specialization against PEFT; relaxed uses compiler defaults without equivalence checks and may change merged NVFP4 bytes. Only used with merge_compile.",
+    ),
+    (
         ("--merge-method",),
         None,
         None,
