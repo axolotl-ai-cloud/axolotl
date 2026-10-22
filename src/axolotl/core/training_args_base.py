@@ -58,6 +58,16 @@ class AxolotlTrainingMixins:
         default=False,
         metadata={"help": "Use real batches for efficient training."},
     )
+    checkpoint_save_retry_wait: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "Seconds to wait before rewriting a checkpoint file whose write failed with a disk error. None disables retries."
+        },
+    )
+    checkpoint_save_retries: int = field(
+        default=1,
+        metadata={"help": "Retries per checkpoint file write after a disk error."},
+    )
     include_tkps: bool = field(
         default=True,
         metadata={
