@@ -1000,7 +1000,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage.</p></li>
 <li><p>Install FLA for sample packing support with the Gated DeltaNet linear attention layers:</p></li>
 </ol>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip uninstall causal-conv1d <span class="kw">&amp;&amp;</span> <span class="ex">uv</span> pip install flash-linear-attention==0.4.1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip uninstall causal-conv1d <span class="kw">&amp;&amp;</span> <span class="ex">uv</span> pip install flash-linear-attention==0.5.2</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <blockquote class="blockquote">
 <p>FLA is required when <code>sample_packing: true</code>. Without it, training raises a <code>RuntimeError</code> on packed sequences. Vision configs use <code>sample_packing: false</code> so FLA is optional there.</p>
 </blockquote>

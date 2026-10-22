@@ -1016,6 +1016,7 @@ plain <code>nn.Linear</code> modules.</li>
 <li><code>sample_packing: true</code> is supported.</li>
 <li>Read more on how to load your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</li>
 <li>The dataset format follows the OpenAI Messages format as seen <a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">here</a>.</li>
+<li>The chat template requires a thinking field on every assistant message (<code>reasoning_content</code>, <code>reasoning</code>, <code>think</code>, <code>think_fast</code> or <code>think_faster</code>); map yours with <code>field_thinking</code>, as the examples do for <code>thinking</code>.</li>
 </ul>
 </section>
 </section>

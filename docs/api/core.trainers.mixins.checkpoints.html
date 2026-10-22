@@ -962,6 +962,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
   <li><a href="#axolotl.core.trainers.mixins.checkpoints.CheckpointSaveMixin" id="toc-axolotl.core.trainers.mixins.checkpoints.CheckpointSaveMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.mixins.checkpoints.CheckpointSaveMixin">CheckpointSaveMixin</a></li>
+  <li><a href="#axolotl.core.trainers.mixins.checkpoints.CheckpointWriteRetryMixin" id="toc-axolotl.core.trainers.mixins.checkpoints.CheckpointWriteRetryMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.mixins.checkpoints.CheckpointWriteRetryMixin">CheckpointWriteRetryMixin</a></li>
+  </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.core.trainers.mixins.checkpoints.with_checkpoint_write_retry" id="toc-axolotl.core.trainers.mixins.checkpoints.with_checkpoint_write_retry" class="nav-link" data-scroll-target="#axolotl.core.trainers.mixins.checkpoints.with_checkpoint_write_retry">with_checkpoint_write_retry</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -976,7 +981,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.core.trainers.mixins.checkpoints" class="level1">
 <h1>core.trainers.mixins.checkpoints</h1>
 <p><code>core.trainers.mixins.checkpoints</code></p>
-<p>Custom handling to not fail training if fsdp optimizer is not savable</p>
+<p>Checkpoint save handling: unsavable FSDP optimizers and retries after disk errors.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -991,12 +996,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.core.trainers.mixins.checkpoints.CheckpointSaveMixin">CheckpointSaveMixin</a></td>
 <td>Mixin to handle saving the optimizer and scheduler if they are not savable.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.core.trainers.mixins.checkpoints.CheckpointWriteRetryMixin">CheckpointWriteRetryMixin</a></td>
+<td>Retry checkpoint file writes that fail with a full disk, quota or I/O error.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.core.trainers.mixins.checkpoints.CheckpointSaveMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.mixins.checkpoints.CheckpointSaveMixin">CheckpointSaveMixin</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.checkpoints.CheckpointSaveMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Mixin to handle saving the optimizer and scheduler if they are not savable.</p>
+</section>
+<section id="axolotl.core.trainers.mixins.checkpoints.CheckpointWriteRetryMixin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.mixins.checkpoints.CheckpointWriteRetryMixin">CheckpointWriteRetryMixin</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.checkpoints.CheckpointWriteRetryMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Retry checkpoint file writes that fail with a full disk, quota or I/O error.</p>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.core.trainers.mixins.checkpoints.with_checkpoint_write_retry">with_checkpoint_write_retry</a></td>
+<td>Run a <code>_save_checkpoint</code> override inside the trainer’s write-retry scope.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.core.trainers.mixins.checkpoints.with_checkpoint_write_retry" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.mixins.checkpoints.with_checkpoint_write_retry">with_checkpoint_write_retry</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.checkpoints.with_checkpoint_write_retry(method)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Run a <code>_save_checkpoint</code> override inside the trainer’s write-retry scope.</p>
 
 
 </section>

@@ -959,9 +959,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview"><span class="header-section-number">1</span> Overview</a></li>
   <li><a href="#file-based-checkpoint-trigger" id="toc-file-based-checkpoint-trigger" class="nav-link" data-scroll-target="#file-based-checkpoint-trigger"><span class="header-section-number">2</span> File-Based Checkpoint Trigger</a></li>
-  <li><a href="#controlc-sigint-checkpoint" id="toc-controlc-sigint-checkpoint" class="nav-link" data-scroll-target="#controlc-sigint-checkpoint"><span class="header-section-number">3</span> Control+C (SIGINT) Checkpoint</a></li>
-  <li><a href="#best-practices" id="toc-best-practices" class="nav-link" data-scroll-target="#best-practices"><span class="header-section-number">4</span> Best Practices</a></li>
-  <li><a href="#example" id="toc-example" class="nav-link" data-scroll-target="#example"><span class="header-section-number">5</span> Example</a></li>
+  <li><a href="#mirroring-checkpoints-to-shared-storage" id="toc-mirroring-checkpoints-to-shared-storage" class="nav-link" data-scroll-target="#mirroring-checkpoints-to-shared-storage"><span class="header-section-number">3</span> Mirroring Checkpoints to Shared Storage</a></li>
+  <li><a href="#retrying-saves-after-disk-errors" id="toc-retrying-saves-after-disk-errors" class="nav-link" data-scroll-target="#retrying-saves-after-disk-errors"><span class="header-section-number">4</span> Retrying Saves After Disk Errors</a></li>
+  <li><a href="#controlc-sigint-checkpoint" id="toc-controlc-sigint-checkpoint" class="nav-link" data-scroll-target="#controlc-sigint-checkpoint"><span class="header-section-number">5</span> Control+C (SIGINT) Checkpoint</a></li>
+  <li><a href="#best-practices" id="toc-best-practices" class="nav-link" data-scroll-target="#best-practices"><span class="header-section-number">6</span> Best Practices</a></li>
+  <li><a href="#example" id="toc-example" class="nav-link" data-scroll-target="#example"><span class="header-section-number">7</span> Example</a></li>
   </ul>
 </nav>
     </div>
@@ -989,7 +991,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 <section id="overview" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="overview"><span class="header-section-number">1</span> Overview</h2>
-<p>Axolotl supports on-demand checkpoint saving during training. You can trigger checkpoints via file-based triggers (for programmatic control) or Control+C (for interactive use).</p>
+<p>Axolotl supports on-demand checkpoint saving during training. You can trigger checkpoints via file-based triggers (for programmatic control) or Control+C (for interactive use), and mirror checkpoints from fast local storage to a shared filesystem without blocking training.</p>
 </section>
 <section id="file-based-checkpoint-trigger" class="level2" data-number="2">
 <h2 data-number="2" class="anchored" data-anchor-id="file-based-checkpoint-trigger"><span class="header-section-number">2</span> File-Based Checkpoint Trigger</h2>
@@ -998,11 +1000,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Enable in your config:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">dynamic_checkpoint</span><span class="kw">:</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">check_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">100</span><span class="co">  # Optional: check every N steps (default: 100)</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">check_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span><span class="co">  # Optional: check every N steps (default: 10)</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">trigger_file_path</span><span class="kw">:</span><span class="at"> </span><span class="st">"axolotl_checkpoint.save"</span><span class="co">  # Optional: custom filename</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong>Options:</strong>
 - <code>enabled</code>: <code>true</code> to enable (required)
-- <code>check_interval</code>: Steps between file checks. Default: 100. Lower = faster response, higher I/O overhead.
+- <code>check_interval</code>: Steps between file checks. Default: 10. Lower = faster response, higher I/O overhead.
 - <code>trigger_file_path</code>: Custom trigger filename. Default: <code>axolotl_checkpoint.save</code></p>
 </section>
 <section id="how-it-works" class="level3" data-number="2.2">
@@ -1028,26 +1030,108 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">touch</span> /path/to/output_dir/my_trigger.save</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </section>
-<section id="controlc-sigint-checkpoint" class="level2" data-number="3">
-<h2 data-number="3" class="anchored" data-anchor-id="controlc-sigint-checkpoint"><span class="header-section-number">3</span> Control+C (SIGINT) Checkpoint</h2>
+<section id="mirroring-checkpoints-to-shared-storage" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="mirroring-checkpoints-to-shared-storage"><span class="header-section-number">3</span> Mirroring Checkpoints to Shared Storage</h2>
+<p>Writing checkpoints, especially optimizer states, to a network filesystem such as NFS can stall
+training for as long as the write takes. With <code>checkpoint_mirror</code>, training saves to a fast local
+<code>output_dir</code> (for example node-local NVMe) and keeps going while each checkpoint is copied to a
+shared directory in the background.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> /mnt/local-nvme/my-run</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">500</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">save_total_limit</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="fu">checkpoint_mirror</span><span class="kw">:</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dir</span><span class="kw">:</span><span class="at"> /mnt/nfs/runs/my-run</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">delete</span><span class="kw">:</span><span class="at"> mirror</span><span class="co">        # or keep</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="co">  # save_total_limit: 10  # with delete: keep, how many to keep in dir</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_pending</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>Options:</strong></p>
+<ul>
+<li><code>dir</code>: Shared directory that receives every checkpoint. It must be outside <code>output_dir</code>.</li>
+<li><code>delete</code>: <code>mirror</code> keeps as many checkpoints in <code>dir</code> as <code>save_total_limit</code> keeps locally. <code>keep</code>
+never deletes from <code>dir</code>, or keeps the newest <code>checkpoint_mirror.save_total_limit</code> when set.
+The newest and best checkpoints are never deleted.</li>
+<li><code>max_pending</code>: Checkpoints queued for copying at once. Queued checkpoints are hard links, so this
+bounds the local disk they hold. A save that finds the queue full is not mirrored and training
+does not wait; the newest checkpoint is retried at the end of training.</li>
+<li><code>copy_threads</code>: Files copied in parallel per checkpoint. Default: 4.</li>
+<li><code>resume</code>: Whether <code>auto_resume_from_checkpoints</code> may resume from <code>dir</code>. Default: <code>true</code>.</li>
+</ul>
+<p>On CoreWeave CKS, <code>output_dir</code> can be under the pod’s node-local <code>/scratch</code> volume when
+<code>checkpoint_mirror.dir</code> is on the PVC (under <code>pvc_mount</code>).</p>
+<section id="how-it-works-1" class="level3" data-number="3.1">
+<h3 data-number="3.1" class="anchored" data-anchor-id="how-it-works-1"><span class="header-section-number">3.1</span> How It Works</h3>
+<ol type="1">
+<li>On each save, the checkpoint is hard-linked into a private queue in <code>output_dir</code>, which is
+instant and survives local rotation by <code>save_total_limit</code>.</li>
+<li>A background thread copies queued checkpoints in order into a hidden staging directory in
+<code>dir</code>, then renames it to <code>checkpoint-N</code>. A checkpoint in <code>dir</code> is therefore always complete.</li>
+<li>Before the final save, pending checkpoint copies are drained. After it, the final model,
+tokenizer and other files in <code>output_dir</code> are copied as well.</li>
+</ol>
+<p>Use one <code>dir</code> per run: at startup, staging left in <code>dir</code> by an earlier run is removed, and a
+checkpoint is only assembled from the current run’s copies.</p>
+<p>A failed copy logs a warning and training continues; the local checkpoint is unaffected. If the
+newest checkpoint failed to copy, it is retried once at the end of training.</p>
+</section>
+<section id="multi-node-runs" class="level3" data-number="3.2">
+<h3 data-number="3.2" class="anchored" data-anchor-id="multi-node-runs"><span class="header-section-number">3.2</span> Multi-node Runs</h3>
+<p>When <code>output_dir</code> is local to each node, every node holds only its own ranks’ model shards,
+optimizer states and RNG states. Axolotl detects this at startup. Each node then copies its share,
+and <code>checkpoint-N</code> appears in <code>dir</code> only once every node has finished. Nodes other than the first
+also apply <code>save_total_limit</code> to their own <code>output_dir</code>, which Hugging Face Trainer only does on
+the main process. The final outputs are copied from the first node only, and a sharded final
+save merges its weights from the mirrored checkpoint, since no node holds every shard.</p>
+</section>
+<section id="resuming" class="level3" data-number="3.3">
+<h3 data-number="3.3" class="anchored" data-anchor-id="resuming"><span class="header-section-number">3.3</span> Resuming</h3>
+<p>With <code>auto_resume_from_checkpoints: true</code>, Axolotl resumes from the newest checkpoint found in
+<code>output_dir</code> or <code>dir</code>, preferring <code>output_dir</code> on a tie. When <code>output_dir</code> is local to each node
+of a multi-node run, no single node holds a complete checkpoint, so it always resumes from <code>dir</code>.
+This also covers a restart on fresh nodes whose local disks are empty.</p>
+</section>
+</section>
+<section id="retrying-saves-after-disk-errors" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="retrying-saves-after-disk-errors"><span class="header-section-number">4</span> Retrying Saves After Disk Errors</h2>
+<p>A checkpoint write that fails because the disk is full, a quota is exceeded, or the filesystem
+returns an I/O error normally fails the save and ends training. With <code>checkpoint_save_retry</code>,
+the write waits and is tried again first:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">checkpoint_save_retry</span><span class="kw">:</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">wait_seconds</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span><span class="co">   # pause before rewriting the file</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">retries</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">          # retries per file before the error is raised</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The retry applies to the files of each <code>checkpoint-N</code>: model weights, optimizer, scheduler and
+RNG states, the trainer state, and the model, adapter, generation and tokenizer configs. The
+failed file is rewritten in place on the rank that hit the error, so no rank skips or reorders a
+collective. The other ranks wait at their next collective,
+so keep <code>wait_seconds * retries</code> below <code>ddp_timeout</code> (1800 seconds by default); Axolotl warns at
+startup otherwise. Distributed checkpoint saves (FSDP sharded state dicts) report a failure on
+every rank, and every rank retries them together.</p>
+<p>Disk errors are recognized by errno (<code>ENOSPC</code>, <code>EDQUOT</code>, <code>EIO</code>, <code>EFBIG</code>, <code>ESTALE</code>) and by the
+messages that writers without an errno produce, for example
+<code>I/O error: Disk quota exceeded (os error 122)</code> from safetensors or <code>file write failed</code> from
+<code>torch.save</code>. Other errors are raised immediately. When <code>checkpoint_mirror</code> is also set, the
+pause gives queued copies time to finish and release the local disk space they hold.</p>
+</section>
+<section id="controlc-sigint-checkpoint" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="controlc-sigint-checkpoint"><span class="header-section-number">5</span> Control+C (SIGINT) Checkpoint</h2>
 <p>Pressing <code>Ctrl+C</code> during training saves the model state and exits gracefully. <strong>Note:</strong> This saves only the model weights, not optimizer state. For resumable checkpoints, use the file-based trigger.</p>
 </section>
-<section id="best-practices" class="level2" data-number="4">
-<h2 data-number="4" class="anchored" data-anchor-id="best-practices"><span class="header-section-number">4</span> Best Practices</h2>
+<section id="best-practices" class="level2" data-number="6">
+<h2 data-number="6" class="anchored" data-anchor-id="best-practices"><span class="header-section-number">6</span> Best Practices</h2>
 <ul>
-<li><strong>Check interval</strong>: Lower values (10-50) for fast training, default 100 for slower training</li>
+<li><strong>Check interval</strong>: Lower values (10-50) for fast training, higher values (e.g.&nbsp;100) for slower training</li>
 <li><strong>Distributed training</strong>: Create trigger file once; rank 0 handles synchronization</li>
 <li><strong>Resume</strong>: Dynamic checkpoints can be resumed like regular checkpoints via <code>resume_from_checkpoint</code></li>
 </ul>
 </section>
-<section id="example" class="level2" data-number="5">
-<h2 data-number="5" class="anchored" data-anchor-id="example"><span class="header-section-number">5</span> Example</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs/lora-out</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">500</span><span class="co">  # Scheduled checkpoints</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="fu">dynamic_checkpoint</span><span class="kw">:</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">check_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">50</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="example" class="level2" data-number="7">
+<h2 data-number="7" class="anchored" data-anchor-id="example"><span class="header-section-number">7</span> Example</h2>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs/lora-out</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">500</span><span class="co">  # Scheduled checkpoints</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="fu">dynamic_checkpoint</span><span class="kw">:</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">check_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">50</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This enables scheduled checkpoints every 500 steps plus on-demand saves via file trigger (checked every 50 steps).</p>
 
 

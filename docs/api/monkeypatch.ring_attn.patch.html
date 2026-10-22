@@ -979,7 +979,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p><code>monkeypatch.ring_attn.patch</code></p>
 <p>Context-parallel group registry.</p>
 <p>Tracks the process group used for context parallelism so the rest of axolotl
-(GRPO trainer, mamba/SSM CP correction, <code>is_cp_active</code>) can find it. The
+(GRPO trainer, <code>is_cp_active</code>) can find it. The
 ringmaster ContextParallelPlugin sets this group; the actual ring/ulysses
 attention is owned by ringmaster (the legacy <code>ring_flash_attn</code> kernel path has
 been removed).</p>

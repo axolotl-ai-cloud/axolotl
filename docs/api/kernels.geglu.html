@@ -1002,7 +1002,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.kernels.geglu.geglu_backward" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.geglu.geglu_backward">geglu_backward</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>kernels.geglu.geglu_backward(grad_output, gate, up)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>kernels.geglu.geglu_backward(grad_output, gate, up, approximate<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>GEGLU backward pass using in-place operations.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
@@ -1040,6 +1040,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Up-projection tensor from forward pass, shape <code>[batch, seq_len, hidden_dim]</code>.</td>
 <td><em>required</em></td>
 </tr>
+<tr class="even">
+<td>approximate</td>
+<td>bool</td>
+<td>Use the tanh approximation of GELU (<code>gelu_pytorch_tanh</code>).</td>
+<td><code>False</code></td>
+</tr>
 </tbody>
 </table>
 </section>
@@ -1074,15 +1080,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.kernels.geglu.geglu_forward" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.geglu.geglu_forward">geglu_forward</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>kernels.geglu.geglu_forward(gate, up)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>kernels.geglu.geglu_forward(gate, up, approximate<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>GEGLU forward pass.</p>
 <section id="parameters-1" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 8%">
+<col style="width: 13%">
 <col style="width: 14%">
-<col style="width: 64%">
+<col style="width: 61%">
 <col style="width: 12%">
 </colgroup>
 <thead>
@@ -1105,6 +1111,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>torch.Tensor</td>
 <td>Up-projection tensor of shape [batch, seq_len, hidden_dim].</td>
 <td><em>required</em></td>
+</tr>
+<tr class="odd">
+<td>approximate</td>
+<td>bool</td>
+<td>Use the tanh approximation of GELU (<code>gelu_pytorch_tanh</code>).</td>
+<td><code>False</code></td>
 </tr>
 </tbody>
 </table>

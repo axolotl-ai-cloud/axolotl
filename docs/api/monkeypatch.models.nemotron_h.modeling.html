@@ -1009,7 +1009,7 @@ leaks hidden state across boundaries. Attention and MoE blocks need no changes
 <p>Skip the fused Mamba2 training kernel where its assumptions break.</p>
 <p><code>mamba_split_conv1d_scan_combined</code> multiplies by <code>out_proj.weight</code>
 itself, which fails on a bitsandbytes-quantized weight, and it never
-surfaces the final SSM state that the CP correction needs. Returning
+surfaces the final SSM state that context parallelism needs. Returning
 <code>None</code> is upstream’s own “kernel unavailable” signal, so the mixer falls
 back to the separate conv / chunk-scan calls.</p>
 </section>

@@ -1070,6 +1070,17 @@ hidden-state-sized tensor per layer.</p>
 <p>This runs eagerly (no <code>torch.compile</code>) via torch’s selective-checkpoint policy API. Ops are matched
 at the dispatcher level: SDPA and flash-attention are matched out of the box, and custom kernels
 that are not registered as torch ops are simply recomputed as usual — nothing breaks.</p>
+<p>Flash Attention 4 (<code>attn_implementation: flash_attention_4</code>, or FA2/FA3 upgraded to it) is savable
+too. FA4 (<code>flash_attn.cute</code>) registers no torch op, so inside checkpointed layers Axolotl runs it
+through <code>axolotl::flash_attn_4_fwd</code> / <code>axolotl::flash_attn_4_varlen_fwd</code>. These call FA4’s own
+forward, and their backward calls FA4’s own backward on the saved output and log-sum-exp, so the
+kernels and numerics are unchanged and the backward does not re-run the attention forward.
+Sliding-window FA4 calls are recognized from their window and recomputed like any other
+(<code>save_sliding_window</code> applies), and <code>offload: true</code> moves the saved FA4 outputs to CPU. FA4 calls
+with attention sinks (<code>learnable_sink</code>) or mask/score mods, calls outside checkpointed layers and
+calls under <code>torch.compile</code> go to FA4 directly and are recomputed as before. The
+<code>kernels-community/flash-attn4</code> hub kernel is not covered: use <code>flash_attention_4</code> with
+<code>flash-attn-4</code> installed.</p>
 <p>The explicit form lets you save additional ops, matched as substrings of the qualified op name:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span></span>

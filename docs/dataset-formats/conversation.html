@@ -1004,6 +1004,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"messages"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">,</span> <span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">,</span> <span class="er">...</span><span class="ot">]</span><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
+<p>An optional top-level <code>system</code> field is prepended as a system turn unless <code>messages</code> already starts with one. Null values are skipped.</p>
 <p>See <a href="../../docs/config-reference.html">configs</a> for full configs and supported templates.</p>
 <section id="migrating-from-sharegpt" class="level3">
 <h3 class="anchored" data-anchor-id="migrating-from-sharegpt">Migrating from sharegpt</h3>
@@ -1484,6 +1485,20 @@ Tip
 <span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"Output after thinking..."</span></span>
 <span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
+<section id="labeling-from-generation-markers" class="level4">
+<h4 class="anchored" data-anchor-id="labeling-from-generation-markers">Labeling from generation markers</h4>
+<p>If your chat template wraps assistant output in <code>{% generation %}...{% endgeneration %}</code>, set <code>generation_tags: true</code> to label those blocks directly. This also trains template structure inside them, such as Harmony channel headers, and is faster on long conversations.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ...</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">generation_tags</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li>The template needs one generation block per assistant turn. Per-turn <code>train</code> flags still apply.</li>
+<li><code>train_on_eot</code> and <code>train_on_eos</code> apply to the token ending each block, inside it or right after it.</li>
+<li>Rows with <code>training_detail</code>, a trainable non-assistant turn, or blocks that don’t match the turns use the default labeling. <code>train_on_inputs</code> or non-assistant <code>roles_to_train</code> turn it off.</li>
+<li>Not supported with a processor, mistral-common, or slow tokenizers.</li>
+</ul>
+</section>
 </section>
 </section>
 <section id="sharegpt" class="level2">
@@ -1508,7 +1523,7 @@ Important
 <div class="code-with-filename-file">
 <pre><strong>data.jsonl</strong></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 
 

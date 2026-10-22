@@ -1004,7 +1004,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Prepare the process to run native FA4.</p>
 <p>Silences the harmless first-compile <code>AuxData</code> warning and, for an explicitly requested
 <code>flash_attention_4</code>, surfaces the stale-quack and Blackwell nested-election warnings
-(the auto-upgrade path checks both in <code>fa4_usable</code> before reaching here).</p>
+(the auto-upgrade path checks both in <code>fa4_usable</code> before reaching here). Inside
+selective checkpointing regions FA4 then runs as a dispatcher-visible op, so
+<code>save: [attention]</code> can keep its output instead of recomputing it.</p>
 </section>
 <section id="axolotl.monkeypatch.attention.flash_attn_4.fa4_usable" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.attention.flash_attn_4.fa4_usable">fa4_usable</h3>

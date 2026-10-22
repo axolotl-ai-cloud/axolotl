@@ -997,8 +997,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ol type="1">
 <li><p>Install Axolotl following the <a href="https://docs.axolotl.ai/docs/installation.html">installation guide</a>.</p></li>
 <li><p>Install CCE via <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">docs</a></p></li>
-<li><p>Check that FLA 0.4.1 is installed — the KDA layers import their kernels from it:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install fla-core==0.4.1 flash-linear-attention==0.4.1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<li><p>Check that FLA 0.5.2 is installed — the KDA layers import their kernels from it:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install fla-core==0.5.2 flash-linear-attention==0.5.2</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <blockquote class="blockquote">
 <p>Axolotl already pins both on x86_64, so a standard install covers this. The
 version matters: <code>fused_kda_gate</code> changed signature in 0.4.1, so 0.4.0 raises
