@@ -925,6 +925,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--merge-compile/--no-merge-compile",),
+        None,
+        None,
+        "Compile merge-aware NVFP4 expert-chunk arithmetic, using strict precision by default. Requires memory_efficient merging; other targets remain eager.",
+    ),
+    (
+        ("--merge-compile-precision",),
+        None,
+        None,
+        "Compiled merge precision: strict preserves eager rounding and validates each specialization against PEFT; relaxed uses compiler defaults without equivalence checks and may change merged NVFP4 bytes. Only used with merge_compile.",
+    ),
+    (
         ("--merge-method",),
         None,
         None,
@@ -3213,6 +3225,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints.",
+    ),
+    (
+        ("--adapter-checkpoint-format",),
+        None,
+        None,
+        "How FSDP2 writes PEFT adapters, for checkpoint-N saves and the end-of-training export to output_dir. 'gather' assembles every adapter tensor on rank 0 before writing adapter_model.safetensors. 'sharded' has every rank write the slices it holds to <dir>/.adapter_shards/, with no cross-rank tensor transfer when every rank sees the output directory, then rank 0 consolidates them into the same adapter_model.safetensors. Checkpoints consolidate on a background thread while training continues: one consolidation runs at a time, and a save that finds one running and one queued waits. Until a checkpoint is consolidated, its on_save callbacks (checkpoint mirror, publishers) and save_total_limit rotation are held back, and training end waits for it; a resume from an unconsolidated checkpoint finishes the consolidation first. The final export waits for outstanding checkpoint consolidations, then consolidates its own shards before training returns. Requires an adapter, fsdp_version 2 with state_dict_type FULL_STATE_DICT (with or without expert_parallel_size), tensor_parallel_size 1, no rl, load_best_model_at_end false, and hub_strategy end when hub_model_id is set; config validation rejects anything else. Single-process runs, multiple adapters, and quantized adapter tensors fall back to 'gather' at save time.",
+    ),
+    (
+        ("--adapter-final-save-format",),
+        None,
+        None,
+        "Override adapter_checkpoint_format for the end-of-training export only. Unset follows adapter_checkpoint_format; 'gather' keeps sharded checkpoints but writes the final adapter through the rank 0 gather, e.g. to byte-compare a sharded checkpoint against a gathered export of the same weights.",
     ),
     (
         ("--use-tensorboard/--no-use-tensorboard",),

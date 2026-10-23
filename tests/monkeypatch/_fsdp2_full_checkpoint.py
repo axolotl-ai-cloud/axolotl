@@ -177,6 +177,7 @@ def check_peft_trainer_save_route(mesh, root):
     from accelerate import Accelerator
     from peft import LoraConfig, PeftModel, get_peft_model
     from peft.utils.save_and_load import get_peft_model_state_dict
+    from safetensors.torch import load_file
 
     from axolotl.core.trainers.base import AxolotlTrainer
     from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
@@ -257,10 +258,38 @@ def check_peft_trainer_save_route(mesh, root):
     for unwrap in (True, False):
         full = accelerator.get_state_dict(model, unwrap=unwrap)
         if dist.get_rank() == 0:
-            assert set(full) == set(model.state_dict())
-            assert "base_model.model.counter" in full
-            assert "base_model.model.dense.base_layer.weight" in full
+            # the frozen base never reaches rank 0; PEFT selects the adapter from these keys
+            assert set(full) == {k for k in model.state_dict() if "lora_" in k}
+            assert set(get_peft_model_state_dict(model, state_dict=full)) == set(
+                get_peft_model_state_dict(model)
+            )
+    from transformers import Trainer
+
+    from axolotl.core.trainers.mixins.distributed_parallel import (
+        DistributedParallelMixin,
+    )
+
+    def no_full_gather(*args, **kwargs):
+        raise AssertionError("gathered the full PEFT state dict")
+
+    mixin = object.__new__(DistributedParallelMixin)
+    mixin.model = model
+    mixin.args = SimpleNamespace(should_save=False)
+    mixin.accelerator = SimpleNamespace(
+        parallelism_config=SimpleNamespace(dp_shard_enabled=True),
+        get_state_dict=no_full_gather,
+    )
+    captured = {}
+    with patch.object(
+        Trainer,
+        "_save",
+        lambda self, output_dir=None, state_dict=None: captured.update(
+            state=state_dict
+        ),
+    ):
+        mixin._save(str(root / "mixin-save"))
     if dist.get_rank() == 0:
+        assert set(captured["state"]) == {k for k in model.state_dict() if "lora_" in k}
         print("PASS full-peft-state-dict", flush=True)
     trainer = object.__new__(AxolotlTrainer)
     trainer.model = model
@@ -279,18 +308,16 @@ def check_peft_trainer_save_route(mesh, root):
     dist.barrier()
     error = None
     if dist.get_rank() == 0:
-        saved = torch.load(
-            Path(trainer.args.output_dir) / "pytorch_model_fsdp.bin", weights_only=True
-        )
-        if set(saved) != set(expected):
+        directory = Path(trainer.args.output_dir)
+        exported = load_file(directory / "adapter_model.safetensors")
+        if len(exported) != len(expected):
             error = "Trainer checkpoint omitted frozen adapter factors"
     _check_errors(error)
     if dist.get_rank() == 0:
-        directory = Path(trainer.args.output_dir)
-        assert (directory / "adapter_model.safetensors").is_file()
+        assert any(value.shape == (64, 256) for value in exported.values())
+        # the model-only FSDP file only points at the adapter: no second copy of the tensors
         saved = torch.load(directory / "pytorch_model_fsdp.bin", weights_only=True)
-        assert set(saved) == set(expected)
-        assert any(value.shape == (64, 256) for value in saved.values())
+        assert saved == {"_axolotl_adapter_reference": 1}
         assert not (directory / "optimizer.bin").exists()
     with torch.no_grad():
         for name, parameter in model.named_parameters():
@@ -307,6 +334,31 @@ def check_peft_trainer_save_route(mesh, root):
     for name, parameter in model.named_parameters():
         if "lora_" in name:
             compare(parameter, expected[name])
+    with torch.no_grad():
+        for name, parameter in model.named_parameters():
+            if "lora_" in name:
+                parameter.to_local().zero_()
+    trainer.state = SimpleNamespace(
+        best_model_checkpoint=trainer.args.output_dir, best_metric=0.0
+    )
+    with patch.object(
+        model, "load_adapter", side_effect=AssertionError("Used local PEFT restore")
+    ):
+        trainer._load_best_model()
+    for name, parameter in model.named_parameters():
+        if "lora_" in name:
+            compare(parameter, expected[name])
+    orphan = root / "sft-model-only-orphan-reference"
+    if dist.get_rank() == 0:
+        orphan.mkdir()
+        torch.save({"_axolotl_adapter_reference": 1}, orphan / "pytorch_model_fsdp.bin")
+    dist.barrier()
+    try:
+        trainer._load_from_checkpoint(str(orphan))
+    except ValueError as exc:
+        assert "Referenced adapter load failed" in str(exc)
+    else:
+        raise AssertionError("adapter reference without an adapter file was accepted")
     if dist.get_rank() == 0:
         print("PASS sft-model-only-ep-adapter-resume", flush=True)
     regular_directory = root / "sft-regular"
@@ -557,6 +609,13 @@ def check_non_ep_peft_exports(root):
                 assert any("wte.weight" in name for name in saved)
                 assert any("ln_f" in name for name in saved)
                 assert (directory / "pytorch_model_fsdp.bin").exists() == internal_call
+                if model_only:
+                    # two adapters: the file keeps the full state, not an adapter reference
+                    full = torch.load(
+                        directory / "pytorch_model_fsdp.bin", weights_only=True
+                    )
+                    assert "_axolotl_adapter_reference" not in full
+                    assert any(".inactive." in name for name in full)
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
         _check_errors(error)

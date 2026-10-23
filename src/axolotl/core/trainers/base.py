@@ -52,6 +52,7 @@ from axolotl.core.trainers.mixins import (
     PackingMixin,
     RngLoaderMixin,
     SchedulerMixin,
+    ShardedAdapterSaveMixin,
     with_checkpoint_write_retry,
 )
 from axolotl.core.trainers.utils import (
@@ -128,6 +129,7 @@ class AxolotlTrainer(
     CheckpointSaveMixin,
     LayerOffloadingMixin,
     ActivationOffloadingMixin,
+    ShardedAdapterSaveMixin,
     DistributedParallelMixin,
     Trainer,
 ):
@@ -1395,6 +1397,21 @@ class AxolotlTrainer(
             if not is_peft_available()
             else (PreTrainedModel, PeftModel)
         )
+        save_kwargs = {}
+        if getattr(self, "is_fsdp_enabled", False) and is_peft_available():
+            unwrapped = (
+                self.model
+                if isinstance(self.model, supported_classes)
+                else self.accelerator.unwrap_model(self.model, keep_torch_compile=False)
+            )
+            if isinstance(unwrapped, PeftModel):
+                from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+                    peft_save_embedding_layers,
+                )
+
+                save_kwargs["save_embedding_layers"] = peft_save_embedding_layers(
+                    unwrapped
+                )
         # Save a trained model and configuration using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
         if not isinstance(self.model, supported_classes):
@@ -1411,6 +1428,7 @@ class AxolotlTrainer(
                     output_dir,
                     state_dict=state_dict,
                     is_main_process=self.accelerator.is_main_process,
+                    **save_kwargs,
                 )
             else:
                 LOG.info(
@@ -1426,6 +1444,7 @@ class AxolotlTrainer(
                 output_dir,
                 state_dict=state_dict,
                 is_main_process=self.accelerator.is_main_process,
+                **save_kwargs,
             )
 
         if self.processing_class is not None:
