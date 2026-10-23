@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# coverage only defaults to the sys.monitoring core on 3.14+; ctrace is ~10x slower
+export COVERAGE_CORE=sysmon
+
 case "${NF4_TEST_STACK:-pinned}" in
   pinned|nightly) ;;
   *) echo "Unknown NF4_TEST_STACK: $NF4_TEST_STACK" >&2; exit 1 ;;

@@ -26,6 +26,8 @@ env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
   DS_ACCELERATOR: "cpu"
+  # coverage only defaults to the sys.monitoring core on 3.14+; ctrace is ~10x slower
+  COVERAGE_CORE: "sysmon"
   OMP_NUM_THREADS: "1"
   MKL_NUM_THREADS: "1"
 

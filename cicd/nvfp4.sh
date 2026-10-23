@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# coverage only defaults to the sys.monitoring core on 3.14+; ctrace is ~10x slower
+export COVERAGE_CORE=sysmon
+
 python - <<'NVFP4_ENV'
 import importlib.metadata
 import os
