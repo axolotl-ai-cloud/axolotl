@@ -35,7 +35,6 @@ permissions:
 env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
-  # coverage only defaults to the sys.monitoring core on 3.14+; ctrace is ~10x slower
   COVERAGE_CORE: "sysmon"
 
 jobs:

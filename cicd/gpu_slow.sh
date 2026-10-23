@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# coverage only defaults to the sys.monitoring core on 3.14+; ctrace is ~10x slower
 export COVERAGE_CORE=sysmon
 
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, torch.__version__"
