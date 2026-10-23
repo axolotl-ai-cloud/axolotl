@@ -174,6 +174,16 @@ def pytest_sessionfinish(session, exitstatus):  # pylint: disable=unused-argumen
         session.exitstatus = 1
 
 
+@pytest.hookimpl(hookwrapper=True, trylast=True)
+def pytest_runtest_protocol(item, nextitem):  # pylint: disable=unused-argument
+    # coverage's sysmon core reports each line once; re-arm so testmon credits every test.
+    # trylast nests this inside testmon's wrapper, after its per-test context switch.
+    sysmon_coverage = sys.monitoring.get_tool(sys.monitoring.COVERAGE_ID)
+    if sysmon_coverage and item.config.pluginmanager.has_plugin("TestmonCollect"):
+        sys.monitoring.restart_events()
+    yield
+
+
 def pytest_runtest_setup(item):
     if _cuda_context_poisoned:
         item.session.shouldstop = (
