@@ -57,7 +57,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[UserDefinedDatasetConfig] = None):
             prompt[field_instruction],
             prompt[field_input] if field_input in prompt else "",
             prompt[field_output] if field_output in prompt else "",
-            prompt[field_system] if field_system in prompt else system_prompt,
+            system_prompt if prompt.get(field_system) is None else prompt[field_system],
         )
 
     turn_format = ds_cfg.format

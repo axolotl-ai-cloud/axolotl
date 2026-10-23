@@ -7,15 +7,9 @@ import torch.nn.functional as F
 from axolotl.monkeypatch.attention.sdpa_varlen import (
     patch_sdpa_varlen,
     unpatch_sdpa_varlen,
-    varlen_available,
 )
 
-pytestmark = [
-    pytest.mark.skipif(
-        not varlen_available(), reason="torch.nn.attention.varlen needs torch >= 2.10"
-    ),
-    pytest.mark.gpu,
-]
+pytestmark = pytest.mark.gpu
 
 requires_cuda = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="varlen_attn needs CUDA"
@@ -24,22 +18,6 @@ requires_cuda = pytest.mark.skipif(
 DEV = "cuda"
 # The fallback path never reaches varlen_attn, so it runs on CPU too.
 FALLBACK_DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
-
-
-def _varlen_supports_window() -> bool:
-    """varlen_attn gained the ``window_size`` arg (sliding window) in torch 2.11; on causal-only
-    builds the sdpa_varlen patch refuses sliding, so those params can't be exercised here."""
-    if not varlen_available():
-        return False
-    import inspect
-
-    from torch.nn.attention.varlen import varlen_attn
-
-    try:
-        params = set(inspect.signature(varlen_attn).parameters)
-    except (TypeError, ValueError):
-        params = set()
-    return "window_size" in params or "is_causal" not in params
 
 
 class _Mod:
@@ -90,15 +68,7 @@ def patched():
     [
         ([[2048, 2048]], None, "B1-2docs"),
         ([[1000, 1500, 1596]], None, "B1-3docs"),
-        pytest.param(
-            [[2048, 2048]],
-            1024,
-            "B1-sliding",
-            marks=pytest.mark.skipif(
-                not _varlen_supports_window(),
-                reason="sliding-window varlen needs varlen_attn(window_size=...) (torch >= 2.11)",
-            ),
-        ),
+        ([[2048, 2048]], 1024, "B1-sliding"),
         ([[2000, 2096], [1500, 1000, 1596]], None, "B2-padded"),
     ],
 )

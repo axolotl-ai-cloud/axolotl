@@ -1,7 +1,7 @@
 """Context-parallel group registry.
 
 Tracks the process group used for context parallelism so the rest of axolotl
-(GRPO trainer, mamba/SSM CP correction, ``is_cp_active``) can find it. The
+(GRPO trainer, ``is_cp_active``) can find it. The
 ringmaster ContextParallelPlugin sets this group; the actual ring/ulysses
 attention is owned by ringmaster (the legacy ``ring_flash_attn`` kernel path has
 been removed).

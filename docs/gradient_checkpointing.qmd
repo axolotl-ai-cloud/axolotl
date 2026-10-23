@@ -73,6 +73,18 @@ This runs eagerly (no `torch.compile`) via torch's selective-checkpoint policy A
 at the dispatcher level: SDPA and flash-attention are matched out of the box, and custom kernels
 that are not registered as torch ops are simply recomputed as usual — nothing breaks.
 
+Flash Attention 4 (`attn_implementation: flash_attention_4`, or FA2/FA3 upgraded to it) is savable
+too. FA4 (`flash_attn.cute`) registers no torch op, so inside checkpointed layers Axolotl runs it
+through `axolotl::flash_attn_4_fwd` / `axolotl::flash_attn_4_varlen_fwd`. These call FA4's own
+forward, and their backward calls FA4's own backward on the saved output and log-sum-exp, so the
+kernels and numerics are unchanged and the backward does not re-run the attention forward.
+Sliding-window FA4 calls are recognized from their window and recomputed like any other
+(`save_sliding_window` applies), and `offload: true` moves the saved FA4 outputs to CPU. FA4 calls
+with attention sinks (`learnable_sink`) or mask/score mods, calls outside checkpointed layers and
+calls under `torch.compile` go to FA4 directly and are recomputed as before. The
+`kernels-community/flash-attn4` hub kernel is not covered: use `flash_attention_4` with
+`flash-attn-4` installed.
+
 The explicit form lets you save additional ops, matched as substrings of the qualified op name:
 
 ```yaml

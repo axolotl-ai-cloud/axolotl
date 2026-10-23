@@ -216,7 +216,6 @@ quartodoc:
         - monkeypatch.models.qwen3_moe.fused_attn
         - monkeypatch.models.qwen3_next.modeling
         - monkeypatch.models.qwen3_vl.fused_attn
-        - monkeypatch.models.voxtral.modeling
         - monkeypatch.peft.utils
         - monkeypatch.ring_attn.patch
         - monkeypatch.tiled_mlp.base

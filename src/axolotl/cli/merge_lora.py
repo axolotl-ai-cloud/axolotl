@@ -41,6 +41,8 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     if resolve_merge_method is not None:
         merge_method = resolve_merge_method(cfg, configured_merge_method)
     if merge_method == "legacy":
+        if cfg.get("merge_compile"):
+            raise ValueError("merge_compile requires merge_method: memory_efficient")
         if (
             getattr(cfg, "_original_nf4_backend", None) or cfg.nf4_backend
         ) == "torchao" or getattr(cfg, "_original_staged_nf4", False):
@@ -186,6 +188,8 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         dequant=bool(getattr(cfg, "merge_dequant", False)),
         override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),
         revision=cfg.revision_of_model,
+        merge_compile=bool(cfg.get("merge_compile", False)),
+        merge_compile_precision=cfg.get("merge_compile_precision") or "strict",
     )
     PluginManager.get_instance().post_lora_merge(
         cfg,

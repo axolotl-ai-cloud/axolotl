@@ -155,6 +155,20 @@ class TrainerBuilderBase(abc.ABC):
                 )
             )
 
+        if self.cfg.checkpoint_mirror:
+            from axolotl.core.checkpoint_mirror import CheckpointMirrorCallback
+
+            mirror = self.cfg.checkpoint_mirror
+            callbacks.append(
+                CheckpointMirrorCallback(
+                    mirror["dir"],
+                    delete=mirror.get("delete") or "mirror",
+                    save_total_limit=mirror.get("save_total_limit"),
+                    max_pending=mirror.get("max_pending") or 2,
+                    copy_threads=mirror.get("copy_threads") or 4,
+                )
+            )
+
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
                 DynamicCheckpointCallback,
@@ -781,6 +795,10 @@ class TrainerBuilderBase(abc.ABC):
             )
 
         training_args_kwargs["include_tkps"] = self.cfg.include_tkps
+        if self.cfg.checkpoint_save_retry:
+            retry = self.cfg.checkpoint_save_retry
+            training_args_kwargs["checkpoint_save_retry_wait"] = retry["wait_seconds"]
+            training_args_kwargs["checkpoint_save_retries"] = retry["retries"]
         training_args_kwargs["max_steps"] = self.cfg.max_steps or total_num_steps or -1
         training_args_kwargs["num_train_epochs"] = self.cfg.num_epochs
 

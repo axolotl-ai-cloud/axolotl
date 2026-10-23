@@ -1962,19 +1962,12 @@ def test_fixed_decision_slots_are_supported(mode, k_max):
     )
 
 
-@pytest.mark.parametrize(
-    ("harness_kwargs", "match"),
-    [
-        ({"grad_through_steps": True}, "grad-through-steps"),
-        ({"spec": replace(_spec(), self_conditioning=True)}, "self-conditioning"),
-    ],
-    ids=["grad-through-steps", "self-conditioning"],
-)
-def test_decision_multistep_rejects_unsupported_native_settings(harness_kwargs, match):
-    spec = harness_kwargs.pop("spec", _spec())
-    trainer = MultistepTrainerHarness(spec, k_max=2, sampled_steps=2, **harness_kwargs)
+def test_decision_multistep_rejects_unsupported_native_settings():
+    trainer = MultistepTrainerHarness(
+        replace(_spec(), self_conditioning=True), k_max=2, sampled_steps=2
+    )
 
-    with pytest.raises(NotImplementedError, match=match):
+    with pytest.raises(NotImplementedError, match="self-conditioning"):
         trainer.compute_loss(_TinyNativeModel(), _full_sequence_multistep_inputs())
 
 

@@ -18,6 +18,8 @@ from pydantic import (
 
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.checkpoint_mirror import CheckpointMirrorConfig
+from axolotl.utils.schemas.checkpoint_save_retry import CheckpointSaveRetryConfig
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
@@ -307,7 +309,7 @@ class AxolotlInputConfig(
     dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Configuration for dynamic checkpointing (trigger by file or signal). "
+            "description": "Configuration for dynamic checkpointing (trigger by file). "
             "Set 'enabled: true' to activate this feature."
         },
     )
@@ -1321,6 +1323,18 @@ class AxolotlInputConfig(
     save_total_limit: int | None = Field(
         default=None, json_schema_extra={"description": "Checkpoints saved at a time"}
     )
+    checkpoint_save_retry: CheckpointSaveRetryConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Retry checkpoint file writes that fail with a full disk, exceeded quota or I/O error once, after a pause, before the save fails. See https://docs.axolotl.ai/docs/checkpoint_saving.html"
+        },
+    )
+    checkpoint_mirror: CheckpointMirrorConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Copy each checkpoint from output_dir to a shared directory in the background, so output_dir can be fast local storage. See https://docs.axolotl.ai/docs/checkpoint_saving.html"
+        },
+    )
     save_first_step: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1348,6 +1362,18 @@ class AxolotlInputConfig(
         default=False,
         json_schema_extra={
             "description": "Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints."
+        },
+    )
+    adapter_checkpoint_format: Literal["gather", "sharded"] | None = Field(
+        default="gather",
+        json_schema_extra={
+            "description": "How FSDP2 writes PEFT adapters, for checkpoint-N saves and the end-of-training export to output_dir. 'gather' assembles every adapter tensor on rank 0 before writing adapter_model.safetensors. 'sharded' has every rank write the slices it holds to <dir>/.adapter_shards/, with no cross-rank tensor transfer when every rank sees the output directory, then rank 0 consolidates them into the same adapter_model.safetensors. Checkpoints consolidate on a background thread while training continues: one consolidation runs at a time, and a save that finds one running and one queued waits. Until a checkpoint is consolidated, its on_save callbacks (checkpoint mirror, publishers) and save_total_limit rotation are held back, and training end waits for it; a resume from an unconsolidated checkpoint finishes the consolidation first. The final export waits for outstanding checkpoint consolidations, then consolidates its own shards before training returns. Requires an adapter, fsdp_version 2 with state_dict_type FULL_STATE_DICT (with or without expert_parallel_size), tensor_parallel_size 1, no rl, load_best_model_at_end false, and hub_strategy end when hub_model_id is set; config validation rejects anything else. Single-process runs, multiple adapters, and quantized adapter tensors fall back to 'gather' at save time."
+        },
+    )
+    adapter_final_save_format: Literal["gather", "sharded"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Override adapter_checkpoint_format for the end-of-training export only. Unset follows adapter_checkpoint_format; 'gather' keeps sharded checkpoints but writes the final adapter through the rank 0 gather, e.g. to byte-compare a sharded checkpoint against a gathered export of the same weights."
         },
     )
     use_tensorboard: bool | None = Field(
@@ -2117,9 +2143,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_beta_and_trl_beta_match(cls, data):
-        if data.get("beta") and data.get("trl", {}).get("beta"):
-            if data["beta"] != data["trl"]["beta"]:
-                raise ValueError("beta and trl.beta must match or one must be removed")
+        trl_beta = (data.get("trl") or {}).get("beta")
+        if data.get("rl_beta") and trl_beta and data["rl_beta"] != trl_beta:
+            raise ValueError("rl_beta and trl.beta must match or one must be removed")
         return data
 
     @model_validator(mode="after")

@@ -600,7 +600,51 @@ class ModelLoader:
             and self.model.config.eos_token_id
             and self.model.config.eos_token_id != self.tokenizer.eos_token_id
         ):
-            self.model.config.eos_token_id = self.tokenizer.eos_token_id
+            if not isinstance(self.model.config.eos_token_id, list):
+                self.model.config.eos_token_id = self.tokenizer.eos_token_id
+            elif (
+                self.tokenizer.eos_token_id is not None
+                and self.tokenizer.eos_token_id not in self.model.config.eos_token_id
+            ):
+                self.model.config.eos_token_id = [
+                    *self.model.config.eos_token_id,
+                    self.tokenizer.eos_token_id,
+                ]
+
+        self._sync_generation_config_eos()
+
+    def _sync_generation_config_eos(self):
+        """Make generation stop on the tokenizer eos and the configured eot tokens."""
+        generation_config = getattr(self.model, "generation_config", None)
+        if generation_config is None or self.tokenizer.eos_token_id is None:
+            return
+
+        existing = generation_config.eos_token_id
+        if existing is None:
+            existing = []
+        elif isinstance(existing, int):
+            existing = [existing]
+        eos_ids = list(existing)
+
+        candidates = [self.tokenizer.eos_token_id]
+        # mistral-common strategies ignore eot_tokens, so they are not trained
+        if not self.cfg.tokenizer_use_mistral_common:
+            for token in self.cfg.eot_tokens or []:
+                token_ids = self.tokenizer.encode(token, add_special_tokens=False)
+                if len(token_ids) == 1:
+                    candidates.append(token_ids[0])
+        for token_id in candidates:
+            if token_id not in eos_ids:
+                eos_ids.append(token_id)
+
+        if eos_ids != existing:
+            LOG.info(
+                f"Setting generation_config.eos_token_id from "
+                f"{generation_config.eos_token_id} to {eos_ids}"
+            )
+            generation_config.eos_token_id = (
+                eos_ids[0] if len(eos_ids) == 1 else eos_ids
+            )
 
     def _should_convert_embedding_dtypes(self) -> bool:
         """Whether the post-quantization pass converts modules back to `torch_dtype`."""

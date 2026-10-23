@@ -10,6 +10,7 @@ chat_template: tokenizer_default
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
     type: chat_template
+    generation_tags: true
 
 val_set_size: 0.0
 output_dir: ./outputs/beam-real-mp

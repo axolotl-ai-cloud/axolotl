@@ -64,6 +64,19 @@ def fp4_cute_available() -> bool:
         return False
 
 
+@functools.lru_cache(maxsize=1)
+def _blockscaled_format_kwargs() -> dict:
+    """quack builds that resolve blockscaled formats by name require them on the low-level gemm."""
+    import inspect
+
+    from quack.gemm import gemm as gemm_low
+
+    params = inspect.signature(gemm_low).parameters
+    if "bs_format_a" in params and "bs_format_b" in params:
+        return {"bs_format_a": "nvfp4", "bs_format_b": "nvfp4"}
+    return {}
+
+
 def _check_dims(n: int, k: int, gated: bool) -> None:
     assert k % 32 == 0, f"K={k} must be divisible by 32 (fp4 16B alignment)"
     assert n % 8 == 0, f"N={n} must be divisible by 8 (bf16 output alignment)"
@@ -226,6 +239,7 @@ class GroupedNvfp4Gemm:
             cu_seqlens_m=cu,
             SFA=sfa,
             SFB=self._sfb,
+            **_blockscaled_format_kwargs(),
         )
 
         pre = acc

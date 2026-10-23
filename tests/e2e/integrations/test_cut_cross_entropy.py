@@ -9,7 +9,6 @@ from safetensors.torch import load_file
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils import get_pytorch_version
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
@@ -81,20 +80,15 @@ class TestCutCrossEntropyIntegration:
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
-        major, minor, _ = get_pytorch_version()
-        if (major, minor) < (2, 4):
-            with pytest.raises(ImportError):
-                train(cfg=cfg, dataset_meta=dataset_meta)
-        else:
-            train(cfg=cfg, dataset_meta=dataset_meta)
-            check_model_output_exists(temp_dir, cfg)
-            check_tensorboard_loss_decreased(
-                temp_dir + "/runs",
-                initial_window=5,
-                final_window=5,
-                max_initial=2.2,
-                max_final=2.0,
-            )
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=2.2,
+            max_final=2.0,
+        )
 
     def test_qwen2_w_cce(self, temp_dir):
         cfg = DictDefault(
@@ -135,20 +129,15 @@ class TestCutCrossEntropyIntegration:
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
-        major, minor, _ = get_pytorch_version()
-        if (major, minor) < (2, 4):
-            with pytest.raises(ImportError):
-                train(cfg=cfg, dataset_meta=dataset_meta)
-        else:
-            train(cfg=cfg, dataset_meta=dataset_meta)
-            check_model_output_exists(temp_dir, cfg)
-            check_tensorboard_loss_decreased(
-                temp_dir + "/runs",
-                initial_window=5,
-                final_window=5,
-                max_initial=5.0,
-                max_final=4.7,
-            )
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=5.0,
+            max_final=4.7,
+        )
 
     @pytest.mark.parametrize(
         "attention_type",
@@ -171,20 +160,15 @@ class TestCutCrossEntropyIntegration:
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
 
-        major, minor, _ = get_pytorch_version()
-        if (major, minor) < (2, 4):
-            with pytest.raises(ImportError):
-                train(cfg=cfg, dataset_meta=dataset_meta)
-        else:
-            train(cfg=cfg, dataset_meta=dataset_meta)
-            check_model_output_exists(temp_dir, cfg)
-            check_tensorboard_loss_decreased(
-                temp_dir + "/runs",
-                initial_window=5,
-                final_window=5,
-                max_initial=2.2,
-                max_final=2.0,
-            )
+        train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=2.2,
+            max_final=2.0,
+        )
 
     def test_llama_lora_lm_head_w_cce(self, min_cfg, temp_dir):
         cfg = DictDefault(

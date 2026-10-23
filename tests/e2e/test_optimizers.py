@@ -14,9 +14,6 @@ from axolotl.utils.dict import DictDefault
 from .utils import (
     check_model_output_exists,
     check_tensorboard_loss_decreased,
-    require_torch_2_5_1,
-    require_torch_2_6_0,
-    require_torch_2_7_0,
     with_temp_dir,
 )
 
@@ -72,7 +69,6 @@ class TestCustomOptimizers(unittest.TestCase):
         assert trainer.optimizer.optimizer.__class__.__name__ == "AdamW"
 
     @with_temp_dir
-    @require_torch_2_5_1
     def test_adopt_adamw(self, temp_dir):
         cfg = DictDefault(
             {
@@ -165,7 +161,6 @@ class TestCustomOptimizers(unittest.TestCase):
         )
 
     @with_temp_dir
-    @require_torch_2_5_1
     def test_muon(self, temp_dir):
         cfg = DictDefault(
             {
@@ -258,7 +253,6 @@ class TestCustomOptimizers(unittest.TestCase):
         assert trainer.optimizer.optimizer.__class__.__name__ == "SCAO"
 
     @with_temp_dir
-    @require_torch_2_5_1
     def test_muon_8bit(self, temp_dir):
         cfg = DictDefault(
             {
@@ -304,7 +298,6 @@ class TestCustomOptimizers(unittest.TestCase):
         assert "Muon8bit" in trainer.optimizer.optimizer.__class__.__name__
 
     @with_temp_dir
-    @require_torch_2_5_1
     def test_sinkgd(self, temp_dir):
         cfg = DictDefault(
             {
@@ -352,7 +345,6 @@ class TestCustomOptimizers(unittest.TestCase):
         assert "SinkGD" in trainer.optimizer.optimizer.__class__.__name__
 
     @with_temp_dir
-    @require_torch_2_5_1
     def test_sinkgd_spectral_norm(self, temp_dir):
         """Feature A: spectral-norm (Muon target) trains end-to-end without NaN/divergence."""
         cfg = DictDefault(
@@ -408,7 +400,6 @@ class TestCustomOptimizers(unittest.TestCase):
         reason="Dion's internal torch.compile hits a dynamo cache-limit error"
     )
     @with_temp_dir
-    @require_torch_2_7_0
     def test_dion(self, temp_dir):
         cfg = DictDefault(
             {
@@ -528,7 +519,6 @@ class TestCustomOptimizers(unittest.TestCase):
         check_model_output_exists(temp_dir, cfg)
 
     @with_temp_dir
-    @require_torch_2_6_0
     def test_came_pytorch(self, temp_dir):
         pytest.importorskip("came_pytorch")
         cfg = DictDefault(
@@ -587,7 +577,6 @@ class TestCustomOptimizers(unittest.TestCase):
         )
 
 
-@require_torch_2_7_0
 @pytest.mark.parametrize(
     "optimizer_name,expected_class,learning_rate",
     [

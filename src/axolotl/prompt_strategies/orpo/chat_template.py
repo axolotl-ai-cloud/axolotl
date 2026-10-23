@@ -97,7 +97,7 @@ class ORPODatasetParsingStrategy:
         if system := prompt.get("system", None):
             messages.append(Message(role="system", content=system, label=False))
         for i in range(total_msg_turns):
-            if "prompt" in prompt:
+            if prompt.get("prompt") is not None:
                 messages.append(
                     Message(role="user", content=prompt["prompt"], label=False)
                 )

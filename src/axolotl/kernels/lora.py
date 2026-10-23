@@ -10,6 +10,7 @@ See "DoRA: Weight-Decomposed Low-Rank Adaptation" (https://arxiv.org/abs/2402.09
 Credit to `unsloth` (https://unsloth.ai/) for inspiration for this implementation.
 """
 
+import functools
 from typing import Callable
 
 import torch
@@ -30,7 +31,34 @@ def _activation_kernels(kind: str) -> tuple[Callable, Callable]:
         return swiglu_forward, swiglu_backward
     from .geglu import geglu_backward, geglu_forward
 
+    if kind == "geglu_tanh":
+        return (
+            functools.partial(geglu_forward, approximate=True),
+            functools.partial(geglu_backward, approximate=True),
+        )
     return geglu_forward, geglu_backward
+
+
+_TANH_GELU = (
+    "GELUTanh",
+    "PytorchGELUTanh",
+    "NewGELUActivation",
+    "FastGELUActivation",
+    "AccurateGELUActivation",
+)
+
+
+def _geglu_kind(act_fn) -> str | None:
+    """GEGLU kernel kind reproducing ``act_fn``, or None when only the eager act_fn is exact."""
+    if act_fn is None:
+        # Liger's GEGLU MLPs drop act_fn and hardcode tanh GELU
+        return "geglu_tanh"
+    if isinstance(act_fn, nn.GELU):
+        return "geglu_tanh" if act_fn.approximate == "tanh" else "geglu"
+    name = type(act_fn).__name__
+    if name == "GELUActivation":
+        return "geglu"
+    return "geglu_tanh" if name in _TANH_GELU else None
 
 
 def _parameter_dtypes(*parameters):
@@ -96,8 +124,7 @@ def _projection_forward_mlp(self, X, kind):
         isinstance(self.act_fn, nn.SiLU)
         or type(self.act_fn).__name__ == "SiLUActivation"
         if kind == "swiglu"
-        else (isinstance(self.act_fn, nn.GELU) and self.act_fn.approximate == "none")
-        or type(self.act_fn).__name__ == "GELUActivation"
+        else _geglu_kind(getattr(self, "act_fn", None)) == kind
     )
     hidden = (
         _GatedActivation.apply(gate, up, kind)
@@ -867,11 +894,12 @@ def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.T
 
     Supports bias, dropout, and DoRA.
     """
-    if any(
+    kind = _geglu_kind(getattr(self, "act_fn", None))
+    if kind is None or any(
         _requires_projection_forward(p)
         for p in (self.gate_proj, self.up_proj, self.down_proj)
     ):
-        return _projection_forward_mlp(self, X, "geglu")
+        return _projection_forward_mlp(self, X, kind or "geglu")
     gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateDrop, gateMag = (
         get_lora_parameters(self.gate_proj)
     )
@@ -915,7 +943,7 @@ def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.T
         downLB,
         downMag,
         # Activation and flags
-        *_activation_kernels("geglu"),
+        *_activation_kernels(kind),
         inplace,
     )
 

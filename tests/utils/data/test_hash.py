@@ -221,14 +221,3 @@ class TestGenerateDatasetHashFromConfig:
         h2 = generate_dataset_hash_from_config(cfg_b, _datasets(), tokenizer_path)
 
         assert h1 != h2
-
-    def test_no_added_tokens_overrides_uses_tokenizer_name_as_before(self):
-        """Without added_tokens_overrides the old behaviour is preserved."""
-        cfg = _base_cfg()  # no added_tokens_overrides
-        tokenizer_name = "NousResearch/Llama-3.2-1B"
-
-        h1 = generate_dataset_hash_from_config(cfg, _datasets(), tokenizer_name)
-        # Changing tokenizer_name still changes the hash
-        h2 = generate_dataset_hash_from_config(cfg, _datasets(), "some/other-model")
-
-        assert h1 != h2

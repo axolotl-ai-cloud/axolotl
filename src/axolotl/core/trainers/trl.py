@@ -4,13 +4,18 @@ from trl import KTOTrainer, RewardTrainer
 from trl.experimental.cpo import CPOTrainer
 from trl.experimental.orpo import ORPOTrainer
 
-from axolotl.core.trainers.mixins import DistributedParallelMixin, RngLoaderMixin
+from axolotl.core.trainers.mixins import (
+    CheckpointWriteRetryMixin,
+    DistributedParallelMixin,
+    RngLoaderMixin,
+)
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.trainers.mixins.scheduler import SchedulerMixin
 from axolotl.core.trainers.prm.prm_trainer import PRMTrainer
 
 
 class AxolotlORPOTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,
@@ -26,6 +31,7 @@ class AxolotlORPOTrainer(
 
 
 class AxolotlKTOTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,
@@ -41,6 +47,7 @@ class AxolotlKTOTrainer(
 
 
 class AxolotlCPOTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,
@@ -56,6 +63,7 @@ class AxolotlCPOTrainer(
 
 
 class AxolotlRewardTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,
@@ -71,6 +79,7 @@ class AxolotlRewardTrainer(
 
 
 class AxolotlPRMTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,
