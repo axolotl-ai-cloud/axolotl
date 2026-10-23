@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+export COVERAGE_CORE=sysmon
+
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, torch.__version__"
 
 case "${MULTIGPU_TEST_SUITE}" in

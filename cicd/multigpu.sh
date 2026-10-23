@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+export COVERAGE_CORE=sysmon
+
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
 set -o pipefail

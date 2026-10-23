@@ -35,6 +35,7 @@ permissions:
 env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
+  COVERAGE_CORE: "sysmon"
 
 jobs:
   pre-commit:

@@ -26,6 +26,7 @@ env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
   DS_ACCELERATOR: "cpu"
+  COVERAGE_CORE: "sysmon"
   OMP_NUM_THREADS: "1"
   MKL_NUM_THREADS: "1"
 
@@ -47,6 +48,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Restore Cache from S3
+        run: |
+          mkdir -p ~/.cache/huggingface/hub
+          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd --strip-components=1
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
