@@ -1499,6 +1499,27 @@ Tip
 <li>Not supported with a processor, mistral-common, or slow tokenizers.</li>
 </ul>
 </section>
+<section id="stochastic-label-dropout-for-structural-tokens-advanced" class="level4">
+<h4 class="anchored" data-anchor-id="stochastic-label-dropout-for-structural-tokens-advanced">Stochastic label dropout for structural tokens (advanced)</h4>
+<p>Tool-heavy chat data repeats structural tokens (channel/message/end markers, tool-call tags) thousands of times, so they dominate the training signal. <code>label_keep_prob</code> down-weights them in expectation without changing the loss: on every optimizer step, each trained label whose token id is listed is kept with probability <code>keep_prob</code> and otherwise set to <code>-100</code>. Draws are independent per position and re-drawn every step. Inputs are unchanged, and labels that are already masked (system/user/tool turns) are never touched.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Reflection Beam (Harmony-style template): ids as the template emits them</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="fu">label_keep_prob</span><span class="kw">:</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">151672</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.3</span><span class="co">   # &lt;|channel|&gt;</span></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">151671</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.3</span><span class="co">   # &lt;|message|&gt;</span></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">151670</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span><span class="co">   # &lt;|end|&gt;</span></span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">151675</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span><span class="co">   # &lt;|call|&gt;</span></span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">151679</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.3</span><span class="co">   # &lt;rfl:parameter name="   (one added token, includes the quote)</span></span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">151680</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.3</span><span class="co">   # \n&lt;/rfl:parameter&gt;      (one added token, includes the newline)</span></span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a><span class="fu">label_keep_prob_normalize</span><span class="kw">:</span><span class="at"> dropped</span><span class="co">  # default; or `original`</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Keys are <strong>token ids</strong>, not strings. Give the exact ids the chat template emits: a string typed by hand can tokenize into different pieces than the template produces (e.g.&nbsp;<code>&lt;rfl:parameter name=</code> typed as text is six ordinary pieces, while the template emits the single added token <code>&lt;rfl:parameter name="</code>). Find ids with <code>axolotl preprocess config.yaml --debug</code> or <code>tokenizer.convert_tokens_to_ids(...)</code>. At startup each configured id is logged with the token it decodes to, and ids outside the tokenizer vocabulary are rejected.</p>
+<p>Behavior:</p>
+<ul>
+<li>Masking is applied to collated training batches inside the trainer, so it works with every SFT collator, sample packing, and any loss that reads <code>labels</code> (model cross entropy, Cut Cross Entropy, Liger). Evaluation batches are not masked.</li>
+<li>Draws come from a generator seeded by <code>seed</code>, the global step, the process rank and the micro-batch index, so runs (and resumes) are reproducible.</li>
+<li><code>label_keep_prob_normalize: dropped</code> (default) normalizes by the trained-token count after masking, as ordinary label masking does, so the other tokens are slightly upweighted. <code>original</code> normalizes by the count before masking, so every other token’s weight is exactly unchanged and a listed token’s expected weight is exactly <code>keep_prob</code>.</li>
+<li>Only supported for SFT / causal LM training; it is rejected with <code>rl</code>, reward models, KD and diffusion LM.</li>
+</ul>
+</section>
 </section>
 </section>
 <section id="sharegpt" class="level2">
@@ -1523,7 +1544,7 @@ Important
 <div class="code-with-filename-file">
 <pre><strong>data.jsonl</strong></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27" data-filename="data.jsonl"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span><span class="dt">"conversations"</span><span class="fu">:</span> <span class="ot">[</span><span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">,</span> <span class="dt">"value"</span><span class="fu">:</span> <span class="st">"..."</span><span class="fu">}</span><span class="ot">]</span><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 
 
