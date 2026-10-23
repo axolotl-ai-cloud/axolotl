@@ -69,6 +69,7 @@ from axolotl.utils.distributed import (
     is_distributed,
     is_main_process,
 )
+from axolotl.utils.label_dropout import LabelDropout
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import (
     LabelBalancedRandomSampler,
@@ -203,6 +204,12 @@ class AxolotlTrainer(
         )
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+        label_keep_prob = getattr(self.args, "label_keep_prob", None)
+        self._label_dropout = (
+            LabelDropout(label_keep_prob, seed=self.args.seed)
+            if label_keep_prob
+            else None
+        )
 
     def _init_training_state(
         self,
@@ -697,6 +704,26 @@ class AxolotlTrainer(
         from deepspeed.utils import groups
 
         return groups._get_sequence_parallel_group()
+
+    @override
+    def get_batch_samples(self, epoch_iterator, num_batches, device):
+        dropout = self._label_dropout
+        if dropout is None:
+            return super().get_batch_samples(epoch_iterator, num_batches, device)
+        step, rank = self.state.global_step, self.args.process_index
+        if self.args.label_keep_prob_normalize == "original":
+            # count trained tokens before masking so other tokens' weights are unchanged
+            batch_samples, num_items_in_batch = super().get_batch_samples(
+                epoch_iterator, num_batches, device
+            )
+            for micro_step, batch in enumerate(batch_samples):
+                dropout.apply(batch, dropout.generator(step, rank, micro_step))
+            return batch_samples, num_items_in_batch
+        return super().get_batch_samples(
+            dropout.iter_applied(epoch_iterator, num_batches, step, rank),
+            num_batches,
+            device,
+        )
 
     @override
     def _get_num_items_in_batch(self, batch_samples, device):
