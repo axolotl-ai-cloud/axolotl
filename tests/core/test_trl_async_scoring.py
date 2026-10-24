@@ -584,7 +584,7 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
 
 def test_ebft_strategy_routes_async_prefetch_to_trl(tmp_path):
     from axolotl.core.trainers.ebft import EBFTStrategy
-    from axolotl.core.trainers.ebft.trainer import AxolotlAsyncEBFTTrainer
+    from axolotl.core.trainers.ebft.trainer import AxolotlEBFTTrainer
     from axolotl.utils.dict import DictDefault
 
     cfg = DictDefault(
@@ -612,5 +612,4 @@ def test_ebft_strategy_routes_async_prefetch_to_trl(tmp_path):
     assert args.generation_kwargs == {"stop_token_ids": [7]}
 
     cfg.trl.async_prefetch = False
-    cfg.trl.use_data_producer = True
-    assert EBFTStrategy.get_trainer_class(cfg) is AxolotlAsyncEBFTTrainer
+    assert EBFTStrategy.get_trainer_class(cfg) is AxolotlEBFTTrainer

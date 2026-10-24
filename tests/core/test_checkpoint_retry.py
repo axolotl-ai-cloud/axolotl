@@ -281,7 +281,6 @@ def test_every_axolotl_trainer_retries_checkpoint_writes():
     from axolotl.core.trainers.ebft.trl_async_trainer import AxolotlTRLAsyncEBFTTrainer
     from axolotl.core.trainers.grpo.trainer import (
         AxolotlAsyncGRPOTrainer,
-        AxolotlDataProducerGRPOTrainer,
         AxolotlGRPOTrainer,
     )
     from axolotl.core.trainers.trl import (
@@ -298,7 +297,6 @@ def test_every_axolotl_trainer_retries_checkpoint_writes():
         AxolotlGRPOTrainer,
         AxolotlAsyncGRPOTrainer,
         AxolotlTRLAsyncEBFTTrainer,
-        AxolotlDataProducerGRPOTrainer,
         AxolotlORPOTrainer,
         AxolotlKTOTrainer,
         AxolotlCPOTrainer,

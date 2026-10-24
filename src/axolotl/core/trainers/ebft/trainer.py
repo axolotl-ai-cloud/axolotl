@@ -23,10 +23,7 @@ from axolotl.core.trainers.ebft.rewards import (
     extract_hidden_states,
     group_feature_rewards,
 )
-from axolotl.core.trainers.grpo.trainer import (
-    AxolotlDataProducerGRPOTrainer,
-    AxolotlGRPOTrainer,
-)
+from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -131,54 +128,6 @@ class EBFTMixin:
             f"EBFT feature extraction from layers {self.feature_layer_indices} "
             f"(of {num_layers} total), embed_method={args.ebft_embed_method}"
         )
-        if args.ebft_adaptive_max_tokens:
-            LOG.info(
-                f"EBFT adaptive max_tokens enabled "
-                f"(gt_length_multiplier={args.ebft_gt_length_multiplier})"
-            )
-
-    _adaptive_max_lock = None  # initialized lazily
-
-    def _generate_only(self, inputs, rank0_only=False):
-        """Override to set per-batch max_tokens based on ground-truth length.
-
-        Uses a lock to prevent race conditions in async mode where concurrent
-        BG threads could interleave mutations of max_completion_length.
-        """
-        import threading
-
-        args = self.args
-        if (
-            args.ebft_adaptive_max_tokens
-            and hasattr(self, "vllm_generation")
-            and inputs
-        ):
-            gt_texts = [
-                x.get("ground_truth", "") for x in inputs if x.get("ground_truth")
-            ]
-            if gt_texts:
-                gt_token_counts = [
-                    len(self.processing_class.encode(gt, add_special_tokens=False))
-                    for gt in gt_texts
-                ]
-                multiplier = args.ebft_gt_length_multiplier
-                max_completion = self.vllm_generation.max_completion_length
-                adaptive_max = max(
-                    min(int(c * multiplier), max_completion) for c in gt_token_counts
-                )
-                adaptive_max = max(adaptive_max, 64)
-
-                if self._adaptive_max_lock is None:
-                    self._adaptive_max_lock = threading.Lock()
-                with self._adaptive_max_lock:
-                    original = self.vllm_generation.max_completion_length
-                    self.vllm_generation.max_completion_length = adaptive_max
-                    try:
-                        return super()._generate_only(inputs, rank0_only)
-                    finally:
-                        self.vllm_generation.max_completion_length = original
-
-        return super()._generate_only(inputs, rank0_only)
 
     @torch.no_grad()
     def _feature_matching_reward(
@@ -322,10 +271,8 @@ class EBFTMixin:
         )
 
         # --- Extract features from frozen feature network ---
-        # INVARIANT: disable_adapter() yields the unmodified base weights because
-        # _sync_peft_weights_no_merge and _sync_lora_adapter never call
-        # merge_adapter() — they compute merged weights as new tensors or save
-        # the adapter to filesystem. Base weights are never modified in-place.
+        # With PEFT this is the actor's base. TRL's merged vLLM sync folds the
+        # adapter in and back out in place, which leaves bf16 rounding error in it.
         if self._share_feature_weights:
             unwrapped = self.accelerator.unwrap_model(self.model)
             feature_ctx = unwrapped.disable_adapter()
@@ -496,11 +443,5 @@ class EBFTMixin:
 
 class AxolotlEBFTTrainer(EBFTMixin, AxolotlGRPOTrainer):
     """EBFT trainer using synchronous GRPO (standard vLLM generation)."""
-
-    pass
-
-
-class AxolotlAsyncEBFTTrainer(EBFTMixin, AxolotlDataProducerGRPOTrainer):
-    """EBFT trainer using async GRPO (prefetches next batch during training)."""
 
     pass

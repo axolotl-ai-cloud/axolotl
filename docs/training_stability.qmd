@@ -123,7 +123,7 @@ This means the policy has diverged significantly from the weights used by vLLM f
 **Fixes**:
 
 - Decrease `vllm_sync_interval` (sync weights more often).
-- Enable `off_policy_mask_threshold` (e.g., 0.5) to mask stale off-policy samples.
+- Enable `off_policy_mask_threshold` (e.g., 0.5) to mask stale off-policy samples (synchronous GRPO; async GRPO bounds the ratio with `vllm_importance_sampling_cap`).
 - Use `importance_sampling_level: token` for finer-grained correction.
 
 ### Gradient Norm Instability

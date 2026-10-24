@@ -364,16 +364,12 @@ class TestGRPOStrategy:
     def _cfg(self, **trl):
         return DictDefault({"trl": DictDefault(trl), "vllm": None})
 
-    def test_async_backend(self):
-        assert GRPOStrategy.get_async_backend(self._cfg()) is None
-        assert GRPOStrategy.get_async_backend(self._cfg(async_prefetch=True)) == "trl"
-        assert (
-            GRPOStrategy.get_async_backend(self._cfg(use_data_producer=True))
-            == "data_producer"
-        )
+    def test_is_async(self):
+        assert not GRPOStrategy.is_async(self._cfg())
+        assert GRPOStrategy.is_async(self._cfg(async_prefetch=True))
         cfg = self._cfg(async_prefetch=True)
         cfg.nemo_gym_enabled = True
-        assert GRPOStrategy.get_async_backend(cfg) == "trl"
+        assert GRPOStrategy.is_async(cfg)
 
     def test_plugins_add_reward_funcs(self, monkeypatch):
         from axolotl.integrations.base import BasePlugin, PluginManager
@@ -394,25 +390,12 @@ class TestGRPOStrategy:
         assert reward_funcs == [plugin_reward]
 
     def test_trainer_and_args_classes(self):
-        from axolotl.core.trainers.grpo import (
-            AxolotlDataProducerGRPOConfig,
-            AxolotlDataProducerGRPOTrainer,
-        )
-
         assert (
             GRPOStrategy.get_trainer_class(async_grpo=True) is AxolotlAsyncGRPOTrainer
         )
         assert (
-            GRPOStrategy.get_trainer_class(data_producer=True)
-            is AxolotlDataProducerGRPOTrainer
-        )
-        assert (
             GRPOStrategy.get_training_args_class(async_grpo=True)
             is AxolotlAsyncGRPOConfig
-        )
-        assert (
-            GRPOStrategy.get_training_args_class(data_producer=True)
-            is AxolotlDataProducerGRPOConfig
         )
 
     def test_async_training_args_kwargs(self):

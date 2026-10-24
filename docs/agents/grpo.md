@@ -48,7 +48,7 @@ Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also w
 | Reward workers | `reward_num_workers: 4` | Score rewards in processes, several groups at once |
 | Ratio cap | `vllm_importance_sampling_cap: 3.0` | Bound the policy/sampler ratio (dual-clip) |
 
-Streaming scoring, replay buffer, re-rolling and OPSM belong to the data producer trainer (`use_data_producer` without `async_prefetch`).
+OPSM (`off_policy_mask_threshold`) applies to synchronous GRPO only. Axolotl's own data producer trainer was removed; `use_data_producer` is a deprecated alias for `async_prefetch` with `max_staleness: 0`, and its streaming, replay and re-roll options fail validation (see docs/grpo.qmd#sec-data-producer-migration).
 
 ## Health Checks
 
@@ -66,10 +66,11 @@ src/axolotl/
   cli/train.py                     # Entry point
   cli/vllm_serve.py                # Launches vLLM's native OpenAI server (dev mode, NCCL weight transfer, optional LoRA)
   core/trainers/grpo/
-    trainer.py                     # AxolotlGRPOTrainer, data producer trainer
+    trainer.py                     # AxolotlGRPOTrainer (sync) and its context-parallel variant
     trl_async_trainer.py           # Async GRPO: TRL's AsyncGRPOTrainer + axolotl extensions
     trl_async_rollout.py           # Async GRPO rollout process: rewards, advantages, reward pool
-    async_trainer.py               # Data producer trainer internals (`use_data_producer` alone)
+    trl_async_scoring.py           # Async GRPO: rewards scored on the trainer (EBFT)
+    trl_async_traces.py            # Async GRPO: the on_rollouts_scored plugin hook
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
   utils/schemas/trl.py             # TRL config schema (all trl: options)

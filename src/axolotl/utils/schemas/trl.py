@@ -275,9 +275,8 @@ class TRLConfig(BaseModel):
     use_data_producer: bool = Field(
         default=False,
         json_schema_extra={
-            "description": "Use the GRPODataProducer protocol for online data generation "
-            "(the data producer trainer). With rl: grpo or structured EBFT and "
-            "async_prefetch, async GRPO runs on TRL's AsyncGRPOTrainer instead."
+            "description": "Deprecated: the data producer trainer was removed. Maps to "
+            "async_prefetch: true with max_staleness: 0."
         },
     )
     async_prefetch: bool = Field(
@@ -287,13 +286,6 @@ class TRLConfig(BaseModel):
             "on TRL's AsyncGRPOTrainer: a vLLM server generates continuously while the "
             "trainer consumes scored samples up to max_staleness policy versions old. "
             "Structured EBFT runs on it too."
-        },
-    )
-    prefetch_depth: int | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Number of rollouts to prefetch ahead of training (data producer "
-            "trainer only)."
         },
     )
     vllm_sync_interval: int | None = Field(
@@ -324,19 +316,6 @@ class TRLConfig(BaseModel):
             "micro_batch_size samples per rank instead."
         },
     )
-    streaming_partial_batch: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Score prompt groups incrementally instead of the full batch at "
-            "once (data producer trainer only; async GRPO always scores per group)."
-        },
-    )
-    streaming_min_groups: int | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Minimum prompt groups to score per streaming chunk."
-        },
-    )
     vllm_importance_sampling_correction: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -364,14 +343,14 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "KL threshold for off-policy sequence masking (OPSM). None = "
-            "disabled. Data producer trainer only."
+            "disabled. Synchronous GRPO only."
         },
     )
     use_bias_correction_kl: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Apply IS correction to KL divergence term. Data producer "
-            "trainer only."
+            "description": "Apply IS correction to KL divergence term. Synchronous GRPO "
+            "only."
         },
     )
 
@@ -380,48 +359,15 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "Number of persistent subprocess workers for parallel reward computation. Each worker has its "
             "own main thread so signal.alarm() (used by math_verify) works correctly. Work is sharded across "
-            "workers by prompt groups. Applies to async GRPO and the data producer trainer, for "
-            "synchronous reward functions."
-        },
-    )
-    replay_buffer_size: int = Field(
-        default=0,
-        json_schema_extra={
-            "description": "[Experimental, disabled by default] Size of the replay buffer for storing high-signal rollout "
-            "groups. When > 0, groups with reward variance are cached and used to replace zero-signal groups "
-            "(where all rewards are identical). Set to 0 to disable. Data producer trainer only."
-        },
-    )
-    replay_recompute_logps: bool = Field(
-        default=True,
-        json_schema_extra={
-            "description": "When True (default), recompute old_per_token_logps for replayed groups using the current "
-            "training model. This fixes the importance sampling mismatch that occurs when replaying stale data. "
-            "Only relevant when replay_buffer_size > 0."
-        },
-    )
-    reroll_start_fraction: float = Field(
-        default=1.0,
-        json_schema_extra={
-            "description": "Fraction of total training steps after which deferred re-rolling begins. Zero-signal prompts "
-            "(where all rewards in a group are identical) are buffered and re-injected into later batches when the "
-            "model is more likely to solve them. Set to 1.0 to disable. Data producer trainer only."
-        },
-    )
-    reroll_max_groups: int = Field(
-        default=1,
-        json_schema_extra={
-            "description": "Maximum number of prompt groups to replace with re-roll candidates per batch. Higher values "
-            "increase data utilization but reduce prompt diversity. Data producer trainer only."
+            "workers by prompt groups. Async GRPO, for synchronous reward functions."
         },
     )
     skip_zero_advantage_batches: bool = Field(
         default=True,
         json_schema_extra={
-            "description": "When True, skip gradient computation for micro-batches where all advantages are zero (no learning "
-            "signal). This avoids the forward/backward pass entirely when no learning signal is present. The step is "
-            "logged with skipped_zero_adv_batches=1 for monitoring. Async GRPO drops each zero-advantage sample "
-            "before packing instead (logged as sample/dropped_zero_adv_total)."
+            "description": "Async GRPO: drop samples whose advantage is zero (no learning "
+            "signal) before packing, logged as sample/dropped_zero_adv_total. With "
+            "rewards scored on the trainer they are taken out of the loss instead."
         },
     )
     vllm_lora_sync: bool = Field(

@@ -111,7 +111,7 @@ def select_weight_sync_transport(
 def _on_async_grpo(cfg) -> bool:
     from axolotl.core.trainers.grpo import GRPOStrategy
 
-    return GRPOStrategy.get_async_backend(cfg) == "trl"
+    return GRPOStrategy.is_async(cfg)
 
 
 class NemoGymPlugin(BasePlugin):
@@ -449,30 +449,10 @@ class NemoGymPlugin(BasePlugin):
     def _setup_lora_sync(self, trainer):
         """Replace sync_weights with LoRA adapter sync via filesystem + HTTP.
 
-        If the data producer trainer is detected (has ``_sync_lora_adapter``),
-        delegates to it — that method already handles multi-GPU (FSDP/DeepSpeed
-        state_dict gather, broadcast sync dir, barrier).
-
-        Otherwise installs a standalone closure for the non-async GRPO path that
-        saves the adapter and POSTs to ``/v1/load_lora_adapter``.
+        Saves the adapter and POSTs it to ``/v1/load_lora_adapter``.
         """
         vllm_gen = trainer.vllm_generation
 
-        # Data producer trainer path: delegate to its _sync_lora_adapter (multi-GPU safe)
-        if hasattr(trainer, "_sync_lora_adapter"):
-
-            def lora_sync_weights():
-                trainer._sync_lora_adapter()
-
-            vllm_gen.sync_weights = lora_sync_weights
-            type(vllm_gen).sync_weights = lambda self: lora_sync_weights()
-            LOG.info(
-                "Installed LoRA adapter sync "
-                "(delegates to async trainer._sync_lora_adapter)"
-            )
-            return
-
-        # Non-async standard GRPO path: standalone closure
         import os
         import tempfile
 
