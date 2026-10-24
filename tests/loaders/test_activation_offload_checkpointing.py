@@ -45,9 +45,13 @@ def base_model_path(tmp_path_factory):
 @pytest.fixture(autouse=True)
 def cpu_accelerator():
     # TRL's OffloadActivations reads the accelerator type at init; on a CPU-only
-    # host there is none. CPU tensors are counted but never moved.
-    with mock.patch.object(
-        torch.accelerator, "current_accelerator", return_value=torch.device("cpu")
+    # host there is none. Newer TRL then copies the CPU tensors CPU-to-CPU and
+    # calls the device module's empty_cache, which torch.cpu lacks.
+    with (
+        mock.patch.object(
+            torch.accelerator, "current_accelerator", return_value=torch.device("cpu")
+        ),
+        mock.patch.object(torch.cpu, "empty_cache", lambda: None, create=True),
     ):
         yield
 
