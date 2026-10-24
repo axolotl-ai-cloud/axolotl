@@ -1,6 +1,7 @@
 """The CI Modal functions must import the runner's cicd/, not the image's checkout."""
 
-import importlib.util
+import importlib
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,8 +22,10 @@ def test_functions_run_from_the_mount_root(monkeypatch, name):
         return workdir(self, path)
 
     monkeypatch.setattr(modal.Image, "workdir", spy)
-    spec = importlib.util.spec_from_file_location(f"_cicd_{name}", CICD / f"{name}.py")
-    assert spec is not None and spec.loader is not None
-    spec.loader.exec_module(importlib.util.module_from_spec(spec))
+    # import as a package module (relative imports) and fresh, so the image is rebuilt under the spy
+    monkeypatch.syspath_prepend(str(CICD.parent))
+    for mod in [m for m in sys.modules if m == "cicd" or m.startswith("cicd.")]:
+        monkeypatch.delitem(sys.modules, mod)
+    importlib.import_module(f"cicd.{name}")
 
     assert workdirs == [modal.mount.ROOT_DIR.as_posix()]
