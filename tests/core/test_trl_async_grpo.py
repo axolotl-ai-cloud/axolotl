@@ -780,3 +780,142 @@ def test_rollout_loop_must_be_an_axolotl_rollout_loop(tmp_path):
         AxolotlAsyncGRPOConfig(
             output_dir=str(tmp_path), use_cpu=True, rollout_loop="queue.Queue"
         )
+
+
+class _RecordingPlugin:
+    """Stands in for a trace-capture plugin."""
+
+    def __init__(self):
+        self.calls = []
+
+    def on_rollouts_scored(self, cfg, trainer, *args):
+        self.calls.append(args)
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
+
+
+class _LiveWorker(StubWorker):
+    """Generates without end like a rollout worker: each sample is tagged with the
+    live policy version, and the first two after every sync are one version old."""
+
+    def __init__(self, make_sample):
+        super().__init__([])
+        self._make_sample = make_sample
+        self._stale_due = 0
+        self._fresh = 0
+        self.rollout_buffer = self
+
+    def update_model_version(self, version):
+        super().update_model_version(version)
+        self._stale_due = 2
+
+    def qsize(self):
+        return 0
+
+    def get(self, timeout=None):
+        version = self.versions[-1]
+        if self._stale_due:
+            self._stale_due -= 1
+            return self._make_sample(version - 1, index=-1)
+        self._fresh += 1
+        return self._make_sample(version, index=self._fresh - 1)
+
+
+def test_staleness_zero_trains_on_fresh_samples_and_reports_rollouts(
+    tmp_path, monkeypatch
+):
+    """`use_data_producer` maps onto max_staleness 0: samples of an older policy are
+    dropped, training does not stall, and plugins see every step's rollouts."""
+    from datasets import Dataset
+    from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaConfig
+    from trl.experimental.async_grpo import async_grpo_trainer, packing
+
+    from axolotl.integrations.base import PluginManager
+
+    monkeypatch.setattr(packing, "tree_attention", reference_tree_attention)
+    monkeypatch.setattr(
+        async_grpo_trainer, "get_peak_flops_per_device", lambda *a, **k: None
+    )
+    plugin = _RecordingPlugin()
+    manager = PluginManager.get_instance()
+    monkeypatch.setitem(manager.plugins, "recorder", plugin)
+    monkeypatch.setattr(manager, "_cfg", DictDefault({"rl": "grpo"}))
+
+    tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
+    torch.manual_seed(0)
+    model = AutoModelForCausalLM.from_config(
+        LlamaConfig(
+            vocab_size=len(tokenizer),
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+        )
+    )
+    prompt = [{"role": "user", "content": "What is 2+2?"}]
+    prompt_ids = tokenizer.apply_chat_template(
+        prompt, add_generation_prompt=True, return_dict=False
+    )
+    answer = tokenizer("Four", add_special_tokens=False)["input_ids"]
+
+    completion = [*answer, tokenizer.eos_token_id]
+
+    def make_sample(version, index):
+        g = index % 4
+        return RolloutSample(
+            prompt=prompt,
+            completion=[{"role": "assistant", "content": "Four"}],
+            input_ids=np.asarray(prompt_ids + completion, dtype=np.int64),
+            completion_mask=np.asarray(
+                [0] * len(prompt_ids) + [1] * len(completion), dtype=np.int64
+            ),
+            old_log_probs=np.full(len(prompt_ids) + len(completion), -1.0),
+            advantage=float(g) - 1.5,
+            model_version=version,
+            group_id=index // 4,
+            metrics={"reward": float(g), "rewards/len": float(g)},
+        )
+
+    args = AxolotlAsyncGRPOConfig(
+        output_dir=str(tmp_path),
+        max_steps=3,
+        max_staleness=0,
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=1,
+        learning_rate=1e-3,
+        bf16=False,
+        use_cpu=True,
+        token_budget=0,
+        report_to=[],
+        save_strategy="no",
+        logging_steps=1,
+        gradient_checkpointing=False,
+    )
+    worker = _LiveWorker(make_sample)
+    trainer = AxolotlAsyncGRPOTrainer(
+        model,
+        reward_funcs=[],
+        args=args,
+        train_dataset=Dataset.from_dict({"prompt": [prompt] * 4}),
+        processing_class=tokenizer,
+        rollout_worker=worker,
+        weight_transfer=StubTransfer(),
+    )
+    trainer.train()
+
+    assert trainer.state.global_step == 3
+    assert worker.versions == [1, 2, 3, 4]
+    # TRL counts a group when it is collated; the dataloader fetches a micro-batch
+    # ahead, so the next step's group is counted too.
+    assert {0, 1, 2} <= trainer._trained_groups
+    logs = trainer.state.log_history
+    assert sum(log.get("sample/dropped_stale_total", 0) for log in logs) >= 4
+
+    assert len(plugin.calls) == 3
+    for prompts, completions, rewards, advantages in plugin.calls:
+        assert prompts == [tokenizer.decode(prompt_ids, skip_special_tokens=True)] * 4
+        assert completions == ["Four"] * 4
+        assert rewards == {"len": [0.0, 1.0, 2.0, 3.0]}
+        assert advantages == [-1.5, -0.5, 0.5, 1.5]
