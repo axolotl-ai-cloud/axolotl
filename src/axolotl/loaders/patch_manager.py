@@ -29,6 +29,7 @@ from axolotl.model_support import (
     resolve_model_support,
     run_model_support_hooks,
 )
+from axolotl.monkeypatch.models.recurrent_support import trains_on_packed_rows
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -562,12 +563,10 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
-        # packed rows (multipack) and flattened batches both mark document
+        # packed rows (multipack, async GRPO) and flattened batches mark document
         # boundaries with position_ids restarting at 0; recurrent mixers need
         # that threaded into their kernels as seq_idx / cu_seqlens.
-        packed_boundaries_needed = bool(
-            self.cfg.sample_packing or getattr(self.cfg, "batch_flattening", False)
-        )
+        packed_boundaries_needed = trains_on_packed_rows(self.cfg)
 
         if self.cfg.model_config_type == "nemotron_h":
             from axolotl.monkeypatch.models.nemotron_h.modeling import (
