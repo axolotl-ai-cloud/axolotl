@@ -46,11 +46,46 @@ PACKING_UNSUPPORTED = frozenset(
 
 RECURRENT_MODEL_TYPES = PACKING_PATCHED | PACKING_UNSUPPORTED
 
+ATTENTION_LAYER_TYPES = frozenset({"full_attention", "sliding_attention"})
 
-def validate_recurrent_model_config(cfg) -> None:
+
+def recurrent_layer_types(config) -> set[str]:
+    """The ``layer_types`` of a model config that are not attention."""
+    text_config = config.get_text_config()
+    return set(getattr(text_config, "layer_types", None) or []) - ATTENTION_LAYER_TYPES
+
+
+def packs_async_grpo_rollouts(cfg) -> bool:
+    """Async GRPO (and structured EBFT on it) packs every rank's rollouts into one row."""
+    if not (cfg.trl and cfg.trl.async_prefetch):
+        return False
+    if cfg.rl in ("grpo", "gdpo"):
+        return True
+    return cfg.rl == "ebft" and (cfg.ebft or {}).get("mode") != "strided"
+
+
+def trains_on_packed_rows(cfg) -> bool:
+    """Whether batches concatenate samples, each starting where position_ids restart at 0."""
+    return bool(
+        cfg.sample_packing or cfg.batch_flattening or packs_async_grpo_rollouts(cfg)
+    )
+
+
+def validate_recurrent_model_config(cfg, model_config=None) -> None:
     """Raise when a recurrent architecture would silently train on leaked state."""
     model_type = cfg.model_config_type or ""
+    async_rows = packs_async_grpo_rollouts(cfg)
     if model_type not in RECURRENT_MODEL_TYPES:
+        if not (async_rows and model_config is not None):
+            return
+        layers = recurrent_layer_types(model_config)
+        if layers:
+            raise ValueError(
+                f"Async GRPO packs rollouts into rows, but model_type={model_type} "
+                f"has {sorted(layers)} layers with no packed-sequence boundary "
+                "handling, so their state would leak across packed samples. Train "
+                "it with synchronous GRPO (without `trl.async_prefetch`)."
+            )
         return
 
     if (cfg.sample_packing or cfg.batch_flattening) and (
@@ -61,4 +96,11 @@ def validate_recurrent_model_config(cfg) -> None:
             f"{model_type}: its recurrent layers have no packed-sequence boundary "
             "handling, so state would leak across packed samples. Set "
             "`sample_packing: false` and `batch_flattening: false`."
+        )
+    if async_rows and model_type in PACKING_UNSUPPORTED:
+        raise ValueError(
+            f"Async GRPO packs rollouts into rows, but model_type={model_type} has "
+            "recurrent layers with no packed-sequence boundary handling, so state "
+            "would leak across packed samples. Train it with synchronous GRPO "
+            "(without `trl.async_prefetch`)."
         )
