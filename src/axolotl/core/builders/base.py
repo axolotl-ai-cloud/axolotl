@@ -697,25 +697,32 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["activation_offloading"] = (
                     self.cfg.activation_offloading
                 )
-        elif self.cfg.activation_offloading:
-            # TRL offloader replaces HF recompute (re-added for full finetune in the
-            # model loader), so disable HF checkpointing and pass the mode through.
+        elif self.cfg.activation_offloading and not self.cfg.adapter:
+            # Full finetune: the model loader wraps the layers for recompute when
+            # gradient_checkpointing is on, so HF checkpointing stays off.
             training_args_kwargs["gradient_checkpointing"] = False
             training_args_kwargs["activation_offloading"] = (
                 self.cfg.activation_offloading
             )
-        elif self.cfg.gradient_checkpointing is not None:
-            training_args_kwargs["gradient_checkpointing"] = (
-                self.cfg.gradient_checkpointing
-            )
-            if self.cfg.gradient_checkpointing_kwargs is not None:
-                training_args_kwargs["gradient_checkpointing_kwargs"] = (
-                    self.cfg.gradient_checkpointing_kwargs
+        else:
+            # Adapters checkpoint through HF exactly as without offloading; the TRL
+            # offloader then offloads whatever the step saves.
+            if self.cfg.activation_offloading:
+                training_args_kwargs["activation_offloading"] = (
+                    self.cfg.activation_offloading
                 )
-            else:
-                training_args_kwargs["gradient_checkpointing_kwargs"] = {
-                    "use_reentrant": False
-                }
+            if self.cfg.gradient_checkpointing is not None:
+                training_args_kwargs["gradient_checkpointing"] = (
+                    self.cfg.gradient_checkpointing
+                )
+                if self.cfg.gradient_checkpointing_kwargs is not None:
+                    training_args_kwargs["gradient_checkpointing_kwargs"] = (
+                        self.cfg.gradient_checkpointing_kwargs
+                    )
+                else:
+                    training_args_kwargs["gradient_checkpointing_kwargs"] = {
+                        "use_reentrant": False
+                    }
 
     def _set_base_training_args(
         self, total_num_steps
