@@ -147,6 +147,7 @@ class PatchManager:
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
         self._apply_gradient_checkpointing_patches()
+        self._apply_trl_offload_patches()
         self._patch_attention()
         self._apply_multipack_patches()
         self._apply_sdpa_varlen_patch()
@@ -874,6 +875,18 @@ class PatchManager:
             transformers.modeling_utils.checkpoint = (
                 hf_grad_checkpoint_disk_offload_wrapper
             )
+
+    def _apply_trl_offload_patches(self):
+        """Keep saved-tensor layouts intact under TRL's activation offloader."""
+        # TRL's own trainers (DPO, KTO) run their offloader for any truthy mode, hidden_states too
+        if self.cfg.activation_offloading:
+            from axolotl.monkeypatch.trainer.trl_offload import (
+                patch_trl_logprob_entropy_saved_layout,
+                patch_trl_offload_dense_layout,
+            )
+
+            patch_trl_offload_dense_layout()
+            patch_trl_logprob_entropy_saved_layout()
 
     def _apply_mistral_cross_entropy_patch(self):
         """Apply Mistral cross entropy patch if configured."""
