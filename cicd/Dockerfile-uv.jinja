@@ -1,4 +1,13 @@
-FROM axolotlai/axolotl-base-uv:{{ BASE_TAG }}
+FROM {{ BASE_IMAGE | default("axolotlai/axolotl-base-uv", true) }}:{{ BASE_TAG }}
+{% if BASE_IMAGE and BASE_IMAGE != "axolotlai/axolotl-base-uv" %}
+# A shipped image (e.g. -blackwell) carries an sshd/jupyter entrypoint, its own HF cache layout
+# and an axolotl checkout; reset them to what the base-image CI layout expects.
+ENTRYPOINT []
+CMD []
+ENV HF_HUB_CACHE="{{ HF_HOME }}/hub"
+ENV HF_DATASETS_CACHE="{{ HF_HOME }}/datasets"
+RUN rm -rf /workspace/axolotl && mkdir -p /workspace
+{% endif %}
 ENV AXOLOTL_DEPS_HASH="{{ DEPS_HASH }}"
 
 ENV TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"

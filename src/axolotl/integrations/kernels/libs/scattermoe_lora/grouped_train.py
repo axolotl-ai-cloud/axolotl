@@ -512,6 +512,15 @@ def grouped_fp4_moe_train(
                 "(marlin/deepgemm unavailable). Run on a GPU with marlin or deepgemm, or "
                 "requantize the experts with a unit per_tensor_scale."
             )
+    # DeepGEMM casts activations to fp8 in 128-wide K groups, so both reduction dims (H for
+    # gate_up, I for down) must be 128-aligned; Gemma4's moe_intermediate_size=704 is not.
+    if backend == "deepgemm" and (H % 128 or I % 128):
+        if not _backend_available("marlin"):
+            raise RuntimeError(
+                f"grouped NVFP4 MoE: DeepGEMM needs hidden ({H}) and expert intermediate ({I}) "
+                "sizes divisible by 128, and Marlin is unavailable to fall back to."
+            )
+        backend = "marlin"
     if not _BACKEND_LOGGED:
         globals()["_BACKEND_LOGGED"] = True
         LOG.info(

@@ -2,21 +2,27 @@
 # Single-GPU tests that cannot run on the L40S lanes (pytest -m gpu_blackwell, see tests/conftest.py).
 set -euo pipefail
 
-# Blackwell-only kernel stack, pinned to docker/Dockerfile-cloud-blackwell-uv; the shared CI
-# image stays L40S-sized. torch is pinned so the resolver cannot swap the image's build.
-torch_version=$(python -c "import torch; print(torch.__version__)")
-uv pip install --python "$(command -v python)" \
-  "torch==${torch_version}" \
-  "flash-attn-4[cu13]==4.0.0b35" \
-  "quack-kernels[cu13]==0.6.5"
+# The image is the shipped -blackwell build (docker/Dockerfile-cloud-blackwell-uv), so its kernel
+# stack is what we test; a missing package means the image regressed, not a skip.
 python - <<'BLACKWELL_DEPS'
 import importlib.metadata as md
 
-for dist in ("flash-attn-4", "quack-kernels", "nvidia-cutlass-dsl", "triton", "torchao"):
+missing = []
+for dist in (
+    "deep-ep",
+    "flash-attn-4",
+    "quack-kernels",
+    "nvidia-cutlass-dsl",
+    "triton",
+    "torchao",
+):
     try:
         print(f"{dist}=={md.version(dist)}", flush=True)
     except md.PackageNotFoundError:
-        print(f"{dist}: not installed", flush=True)
+        missing.append(dist)
+assert not missing, f"Blackwell image is missing {missing}"
+
+import deep_ep  # noqa: F401  # the wheel links nvshmem and torch; import catches ABI drift
 BLACKWELL_DEPS
 
 python - <<'BLACKWELL_ENV'

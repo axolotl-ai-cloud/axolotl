@@ -118,3 +118,70 @@ def test_b2_nvfp4_lora_without_grouped_mode_ok_off_blackwell(monkeypatch):
     with pytest.raises(Exception) as exc:
         ex.scattermoe_experts_forward(self_, hidden, top_k_index, top_k_weights)
     assert "grouped fp4 MoE path on Blackwell" not in str(exc.value)
+
+
+class _Picked(Exception):
+    pass
+
+
+def _pick(name):
+    def _raise(*_args, **_kwargs):
+        raise _Picked(name)
+
+    return _raise
+
+
+@pytest.mark.parametrize("inter,expected", [(704, "marlin"), (768, "deepgemm")])
+def test_deepgemm_unaligned_intermediate_falls_back_to_marlin(
+    monkeypatch, inter, expected
+):
+    # DeepGEMM's fp8 activation cast asserts K % 128 == 0; Gemma4's I=704 must route to marlin
+    # before the forward instead of tripping that assert on sm100.
+    from axolotl.integrations.kernels.libs.scattermoe_lora import (
+        dequant_grouped,
+        grouped_train as gt,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import (
+        backend as marlin_backend,
+    )
+
+    monkeypatch.setattr(gt, "_train_backend", lambda mode: "deepgemm")
+    monkeypatch.setattr(gt, "_backend_available", lambda name: name == "marlin")
+    monkeypatch.setattr(marlin_backend, "build_marlin_forward_base", _pick("marlin"))
+    monkeypatch.setattr(dequant_grouped, "_cached_mxfp4", _pick("deepgemm"))
+
+    E, H, topk, N = 2, 256, 2, 4
+    gu = SimpleNamespace(qdata=torch.zeros(E, 2 * inter, H // 2, dtype=torch.uint8))
+    dn = SimpleNamespace(qdata=torch.zeros(E, H, inter // 2, dtype=torch.uint8))
+    idx = torch.randint(0, E, (N, topk))
+    wts = torch.rand(N, topk)
+
+    with pytest.raises(_Picked) as picked:
+        gt.grouped_fp4_moe_train(
+            torch.zeros(N, H), idx, wts, gu, dn, None, None, None, "nvfp4"
+        )
+    assert picked.value.args[0] == expected
+
+
+def test_deepgemm_unaligned_without_marlin_raises(monkeypatch):
+    from axolotl.integrations.kernels.libs.scattermoe_lora import grouped_train as gt
+
+    monkeypatch.setattr(gt, "_train_backend", lambda mode: "deepgemm")
+    monkeypatch.setattr(gt, "_backend_available", lambda name: False)
+
+    E, H, inter, topk, N = 2, 256, 704, 2, 4
+    gu = SimpleNamespace(qdata=torch.zeros(E, 2 * inter, H // 2, dtype=torch.uint8))
+    dn = SimpleNamespace(qdata=torch.zeros(E, H, inter // 2, dtype=torch.uint8))
+
+    with pytest.raises(RuntimeError, match="divisible by 128"):
+        gt.grouped_fp4_moe_train(
+            torch.zeros(N, H),
+            torch.randint(0, E, (N, topk)),
+            torch.rand(N, topk),
+            gu,
+            dn,
+            None,
+            None,
+            None,
+            "nvfp4",
+        )

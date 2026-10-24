@@ -68,6 +68,16 @@ def test_dockerfile_extras_and_nightly_date_participate(tmp_path):
     assert day1 != day2
 
 
+def test_base_image_participates_only_when_set(tmp_path):
+    root = _copy_inputs(tmp_path)
+    base = mod.compute(root, {}, today=TODAY)
+    assert mod.compute(root, {"BASE_IMAGE": ""}, today=TODAY) == base
+    assert (
+        mod.compute(root, {"BASE_IMAGE": "axolotlai/axolotl-cloud-uv"}, today=TODAY)
+        != base
+    )
+
+
 def test_shared_image_expires_weekly(tmp_path):
     root = _copy_inputs(tmp_path)
     same_week = mod.compute(root, {}, today=dt.date(2026, 10, 5)) == mod.compute(

@@ -24,6 +24,7 @@ df_args = {
     "AXOLOTL_ARGS": os.environ.get("AXOLOTL_ARGS", ""),
     "PYTORCH_VERSION": os.environ.get("PYTORCH_VERSION", "2.13.0"),
     "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.12-cu130-2.13.0"),
+    "BASE_IMAGE": os.environ.get("BASE_IMAGE", ""),
     "DEPS_HASH": os.environ.get("DEPS_HASH", "dev"),
     "CUDA": os.environ.get("CUDA", "130"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
