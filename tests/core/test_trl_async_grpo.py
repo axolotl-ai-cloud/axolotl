@@ -200,14 +200,14 @@ class _Tokenizer:
     pad_token_id = 0
 
 
-def _rollout_loop(reward_funcs, **kwargs):
+def _rollout_loop(reward_funcs, processing_class=None, **kwargs):
     from datasets import Dataset
 
     return AxolotlRolloutLoop(
         model_name="m",
         dataset=Dataset.from_dict({"prompt": [[{"role": "user", "content": "q"}]]}),
         reward_funcs=reward_funcs,
-        processing_class=_Tokenizer(),
+        processing_class=processing_class or _Tokenizer(),
         eos_token_ids=[0],
         rollout_buffer=queue.Queue(),
         model_version_value=mp.Value("i", 0),
@@ -261,6 +261,49 @@ class TestRolloutLoop:
         assert samples[0].advantage < 0 < samples[1].advantage
         assert samples[0].metrics["rewards/length_reward"] == 1.0
         assert {s.group_id for s in samples} == {7}
+
+    @pytest.fixture
+    def chatml_tokenizer(self, download_smollm2_135m_instruct_model):
+        from transformers import AutoTokenizer
+
+        from axolotl.utils.chat_templates import get_chat_template
+
+        tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
+        tokenizer.chat_template = get_chat_template("chatml")
+        return tokenizer
+
+    def test_chat_template_trl_cannot_parse_decodes_completions(self, chatml_tokenizer):
+        from trl_async_grpo_rewards import length_reward
+
+        loop = _rollout_loop([length_reward], processing_class=chatml_tokenizer)
+        prompt = [{"role": "user", "content": "What is 2+2?"}]
+        answer = chatml_tokenizer(
+            "The answer is 4.<|im_end|>", add_special_tokens=False
+        )["input_ids"]
+
+        async def generate_one_turn(prompt_ids):
+            return answer, [-0.5] * len(answer)
+
+        loop._generate_one_turn = generate_one_turn
+        completion, completion_ids, sequences, *_ = loop._loop.run_until_complete(
+            loop._generate_one(prompt, tool_dict={}, tools=[])
+        )
+        assert completion == [{"role": "assistant", "content": "The answer is 4."}]
+        assert completion_ids == answer
+        prompt_ids = chatml_tokenizer.apply_chat_template(
+            prompt, add_generation_prompt=True, return_dict=False
+        )
+        assert sequences[0].input_ids == prompt_ids + answer
+
+    def test_chat_template_trl_cannot_parse_still_fails_with_tools(
+        self, chatml_tokenizer
+    ):
+        from trl_async_grpo_rewards import length_reward, lookup_tool
+
+        with pytest.raises(ValueError, match="Unrecognized chat template"):
+            _rollout_loop(
+                [length_reward], processing_class=chatml_tokenizer, tools=[lookup_tool]
+            )
 
     def test_reward_weights_length_checked(self):
         from trl_async_grpo_rewards import length_reward
