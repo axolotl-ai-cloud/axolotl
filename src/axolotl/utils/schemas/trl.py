@@ -322,8 +322,8 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Apply IS correction for distribution mismatch between vLLM and "
-            "training model. Async GRPO bounds the policy/sampler ratio at "
-            "vllm_importance_sampling_cap (default on)."
+            "training model. Async GRPO weights each token by the policy/sampler "
+            "ratio, bounded at vllm_importance_sampling_cap (default on)."
         },
     )
     vllm_importance_sampling_mode: (
@@ -334,7 +334,7 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "IS mode: token_truncate, token_mask, sequence_truncate, or "
             "sequence_mask. Async GRPO supports the token modes: token_truncate caps "
-            "the ratio (dual-clip), token_mask drops tokens beyond the cap."
+            "the weight, token_mask drops tokens beyond the cap."
         },
     )
     vllm_importance_sampling_cap: float | None = Field(

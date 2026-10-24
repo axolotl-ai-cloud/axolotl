@@ -366,7 +366,7 @@ Requirements:
 - FSDP2 or DDP. DeepSpeed and `context_parallel_size > 1` are not supported.
 - Conversational prompts (a list of messages in the `prompt` column). Text-only: multimodal datasets are not supported.
 - Reward functions get each completion as an assistant message. TRL splits out reasoning and tool calls only for the chat templates it ships a response parser for (Qwen, Llama 3.1/3.2, Gemma 4 and a few others); with any other template, including axolotl's `chatml` and `llama3`, the message content is the decoded completion.
-- No reference model: `beta` must be 0, and only the token-level clipped loss (`loss_type: dapo`) is available.
+- No reference model: `beta` must be 0, and only the token-level loss (`loss_type: dapo`) is available.
 - Reward functions run in a spawned process with no GPU, so they must be picklable (module-level functions, not lambdas). Reward models are not supported.
 - A quantized base model (QLoRA, FP8) needs `vllm_lora_sync: true`, since merged weights cannot be folded into quantized ones.
 - The trainer packs with TRL's tree attention, which uses the `kernels-community/flash-attn3` hub kernel. That kernel has builds for SM80 and SM90 only, so on other GPUs (Blackwell) axolotl falls back to `kernels-community/flash-attn2`.
@@ -381,7 +381,7 @@ Without `max_steps`, training stops after `num_epochs` passes over the prompts a
 
 **Reward options.** `reward_weights`, `multi_objective_aggregation` (including `normalize_then_sum` for GDPO), `scale_rewards` (`group` or `none`) and `mask_truncated_completions` keep their GRPO meaning. Advantages are normalized per group as each group finishes, so `scale_rewards: batch` is not available.
 
-**Ratio cap** (`vllm_importance_sampling_correction`, default `true`). The ratio between the policy and the vLLM sampler grows with staleness and trainer/inference mismatch. PPO's clip bounds it only for positive advantages. `vllm_importance_sampling_mode: token_truncate` (default) caps the unclipped term at `vllm_importance_sampling_cap` (default 3.0, dual-clip PPO); `token_mask` drops tokens beyond the cap from the loss. `sampling/capped_token_frac` reports how often the cap binds.
+**Importance weights instead of a sampler trust region** (`vllm_importance_sampling_correction`, default `true`). TRL clips the ratio between the policy and the vLLM sampler at 1 ± `epsilon`. That ratio grows with staleness and trainer/inference mismatch, so the clip stops the gradient of exactly the tokens whose probability is changing fastest. On Qwen2.5-1.5B LoRA with a GSM8K answer-format reward, TRL's loss took 28 to over 50 steps to reach a 0.9 format rate that axolotl's removed trainer reached in 15-18; with importance weights, async GRPO reaches it in 17. As in synchronous GRPO, each rollout is trained on once, so async GRPO takes the PPO ratio against the policy itself (never clipped; `epsilon` has no effect) and weights each token by the policy/sampler ratio: `vllm_importance_sampling_mode: token_truncate` (default) caps the weight at `vllm_importance_sampling_cap` (default 3.0), `token_mask` drops tokens beyond the cap from the loss. `ratio` and `kl` report the policy/sampler divergence, `sampling/capped_token_frac` how often the cap binds.
 
 **Out-of-place merged sync.** When the server has no LoRA support, TRL merges the adapter into the base weights for the send and unmerges it afterwards. In bf16 that round trip does not restore the weights: one sync changed 6% of a layer's frozen weights, and 1000 syncs with a moving adapter left 58% changed and a 1.3% relative drift. Async GRPO instead streams `W + ΔW` computed in fp32 per parameter, so the trained model is never written to. DoRA is supported this way on a single GPU or DDP, but not under FSDP.
 
@@ -410,7 +410,7 @@ Config validation rejects the trainer's other options and names what replaces ea
 
 ## Importance Sampling and Off-Policy Correction
 
-Async GRPO bounds the per-token ratio between the policy and the vLLM sampler at `vllm_importance_sampling_cap` (see [above](#sec-async)). Synchronous GRPO instead recomputes log-probabilities on the trainer and weights each token by the trainer/sampler ratio:
+Both GRPO trainers weight each token by the trainer/sampler ratio, capped at `vllm_importance_sampling_cap`. Async GRPO takes it from the training forward (see [above](#sec-async)); synchronous GRPO recomputes log-probabilities on the trainer and also offers sequence-level weights and OPSM:
 
 ```yaml
 trl:
