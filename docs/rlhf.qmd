@@ -738,7 +738,7 @@ trl:
   max_staleness: 4             # Drop rollouts more than N syncs old
 ```
 
-Axolotl adds zero-advantage filtering (`skip_zero_advantage_batches`), parallel reward processes (`reward_num_workers`), `reward_weights` / `multi_objective_aggregation` / `scale_rewards` / `mask_truncated_completions`, and a cap on the policy/sampler ratio (`vllm_importance_sampling_cap`). Async GRPO needs a vLLM server, FSDP2 or DDP, conversational prompts, and no reference model (`beta: 0`). See [Async Training Features](grpo.qmd#sec-async) for details and for options that only apply to the data producer trainer (streaming scoring, replay buffer, re-rolling, OPSM).
+Axolotl adds zero-advantage filtering (`skip_zero_advantage_batches`), parallel reward processes (`reward_num_workers`), `reward_weights` / `multi_objective_aggregation` / `scale_rewards` / `mask_truncated_completions`, and a cap on the policy/sampler ratio (`vllm_importance_sampling_cap`). Async GRPO needs a vLLM server, FSDP2 or DDP, conversational prompts, and no reference model (`beta: 0`). See [Async Training Features](grpo.qmd#sec-async) for details, and [Migrating from the data producer trainer](grpo.qmd#sec-data-producer-migration) for the options of axolotl's removed GRPO trainer.
 
 ##### vLLM LoRA Sync
 
@@ -997,10 +997,8 @@ trl:
   vllm_server_port: 8000
   vllm_lora_sync: true                   # LoRA adapter sync (recommended)
   vllm_sync_interval: 3
-  use_data_producer: true
   async_prefetch: true                   # Set false for sync mode
   scale_rewards: true
-  loss_type: grpo
   epsilon: 0.2
 
 vllm:
@@ -1415,7 +1413,7 @@ Run `axolotl train` from the directory containing `mm_rewards.py`. To generate o
 - **Chat template**: every row is rendered with one template (the processor's, or the top-level `chat_template`); per-dataset `chat_template` is ignored.
 - **One kind of data per run**: image and text-only datasets cannot be mixed. Exact deduplication is skipped for image datasets.
 - **Tiled-image models (SmolVLM, Idefics3)**: GRPO with `vllm_mode: server` fails because these split each image into tiles; use `vllm_mode: colocate` or no vLLM.
-- **Async GRPO** (`async_prefetch` with `rl: grpo`) is text-only. The data producer trainer (`use_data_producer`) does not support InternVL (tile-based) or multiple images per row with LLaVA-style processors yet.
+- **Async GRPO** (`async_prefetch` with `rl: grpo`) is text-only.
 - **Not supported**: ORPO, SimPO, EBFT, `tokenizer_use_mistral_common`, and GRPO with `context_parallel_size` > 1. `pad_to_multiple_of` is ignored for DPO/KTO.
 
 ### Using local dataset files

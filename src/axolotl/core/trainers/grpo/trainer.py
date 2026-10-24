@@ -40,7 +40,6 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
-from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
 from axolotl.core.trainers.grpo.merge_check import LoraMergeCheckMixin
 from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.grpo.trl_async_trainer import (
@@ -85,21 +84,6 @@ class AxolotlGRPOTrainer(
         if getattr(self, "vllm_generation", None) is not None:
             exact_unmerge_vllm_sync(self.vllm_generation)
             merge_aware_vllm_sync(self.vllm_generation)
-
-
-class AxolotlDataProducerGRPOTrainer(
-    CheckpointWriteRetryMixin,
-    RngLoaderMixin,
-    SchedulerMixin,
-    OptimizerMixin,
-    OptimizerInitMixin,
-    DistributedParallelMixin,
-    ActivationOffloadingMixin,
-    FastAsyncGRPOTrainer,
-):
-    """GRPOTrainer driven by axolotl's data producer protocol (`use_data_producer`)"""
-
-    _tag_names = ["trl", "grpo", "async", "axolotl"]
 
 
 class AxolotlGRPOContextParallelTrainer(AxolotlGRPOTrainer):

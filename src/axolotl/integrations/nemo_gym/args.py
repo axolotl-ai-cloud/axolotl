@@ -156,7 +156,9 @@ class NemoGymArgs(BaseModel):
                     "Provide at least one dataset with 'path' and 'server_name'."
                 )
             trl = data.get("trl") or {}
-            if data.get("nemo_gym_multi_turn") and not trl.get("async_prefetch"):
+            # `use_data_producer` is a deprecated alias of async GRPO.
+            async_grpo = trl.get("async_prefetch") or trl.get("use_data_producer")
+            if data.get("nemo_gym_multi_turn") and not async_grpo:
                 raise ValueError(
                     "nemo_gym_multi_turn runs on async GRPO: set "
                     "`trl.async_prefetch: true` with a vLLM server "

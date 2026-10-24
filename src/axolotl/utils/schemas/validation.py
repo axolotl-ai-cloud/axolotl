@@ -224,6 +224,21 @@ SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
 FSDP1_MIGRATION_DOCS = "docs/multi-gpu.qmd#sec-migrate-fsdp1-fsdp2"
 
+DATA_PRODUCER_MIGRATION_DOCS = "docs/grpo.qmd#sec-data-producer-migration"
+
+# `trl` options of the removed data producer trainer; the value says what replaces each
+DATA_PRODUCER_REMOVED_OPTIONS = {
+    "prefetch_depth": "`trl.max_staleness`, how many weight syncs a rollout may lag",
+    "streaming_partial_batch": "none needed, async GRPO scores each group as it "
+    "finishes",
+    "streaming_min_groups": "none needed, async GRPO scores each group as it finishes",
+    "replay_buffer_size": "none, each rollout is trained on once and "
+    "`trl.skip_zero_advantage_batches` drops samples without signal",
+    "replay_recompute_logps": "none, see replay_buffer_size",
+    "reroll_start_fraction": "none",
+    "reroll_max_groups": "none",
+}
+
 # fsdp_config keys accelerate rejects under FSDP2; the value names the FSDP2 replacement
 FSDP1_ONLY_REJECTED_KEYS = {
     "sharding_strategy": "reshard_after_forward",
@@ -2723,6 +2738,41 @@ class EBFTValidationMixin:
 class GRPOVllmValidationMixin:
     """Validation mixin for vllm when using GRPO."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_data_producer_options(cls, data):
+        """Reject the removed data producer trainer's options, map its alias."""
+        trl = data.get("trl") or {}
+        problems = [
+            f"`trl.{name}`: {replacement}"
+            for name, replacement in DATA_PRODUCER_REMOVED_OPTIONS.items()
+            if trl.get(name) is not None
+        ]
+        if data.get("rl") in ("grpo", "gdpo") and data.get("batch_flattening") is True:
+            problems.append(
+                "`batch_flattening`: `trl.token_budget`, async GRPO packs rollouts by "
+                "token budget"
+            )
+        if problems:
+            raise ValueError(
+                "The data producer trainer has been removed, and with it:\n- "
+                + "\n- ".join(problems)
+                + f"\nSee {DATA_PRODUCER_MIGRATION_DOCS} for the migration guide."
+            )
+        if trl.get("use_data_producer"):
+            LOG.warning(
+                "`trl.use_data_producer` is deprecated: the data producer trainer has "
+                "been removed. It now selects async GRPO (`trl.async_prefetch: true`) "
+                "with `trl.max_staleness: 0`; set those instead. See "
+                f"{DATA_PRODUCER_MIGRATION_DOCS}."
+            )
+            if not trl.get("async_prefetch"):
+                trl["async_prefetch"] = True
+                if trl.get("max_staleness") is None:
+                    trl["max_staleness"] = 0
+            trl["use_data_producer"] = False
+        return data
+
     @model_validator(mode="after")
     def check_vllm_mode_set(self):
         if self.trl and self.trl.use_vllm and not self.trl.vllm_mode:
@@ -2748,12 +2798,6 @@ class GRPOVllmValidationMixin:
                 "over HTTP to the vLLM server). In colocate mode, remove `vllm_lora_sync`; "
                 "weights are merged and loaded into the colocated engine directly."
             )
-        if (trl.async_prefetch or trl.use_data_producer) and self.adapter:
-            raise ValueError(
-                "`vllm_mode: colocate` with an adapter is not supported by the async GRPO "
-                "trainer (`async_prefetch` / `use_data_producer`): its LoRA weight sync only "
-                "targets a vLLM server. Remove those options or use `vllm_mode: server`."
-            )
         if not (self.vllm and self.vllm.max_model_len):
             LOG.warning(
                 "Set `vllm.max_model_len` (longest prompt + max_completion_length) for "
@@ -2773,12 +2817,6 @@ class GRPOVllmValidationMixin:
             trl and trl.async_prefetch
         ):
             return self
-
-        def data_producer_only(option: str) -> str:
-            return (
-                f"`trl.{option}` belongs to the data producer trainer "
-                "and has no effect on async GRPO; remove it"
-            )
 
         problems = []
         if not trl.use_vllm:
@@ -2833,23 +2871,11 @@ class GRPOVllmValidationMixin:
                 "a quantized base model needs adapter-only weight sync: set "
                 "`trl.vllm_lora_sync: true`"
             )
-        if trl.prefetch_depth is not None:
-            problems.append(
-                "`trl.prefetch_depth` is replaced by `trl.max_staleness` (how many "
-                "weight syncs a rollout may lag)"
-            )
-        for option in (
-            "streaming_partial_batch",
-            "streaming_min_groups",
-            "off_policy_mask_threshold",
-            "use_bias_correction_kl",
-        ):
+        for option in ("off_policy_mask_threshold", "use_bias_correction_kl"):
             if getattr(trl, option) is not None:
-                problems.append(data_producer_only(option))
-        if trl.replay_buffer_size:
-            problems.append(data_producer_only("replay_buffer_size"))
-        if trl.reroll_start_fraction < 1.0:
-            problems.append(data_producer_only("reroll_start_fraction"))
+                problems.append(
+                    f"`trl.{option}` applies to synchronous GRPO only; remove it"
+                )
         if problems:
             raise ValueError(
                 f"`trl.async_prefetch` with rl: {getattr(self.rl, 'value', self.rl)} "

@@ -429,8 +429,9 @@ class TestConfigValidation:
 
     def test_multi_turn_needs_async_grpo(self):
         with pytest.raises(ValueError, match="async_prefetch"):
-            self._validate(nemo_gym_multi_turn=True, trl={"use_data_producer": True})
+            self._validate(nemo_gym_multi_turn=True, trl={"num_generations": 4})
         self._validate(nemo_gym_multi_turn=True, trl={"async_prefetch": True})
+        self._validate(nemo_gym_multi_turn=True, trl={"use_data_producer": True})
 
     def test_superseded_reward_funcs_are_dropped(self):
         data = self._validate(

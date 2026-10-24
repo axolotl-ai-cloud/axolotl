@@ -4,18 +4,14 @@ import importlib
 import inspect
 import os
 import warnings
-from typing import Any, Literal
+from typing import Any
 
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
 from trl.trainer.grpo_trainer import RewardFunc
 
-from axolotl.core.trainers.grpo.args import (
-    AxolotlDataProducerGRPOConfig,
-    AxolotlGRPOConfig,
-)
+from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
 from axolotl.core.trainers.grpo.trainer import (
-    AxolotlDataProducerGRPOTrainer,
     AxolotlGRPOContextParallelTrainer,
     AxolotlGRPOSequenceParallelTrainer,  # noqa: F401  deprecated alias, kept importable
     AxolotlGRPOTrainer,
@@ -37,18 +33,9 @@ class GRPOStrategy:
     """Strategy for GRPO training"""
 
     @staticmethod
-    def get_async_backend(cfg: DictDefault) -> Literal["trl", "data_producer"] | None:
-        """Pick the trainer behind `trl.async_prefetch` / `trl.use_data_producer`.
-
-        `async_prefetch` runs on TRL's AsyncGRPOTrainer. The data producer trainer
-        stays behind `use_data_producer` alone.
-        """
-        trl = cfg.trl
-        if not trl or not (trl.async_prefetch or trl.use_data_producer):
-            return None
-        if trl.async_prefetch:
-            return "trl"
-        return "data_producer"
+    def is_async(cfg: DictDefault) -> bool:
+        """`trl.async_prefetch` runs on TRL's AsyncGRPOTrainer."""
+        return bool(cfg.trl and cfg.trl.async_prefetch)
 
     @classmethod
     def get_trainer_class(
@@ -56,12 +43,10 @@ class GRPOStrategy:
         context_parallel: bool = False,
         async_grpo: bool = False,
         sequence_parallel: bool | None = None,
-        data_producer: bool = False,
     ) -> (
         type[AxolotlGRPOTrainer]
         | type[AxolotlGRPOContextParallelTrainer]
         | type[AxolotlAsyncGRPOTrainer]
-        | type[AxolotlDataProducerGRPOTrainer]
     ):
         if sequence_parallel is not None:
             warnings.warn(
@@ -70,29 +55,21 @@ class GRPOStrategy:
                 stacklevel=2,
             )
             context_parallel = context_parallel or sequence_parallel
-        if context_parallel and (async_grpo or data_producer):
+        if context_parallel and async_grpo:
             raise ValueError(
                 "context_parallel and async_grpo cannot both be enabled. "
-                "Disable one of context_parallel_size > 1 or async_prefetch/use_data_producer."
+                "Disable one of context_parallel_size > 1 or async_prefetch."
             )
         if context_parallel:
             return AxolotlGRPOContextParallelTrainer
-        if data_producer:
-            return AxolotlDataProducerGRPOTrainer
         if async_grpo:
             return AxolotlAsyncGRPOTrainer
         return AxolotlGRPOTrainer
 
     @classmethod
     def get_training_args_class(
-        cls, async_grpo: bool = False, data_producer: bool = False
-    ) -> (
-        type[AxolotlGRPOConfig]
-        | type[AxolotlAsyncGRPOConfig]
-        | type[AxolotlDataProducerGRPOConfig]
-    ):
-        if data_producer:
-            return AxolotlDataProducerGRPOConfig
+        cls, async_grpo: bool = False
+    ) -> type[AxolotlGRPOConfig] | type[AxolotlAsyncGRPOConfig]:
         if async_grpo:
             return AxolotlAsyncGRPOConfig
         return AxolotlGRPOConfig
@@ -236,63 +213,29 @@ class GRPOStrategy:
         if trl.log_multimodal is not None:
             grpo_args_kwargs["log_multimodal"] = trl.log_multimodal
 
-        # Async GRPO fields
-        if getattr(trl, "use_data_producer", None) is not None:
-            grpo_args_kwargs["use_data_producer"] = trl.use_data_producer
-        if getattr(trl, "async_prefetch", None) is not None:
-            grpo_args_kwargs["async_prefetch"] = trl.async_prefetch
-        if getattr(trl, "prefetch_depth", None) is not None:
-            grpo_args_kwargs["prefetch_depth"] = trl.prefetch_depth
-        if getattr(trl, "vllm_sync_interval", None) is not None:
-            grpo_args_kwargs["vllm_sync_interval"] = trl.vllm_sync_interval
-        if getattr(trl, "streaming_partial_batch", None) is not None:
-            grpo_args_kwargs["streaming_partial_batch"] = trl.streaming_partial_batch
-        if getattr(trl, "streaming_min_groups", None) is not None:
-            grpo_args_kwargs["streaming_min_groups"] = trl.streaming_min_groups
-        if getattr(trl, "vllm_importance_sampling_correction", None) is not None:
+        if trl.vllm_importance_sampling_correction is not None:
             grpo_args_kwargs["vllm_importance_sampling_correction"] = (
                 trl.vllm_importance_sampling_correction
             )
-        if getattr(trl, "vllm_importance_sampling_mode", None) is not None:
+        if trl.vllm_importance_sampling_mode is not None:
             grpo_args_kwargs["vllm_importance_sampling_mode"] = (
                 trl.vllm_importance_sampling_mode
             )
-        if getattr(trl, "vllm_importance_sampling_cap", None) is not None:
+        if trl.vllm_importance_sampling_cap is not None:
             grpo_args_kwargs["vllm_importance_sampling_cap"] = (
                 trl.vllm_importance_sampling_cap
             )
-        if getattr(trl, "off_policy_mask_threshold", None) is not None:
+        if trl.off_policy_mask_threshold is not None:
             grpo_args_kwargs["off_policy_mask_threshold"] = (
                 trl.off_policy_mask_threshold
             )
-        if getattr(trl, "use_bias_correction_kl", None) is not None:
+        if trl.use_bias_correction_kl is not None:
             grpo_args_kwargs["use_bias_correction_kl"] = trl.use_bias_correction_kl
 
-        # Fast Async GRPO fields
-        if getattr(trl, "reward_num_workers", None) is not None:
-            grpo_args_kwargs["reward_num_workers"] = trl.reward_num_workers
-        if getattr(trl, "replay_buffer_size", None) is not None:
-            grpo_args_kwargs["replay_buffer_size"] = trl.replay_buffer_size
-        if getattr(trl, "replay_recompute_logps", None) is not None:
-            grpo_args_kwargs["replay_recompute_logps"] = trl.replay_recompute_logps
-        if getattr(trl, "reroll_start_fraction", None) is not None:
-            grpo_args_kwargs["reroll_start_fraction"] = trl.reroll_start_fraction
-        if getattr(trl, "reroll_max_groups", None) is not None:
-            grpo_args_kwargs["reroll_max_groups"] = trl.reroll_max_groups
-        if getattr(trl, "skip_zero_advantage_batches", None) is not None:
-            grpo_args_kwargs["skip_zero_advantage_batches"] = (
-                trl.skip_zero_advantage_batches
-            )
-        if getattr(trl, "vllm_lora_sync", None) is not None:
-            grpo_args_kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
         if trl.vllm_merge_check_interval is not None:
             grpo_args_kwargs["vllm_merge_check_interval"] = (
                 trl.vllm_merge_check_interval
             )
-
-        # Batch flattening (top-level config, not under trl)
-        if getattr(cfg, "batch_flattening", None):
-            grpo_args_kwargs["batch_flattening"] = cfg.batch_flattening
 
         return grpo_args_kwargs
 

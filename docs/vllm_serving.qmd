@@ -139,7 +139,7 @@ With `vllm_enable_sleep_mode: true`, vLLM offloads its VRAM allocation when not 
 Colocate mode is significantly slower than server mode because generation and training cannot overlap. The GPU alternates between the two workloads. This mode is practical only for smaller models (up to ~3B on a 24 GB GPU).
 :::
 
-Colocate mode cannot be combined with `context_parallel_size > 1`, with `vllm_lora_sync`, with async GRPO (`async_prefetch`), or with the data producer trainer (`use_data_producer`) when training an adapter; config validation rejects those combinations.
+Colocate mode cannot be combined with `context_parallel_size > 1`, with `vllm_lora_sync`, or with async GRPO (`async_prefetch`); config validation rejects those combinations.
 
 **When to use colocate mode:**
 
@@ -219,7 +219,7 @@ trl:
 ::: {.callout-tip}
 If you are training with LoRA (which is recommended for GRPO), always enable `vllm_lora_sync: true`. The performance difference is substantial, especially as training progresses and NCCL contention increases.
 
-NCCL merge sync folds the adapter into the base weights out of place, so the weights being trained are never modified (the data producer trainer under FSDP still merges in place). With the data producer trainer, FP8 base weights are requantized with fresh block scales before being sent, and DoRA adapters and bitsandbytes 4-bit bases (QLoRA) raise an error; use `vllm_lora_sync: true` for them. Async GRPO needs `vllm_lora_sync: true` for any quantized base, and merges DoRA adapters except under FSDP.
+Async GRPO's NCCL merge sync folds the adapter into the base weights out of place, so the weights being trained are never modified; synchronous GRPO uses TRL's sync, which merges in place. Async GRPO needs `vllm_lora_sync: true` for any quantized base, and merges DoRA adapters except under FSDP.
 :::
 
 ### Merged Sync Rounding {#sec-merge-rounding}
@@ -266,7 +266,7 @@ When vLLM weights are stale (between syncs), the generated data is slightly off-
 trl:
   vllm_importance_sampling_correction: true
   importance_sampling_level: token          # 'token' or 'sequence'
-  off_policy_mask_threshold: 0.5            # KL threshold for masking stale sequences
+  off_policy_mask_threshold: 0.5            # KL threshold for masking stale sequences (sync GRPO)
 ```
 
 - **Token-level IS** is recommended when using Liger kernel (sequence-level has numerical issues with chunked computation)
