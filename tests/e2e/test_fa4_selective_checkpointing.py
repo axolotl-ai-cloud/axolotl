@@ -23,9 +23,14 @@ def _fa4_ready():
     return fa4.fa4_usable()
 
 
-pytestmark = pytest.mark.skipif(
-    not _fa4_ready(), reason="requires a GPU with Flash Attention 4 (flash_attn.cute)"
-)
+pytestmark = [
+    # FA4 also runs on SM90, but CI only has it on B200, where it covers the SM100 backward.
+    pytest.mark.gpu_blackwell,
+    pytest.mark.skipif(
+        not _fa4_ready(),
+        reason="requires a GPU with Flash Attention 4 (flash_attn.cute)",
+    ),
+]
 
 
 def _model(arch, sac):

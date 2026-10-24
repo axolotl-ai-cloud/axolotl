@@ -98,8 +98,26 @@ _GPU_MARKER_PROPERTY = "axolotl_gpu_marker_missing"
 _gpu_marker_missing: dict[str, str] = {}
 
 
+# Blackwell-only gates name an SM10x-12x arch (or "Blackwell") and no pre-Blackwell one;
+# "Hopper (sm_90) or Blackwell" and "Marlin sm80+ / CUTLASS sm120" run on older GPUs.
+BLACKWELL_SKIP_REASON_RE = re.compile(
+    r"\bblackwell\b|\bsm[_ ]?(?:>=\s*)?1[0-2]\d\b", re.IGNORECASE
+)
+PRE_BLACKWELL_ARCH_RE = re.compile(
+    r"\bsm[_ ]?[5-9]\d\b|\b(?:ampere|ada|hopper|[ah]100|l40s?)\b", re.IGNORECASE
+)
+
+
 def is_gpu_skip_reason(reason) -> bool:
     return bool(reason) and GPU_SKIP_REASON_RE.search(str(reason)) is not None
+
+
+def is_blackwell_skip_reason(reason) -> bool:
+    text = str(reason or "")
+    return (
+        BLACKWELL_SKIP_REASON_RE.search(text) is not None
+        and PRE_BLACKWELL_ARCH_RE.search(text) is None
+    )
 
 
 def skip_marker_text(mark) -> str:
@@ -115,6 +133,17 @@ def item_is_cuda_gated(item) -> bool:
     )
 
 
+def needs_gpu_blackwell_marker(item) -> bool:
+    # Multi-GPU NVFP4 tests keep their own `nvfp4` lane (cicd/nvfp4.sh).
+    if item.get_closest_marker("gpu_blackwell") or item.get_closest_marker("nvfp4"):
+        return False
+    return any(
+        mark.name in ("skipif", "skip")
+        and is_blackwell_skip_reason(skip_marker_text(mark))
+        for mark in item.iter_markers()
+    )
+
+
 def skip_reason_from_report(report) -> str:
     longrepr = getattr(report, "longrepr", None)
     if isinstance(longrepr, tuple) and len(longrepr) == 3:
@@ -125,7 +154,12 @@ def skip_reason_from_report(report) -> str:
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):  # pylint: disable=unused-argument
     for item in items:
-        if item.get_closest_marker("gpu") is None and item_is_cuda_gated(item):
+        if needs_gpu_blackwell_marker(item):
+            item.add_marker(pytest.mark.gpu_blackwell)
+        if item.get_closest_marker("gpu") is None and (
+            item.get_closest_marker("gpu_blackwell") is not None
+            or item_is_cuda_gated(item)
+        ):
             item.add_marker(pytest.mark.gpu)
 
 
