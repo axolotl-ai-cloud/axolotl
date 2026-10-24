@@ -3,6 +3,8 @@ import torch
 
 from axolotl.core.trainers.diffusion_lm import varlen
 
+from tests.accelerator import DEVICE_TYPE, device_module, gpu_available
+
 
 def test_metadata_uses_document_runs_and_distinguishes_rows():
     document_ids = torch.tensor([[7, 7, 8, -1, 9, 9], [7, 7, -1, 8, 8, -1]])
@@ -160,11 +162,11 @@ def test_varlen_attention_rejects_incompatible_shapes_before_kernel(monkeypatch)
         )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.skipif(not gpu_available(), reason="a GPU is required")
 def test_varlen_attention_moves_cpu_metadata_to_attention_device(monkeypatch):
     document_ids = torch.tensor([[0, 0, -1, 1]])
     metadata = varlen.build_varlen_metadata(document_ids, document_ids >= 0)
-    device = torch.device("cuda", torch.cuda.current_device())
+    device = torch.device(DEVICE_TYPE, device_module().current_device())
     query = torch.randn(1, 1, 4, 2, device=device, requires_grad=True)
     key = torch.randn(1, 1, 4, 2, device=device, requires_grad=True)
     value = torch.randn(1, 1, 4, 2, device=device, requires_grad=True)

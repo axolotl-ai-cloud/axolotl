@@ -34,6 +34,8 @@ from __future__ import annotations
 import pytest
 import torch
 
+from tests.accelerator import DEVICE_TYPE, device_module, gpu_available
+
 # Failing-config constants (mirror tests/integrations/monkeypatch/
 # bench_tiled_mlp_moe.py at seq=524288, shards=16).
 _T = 32768
@@ -45,9 +47,7 @@ _DTYPE = torch.bfloat16
 
 
 def _requires_cuda():
-    return pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="CUDA required for the repro"
-    )
+    return pytest.mark.skipif(not gpu_available(), reason="GPU required for the repro")
 
 
 _SCATTER2SCATTER_INT32_LIMIT = 2**31
@@ -69,7 +69,7 @@ def test_scatter2scatter_below_threshold_no_overhead():
         flatten_sort_count,
     )
 
-    device = torch.device("cuda:0")
+    device = torch.device(f"{DEVICE_TYPE}:0")
     torch.manual_seed(0)
 
     # Small shape: T=512 tokens → L_scattered=4096 → output is
@@ -109,7 +109,7 @@ def test_scatter2scatter_below_threshold_no_overhead():
         y_grouped=True,
         int64_indices=True,
     )
-    torch.cuda.synchronize()
+    device_module().synchronize()
     assert torch.equal(out_i32, out_i64), (
         "INT64_INDICES must not change MMA/accumulation order at small shapes"
     )
@@ -142,7 +142,7 @@ def test_scatter2scatter_no_corruption_at_overflow_shape():
         flatten_sort_count,
     )
 
-    device = torch.device("cuda:0")
+    device = torch.device(f"{DEVICE_TYPE}:0")
     torch.manual_seed(0)
 
     x = torch.randn(_T, _HIDDEN, device=device, dtype=_DTYPE)
@@ -175,7 +175,7 @@ def test_scatter2scatter_no_corruption_at_overflow_shape():
         y_grouped=True,
         int64_indices=True,
     )
-    torch.cuda.synchronize()
+    device_module().synchronize()
 
     overflow_threshold_row = _SCATTER2SCATTER_INT32_LIMIT // y_dim
     sample_rows = [
@@ -217,7 +217,7 @@ def test_parallel_linear_long_seq_routing_combination():
         parallel_linear,
     )
 
-    device = torch.device("cuda:0")
+    device = torch.device(f"{DEVICE_TYPE}:0")
     torch.manual_seed(0)
 
     layer_input = torch.randn(_T, _HIDDEN, device=device, dtype=_DTYPE)
@@ -276,7 +276,7 @@ def test_parallel_linear_long_seq_routing_combination():
             gates=routing_weights,
         )
         # Force the (otherwise lazy) CUDA error to surface synchronously.
-        torch.cuda.synchronize()
+        device_module().synchronize()
 
     assert layer_output.shape == (_T, _HIDDEN)
     # The output must have real values, not zero rows or NaN/Inf.

@@ -7,6 +7,8 @@ import torch
 
 from axolotl.utils.dict import DictDefault
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 
 @pytest.fixture
 def glm(monkeypatch):
@@ -74,7 +76,7 @@ def test_disabled_flags_are_noop(glm):
     )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+@pytest.mark.skipif(not gpu_available(), reason="GPU required")
 def test_liger_forward_and_gradients(glm):
     from transformers.models.glm4_moe_lite.configuration_glm4_moe_lite import (
         Glm4MoeLiteConfig,
@@ -83,8 +85,8 @@ def test_liger_forward_and_gradients(glm):
     torch.manual_seed(42)
     config = Glm4MoeLiteConfig(hidden_size=128, intermediate_size=256)
     original_rope = glm.apply_rotary_pos_emb_interleave
-    norm = glm.Glm4MoeLiteRMSNorm(128).cuda().bfloat16()
-    mlp = glm.Glm4MoeLiteMLP(config, intermediate_size=192).cuda().bfloat16()
+    norm = glm.Glm4MoeLiteRMSNorm(128).to(DEVICE_TYPE).bfloat16()
+    mlp = glm.Glm4MoeLiteMLP(config, intermediate_size=192).to(DEVICE_TYPE).bfloat16()
     original_mlp_forward = glm.Glm4MoeLiteMLP.forward
     expected_mlp = copy.deepcopy(mlp)
     expected_mlp.forward = original_mlp_forward.__get__(expected_mlp)
@@ -95,13 +97,15 @@ def test_liger_forward_and_gradients(glm):
         liger_cross_entropy=False,
         liger_fused_linear_cross_entropy=False,
     )
-    fused_norm = glm.Glm4MoeLiteRMSNorm(128).cuda().bfloat16()
+    fused_norm = glm.Glm4MoeLiteRMSNorm(128).to(DEVICE_TYPE).bfloat16()
     fused_norm.load_state_dict(norm.state_dict())
-    x = torch.randn(2, 17, 128, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    x = torch.randn(
+        2, 17, 128, device=DEVICE_TYPE, dtype=torch.bfloat16, requires_grad=True
+    )
     y = x.detach().clone().requires_grad_()
     q = x.view(2, 17, 2, 64).transpose(1, 2)
     k = q[:, :1]
-    cos = torch.randn(2, 17, 64, device="cuda", dtype=torch.bfloat16)
+    cos = torch.randn(2, 17, 64, device=DEVICE_TYPE, dtype=torch.bfloat16)
     sin = torch.randn_like(cos)
     reference_rope = original_rope(q, k, cos, sin)
     actual_rope = glm.apply_rotary_pos_emb_interleave(
