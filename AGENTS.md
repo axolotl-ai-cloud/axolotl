@@ -108,7 +108,16 @@ The repo pins CI tool versions in `.pre-commit-config.yaml` — never run system
 
 - `pre-commit run --all-files` — ruff, ruff-format, mypy, bandit at the CI-pinned versions
 - `uvx ruff@<rev> check --fix && uvx ruff@<rev> format` — auto-fix with the pinned ruff (`<rev>` = the `ruff-pre-commit` rev in `.pre-commit-config.yaml`)
-- `pytest -m 'not slow' --ignore=tests/e2e tests/` — CPU suite
+- `pytest -m 'not gpu and not slow and not distributed_cpu and not nf4_distributed' --ignore=tests/e2e --ignore=tests/integrations/kernels tests/` — single-process CPU suite
+
+New tests must declare their compute requirements explicitly: `gpu` for CUDA,
+`gpu_blackwell` for single-GPU Blackwell-only kernels, `nvfp4` plus `gpu` for
+multi-GPU NVFP4, and `distributed_cpu` or `nf4_distributed` for CPU process groups.
+Keep hardware/dependency skip guards as well as markers, mark only CUDA cases in
+mixed parameterizations, and avoid GPU work during module import. `slow` is
+additional to hardware markers. Verify that the test path and marker are selected
+by a CI lane with the required hardware; update that lane when necessary. See
+[assigning new tests to compute lanes](.github/CONTRIBUTING.md#assigning-new-tests-to-compute-lanes).
 
 Setup, CI matrix, GPU e2e, skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
