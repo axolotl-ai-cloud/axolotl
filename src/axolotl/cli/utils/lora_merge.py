@@ -4,6 +4,7 @@ import math
 import os
 import re
 import shutil
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -1602,6 +1603,60 @@ _EXPERT_FUSED_GROUPS = (
 )
 
 
+def _stack_expert_tensors(tensors, device):
+    if torch.device(device).type == "cuda" and all(
+        t.device.type == "cpu" and t.dtype == tensors[0].dtype for t in tensors
+    ):
+        # Stack directly into pinned storage to avoid a second host staging copy.
+        staging = torch.empty(
+            (len(tensors), *tensors[0].shape), dtype=tensors[0].dtype, pin_memory=True
+        )
+        torch.stack(tensors, out=staging)
+        return staging.to(device, non_blocking=True)
+    return torch.stack(tensors).to(device)
+
+
+class _ExpertOutputTransfer:
+    """Bound D2H overlap and make outputs CPU-ready when leaving the context."""
+
+    def __init__(self):
+        self.stream = None
+        self.pending = deque()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.stream is not None:
+            self.stream.synchronize()
+        self.pending.clear()
+
+    def copy(self, packed, scale):
+        if packed.device.type != "cuda":
+            return packed.cpu(), scale.cpu()
+        if self.stream is None:
+            self.stream = torch.cuda.Stream(device=packed.device)
+        while self.pending and self.pending[0][0].query():
+            self.pending.popleft()
+        if len(self.pending) >= 2:
+            self.pending[0][0].synchronize()
+            self.pending.popleft()
+        outputs = tuple(
+            torch.empty_like(tensor, device="cpu", pin_memory=True)
+            for tensor in (packed, scale)
+        )
+        self.stream.wait_stream(torch.cuda.current_stream(packed.device))
+        with torch.cuda.stream(self.stream):
+            for output, tensor in zip(outputs, (packed, scale), strict=True):
+                output.copy_(tensor, non_blocking=True)
+                tensor.record_stream(self.stream)
+            complete = torch.cuda.Event()
+            complete.record(self.stream)
+        # Keep both sides alive until DMA finishes, including on error paths.
+        self.pending.append((complete, packed, scale, outputs))
+        return outputs
+
+
 class _Nvfp4ExpertMergeWriter:
     """Folds a FUSED expert LoRA (PEFT ParamWrapper over ``experts.gate_up_proj``/``down_proj``)
     into a base that stores experts PER-EXPERT unfused as modelopt NVFP4
@@ -1662,6 +1717,7 @@ class _Nvfp4ExpertMergeWriter:
         # prefix -> proj -> expert_idx -> {leaf: tensor}
         self.pending: Dict[str, Dict[str, Dict[int, Dict[str, torch.Tensor]]]] = {}
         self._prefix_lora: Dict[str, bool] = {}
+        self._output_transfer = _ExpertOutputTransfer()
         self.merged_groups = 0
         self._delta_mag_sum = 0.0
         self._base_mag_sum = 0.0
@@ -1696,6 +1752,10 @@ class _Nvfp4ExpertMergeWriter:
         """Claim this shard's per-expert NVFP4 tensors for LoRA-targeted expert modules and emit
         the merged tensors of every layer group that is now complete. Returns
         ``(remaining_shard_tensors, emitted_tensors, merged_lora_count)``."""
+        with self._output_transfer:
+            return self._consume(shard_tensors)
+
+    def _consume(self, shard_tensors):
         remaining = dict(shard_tensors)
         for key in list(remaining):
             m = _EXPERT_TRIPLE_RE.match(key)
@@ -1772,6 +1832,7 @@ class _Nvfp4ExpertMergeWriter:
         pts_all: list = []
         pts_fused = None
         fold: list = []
+        requant_scales = {}
         if fresh:
             # mirror fuse_nvfp4_experts: one per-expert pts (max across projs), each
             # proj's ratio folded into its block scales -> dequant here == the fused
@@ -1779,7 +1840,7 @@ class _Nvfp4ExpertMergeWriter:
             pts_all = [
                 torch.stack(
                     [
-                        projs[mp][e]["weight_scale_2"].to(dev).float().reshape(())
+                        projs[mp][e]["weight_scale_2"].float().reshape(())
                         for e in range(E)
                     ]
                 ).view(-1, 1, 1)
@@ -1790,6 +1851,22 @@ class _Nvfp4ExpertMergeWriter:
                 pts_fused = torch.maximum(pts_fused, pts_i)
             # decided over all experts so a chunk folds exactly when the whole group would
             fold = [not torch.allclose(pts_i, pts_fused) for pts_i in pts_all]
+            if not self.dequant:
+                for mp in members:
+                    # Preserve each checkpoint scale's rounding and independent storage.
+                    scales = [
+                        pts_fused[e]
+                        .reshape(projs[mp][e]["weight_scale_2"].shape)
+                        .to(projs[mp][e]["weight_scale_2"].dtype)
+                        .clone()
+                        for e in range(E)
+                    ]
+                    requant_scales[mp] = (
+                        scales,
+                        torch.stack([s.float().reshape(()) for s in scales]).to(dev),
+                    )
+            pts_all = [pts.to(dev) for pts in pts_all]
+            pts_fused = pts_fused.to(dev)
         target = _param_wrapper_target(
             fused_key, self.param_wrapper_map, self.weight_renamings
         )
@@ -1859,7 +1936,9 @@ class _Nvfp4ExpertMergeWriter:
                 part = merged_t[:, start : start + rows, :]
                 start += rows
                 emitted.update(
-                    self._requant_chunk(projs, prefix, mp, part, e0, e1, pts_fused)
+                    self._requant_chunk(
+                        projs, prefix, mp, part, e0, e1, requant_scales.get(mp)
+                    )
                 )
             del merged_t
 
@@ -1889,9 +1968,11 @@ class _Nvfp4ExpertMergeWriter:
                     )
                 )
                 continue
-            qd = torch.stack([projs[mp][e]["weight"].to(dev) for e in range(e0, e1)])
-            sc = torch.stack(
-                [projs[mp][e]["weight_scale"].to(dev) for e in range(e0, e1)]
+            qd = _stack_expert_tensors(
+                [projs[mp][e]["weight"] for e in range(e0, e1)], dev
+            )
+            sc = _stack_expert_tensors(
+                [projs[mp][e]["weight_scale"] for e in range(e0, e1)], dev
             )
             pts = pts_fused[e0:e1]
             if fold[i]:
@@ -1900,34 +1981,28 @@ class _Nvfp4ExpertMergeWriter:
             per_proj.append(nv.dequantize(torch.bfloat16))
         return per_proj[0] if len(per_proj) == 1 else torch.cat(per_proj, dim=1)
 
-    def _requant_chunk(self, projs, prefix, mp, part, e0, e1, pts_fused):
+    def _requant_chunk(self, projs, prefix, mp, part, e0, e1, requant_scales):
         from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
             quantize_nvfp4_merge,
         )
 
         dev = self._dev
-        sc2_in = [projs[mp][e]["weight_scale_2"] for e in range(e0, e1)]
-        if pts_fused is not None:
-            pts_cpu = pts_fused[e0:e1].reshape(-1).cpu()
-            # clone: gate/up share pts_fused, safetensors refuses aliased tensors
-            sc2_out = [
-                pts_cpu[i].reshape(sc2.shape).to(sc2.dtype).clone()
-                for i, sc2 in enumerate(sc2_in)
-            ]
-            pts = torch.stack([s.float().reshape(()) for s in sc2_out]).to(dev)
+        if requant_scales is not None:
+            scales, pts = requant_scales
+            sc2_out = scales[e0:e1]
+            pts = pts[e0:e1]
             packed, scale = quantize_nvfp4_merge(part.float(), pts, scale_mode="fresh")
         else:
-            sc2_out = sc2_in
-            pts = torch.stack([s.float().reshape(()) for s in sc2_in]).to(dev)
-            base_sc = torch.stack(
-                [projs[mp][e]["weight_scale"].to(dev) for e in range(e0, e1)]
+            sc2_out = [projs[mp][e]["weight_scale_2"] for e in range(e0, e1)]
+            pts = torch.stack([s.float().reshape(()) for s in sc2_out]).to(dev)
+            base_sc = _stack_expert_tensors(
+                [projs[mp][e]["weight_scale"] for e in range(e0, e1)], dev
             )
             packed, scale = quantize_nvfp4_merge(
                 part.float(), pts, scale_mode="reuse", base_block_scale=base_sc
             )
         # one transfer per chunk; per-expert rows are disjoint views, which safetensors accepts
-        packed = packed.cpu()
-        scale = scale.cpu()
+        packed, scale = self._copy_outputs_to_cpu(packed, scale)
         emitted = {}
         for i, e in enumerate(range(e0, e1)):
             wkey = f"{prefix}.{e}.{mp}.weight"
@@ -1935,6 +2010,9 @@ class _Nvfp4ExpertMergeWriter:
             emitted[wkey + "_scale"] = scale[i]
             emitted[wkey + "_scale_2"] = sc2_out[i]
         return emitted
+
+    def _copy_outputs_to_cpu(self, packed, scale):
+        return self._output_transfer.copy(packed, scale)
 
     def assert_drained(self) -> None:
         if self.pending:

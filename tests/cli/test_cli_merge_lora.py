@@ -55,3 +55,12 @@ def test_merge_lora_nonexistent_lora_dir(cli_runner, config_path, tmp_path):
         cli, ["merge-lora", str(config_path), "--lora-model-dir", str(lora_dir)]
     )
     assert result.exit_code != 0
+
+
+def test_merge_lora_cpu_threads_override(cli_runner, config_path):
+    with patch("axolotl.cli.merge_lora.do_cli") as mock_do_cli:
+        result = cli_runner.invoke(
+            cli, ["merge-lora", str(config_path), "--merge-num-threads", "4"]
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_do_cli.call_args.kwargs["merge_num_threads"] == "4"
