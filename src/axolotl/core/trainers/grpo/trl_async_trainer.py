@@ -53,6 +53,11 @@ from trl.experimental.async_grpo.packing import TREE_ATTENTION
 from trl.experimental.async_grpo.vllm_client import VLLMClient
 from trl.trainer.utils import add_fused_lm_head, get_config_model_id
 
+from axolotl.core.trainers.grpo.trl_async_packing import (
+    ChainFixedCountBatcher,
+    ChainTokenBudgetBatcher,
+    shares_prefixes,
+)
 from axolotl.core.trainers.grpo.trl_async_rollout import (
     AGGREGATIONS,
     REWARD_SCALINGS,
@@ -369,6 +374,24 @@ def _patched_trl_module(**replacements):
             setattr(trl_async_module, name, value)
 
 
+@contextlib.contextmanager
+def _hidden_layer_types(model: PreTrainedModel):
+    """Hide ``layer_types`` from TRL's ``__init__``.
+
+    TRL rejects any non-attention layer because its trie shares prompt prefixes,
+    which a recurrent layer cannot follow. Rows that never share pack each sample as
+    its own chain, whose boundaries axolotl's packing patches thread into those
+    layers; the check is the only reader of ``layer_types`` during ``__init__``.
+    """
+    text_config = model.config.get_text_config()
+    layer_types = text_config.layer_types
+    text_config.layer_types = None
+    try:
+        yield
+    finally:
+        text_config.layer_types = layer_types
+
+
 def _is_quantized(model: PreTrainedModel) -> bool:
     base = model.get_base_model() if is_peft_model(model) else model
     return bool(getattr(base, "is_quantized", False)) or any(
@@ -548,13 +571,22 @@ class AxolotlAsyncGRPOTrainer(
                 AliasingVLLMClient, alias=args.vllm_lora_alias
             )
         model_id = model
+        self._share_prefixes = True
+        hide_layer_types: contextlib.AbstractContextManager = contextlib.nullcontext()
         if not isinstance(model, str):
             replacements["create_model_from_path"] = _use_loaded_model(model)
             replacements["add_fused_lm_head"] = _add_fused_lm_head_to_base
             model_id = get_config_model_id(model.config)
+            self._share_prefixes = shares_prefixes(model.config)
+            if not self._share_prefixes and getattr(
+                model.config.get_text_config(), "layer_types", None
+            ):
+                hide_layer_types = _hidden_layer_types(model)
+        for scorer in self._trainer_scorers:
+            scorer.share_prefixes = self._share_prefixes
 
         trl_packing._flash_attn = _tree_flash_attn
-        with _patched_trl_module(**replacements):
+        with _patched_trl_module(**replacements), hide_layer_types:
             super().__init__(
                 model=model_id,
                 reward_funcs=reward_funcs,
@@ -611,8 +643,15 @@ class AxolotlAsyncGRPOTrainer(
             else None
         )
         if not self._trainer_scorers:
-            collator = functools.partial(TraceCollator, recorder=self._trace_recorder)
-            with _patched_trl_module(DataCollatorForRollout=collator):
+            replacements: dict[str, Any] = {
+                "DataCollatorForRollout": functools.partial(
+                    TraceCollator, recorder=self._trace_recorder
+                )
+            }
+            if not self._share_prefixes:
+                replacements["TokenBudgetBatcher"] = ChainTokenBudgetBatcher
+                replacements["FixedCountBatcher"] = ChainFixedCountBatcher
+            with _patched_trl_module(**replacements):
                 return super().get_train_dataloader()
         # TRL's dataloader with the step planner in place of its batchers.
         num_processes = self.accelerator.num_processes
@@ -650,6 +689,7 @@ class AxolotlAsyncGRPOTrainer(
                 samples_per_row=self.args.per_device_train_batch_size,
                 scorers=self._trainer_scorers,
                 metrics=self._metrics["train"],
+                share_prefixes=self._share_prefixes,
                 stop_token_ids=self._stop_token_ids()
                 if self.args.mask_truncated_completions
                 else None,

@@ -370,6 +370,7 @@ Requirements:
 - Reward functions run in a spawned process with no GPU, so they must be picklable (module-level functions, not lambdas). Reward models are not supported.
 - A quantized base model (QLoRA, FP8) needs `vllm_lora_sync: true`, since merged weights cannot be folded into quantized ones.
 - The trainer packs with TRL's tree attention, which uses the `kernels-community/flash-attn3` hub kernel. That kernel has builds for SM80 and SM90 only, so on other GPUs (Blackwell) axolotl falls back to `kernels-community/flash-attn2`.
+- Models with recurrent or linear-attention layers (Qwen3.5, Qwen3-Next, Mamba, and the other hybrids axolotl's sample packing supports) train too, but their samples are not prefix-shared: each rollout is packed as its own sequence, and the layers see the boundaries through the same patches as `sample_packing` (GatedDeltaNet models need `flash-linear-attention`). Recurrent models without packed-sequence support are rejected when the config loads.
 
 Without `max_steps`, training stops after `num_epochs` passes over the prompts and `max_steps` becomes a loose upper bound, so use `lr_scheduler: constant` or set `max_steps` for a decaying schedule.
 

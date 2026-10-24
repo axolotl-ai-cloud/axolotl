@@ -85,7 +85,7 @@ class EBFTScorer(TrainerScorer):
             extras = [extra for extra in row.extras if extra["scorer"] == index]
             sequences = [s["score_payload"]["feature_ids"] for s in row.samples]
             sequences += [extra["input_ids"] for extra in extras]
-            packed = pack_sequences(sequences)
+            packed = pack_sequences(sequences, self.share_prefixes)
             packed["uids"] = torch.tensor(
                 [s["score_uid"] for s in row.samples] + [e["uid"] for e in extras],
                 dtype=torch.long,
