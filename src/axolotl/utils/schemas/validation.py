@@ -2700,8 +2700,9 @@ class GRPOVllmValidationMixin:
             LOG.warning(
                 "`trl.use_data_producer` is deprecated: the data producer trainer has "
                 "been removed. It now selects async GRPO (`trl.async_prefetch: true`) "
-                "with `trl.max_staleness: 0`; set those instead. See "
-                f"{DATA_PRODUCER_MIGRATION_DOCS}."
+                "with `trl.max_staleness: 0`, which discards the rollouts in flight at "
+                "every weight sync; `trl.async_prefetch: true` with the default "
+                f"`max_staleness` is faster. See {DATA_PRODUCER_MIGRATION_DOCS}."
             )
             if not trl.get("async_prefetch"):
                 trl["async_prefetch"] = True
