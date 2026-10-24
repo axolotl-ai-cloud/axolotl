@@ -37,7 +37,6 @@ def publish_lora_adapter(
     sync_dir: str,
     version: int,
     timeout: float,
-    alias: str | None = None,
 ):
     """Register ``<sync_dir>/v<version>`` under a fresh versioned adapter name.
 
@@ -45,11 +44,6 @@ def publish_lora_adapter(
     place from disk on every request and keys its prefix cache on the name alone.
     In-flight requests are drained first so at most the previous version can
     still be referenced once generation resumes.
-
-    ``alias`` is a fixed name that is re-pointed at every version, for clients
-    that cannot follow the versioned name. It should be the served base model
-    name: requests arriving between the unload and the reload then fall back to
-    the base model instead of failing.
     """
     base_url = vllm_client.base_url
     # vllm_client.model is re-pointed at each adapter below, so keep the base name.
@@ -69,9 +63,6 @@ def publish_lora_adapter(
     try:
         lora_name = adapter_name(version)
         _load_adapter(base_url, lora_name, adapter_path(version), timeout)
-        if alias:
-            _unload_adapter(base_url, alias, timeout)
-            _load_adapter(base_url, alias, adapter_path(version), timeout)
         vllm_client.model = lora_name
     finally:
         if paused:

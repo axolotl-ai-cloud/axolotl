@@ -8,7 +8,6 @@ Two modes:
 from typing import Any
 
 from axolotl.core.trainers.ebft.args import (
-    AxolotlAsyncEBFTConfig,
     AxolotlEBFTConfig,
     AxolotlStridedEBFTConfig,
 )
@@ -48,22 +47,6 @@ class EBFTStrategy:
             )
 
             return AxolotlTRLAsyncEBFTTrainer
-
-        # Structured mode: async or sync
-        # use_data_producer also triggers async trainer (needed for LoRA sync
-        # without async_prefetch, since sync trainer lacks LoRA sync support)
-        use_async = (
-            cfg
-            and cfg.trl
-            and (
-                getattr(cfg.trl, "async_prefetch", False)
-                or getattr(cfg.trl, "use_data_producer", False)
-            )
-        )
-        if use_async:
-            from axolotl.core.trainers.ebft.trainer import AxolotlAsyncEBFTTrainer
-
-            return AxolotlAsyncEBFTTrainer
         from axolotl.core.trainers.ebft.trainer import AxolotlEBFTTrainer
 
         return AxolotlEBFTTrainer
@@ -79,18 +62,6 @@ class EBFTStrategy:
             )
 
             return AxolotlTRLAsyncEBFTConfig
-
-        # Structured mode: async or sync config
-        use_async = (
-            cfg
-            and cfg.trl
-            and (
-                getattr(cfg.trl, "async_prefetch", False)
-                or getattr(cfg.trl, "use_data_producer", False)
-            )
-        )
-        if use_async:
-            return AxolotlAsyncEBFTConfig
         return AxolotlEBFTConfig
 
     @classmethod
@@ -198,11 +169,6 @@ class EBFTStrategy:
                 if trl.chat_template_kwargs is not None:
                     kwargs["chat_template_kwargs"] = trl.chat_template_kwargs
 
-                # Async prefetch fields (only pass when enabled — sync config doesn't have these)
-                if getattr(trl, "async_prefetch", False):
-                    kwargs["async_prefetch"] = trl.async_prefetch
-                    if getattr(trl, "vllm_sync_interval", None) is not None:
-                        kwargs["vllm_sync_interval"] = trl.vllm_sync_interval
                 if getattr(trl, "vllm_lora_sync", False):
                     kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
 

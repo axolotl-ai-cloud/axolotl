@@ -117,7 +117,7 @@ lora_target_linear: true
 
 trl:
   use_vllm: true
-  use_data_producer: true
+  async_prefetch: true
   vllm_server_host: 0.0.0.0
   vllm_server_port: 8000
   vllm_server_timeout: 300
@@ -376,42 +376,28 @@ Without `max_steps`, training stops after `num_epochs` passes over the prompts a
 
 **Out-of-place merged sync.** When the server has no LoRA support, TRL merges the adapter into the base weights for the send and unmerges it afterwards. In bf16 that round trip does not restore the weights: one sync changed 6% of a layer's frozen weights, and 1000 syncs with a moving adapter left 58% changed and a 1.3% relative drift. Async GRPO instead streams `W + ΔW` computed in fp32 per parameter, so the trained model is never written to. DoRA is supported this way on a single GPU or DDP, but not under FSDP.
 
-### Migrating from the data producer trainer
+### Migrating from the data producer trainer {#sec-data-producer-migration}
 
-Before TRL shipped `AsyncGRPOTrainer`, `async_prefetch` ran axolotl's own background-thread trainer. With `rl: grpo`, these options now differ:
+Axolotl's own GRPO trainer, which ran behind `use_data_producer` and, before TRL shipped `AsyncGRPOTrainer`, behind `async_prefetch`, has been removed. `trl.use_data_producer: true` remains as a deprecated alias for `async_prefetch: true` with `max_staleness: 0`: rollouts of an older policy are dropped, so training stays close to on-policy (the dataloader fetches one micro-batch ahead, so a step's first micro-batch can still be one weight sync old). Config validation rejects the trainer's other options and names what replaces each:
 
-| Option | Async GRPO |
-|--------|------------|
-| `prefetch_depth` | Removed; `max_staleness` bounds how far generation may run ahead |
-| `streaming_partial_batch`, `streaming_min_groups` | Removed; groups are always scored as they finish |
-| `replay_buffer_size`, `reroll_*`, `off_policy_mask_threshold`, `use_bias_correction_kl` | Not available |
-| `batch_flattening` | Not needed; packing is always padding-free |
-| `vllm_importance_sampling_mode: sequence_*` | Not available; use the token modes |
-| `beta`, `sync_ref_model`, `loss_type` other than `dapo`, `num_iterations > 1` | Not available |
+| Option | Replacement |
+|--------|-------------|
+| `use_data_producer` | `async_prefetch: true`, with `max_staleness: 0` for near-synchronous training |
+| `prefetch_depth` | `max_staleness`: how many weight syncs a rollout may lag |
+| `streaming_partial_batch`, `streaming_min_groups` | None needed: groups are scored as they finish |
+| `replay_buffer_size`, `replay_recompute_logps` | None: each rollout is trained on once, and `skip_zero_advantage_batches` drops samples without signal |
+| `reroll_start_fraction`, `reroll_max_groups` | None |
+| `batch_flattening` (with `rl: grpo`) | `token_budget`: rollouts are packed padding-free up to a token budget |
+| `off_policy_mask_threshold`, `use_bias_correction_kl` | Synchronous GRPO only |
+| `vllm_importance_sampling_mode: sequence_*` | Synchronous GRPO only; async GRPO uses the token modes |
+| `beta`, `sync_ref_model`, `loss_type` other than `dapo`, `num_iterations > 1` | Synchronous GRPO only |
 
-Config validation rejects these combinations with a list of what to change.
-
-### Data producer trainer
-
-`use_data_producer: true` without `async_prefetch` (GRPO, or structured EBFT) keeps running on axolotl's data producer trainer (a `GRPOTrainer` subclass), synchronously, for adapter-only LoRA weight sync without async. It is being retired in favor of async GRPO; its own options are:
-
-```yaml
-trl:
-  use_data_producer: true
-  streaming_partial_batch: true   # score one prompt group at a time
-  streaming_min_groups: 1
-  replay_buffer_size: 100         # replace zero-signal groups with cached high-signal ones
-  replay_recompute_logps: true
-  reroll_start_fraction: 0.5      # re-inject all-failed prompts after 50% of training
-  reroll_max_groups: 1
-```
-
-There, `skip_zero_advantage_batches` skips micro-batches whose advantages are all zero, and `reward_num_workers` shards each batch's rewards across subprocesses.
+`skip_zero_advantage_batches` and `reward_num_workers` apply to async GRPO. Plugins' `on_rollouts_scored` hook is called once per optimizer step on rank 0, with the step's prompts, completions, per-function rewards and advantages.
 
 
 ## Importance Sampling and Off-Policy Correction
 
-Async GRPO bounds the per-token ratio between the policy and the vLLM sampler at `vllm_importance_sampling_cap` (see [above](#sec-async)). The data producer trainer and synchronous GRPO instead recompute log-probabilities on the trainer and weight each token by the trainer/sampler ratio:
+Async GRPO bounds the per-token ratio between the policy and the vLLM sampler at `vllm_importance_sampling_cap` (see [above](#sec-async)). Synchronous GRPO instead recomputes log-probabilities on the trainer and weights each token by the trainer/sampler ratio:
 
 ```yaml
 trl:
@@ -420,7 +406,7 @@ trl:
   off_policy_mask_threshold: 0.5       # KL threshold — masks sequences that are too off-policy
 ```
 
-Use `token` level IS. Sequence-level has numerical issues with Liger's chunked computation. The `off_policy_mask_threshold` (OPSM, data producer trainer only) is a safety net that drops sequences where KL divergence exceeds the threshold — 0.5 is a reasonable starting point.
+Use `token` level IS. Sequence-level has numerical issues with Liger's chunked computation. The `off_policy_mask_threshold` (OPSM, synchronous GRPO only) is a safety net that drops sequences where KL divergence exceeds the threshold — 0.5 is a reasonable starting point.
 
 For detailed coverage of IS modes (`token_mask`, `token_truncate`, etc.), capping, and bias-corrected KL, see [vLLM Serving — IS Correction](vllm_serving.qmd#sec-weight-sync).
 
@@ -465,7 +451,7 @@ CUDA_VISIBLE_DEVICES=0,1 axolotl train config.yaml
 ```
 
 :::{.callout-note}
-Async GRPO runs no collectives off the main thread: rank 0 pulls samples from the rollout queue and the dataloader dispatches one packed row to each rank. With the data producer trainer under FSDP, only rank 0 generates in its background thread and results are broadcast to all ranks.
+Async GRPO runs no collectives off the main thread: rank 0 pulls samples from the rollout queue and the dataloader dispatches one packed row to each rank.
 :::
 
 ### DeepSpeed ZeRO-3
@@ -578,12 +564,9 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `max_staleness` | int | `null` (4) | Async GRPO: drop rollouts more than N weight syncs old |
 | `max_inflight_tasks` | int | `null` | Async GRPO: concurrent generation requests (default `max_staleness` x samples per step) |
 | `token_budget` | int | `null` | Async GRPO: max tokens per rank's micro-batch (default: vLLM `max_model_len`; <= 0 packs `micro_batch_size` samples) |
-| `skip_zero_advantage_batches` | bool | `true` | Async GRPO: drop zero-advantage samples; data producer trainer: skip all-zero micro-batches |
+| `skip_zero_advantage_batches` | bool | `true` | Async GRPO: drop zero-advantage samples |
 | `reward_num_workers` | int | `1` | Processes for synchronous reward functions |
-| `use_data_producer` | bool | `false` | Data producer trainer (LoRA sync without async) |
-| `prefetch_depth` | int | `null` | Data producer trainer: batches to prefetch ahead |
-| `streaming_partial_batch` | bool | `null` | Data producer trainer: score prompt groups incrementally |
-| `streaming_min_groups` | int | `null` | Data producer trainer: minimum groups per streaming chunk |
+| `use_data_producer` | bool | `false` | Deprecated: `async_prefetch: true` with `max_staleness: 0` ([migration](#sec-data-producer-migration)) |
 | `vllm_enable_sleep_mode` | bool | `null` | Offload vLLM weights when idle (colocate mode) |
 
 ### Importance sampling
@@ -596,19 +579,8 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `vllm_importance_sampling_cap` | float | `null` | Cap C for IS ratio clipping/masking |
 | `vllm_importance_sampling_clip_min` | float | `null` | Lower clip bound for the IS ratio (TRL >= 1.6) |
 | `vllm_importance_sampling_clip_max` | float | `null` | Upper clip bound for the IS ratio (TRL >= 1.6) |
-| `off_policy_mask_threshold` | float | `null` | KL threshold for off-policy sequence masking (OPSM) |
-| `use_bias_correction_kl` | bool | `null` | Apply IS correction to KL divergence term |
-
-### Replay and re-roll
-
-Data producer trainer only.
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `replay_buffer_size` | int | `0` | Max cached high-signal groups. 0 = disabled |
-| `replay_recompute_logps` | bool | `true` | Recompute log-probs for replayed data with current model |
-| `reroll_start_fraction` | float | `1.0` | Start re-rolling failed prompts after this fraction of training. 1.0 = disabled |
-| `reroll_max_groups` | int | `1` | Max prompt groups to replace with re-rolls per batch |
+| `off_policy_mask_threshold` | float | `null` | KL threshold for off-policy sequence masking (OPSM), synchronous GRPO |
+| `use_bias_correction_kl` | bool | `null` | Apply IS correction to KL divergence term, synchronous GRPO |
 
 ### Reference model
 

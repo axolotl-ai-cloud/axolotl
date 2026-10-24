@@ -484,7 +484,7 @@ class TestVllmColocateCompat:
             (
                 {"adapter": "lora"},
                 {"async_prefetch": True},
-                "not supported by the async GRPO",
+                "vllm_mode: colocate` is not supported; use `server`",
             ),
         ],
     )
@@ -547,17 +547,14 @@ class TestAsyncGRPOCompat:
     def test_lists_every_problem(self, min_base_cfg):
         with pytest.raises(ValueError) as error:
             validate_config(
-                self._cfg(min_base_cfg, trl={"beta": 0.04, "replay_buffer_size": 8})
+                self._cfg(
+                    min_base_cfg, trl={"beta": 0.04, "off_policy_mask_threshold": 0.5}
+                )
             )
         assert "no reference model" in str(error.value)
-        assert "replay_buffer_size" in str(error.value)
-
-    def test_data_producer_trainer_keeps_its_options(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(
-            rl="grpo",
-            trl={"use_vllm": True, "use_data_producer": True, "replay_buffer_size": 8},
+        assert "off_policy_mask_threshold` applies to synchronous GRPO" in str(
+            error.value
         )
-        assert validate_config(cfg).trl.replay_buffer_size == 8
 
     def test_decaying_schedule_without_max_steps_warns(self, min_base_cfg):
         cfg = self._cfg(min_base_cfg, lr_scheduler="cosine")
@@ -565,6 +562,63 @@ class TestAsyncGRPOCompat:
         with patch("axolotl.utils.schemas.validation.LOG.warning") as warning:
             validate_config(cfg)
         assert any("lr_scheduler: cosine" in c.args[0] for c in warning.call_args_list)
+
+
+class TestDataProducerRemoval:
+    """The data producer trainer is gone; its options fail with their replacement."""
+
+    def test_use_data_producer_maps_to_async_grpo(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo", max_steps=10, trl={"use_vllm": True, "use_data_producer": True}
+        )
+        with patch("axolotl.utils.schemas.validation.LOG.warning") as warning:
+            validated = validate_config(cfg)
+        assert validated.trl.async_prefetch and validated.trl.max_staleness == 0
+        assert not validated.trl.use_data_producer
+        assert any(
+            "use_data_producer` is deprecated" in c.args[0]
+            for c in warning.call_args_list
+        )
+
+    def test_use_data_producer_keeps_an_explicit_async_setup(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            max_steps=10,
+            trl={
+                "use_vllm": True,
+                "use_data_producer": True,
+                "async_prefetch": True,
+                "max_staleness": 2,
+            },
+        )
+        assert validate_config(cfg).trl.max_staleness == 2
+
+    def test_removed_options_name_their_replacement(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            batch_flattening=True,
+            trl={
+                "use_vllm": True,
+                "prefetch_depth": 2,
+                "replay_buffer_size": 0,
+                "reroll_start_fraction": 0.5,
+            },
+        )
+        with pytest.raises(ValueError) as error:
+            validate_config(cfg)
+        message = str(error.value)
+        assert "data producer trainer has been removed" in message
+        assert "`trl.prefetch_depth`: `trl.max_staleness`" in message
+        assert "`trl.replay_buffer_size`" in message
+        assert "`trl.reroll_start_fraction`" in message
+        assert "`batch_flattening`: `trl.token_budget`" in message
+        assert "docs/grpo.qmd#sec-data-producer-migration" in message
+
+    def test_batch_flattening_still_applies_outside_grpo(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            batch_flattening=True, micro_batch_size=2, flash_attention=True
+        )
+        assert validate_config(cfg).batch_flattening
 
 
 class TestTrainableTokenWarning:

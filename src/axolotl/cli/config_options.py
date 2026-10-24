@@ -1594,19 +1594,13 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.use-data-producer/--no-trl.use-data-producer",),
         "trl__use_data_producer",
         None,
-        "Use the GRPODataProducer protocol for online data generation (the data producer trainer). With rl: grpo or structured EBFT and async_prefetch, async GRPO runs on TRL's AsyncGRPOTrainer instead.",
+        "Deprecated: the data producer trainer was removed. Maps to async_prefetch: true with max_staleness: 0.",
     ),
     (
         ("--trl.async-prefetch/--no-trl.async-prefetch",),
         "trl__async_prefetch",
         None,
         "Overlap generation and training. With rl: grpo/gdpo this runs on TRL's AsyncGRPOTrainer: a vLLM server generates continuously while the trainer consumes scored samples up to max_staleness policy versions old. Structured EBFT runs on it too.",
-    ),
-    (
-        ("--trl.prefetch-depth",),
-        "trl__prefetch_depth",
-        "int",
-        "Number of rollouts to prefetch ahead of training (data producer trainer only).",
     ),
     (
         ("--trl.vllm-sync-interval",),
@@ -1633,18 +1627,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Async GRPO: max unique tokens packed into one rank's micro-batch. Defaults to the vLLM server's max_model_len; <= 0 packs micro_batch_size samples per rank instead.",
     ),
     (
-        ("--trl.streaming-partial-batch/--no-trl.streaming-partial-batch",),
-        "trl__streaming_partial_batch",
-        None,
-        "Score prompt groups incrementally instead of the full batch at once (data producer trainer only; async GRPO always scores per group).",
-    ),
-    (
-        ("--trl.streaming-min-groups",),
-        "trl__streaming_min_groups",
-        "int",
-        "Minimum prompt groups to score per streaming chunk.",
-    ),
-    (
         (
             "--trl.vllm-importance-sampling-correction/--no-trl.vllm-importance-sampling-correction",
         ),
@@ -1668,49 +1650,25 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.off-policy-mask-threshold",),
         "trl__off_policy_mask_threshold",
         "float",
-        "KL threshold for off-policy sequence masking (OPSM). None = disabled. Data producer trainer only.",
+        "KL threshold for off-policy sequence masking (OPSM). None = disabled. Synchronous GRPO only.",
     ),
     (
         ("--trl.use-bias-correction-kl/--no-trl.use-bias-correction-kl",),
         "trl__use_bias_correction_kl",
         None,
-        "Apply IS correction to KL divergence term. Data producer trainer only.",
+        "Apply IS correction to KL divergence term. Synchronous GRPO only.",
     ),
     (
         ("--trl.reward-num-workers",),
         "trl__reward_num_workers",
         "int",
-        "Number of persistent subprocess workers for parallel reward computation. Each worker has its own main thread so signal.alarm() (used by math_verify) works correctly. Work is sharded across workers by prompt groups. Applies to async GRPO and the data producer trainer, for synchronous reward functions.",
-    ),
-    (
-        ("--trl.replay-buffer-size",),
-        "trl__replay_buffer_size",
-        "int",
-        "[Experimental, disabled by default] Size of the replay buffer for storing high-signal rollout groups. When > 0, groups with reward variance are cached and used to replace zero-signal groups (where all rewards are identical). Set to 0 to disable. Data producer trainer only.",
-    ),
-    (
-        ("--trl.replay-recompute-logps/--no-trl.replay-recompute-logps",),
-        "trl__replay_recompute_logps",
-        None,
-        "When True (default), recompute old_per_token_logps for replayed groups using the current training model. This fixes the importance sampling mismatch that occurs when replaying stale data. Only relevant when replay_buffer_size > 0.",
-    ),
-    (
-        ("--trl.reroll-start-fraction",),
-        "trl__reroll_start_fraction",
-        "float",
-        "Fraction of total training steps after which deferred re-rolling begins. Zero-signal prompts (where all rewards in a group are identical) are buffered and re-injected into later batches when the model is more likely to solve them. Set to 1.0 to disable. Data producer trainer only.",
-    ),
-    (
-        ("--trl.reroll-max-groups",),
-        "trl__reroll_max_groups",
-        "int",
-        "Maximum number of prompt groups to replace with re-roll candidates per batch. Higher values increase data utilization but reduce prompt diversity. Data producer trainer only.",
+        "Number of persistent subprocess workers for parallel reward computation. Each worker has its own main thread so signal.alarm() (used by math_verify) works correctly. Work is sharded across workers by prompt groups. Async GRPO, for synchronous reward functions.",
     ),
     (
         ("--trl.skip-zero-advantage-batches/--no-trl.skip-zero-advantage-batches",),
         "trl__skip_zero_advantage_batches",
         None,
-        "When True, skip gradient computation for micro-batches where all advantages are zero (no learning signal). This avoids the forward/backward pass entirely when no learning signal is present. The step is logged with skipped_zero_adv_batches=1 for monitoring. Async GRPO drops each zero-advantage sample before packing instead (logged as sample/dropped_zero_adv_total).",
+        "Async GRPO: drop samples whose advantage is zero (no learning signal) before packing, logged as sample/dropped_zero_adv_total. With rewards scored on the trainer they are taken out of the loss instead.",
     ),
     (
         ("--trl.vllm-lora-sync/--no-trl.vllm-lora-sync",),

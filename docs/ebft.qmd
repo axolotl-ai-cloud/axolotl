@@ -106,10 +106,8 @@ trl:
   vllm_server_port: 8000
   vllm_lora_sync: true
   vllm_sync_interval: 3
-  use_data_producer: true
-  async_prefetch: false
+  async_prefetch: true
   scale_rewards: true
-  loss_type: grpo
 
 vllm:
   gpu_memory_utilization: 0.5
@@ -438,7 +436,7 @@ These parameters are set under the `ebft:` key in the YAML config.
 | `alignment_coef` | `float` | `1.0` | Weight for alignment reward (cosine similarity with ground truth) |
 | `diversity_coef` | `float` | `1.0` | Weight for diversity penalty (pairwise dot product between samples) |
 | `ce_coef` | `float` | `0.0` | Cross-entropy loss coefficient on ground-truth tokens |
-| `adaptive_max_tokens` | `bool` | `true` | Dynamically set vLLM `max_tokens` based on ground-truth length (structured mode) |
+| `adaptive_max_tokens` | `bool` | `true` | Dynamically set vLLM `max_tokens` based on ground-truth length (async structured mode) |
 | `gt_length_multiplier` | `float` | `1.5` | Multiplier for ground-truth token count when computing adaptive max tokens (min 0.1) |
 
 ### Strided Mode Parameters
@@ -469,7 +467,7 @@ These are set under the `trl:` key and control the GRPO training loop.
 | `use_vllm` | `bool` | -- | Enable vLLM generation backend |
 | `vllm_lora_sync` | `bool` | `false` | Sync LoRA adapters via filesystem (recommended) |
 | `vllm_sync_interval` | `int` | `1` | Steps between weight syncs to vLLM |
-| `use_data_producer` | `bool` | -- | Required for sync mode with LoRA sync |
+| `use_data_producer` | `bool` | -- | Deprecated: `async_prefetch: true` with `max_staleness: 0` |
 | `async_prefetch` | `bool` | `false` | Run on async GRPO (overlaps generation with training) |
 | `max_staleness` | `int` | `4` | Async: drop rollouts more than this many weight syncs old |
 | `generation_kwargs` | `dict` | -- | Extra vLLM sampling parameters, e.g. `stop_token_ids` |
