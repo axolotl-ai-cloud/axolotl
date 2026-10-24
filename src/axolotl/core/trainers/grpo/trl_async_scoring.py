@@ -35,6 +35,7 @@ from accelerate.utils import gather_object
 from trl.experimental.async_grpo.packing import TreeRow
 from trl.trainer.utils import pad
 
+from axolotl.core.trainers.grpo.trl_async_packing import ChainRow
 from axolotl.core.trainers.grpo.trl_async_rollout import (
     SCORE_PAYLOAD,
     compute_group_advantages,
@@ -54,6 +55,8 @@ class TrainerScorer:
     """
 
     name = "scorer"
+    # False for models with recurrent layers: pack each sequence as its own chain.
+    share_prefixes = True
 
     def group_extras(self, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Sequences scored with a group but not trained, e.g. a reference answer."""
@@ -92,7 +95,13 @@ class ScoredRow(TreeRow):
         self.extras: list[dict[str, Any]] = []
 
 
-def pack_sequences(sequences: list[np.ndarray]) -> dict[str, torch.Tensor]:
+class ScoredChainRow(ChainRow, ScoredRow):
+    """A ``ScoredRow`` that packs each sample as its own chain."""
+
+
+def pack_sequences(
+    sequences: list[np.ndarray], share_prefixes: bool = True
+) -> dict[str, torch.Tensor]:
     """Tree-pack token sequences for a no-grad forward, as ``TreeRow.pack`` would.
 
     Besides the model inputs (``input_ids``, ``position_ids``, ``tree_*``), returns
@@ -101,7 +110,7 @@ def pack_sequences(sequences: list[np.ndarray]) -> dict[str, torch.Tensor]:
     ``input_ids``, ``tree_kv_index``, ``tree_cu_seqlens_q`` and ``offsets``, so a padded
     copy can be cut back.
     """
-    row = TreeRow()
+    row = TreeRow() if share_prefixes else ChainRow()
     for ids in sequences:
         row.add(
             {
@@ -239,6 +248,7 @@ class StepPlanner(torch.utils.data.IterableDataset):
         samples_per_row: int,
         scorers: list[TrainerScorer],
         metrics: dict,
+        share_prefixes: bool = True,
         stop_token_ids: frozenset[int] | None = None,
     ):
         self.dataset = dataset
@@ -248,6 +258,7 @@ class StepPlanner(torch.utils.data.IterableDataset):
         self.samples_per_row = samples_per_row
         self.scorers = scorers
         self.metrics = metrics
+        self.row_cls = ScoredRow if share_prefixes else ScoredChainRow
         self.stop_token_ids = stop_token_ids
         self.reward_names: list[str] | None = None
         self._uids = itertools.count()
@@ -276,7 +287,7 @@ class StepPlanner(torch.utils.data.IterableDataset):
             accepted, rows, pending = [], self._new_rows(), group
 
     def _new_rows(self) -> list[ScoredRow]:
-        return [ScoredRow() for _ in range(self.steps * self.num_processes)]
+        return [self.row_cls() for _ in range(self.steps * self.num_processes)]
 
     def _read_group(self, source) -> _Group:
         # A group is read whole before anything is yielded, so the staleness check
