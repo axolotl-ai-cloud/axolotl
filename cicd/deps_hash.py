@@ -68,8 +68,6 @@ def compute(
         f"extras={env.get('AXOLOTL_EXTRAS', '')} args={env.get('AXOLOTL_ARGS', '')} "
         f"base={env.get('BASE_TAG', '')}".encode()
     )
-    if env.get("BASE_IMAGE"):
-        digest.update(f"image={env['BASE_IMAGE']}".encode())
     day = today or dt.datetime.now(dt.UTC).date()
     if env.get("NIGHTLY_BUILD") == "true":
         digest.update(day.isoformat().encode())
