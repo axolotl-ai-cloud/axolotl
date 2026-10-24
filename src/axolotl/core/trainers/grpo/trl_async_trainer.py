@@ -39,7 +39,10 @@ from datasets import Dataset
 from torch.distributed.tensor import DTensor
 from torch.utils.data import DataLoader
 from transformers import PreTrainedModel
-from trl.experimental.async_grpo import async_grpo_trainer as trl_async_module
+from trl.experimental.async_grpo import (
+    async_grpo_trainer as trl_async_module,
+    packing as trl_packing,
+)
 from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig
 from trl.experimental.async_grpo.async_grpo_trainer import (
     AsyncGRPOTrainer,
@@ -309,6 +312,24 @@ def _add_fused_lm_head_to_base(model, **kwargs):
     )
 
 
+_trl_tree_flash_attn = trl_packing._flash_attn
+
+
+@functools.cache
+def _tree_flash_attn():
+    """TRL's FA3 kernel, or FA2's where FA3 has no build for the GPU (Blackwell)."""
+    try:
+        return _trl_tree_flash_attn()
+    except RuntimeError as err:
+        LOG.warning(
+            f"Tree attention uses flash-attn2: flash-attn3 failed to load: {err}"
+        )
+        from kernels import get_kernel
+
+        # Same varlen API, and it aligns the causal mask bottom-right like FA3.
+        return get_kernel("kernels-community/flash-attn2", version=3)
+
+
 @contextlib.contextmanager
 def _patched_trl_module(**replacements):
     originals = {name: getattr(trl_async_module, name) for name in replacements}
@@ -505,6 +526,7 @@ class AxolotlAsyncGRPOTrainer(
             replacements["add_fused_lm_head"] = _add_fused_lm_head_to_base
             model_id = get_config_model_id(model.config)
 
+        trl_packing._flash_attn = _tree_flash_attn
         with _patched_trl_module(**replacements):
             super().__init__(
                 model=model_id,
