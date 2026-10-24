@@ -7,6 +7,7 @@ Everything here runs inside the CUDA-free child process TRL's
 from __future__ import annotations
 
 import asyncio
+import functools
 import multiprocessing as mp
 import queue
 import time
@@ -14,6 +15,7 @@ import warnings
 from typing import Any
 
 import numpy as np
+from trl.chat_template_utils import add_response_schema
 from trl.experimental.async_grpo.async_rollout_worker import (
     AsyncRolloutWorker,
     RolloutGroup,
@@ -22,7 +24,10 @@ from trl.experimental.async_grpo.async_rollout_worker import (
 )
 from trl.trainer.utils import is_async_callable, print_prompt_completions_sample
 
+from axolotl.utils.logging import get_logger
 from axolotl.utils.reward_worker import reward_worker_main
+
+LOG = get_logger(__name__)
 
 AGGREGATIONS = ("sum_then_normalize", "normalize_then_sum")
 REWARD_SCALINGS = ("group", "none")
@@ -149,6 +154,13 @@ class RewardProcessPool:
         self._workers = []
 
 
+def _decode_as_message(tokenizer, ids, *args, **kwargs) -> dict[str, str]:
+    return {
+        "role": "assistant",
+        "content": tokenizer.decode(ids, skip_special_tokens=True),
+    }
+
+
 class AxolotlRolloutLoop(_AsyncRolloutLoop):
     """TRL's rollout loop with GRPOTrainer's reward options and parallel scoring."""
 
@@ -161,7 +173,32 @@ class AxolotlRolloutLoop(_AsyncRolloutLoop):
         reward_num_workers: int = 1,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        tokenizer = kwargs["processing_class"]
+        decode_responses = False
+        if (
+            getattr(tokenizer, "response_template", None) is None
+            and getattr(tokenizer, "response_schema", None) is None
+            and not (kwargs.get("tools") or kwargs.get("environment_factory"))
+        ):
+            # TRL ships response parsers, which read tool calls out of completions, for
+            # some chat templates only and refuses to start on any other. Without
+            # tools, the decoded completion is the whole assistant message.
+            try:
+                kwargs["processing_class"] = add_response_schema(tokenizer)
+            except ValueError:
+                decode_responses = True
+                tokenizer.response_template = ""  # passes TRL's check for a parser
+        try:
+            super().__init__(**kwargs)
+        finally:
+            if decode_responses:
+                tokenizer.response_template = None
+        if decode_responses:
+            tokenizer.parse_response = functools.partial(_decode_as_message, tokenizer)
+            LOG.info(
+                "TRL has no response parser for this chat template; completions are "
+                "decoded as plain assistant messages."
+            )
         num_columns = len(self.reward_func_names)
         if reward_weights is None:
             reward_weights = [1.0] * num_columns
