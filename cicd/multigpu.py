@@ -47,10 +47,15 @@ temp_dir = tempfile.mkdtemp()
 with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
     f.write(dockerfile_contents)
 
-cicd_image = Image.from_dockerfile(
-    pathlib.Path(temp_dir) / "Dockerfile",
-    gpu="A10G",
-).env(df_args)
+cicd_image = (
+    Image.from_dockerfile(
+        pathlib.Path(temp_dir) / "Dockerfile",
+        gpu="A10G",
+    )
+    # cwd leads sys.path; from the image's checkout it shadows the cicd/ Modal mounts at /root
+    .workdir("/root")
+    .env(df_args)
+)
 
 app = App("Axolotl CI/CD", secrets=[])
 
