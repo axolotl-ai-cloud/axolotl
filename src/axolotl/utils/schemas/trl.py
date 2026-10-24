@@ -276,7 +276,9 @@ class TRLConfig(BaseModel):
         default=False,
         json_schema_extra={
             "description": "Deprecated: the data producer trainer was removed. Maps to "
-            "async_prefetch: true with max_staleness: 0."
+            "async_prefetch: true with max_staleness: 0, which discards in-flight "
+            "rollouts at every weight sync; async_prefetch with the default "
+            "max_staleness is faster."
         },
     )
     async_prefetch: bool = Field(

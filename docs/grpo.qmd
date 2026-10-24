@@ -387,11 +387,15 @@ Without `max_steps`, training stops after `num_epochs` passes over the prompts a
 
 ### Migrating from the data producer trainer {#sec-data-producer-migration}
 
-Axolotl's own GRPO trainer, which ran behind `use_data_producer` and, before TRL shipped `AsyncGRPOTrainer`, behind `async_prefetch`, has been removed. `trl.use_data_producer: true` remains as a deprecated alias for `async_prefetch: true` with `max_staleness: 0`: rollouts of an older policy are dropped, so training stays close to on-policy (the dataloader fetches one micro-batch ahead, so a step's first micro-batch can still be one weight sync old). Config validation rejects the trainer's other options and names what replaces each:
+Axolotl's own GRPO trainer, which ran behind `use_data_producer` and, before TRL shipped `AsyncGRPOTrainer`, behind `async_prefetch`, has been removed. `trl.use_data_producer: true` remains as a deprecated alias for `async_prefetch: true` with `max_staleness: 0`: rollouts of an older policy are dropped, so training stays close to on-policy (the dataloader fetches one micro-batch ahead, so a step's first micro-batch can still be one weight sync old).
+
+The alias is slower than the trainer it replaces: every weight sync discards the generation requests still in flight. Training Qwen2.5-1.5B with LoRA on GSM8K, it dropped about 85 samples per step and took 22.5 s per step, against 16.7 s on the old synchronous path. Unless every rollout must come from the current policy, set `async_prefetch: true` and keep the default `max_staleness` (4): the same run was 12% faster per step than the old trainer's async mode.
+
+Config validation rejects the trainer's other options and names what replaces each:
 
 | Option | Replacement |
 |--------|-------------|
-| `use_data_producer` | `async_prefetch: true`, with `max_staleness: 0` for near-synchronous training |
+| `use_data_producer` | `async_prefetch: true` with the default `max_staleness`; `max_staleness: 0` keeps rollouts near-synchronous at the cost above |
 | `prefetch_depth` | `max_staleness`: how many weight syncs a rollout may lag |
 | `streaming_partial_batch`, `streaming_min_groups` | None needed: groups are scored as they finish |
 | `replay_buffer_size`, `replay_recompute_logps` | None: each rollout is trained on once, and `skip_zero_advantage_batches` drops samples without signal |
@@ -576,7 +580,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `token_budget` | int | `null` | Async GRPO: max tokens per rank's micro-batch (default: vLLM `max_model_len`; <= 0 packs `micro_batch_size` samples) |
 | `skip_zero_advantage_batches` | bool | `true` | Async GRPO: drop zero-advantage samples |
 | `reward_num_workers` | int | `1` | Processes for synchronous reward functions |
-| `use_data_producer` | bool | `false` | Deprecated: `async_prefetch: true` with `max_staleness: 0` ([migration](#sec-data-producer-migration)) |
+| `use_data_producer` | bool | `false` | Deprecated: `async_prefetch: true` with `max_staleness: 0`, slower than the default staleness ([migration](#sec-data-producer-migration)) |
 | `vllm_enable_sleep_mode` | bool | `null` | Offload vLLM weights when idle (colocate mode) |
 
 ### Importance sampling

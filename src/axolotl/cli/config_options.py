@@ -1600,7 +1600,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.use-data-producer/--no-trl.use-data-producer",),
         "trl__use_data_producer",
         None,
-        "Deprecated: the data producer trainer was removed. Maps to async_prefetch: true with max_staleness: 0.",
+        "Deprecated: the data producer trainer was removed. Maps to async_prefetch: true with max_staleness: 0, which discards in-flight rollouts at every weight sync; async_prefetch with the default max_staleness is faster.",
     ),
     (
         ("--trl.async-prefetch/--no-trl.async-prefetch",),
