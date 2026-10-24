@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from axolotl.utils.gguf import LORA_OUTTYPES
+
 # Weight types accepted by llama.cpp's `llama-quantize`. Validated up front so a typo
 # fails immediately rather than after the (slow) f16 conversion has already run.
 GGUF_QUANT_TYPES = frozenset(
@@ -41,6 +43,10 @@ class ExportConfig(BaseModel):
         default=None,
         description="Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
     )
+    lora: bool = Field(
+        default=False,
+        description="Export a LoRA adapter as a standalone GGUF. Auto-detected from the output directory; set explicitly when both merged/ and an adapter are present.",
+    )
 
     @field_validator("quantize", mode="before")
     @classmethod
@@ -59,6 +65,17 @@ class ExportConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_quantize(self):
+        if self.lora:
+            if self.quantize:
+                raise ValueError(
+                    "`export.quantize` is not supported for LoRA adapter exports. "
+                    "llama-quantize only accepts full models, not adapters."
+                )
+            if self.outtype not in LORA_OUTTYPES:
+                raise ValueError(
+                    f"`export.outtype` must be one of {sorted(LORA_OUTTYPES)} for "
+                    f"LoRA adapter exports, not '{self.outtype}'."
+                )
         if not self.quantize:
             return self
         # llama.cpp refuses to dequantize an already-quantized source.
