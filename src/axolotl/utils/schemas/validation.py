@@ -2095,8 +2095,7 @@ class ModelCompatibilityValidationMixin:
         if self.activation_offloading and self.activation_offloading != "hidden_states":
             raise ValueError(
                 "selective_checkpointing is only compatible with "
-                "activation_offloading: hidden_states (or false); the TRL offloader "
-                "paths bypass HF gradient checkpointing"
+                "activation_offloading: hidden_states (or false)"
             )
         sac = self.selective_checkpointing
         fused_lora = any(
