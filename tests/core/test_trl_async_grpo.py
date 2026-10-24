@@ -186,13 +186,17 @@ class TestConfig:
     def test_rejects_cap_inside_trust_region(self, tmp_path):
         with pytest.raises(ValueError, match="1 \\+ epsilon_high"):
             AxolotlAsyncGRPOConfig(
-                output_dir=str(tmp_path), vllm_importance_sampling_cap=1.1
+                output_dir=str(tmp_path),
+                use_cpu=True,
+                vllm_importance_sampling_cap=1.1,
             )
 
     def test_rejects_sequence_modes(self, tmp_path):
         with pytest.raises(ValueError, match="vllm_importance_sampling_mode"):
             AxolotlAsyncGRPOConfig(
-                output_dir=str(tmp_path), vllm_importance_sampling_mode="sequence_mask"
+                output_dir=str(tmp_path),
+                use_cpu=True,
+                vllm_importance_sampling_mode="sequence_mask",
             )
 
 
