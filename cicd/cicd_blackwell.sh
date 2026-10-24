@@ -2,34 +2,20 @@
 # Single-GPU tests that cannot run on the L40S lanes (pytest -m gpu_blackwell, see tests/conftest.py).
 set -euo pipefail
 
-# Blackwell-only kernel stack, pinned to docker/Dockerfile-cloud-blackwell-uv; the shared CI
-# image stays L40S-sized. torch is pinned so the resolver cannot swap the image's build.
-# DeepEP comes from cicd/deep_ep.py's cached wheel, installed before this script runs.
-torch_version=$(python -c "import torch; print(torch.__version__)")
-uv pip install --python "$(command -v python)" \
-  "torch==${torch_version}" \
-  "flash-attn-4[cu13]==4.0.0b35" \
-  "quack-kernels[cu13]==0.6.5"
-# a missing package here would turn the lane into a skip-only run
+# The image installs axolotl's `blackwell` extra (AXOLOTL_EXTRAS) and cicd/deep_ep.py installs DeepEP
+# before this runs; log what resolved. A missing one raises here instead of a skip-only run.
 python - <<'BLACKWELL_DEPS'
 import importlib.metadata as md
 
-missing = []
-for dist in (
-    "deep-ep",
-    "flash-attn-4",
-    "quack-kernels",
-    "nvidia-cutlass-dsl",
-    "triton",
-    "torchao",
-):
-    try:
-        print(f"{dist}=={md.version(dist)}", flush=True)
-    except md.PackageNotFoundError:
-        missing.append(dist)
-assert not missing, f"Blackwell stack is missing {missing}"
+from packaging.requirements import Requirement
 
-import deep_ep  # noqa: F401  # the wheel links nvshmem and torch; import catches ABI drift
+stack = [
+    Requirement(r).name
+    for r in md.requires("axolotl") or []
+    if 'extra == "blackwell"' in r
+]
+for dist in [*stack, "nvidia-cutlass-dsl", "deep-ep", "triton", "torchao"]:
+    print(f"{dist}=={md.version(dist)}", flush=True)
 BLACKWELL_DEPS
 
 python - <<'BLACKWELL_ENV'
