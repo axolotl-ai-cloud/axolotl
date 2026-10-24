@@ -365,6 +365,7 @@ Requirements:
 - `vllm_mode: server`. Colocate mode is not supported.
 - FSDP2 or DDP. DeepSpeed and `context_parallel_size > 1` are not supported.
 - Conversational prompts (a list of messages in the `prompt` column). Text-only: multimodal datasets are not supported.
+- Reward functions get each completion as an assistant message. TRL splits out reasoning and tool calls only for the chat templates it ships a response parser for (Qwen, Llama 3.1/3.2, Gemma 4 and a few others); with any other template, including axolotl's `chatml` and `llama3`, the message content is the decoded completion.
 - No reference model: `beta` must be 0, and only the token-level clipped loss (`loss_type: dapo`) is available.
 - Reward functions run in a spawned process with no GPU, so they must be picklable (module-level functions, not lambdas). Reward models are not supported.
 - A quantized base model (QLoRA, FP8) needs `vllm_lora_sync: true`, since merged weights cannot be folded into quantized ones.

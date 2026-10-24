@@ -32,3 +32,12 @@ def start_time_reward(completions, **kwargs):
     start = time.time()
     time.sleep(0.3)
     return [start] * len(completions)
+
+
+def lookup_tool(query: str) -> str:
+    """Look up a query.
+
+    Args:
+        query: What to look up.
+    """
+    return query
