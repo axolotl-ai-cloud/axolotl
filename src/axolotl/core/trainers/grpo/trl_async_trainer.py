@@ -64,6 +64,11 @@ from axolotl.core.trainers.grpo.trl_async_scoring import (
     check_step_capacity,
     score_step,
 )
+from axolotl.core.trainers.grpo.trl_async_traces import (
+    TraceCollator,
+    TraceRecorder,
+    rollout_traces,
+)
 from axolotl.core.trainers.mixins import (
     CheckpointWriteRetryMixin,
     DistributedParallelMixin,
@@ -72,6 +77,7 @@ from axolotl.core.trainers.mixins import (
 )
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.training_args_base import AxolotlTrainingMixins
+from axolotl.integrations.base import PluginManager
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -422,6 +428,7 @@ class AxolotlAsyncGRPOTrainer(
             )
         self._trainer_scorers = list(trainer_scorers or [])
         self._step_planner: StepPlanner | None = None
+        self._trace_recorder: TraceRecorder | None = None
         if rollout_func is not None:
             raise ValueError(
                 "Async GRPO generates in TRL's rollout worker and does not take a "
@@ -549,8 +556,15 @@ class AxolotlAsyncGRPOTrainer(
         return frozenset([*self.eos_token_ids, self.processing_class.pad_token_id])
 
     def get_train_dataloader(self) -> DataLoader:
+        self._trace_recorder = (
+            TraceRecorder()
+            if self.accelerator.is_main_process and PluginManager.get_instance().plugins
+            else None
+        )
         if not self._trainer_scorers:
-            return super().get_train_dataloader()
+            collator = functools.partial(TraceCollator, recorder=self._trace_recorder)
+            with _patched_trl_module(DataCollatorForRollout=collator):
+                return super().get_train_dataloader()
         # TRL's dataloader with the step planner in place of its batchers.
         num_processes = self.accelerator.num_processes
         steps = self.args.gradient_accumulation_steps
@@ -603,6 +617,7 @@ class AxolotlAsyncGRPOTrainer(
                     groups_trained=self._trained_groups,
                     metrics=self._metrics["train"],
                     token_budget=max(self.args.token_budget or 0, 0),
+                    recorder=self._trace_recorder,
                     scorers=self._trainer_scorers,
                 ),
                 num_workers=0,
@@ -613,9 +628,25 @@ class AxolotlAsyncGRPOTrainer(
         batch_samples, num_items_in_batch = super().get_batch_samples(
             epoch_iterator, num_batches, device
         )
+        scored = None
         if self._trainer_scorers and batch_samples:
-            score_step(self, batch_samples)
+            scored = score_step(self, batch_samples)
+        if self._trace_recorder is not None and batch_samples:
+            self._notify_rollouts_scored(
+                self._trace_recorder.pop(batch_samples), scored
+            )
         return batch_samples, num_items_in_batch
+
+    def _notify_rollouts_scored(self, samples, scored) -> None:
+        """Hand one optimizer step's rollouts to plugins' ``on_rollouts_scored``."""
+        plugins = PluginManager.get_instance()
+        cfg = getattr(self, "axolotl_cfg", None) or plugins.cfg
+        if cfg is None or not samples:
+            return
+        prompts, completions, rewards, advantages = rollout_traces(
+            self.processing_class, samples, scored
+        )
+        plugins.on_rollouts_scored(cfg, self, prompts, completions, rewards, advantages)
 
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None

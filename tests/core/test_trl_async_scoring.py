@@ -484,9 +484,25 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
     """Pending EBFT rollouts are planned, scored on the trainer and trained on."""
     from peft import LoraConfig, get_peft_model
 
+    from axolotl.integrations.base import PluginManager
+    from axolotl.utils.dict import DictDefault
+
     monkeypatch.setattr(
         async_grpo_trainer, "get_peak_flops_per_device", lambda *a, **k: None
     )
+    calls = []
+
+    class Plugin:
+        def on_rollouts_scored(self, cfg, trainer, *args):
+            calls.append(args)
+
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+
+    plugin = Plugin()
+    manager = PluginManager.get_instance()
+    monkeypatch.setitem(manager.plugins, "recorder", plugin)
+    monkeypatch.setattr(manager, "_cfg", DictDefault({"rl": "ebft"}))
     model = get_peft_model(
         tiny_model(tokenizer).train(),
         LoraConfig(r=8, target_modules=["q_proj", "v_proj"]),
@@ -556,6 +572,14 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
     assert losses and all(np.isfinite(losses))
     logs = {key for log in trainer.state.log_history for key in log}
     assert {"reward", "rewards/ebft", "ebft/alignment", "ebft/cfm_loss"} <= logs
+
+    # Trace capture sees each step's two groups, with the rewards scored on the
+    # trainer.
+    assert len(calls) == 2
+    for prompts, completions, rewards, advantages in calls:
+        assert len(prompts) == len(completions) == len(advantages) == 8
+        assert list(rewards) == ["ebft"] and len(rewards["ebft"]) == 8
+        assert np.isfinite(advantages).all() and np.isfinite(rewards["ebft"]).all()
 
 
 def test_ebft_strategy_routes_async_prefetch_to_trl(tmp_path):
