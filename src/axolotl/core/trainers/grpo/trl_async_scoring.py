@@ -32,7 +32,6 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from accelerate.utils import gather_object
-from trl.experimental.async_grpo.async_grpo_trainer import DataCollatorForRollout
 from trl.experimental.async_grpo.packing import TreeRow
 from trl.trainer.utils import pad
 
@@ -40,6 +39,7 @@ from axolotl.core.trainers.grpo.trl_async_rollout import (
     SCORE_PAYLOAD,
     compute_group_advantages,
 )
+from axolotl.core.trainers.grpo.trl_async_traces import TraceCollator
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -374,7 +374,7 @@ class StepPlanner(torch.utils.data.IterableDataset):
 
 
 @dataclass
-class ScoringCollator(DataCollatorForRollout):
+class ScoringCollator(TraceCollator):
     """TRL's collator plus what ``score_step`` needs on every rank."""
 
     scorers: list[TrainerScorer] = field(default_factory=list)
@@ -432,8 +432,14 @@ def _gather(record):
     return [record]
 
 
-def score_step(trainer, batches: list[dict[str, torch.Tensor]]) -> None:
-    """Score one optimizer step's micro-batches in place (see module doc)."""
+def score_step(
+    trainer, batches: list[dict[str, torch.Tensor]]
+) -> tuple[list[str], dict[int, tuple[np.ndarray, float]]] | None:
+    """Score one optimizer step's micro-batches in place (see module doc).
+
+    On rank 0, returns the reward names and each sample's reward columns and
+    advantage, for the ``on_rollouts_scored`` hook.
+    """
     start = time.time()
     scorers: list[TrainerScorer] = trainer._trainer_scorers
     args = trainer.args
@@ -494,7 +500,7 @@ def score_step(trainer, batches: list[dict[str, torch.Tensor]]) -> None:
         extra_members.setdefault(extras[uid], []).append(uid)
 
     if not records:
-        return
+        return None
     num_child_columns = len(next(iter(records.values()))[1])
     weights = np.asarray(
         args.reward_weights or [1.0] * (num_child_columns + len(scorers)),
@@ -592,6 +598,8 @@ def score_step(trainer, batches: list[dict[str, torch.Tensor]]) -> None:
             (float(len(excluded)), float(len(records)))
         )
         metrics["perf/score_s"].append(time.time() - start)
+        return names, {uid: (columns[uid], advantage[uid]) for uid in records}
+    return None
 
 
 def check_step_capacity(
