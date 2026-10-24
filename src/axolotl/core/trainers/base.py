@@ -65,6 +65,7 @@ from axolotl.utils.bench import get_gpu_memory_usage
 from axolotl.utils.collators import DataCollatorForSeq2Seq
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
+    empty_device_cache,
     get_world_size,
     is_distributed,
     is_main_process,
@@ -1393,8 +1394,7 @@ class AxolotlTrainer(
 
         # Reclaim VRAM held by the FSDP full-state-dict gather.
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        empty_device_cache()
 
         return result
 

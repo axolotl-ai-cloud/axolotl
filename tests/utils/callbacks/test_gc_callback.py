@@ -29,7 +29,7 @@ class TestGCCallback:
         assert cb.gc_collect_steps == -1
 
     @patch("axolotl.utils.callbacks.gc.collect")
-    @patch("axolotl.utils.callbacks.torch.cuda.empty_cache")
+    @patch("axolotl.utils.callbacks.empty_device_cache")
     def test_gc_calls_collect_and_empty_cache(self, mock_empty_cache, mock_gc_collect):
         cb = GCCallback(gc_collect_steps=1)
         cb._gc()
@@ -37,7 +37,7 @@ class TestGCCallback:
         mock_empty_cache.assert_called_once()
 
     @patch("axolotl.utils.callbacks.gc.collect")
-    @patch("axolotl.utils.callbacks.torch.cuda.empty_cache")
+    @patch("axolotl.utils.callbacks.empty_device_cache")
     def test_on_step_end_periodic_gc(self, mock_empty_cache, mock_gc_collect):
         cb = GCCallback(gc_collect_steps=5)
         args = MagicMock()
@@ -55,7 +55,7 @@ class TestGCCallback:
         mock_gc_collect.assert_called_once()
 
     @patch("axolotl.utils.callbacks.gc.collect")
-    @patch("axolotl.utils.callbacks.torch.cuda.empty_cache")
+    @patch("axolotl.utils.callbacks.empty_device_cache")
     def test_on_step_end_no_gc_when_not_on_interval(
         self, mock_empty_cache, mock_gc_collect
     ):
@@ -75,7 +75,7 @@ class TestGCCallback:
         mock_gc_collect.assert_not_called()
 
     @patch("axolotl.utils.callbacks.gc.collect")
-    @patch("axolotl.utils.callbacks.torch.cuda.empty_cache")
+    @patch("axolotl.utils.callbacks.empty_device_cache")
     def test_on_step_end_gc_before_eval(self, mock_empty_cache, mock_gc_collect):
         cb = GCCallback(gc_collect_steps=-1)
         args = MagicMock()

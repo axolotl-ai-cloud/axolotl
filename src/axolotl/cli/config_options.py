@@ -2334,7 +2334,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--bf16",),
         None,
         None,
-        "Use CUDA bf16. bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. require >=ampere",
+        "Enable bfloat16. bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. Requires CUDA Ampere+ GPU or a TPU.",
     ),
     (
         ("--fp16/--no-fp16",),
