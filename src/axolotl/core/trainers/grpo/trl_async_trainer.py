@@ -14,8 +14,8 @@ On top of TRL, this trainer:
 - scores rewards in a process pool, several groups at a time
   (``reward_num_workers``);
 - honors ``reward_weights``, ``multi_objective_aggregation`` and ``scale_rewards``;
-- bounds the policy/sampler ratio of each token
-  (``vllm_importance_sampling_cap``);
+- weights each token by its policy/sampler ratio, capped at
+  ``vllm_importance_sampling_cap``, instead of clipping that ratio;
 - syncs merged LoRA weights without merging into the trained model;
 - runs a custom rollout loop (``rollout_loop``), e.g. one that delegates whole
   rollouts to an agent server, and serves the synced adapter under a fixed name
@@ -51,7 +51,7 @@ from trl.experimental.async_grpo.async_grpo_trainer import (
 )
 from trl.experimental.async_grpo.packing import TREE_ATTENTION
 from trl.experimental.async_grpo.vllm_client import VLLMClient
-from trl.trainer.utils import add_fused_lm_head, get_config_model_id, nanmax, nanmin
+from trl.trainer.utils import add_fused_lm_head, get_config_model_id
 
 from axolotl.core.trainers.grpo.trl_async_rollout import (
     AGGREGATIONS,
@@ -172,20 +172,20 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
     vllm_importance_sampling_correction: bool = field(
         default=True,
         metadata={
-            "help": "Bound the per-token ratio between the policy and the vLLM sampler "
-            "at vllm_importance_sampling_cap."
+            "help": "Weight each token by the ratio between the policy and the vLLM "
+            "sampler, bounded at vllm_importance_sampling_cap."
         },
     )
     vllm_importance_sampling_mode: str = field(
         default="token_truncate",
         metadata={
-            "help": "'token_truncate' caps the unclipped ratio (dual-clip), "
-            "'token_mask' drops tokens whose ratio exceeds the cap from the loss."
+            "help": "'token_truncate' caps the weight at the cap, 'token_mask' drops "
+            "tokens whose ratio exceeds the cap from the loss."
         },
     )
     vllm_importance_sampling_cap: float = field(
         default=3.0,
-        metadata={"help": "Ratio bound used by vllm_importance_sampling_mode."},
+        metadata={"help": "Weight bound used by vllm_importance_sampling_mode."},
     )
     rollout_loop: str | None = field(
         default=None,
@@ -228,11 +228,10 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
                 f"{IMPORTANCE_SAMPLING_MODES}, got "
                 f"{self.vllm_importance_sampling_mode!r}"
             )
-        epsilon_high = self.epsilon if self.epsilon_high is None else self.epsilon_high
-        if self.vllm_importance_sampling_cap <= 1.0 + epsilon_high:
+        if self.vllm_importance_sampling_cap <= 1.0:
             raise ValueError(
-                "vllm_importance_sampling_cap must exceed 1 + epsilon_high, or it would "
-                "cut into the PPO trust region"
+                "vllm_importance_sampling_cap must exceed 1, or it would down-weight "
+                "or drop every token the sampler agrees with"
             )
         if self.reward_num_workers < 1:
             raise ValueError("reward_num_workers must be >= 1")
@@ -673,7 +672,7 @@ class AxolotlAsyncGRPOTrainer(
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
-        # TRL's compute_loss with the ratio bound of `_policy_loss`.
+        # TRL's compute_loss with the importance-weighted loss of `_policy_loss`.
         mask_bool = inputs["attention_mask"].bool()
         selected = inputs["token_index"] >= 0
         input_ids = inputs["input_ids"][mask_bool].unsqueeze(0)
@@ -682,7 +681,6 @@ class AxolotlAsyncGRPOTrainer(
         token_index = inputs["token_index"][selected]
         old_log_probs = inputs["old_log_probs"][selected]
         advantages = inputs["advantages"][selected]
-        segment_id = inputs["segment_id"][selected]
         tree_kwargs = {
             key: inputs[key][inputs[key] >= 0]
             for key in ("tree_kv_index", "tree_cu_seqlens_q", "tree_cu_seqlens_k")
@@ -705,7 +703,7 @@ class AxolotlAsyncGRPOTrainer(
         entropy = outputs.entropy.flatten()[token_index]
         self._last_forward_time_s = time.time() - forward_start
 
-        per_token_loss, coef_1, log_ratio, is_capped = self._policy_loss(
+        per_token_loss, ratio, log_ratio, is_capped = self._policy_loss(
             log_probs, old_log_probs, advantages
         )
 
@@ -726,62 +724,25 @@ class AxolotlAsyncGRPOTrainer(
             )
 
         with torch.no_grad():
-            is_low_clipped = (coef_1 < 1 - self.epsilon_low) & (advantages < 0)
-            is_high_clipped = (coef_1 > 1 + self.epsilon_high) & (advantages > 0)
-            is_region_clipped = is_low_clipped | is_high_clipped
-            count = torch.full_like(coef_1.sum(), float(log_probs.numel()))
+            count = torch.full_like(ratio.sum(), float(log_probs.numel()))
             stats = torch.stack(
                 [
-                    coef_1.sum(),
-                    ((coef_1 - 1) - log_ratio).sum(),
+                    ratio.sum(),
+                    ((ratio - 1) - log_ratio).sum(),
                     entropy.sum(),
-                    is_low_clipped.float().sum(),
-                    is_high_clipped.float().sum(),
-                    is_region_clipped.float().sum(),
                     is_capped.float().sum(),
                     count,
                 ]
             )
             stats = self.accelerator.reduce(stats, reduction="sum")
-            (
-                ratio_sum,
-                kl_sum,
-                entropy_sum,
-                low_clip_sum,
-                high_clip_sum,
-                region_clip_sum,
-                capped_sum,
-                global_count,
-            ) = stats.unbind(0)
+            ratio_sum, kl_sum, entropy_sum, capped_sum, global_count = stats.unbind(0)
             metrics = self._metrics["train"]
             metrics["ratio"].append((ratio_sum / global_count).item())
             metrics["kl"].append((kl_sum / global_count).item())
             metrics["entropy"].append((entropy_sum / global_count).item())
-            metrics["clip_ratio/low_mean"].append((low_clip_sum / global_count).item())
-            metrics["clip_ratio/high_mean"].append(
-                (high_clip_sum / global_count).item()
-            )
-            metrics["clip_ratio/region_mean"].append(
-                (region_clip_sum / global_count).item()
-            )
             metrics["sampling/capped_token_frac"].append(
                 (capped_sum / global_count).item()
             )
-
-            num_seq = int(segment_id.max()) + 1 if segment_id.numel() else 0
-
-            def seg_sum(vals):
-                return torch.zeros(num_seq, device=vals.device).index_add_(
-                    0, segment_id, vals
-                )
-
-            seq_tokens = seg_sum(torch.ones_like(coef_1, dtype=torch.float32))
-            per_seq_low = seg_sum(is_low_clipped.float()) / seq_tokens
-            per_seq_high = seg_sum(is_high_clipped.float()) / seq_tokens
-            gathered_low_min = self.accelerator.gather(nanmin(per_seq_low))
-            gathered_high_max = self.accelerator.gather(nanmax(per_seq_high))
-            metrics["clip_ratio/low_min"].append(nanmin(gathered_low_min).item())
-            metrics["clip_ratio/high_max"].append(nanmax(gathered_high_max).item())
 
             if self.aux_loss_enabled:
                 gathered_aux = self.accelerator.reduce(
@@ -846,29 +807,27 @@ class AxolotlAsyncGRPOTrainer(
         old_log_probs: torch.Tensor,
         advantages: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Per-token clipped surrogate against the sampler's log-probabilities.
+        """Per-token policy-gradient loss, importance-weighted toward the vLLM sampler.
 
-        The ratio here is the policy over the vLLM sampler, so it carries both
-        staleness and trainer/inference mismatch. PPO's clip bounds it only where the
-        advantage is positive; for a negative advantage the unclipped term grows with
-        the ratio. ``token_truncate`` caps that term at ``vllm_importance_sampling_cap``
-        (dual-clip PPO), ``token_mask`` drops tokens beyond the cap from the loss.
+        Each rollout is trained on once, so as in synchronous GRPO the PPO ratio is the
+        policy over itself (1, never clipped) and the policy/sampler ratio, which
+        carries staleness and trainer/inference mismatch, is a detached per-token
+        weight: ``token_truncate`` caps it at ``vllm_importance_sampling_cap``,
+        ``token_mask`` drops tokens beyond the cap. Clipping the policy/sampler ratio
+        at 1 ± epsilon, as TRL does, stops the gradient of the tokens whose
+        probability is moving fastest.
         """
-        log_ratio = log_probs - old_log_probs
-        coef_1 = torch.exp(log_ratio)
-        coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
-        unclipped = coef_1
+        log_ratio = log_probs.detach() - old_log_probs
+        ratio = torch.exp(log_ratio)
+        per_token_loss = -advantages * torch.exp(log_probs - log_probs.detach())
         if self.args.vllm_importance_sampling_correction:
             cap = self.args.vllm_importance_sampling_cap
-            is_capped = coef_1.detach() > cap
+            is_capped = ratio > cap
             if self.args.vllm_importance_sampling_mode == "token_truncate":
-                unclipped = torch.clamp(coef_1, max=cap)
+                weight = ratio.clamp(max=cap)
+            else:
+                weight = ratio.masked_fill(is_capped, 0.0)
+            per_token_loss = per_token_loss * weight
         else:
-            is_capped = torch.zeros_like(coef_1, dtype=torch.bool)
-        per_token_loss = -torch.min(unclipped * advantages, coef_2 * advantages)
-        if (
-            self.args.vllm_importance_sampling_correction
-            and self.args.vllm_importance_sampling_mode == "token_mask"
-        ):
-            per_token_loss = per_token_loss.masked_fill(is_capped, 0.0)
-        return per_token_loss, coef_1, log_ratio, is_capped
+            is_capped = torch.zeros_like(ratio, dtype=torch.bool)
+        return per_token_loss, ratio, log_ratio, is_capped
