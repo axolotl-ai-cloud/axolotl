@@ -467,7 +467,7 @@ These are set under the `trl:` key and control the GRPO training loop.
 | `use_vllm` | `bool` | -- | Enable vLLM generation backend |
 | `vllm_lora_sync` | `bool` | `false` | Sync LoRA adapters via filesystem (recommended) |
 | `vllm_sync_interval` | `int` | `1` | Steps between weight syncs to vLLM |
-| `use_data_producer` | `bool` | -- | Deprecated: `async_prefetch: true` with `max_staleness: 0` |
+| `use_data_producer` | `bool` | -- | Deprecated: `async_prefetch: true` with `max_staleness: 0`, which discards in-flight rollouts at every sync; prefer `async_prefetch` with the default `max_staleness` |
 | `async_prefetch` | `bool` | `false` | Run on async GRPO (overlaps generation with training) |
 | `max_staleness` | `int` | `4` | Async: drop rollouts more than this many weight syncs old |
 | `generation_kwargs` | `dict` | -- | Extra vLLM sampling parameters, e.g. `stop_token_ids` |
@@ -549,9 +549,6 @@ Complete example configurations are available in `examples/ebft/`:
 | Config | Model | Mode | Description |
 |--------|-------|------|-------------|
 | `llama-1b-ebft-strided-structured.yaml` | Llama 3.2 1B | Strided | Single-GPU strided training on code data |
-| `qwen3-4b-ebft-structured.yaml` | Qwen3 4B | Structured (sync) | Two-GPU structured training |
-| `qwen3-4b-ebft-structured-async.yaml` | Qwen3 4B | Structured (async) | Two-GPU async training with prefetch |
-| `qwen3-8b-ebft-structured.yaml` | Qwen3 8B | Structured (sync) | Two-GPU structured training for larger model |
 | `qwen35-4b-ebft-structured.yaml` | Qwen3.5 4B | Structured (sync) | Two-GPU with Qwen3.5 |
 | `qwen35-4b-ebft-structured-async.yaml` | Qwen3.5 4B | Structured (async) | Two-GPU async with Qwen3.5 |
 | `qwen35-9b-ebft-structured.yaml` | Qwen3.5 9B | Structured (sync) | Two-GPU structured for 9B model |
