@@ -644,6 +644,43 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
     assert any(log.get("sampling/capped_token_frac", 0) > 0 for log in logs)
 
 
+class TestTreeFlashAttn:
+    @pytest.fixture
+    def tree_flash_attn(self, monkeypatch):
+        import kernels
+
+        from axolotl.core.trainers.grpo import trl_async_trainer
+
+        loaded = []
+        monkeypatch.setattr(
+            kernels, "get_kernel", lambda repo, **kw: loaded.append((repo, kw)) or repo
+        )
+        trl_async_trainer._tree_flash_attn.cache_clear()
+        yield trl_async_trainer, loaded
+        trl_async_trainer._tree_flash_attn.cache_clear()
+
+    def test_falls_back_to_flash_attn2_where_flash_attn3_has_no_build(
+        self, tree_flash_attn, monkeypatch
+    ):
+        trl_async_trainer, loaded = tree_flash_attn
+
+        def no_build():
+            raise RuntimeError(
+                "CUDA capability 12.0 of the current device is not supported by "
+                "the architectures of the build: 8.0, 9.0a"
+            )
+
+        monkeypatch.setattr(trl_async_trainer, "_trl_tree_flash_attn", no_build)
+        assert trl_async_trainer._tree_flash_attn() == "kernels-community/flash-attn2"
+        assert loaded == [("kernels-community/flash-attn2", {"version": 3})]
+
+    def test_keeps_flash_attn3_where_it_loads(self, tree_flash_attn, monkeypatch):
+        trl_async_trainer, loaded = tree_flash_attn
+        monkeypatch.setattr(trl_async_trainer, "_trl_tree_flash_attn", lambda: "fa3")
+        assert trl_async_trainer._tree_flash_attn() == "fa3"
+        assert loaded == []
+
+
 class TestAliasingVLLMClient:
     def test_sync_drains_and_moves_the_alias(self, monkeypatch):
         from trl.experimental.async_grpo import vllm_client
