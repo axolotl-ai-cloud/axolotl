@@ -167,10 +167,23 @@ def patch_model_with_mixlora(model: nn.Module, cfg: DictDefault) -> nn.Module:
                 "compute_dtype",
                 torch.get_default_dtype(),
             )
+        # Router and experts are trainable, so under fp16 AMP they must not be
+        # fp16: GradScaler.unscale_ rejects fp16 grads. PEFT casts its own
+        # adapters via autocast_adapter_dtype; these are built outside PEFT, so
+        # do it here, honoring the same config flag.
+        trainable_dtype = dtype
+        if cfg.peft_autocast_adapter_dtype is not False and dtype in (
+            torch.float16,
+            torch.bfloat16,
+        ):
+            trainable_dtype = torch.float32
+
         # Only move trainable params (router + experts) to the device
         # The original FFN is already on the correct device
-        mixlora_ffn.router = mixlora_ffn.router.to(device=device, dtype=dtype)
-        mixlora_ffn.experts = mixlora_ffn.experts.to(device=device, dtype=dtype)
+        mixlora_ffn.router = mixlora_ffn.router.to(device=device, dtype=trainable_dtype)
+        mixlora_ffn.experts = mixlora_ffn.experts.to(
+            device=device, dtype=trainable_dtype
+        )
 
         setattr(parent, attr_name, mixlora_ffn)
 
