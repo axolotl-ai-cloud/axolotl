@@ -130,8 +130,6 @@ class TestSampleFilterQueue:
 
 def _loss_stub(correction=True, mode="token_truncate", cap=3.0):
     return types.SimpleNamespace(
-        epsilon_low=0.2,
-        epsilon_high=0.2,
         args=types.SimpleNamespace(
             vllm_importance_sampling_correction=correction,
             vllm_importance_sampling_mode=mode,
@@ -147,48 +145,50 @@ class TestPolicyLoss:
 
     def _loss(self, stub, advantages):
         log_probs = self.log_probs.clone().requires_grad_(True)
-        loss, coef, _, capped = AxolotlAsyncGRPOTrainer._policy_loss(
+        loss, ratio, _, capped = AxolotlAsyncGRPOTrainer._policy_loss(
             stub, log_probs, self.old, advantages
         )
         loss.sum().backward()
-        return loss.detach(), log_probs.grad, coef.detach(), capped
+        return loss.detach(), log_probs.grad, ratio, capped
 
-    def test_without_correction_matches_ppo_clip(self):
-        advantages = torch.tensor([-1.0, -1.0, -1.0])
-        loss, _, coef, capped = self._loss(_loss_stub(correction=False), advantages)
-        expected = -torch.min(coef * advantages, coef.clamp(0.8, 1.2) * advantages)
-        torch.testing.assert_close(loss, expected)
+    def test_without_correction_is_plain_policy_gradient(self):
+        advantages = torch.tensor([1.0, -1.0, 1.0])
+        loss, grad, ratio, capped = self._loss(_loss_stub(correction=False), advantages)
+        torch.testing.assert_close(loss, -advantages)
+        torch.testing.assert_close(grad, -advantages)
+        torch.testing.assert_close(ratio, torch.tensor([0.5, 1.0, 10.0]))
         assert not capped.any()
 
-    def test_truncate_caps_negative_advantage_ratio(self):
-        advantages = torch.tensor([-1.0, -1.0, -1.0])
-        loss, grad, _, capped = self._loss(_loss_stub(), advantages)
-        assert capped.tolist() == [False, False, True]
-        assert loss[2] == pytest.approx(3.0)
-        assert grad[2] == 0.0
-        _, uncapped_grad, _, _ = self._loss(_loss_stub(correction=False), advantages)
-        assert uncapped_grad[2] == pytest.approx(10.0)
+    def test_truncate_weights_by_capped_ratio(self):
+        weights = torch.tensor([0.5, 1.0, 3.0])
+        for advantages in (torch.ones(3), -torch.ones(3)):
+            loss, grad, _, capped = self._loss(_loss_stub(), advantages)
+            torch.testing.assert_close(loss, -advantages * weights)
+            torch.testing.assert_close(grad, -advantages * weights)
+            assert capped.tolist() == [False, False, True]
 
-    def test_truncate_leaves_positive_advantages_to_ppo(self):
-        advantages = torch.tensor([1.0, 1.0, 1.0])
-        loss, _, _, _ = self._loss(_loss_stub(), advantages)
-        reference, _, _, _ = self._loss(_loss_stub(correction=False), advantages)
-        torch.testing.assert_close(loss, reference)
+    def test_moved_tokens_keep_their_gradient(self):
+        # A PPO clip at 1.2 against the sampler would zero the gradient of the token
+        # whose probability rose 10x since it was sampled.
+        advantages = torch.ones(3)
+        _, grad, _, _ = self._loss(_loss_stub(cap=20.0), advantages)
+        torch.testing.assert_close(grad, torch.tensor([-0.5, -1.0, -10.0]))
 
     def test_mask_drops_tokens_beyond_cap(self):
         advantages = torch.tensor([1.0, -1.0, 1.0])
         loss, grad, _, _ = self._loss(_loss_stub(mode="token_mask"), advantages)
         assert loss[2] == 0.0 and grad[2] == 0.0
         assert loss[1] == pytest.approx(1.0)
+        assert grad[0] == pytest.approx(-0.5)
 
 
 class TestConfig:
-    def test_rejects_cap_inside_trust_region(self, tmp_path):
-        with pytest.raises(ValueError, match="1 \\+ epsilon_high"):
+    def test_rejects_cap_at_most_one(self, tmp_path):
+        with pytest.raises(ValueError, match="must exceed 1"):
             AxolotlAsyncGRPOConfig(
                 output_dir=str(tmp_path),
                 use_cpu=True,
-                vllm_importance_sampling_cap=1.1,
+                vllm_importance_sampling_cap=1.0,
             )
 
     def test_rejects_sequence_modes(self, tmp_path):
