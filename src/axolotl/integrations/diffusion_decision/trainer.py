@@ -26,8 +26,9 @@ from axolotl.processing_strategies import (
     NEMOTRON_VLM_IMAGE_PAD_ID,
     NEMOTRON_VLM_IMAGE_START_ID,
 )
+from axolotl.utils.logging import get_logger
 
-from ._util import _value
+from ._util import _value, token_budget_eval_packing
 from .args import DiffusionDecisionConfig
 from .loss import (
     DecisionLabelExample,
@@ -36,6 +37,26 @@ from .loss import (
     decision_label_loss_from_hidden,
 )
 from .slot_sampling import DecisionDraw
+
+LOG = get_logger(__name__)
+
+
+def _commit_selected_argmax(
+    state: torch.Tensor,
+    logits: torch.Tensor,
+    update_mask: torch.Tensor,
+    *,
+    rows: torch.Tensor,
+    positions: torch.Tensor,
+) -> torch.Tensor:
+    """Commit argmax predictions from logits selected at ``(rows, positions)``."""
+
+    del update_mask
+    if logits.shape[:2] != rows.shape:
+        raise ValueError("selected logits must match the committed coordinates")
+    committed = state.clone()
+    committed[rows[0], positions[0]] = logits.detach()[0].argmax(-1).to(state.dtype)
+    return committed
 
 
 class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
@@ -61,6 +82,17 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         dataset = self.train_dataset if train_dataset is None else train_dataset
         manifest = getattr(dataset, "manifest", None)
         sampled_draws = self._uses_sampled_slot_draws()
+        plan = getattr(dataset, "batch_plan", None)
+        if plan is not None and not getattr(self.args, "sample_packing", False):
+            if self.args.per_device_train_batch_size != plan.micro_batch_size:
+                raise ValueError(
+                    "decision dataset microbatch size does not match per_device_train_batch_size"
+                )
+            return _DecisionPlanBatchSampler(
+                plan,
+                self.args.world_size,
+                drop_last=bool(getattr(self.args, "dataloader_drop_last", False)),
+            )
         if getattr(self.args, "sample_packing", False):
             if sampled_draws:
                 raise ValueError(
@@ -135,6 +167,11 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         sampled_slot_training = (
             is_training and typed_decision_dataset and self._uses_sampled_slot_draws()
         )
+        planned_training = (
+            is_training
+            and getattr(dataset, "batch_plan", None) is not None
+            and not self.args.sample_packing
+        )
         if not hasattr(dataset, "column_names"):
             dataset.column_names = ()
         sample_packing = self.args.sample_packing
@@ -147,7 +184,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             self.args.sample_packing = False
             if not is_training:
                 self.args.dataloader_drop_last = False
-        if stratified_training or sampled_slot_training:
+        if stratified_training or sampled_slot_training or planned_training:
             self.accelerator.even_batches = True
         try:
             dataloader = super()._get_dataloader(
@@ -168,8 +205,80 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         if self.args.sample_packing and self.args.eval_sample_packing is not False:
             return super()._get_eval_sampler(dataset)
         if isinstance(getattr(dataset, "manifest", None), Mapping):
+            budget = self._eval_token_budget()
+            if budget is not None:
+                return _TokenBudgetEvalBatchSampler(
+                    _decision_row_lengths(dataset),
+                    budget,
+                    self.args.world_size,
+                )
             return SequentialSampler(dataset)
         return super()._get_eval_sampler(dataset)
+
+    def evaluation_loop(
+        self,
+        dataloader,
+        description,
+        prediction_loss_only=None,
+        ignore_keys=None,
+        metric_key_prefix="eval",
+    ):
+        output = super().evaluation_loop(
+            dataloader,
+            description,
+            prediction_loss_only=prediction_loss_only,
+            ignore_keys=ignore_keys,
+            metric_key_prefix=metric_key_prefix,
+        )
+        if _uses_token_budget_batches(dataloader):
+            # The core loop weights every step's mean loss by the fixed
+            # eval_batch_size; token-budget steps hold different numbers of rows.
+            # Report the example-weighted mean the fixed batches produced instead,
+            # from the decision totals (summed over ranks, each row counted once).
+            totals = _reduce_decision_metric_totals(
+                self._decision_metric_totals("eval")
+            ).get("decision/all")
+            if totals and totals["examples"]:
+                output.metrics[f"{metric_key_prefix}_loss"] = (
+                    totals["loss"] / totals["examples"]
+                )
+        return output
+
+    def _eval_token_budget(self) -> int | None:
+        """Token budget of a packed evaluation micro-batch, or None for fixed batches.
+
+        ``eval_sample_packing: true`` with ``sample_packing: false`` packs consecutive
+        full-sequence rows up to ``sequence_len * eval_batch_size`` tokens. With
+        ``sample_packing: true`` the core MultipackBatchSampler packs evaluation
+        (``_get_eval_sampler`` returns it before reaching this budget).
+        """
+        spec = self._native_spec
+        cfg = self.axolotl_cfg
+        if (
+            spec is None
+            or spec.layout is not DiffusionLayout.FULL_SEQUENCE
+            or not token_budget_eval_packing(cfg)
+        ):
+            return None
+        sequence_len = _value(cfg, "sequence_len")
+        # resolve_native_packing_budget(is_eval=True) without training packing.
+        batch_size = (
+            _value(cfg, "eval_batch_size")
+            or _value(cfg, "micro_batch_size")
+            or getattr(self.args, "per_device_eval_batch_size", None)
+        )
+        if not all(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0
+            for value in (sequence_len, batch_size)
+        ):
+            raise ValueError(
+                "eval_sample_packing requires positive sequence_len and eval_batch_size"
+            )
+        budget = sequence_len * batch_size
+        if _value(cfg, "attn_implementation") == "flex_attention":
+            # Same physical bucket rounding as the collator's native packing budget.
+            budget = budget // 128 * 128
+        return budget
 
     def compute_loss(
         self,
@@ -390,6 +499,12 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     else 0.0
                 )
                 logs[f"{key_prefix}{prefix}/examples"] = count
+            # Logging-only label-set diagnostics; absent with label_softmax:
+            # restricted (no full-vocabulary term), so nothing is emitted then.
+            label_count = values.get("label_metric_examples", 0.0)
+            if label_count:
+                for name in _LABEL_METRIC_NAMES:
+                    logs[f"{key_prefix}{prefix}/{name}"] = values[name] / label_count
         self._decision_metric_totals(train_eval).clear()
         return super().log(logs, start_time)
 
@@ -720,6 +835,30 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         capability_model = model
         while hasattr(capability_model, "module"):
             capability_model = capability_model.module
+        canvas_kwargs: dict[str, Any] = {}
+        if getattr(capability_model, "requires_canvas_mask", False):
+            # Two-tower models denoise the canvas as one block over context states of
+            # the clean prompt, so they need to know where each canvas starts.
+            if "decision_canvas_mask" not in inputs:
+                raise ValueError(
+                    "this model needs decision_canvas_mask in full-sequence decision batches"
+                )
+            canvas_kwargs["axolotl_canvas_mask"] = _pad_to_packed(
+                inputs["decision_canvas_mask"].bool(), packed, False
+            )
+            # The sampled corruption time of each document (per token): canvases
+            # carry pinned template tokens that are never masked, so the masked
+            # fraction of the canvas understates the noise level the loss assumes.
+            canvas_kwargs["axolotl_canvas_times"] = torch.where(
+                logical_rows >= 0,
+                times[logical_rows.clamp_min(0)],
+                torch.zeros((), dtype=times.dtype, device=times.device),
+            )
+
+        def with_canvas(extra: dict[str, Any] | None = None) -> dict[str, Any] | None:
+            merged = {**media_kwargs, **canvas_kwargs, **(extra or {})}
+            return merged or None
+
         use_selected_logits = (
             not return_hidden_states
             and spec.logit_alignment is LogitAlignment.ALIGNED
@@ -735,13 +874,14 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs={
-                            **media_kwargs,
-                            "axolotl_selected_logits": (
-                                selected_rows,
-                                selected_positions,
-                            ),
-                        },
+                        model_kwargs=with_canvas(
+                            {
+                                "axolotl_selected_logits": (
+                                    selected_rows,
+                                    selected_positions,
+                                )
+                            }
+                        ),
                     )
                 ),
                 "final_logits_from_outputs": lambda output: output.logits,
@@ -756,7 +896,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs={**media_kwargs, "cce_return_hidden_states": True},
+                        model_kwargs=with_canvas({"cce_return_hidden_states": True}),
                     )
                 ),
                 "final_logits_from_outputs": lambda output: output.last_hidden_state,
@@ -776,7 +916,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                         kernel_options=getattr(
                             self.axolotl_cfg, "flex_attn_compile_kwargs", None
                         ),
-                        model_kwargs=media_kwargs or None,
+                        model_kwargs=with_canvas(),
                     )
                 ),
                 logits_from_outputs=lambda current_outputs: backend.canvas_logits(
@@ -785,6 +925,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
                 ),
                 update_state=update_state,
+                training=model.training,
                 **final_kwargs,
             )
         else:
@@ -797,11 +938,67 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                     "full-sequence decision K-step self-conditioning is not implemented"
                 )
             # Non-SC full-sequence reads retain the same noisy labels each step.
-            steps = self._sample_native_unroll_steps(k_max, packed["input_ids"].device)
+            steps = self._native_unroll_steps(
+                k_max, packed["input_ids"].device, model.training
+            )
+            kernel_options = getattr(self.axolotl_cfg, "flex_attn_compile_kwargs", None)
+            step_model_kwargs = None
             if free_slot_mask is not None:
                 update_mask = free_slot_mask
+                if (
+                    steps > 1
+                    and spec.logit_alignment is LogitAlignment.ALIGNED
+                    and bool(
+                        getattr(capability_model, "supports_selected_logits", False)
+                    )
+                ):
+                    # Non-final passes feed forward only the argmax at free slots,
+                    # so project logits there instead of over every position.
+                    slot_rows, slot_positions = free_slot_mask.nonzero(as_tuple=True)
+                    slot_rows = slot_rows.unsqueeze(0)
+                    slot_positions = slot_positions.unsqueeze(0)
+                    step_model_kwargs = {
+                        "axolotl_selected_logits": (slot_rows, slot_positions)
+                    }
+                    update_state = partial(
+                        _commit_selected_argmax,
+                        rows=slot_rows,
+                        positions=slot_positions,
+                    )
+                    if media_kwargs:
+                        update_state = _without_image_markers(update_state)
             else:
+                # Without free slots nothing is committed (labels keep their noisy
+                # tokens) and nothing conditions the next pass (no
+                # self-conditioning, no gradient through earlier passes, both
+                # rejected above), so every non-final pass re-reads the final
+                # pass's exact state under no_grad and its full-vocabulary logits
+                # are discarded. Run only the final pass, in training and
+                # evaluation alike: loss and gradients are bitwise identical. The
+                # step count is still drawn above, so the RNG stream is unchanged.
                 update_mask = torch.zeros_like(update_mask)
+                if steps > 1:
+                    self._log_skipped_unroll_passes_once(k_max)
+                steps = 1
+
+            def forward_step(current_state, _conditioning, _conditioning_mask):
+                return backend.forward(
+                    model,
+                    packed,
+                    current_state,
+                    kernel_options=kernel_options,
+                    model_kwargs=with_canvas(step_model_kwargs),
+                )
+
+            def logits_from_outputs(current_outputs):
+                if step_model_kwargs is not None:
+                    return current_outputs.logits
+                return backend.canvas_logits(
+                    current_outputs,
+                    packed,
+                    aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
+                )
+
             outputs, logits, _ = run_unroll(
                 state=state,
                 update_mask=update_mask,
@@ -810,27 +1007,25 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
                 supports_self_conditioning=False,
                 k1_conditioning_mask=None,
                 recurrent_conditioning_mask=None,
-                forward_step=lambda current_state, _conditioning, _conditioning_mask: (
-                    backend.forward(
-                        model,
-                        packed,
-                        current_state,
-                        kernel_options=getattr(
-                            self.axolotl_cfg, "flex_attn_compile_kwargs", None
-                        ),
-                        model_kwargs=media_kwargs or None,
-                    )
-                ),
-                logits_from_outputs=lambda current_outputs: backend.canvas_logits(
-                    current_outputs,
-                    packed,
-                    aligned=spec.logit_alignment is LogitAlignment.ALIGNED,
-                ),
+                forward_step=forward_step,
+                logits_from_outputs=logits_from_outputs,
                 update_state=update_state,
                 pilot_for_single_step=False,
                 **final_kwargs,
             )
         return logits, outputs
+
+    def _log_skipped_unroll_passes_once(self, k_max: int) -> None:
+        if getattr(self, "_logged_skipped_unroll_passes", False):
+            return
+        self._logged_skipped_unroll_passes = True
+        LOG.info(
+            "diffusion_decision: unroll.k_max=%d on a full-sequence layout without "
+            "free latent slots or self-conditioning; earlier passes commit and "
+            "condition nothing, so only the final (loss) pass is run. Use "
+            "diffusion_decision.latent.mode: free for passes that feed forward.",
+            k_max,
+        )
 
     def _encoder_canvas_logits(
         self,
@@ -877,7 +1072,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         state = corrupted.input_ids
         k1, recurrent = self._conditioning_masks(packed, batch.logical_ids.numel())
         k_max, grad_through_steps = self._native_unroll_settings()
-        steps = self._sample_native_unroll_steps(k_max, packed.device)
+        steps = self._native_unroll_steps(k_max, packed.device, model.training)
         update_mask = packed.canvas_update_mask & ~packed.canvas_input_pinned_mask
         if decision.latent.mode == "free":
             free_slot_mask = (
@@ -903,6 +1098,7 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
             recurrent_conditioning_mask=recurrent,
             update_mask=update_mask,
             kernel_options=getattr(self.axolotl_cfg, "flex_attn_compile_kwargs", None),
+            return_encoder_logits=self._encoder_ar_weight() != 0.0,
         )
         logical_rows = inputs["decision_logical_rows"].long()
         positions = inputs["decision_label_positions"].long()
@@ -984,12 +1180,14 @@ class DiffusionDecisionTrainer(AxolotlDiffusionTrainer):
         reads = torch.rand(count, device=device) < decision.read_fraction
         return torch.where(reads, torch.ones_like(times), times)
 
+    def _encoder_ar_weight(self) -> float:
+        weight = self._native_value("encoder_ar_weight")
+        return 1.0 if weight is None else float(weight)
+
     def _encoder_ar_loss(
         self, model, outputs, packed, num_items_in_batch
     ) -> torch.Tensor:
-        weight = self._native_value("encoder_ar_weight")
-        if weight is None:
-            weight = 1.0
+        weight = self._encoder_ar_weight()
         if not weight:
             return outputs.logits.new_zeros(())
         encoder_logits = getattr(outputs, "encoder_logits", None)
@@ -1219,22 +1417,19 @@ def _empty_decision_metric_totals() -> dict[str, float]:
         "full_vocab_dft_hard_count": 0.0,
         "brier_loss": 0.0,
         "examples": 0.0,
+        "label_mass": 0.0,
+        "label_mass_nll": 0.0,
+        "excess_full_vocab_loss": 0.0,
+        "label_metric_examples": 0.0,
     }
+
+
+_LABEL_METRIC_NAMES = ("label_mass", "label_mass_nll", "excess_full_vocab_loss")
 
 
 def _per_example_decision_results(
     result: DecisionLossResult, examples: int
-) -> (
-    tuple[
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-    ]
-    | None
-):
+) -> tuple[tuple[torch.Tensor, ...] | None, ...] | None:
     values = (
         result.per_example_loss,
         result.per_example_restricted_loss,
@@ -1243,6 +1438,11 @@ def _per_example_decision_results(
         result.per_example_full_vocab_dft_hard_weight_sum,
         result.per_example_full_vocab_dft_hard_count,
         result.per_example_brier_loss,
+    )
+    label_values = (
+        result.per_example_label_mass,
+        result.per_example_label_mass_nll,
+        result.per_example_excess_full_vocab_loss,
     )
     if all(value is None for value in (values[0], values[1], values[2], values[6])):
         return None
@@ -1264,7 +1464,11 @@ def _per_example_decision_results(
         if values[5] is not None
         else tuple(value.new_zeros(()) for value in full)
     )
-    return (  # type: ignore[return-value]
+    if any(value is not None and len(value) != examples for value in label_values):
+        raise ValueError("decision loss result has invalid per-example label metrics")
+    if any(value is None for value in label_values):
+        label_values = (None, None, None)
+    return (
         values[0],
         values[1],
         values[2],
@@ -1272,26 +1476,24 @@ def _per_example_decision_results(
         dft_hard_weight_sum,
         dft_hard_count,
         values[6],
+        *label_values,
     )
 
 
 def _subset_decision_result(
-    values: tuple[
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-        tuple[torch.Tensor, ...],
-    ],
+    values: tuple[tuple[torch.Tensor, ...] | None, ...],
     indices: Sequence[int],
 ) -> DecisionLossResult:
     if not indices:
         raise ValueError("source metric group must not be empty")
     selected = tuple(
-        tuple(component[index] for index in indices) for component in values
+        None if component is None else tuple(component[index] for index in indices)
+        for component in values
     )
-    means = tuple(torch.stack(component).mean() for component in selected)
+    means = tuple(
+        None if component is None else torch.stack(component).mean()
+        for component in selected
+    )
     return DecisionLossResult(
         loss=means[0],
         restricted_loss=means[1],
@@ -1307,6 +1509,12 @@ def _subset_decision_result(
         per_example_full_vocab_dft_hard_weight_sum=selected[4],
         per_example_full_vocab_dft_hard_count=selected[5],
         per_example_brier_loss=selected[6],
+        label_mass=means[7],
+        label_mass_nll=means[8],
+        excess_full_vocab_loss=means[9],
+        per_example_label_mass=selected[7],
+        per_example_label_mass_nll=selected[8],
+        per_example_excess_full_vocab_loss=selected[9],
     )
 
 
@@ -1332,6 +1540,13 @@ def _accumulate_decision_metrics(
     if hard_count is not None:
         totals["full_vocab_dft_hard_count"] += float(hard_count.detach())
     totals["examples"] += examples
+    label_values = [getattr(result, name) for name in _LABEL_METRIC_NAMES]
+    if all(value is not None for value in label_values):
+        for name, value in zip(_LABEL_METRIC_NAMES, label_values, strict=True):
+            totals[name] = totals.get(name, 0.0) + float(value.detach()) * examples
+        totals["label_metric_examples"] = (
+            totals.get("label_metric_examples", 0.0) + examples
+        )
 
 
 def _reduce_decision_metric_totals(
@@ -1405,6 +1620,83 @@ def _validate_question_coordinates(
         (positions[question_mask] < position_count).all(),
         "active label positions are out of range",
     )
+
+
+def _uses_token_budget_batches(dataloader) -> bool:
+    sampler = getattr(dataloader, "batch_sampler", None)
+    for _ in range(4):
+        if isinstance(sampler, _TokenBudgetEvalBatchSampler):
+            return True
+        sampler = getattr(sampler, "batch_sampler", None)
+    return False
+
+
+def _decision_row_lengths(dataset) -> list[int]:
+    """Flattened full-sequence tokens each row contributes (prompt plus canvas)."""
+    lengths = []
+    for index in range(len(dataset)):
+        canvas = dataset[index]["canvas"]
+        lengths.append(len(canvas.prompt_ids) + len(canvas.canvas_ids))
+    return lengths
+
+
+class _TokenBudgetEvalBatchSampler(BatchSampler):
+    """Sequential evaluation batches filled up to a physical token budget.
+
+    Rows keep dataset order and each appears exactly once. The batch count is made
+    a multiple of ``world_size`` by splitting the batches with the most rows, so
+    accelerate shards whole batches without repeating any row. ``batch_size`` is
+    None: accelerate treats the batches as dynamic and never tops them up.
+    """
+
+    def __init__(
+        self, lengths: Sequence[int], token_budget: int, world_size: int = 1
+    ) -> None:
+        if (
+            isinstance(token_budget, bool)
+            or not isinstance(token_budget, int)
+            or token_budget < 1
+        ):
+            raise ValueError("evaluation token budget must be a positive integer")
+        if isinstance(world_size, bool) or not isinstance(world_size, int):
+            raise ValueError("evaluation world_size must be an integer")
+        if world_size < 1:
+            raise ValueError("evaluation world_size must be positive")
+        batches: list[list[int]] = []
+        current: list[int] = []
+        used = 0
+        for index, length in enumerate(lengths):
+            if length < 1 or length > token_budget:
+                raise ValueError(
+                    f"evaluation row {index} has {length} tokens; the flattened "
+                    f"evaluation budget is {token_budget}"
+                )
+            if current and used + length > token_budget:
+                batches.append(current)
+                current, used = [], 0
+            current.append(index)
+            used += length
+        if current:
+            batches.append(current)
+        while len(batches) % world_size:
+            widest = max(range(len(batches)), key=lambda item: len(batches[item]))
+            batch = batches[widest]
+            if len(batch) < 2:
+                # Fewer rows than ranks: accelerate repeats rows to even the ranks.
+                break
+            half = len(batch) // 2
+            batches[widest : widest + 1] = [batch[:half], batch[half:]]
+        self._batches = batches
+        self.sampler = range(len(lengths))
+        self.batch_size = None
+        self.drop_last = False
+
+    def __iter__(self):
+        for batch in self._batches:
+            yield list(batch)
+
+    def __len__(self) -> int:
+        return len(self._batches)
 
 
 class _DecisionDrawBatchSampler(BatchSampler):
@@ -1506,6 +1798,45 @@ class _StratifiedDecisionBatchSampler(BatchSampler):
 
     def __len__(self) -> int:
         groups = self._dataset_size // self._batch_size
+        return groups + (-groups) % self._world_size
+
+
+class _DecisionPlanBatchSampler(BatchSampler):
+    """Microbatches of a DecisionBatchPlan epoch, as DecisionDraw descriptors.
+
+    The epoch comes from the plan, which both this sampler's ``set_epoch`` and the
+    dataset's (accelerate reaches only the dataset after a resume skip) move. Each
+    epoch is drawn afresh; every epoch has the same number of batches.
+    """
+
+    def __init__(self, plan, world_size: int = 1, *, drop_last: bool = False) -> None:
+        _validate_decision_sampler_args(
+            plan.draws_per_epoch, plan.micro_batch_size, plan.seed, world_size
+        )
+        self._plan = plan
+        self._world_size = world_size
+        self._drop_last = drop_last
+        super().__init__(
+            SequentialSampler(range(plan.draws_per_epoch)),
+            plan.micro_batch_size,
+            drop_last,
+        )
+
+    def set_epoch(self, epoch: int) -> None:
+        self._plan.set_epoch(epoch)
+
+    def __iter__(self):
+        epoch = self._plan.epoch
+        yield from _decision_draw_groups(
+            self._plan.batches(epoch, drop_last=self._drop_last),
+            epoch=epoch,
+            batch_size=self._plan.micro_batch_size,
+            world_size=self._world_size,
+        )
+
+    def __len__(self) -> int:
+        # Every epoch holds batches_per_epoch full microbatches.
+        groups = self._plan.batches_per_epoch
         return groups + (-groups) % self._world_size
 
 

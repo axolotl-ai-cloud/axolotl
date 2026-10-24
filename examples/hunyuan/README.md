@@ -37,15 +37,21 @@ HunYuan Instruct models can choose to enter a slow think or fast think pattern. 
 # fast think pattern
 messages = [
     {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "/no_think What color is the sun?" },
-    {"role": "assistant", "content": "<think>\n\n</think>\n<answer>\nThe sun is yellow.\n</answer>"}
+    {"role": "user", "content": "/no_think What color is the sun?"},
+    {
+        "role": "assistant",
+        "content": "<think>\n\n</think>\n<answer>\nThe sun is yellow.\n</answer>",
+    },
 ]
 
 # slow think pattern
 messages = [
     {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "/no_think What color is the sun?" },
-    {"role": "assistant", "content": "<think>\nThe user is asking about the color of the sun. I need to ...\n</think>\n<answer>\nThe sun is yellow.\n</answer>"}
+    {"role": "user", "content": "/no_think What color is the sun?"},
+    {
+        "role": "assistant",
+        "content": "<think>\nThe user is asking about the color of the sun. I need to ...\n</think>\n<answer>\nThe sun is yellow.\n</answer>",
+    },
 ]
 ```
 

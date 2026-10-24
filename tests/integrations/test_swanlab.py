@@ -33,28 +33,27 @@ from axolotl.integrations.swanlab.plugins import SwanLabPlugin
 SWANLAB_INSTALLED = importlib.util.find_spec("swanlab") is not None
 
 
-@pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabConfigValidators:
     """Tests for Pydantic field validators in SwanLabConfig."""
 
     def test_valid_swanlab_mode_cloud(self):
         """Test that 'cloud' mode is valid."""
-        config = SwanLabConfig(swanlab_mode="cloud")
+        config = SwanLabConfig(use_swanlab=False, swanlab_mode="cloud")
         assert config.swanlab_mode == "cloud"
 
     def test_valid_swanlab_mode_local(self):
         """Test that 'local' mode is valid."""
-        config = SwanLabConfig(swanlab_mode="local")
+        config = SwanLabConfig(use_swanlab=False, swanlab_mode="local")
         assert config.swanlab_mode == "local"
 
     def test_valid_swanlab_mode_offline(self):
         """Test that 'offline' mode is valid."""
-        config = SwanLabConfig(swanlab_mode="offline")
+        config = SwanLabConfig(use_swanlab=False, swanlab_mode="offline")
         assert config.swanlab_mode == "offline"
 
     def test_valid_swanlab_mode_disabled(self):
         """Test that 'disabled' mode is valid."""
-        config = SwanLabConfig(swanlab_mode="disabled")
+        config = SwanLabConfig(use_swanlab=False, swanlab_mode="disabled")
         assert config.swanlab_mode == "disabled"
 
     def test_invalid_swanlab_mode(self):
@@ -71,18 +70,13 @@ class TestSwanLabConfigValidators:
 
     def test_swanlab_mode_none_allowed(self):
         """Test that None mode is allowed (will use default)."""
-        config = SwanLabConfig(swanlab_mode=None)
+        config = SwanLabConfig(use_swanlab=False, swanlab_mode=None)
         assert config.swanlab_mode is None
 
     def test_valid_swanlab_project(self):
         """Test that valid project name is accepted."""
         config = SwanLabConfig(swanlab_project="my-project")
         assert config.swanlab_project == "my-project"
-
-    def test_swanlab_project_none_allowed(self):
-        """Test that None project is allowed."""
-        config = SwanLabConfig(swanlab_project=None)
-        assert config.swanlab_project is None
 
     def test_empty_swanlab_project_rejected(self):
         """Test that empty string project name is rejected."""

@@ -11,7 +11,7 @@ execute:
 
 ## Overview
 
-Axolotl supports on-demand checkpoint saving during training. You can trigger checkpoints via file-based triggers (for programmatic control) or Control+C (for interactive use).
+Axolotl supports on-demand checkpoint saving during training. You can trigger checkpoints via file-based triggers (for programmatic control) or Control+C (for interactive use), and mirror checkpoints from fast local storage to a shared filesystem without blocking training.
 
 ## File-Based Checkpoint Trigger
 
@@ -22,13 +22,13 @@ Enable in your config:
 ```yaml
 dynamic_checkpoint:
   enabled: true
-  check_interval: 100  # Optional: check every N steps (default: 100)
+  check_interval: 10  # Optional: check every N steps (default: 10)
   trigger_file_path: "axolotl_checkpoint.save"  # Optional: custom filename
 ```
 
 **Options:**
 - `enabled`: `true` to enable (required)
-- `check_interval`: Steps between file checks. Default: 100. Lower = faster response, higher I/O overhead.
+- `check_interval`: Steps between file checks. Default: 10. Lower = faster response, higher I/O overhead.
 - `trigger_file_path`: Custom trigger filename. Default: `axolotl_checkpoint.save`
 
 ### How It Works
@@ -62,13 +62,104 @@ dynamic_checkpoint:
 touch /path/to/output_dir/my_trigger.save
 ```
 
+## Mirroring Checkpoints to Shared Storage
+
+Writing checkpoints, especially optimizer states, to a network filesystem such as NFS can stall
+training for as long as the write takes. With `checkpoint_mirror`, training saves to a fast local
+`output_dir` (for example node-local NVMe) and keeps going while each checkpoint is copied to a
+shared directory in the background.
+
+```yaml
+output_dir: /mnt/local-nvme/my-run
+save_steps: 500
+save_total_limit: 2
+
+checkpoint_mirror:
+  dir: /mnt/nfs/runs/my-run
+  delete: mirror        # or keep
+  # save_total_limit: 10  # with delete: keep, how many to keep in dir
+  max_pending: 2
+```
+
+**Options:**
+
+- `dir`: Shared directory that receives every checkpoint. It must be outside `output_dir`.
+- `delete`: `mirror` keeps as many checkpoints in `dir` as `save_total_limit` keeps locally. `keep`
+  never deletes from `dir`, or keeps the newest `checkpoint_mirror.save_total_limit` when set.
+  The newest and best checkpoints are never deleted.
+- `max_pending`: Checkpoints queued for copying at once. Queued checkpoints are hard links, so this
+  bounds the local disk they hold. A save that finds the queue full is not mirrored and training
+  does not wait; the newest checkpoint is retried at the end of training.
+- `copy_threads`: Files copied in parallel per checkpoint. Default: 4.
+- `resume`: Whether `auto_resume_from_checkpoints` may resume from `dir`. Default: `true`.
+
+On CoreWeave CKS, `output_dir` can be under the pod's node-local `/scratch` volume when
+`checkpoint_mirror.dir` is on the PVC (under `pvc_mount`).
+
+### How It Works
+
+1. On each save, the checkpoint is hard-linked into a private queue in `output_dir`, which is
+   instant and survives local rotation by `save_total_limit`.
+2. A background thread copies queued checkpoints in order into a hidden staging directory in
+   `dir`, then renames it to `checkpoint-N`. A checkpoint in `dir` is therefore always complete.
+3. Before the final save, pending checkpoint copies are drained. After it, the final model,
+   tokenizer and other files in `output_dir` are copied as well.
+
+Use one `dir` per run: at startup, staging left in `dir` by an earlier run is removed, and a
+checkpoint is only assembled from the current run's copies.
+
+A failed copy logs a warning and training continues; the local checkpoint is unaffected. If the
+newest checkpoint failed to copy, it is retried once at the end of training.
+
+### Multi-node Runs
+
+When `output_dir` is local to each node, every node holds only its own ranks' model shards,
+optimizer states and RNG states. Axolotl detects this at startup. Each node then copies its share,
+and `checkpoint-N` appears in `dir` only once every node has finished. Nodes other than the first
+also apply `save_total_limit` to their own `output_dir`, which Hugging Face Trainer only does on
+the main process. The final outputs are copied from the first node only, and a sharded final
+save merges its weights from the mirrored checkpoint, since no node holds every shard.
+
+### Resuming
+
+With `auto_resume_from_checkpoints: true`, Axolotl resumes from the newest checkpoint found in
+`output_dir` or `dir`, preferring `output_dir` on a tie. When `output_dir` is local to each node
+of a multi-node run, no single node holds a complete checkpoint, so it always resumes from `dir`.
+This also covers a restart on fresh nodes whose local disks are empty.
+
+## Retrying Saves After Disk Errors
+
+A checkpoint write that fails because the disk is full, a quota is exceeded, or the filesystem
+returns an I/O error normally fails the save and ends training. With `checkpoint_save_retry`,
+the write waits and is tried again first:
+
+```yaml
+checkpoint_save_retry:
+  wait_seconds: 300   # pause before rewriting the file
+  retries: 1          # retries per file before the error is raised
+```
+
+The retry applies to the files of each `checkpoint-N`: model weights, optimizer, scheduler and
+RNG states, the trainer state, and the model, adapter, generation and tokenizer configs. The
+failed file is rewritten in place on the rank that hit the error, so no rank skips or reorders a
+collective. The other ranks wait at their next collective,
+so keep `wait_seconds * retries` below `ddp_timeout` (1800 seconds by default); Axolotl warns at
+startup otherwise. Distributed checkpoint saves (FSDP sharded state dicts) report a failure on
+every rank, and every rank retries them together.
+
+Disk errors are recognized by errno (`ENOSPC`, `EDQUOT`, `EIO`, `EFBIG`, `ESTALE`) and by the
+messages that writers without an errno produce, for example
+`I/O error: Disk quota exceeded (os error 122)` from safetensors or `file write failed` from
+`torch.save`. Other errors are raised immediately. When `checkpoint_mirror` is also set, the
+pause gives queued copies time to finish and release the local disk space they hold.
+
 ## Control+C (SIGINT) Checkpoint
 
 Pressing `Ctrl+C` during training saves the model state and exits gracefully. **Note:** This saves only the model weights, not optimizer state. For resumable checkpoints, use the file-based trigger.
 
 ## Best Practices
 
-- **Check interval**: Lower values (10-50) for fast training, default 100 for slower training
+- **Check interval**: Lower values (10-50) for fast training, higher values (e.g. 100) for slower training
 - **Distributed training**: Create trigger file once; rank 0 handles synchronization
 - **Resume**: Dynamic checkpoints can be resumed like regular checkpoints via `resume_from_checkpoint`
 

@@ -10,7 +10,7 @@ from accelerate.test_utils import execute_subprocess_async, get_torch_dist_uniqu
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_tensorboard, require_torch_2_5_1, requires_flash_attn
+from tests.e2e.utils import check_tensorboard, requires_flash_attn
 
 pytestmark = requires_flash_attn
 
@@ -77,9 +77,6 @@ class TestKnowledgeDistillation:
     Test case for Knowledge Distillation
     """
 
-    # While this will run on torch 2.4.x without torch_compile enabled
-    # the VRAM requirement is higher than what is available in CI
-    @require_torch_2_5_1
     def test_llama_kd(self, temp_dir, kd_min_cfg):
         cfg = DictDefault(kd_min_cfg)
 

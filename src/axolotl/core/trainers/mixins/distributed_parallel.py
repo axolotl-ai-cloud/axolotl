@@ -82,6 +82,17 @@ class DistributedParallelMixin(Trainer):
                     model._axolotl_native_nvfp4_deepspeed_prepared = True
         return super()._wrap_model(model, *args, **kwargs)
 
+    def _prepare_for_training(self, *args, **kwargs):
+        # transformers>=5.20 skips accelerate's FSDP2/DeepSpeed prepare for load-time TP models and
+        # world-averages every non-DTensor grad, which breaks FSDP/DS+TP and mixes TP-local LoRA shards
+        if not getattr(self, "is_distributed_loading_by_transformers", False):
+            return super()._prepare_for_training(*args, **kwargs)
+        self.is_distributed_loading_by_transformers = False
+        try:
+            return super()._prepare_for_training(*args, **kwargs)
+        finally:
+            self.is_distributed_loading_by_transformers = True
+
     def _expert_parallel_enabled(self) -> bool:
         parallelism = getattr(self.accelerator, "parallelism_config", None)
         if parallelism is not None:
@@ -190,6 +201,12 @@ class DistributedParallelMixin(Trainer):
             )
         if state_dict is None:
             metadata = getattr(self.model, "_axolotl_native_nvfp4_metadata", None)
+            # transformers>=5.20 already runs save_pretrained on every rank for load-time TP models
+            self._axolotl_save_joined_all_ranks = (
+                getattr(self, "is_distributed_loading_by_transformers", False)
+                and not self.is_fsdp_enabled
+                and not getattr(self, "is_deepspeed_enabled", False)
+            )
             result = super().save_model(output_dir, _internal_call)
             if metadata and self.args.should_save:
                 from axolotl.monkeypatch.torchao_nvfp4_merge_persistence import (
@@ -255,8 +272,12 @@ class DistributedParallelMixin(Trainer):
                 and not self._ep_full_param_experts()
                 and tp_save_joins_all_ranks(self.accelerator, self.is_fsdp_enabled)
             ):
+                self._axolotl_save_joined_all_ranks = False
                 result = self._save_model_native(output_dir, _internal_call)
-                if not self.args.should_save:
+                if (
+                    not self.args.should_save
+                    and not self._axolotl_save_joined_all_ranks
+                ):
                     # transformers gathers TP DTensors and barriers inside save_pretrained, so the
                     # non-writing ranks must call it too; under FSDP the state dict was already
                     # gathered by every rank, so they only need to join the barrier
@@ -282,6 +303,7 @@ class DistributedParallelMixin(Trainer):
         ):
             from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
                 _model_needs_ownership,
+                adapter_reference,
             )
 
             if _model_needs_ownership(self.model):
@@ -289,7 +311,12 @@ class DistributedParallelMixin(Trainer):
 
                 target = output_dir or self.args.output_dir
                 os.makedirs(target, exist_ok=True)
-                torch.save(state_dict, os.path.join(target, "pytorch_model_fsdp.bin"))
+                # the PEFT adapter file saved beside it already holds this state
+                reference = adapter_reference(self.model)
+                torch.save(
+                    state_dict if reference is None else reference,
+                    os.path.join(target, "pytorch_model_fsdp.bin"),
+                )
 
     def _save(self, output_dir: str | None = None, state_dict=None):
         if (
@@ -297,7 +324,16 @@ class DistributedParallelMixin(Trainer):
             and self.accelerator.parallelism_config
             and self.accelerator.parallelism_config.dp_shard_enabled
         ):
-            state_dict = self.accelerator.get_state_dict(self.model)
+            from accelerate.utils.modeling import is_peft_model
+
+            if is_peft_model(self.model):
+                from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+                    full_model_state,
+                )
+
+                state_dict = full_model_state(self.model, adapter_only=True)
+            else:
+                state_dict = self.accelerator.get_state_dict(self.model)
         self._save_fsdp2_model_only_checkpoint(output_dir, state_dict)
         super()._save(output_dir, state_dict=state_dict)
 

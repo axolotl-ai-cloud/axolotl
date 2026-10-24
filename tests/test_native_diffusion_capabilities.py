@@ -3,7 +3,12 @@
 import pytest
 
 from axolotl.model_support import get_model_support, resolve_model_support
-from axolotl.model_support.base import Supported, Unsupported, check_capability
+from axolotl.model_support.base import (
+    Experimental,
+    Supported,
+    Unsupported,
+    check_capability,
+)
 
 
 @pytest.mark.parametrize(
@@ -19,6 +24,11 @@ def test_native_diffusion_rejects_unverified_integrations(model_type, feature):
     resolved = resolve_model_support(support)
     if model_type == "nemotron_labs_diffusion" and feature == "cut_cross_entropy":
         assert isinstance(resolved.capabilities[feature], Supported)
+        check_capability(support, feature, model_type)
+        return
+    if model_type == "diffusion_gemma" and feature == "expert_kernels":
+        # ScatterMoE is validated against the stock experts (tied expert LoRA).
+        assert isinstance(resolved.capabilities[feature], Experimental)
         check_capability(support, feature, model_type)
         return
     assert isinstance(resolved.capabilities[feature], Unsupported)

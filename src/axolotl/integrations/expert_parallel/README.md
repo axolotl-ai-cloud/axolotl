@@ -30,7 +30,7 @@ Overlap is not a speedup guarantee: each chunk adds its own collectives and kern
 
 ## Requirements
 
-Ampere (sm_80, A100) or Hopper (sm_90, H100), all-pairs NVLink — for the `deep_ep` backend only. The `torch` backend runs on any GPU topology with a working NCCL or gloo backend, including PCIe-only setups with no NVLink.
+Ampere (sm_80, A100), Hopper (sm_90, H100) or Blackwell (sm_100, B200), all-pairs NVLink — for the `deep_ep` backend only. The `torch` backend runs on any GPU topology with a working NCCL or gloo backend, including PCIe-only setups with no NVLink.
 
 ## Installation
 
@@ -169,6 +169,31 @@ DISABLE_NVSHMEM=1 DISABLE_SM90_FEATURES=1 TORCH_CUDA_ARCH_LIST=8.0 MAX_JOBS=16 \
 python -c "import deep_ep; print(deep_ep.Buffer)"
 ```
 
+**Blackwell (sm_100, B200), node-local EP on CUDA 13.0:**
+
+DeepEP `main` requires CUDA 13.1; `v1.2.1` builds against the CUDA 13.0 toolkit
+that the Axolotl images ship once CUDA 13's relocated `cuda/std/*` headers (`include/cccl`) are on the
+include path. It links the `nvidia-nvshmem-cu13` wheel that torch already depends on, so no OFED headers
+or system NVSHMEM are needed. No GPU is needed for the build; the wheel can be built once and installed
+on every node.
+
+```bash
+git clone --depth 1 --branch v1.2.1 https://github.com/deepseek-ai/DeepEP.git
+cd DeepEP
+export TORCH_CUDA_ARCH_LIST=10.0 MAX_JOBS=16 \
+  CFLAGS=-I/usr/local/cuda/include/cccl CXXFLAGS=-I/usr/local/cuda/include/cccl \
+  NVCC_PREPEND_FLAGS=-I/usr/local/cuda/include/cccl
+python setup.py bdist_wheel -d dist     # uv pip install . fails in the build backend on this tag
+uv pip install --no-deps dist/deep_ep-*.whl
+python -c "import deep_ep; print(deep_ep.Buffer)"
+```
+
+Notes:
+
+- `TORCH_CUDA_ARCH_LIST=10.0` makes `setup.py` set `DISABLE_AGGRESSIVE_PTX_INSTRS=1` on its own; the sm_90-only PTX tricks are not built. Hopper features (FP8 dispatch, TMA) stay on.
+- Axolotl's mesh keeps `ep` as the innermost axis, so EP groups are node-local and DeepEP only uses its NVLink intranode path; the NVSHMEM/RDMA path is linked but idle (`num_rdma_bytes` stays 0).
+- The `axolotlai/axolotl-cloud` `-blackwell` image tags ship this wheel together with the rest of the Blackwell kernel stack (see the [Docker docs](https://docs.axolotl.ai/docs/docker.html)).
+
 ## Usage
 
 EP requires FSDP2 (`fsdp_version: 2` with an `fsdp_config` block) and `fsdp_config.state_dict_type: FULL_STATE_DICT`; config validation rejects EP under DDP, DeepSpeed, or a sharded state dict. The dense weights FSDP-shard, the experts are wrapped on the non-`ep` axes, and the full state dict gathers every EP group's experts before rank 0 writes. `SHARDED_STATE_DICT` (accelerate's FSDP2 default when unset) would keep only EP group 0's experts, because every group's expert shard has the same name, shape and offset and DCP deduplicates them.
@@ -230,12 +255,18 @@ for quantization, memory, and mesh compatibility limits.
 - `pytorch_model_fsdp.bin` is the native model checkpoint used by
   `resume_from_checkpoint` and best-model loading. Trainer LoRA/QLoRA checkpoints
   include PEFT export state, including frozen adapter factors, saved modules, and
-  required embeddings; the frozen base model is loaded separately.
+  required embeddings; the frozen base model is loaded separately. In model-only
+  checkpoints of a single-adapter PEFT model, and in every checkpoint written with
+  `adapter_checkpoint_format: sharded`, this file only references the
+  `adapter_model.safetensors` beside it, and restore reads the adapter from there.
+  Full-parameter and multi-adapter checkpoints, and checkpoints from earlier
+  versions, hold the complete state in this file.
 - `optimizer.bin` preserves every expert owner's optimizer state. It is absent
   when `save_only_model: true`.
 - `adapter_model.safetensors` is the ordinary PEFT adapter export used by
   `lora_model_dir`. Model-only intermediate checkpoints also include the native
-  resume file; final exports do not.
+  resume file; final exports do not. Keep it with the native resume file when
+  copying model-only checkpoints, since the resume file may reference it.
 
 Native checkpoints and final exports need not have the same layout. For example,
 Mixtral full-model exports unpack fused expert weights, while native checkpoints
@@ -260,7 +291,7 @@ experts cannot be reconstructed from the truncated native checkpoint.
 
 ## Limitations
 
-- Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). `ModuleList` as used in Mixtral is not supported.
+- Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`, or `up_proj` / `down_proj` for non-gated experts such as Nemotron-H's relu² MoE). `ModuleList` as used in Mixtral is not supported.
 - `num_experts` must be divisible by `expert_parallel_size`.
 - EP requires FSDP2 with `fsdp_config.state_dict_type: FULL_STATE_DICT` (see [Usage](#usage));
   DDP, DeepSpeed and `SHARDED_STATE_DICT` are rejected at config validation.

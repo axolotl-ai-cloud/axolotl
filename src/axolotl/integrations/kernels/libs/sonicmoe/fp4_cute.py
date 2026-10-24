@@ -22,8 +22,8 @@ Conventions:
 Uses quack's LOW-LEVEL ``quack.gemm.gemm`` (not ``gemm_interface.gemm``: the
 custom-op/autotune wrapper adds ~4x per-call Python dispatch at these MoE sizes).
 
-GPU-only (SM100/SM110); quack/cutlass import lazily. Runtime pin
-quack-kernels 0.6.1 + nvidia-cutlass-dsl 4.6.0.
+GPU-only (SM100/SM110); quack/cutlass import lazily. Verified with
+quack-kernels 0.6.5 on nvidia-cutlass-dsl 4.8 (the version flash-attn-4 also needs).
 """
 
 from __future__ import annotations
@@ -62,6 +62,19 @@ def fp4_cute_available() -> bool:
         return True
     except Exception:
         return False
+
+
+@functools.lru_cache(maxsize=1)
+def _blockscaled_format_kwargs() -> dict:
+    """quack builds that resolve blockscaled formats by name require them on the low-level gemm."""
+    import inspect
+
+    from quack.gemm import gemm as gemm_low
+
+    params = inspect.signature(gemm_low).parameters
+    if "bs_format_a" in params and "bs_format_b" in params:
+        return {"bs_format_a": "nvfp4", "bs_format_b": "nvfp4"}
+    return {}
 
 
 def _check_dims(n: int, k: int, gated: bool) -> None:
@@ -226,6 +239,7 @@ class GroupedNvfp4Gemm:
             cu_seqlens_m=cu,
             SFA=sfa,
             SFB=self._sfb,
+            **_blockscaled_format_kwargs(),
         )
 
         pre = acc

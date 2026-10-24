@@ -3,7 +3,6 @@
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 import httpx
 import pytest
@@ -32,7 +31,8 @@ def test_ringmaster_fsdp2_parity(backend, inner, packed):
             "torch.distributed.run",
             "--standalone",
             "--nproc_per_node=2",
-            str(Path(__file__).with_name("_ringmaster_parity.py")),
+            "--module",
+            "tests.e2e.multigpu._ringmaster_parity",
         ],
         env=os.environ
         | {
@@ -73,7 +73,8 @@ def test_ringmaster_mamba_fsdp2_parity(hub, packed):
             "torch.distributed.run",
             "--standalone",
             "--nproc_per_node=2",
-            str(Path(__file__).with_name("_ringmaster_parity.py")),
+            "--module",
+            "tests.e2e.multigpu._ringmaster_parity",
         ],
         env=os.environ
         | {
@@ -182,7 +183,8 @@ def test_ringmaster_fla_mamba_fsdp2_parity(family, packed, lora):
             "torch.distributed.run",
             "--standalone",
             "--nproc_per_node=2",
-            str(Path(__file__).with_name("_ringmaster_parity.py")),
+            "--module",
+            "tests.e2e.multigpu._ringmaster_parity",
         ],
         env=os.environ
         | {

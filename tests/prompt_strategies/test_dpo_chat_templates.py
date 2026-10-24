@@ -376,6 +376,47 @@ class TestDPOChatTemplateToolRole:
         result = transform_fn(dataset[0], tokenizer=llama3_tokenizer)
         assert "prompt" in result
 
+    def test_null_mapped_property_is_dropped(self, llama3_tokenizer):
+        """Struct unification fills absent mapped properties with None."""
+        tool_calls = [
+            {"type": "function", "function": {"name": "f", "arguments": "{}"}}
+        ]
+        dataset = Dataset.from_list(
+            [
+                {
+                    "messages": [
+                        {"role": "user", "content": "hello"},
+                        {"role": "assistant", "content": "", "tool_calls": tool_calls},
+                        {"role": "tool", "content": "42"},
+                        {"role": "user", "content": "and?"},
+                    ],
+                    "chosen": {"role": "assistant", "content": "The answer is 42."},
+                    "rejected": {"role": "assistant", "content": "Unknown."},
+                }
+            ]
+        )
+        assert dataset[0]["messages"][0]["tool_calls"] is None
+        transform_fn, _ = default(
+            DictDefault(
+                {
+                    "chat_template": "llama4",
+                    "datasets": [
+                        {
+                            "type": "chat_template",
+                            "message_property_mappings": {
+                                "role": "role",
+                                "content": "content",
+                                "tool_calls": "tool_calls",
+                            },
+                        }
+                    ],
+                }
+            )
+        )
+        result = transform_fn(dataset[0], tokenizer=llama3_tokenizer)
+        assert "and?" in result["prompt"]
+        assert '"name": "f"' in result["prompt"]
+
 
 class TestDPOChatTemplateVision:
     """Vision samples stay conversational so TRL renders them with the processor."""

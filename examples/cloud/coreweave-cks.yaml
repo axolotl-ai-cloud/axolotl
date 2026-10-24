@@ -1,0 +1,32 @@
+# axolotl train train.yaml --cloud coreweave-cks.yaml --launcher torchrun
+provider: coreweave
+backend: cks
+image: axolotlai/axolotl-cloud:main-latest
+
+# kubeconfig: ~/.kube/coreweave.yaml   # omit to use the ambient kubectl context
+namespace: my-tenant-namespace
+nodes: 2
+gpus_per_node: 8
+
+# ReadWriteMany volume (storage class shared-vast) mounted at pvc_mount; relative
+# output_dir values land under <pvc_mount>/axolotl-jobs/<job>/
+pvc: training-shared
+pvc_mount: /data
+cpu: "100"
+memory_request: 1600Gi   # cpu_ram_efficient_loading stages the whole checkpoint on one rank
+shm_size: 256Gi
+# node-local directories mounted read-only (host path: container path), e.g. weights staged on each
+# node's NVMe so base_model loads skip the shared volume
+# host_paths:
+#   /mnt/local/models: /models
+
+rdma: true               # rdma/ib + the InfiniBand NCCL recipe
+secret_env:
+  HF_TOKEN: hf-token/token
+object_storage:          # workload identity; no access keys
+  org_id: my-org-id
+  region: US-EAST-15A
+env:
+  NCCL_DEBUG: WARN
+# setup_commands:
+#   - uv pip install --python "$(command -v python)" --no-deps /data/pkgs/transformers-*.whl

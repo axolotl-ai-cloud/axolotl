@@ -187,6 +187,18 @@ class LoraConfig(BaseModel):
     )
 
     merge_lora: bool | None = None
+    merge_compile: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Compile merge-aware NVFP4 expert-chunk arithmetic, using strict precision by default. Requires memory_efficient merging; other targets remain eager."
+        },
+    )
+    merge_compile_precision: Literal["strict", "relaxed"] = Field(
+        default="strict",
+        json_schema_extra={
+            "description": "Compiled merge precision: strict preserves eager rounding and validates each specialization against PEFT; relaxed uses compiler defaults without equivalence checks and may change merged NVFP4 bytes. Only used with merge_compile."
+        },
+    )
     merge_method: Literal["legacy", "memory_efficient"] | None = Field(
         default=None,
         json_schema_extra={
@@ -285,6 +297,12 @@ class LoraConfig(BaseModel):
                 "not have, so PEFT fails when building the adapter; eva and mica are "
                 "not supported for target parameters."
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_merge_compile_method(self):
+        if self.merge_compile and self.merge_method == "legacy":
+            raise ValueError("merge_compile requires merge_method: memory_efficient")
         return self
 
 

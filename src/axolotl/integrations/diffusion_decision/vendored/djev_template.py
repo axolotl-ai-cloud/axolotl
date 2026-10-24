@@ -21,9 +21,20 @@ class SchemaError(ValueError):
     pass
 
 
-def parse_schema(value, *, alphabet=None):
-    """Parse a DJeV schema, with an optional local label alphabet adaptation."""
-    if alphabet is not None and (
+# Local: alphabets (tuples) already validated; checking a 255-label alphabet on
+# every parse dominated re-permuted canvas assembly.
+_CHECKED_ALPHABETS: set[tuple[str, ...]] = set()
+
+
+def _checked(alphabet):
+    try:
+        return type(alphabet) is tuple and alphabet in _CHECKED_ALPHABETS
+    except TypeError:  # unhashable labels: not a valid alphabet anyway
+        return False
+
+
+def _check_alphabet(alphabet):
+    if (
         not isinstance(alphabet, (list, tuple))
         or len(alphabet) < 2
         or any(
@@ -40,6 +51,14 @@ def parse_schema(value, *, alphabet=None):
         raise SchemaError(
             "schema: label alphabet must contain distinct one-character labels"
         )
+
+
+def parse_schema(value, *, alphabet=None):
+    """Parse a DJeV schema, with an optional local label alphabet adaptation."""
+    if alphabet is not None and not _checked(alphabet):
+        _check_alphabet(alphabet)
+        if type(alphabet) is tuple:
+            _CHECKED_ALPHABETS.add(alphabet)
     if (
         not isinstance(value, dict)
         or not isinstance(value.get("questions"), list)

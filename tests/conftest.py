@@ -98,8 +98,26 @@ _GPU_MARKER_PROPERTY = "axolotl_gpu_marker_missing"
 _gpu_marker_missing: dict[str, str] = {}
 
 
+# Blackwell-only gates name an SM10x-12x arch (or "Blackwell") and no pre-Blackwell one;
+# "Hopper (sm_90) or Blackwell" and "Marlin sm80+ / CUTLASS sm120" run on older GPUs.
+BLACKWELL_SKIP_REASON_RE = re.compile(
+    r"\bblackwell\b|\bsm[_ ]?(?:>=\s*)?1[0-2]\d\b", re.IGNORECASE
+)
+PRE_BLACKWELL_ARCH_RE = re.compile(
+    r"\bsm[_ ]?[5-9]\d\b|\b(?:ampere|ada|hopper|[ah]100|l40s?)\b", re.IGNORECASE
+)
+
+
 def is_gpu_skip_reason(reason) -> bool:
     return bool(reason) and GPU_SKIP_REASON_RE.search(str(reason)) is not None
+
+
+def is_blackwell_skip_reason(reason) -> bool:
+    text = str(reason or "")
+    return (
+        BLACKWELL_SKIP_REASON_RE.search(text) is not None
+        and PRE_BLACKWELL_ARCH_RE.search(text) is None
+    )
 
 
 def skip_marker_text(mark) -> str:
@@ -115,6 +133,17 @@ def item_is_cuda_gated(item) -> bool:
     )
 
 
+def needs_gpu_blackwell_marker(item) -> bool:
+    # Multi-GPU NVFP4 tests keep their own `nvfp4` lane (cicd/nvfp4.sh).
+    if item.get_closest_marker("gpu_blackwell") or item.get_closest_marker("nvfp4"):
+        return False
+    return any(
+        mark.name in ("skipif", "skip")
+        and is_blackwell_skip_reason(skip_marker_text(mark))
+        for mark in item.iter_markers()
+    )
+
+
 def skip_reason_from_report(report) -> str:
     longrepr = getattr(report, "longrepr", None)
     if isinstance(longrepr, tuple) and len(longrepr) == 3:
@@ -125,7 +154,12 @@ def skip_reason_from_report(report) -> str:
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):  # pylint: disable=unused-argument
     for item in items:
-        if item.get_closest_marker("gpu") is None and item_is_cuda_gated(item):
+        if needs_gpu_blackwell_marker(item):
+            item.add_marker(pytest.mark.gpu_blackwell)
+        if item.get_closest_marker("gpu") is None and (
+            item.get_closest_marker("gpu_blackwell") is not None
+            or item_is_cuda_gated(item)
+        ):
             item.add_marker(pytest.mark.gpu)
 
 
@@ -172,6 +206,16 @@ def pytest_sessionfinish(session, exitstatus):  # pylint: disable=unused-argumen
         print(header, *lines, sep="\n")
     if os.environ.get("AXOLOTL_CI_ENFORCE_GPU_MARKER") == "1":
         session.exitstatus = 1
+
+
+@pytest.hookimpl(hookwrapper=True, trylast=True)
+def pytest_runtest_protocol(item, nextitem):  # pylint: disable=unused-argument
+    # coverage's sysmon core reports each line once; re-arm so testmon credits every test.
+    # trylast nests this inside testmon's wrapper, after its per-test context switch.
+    sysmon_coverage = sys.monitoring.get_tool(sys.monitoring.COVERAGE_ID)
+    if sysmon_coverage and item.config.pluginmanager.has_plugin("TestmonCollect"):
+        sys.monitoring.restart_events()
+    yield
 
 
 def pytest_runtest_setup(item):
@@ -253,12 +297,6 @@ def download_smollm2_135m_bnb_nf4_model():
 def download_smollm2_135m_instruct_model():
     # download the model
     snapshot_download_w_retry("HuggingFaceTB/SmolLM2-135M-Instruct", repo_type="model")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def download_smollm2_135m_gptq_model():
-    # download the model
-    snapshot_download_w_retry("lilmeaty/SmolLM2-135M-Instruct-GPTQ", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -419,14 +457,6 @@ def download_tiny_shakespeare_dataset():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_evolkit_kd_sample_dataset():
-    # download the dataset
-    snapshot_download_w_retry(
-        "axolotl-ai-co/evolkit-logprobs-pipeline-75k-v2-sample", repo_type="dataset"
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
 def download_deepseek_model_fixture():
     snapshot_download_w_retry("axolotl-ai-co/DeepSeek-V3-11M", repo_type="model")
 
@@ -436,16 +466,6 @@ def download_huggyllama_model_fixture():
     # download the tokenizer only
     snapshot_download_w_retry(
         "huggyllama/llama-7b",
-        repo_type="model",
-        allow_patterns=["*token*", "config.json"],
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
-def download_llama33_70b_model_fixture():
-    # download the tokenizer only
-    snapshot_download_w_retry(
-        "axolotl-ai-co/Llama-3.3-70B-Instruct-tokenizer",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
     )
@@ -608,14 +628,6 @@ def download_llama2_model_fixture():
         "NousResearch/Llama-2-7b-hf",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
-def download_llama32_1b_model_fixture():
-    snapshot_download_w_retry(
-        "osllmai-community/Llama-3.2-1B",
-        repo_type="model",
     )
 
 
@@ -807,26 +819,6 @@ def dataset_winglian_tiny_shakespeare(
 
 
 @pytest.fixture
-def dataset_tatsu_lab_alpaca(
-    download_ds_fixture_bundle: Path,
-):
-    from datasets import load_from_disk
-
-    ds_path = download_ds_fixture_bundle / "tatsu-lab__alpaca"
-    return load_from_disk(ds_path)["train"]
-
-
-@pytest.fixture
-def dataset_mhenrichsen_alpaca_2k_test(
-    download_ds_fixture_bundle: Path,
-):
-    from datasets import load_from_disk
-
-    ds_path = download_ds_fixture_bundle / "mhenrichsen__alpaca_2k_test"
-    return load_from_disk(ds_path)["train"]
-
-
-@pytest.fixture
 def dataset_argilla_ultrafeedback_binarized_preferences_cleaned(
     download_ds_fixture_bundle: Path,
 ):
@@ -835,29 +827,6 @@ def dataset_argilla_ultrafeedback_binarized_preferences_cleaned(
     ds_path = (
         download_ds_fixture_bundle
         / "argilla__ultrafeedback-binarized-preferences-cleaned"
-    )
-    return load_from_disk(ds_path)["train"]
-
-
-@pytest.fixture
-def dataset_fozziethebeat_alpaca_messages_2k_dpo_test(
-    download_ds_fixture_bundle: Path,
-):
-    from datasets import load_from_disk
-
-    ds_path = download_ds_fixture_bundle / "fozziethebeat__alpaca_messages_2k_dpo_test"
-    return load_from_disk(ds_path)["train"]
-
-
-@pytest.fixture
-def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
-    download_ds_fixture_bundle: Path,
-):
-    from datasets import load_from_disk
-
-    ds_path = (
-        download_ds_fixture_bundle
-        / "fozziethebeat__alpaca_messages_2k_dpo_test__rev_ea82cff"
     )
     return load_from_disk(ds_path)["train"]
 
@@ -910,7 +879,6 @@ def test_load_fixtures(
     download_llama3_8b_model_fixture,
     download_llama3_8b_instruct_model_fixture,
     download_phi_35_mini_model_fixture,
-    download_phi_3_medium_model_fixture,
     download_phi_4_reasoning_model_fixture,
     download_mistral_7b_model_fixture,
     download_gemma_2b_model_fixture,

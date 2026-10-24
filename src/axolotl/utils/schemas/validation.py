@@ -402,6 +402,21 @@ class DatasetValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_generation_tags_needs_prepare(cls, data):
+        if data.get("skip_prepare_dataset") and any(
+            ds.get("generation_tags")
+            if isinstance(ds, dict)
+            else getattr(ds, "generation_tags", None)
+            for ds in (data.get("datasets") or []) + (data.get("test_datasets") or [])
+        ):
+            raise ValueError(
+                "generation_tags labels during dataset preparation and has no effect "
+                "with skip_prepare_dataset"
+            )
+        return data
+
 
 class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
@@ -544,6 +559,37 @@ class TrainingValidationMixin:
             raise ValueError(
                 "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_checkpoint_save_retry_timeout(cls, data):
+        retry = data.get("checkpoint_save_retry")
+        if not isinstance(retry, dict):
+            return data
+        total = float(retry.get("wait_seconds", 300)) * int(retry.get("retries", 1))
+        timeout = data.get("ddp_timeout") or 1800
+        if total >= timeout:
+            LOG.warning(
+                f"checkpoint_save_retry waits up to {total:g}s on the rank whose write "
+                f"failed, while the other ranks wait at a collective that times out after "
+                f"ddp_timeout={timeout}s. Lower wait_seconds or raise ddp_timeout."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_checkpoint_mirror_dir(cls, data):
+        mirror = data.get("checkpoint_mirror")
+        mirror_dir = mirror.get("dir") if isinstance(mirror, dict) else None
+        if mirror_dir and data.get("output_dir"):
+            output_dir = Path(data["output_dir"]).expanduser().resolve()
+            target = Path(mirror_dir).expanduser().resolve()
+            if target == output_dir or target.is_relative_to(output_dir):
+                raise ValueError(
+                    "checkpoint_mirror.dir must be outside output_dir; the final copy "
+                    "would otherwise copy the mirror into itself"
+                )
         return data
 
     @model_validator(mode="before")
@@ -1040,28 +1086,6 @@ class RLValidationMixin:
 
         return data
 
-    @model_validator(mode="after")
-    def check_dpo_use_liger_kernel(self):
-        if not self.dpo_use_liger_kernel:
-            return self
-        loss_types = self.dpo_loss_type
-        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
-        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
-        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
-            raise ValueError(
-                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
-                "(liger-kernel's fused DPO loss cannot length-normalize the "
-                "squared margin). Disable the liger kernel or use another loss."
-            )
-        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
-        if loss_types and len(loss_types) > 1:
-            LOG.warning(
-                "`dpo_use_liger_kernel` uses only the first entry of "
-                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
-                "are ignored on the liger loss path."
-            )
-        return self
-
     @model_validator(mode="before")
     @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
@@ -1173,9 +1197,8 @@ STAGED_NF4_CONSTRAINTS = [
             bool(self.deepspeed)
             or (self.tensor_parallel_size or 1) > 1
             or (self.context_parallel_size or 1) > 1
-            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
         ),
-        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+        "CPU-staged NF4 does not support DeepSpeed, tensor or context parallelism",
     ),
     (
         lambda self: (self.dp_replicate_size or 1) > 1,
@@ -1232,7 +1255,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon":
+        if data.get("optimizer") in ("muon", "muon_8bit"):
             if data.get("deepspeed"):
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"
@@ -1294,7 +1317,7 @@ class OptimizationValidationMixin:
                 "silently ignored. Remove them or pick a different optimizer."
             )
 
-        if data.get("relora_steps"):
+        if data.get("relora"):
             raise ValueError(
                 "relora resets optimizer state through Optimizer.state, which polora "
                 "does not use, so its momentum would survive every merge."
@@ -2435,6 +2458,40 @@ class DistributedValidationMixin:
             raise ValueError(
                 "tensor_parallel_size > 1 cannot be combined with expert_parallel_size > 1; "
                 "shard the experts with expert_parallel_size and the rest with dp_shard_size"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_sharded_adapter_checkpoints(self):
+        if self.adapter_checkpoint_format != "sharded":
+            if self.adapter_final_save_format == "sharded":
+                raise ValueError(
+                    "adapter_final_save_format: sharded requires "
+                    "adapter_checkpoint_format: sharded"
+                )
+            return self
+        problems = []
+        if not self.adapter:
+            problems.append("an adapter (lora/qlora)")
+        if not self.fsdp_config or (self.fsdp_version or 2) != 2:
+            problems.append("fsdp_version: 2")
+        elif self.fsdp_config.state_dict_type != "FULL_STATE_DICT":
+            problems.append("fsdp_config.state_dict_type: FULL_STATE_DICT")
+        if (self.tensor_parallel_size or 1) > 1:
+            problems.append("tensor_parallel_size: 1")
+        if self.rl:
+            # the RL trainers do not include ShardedAdapterSaveMixin
+            problems.append("rl unset")
+        if self.load_best_model_at_end:
+            # the best checkpoint may still be consolidating when training ends
+            problems.append("load_best_model_at_end: false")
+        if self.hub_model_id and (self.hub_strategy or "every_save") != "end":
+            # Trainer pushes each checkpoint before its adapter is consolidated
+            problems.append("hub_strategy: end when hub_model_id is set")
+        if problems:
+            raise ValueError(
+                "adapter_checkpoint_format: sharded writes PEFT adapter-only checkpoints "
+                "under FSDP2 and requires " + ", ".join(problems)
             )
         return self
 

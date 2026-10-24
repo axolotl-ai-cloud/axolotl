@@ -18,12 +18,9 @@ pytestmark = pytest.mark.nvfp4
 )
 def test_native_nvfp4_lora_deepspeed(tmp_path, stage):
     pytest.importorskip("deepspeed")
-    try:
-        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
-    except ImportError:
-        pytest.skip("TorchAO NVFP4 unavailable")
-    if NVFP4Tensor is None:
-        pytest.skip("TorchAO NVFP4 unavailable")
+    pytest.importorskip(
+        "torchao.prototype.mx_formats.nvfp4_tensor", reason="TorchAO NVFP4 unavailable"
+    )
     env = os.environ | {
         "TORCHAO_LORA_DEEPSPEED_TMP": str(tmp_path),
         "ZERO_STAGE": str(stage),

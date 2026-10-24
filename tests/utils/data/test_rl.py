@@ -315,3 +315,36 @@ def test_load_split_rejects_mixed_image_and_text_datasets():
         pytest.raises(ValueError, match="mixing image and text-only"),
     ):
         _load_split(cfg, "train")
+
+
+def test_map_dataset_gives_reemitted_columns_fresh_features():
+    """A transform that removes and re-emits a column must not inherit the old feature."""
+    from datasets import Dataset
+
+    from axolotl.utils.data.rl import _map_dataset
+    from axolotl.utils.dict import DictDefault
+
+    dataset = Dataset.from_list(
+        [
+            {
+                "prompt": "q",
+                "chosen": [{"role": "assistant", "content": "good", "extra": None}],
+                "rejected": [{"role": "assistant", "content": "bad", "extra": "x"}],
+            }
+        ]
+    )
+
+    def transform(sample):
+        return {
+            "prompt": sample["prompt"],
+            "chosen": sample["chosen"][-1]["content"],
+            "rejected": sample["rejected"][-1]["content"],
+        }
+
+    cfg = DictDefault({"dataset_num_proc": None, "is_preprocess": True})
+    mapped = _map_dataset(
+        cfg, dataset, transform, remove_columns=["chosen", "rejected"]
+    )
+    assert mapped.column_names == ["prompt", "chosen", "rejected"]
+    assert mapped[0]["chosen"] == "good" and mapped[0]["rejected"] == "bad"
+    assert str(mapped.features["chosen"]) == "Value('string')"

@@ -436,84 +436,6 @@ class TestBnbBlocksizeValidator:
         validate_config(cfg)
 
 
-class TestFlashAttnAvailabilityMessage:
-    """The error names the hub failure transformers swallows, and a hub lookup
-    that succeeds on retry overrides transformers' cached verdict."""
-
-    def test_hub_failure_reason_is_reported(self, min_base_cfg, monkeypatch):
-        import kernels
-        import torch
-        from transformers import utils as transformers_utils
-
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-        monkeypatch.setattr(
-            transformers_utils, "is_flash_attn_2_available", lambda **_: False
-        )
-
-        def failing_get_kernel(*_, **__):
-            raise RuntimeError("HTTP 429 Too Many Requests")
-
-        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
-        from axolotl.utils.schemas import validation
-
-        def no_cached_build(*_, **__):
-            raise FileNotFoundError("no loadable cached snapshot")
-
-        monkeypatch.setattr(validation, "_get_kernel_from_cache", no_cached_build)
-        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
-        with pytest.raises(ValueError, match="HTTP 429 Too Many Requests"):
-            validate_config(cfg)
-
-    def test_hub_failure_falls_back_to_cached_build(self, min_base_cfg, monkeypatch):
-        import kernels
-        import torch
-        from transformers import utils as transformers_utils
-
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-        monkeypatch.setattr(
-            transformers_utils, "is_flash_attn_2_available", lambda **_: False
-        )
-
-        def failing_get_kernel(*_, **__):
-            raise RuntimeError("HTTP 429 Too Many Requests")
-
-        monkeypatch.setattr(kernels, "get_kernel", failing_get_kernel)
-        from axolotl.utils.schemas import validation
-
-        monkeypatch.setattr(
-            validation, "_get_kernel_from_cache", lambda *_, **__: object()
-        )
-        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
-        validate_config(cfg)
-
-    def test_successful_lookup_overrides_transformers_verdict(
-        self, min_base_cfg, monkeypatch
-    ):
-        """transformers' probe swallows transient hub errors as "unavailable"."""
-        import kernels
-        import torch
-        from transformers import utils as transformers_utils
-
-        cleared = []
-
-        def unavailable(**_):
-            return False
-
-        unavailable.cache_clear = lambda: cleared.append(True)
-
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-        monkeypatch.setattr(
-            transformers_utils, "is_flash_attn_2_available", unavailable
-        )
-        monkeypatch.setattr(kernels, "get_kernel", lambda *_, **__: object())
-        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
-
-        validated = validate_config(cfg)
-
-        assert validated.attn_implementation == "flash_attention_2"
-        assert cleared == [True]
-
-
 class TestCustomLossConflictsValidator:
     """use_dft / use_eaft need full logits and unsharded labels in the SFT trainer."""
 
@@ -602,3 +524,64 @@ class TestTrainableTokenWarning:
             AxolotlInputConfig.warn_peft_trainable_token_to_fix_untrained(data)
         warning.assert_called_once()
         assert "Token 201" in warning.call_args.args[0]
+
+
+class TestCheckpointMirror:
+    """checkpoint_mirror copies saves from a local output_dir to a shared directory."""
+
+    def test_defaults(self, min_base_cfg, tmp_path):
+        cfg = min_base_cfg | {
+            "output_dir": str(tmp_path / "nvme"),
+            "checkpoint_mirror": {"dir": str(tmp_path / "nfs")},
+        }
+        mirror = validate_config(cfg).checkpoint_mirror
+        assert mirror["delete"] == "mirror"
+        assert mirror["save_total_limit"] is None
+        assert mirror["max_pending"] == 2
+        assert mirror["resume"] is True
+
+    @pytest.mark.parametrize("inside", ["", "mirror"])
+    def test_rejects_a_mirror_inside_output_dir(self, min_base_cfg, tmp_path, inside):
+        out = tmp_path / "nvme"
+        cfg = min_base_cfg | {
+            "output_dir": str(out),
+            "checkpoint_mirror": {"dir": str(out / inside)},
+        }
+        with pytest.raises(ValueError, match="outside output_dir"):
+            validate_config(cfg)
+
+    def test_mirror_limit_requires_keep(self, min_base_cfg, tmp_path):
+        cfg = min_base_cfg | {
+            "output_dir": str(tmp_path / "nvme"),
+            "checkpoint_mirror": {
+                "dir": str(tmp_path / "nfs"),
+                "delete": "mirror",
+                "save_total_limit": 3,
+            },
+        }
+        with pytest.raises(ValueError, match="only applies with `delete: keep`"):
+            validate_config(cfg)
+
+        cfg["checkpoint_mirror"]["delete"] = "keep"
+        assert validate_config(cfg).checkpoint_mirror["save_total_limit"] == 3
+
+
+class TestCheckpointSaveRetry:
+    def test_defaults(self, min_base_cfg):
+        cfg = min_base_cfg | {"checkpoint_save_retry": {}}
+        retry = validate_config(cfg).checkpoint_save_retry
+        assert (retry["wait_seconds"], retry["retries"]) == (300, 1)
+
+    def test_warns_when_the_wait_reaches_ddp_timeout(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | {
+            "checkpoint_save_retry": {"wait_seconds": 600, "retries": 3},
+            "ddp_timeout": 1800,
+        }
+        with caplog.at_level("WARNING"):
+            validate_config(cfg)
+        assert "Lower wait_seconds or raise ddp_timeout" in caplog.text
+
+    def test_rejects_negative_wait(self, min_base_cfg):
+        cfg = min_base_cfg | {"checkpoint_save_retry": {"wait_seconds": -1}}
+        with pytest.raises(ValueError):
+            validate_config(cfg)

@@ -800,3 +800,21 @@ def test_gemma_native_trainer_evaluate_uses_diffusion_loss(tmp_path):
     metrics = trainer.evaluate()
 
     assert torch.isfinite(torch.tensor(metrics["eval_loss"]))
+
+
+def test_flex_backend_raises_the_dynamo_recompile_budget(monkeypatch):
+    import torch._dynamo
+
+    from axolotl.core.trainers.diffusion_lm.attention import FLEX_RECOMPILE_LIMIT
+    from axolotl.core.trainers.diffusion_lm.backends.encoder_canvas import (
+        EncoderCanvasBackend,
+    )
+
+    monkeypatch.setattr(torch._dynamo.config, "recompile_limit", 8)
+    EncoderCanvasBackend(32, 8, attention_backend="dense")
+    assert torch._dynamo.config.recompile_limit == 8
+    EncoderCanvasBackend(32, 8, attention_backend="flex_attention")
+    assert torch._dynamo.config.recompile_limit == FLEX_RECOMPILE_LIMIT
+    monkeypatch.setattr(torch._dynamo.config, "recompile_limit", 256)
+    EncoderCanvasBackend(32, 8, attention_backend="flex_attention")
+    assert torch._dynamo.config.recompile_limit == 256

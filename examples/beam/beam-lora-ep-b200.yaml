@@ -1,0 +1,212 @@
+# Beam LoRA SFT on 2 x 8 B200 (16 GPUs).
+#
+# bf16 base, no quantization. EP=8 is node-local (each GPU owns 32 of the 256
+# experts per layer, ~123 GB) and the dense weights FSDP-shard over the same
+# node-local axis; HSDP replicates that across the two nodes, so InfiniBand
+# only carries the LoRA gradient all-reduce. LoRA on attention projections
+# plus the fused 3D expert tensors via lora_target_parameters.
+base_model: reflection/Beam-1.0-501B-A23B
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+# ScatterMoE grouped GEMM for the routed experts (Triton, any sm80+). Swap to
+# use_sonicmoe: true once the baseline runs; it is the faster B200 path.
+use_scattermoe: true
+cut_cross_entropy: true
+autotune_cache_path: ./outputs/autotune-b200.json
+# Triton autotune winners measured on B200 (sm_100) and H100 for this architecture's expert
+# GEMMs (LoRA rank 32); identical across every routed-row bucket we saw, so pin them: no step
+# benchmarks configs and EP ranks stay in lockstep. Each profile is keyed to the shapes it was
+# measured at: with EP=8 the bf16 gate_up GEMM (K=5120) takes the split base+LoRA path, so the
+# fused LoRA kernel only ever runs the down projection (K=2560); the NVFP4 kernels saw both.
+# Any other shape falls back to the normal autotune. The full measured cache (bf16 and NVFP4
+# paths) is in autotune/b200.json; point autotune_cache_path at a copy to keep recording new keys.
+autotune_profiles:
+  - kernel: _scatter2scatter_lora          # bf16 experts, forward
+    gpu: B200
+    match: { N: 5120, K: 2560 }
+    configs:
+      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
+  - kernel: _scatter2scatter_lora          # bf16 experts, forward
+    gpu: H100
+    match: { N: 5120, K: 2560 }
+    configs:
+      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 64, num_stages: 4, num_warps: 4 }
+  - kernel: _scatter2scatter_lora_mx       # NVFP4 experts, forward
+    gpu: B200
+    match: { N: 5120, K: [2560, 5120] }
+    configs:
+      - { BLOCK_M: 128, BLOCK_N: 64, BLOCK_K: 32, num_stages: 3, num_warps: 4 }
+  - kernel: _scatter2scatter_lora_dX_mx    # NVFP4 experts, input gradient
+    gpu: B200
+    match: { N: 5120, K: [2560, 5120] }
+    configs:
+      - { BLOCK_M: 64, BLOCK_N: 32, BLOCK_K: 64, num_stages: 2, num_warps: 4 }
+  # SonicMoE (use_sonicmoe: true): quack GEMMs on B200, measured on Beam at EP=8 (32 local experts per
+  # rank, so the shapes below carry 32 in the expert dimension). Ignored by ScatterMoE. Pins first (the
+  # first match decides) for the training sizes of sonicmoe_ep_compact_routing with highwater row
+  # padding (>= 98304 pair rows; eval's 32k-65k keep the filtered search); everything else is narrowed
+  # to the tiles that ever won.
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: B200
+    match: { "postact_out.dim0": { ge: 98304 }, "B.shape": [32, 5120, 5120] }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    match: { "A.dim0": { ge: 98304 }, "B.shape": [32, 2560, 5120] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1 }
+      - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 1 }
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    match: { "PreAct.dim0": { ge: 98304 }, "B.shape": [32, 5120, 2560] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+  # backward: expert weight grads (varlen K = pairs; out [local experts, H, I or 2I]) and dX through gate/up.
+  # Measured on Beam EP=8 at 65k-360k pairs: the winner is always one of these two (others >= 3% slower,
+  # non-persistent 4-22% slower), and they trade places by bucket, so both stay in the sweep.
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    match: { "out.shape": [32, 5120, null], "B.dim0": { ge: 65536 } }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    match: { "A.dim0": { ge: 65536 }, "B.shape": [32, 5120, 5120] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true }
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true }
+  # forward gated below the training sizes (eval, small layers): 16k-98k rows, 11 measured keys; these
+  # four always held a config within 1% of the best
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: B200
+    match: { "postact_out.dim0": { ge: 16384, lt: 98304 }, "B.shape": [32, 5120, 5120] }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true }
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false }
+      - { tile_m: 128, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true }
+  # dgated below the training sizes: 256x256 c2x1 persistent won both measured keys (65k rows), others >= 4% slower
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    match: { "PreAct.dim0": { ge: 16384, lt: 98304 }, "B.shape": [32, 5120, 2560] }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true }
+  # everything else: narrowed search (tile_n = tile_m or 2x for gated; measured winners all kept)
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      where:
+        - { if: { tile_m: 128 }, then: { tile_n: [128, 256] } }
+        - { if: { tile_m: 256 }, then: { tile_n: [256, 512] } }
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      tile_n: [160, 192, 224, 256, 512]
+  - kernel: gemm_tuned
+    backend: quack
+    gpu: B200
+    allow:
+      tile_n: [160, 192, 224, 256, 512]
+      where:
+        - { if: { cluster: [2, 2] }, then: { tile_m: 256 } }
+autotune_neighborhood: 1
+
+expert_parallel_size: 8
+dp_replicate_size: 2
+dp_shard_size: 1
+expert_parallel_backend: deep_ep
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    generation_tags: true
+    split: train[:2%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.01
+output_dir: ./outputs/beam-lora-ep
+
+sequence_len: 8192
+sample_packing: true
+pad_to_sequence_len: true
+eval_sample_packing: true
+train_on_inputs: false
+
+adapter: lora
+lora_r: 32
+lora_alpha: 64
+# PEFT's ParamWrapper rejects dropout on target_parameters
+lora_dropout: 0.0
+# gate_proj is ambiguous here (attention output gate vs dense MLP); never
+# lora_target_linear.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# routed experts are fused 3D nn.Parameter tensors; the router (mlp.gate.weight)
+# is deliberately absent
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+num_epochs: 2
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1.0e-4
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+bf16: true
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+attn_implementation: flash_attention_4
+# fused LoRA kernels: the QKV/O patch keeps Beam's gate and norms in place (A/B: identical losses)
+lora_qkv_kernel: true
+lora_o_kernel: true
+lora_mlp_kernel: true
+
+fsdp_version: 2
+fsdp_config:
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: BeamDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  offload_params: false
+
+# rank 0 streams ~1 TB from the shared volume before the first collective
+ddp_timeout: 7200
+
+logging_steps: 1
+evals_per_epoch: 2
+save_steps: 100
+save_total_limit: 3
+seed: 42
+
+special_tokens:
+  eos_token: "<|return|>"
+  pad_token: "<|endoftext|>"

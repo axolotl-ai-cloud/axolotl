@@ -10,7 +10,6 @@ from transformers.testing_utils import get_torch_dist_unique_port
 from tests.e2e.multigpu.utils import fsdp2_training_config
 from tests.e2e.utils import (
     check_tensorboard_loss_decreased,
-    require_torch_2_7_0,
     requires_flash_attn,
 )
 
@@ -47,7 +46,6 @@ def verify_training_success(temp_dir):
 class TestDistMuon:
     """Test class for DistMuon optimizer with FSDP2 functionality."""
 
-    @require_torch_2_7_0
     def test_fft_sft(self, temp_dir):
         cfg = fsdp2_training_config(
             {
@@ -106,7 +104,6 @@ class TestDistMuon:
 
         verify_training_success(temp_dir)
 
-    @require_torch_2_7_0
     def test_lora_sft(self, temp_dir):
         cfg = fsdp2_training_config(
             {
