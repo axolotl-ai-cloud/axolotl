@@ -39,6 +39,10 @@ ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 RUN --mount=type=cache,target=/root/.cache/uv \
     set -e; \
     NV_BACKEND="${TORCH_BACKEND%?}"; \
+    CUTLASS_DSL="nvidia-cutlass-dsl"; \
+    if [ "$NV_BACKEND" = "cu13" ]; then \
+        CUTLASS_DSL="${CUTLASS_DSL}[cu13]"; \
+    fi; \
     if [ "$TORCH_BACKEND" = "cu132" ]; then \
         TVM_FFI=""; \
     else \
@@ -48,11 +52,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     if [ -n "$TORCH_INDEX_URL" ]; then \
         uv pip install --extra-index-url "$TORCH_INDEX_URL" \
             torch==${PYTORCH_VERSION} ${TVM_FFI} torchvision \
-            nvidia-cutlass-dsl nvidia-nvshmem-${NV_BACKEND}; \
+            "${CUTLASS_DSL}" nvidia-nvshmem-${NV_BACKEND}; \
     else \
         UV_TORCH_BACKEND=$TORCH_BACKEND uv pip install \
             torch==${PYTORCH_VERSION} ${TVM_FFI} torchvision \
-            nvidia-cutlass-dsl nvidia-nvshmem-${NV_BACKEND}; \
+            "${CUTLASS_DSL}" nvidia-nvshmem-${NV_BACKEND}; \
     fi; \
     uv pip install awscli pydantic
 
