@@ -107,10 +107,21 @@ class TestActivationOffloading:
         assert cfg.activation_offloading == mode
         assert any("with no recompute" in msg for msg in validation_warnings)
 
+    @pytest.mark.parametrize("rl", ["grpo", "gdpo"])
+    def test_grpo_offload_without_gc(self, min_base_cfg, validation_warnings, rl):
+        cfg = (
+            DictDefault(gradient_checkpointing=False, activation_offloading=True, rl=rl)
+            | min_base_cfg
+        )
+
+        cfg = validate_config(cfg)
+        assert cfg.activation_offloading is True
+        assert any("with no recompute" in msg for msg in validation_warnings)
+
     @pytest.mark.parametrize(
         "trainer",
-        [{"rl": "orpo"}, {"rl": "grpo"}, {"process_reward_model": True}],
-        ids=["orpo", "grpo", "prm"],
+        [{"rl": "orpo"}, {"process_reward_model": True}],
+        ids=["orpo", "prm"],
     )
     def test_trl_offload_without_gc_rejected_without_offload_context(
         self, min_base_cfg, trainer

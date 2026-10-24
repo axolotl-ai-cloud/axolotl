@@ -43,6 +43,7 @@ from trl.trainer.utils import pad
 from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
 from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
+    ActivationOffloadingMixin,
     CheckpointWriteRetryMixin,
     DistributedParallelMixin,
     RngLoaderMixin,
@@ -62,6 +63,7 @@ class AxolotlGRPOTrainer(
     OptimizerMixin,
     OptimizerInitMixin,
     DistributedParallelMixin,
+    ActivationOffloadingMixin,
     GRPOTrainer,
 ):
     """Extend the base GRPOTrainer for axolotl helpers"""
@@ -82,6 +84,7 @@ class AxolotlAsyncGRPOTrainer(
     OptimizerMixin,
     OptimizerInitMixin,
     DistributedParallelMixin,
+    ActivationOffloadingMixin,
     FastAsyncGRPOTrainer,
 ):
     """Extend AsyncGRPOTrainer with axolotl helpers"""

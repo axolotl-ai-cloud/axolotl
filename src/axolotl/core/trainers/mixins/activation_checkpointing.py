@@ -164,6 +164,9 @@ class ActivationOffloadingMixin(Trainer):
                 self.activation_offload_context = get_act_offloading_ctx_manager(
                     self.model, use_streams=use_streams
                 )
+            if hasattr(self, "maybe_activation_offload_context"):
+                # a TRL trainer's own offloader would nest inside this one
+                self.maybe_activation_offload_context = contextlib.nullcontext()
         else:
             self.activation_offload_context = contextlib.nullcontext()
 

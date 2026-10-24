@@ -2049,8 +2049,6 @@ class ModelCompatibilityValidationMixin:
                 gc_kwargs.setdefault("use_reentrant", False)
                 self.gradient_checkpointing_kwargs = gc_kwargs
         elif self.process_reward_model or self.rl in (
-            RLType.GRPO,
-            RLType.GDPO,
             RLType.ORPO,
             RLType.SIMPO,
             RLType.EBFT,
