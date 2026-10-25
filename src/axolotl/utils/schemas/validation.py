@@ -2931,6 +2931,24 @@ class GRPOVllmValidationMixin:
                 f"`lr_scheduler: {self.lr_scheduler}` will barely decay. Set `max_steps`, "
                 "or use `lr_scheduler: constant`."
             )
+
+        # TRL's AsyncGRPOConfig defaults: max_staleness 4, weight_sync_steps 1
+        staleness = 4 if trl.max_staleness is None else trl.max_staleness
+        sync_interval = trl.vllm_sync_interval or 1
+        if (
+            self.adapter in ("lora", "qlora")
+            and trl.loss_type in (None, "dapo")
+            and staleness * sync_interval > 2
+        ):
+            LOG.warning(
+                f"Async GRPO with a LoRA adapter trains on rollouts up to "
+                f"{staleness * sync_interval} optimizer steps old (`max_staleness: "
+                f"{staleness}`, `vllm_sync_interval: {sync_interval}`). "
+                "`loss_type: dapo` (the default) drops the gradient of tokens whose "
+                "probability moved past `epsilon` since sampling, and in 200-step "
+                "LoRA runs it stopped ending completions; `trl.loss_type: cispo` is "
+                "recommended. See docs/grpo.qmd#async-loss."
+            )
         return self
 
 
