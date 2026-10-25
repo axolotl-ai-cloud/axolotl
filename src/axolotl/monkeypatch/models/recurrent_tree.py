@@ -31,6 +31,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 import torch
 
 # A varlen scan over the sequences of one call: (inputs [1, T, ...] each,
@@ -88,21 +89,30 @@ def follows_trees(module) -> bool:
 
 @dataclass
 class _Level:
-    tokens: torch.Tensor  # row positions of the level's segments, end to end
+    start: int  # the level's span in the level-ordered row
+    end: int
     cu_seqlens: torch.Tensor
     parents: torch.Tensor | None  # each segment's parent index in the level above
+
+
+def _ranges(starts: np.ndarray, counts: np.ndarray) -> np.ndarray:
+    """``concat(arange(a, a + n) for a, n in zip(starts, counts))``."""
+    offsets = np.cumsum(counts) - counts
+    return np.repeat(starts - offsets, counts) + np.arange(counts.sum())
 
 
 @dataclass
 class TreePlan:
     """The segments of one packed row and the paths between them."""
 
-    starts: list[int]
-    lengths: list[int]
-    parent: list[int]
-    paths: list[list[int]]  # root-to-segment row positions, ending with its own
-    num_tokens: int
+    lengths: np.ndarray
+    kv_index: np.ndarray  # root-to-segment paths end to end, as row positions
+    cu_k: np.ndarray  # path boundaries in kv_index
     device: torch.device
+    # row positions sorted by depth level (segments in row order within a level),
+    # and each row position's index in that order
+    order: torch.Tensor
+    inverse: torch.Tensor
     levels: list[_Level] = field(default_factory=list)
     _conv: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = field(
         default_factory=dict
@@ -117,35 +127,27 @@ class TreePlan:
         give it; the kept positions are the segments' own tokens, in row order.
         """
         if width not in self._conv:
-            gather, cu, keep = [], [0], []
-            for path, length in zip(self.paths, self.lengths, strict=True):
-                history = path[max(0, len(path) - length - (width - 1)) : -length]
-                keep.extend(
-                    range(
-                        len(gather) + len(history), len(gather) + len(history) + length
-                    )
-                )
-                gather.extend(history + path[-length:])
-                cu.append(len(gather))
+            ends = self.cu_k[1:]
+            history = np.minimum(width - 1, ends - self.cu_k[:-1] - self.lengths)
+            counts = history + self.lengths
+            gather = self.kv_index[_ranges(ends - counts, counts)]
+            cu = np.concatenate([[0], np.cumsum(counts)])
+            keep = _ranges(cu[:-1] + history, self.lengths)
             self._conv[width] = self._tensors(gather, cu, keep)
         return self._conv[width]
 
     def path_layout(self):
         """Gather index, cu_seqlens and kept positions running every whole path."""
         if self._paths is None:
-            gather, cu, keep = [], [0], []
-            for path, length in zip(self.paths, self.lengths, strict=True):
-                gather.extend(path)
-                cu.append(len(gather))
-                keep.extend(range(len(gather) - length, len(gather)))
-            self._paths = self._tensors(gather, cu, keep)
+            keep = _ranges(self.cu_k[1:] - self.lengths, self.lengths)
+            self._paths = self._tensors(self.kv_index, self.cu_k, keep)
         return self._paths
 
     def _tensors(self, gather, cu, keep):
         return (
-            torch.tensor(gather, dtype=torch.long, device=self.device),
-            torch.tensor(cu, dtype=torch.int32, device=self.device),
-            torch.tensor(keep, dtype=torch.long, device=self.device),
+            torch.as_tensor(gather, dtype=torch.long, device=self.device),
+            torch.as_tensor(cu, dtype=torch.int32, device=self.device),
+            torch.as_tensor(keep, dtype=torch.long, device=self.device),
         )
 
 
@@ -168,42 +170,48 @@ def tree_plan(kwargs: dict[str, Any]) -> TreePlan | None:
 
 
 def _build_plan(kv_index, cu_q, cu_k) -> TreePlan:
-    kv, q, k = (t.tolist() for t in (kv_index, cu_q, cu_k))
-    starts = q[:-1]
-    lengths = [b - a for a, b in zip(q[:-1], q[1:], strict=True)]
-    paths = [kv[a:b] for a, b in zip(k[:-1], k[1:], strict=True)]
-    owner = {}
-    for segment, (start, length) in enumerate(zip(starts, lengths, strict=True)):
-        owner.update(dict.fromkeys(range(start, start + length), segment))
-    parent, level = [], []
-    for path, length in zip(paths, lengths, strict=True):
-        above = owner[path[-length - 1]] if len(path) > length else -1
-        parent.append(above)
-        level.append(0 if above < 0 else level[above] + 1)
-    plan = TreePlan(starts, lengths, parent, paths, q[-1], kv_index.device)
-    index_in_level: dict[int, int] = {}
-    for depth in range(max(level) + 1):
-        members = [s for s in range(len(starts)) if level[s] == depth]
-        for i, segment in enumerate(members):
-            index_in_level[segment] = i
-        tokens = [p for s in members for p in range(starts[s], starts[s] + lengths[s])]
-        cu = [0]
-        for segment in members:
-            cu.append(cu[-1] + lengths[segment])
-        parents = (
-            torch.tensor(
-                [index_in_level[parent[s]] for s in members], device=plan.device
-            )
-            if depth
-            else None
-        )
+    kv, q, k = (t.cpu().numpy().astype(np.int64) for t in (kv_index, cu_q, cu_k))
+    lengths = np.diff(q)
+    segment_of = np.repeat(np.arange(len(lengths)), lengths)
+    parent_token = k[1:] - lengths - 1
+    parent = np.where(
+        parent_token >= k[:-1], segment_of[kv[np.maximum(parent_token, 0)]], -1
+    )
+    level = np.zeros(len(lengths), dtype=np.int64)
+    for segment, above in enumerate(parent.tolist()):  # parents come first (DFS)
+        if above >= 0:
+            level[segment] = level[above] + 1
+    order = np.argsort(level[segment_of], kind="stable")
+    inverse = np.empty_like(order)
+    inverse[order] = np.arange(len(order))
+    device = kv_index.device
+    plan = TreePlan(
+        lengths,
+        kv,
+        k,
+        device,
+        torch.as_tensor(order, device=device),
+        torch.as_tensor(inverse, device=device),
+    )
+    index_in_level = np.zeros(len(lengths), dtype=np.int64)
+    start = 0
+    for depth in range(int(level.max()) + 1):
+        members = np.nonzero(level == depth)[0]
+        index_in_level[members] = np.arange(len(members))
+        sizes = lengths[members]
+        cu = np.concatenate([[0], np.cumsum(sizes)])
+        parents = None
+        if depth:
+            parents = torch.as_tensor(index_in_level[parent[members]], device=device)
         plan.levels.append(
             _Level(
-                torch.tensor(tokens, dtype=torch.long, device=plan.device),
-                torch.tensor(cu, dtype=torch.int32, device=plan.device),
+                start,
+                start + int(cu[-1]),
+                torch.as_tensor(cu, dtype=torch.int32, device=device),
                 parents,
             )
         )
+        start += int(cu[-1])
     return plan
 
 
@@ -226,15 +234,15 @@ def tree_scan(
         gather, cu_seqlens, keep = plan.path_layout()
         out, _ = scan([x[:, gather] for x in inputs], cu_seqlens, None)
         return out[:, keep]
-    result: torch.Tensor | None = None
-    final = None
+    if len(plan.levels) == 1:  # nothing shared: the row is already in level order
+        return scan(inputs, plan.levels[0].cu_seqlens, None)[0]
+    # One gather into level order; each level is then a contiguous slice.
+    ordered = [x[:, plan.order] for x in inputs]
+    outs, final = [], None
     for level in plan.levels:
         initial = None if level.parents is None else final[level.parents]
         out, final = scan(
-            [x[:, level.tokens] for x in inputs], level.cu_seqlens, initial
+            [x[:, level.start : level.end] for x in ordered], level.cu_seqlens, initial
         )
-        if result is None:
-            result = out.new_zeros((out.shape[0], plan.num_tokens, *out.shape[2:]))
-        result = result.index_copy(1, level.tokens, out)
-    assert result is not None
-    return result
+        outs.append(out)
+    return torch.cat(outs, dim=1)[:, plan.inverse]
