@@ -167,6 +167,10 @@ def _gated_delta_nets(model) -> list:
     return [m for m in model.modules() if type(m).__name__.endswith("GatedDeltaNet")]
 
 
+def _has_fla() -> bool:
+    return importlib.util.find_spec("fla") is not None
+
+
 def shares_prefixes(model) -> bool:
     """Whether a packed row may share prompt prefixes across its samples.
 
@@ -196,7 +200,7 @@ def shares_prefixes(model) -> bool:
             "run the stock forward, which mixes state across packed samples. Load the "
             "model through axolotl, which applies its packing patch."
         )
-    if mixers and importlib.util.find_spec("fla") is None:
+    if mixers and not _has_fla():
         # The packed GatedDeltaNet forward needs FLA's varlen kernels; without them
         # transformers would scan in pure PyTorch (~20x slower) or mix samples.
         raise ValueError(
