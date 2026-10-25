@@ -9,26 +9,26 @@ from collections import defaultdict
 import numpy as np
 import pytest
 import torch
+from async_test_utils import StubTransfer, StubWorker, reference_tree_attention
 from datasets import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaConfig
 from trl.experimental.async_grpo import async_grpo_trainer, packing
 from trl.experimental.async_grpo.async_rollout_worker import RolloutGroup
 from trl.trainer.utils import pad
-from trl_async_test_utils import StubTransfer, StubWorker, reference_tree_attention
 
-from axolotl.core.trainers.ebft.trainer import EBFTMixin
-from axolotl.core.trainers.ebft.trl_async_rollout import (
+from axolotl.core.trainers.ebft.async_rollout import (
     EBFTRolloutLoop,
     reference_ids,
 )
-from axolotl.core.trainers.ebft.trl_async_trainer import (
-    AxolotlTRLAsyncEBFTConfig,
-    AxolotlTRLAsyncEBFTTrainer,
+from axolotl.core.trainers.ebft.async_trainer import (
+    AxolotlAsyncEBFTConfig,
+    AxolotlAsyncEBFTTrainer,
     EBFTScorer,
     feature_layer_indices,
 )
-from axolotl.core.trainers.grpo.trl_async_rollout import SCORE_PAYLOAD
-from axolotl.core.trainers.grpo.trl_async_scoring import (
+from axolotl.core.trainers.ebft.trainer import EBFTMixin
+from axolotl.core.trainers.grpo.async_rollout import SCORE_PAYLOAD
+from axolotl.core.trainers.grpo.async_scoring import (
     GroupedQueue,
     ScoredRow,
     StepPlanner,
@@ -528,7 +528,7 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
     ]
     assert all(np.isnan(s.advantage) for s in samples)
 
-    args = AxolotlTRLAsyncEBFTConfig(
+    args = AxolotlAsyncEBFTConfig(
         output_dir=str(tmp_path),
         max_steps=2,
         per_device_train_batch_size=4,
@@ -546,7 +546,7 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
         ebft_embed_method="mean_pooling",
         ebft_diversity_coef=0.5,
     )
-    trainer = AxolotlTRLAsyncEBFTTrainer(
+    trainer = AxolotlAsyncEBFTTrainer(
         model,
         args=args,
         train_dataset=Dataset.from_list(rows),
@@ -600,9 +600,9 @@ def test_ebft_strategy_routes_async_prefetch_to_trl(tmp_path):
             "vllm": None,
         }
     )
-    assert EBFTStrategy.get_trainer_class(cfg) is AxolotlTRLAsyncEBFTTrainer
-    assert EBFTStrategy.get_training_args_class(cfg) is AxolotlTRLAsyncEBFTConfig
-    args = AxolotlTRLAsyncEBFTConfig(
+    assert EBFTStrategy.get_trainer_class(cfg) is AxolotlAsyncEBFTTrainer
+    assert EBFTStrategy.get_training_args_class(cfg) is AxolotlAsyncEBFTConfig
+    args = AxolotlAsyncEBFTConfig(
         output_dir=str(tmp_path),
         use_cpu=True,
         **EBFTStrategy.set_training_args_kwargs(cfg),

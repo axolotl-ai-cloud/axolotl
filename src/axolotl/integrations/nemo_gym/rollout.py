@@ -30,7 +30,7 @@ from trl.experimental.async_grpo.async_rollout_worker import (
     _chain_to_sequences,
 )
 
-from axolotl.core.trainers.grpo.trl_async_rollout import AxolotlRolloutLoop
+from axolotl.core.trainers.grpo.async_rollout import AxolotlRolloutLoop
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
