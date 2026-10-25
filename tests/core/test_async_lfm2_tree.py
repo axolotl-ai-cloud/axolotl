@@ -4,13 +4,13 @@ import importlib
 
 import pytest
 import torch
-from trl_async_test_utils import (
+from async_test_utils import (
     assert_tree_rows_match_alone,
     branching_samples,
     reference_tree_attention,
 )
 
-from axolotl.core.trainers.grpo.trl_async_packing import shares_prefixes
+from axolotl.core.trainers.grpo.async_packing import shares_prefixes
 
 LAYERS = {"layer_types": ["conv", "full_attention", "conv"], "conv_L_cache": 3}
 FAMILIES = {

@@ -40,10 +40,10 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
-from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
-from axolotl.core.trainers.grpo.trl_async_trainer import (
+from axolotl.core.trainers.grpo.async_trainer import (
     AxolotlAsyncGRPOTrainer,  # noqa: F401
 )
+from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
     CheckpointWriteRetryMixin,

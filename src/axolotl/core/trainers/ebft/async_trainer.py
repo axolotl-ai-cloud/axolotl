@@ -5,7 +5,7 @@ The rollout process (``EBFTRolloutLoop``) generates and leaves the advantage pen
 every rank: a no-grad forward of each completion's feature sequence and its group's
 reference through the frozen feature network (the actor with adapters disabled, or a
 frozen copy for full fine-tuning), pooled hidden states at ``ebft_feature_layers``,
-then ``group_feature_rewards``. See ``axolotl.core.trainers.grpo.trl_async_scoring``.
+then ``group_feature_rewards``. See ``axolotl.core.trainers.grpo.async_scoring``.
 """
 
 from __future__ import annotations
@@ -22,23 +22,23 @@ from transformers import PreTrainedModel
 
 from axolotl.core.trainers.ebft.args import EBFTFieldsMixin
 from axolotl.core.trainers.ebft.rewards import group_feature_rewards, pool_sequence
-from axolotl.core.trainers.grpo.trl_async_packing import sample_boundaries
-from axolotl.core.trainers.grpo.trl_async_scoring import (
+from axolotl.core.trainers.grpo.async_packing import sample_boundaries
+from axolotl.core.trainers.grpo.async_scoring import (
     ScoredRow,
     TrainerScorer,
     pack_sequences,
     unpack_sequences,
 )
-from axolotl.core.trainers.grpo.trl_async_trainer import (
+from axolotl.core.trainers.grpo.async_trainer import (
     AxolotlAsyncGRPOConfig,
     AxolotlAsyncGRPOTrainer,
 )
 
-EBFT_ROLLOUT_LOOP = "axolotl.core.trainers.ebft.trl_async_rollout.EBFTRolloutLoop"
+EBFT_ROLLOUT_LOOP = "axolotl.core.trainers.ebft.async_rollout.EBFTRolloutLoop"
 
 
 @dataclass
-class AxolotlTRLAsyncEBFTConfig(EBFTFieldsMixin, AxolotlAsyncGRPOConfig):
+class AxolotlAsyncEBFTConfig(EBFTFieldsMixin, AxolotlAsyncGRPOConfig):
     """``AxolotlAsyncGRPOConfig`` plus EBFT's fields."""
 
     generation_kwargs: dict | None = field(
@@ -168,7 +168,7 @@ def feature_layer_indices(model: PreTrainedModel, fractions: list[float]) -> lis
     return [int(fraction * config.num_hidden_layers) for fraction in fractions]
 
 
-class AxolotlTRLAsyncEBFTTrainer(AxolotlAsyncGRPOTrainer):
+class AxolotlAsyncEBFTTrainer(AxolotlAsyncGRPOTrainer):
     """Structured-mode EBFT on async GRPO (see module doc)."""
 
     _tag_names = ["trl", "async-grpo", "ebft", "axolotl"]
@@ -176,7 +176,7 @@ class AxolotlTRLAsyncEBFTTrainer(AxolotlAsyncGRPOTrainer):
     def __init__(
         self,
         model: PreTrainedModel,
-        args: AxolotlTRLAsyncEBFTConfig | None = None,
+        args: AxolotlAsyncEBFTConfig | None = None,
         train_dataset=None,
         processing_class=None,
         callbacks=None,
@@ -185,9 +185,7 @@ class AxolotlTRLAsyncEBFTTrainer(AxolotlAsyncGRPOTrainer):
         **kwargs,
     ):
         if args is None:
-            raise ValueError(
-                "AxolotlTRLAsyncEBFTTrainer needs an AxolotlTRLAsyncEBFTConfig"
-            )
+            raise ValueError("AxolotlAsyncEBFTTrainer needs an AxolotlAsyncEBFTConfig")
         if (
             isinstance(train_dataset, Dataset)
             and "ground_truth" not in train_dataset.column_names

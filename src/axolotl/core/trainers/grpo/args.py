@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from trl import GRPOConfig
 
-from axolotl.core.trainers.grpo.trl_async_trainer import (
+from axolotl.core.trainers.grpo.async_trainer import (
     AxolotlAsyncGRPOConfig,  # noqa: F401
 )
 from axolotl.core.training_args import AxolotlTrainingMixins

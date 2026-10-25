@@ -11,7 +11,7 @@ pytest.importorskip("fla.ops.kda", reason="the KDA layers import fla-core")
 from fla.ops.kda.gate import naive_kda_gate  # noqa: E402
 from fla.ops.kda.naive import naive_recurrent_kda  # noqa: E402
 
-from axolotl.core.trainers.grpo.trl_async_scoring import pack_sequences  # noqa: E402
+from axolotl.core.trainers.grpo.async_scoring import pack_sequences  # noqa: E402
 from axolotl.monkeypatch.models import recurrent_tree  # noqa: E402
 
 HIDDEN, HEADS, HEAD_DIM, WIDTH = 32, 4, 8, 4
