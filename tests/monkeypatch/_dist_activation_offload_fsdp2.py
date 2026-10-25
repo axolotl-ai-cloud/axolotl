@@ -9,7 +9,6 @@ from trl.models.activation_offloading import get_act_offloading_ctx_manager
 
 from axolotl.core.trainers.mixins.activation_checkpointing import (
     _install_live_fsdp_parameter_storage_hooks,
-    _patch_trl_offload_current_stream,
 )
 from axolotl.monkeypatch.trainer.trl_offload import patch_trl_offload_dense_layout
 
@@ -42,7 +41,6 @@ def main():
     torch.cuda.set_device(local_rank)
     dist.init_process_group("nccl")
     PartialState()
-    _patch_trl_offload_current_stream()
     patch_trl_offload_dense_layout()
     model = Tiny().cuda().bfloat16()
     context = get_act_offloading_ctx_manager(model, min_offload_size=1)

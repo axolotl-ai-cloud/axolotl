@@ -2010,36 +2010,48 @@ class ModelCompatibilityValidationMixin:
             raise ValueError("gradient_checkpointing is not supported for MPT models")
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_offload_modes(cls, data):
+        if not isinstance(data, dict):
+            return data
+        if (
+            data.get("activation_offloading") == "disk"
+            or data.get("gradient_checkpointing") == "offload_disk"
+        ):
+            raise ValueError(
+                "activation_offloading: disk is disabled: it never offloaded to disk "
+                "(it ran the same CPU offloader as activation_offloading: true). Use "
+                "activation_offloading: true or hidden_states."
+            )
+        if data.get("activation_offloading") == "legacy":
+            LOG.warning(
+                "activation_offloading: legacy is deprecated and is now an alias of "
+                "activation_offloading: true"
+            )
+            data["activation_offloading"] = True
+        return data
+
     @model_validator(mode="after")
     def check_gradient_checkpointing_w_offload(self):
         if self.gradient_checkpointing == "offload":
             LOG.warning(
-                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true` or `activation_offloading: legacy`"
+                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true`"
             )
             self.gradient_checkpointing = True
-            LOG.warning(
-                "`offload` now uses a new stream implementation; to use the previous implementation, use `activation_offloading: legacy`"
-            )
             self.activation_offloading = True
-        if self.gradient_checkpointing == "offload_disk":
-            LOG.warning(
-                "`offload_disk` is deprecated for gradient_checkpointing, use `activation_offloading: disk`"
-            )
-            self.gradient_checkpointing = True
-            self.activation_offloading = "disk"
         return self
 
     @model_validator(mode="after")
     def check_activation_offloading_wo_gc(self):
         if (
-            self.activation_offloading in ("legacy", "hidden_states")
+            self.activation_offloading == "hidden_states"
             and not self.gradient_checkpointing
         ):
             raise ValueError(
-                f"activation_offloading: {self.activation_offloading} requires "
-                "gradient_checkpointing"
+                "activation_offloading: hidden_states requires gradient_checkpointing"
             )
-        if self.activation_offloading not in (True, "disk"):
+        if self.activation_offloading is not True:
             return self
         if self.gradient_checkpointing:
             # ZeRO-3 keeps reentrant: non-reentrant recompute sees partitioned parameters.
@@ -2196,11 +2208,7 @@ class ModelCompatibilityValidationMixin:
                 "recompute must reuse the forward's routing, which reentrant "
                 "checkpointing cannot guarantee"
             )
-        if self.gradient_checkpointing and self.activation_offloading in (
-            True,
-            "legacy",
-            "disk",
-        ):
+        if self.gradient_checkpointing and self.activation_offloading is True:
             raise ValueError(
                 "expert_parallel_backend: torch is incompatible with activation_offloading "
                 f"{self.activation_offloading!r}: the TRL offloader bypasses the "

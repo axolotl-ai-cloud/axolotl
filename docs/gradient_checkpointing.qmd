@@ -23,7 +23,7 @@ gradient_checkpointing: true
 activation_offloading: true
 ```
 
-With `activation_offloading: true` or `disk`, `gradient_checkpointing` controls recompute:
+With `activation_offloading: true`, `gradient_checkpointing` controls recompute:
 
 - `true`: decoder layers are recomputed in backward; only tensors saved outside them are offloaded.
 - `false`: nothing is recomputed and every saved activation is offloaded, bounded by host RAM and
@@ -32,18 +32,15 @@ With `activation_offloading: true` or `disk`, `gradient_checkpointing` controls 
 
 Checkpointing runs exactly as it would without offloading, for adapters and full finetunes alike,
 honoring `gradient_checkpointing_kwargs`; the non-reentrant default above applies to `rl:` runs as
-well (DeepSpeed ZeRO-3 stays reentrant). `legacy` and `hidden_states` require
-`gradient_checkpointing: true`.
+well (DeepSpeed ZeRO-3 stays reentrant). `hidden_states` requires `gradient_checkpointing: true`.
 
 Activation offloading variants:
 
 The default `activation_offloading: true` offloads activations to CPU and uses CUDA streams
 to overlap the communications and computations when offloading.
 
-The `activation_offloading: legacy` naively offloads activations to CPU and without additional optimizations.
-
-For resource constrained environments with limited CPU memory, `activation_offloading: disk` offloads
-activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.
+`activation_offloading: legacy` is a deprecated alias of `true`. `activation_offloading: disk` is
+disabled: it ran the same CPU offloader as `true` and never offloaded to disk.
 
 The `activation_offloading: hidden_states` mode keeps gradient checkpointing enabled and moves only
 the decoder-layer checkpoint input (`hidden_states`) to CPU. With the default
@@ -60,8 +57,6 @@ parallelism.
 | Mode | What moves | Best for |
 |------|-----------|----------|
 | `true` | Saved activations → CPU, stream-overlapped | General use; LoRA/QLoRA without recompute (`gradient_checkpointing: false`) |
-| `legacy` | Saved activations → CPU, synchronous | Lowest resident GPU memory; when the streamed path's in-flight buffering inflates peak |
-| `disk` | Activations → disk | Severely CPU-RAM-constrained hosts |
 | `hidden_states` | Per-layer checkpoint input only → CPU, stream-overlapped | Long-context training where full activation offload is CPU-memory or bandwidth-bound |
 
 `hidden_states` always recomputes each layer. For LoRA/QLoRA, `activation_offloading: true` with
@@ -129,8 +124,7 @@ traffic, and stacks with `activation_offloading: hidden_states`.
 
 Requires non-reentrant checkpointing (the default). Composes with
 `activation_offloading: hidden_states`: layer inputs go to CPU while attention outputs are saved
-(on GPU, or on CPU with `offload: true`). It is incompatible with the TRL-offloader modes
-(`true`/`legacy`/`disk`).
+(on GPU, or on CPU with `offload: true`). It is incompatible with `activation_offloading: true`.
 Saving matmul ops (via `save`, `save_modules` or `save_matmul_min_k`) is rejected while a
 fused LoRA kernel is enabled, because the kernel adds the adapter delta into the base matmul
 output in place, which invalidates the cached tensor.

@@ -22,6 +22,9 @@ LORA = {
     "lora_alpha": 8,
     "lora_target_modules": ["q_proj", "v_proj"],
 }
+DISK = pytest.param(
+    "disk", marks=pytest.mark.skip(reason="activation_offloading: disk is disabled")
+)
 
 
 @pytest.fixture(scope="module")
@@ -54,16 +57,6 @@ def cpu_accelerator():
         mock.patch.object(torch.cpu, "empty_cache", lambda: None, create=True),
     ):
         yield
-
-
-@pytest.fixture(autouse=True)
-def torch_checkpoint(monkeypatch):
-    # an earlier legacy-mode run leaves transformers' checkpoint replaced by the
-    # CPU-offloading checkpointer
-    import transformers.modeling_utils
-    from torch.utils.checkpoint import checkpoint
-
-    monkeypatch.setattr(transformers.modeling_utils, "checkpoint", checkpoint)
 
 
 def _train_step(base_model_path, min_base_cfg, **overrides):
@@ -175,7 +168,7 @@ def _checkpoint_wrapped(model):
     )
 
 
-@pytest.mark.parametrize("mode", [True, "disk"])
+@pytest.mark.parametrize("mode", [True, DISK])
 @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
 def test_offload_without_gc_offloads_everything(
     base_model_path, min_base_cfg, mode, adapter
@@ -203,7 +196,7 @@ def test_offload_without_gc_offloads_everything(
     } <= step.offload.param_storages
 
 
-@pytest.mark.parametrize("mode", [True, "disk"])
+@pytest.mark.parametrize("mode", [True, DISK])
 @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
 def test_offload_with_gc_recomputes_and_offloads_saved_tensors(
     base_model_path, min_base_cfg, mode, adapter

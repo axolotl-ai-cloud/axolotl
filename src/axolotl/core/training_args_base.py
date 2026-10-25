@@ -266,14 +266,12 @@ class AxolotlTrainingMixins:
         },
     )
 
-    activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
-        field(
-            default=None,
-            metadata={
-                "help": "Activation offloading mode: True (stream-overlapped), "
-                "'legacy' (synchronous), 'disk', 'hidden_states', or False."
-            },
-        )
+    activation_offloading: Literal["hidden_states"] | bool | None = field(
+        default=None,
+        metadata={
+            "help": "Activation offloading mode: True (stream-overlapped), "
+            "'hidden_states', or False."
+        },
     )
 
     layer_offloading: bool | None = field(

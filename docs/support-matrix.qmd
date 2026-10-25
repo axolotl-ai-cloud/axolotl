@@ -165,7 +165,7 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Fused LoRA-MLP/QKV/O kernels | `lora_mlp_kernel` / `lora_qkv_kernel` / `lora_o_kernel` | SFT + FSDP2 only; ⚪ not RLHF, not `trust_remote_code` |
 | Tiled MLP | `tiled_mlp: true` | shards MLP to cut memory |
 | Ulysses / Ring / USP (ringmaster) | via `context_parallel_size` | long-context CP; `auto` prefers Ulysses |
-| Activation offloading | `activation_offloading:` | `legacy` / `hidden_states` require gradient checkpointing; `true` / `disk` without it offload with no recompute; ⚪ CUDA only (no CPU-only training) |
+| Activation offloading | `activation_offloading:` | `hidden_states` requires gradient checkpointing; `true` without it offloads with no recompute; `legacy` is a deprecated alias of `true`; `disk` is disabled; ⚪ CUDA only (no CPU-only training) |
 
 ## Model architectures
 

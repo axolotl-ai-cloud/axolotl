@@ -15,6 +15,9 @@ LORA = {
     "lora_alpha": 16,
     "lora_target_linear": True,
 }
+DISK = pytest.param(
+    "disk", marks=pytest.mark.skip(reason="activation_offloading: disk is disabled")
+)
 
 
 @pytest.fixture
@@ -88,7 +91,7 @@ class TestActivationOffloading:
         assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
         assert cfg.activation_offloading == "hidden_states"
 
-    @pytest.mark.parametrize("mode", [True, "disk"])
+    @pytest.mark.parametrize("mode", [True, DISK])
     @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
     def test_trl_offload_without_gc(
         self, min_base_cfg, validation_warnings, mode, adapter
@@ -136,16 +139,44 @@ class TestActivationOffloading:
         with pytest.raises(ValueError, match="without gradient_checkpointing is not"):
             validate_config(cfg)
 
-    @pytest.mark.parametrize("mode", ["legacy", "hidden_states"])
-    def test_checkpoint_offload_modes_require_gc(self, min_base_cfg, mode):
+    def test_hidden_states_offload_requires_gc(self, min_base_cfg):
         cfg = (
-            DictDefault(gradient_checkpointing=False, activation_offloading=mode)
+            DictDefault(
+                gradient_checkpointing=False, activation_offloading="hidden_states"
+            )
             | min_base_cfg
         )
 
         with pytest.raises(
-            ValueError, match=f"activation_offloading: {mode} requires gradient"
+            ValueError, match="activation_offloading: hidden_states requires gradient"
         ):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("gradient_checkpointing", [True, False])
+    def test_legacy_is_an_alias_of_true(
+        self, min_base_cfg, validation_warnings, gradient_checkpointing
+    ):
+        cfg = (
+            DictDefault(
+                gradient_checkpointing=gradient_checkpointing,
+                activation_offloading="legacy",
+            )
+            | min_base_cfg
+        )
+
+        cfg = validate_config(cfg)
+        assert cfg.activation_offloading is True
+        assert any("legacy is deprecated" in msg for msg in validation_warnings)
+
+    @pytest.mark.parametrize(
+        "disk",
+        [{"activation_offloading": "disk"}, {"gradient_checkpointing": "offload_disk"}],
+        ids=["activation_offloading", "gradient_checkpointing"],
+    )
+    def test_disk_offloading_is_disabled(self, min_base_cfg, disk):
+        cfg = DictDefault({"gradient_checkpointing": True, **disk}) | min_base_cfg
+
+        with pytest.raises(ValueError, match="activation_offloading: disk is disabled"):
             validate_config(cfg)
 
     @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
@@ -164,7 +195,7 @@ class TestActivationOffloading:
         assert cfg.activation_offloading is True
         assert not any("with no recompute" in msg for msg in validation_warnings)
 
-    @pytest.mark.parametrize("mode", [True, "disk"])
+    @pytest.mark.parametrize("mode", [True, DISK])
     @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
     def test_trl_offload_with_gc_defaults_to_non_reentrant(
         self, min_base_cfg, mode, adapter

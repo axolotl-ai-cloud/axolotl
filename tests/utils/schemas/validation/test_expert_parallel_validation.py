@@ -52,7 +52,19 @@ class TestTorchExpertParallelCheckpointing:
         )
         assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
 
-    @pytest.mark.parametrize("mode", [True, "legacy", "disk"])
+    @pytest.mark.parametrize(
+        "mode",
+        [
+            True,
+            "legacy",
+            pytest.param(
+                "disk",
+                marks=pytest.mark.skip(
+                    reason="activation_offloading: disk is disabled"
+                ),
+            ),
+        ],
+    )
     def test_rejects_trl_activation_offloading(self, min_base_cfg, mode):
         with pytest.raises(ValueError, match="incompatible with activation_offloading"):
             _validate(

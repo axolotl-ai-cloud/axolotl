@@ -86,14 +86,24 @@ class TestActivationOffloading:
     @requires_flash_attn
     @pytest.mark.parametrize(
         "offload_mode,expect_streams",
-        [(True, True), ("legacy", False), ("disk", True)],
+        [
+            (True, True),
+            ("legacy", True),
+            pytest.param(
+                "disk",
+                True,
+                marks=pytest.mark.skip(
+                    reason="activation_offloading: disk is disabled"
+                ),
+            ),
+        ],
     )
     def test_offload_mode_wiring(
         self, temp_dir, monkeypatch, offload_mode, expect_streams
     ):
-        """`activation_offloading` must reach the trainer as a live offload
-        context: True => stream-overlapped, 'legacy' => synchronous. Guards the
-        regression where string modes fell through to plain gradient
+        """`activation_offloading` must reach the trainer as a live,
+        stream-overlapped offload context ('legacy' is an alias of true). Guards
+        the regression where string modes fell through to plain gradient
         checkpointing (no offload at all)."""
         from trl.models.activation_offloading import OffloadActivations
 
@@ -149,8 +159,7 @@ class TestActivationOffloading:
             f"through to plain gradient checkpointing"
         )
         assert ctx.use_streams is expect_streams
-        if offload_mode is True:
-            assert captured.get("wrapped") is False
+        assert captured.get("wrapped") is False
 
     @requires_flash_attn
     def test_offload_full_finetune_uses_hf_checkpointing(self, temp_dir, monkeypatch):

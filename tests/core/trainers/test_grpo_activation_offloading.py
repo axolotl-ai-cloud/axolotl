@@ -13,7 +13,10 @@ from axolotl.core.trainers.grpo.trainer import (
     AxolotlAsyncGRPOTrainer,
     AxolotlGRPOTrainer,
 )
-from axolotl.core.trainers.mixins import ActivationOffloadingMixin
+from axolotl.core.trainers.mixins import (
+    ActivationOffloadingMixin,
+    activation_checkpointing as offload_mixin,
+)
 
 
 @pytest.mark.parametrize("trainer_cls", [AxolotlGRPOTrainer, AxolotlAsyncGRPOTrainer])
@@ -43,10 +46,18 @@ class _Model(torch.nn.Module):
         self.lm_head = torch.nn.Linear(4, 4)
 
 
-@pytest.mark.parametrize("offloading", ["legacy", False])
+@pytest.mark.parametrize("offloading", [True, False])
 def test_trl_offload_context_is_replaced(offloading):
-    with mock.patch.object(
-        torch.accelerator, "current_accelerator", return_value=torch.device("cpu")
+    with (
+        mock.patch.object(
+            torch.accelerator, "current_accelerator", return_value=torch.device("cpu")
+        ),
+        # CUDA streams are unavailable on a CPU host
+        mock.patch.object(
+            offload_mixin,
+            "get_act_offloading_ctx_manager",
+            lambda model: OffloadActivations(use_streams=False),
+        ),
     ):
         trainer = _Harness(SimpleNamespace(activation_offloading=offloading), _Model())
 

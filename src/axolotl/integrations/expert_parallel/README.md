@@ -24,7 +24,7 @@ Recompute must replay the forward's routing: a re-run router `topk` can break ti
 
 - It applies under `gradient_checkpointing` (with or without `selective_checkpointing`, including `activation_offloading: hidden_states`) and under FSDP2 `fsdp_config.activation_checkpointing`.
 - The `topk` save is scoped to the MoE block that owns each Experts module; other `topk`s in the layer (e.g. GLM-DSA's attention indexer) recompute as usual.
-- Config validation rejects reentrant checkpointing and, under `gradient_checkpointing`, the TRL offloader modes (`activation_offloading: true | legacy | disk`).
+- Config validation rejects reentrant checkpointing and, under `gradient_checkpointing`, the TRL offloader (`activation_offloading: true`).
 
 The dispatched/combined rows are recomputed by default. `expert_parallel_save_dispatch: true` saves them instead, removing the backward `all_to_all`s at the cost of memory (24 GiB on Qwen3-30B-A3B at 32k packed on 2 GPUs). Recompute cost 1.6 s/step on a PCIe-only pair and broke even on an NVLink pair, so enable the save only on bandwidth-starved links with memory to spare. With the default, EP=2 peaks lower than FSDP2 alone (40.7 vs 48.5 GiB live on a Qwen3-30B-A3B LoRA step at 32k, 2xH100), because each rank only materialises its own experts' rows.
 
