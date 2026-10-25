@@ -51,6 +51,13 @@ except ImportError as err:
     ) from err
 
 from axolotl.model_support.kimi_linear.configuration_kimi import KimiLinearConfig
+from axolotl.monkeypatch.models.kda_tree import KDA, kda_scan, short_convolution
+from axolotl.monkeypatch.models.recurrent_tree import (
+    mark_tree_forward,
+    tree_conv,
+    tree_plan,
+    tree_scan,
+)
 from axolotl.monkeypatch.utils import cu_seqlens_from_position_ids, get_unpad_data
 
 assert version.parse(transformers.__version__) >= version.parse("4.56.0"), (
@@ -428,11 +435,10 @@ class KimiMLAAttention(nn.Module):
         ):
             value_states = F.pad(value_states, [0, self.q_head_dim - self.v_head_dim])
 
-        attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[
-                self.config._attn_implementation
-            ]
+        # get_interface also lets transformers switch the implementation at runtime
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS.get_interface(
+            self.config._attn_implementation, eager_attention_forward
+        )
 
         attn_output, _ = attention_interface(
             self,
@@ -515,6 +521,7 @@ class KimiDeltaAttention(nn.Module):
         )
         self.o_proj = nn.Linear(projection_size, self.hidden_size, bias=False)
 
+    @mark_tree_forward
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -544,10 +551,13 @@ class KimiDeltaAttention(nn.Module):
         if self.training:
             assert mode == "chunk", "Only chunk mode is supported in training."
 
+        tree = tree_plan(kwargs) if cache_params is None else None
         cu_seqlens = kwargs.get("cu_seqlens", None)
         indices = None
         flattened = False
-        if attention_mask is not None:
+        if tree is not None:
+            pass
+        elif attention_mask is not None:
             # multipack encodes one id per packed document, so unpadding also splits documents
             indices, cu_seqlens, _ = get_unpad_data(attention_mask[:, -q_len:])
             hidden_states = index_first_axis(
@@ -568,24 +578,39 @@ class KimiDeltaAttention(nn.Module):
                     self.layer_idx
                 ]
             recurrent_state = cache_params.recurrent_states[self.layer_idx]
-        q, conv_state_q = self.q_conv1d(
-            x=self.q_proj(hidden_states),
-            cache=conv_state_q,
-            output_final_state=use_cache,
-            cu_seqlens=cu_seqlens,
-        )
-        k, conv_state_k = self.k_conv1d(
-            x=self.k_proj(hidden_states),
-            cache=conv_state_k,
-            output_final_state=use_cache,
-            cu_seqlens=cu_seqlens,
-        )
-        v, conv_state_v = self.v_conv1d(
-            x=self.v_proj(hidden_states),
-            cache=conv_state_v,
-            output_final_state=use_cache,
-            cu_seqlens=cu_seqlens,
-        )
+        if tree is not None:
+            q, k, v = (
+                tree_conv(
+                    short_convolution(conv),
+                    proj(hidden_states),
+                    tree,
+                    conv.kernel_size[0],
+                )
+                for proj, conv in (
+                    (self.q_proj, self.q_conv1d),
+                    (self.k_proj, self.k_conv1d),
+                    (self.v_proj, self.v_conv1d),
+                )
+            )
+        else:
+            q, conv_state_q = self.q_conv1d(
+                x=self.q_proj(hidden_states),
+                cache=conv_state_q,
+                output_final_state=use_cache,
+                cu_seqlens=cu_seqlens,
+            )
+            k, conv_state_k = self.k_conv1d(
+                x=self.k_proj(hidden_states),
+                cache=conv_state_k,
+                output_final_state=use_cache,
+                cu_seqlens=cu_seqlens,
+            )
+            v, conv_state_v = self.v_conv1d(
+                x=self.v_proj(hidden_states),
+                cache=conv_state_v,
+                output_final_state=use_cache,
+                cu_seqlens=cu_seqlens,
+            )
         g = self.f_b_proj(self.f_a_proj(hidden_states))
         g = rearrange(g, "... (h d) -> ... h d", d=self.head_dim)
         g = fused_kda_gate(g, self.A_log, self.dt_bias)
@@ -596,7 +621,9 @@ class KimiDeltaAttention(nn.Module):
         )
         v = rearrange(v, "... (h d) -> ... h d", d=self.head_dim)
 
-        if mode == "chunk":
+        if tree is not None:
+            o = tree_scan(kda_scan(chunk_kda), [q, k, v, g, beta], tree, KDA)
+        elif mode == "chunk":
             o, recurrent_state = chunk_kda(
                 q=q,
                 k=k,
