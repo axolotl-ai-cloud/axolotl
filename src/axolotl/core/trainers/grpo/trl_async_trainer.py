@@ -573,7 +573,14 @@ class AxolotlAsyncGRPOTrainer(
         model_id = model
         self._share_prefixes = True
         hide_layer_types: contextlib.AbstractContextManager = contextlib.nullcontext()
+        loaded: PreTrainedModel | None = None
+        trainable: dict[str, bool] = {}
         if not isinstance(model, str):
+            # TRL takes a model whose text config is not its config for a VLM and makes
+            # its whole text model trainable, expecting to apply PEFT afterwards;
+            # axolotl hands it the model already wrapped, trainable as it should be.
+            loaded = model
+            trainable = {n: p.requires_grad for n, p in model.named_parameters()}
             replacements["create_model_from_path"] = _use_loaded_model(model)
             replacements["add_fused_lm_head"] = _add_fused_lm_head_to_base
             model_id = get_config_model_id(model.config)
@@ -598,6 +605,9 @@ class AxolotlAsyncGRPOTrainer(
                 peft_config=peft_config,
                 **kwargs,
             )
+        if loaded is not None:
+            for name, param in loaded.named_parameters():
+                param.requires_grad_(trainable[name])
 
         # Every rank holds the same `_lora_sync` decision, so all of them raise. Merged
         # sync folds the adapter into the base weights, which a quantized base can't take.
