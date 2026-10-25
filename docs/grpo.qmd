@@ -587,7 +587,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `vllm_importance_sampling_correction` | bool | `null` | Enable IS correction for async distribution shift (async GRPO: ratio cap, default on) |
+| `vllm_importance_sampling_correction` | bool | `null` | Enable IS correction for async distribution shift (async GRPO: per-token importance weights, default on) |
 | `importance_sampling_level` | `"token"` or `"sequence"` | `null` | Granularity of IS ratios. Use `token` with Liger |
 | `vllm_importance_sampling_mode` | str | `null` | `token_mask`, `token_truncate`, `sequence_mask`, or `sequence_truncate` (async GRPO: token modes) |
 | `vllm_importance_sampling_cap` | float | `null` | Cap C for IS ratio clipping/masking |
