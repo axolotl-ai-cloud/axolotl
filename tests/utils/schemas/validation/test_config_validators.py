@@ -518,24 +518,66 @@ class TestAsyncGRPOCompat:
                 trl={
                     "max_staleness": 2,
                     "reward_num_workers": 4,
-                    "vllm_importance_sampling_mode": "token_mask",
+                    "epsilon": 0.2,
+                    "epsilon_high": 0.28,
                     "scale_rewards": "none",
                 },
             )
         )
         assert validated.trl.max_staleness == 2
 
+    def test_cispo_takes_the_importance_sampling_options(self, min_base_cfg):
+        validated = validate_config(
+            self._cfg(
+                min_base_cfg,
+                trl={
+                    "loss_type": "cispo",
+                    "vllm_importance_sampling_correction": True,
+                    "vllm_importance_sampling_mode": "token_mask",
+                    "vllm_importance_sampling_cap": 5.0,
+                },
+            )
+        )
+        assert validated.trl.loss_type == "cispo"
+
     @pytest.mark.parametrize(
         "trl,extra,match",
         [
             ({"beta": 0.04}, {}, "no reference model"),
-            ({"loss_type": "grpo"}, {}, "loss_type: dapo"),
+            ({"loss_type": "grpo"}, {}, "`loss_type` must be `dapo`"),
+            (
+                {"vllm_importance_sampling_cap": 5.0},
+                {},
+                "ignores `vllm_importance_sampling_cap`; .* set `loss_type: cispo`",
+            ),
+            (
+                {"loss_type": "dapo", "vllm_importance_sampling_correction": True},
+                {},
+                "ignores `vllm_importance_sampling_correction`",
+            ),
+            (
+                {"loss_type": "cispo", "epsilon_high": 0.28},
+                {},
+                "ignores `epsilon_high`; .*`vllm_importance_sampling_cap`",
+            ),
+            (
+                {"loss_type": "cispo", "vllm_importance_sampling_correction": False},
+                {},
+                "correction: false",
+            ),
             ({"num_iterations": 2}, {}, "num_iterations"),
             ({"scale_rewards": "batch"}, {}, "scale_rewards: batch"),
             ({"prefetch_depth": 2}, {}, "max_staleness"),
             ({"streaming_partial_batch": True}, {}, "data producer trainer"),
             ({"replay_buffer_size": 64}, {}, "replay_buffer_size"),
-            ({"vllm_importance_sampling_mode": "sequence_mask"}, {}, "token_truncate"),
+            (
+                {
+                    "loss_type": "cispo",
+                    "vllm_importance_sampling_mode": "sequence_mask",
+                },
+                {},
+                "token_truncate",
+            ),
             ({"use_vllm": False}, {}, "use_vllm: true"),
             ({}, {"load_in_4bit": True, "adapter": "qlora"}, "vllm_lora_sync"),
         ],

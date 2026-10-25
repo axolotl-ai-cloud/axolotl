@@ -264,6 +264,7 @@ class GRPOStrategy:
             "min_p": trl.min_p,
             "repetition_penalty": trl.repetition_penalty,
             "chat_template_kwargs": trl.chat_template_kwargs,
+            "loss_type": trl.loss_type,
             "epsilon": trl.epsilon,
             "epsilon_high": trl.epsilon_high,
             "log_completions": trl.log_completions,
@@ -278,7 +279,6 @@ class GRPOStrategy:
             "mask_truncated_completions": trl.mask_truncated_completions,
             "skip_zero_advantage_batches": trl.skip_zero_advantage_batches,
             "reward_num_workers": trl.reward_num_workers,
-            "vllm_importance_sampling_correction": trl.vllm_importance_sampling_correction,
             "vllm_importance_sampling_mode": trl.vllm_importance_sampling_mode,
             "vllm_importance_sampling_cap": trl.vllm_importance_sampling_cap,
         }

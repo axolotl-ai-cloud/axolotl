@@ -129,10 +129,12 @@ class TestSampleFilterQueue:
         assert time.monotonic() - start < 1.0
 
 
-def _loss_stub(correction=True, mode="token_truncate", cap=3.0):
+def _loss_stub(loss_type="dapo", mode="token_truncate", cap=3.0, epsilon_high=0.2):
     return types.SimpleNamespace(
+        epsilon_low=0.2,
+        epsilon_high=epsilon_high,
         args=types.SimpleNamespace(
-            vllm_importance_sampling_correction=correction,
+            loss_type=loss_type,
             vllm_importance_sampling_mode=mode,
             vllm_importance_sampling_cap=cap,
         ),
@@ -146,38 +148,47 @@ class TestPolicyLoss:
 
     def _loss(self, stub, advantages):
         log_probs = self.log_probs.clone().requires_grad_(True)
-        loss, ratio, _, capped = AxolotlAsyncGRPOTrainer._policy_loss(
+        loss, ratio, log_ratio = AxolotlAsyncGRPOTrainer._policy_loss(
             stub, log_probs, self.old, advantages
         )
         loss.sum().backward()
-        return loss.detach(), log_probs.grad, ratio, capped
-
-    def test_without_correction_is_plain_policy_gradient(self):
-        advantages = torch.tensor([1.0, -1.0, 1.0])
-        loss, grad, ratio, capped = self._loss(_loss_stub(correction=False), advantages)
-        torch.testing.assert_close(loss, -advantages)
-        torch.testing.assert_close(grad, -advantages)
+        assert not ratio.requires_grad and not log_ratio.requires_grad
         torch.testing.assert_close(ratio, torch.tensor([0.5, 1.0, 10.0]))
-        assert not capped.any()
+        return loss.detach(), log_probs.grad
 
-    def test_truncate_weights_by_capped_ratio(self):
-        weights = torch.tensor([0.5, 1.0, 3.0])
+    def test_dapo_is_trls_clipped_surrogate(self):
+        ratio = torch.tensor([0.5, 1.0, 10.0])
         for advantages in (torch.ones(3), -torch.ones(3)):
-            loss, grad, _, capped = self._loss(_loss_stub(), advantages)
-            torch.testing.assert_close(loss, -advantages * weights)
-            torch.testing.assert_close(grad, -advantages * weights)
-            assert capped.tolist() == [False, False, True]
+            loss, grad = self._loss(_loss_stub(), advantages)
+            expected = -torch.min(
+                ratio * advantages, ratio.clamp(0.8, 1.2) * advantages
+            )
+            torch.testing.assert_close(loss, expected)
+        # Clipped where the ratio left the trust region on the advantage's side: the
+        # token whose probability rose 10x since sampling gets no gradient.
+        _, grad = self._loss(_loss_stub(), torch.ones(3))
+        torch.testing.assert_close(grad, torch.tensor([-0.5, -1.0, 0.0]))
+        _, grad = self._loss(_loss_stub(), -torch.ones(3))
+        torch.testing.assert_close(grad, torch.tensor([0.0, 1.0, 10.0]))
 
-    def test_moved_tokens_keep_their_gradient(self):
-        # A PPO clip at 1.2 against the sampler would zero the gradient of the token
-        # whose probability rose 10x since it was sampled.
-        advantages = torch.ones(3)
-        _, grad, _, _ = self._loss(_loss_stub(cap=20.0), advantages)
+    def test_dapo_honors_epsilon_high(self):
+        _, grad = self._loss(_loss_stub(epsilon_high=10.0), torch.ones(3))
         torch.testing.assert_close(grad, torch.tensor([-0.5, -1.0, -10.0]))
 
-    def test_mask_drops_tokens_beyond_cap(self):
+    def test_cispo_truncate_weights_by_capped_ratio(self):
+        weights = torch.tensor([0.5, 1.0, 3.0])
+        for advantages in (torch.ones(3), -torch.ones(3)):
+            loss, grad = self._loss(_loss_stub("cispo"), advantages)
+            torch.testing.assert_close(loss, -advantages * weights)
+            torch.testing.assert_close(grad, -advantages * weights)
+
+    def test_cispo_keeps_the_gradient_of_moved_tokens(self):
+        _, grad = self._loss(_loss_stub("cispo", cap=20.0), torch.ones(3))
+        torch.testing.assert_close(grad, torch.tensor([-0.5, -1.0, -10.0]))
+
+    def test_cispo_mask_drops_tokens_beyond_cap(self):
         advantages = torch.tensor([1.0, -1.0, 1.0])
-        loss, grad, _, _ = self._loss(_loss_stub(mode="token_mask"), advantages)
+        loss, grad = self._loss(_loss_stub("cispo", mode="token_mask"), advantages)
         assert loss[2] == 0.0 and grad[2] == 0.0
         assert loss[1] == pytest.approx(1.0)
         assert grad[0] == pytest.approx(-0.5)
@@ -203,6 +214,17 @@ class TestNegativeAdvantageVetoCounts:
 
 
 class TestConfig:
+    def test_defaults_to_trls_objective(self, tmp_path):
+        args = AxolotlAsyncGRPOConfig(output_dir=str(tmp_path), use_cpu=True)
+        assert args.loss_type == "dapo"
+        assert not hasattr(args, "vllm_importance_sampling_correction")
+
+    def test_rejects_other_loss_types(self, tmp_path):
+        with pytest.raises(ValueError, match="loss_type"):
+            AxolotlAsyncGRPOConfig(
+                output_dir=str(tmp_path), use_cpu=True, loss_type="grpo"
+            )
+
     def test_rejects_cap_at_most_one(self, tmp_path):
         with pytest.raises(ValueError, match="must exceed 1"):
             AxolotlAsyncGRPOConfig(
@@ -442,6 +464,21 @@ class TestGRPOStrategy:
         assert kwargs["reward_weights"] == [1.0, 0.5]
         assert kwargs["reward_num_workers"] == 4
         assert "beta" not in kwargs
+        assert "loss_type" not in kwargs
+
+    def test_async_cispo_kwargs(self):
+        cfg = self._cfg(
+            async_prefetch=True,
+            loss_type="cispo",
+            vllm_importance_sampling_correction=True,
+            vllm_importance_sampling_mode="token_mask",
+            vllm_importance_sampling_cap=5.0,
+        )
+        kwargs = GRPOStrategy.set_async_training_args_kwargs(cfg)
+        assert kwargs["loss_type"] == "cispo"
+        assert kwargs["vllm_importance_sampling_mode"] == "token_mask"
+        assert kwargs["vllm_importance_sampling_cap"] == 5.0
+        assert "vllm_importance_sampling_correction" not in kwargs
 
 
 class _TinyLM(torch.nn.Module):
@@ -560,10 +597,12 @@ class TestMergedWeightSync:
             torch.testing.assert_close(tensor, expected[name], rtol=0, atol=0)
 
 
-def test_trains_axolotl_loaded_lora_model_on_cpu(
-    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
-):
-    """The axolotl-loaded PEFT model runs TRL's packing, loss and weight sync."""
+def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, **args_kwargs):
+    """A SmolLM2 LoRA trainer on CPU over 16 groups of 4 stub rollouts.
+
+    ``old_log_probs(g)`` sets the sampled log-probabilities of a group's ``g``-th
+    completion; group ids divisible by 4 carry no reward signal.
+    """
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -596,11 +635,7 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
                     completion_mask=np.asarray(
                         [0] * len(prompt_ids) + [1] * len(completion), dtype=np.int64
                     ),
-                    # The negative-advantage half was sampled far less likely than the
-                    # policy now finds it, so its ratio exceeds the cap.
-                    old_log_probs=np.full(
-                        len(ids), -30.0 if g < 2 else 0.0, np.float32
-                    ),
+                    old_log_probs=np.full(len(ids), old_log_probs(g), np.float32),
                     advantage=0.0 if group_id % 4 == 0 else float(g) - 1.5,
                     model_version=0,
                     group_id=group_id,
@@ -620,6 +655,7 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
         report_to=[],
         save_strategy="no",
         gradient_checkpointing=False,
+        **args_kwargs,
     )
     transfer = StubTransfer()
     worker = StubWorker(samples)
@@ -631,6 +667,21 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
         processing_class=tokenizer,
         rollout_worker=worker,
         weight_transfer=transfer,
+    )
+    return trainer, worker, transfer, samples
+
+
+def test_trains_axolotl_loaded_lora_model_on_cpu(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
+):
+    """The axolotl-loaded PEFT model runs TRL's packing, loss and weight sync."""
+    # The negative-advantage half was sampled far less likely than the policy now
+    # finds it, so its ratio exceeds cispo's cap.
+    trainer, worker, transfer, _ = _cpu_trainer(
+        tmp_path,
+        monkeypatch,
+        old_log_probs=lambda g: -30.0 if g < 2 else 0.0,
+        loss_type="cispo",
     )
     assert trainer.model.get_base_model().config._attn_implementation == "tree_fa3"
     assert isinstance(trainer.rollout_queue, SampleFilterQueue)
@@ -676,6 +727,63 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
         log[key] for log in logs for key in log if key.startswith("sampling/nav_")
     ]
     assert len(vetoes) == 2 * len(ratio_mins) and all(v == 0.0 for v in vetoes)
+
+
+def test_default_loss_is_trls(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
+):
+    """With the default loss_type, compute_loss is TRL's AsyncGRPOTrainer's."""
+    from trl.experimental.async_grpo.async_grpo_trainer import (
+        AsyncGRPOTrainer,
+        DataCollatorForRollout,
+    )
+    from trl.experimental.async_grpo.packing import TreeRow
+
+    # Sampled log-probabilities around the policy's put ratios on both sides of the
+    # trust region, for both advantage signs.
+    trainer, _, _, samples = _cpu_trainer(
+        tmp_path, monkeypatch, old_log_probs=lambda g: (-12.0, -8.0, -12.0, -8.0)[g]
+    )
+    assert trainer.args.loss_type == "dapo"
+    row = TreeRow()
+    for sample in samples[4:12]:
+        row.add(
+            {
+                "input_ids": sample.input_ids,
+                "completion_mask": sample.completion_mask,
+                "old_log_probs": sample.old_log_probs,
+                "advantage": sample.advantage,
+                "group_id": sample.group_id,
+                "metrics": sample.metrics,
+            }
+        )
+    batch = DataCollatorForRollout(pad_token_id=trainer.processing_class.pad_token_id)(
+        [[row]]
+    )
+    model = trainer.model
+    model.train()
+    trainer.current_gradient_accumulation_steps = 1
+    params = [p for p in model.parameters() if p.requires_grad]
+    results = []
+    for compute_loss in (
+        AxolotlAsyncGRPOTrainer.compute_loss,
+        AsyncGRPOTrainer.compute_loss,
+    ):
+        model.zero_grad()
+        trainer._metrics["train"].clear()
+        loss = compute_loss(trainer, model, batch)
+        loss.backward()
+        metrics = {k: v[0] for k, v in trainer._metrics["train"].items()}
+        results.append((loss.detach(), [p.grad.clone() for p in params], metrics))
+    (loss, grads, metrics), (trl_loss, trl_grads, trl_metrics) = results
+    torch.testing.assert_close(loss, trl_loss, rtol=0, atol=0)
+    for grad, trl_grad in zip(grads, trl_grads, strict=True):
+        torch.testing.assert_close(grad, trl_grad, rtol=0, atol=0)
+    assert trl_metrics["clip_ratio/low_mean"] > 0
+    assert trl_metrics["clip_ratio/high_mean"] > 0
+    for key, value in trl_metrics.items():
+        if key.startswith(("clip_ratio/", "ratio", "kl", "entropy")):
+            assert metrics[key] == pytest.approx(value), key
 
 
 class TestTreeFlashAttn:
