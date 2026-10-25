@@ -46,7 +46,7 @@ Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also w
 | LoRA sync | `vllm_lora_sync: true` | Fast adapter sync via filesystem |
 | Zero-adv filter | `skip_zero_advantage_batches: true` | Drop samples with no learning signal before packing |
 | Reward workers | `reward_num_workers: 4` | Score rewards in processes, several groups at once |
-| Ratio cap | `vllm_importance_sampling_cap: 3.0` | Bound the policy/sampler ratio (dual-clip) |
+| Importance weights | `vllm_importance_sampling_cap: 3.0` | Weight each token by its policy/sampler ratio, capped |
 
 OPSM (`off_policy_mask_threshold`) applies to synchronous GRPO only. Axolotl's own data producer trainer was removed; `use_data_producer` is a deprecated alias for `async_prefetch` with `max_staleness: 0` (it discards in-flight rollouts at every sync and is slower than the default staleness), and its streaming, replay and re-roll options fail validation (see docs/grpo.qmd#sec-data-producer-migration).
 
