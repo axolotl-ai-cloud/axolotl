@@ -390,7 +390,8 @@ def test_detect_act_type_dispatch():
     )
 
     class FakeGemma4:
-        act_fn = functools.partial(F.gelu, approximate="tanh")
+        # Python 3.14 binds a class-attribute partial as a method; HF modules set act_fn per instance
+        act_fn = staticmethod(functools.partial(F.gelu, approximate="tanh"))
 
     class FakeDSV4:
         act_fn = F.silu

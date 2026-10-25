@@ -50,6 +50,8 @@ from torch.utils._python_dispatch import TorchDispatchMode
 
 pytestmark = [
     pytest.mark.gpu,
+    # a cold Triton autotune of the scattermoe LoRA kernels takes minutes
+    pytest.mark.slow,
     pytest.mark.skipif(
         not torch.cuda.is_available() or torch.cuda.device_count() < 2,
         reason="needs two CUDA GPUs",
