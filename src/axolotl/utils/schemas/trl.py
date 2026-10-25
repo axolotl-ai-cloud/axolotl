@@ -180,7 +180,11 @@ class TRLConfig(BaseModel):
     loss_type: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Loss formulation to use. Supported values: grpo, bnpo, dr_grpo."
+            "description": "Loss formulation to use. Synchronous GRPO: grpo, bnpo, "
+            "dr_grpo, dapo, cispo, and the others TRL's GRPOTrainer supports. Async "
+            "GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler) or "
+            "cispo (policy gradient weighted by the policy/sampler ratio, capped at "
+            "vllm_importance_sampling_cap)."
         },
     )
     mask_truncated_completions: bool = Field(
@@ -322,8 +326,8 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Apply IS correction for distribution mismatch between vLLM and "
-            "training model. Async GRPO weights each token by the policy/sampler "
-            "ratio, bounded at vllm_importance_sampling_cap (default on)."
+            "training model. Async GRPO: only with loss_type cispo, which always "
+            "weights each token by the policy/sampler ratio."
         },
     )
     vllm_importance_sampling_mode: (
@@ -333,13 +337,16 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "IS mode: token_truncate, token_mask, sequence_truncate, or "
-            "sequence_mask. Async GRPO supports the token modes: token_truncate caps "
-            "the weight, token_mask drops tokens beyond the cap."
+            "sequence_mask. Async GRPO with loss_type cispo supports the token modes: "
+            "token_truncate caps the weight, token_mask drops tokens beyond the cap."
         },
     )
     vllm_importance_sampling_cap: float | None = Field(
         default=None,
-        json_schema_extra={"description": "Cap C for IS ratio clipping/masking."},
+        json_schema_extra={
+            "description": "Cap C for IS ratio clipping/masking. Async GRPO with "
+            "loss_type cispo: the weight bound (default 3.0)."
+        },
     )
     off_policy_mask_threshold: float | None = Field(
         default=None,

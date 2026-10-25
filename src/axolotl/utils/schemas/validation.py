@@ -2771,9 +2771,54 @@ class GRPOVllmValidationMixin:
             problems.append("there is no reference model, so `beta` must be 0")
         if trl.sync_ref_model:
             problems.append("there is no reference model to sync")
-        if trl.loss_type not in (None, "dapo"):
+        is_options = [
+            f"`{option}`"
+            for option in (
+                "vllm_importance_sampling_correction",
+                "vllm_importance_sampling_mode",
+                "vllm_importance_sampling_cap",
+            )
+            if getattr(trl, option) is not None
+        ]
+        if trl.loss_type in (None, "dapo"):
+            if is_options:
+                problems.append(
+                    "`loss_type: dapo` (the default, TRL's objective) clips the "
+                    "policy/sampler ratio at `epsilon` / `epsilon_high` and ignores "
+                    f"{', '.join(is_options)}; to weight tokens by the capped ratio "
+                    "instead, set `loss_type: cispo`"
+                )
+        elif trl.loss_type == "cispo":
+            eps_options = [
+                f"`{option}`"
+                for option in ("epsilon", "epsilon_high")
+                if getattr(trl, option) is not None
+            ]
+            if eps_options:
+                problems.append(
+                    "`loss_type: cispo` clips nothing and ignores "
+                    f"{', '.join(eps_options)}; async GRPO's cispo caps the "
+                    "policy/sampler weight with `vllm_importance_sampling_cap` "
+                    "(synchronous GRPO's caps with `epsilon_high`)"
+                )
+            if trl.vllm_importance_sampling_correction is False:
+                problems.append(
+                    "`loss_type: cispo` is the sampler-ratio-weighted loss, so it "
+                    "cannot run with `vllm_importance_sampling_correction: false`; "
+                    "use `loss_type: dapo` for TRL's clipped objective"
+                )
+            if trl.vllm_importance_sampling_mode in (
+                "sequence_truncate",
+                "sequence_mask",
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_mode` must be `token_truncate` or "
+                    "`token_mask`"
+                )
+        else:
             problems.append(
-                "only the token-level clipped loss (`loss_type: dapo`) is supported"
+                "`loss_type` must be `dapo` (TRL's clipped objective, the default) or "
+                "`cispo` (policy gradient weighted by the capped policy/sampler ratio)"
             )
         if trl.importance_sampling_level not in (None, "token"):
             problems.append("only `importance_sampling_level: token` is supported")
@@ -2786,17 +2831,13 @@ class GRPOVllmValidationMixin:
                 "`scale_rewards: batch` is not supported: groups are scored as they "
                 "finish, so use `group` or `none`"
             )
-        if trl.vllm_importance_sampling_mode in ("sequence_truncate", "sequence_mask"):
-            problems.append(
-                "`vllm_importance_sampling_mode` must be `token_truncate` or `token_mask`"
-            )
         if (
             trl.vllm_importance_sampling_clip_min is not None
             or trl.vllm_importance_sampling_clip_max is not None
         ):
             problems.append(
-                "`vllm_importance_sampling_clip_min/max` are not supported; use "
-                "`vllm_importance_sampling_cap`"
+                "`vllm_importance_sampling_clip_min/max` are not supported; with "
+                "`loss_type: cispo`, use `vllm_importance_sampling_cap`"
             )
         if trl.use_liger_loss:
             problems.append("`use_liger_loss` is not supported")
