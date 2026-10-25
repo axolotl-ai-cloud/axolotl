@@ -246,25 +246,41 @@ def qwen3_5_packing_patch(monkeypatch):
         calls.append(cu_seqlens.tolist())
         return _reference_causal_conv1d(x, weight, bias, activation, cu_seqlens)
 
+    forked = []
+
+    def chunk_gated_delta_rule(*args, initial_state=None, **kwargs):
+        forked.append(initial_state is not None)
+        return _reference_chunk_gated_delta_rule(
+            *args, initial_state=initial_state, **kwargs
+        )
+
     monkeypatch.setattr(qwen3_5_packing, "fla_causal_conv1d", causal_conv1d)
     monkeypatch.setattr(
-        qwen3_5_packing,
-        "fla_chunk_gated_delta_rule",
-        _reference_chunk_gated_delta_rule,
+        qwen3_5_packing, "fla_chunk_gated_delta_rule", chunk_gated_delta_rule
     )
     return types.SimpleNamespace(
-        conv_calls=calls, gated_delta_net=modeling_qwen3_5.Qwen3_5GatedDeltaNet
+        conv_calls=calls,
+        forked=forked,
+        gated_delta_net=modeling_qwen3_5.Qwen3_5GatedDeltaNet,
     )
 
 
-def test_packed_hybrid_rows_match_each_sample_alone(qwen3_5_packing_patch):
+@pytest.mark.parametrize("forks", [True, False])
+def test_packed_hybrid_rows_match_each_sample_alone(
+    qwen3_5_packing_patch, monkeypatch, forks
+):
     """Packed rows, prompts shared or not, score every sample as it scores alone.
 
     State leaking across samples or branches would show up as drift. Every path
     runs axolotl's patched GatedDeltaNet forward: the rows through the trie
-    kwargs, the samples alone through the position_ids boundary detection.
+    kwargs (forking the delta-rule state, or rerunning shared paths), the samples
+    alone through the position_ids boundary detection.
     """
     from trl.experimental.async_grpo import packing
+
+    from axolotl.monkeypatch.models import recurrent_tree
+
+    monkeypatch.setattr(recurrent_tree, "FORK_MIN_SAVED_TOKENS", 0 if forks else 10**9)
 
     packing.register_tree_attention()
     model = _tiny_qwen3_5(64)
@@ -345,6 +361,7 @@ def test_packed_hybrid_rows_match_each_sample_alone(qwen3_5_packing_patch):
             torch.testing.assert_close(grad, alone_grads[name], rtol=1e-4, atol=1e-5)
     # The trie's conv ran over root-to-segment paths, not over the packed row.
     assert any(calls[-1] > shared_len for calls in qwen3_5_packing_patch.conv_calls)
+    assert any(qwen3_5_packing_patch.forked) == forks
 
 
 def _tiny_qwen3_5(vocab_size):
@@ -488,9 +505,11 @@ def test_trains_hybrid_model_on_cpu(
         assert min(ratios) > 1
     else:
         assert set(ratios) == {1.0}
-        # One sequence per rollout reaches the GatedDeltaNet kernels.
+        # One sequence per rollout reaches the GatedDeltaNet conv, after its
+        # width - 1 zeros of history.
+        history = model.config.get_text_config().linear_conv_kernel_dim - 1
         for cu_seqlens in calls:
-            assert set(np.diff(cu_seqlens).tolist()) <= lengths
+            assert set((np.diff(cu_seqlens) - history).tolist()) <= lengths
     params = dict(trainer.model.named_parameters())
     assert all(not torch.equal(trained[n], params[n].detach()) for n in trained)
     assert all(torch.equal(frozen[n], params[n].detach()) for n in frozen)

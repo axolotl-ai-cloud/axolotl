@@ -12,10 +12,12 @@ This module holds the architecture-agnostic parts:
 - ``TreePlan``: per segment its span, parent and depth level, and the conv history
   along its path, derived from TRL's tree kwargs and built once per forward.
 - the driver: ``tree_conv`` runs every segment with its path history prepended
-  (one varlen call); ``tree_scan`` runs the trie level by level, starting each
-  segment from its parent's final state, with the handoff in autograd. Kernels
-  that cannot take per-sequence initial states with varlen boundaries instead run
-  every root-to-segment path in one call and keep each segment's tail.
+  (one call); ``tree_scan`` either forks, running the trie level by level and
+  starting each segment from its parent's final state (the handoff stays in
+  autograd), or runs every root-to-segment path in one call and keeps each
+  segment's tail. Kernels that cannot take per-sequence initial states with
+  varlen boundaries always take paths; the others fork when the tokens it saves
+  outweigh one more kernel call per level.
 - the registry of ``TreeFamily`` entries: which model types and mixer classes a
   component covers. The trainer reads it to choose a tree, unshared chains, or a
   refusal; a model patch registers its family next to the code it wraps.
@@ -36,13 +38,23 @@ import torch
 
 # A varlen scan over the sequences of one call: (inputs [1, T, ...] each,
 # cu_seqlens int32 [N + 1], initial_state [N, ...] or None) -> (output
-# [1, T, ...], final_state [N, ...]).
+# [1, T, ...], final_state [N, ...] or None).
 ScanFn = Callable[
     [Sequence[torch.Tensor], torch.Tensor, torch.Tensor | None],
     tuple[torch.Tensor, torch.Tensor | None],
 ]
-# A varlen short causal conv: (x [1, T, D], cu_seqlens int32 [N + 1]) -> [1, T, D].
+# A short causal conv: (x [1, T, D], cu_seqlens int32 [N + 1]) -> [1, T, D].
 ConvFn = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
+# The kwargs a tree-following mixer reads; a layer that filters its mixer's
+# kwargs passes these along.
+TREE_KWARGS = ("tree_kv_index", "tree_cu_seqlens_q", "tree_cu_seqlens_k")
+
+# Path tokens a fork must save per extra trie level. One more varlen call (fwd +
+# bwd) of FLA's chunked kernels costs ~10 ms of host time per layer, rescanning
+# a shared token ~0.2 us of GPU time per layer; on a launch-bound host a
+# 24k-token saving still lost to rescanning.
+FORK_MIN_SAVED_TOKENS = 65536
 
 
 @dataclass(frozen=True)
@@ -87,6 +99,10 @@ def follows_trees(module) -> bool:
     return getattr(type(module).forward, "_axolotl_recurrent_tree", False)
 
 
+def tree_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {name: kwargs[name] for name in TREE_KWARGS if name in kwargs}
+
+
 @dataclass
 class _Level:
     start: int  # the level's span in the level-ordered row
@@ -119,18 +135,26 @@ class TreePlan:
     )
     _paths: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
 
+    def forks(self) -> bool:
+        """Whether forking saves enough over running every path."""
+        saved = int(self.cu_k[-1]) - int(self.lengths.sum())
+        return saved >= FORK_MIN_SAVED_TOKENS * (len(self.levels) - 1)
+
     def conv_layout(self, width: int):
         """Gather index, cu_seqlens and kept positions for a conv of ``width``.
 
-        Each segment is preceded by the last ``width - 1`` inputs of its path, so a
-        conv that starts every sequence from zeros sees what the full path would
-        give it; the kept positions are the segments' own tokens, in row order.
+        Each segment is preceded by the last ``width - 1`` inputs of its path, or
+        by zeros (gather index ``T``, past the row) where the path is shorter, so
+        every kept output, the segments' own tokens in row order, reads what the
+        full path would give it, even from a conv that ignores ``cu_seqlens``.
         """
         if width not in self._conv:
-            ends = self.cu_k[1:]
-            history = np.minimum(width - 1, ends - self.cu_k[:-1] - self.lengths)
+            history = width - 1
             counts = history + self.lengths
-            gather = self.kv_index[_ranges(ends - counts, counts)]
+            slots = _ranges(self.cu_k[1:] - counts, counts)
+            in_path = slots >= np.repeat(self.cu_k[:-1], counts)
+            row_tokens = len(self.order)
+            gather = np.where(in_path, self.kv_index[np.maximum(slots, 0)], row_tokens)
             cu = np.concatenate([[0], np.cumsum(counts)])
             keep = _ranges(cu[:-1] + history, self.lengths)
             self._conv[width] = self._tensors(gather, cu, keep)
@@ -215,12 +239,26 @@ def _build_plan(kv_index, cu_q, cu_k) -> TreePlan:
     return plan
 
 
+def segment_ids(cu_seqlens: torch.Tensor, total: int) -> torch.Tensor:
+    """``seq_idx`` ([1, total] int32) for kernels that take boundaries that way."""
+    ids = getattr(cu_seqlens, "_axolotl_segment_ids", None)
+    if ids is None:
+        positions = torch.arange(
+            total, device=cu_seqlens.device, dtype=cu_seqlens.dtype
+        )
+        ids = torch.searchsorted(cu_seqlens[1:], positions, right=True)
+        ids = ids.to(torch.int32)[None]
+        cu_seqlens._axolotl_segment_ids = ids
+    return ids
+
+
 def tree_conv(
     conv: ConvFn, x: torch.Tensor, plan: TreePlan, width: int
 ) -> torch.Tensor:
     """A short causal conv of ``width`` over ``x`` ([1, T, D], row order) on a tree."""
     gather, cu_seqlens, keep = plan.conv_layout(width)
-    return conv(x[:, gather], cu_seqlens)[:, keep]
+    padded = torch.nn.functional.pad(x, (0, 0, 0, 1))
+    return conv(padded[:, gather], cu_seqlens)[:, keep]
 
 
 def tree_scan(
@@ -230,12 +268,12 @@ def tree_scan(
     component: RecurrentComponent,
 ) -> torch.Tensor:
     """Run a recurrence over ``inputs`` ([1, T, ...] each, row order) on a tree."""
-    if not component.initial_state:
+    if len(plan.levels) == 1:  # nothing shared: the row is already in level order
+        return scan(inputs, plan.levels[0].cu_seqlens, None)[0]
+    if not (component.initial_state and plan.forks()):
         gather, cu_seqlens, keep = plan.path_layout()
         out, _ = scan([x[:, gather] for x in inputs], cu_seqlens, None)
         return out[:, keep]
-    if len(plan.levels) == 1:  # nothing shared: the row is already in level order
-        return scan(inputs, plan.levels[0].cu_seqlens, None)[0]
     # One gather into level order; each level is then a contiguous slice.
     ordered = [x[:, plan.order] for x in inputs]
     outs, final = [], None
