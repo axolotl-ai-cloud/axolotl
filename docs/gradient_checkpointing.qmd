@@ -31,10 +31,9 @@ How the settings combine (decoder layers; the output head always stays on GPU):
 | `false` | `true` | nothing | every saved activation |
 | `true` | `hidden_states` | every layer | each layer's input only |
 
-Adding `selective_checkpointing` to a row with `gradient_checkpointing: true` and
-`activation_offloading` `false` or `hidden_states` skips recomputing the saved ops. Their outputs
-stay on GPU, or move to CPU with `selective_checkpointing.offload: true`. For example, to offload
-each layer's input and not recompute attention:
+Adding `selective_checkpointing` to any row with `gradient_checkpointing: true` skips recomputing
+the saved ops. Their outputs stay on GPU, or move to CPU with `selective_checkpointing.offload: true`.
+For example, to offload each layer's input and not recompute attention:
 
 ```yaml
 gradient_checkpointing: true
@@ -159,11 +158,11 @@ selective_checkpointing:
 ```
 
 This makes the saved attention outputs cost ~zero GPU memory at the price of CPU RAM and PCIe
-traffic, and stacks with `activation_offloading: hidden_states`.
+traffic, and stacks with `activation_offloading: hidden_states` or `true`.
 
-Requires non-reentrant checkpointing (the default). Composes with
-`activation_offloading: hidden_states`: layer inputs go to CPU while attention outputs are saved
-(on GPU, or on CPU with `offload: true`). It is incompatible with `activation_offloading: true`.
+Requires non-reentrant checkpointing (the default). Composes with `activation_offloading:
+hidden_states` or `true`: layer inputs go to CPU (with `true`, so does what is saved outside the
+layers) while the saved ops' outputs stay on GPU, or go to CPU with `offload: true`.
 Saving matmul ops (via `save`, `save_modules` or `save_matmul_min_k`) is rejected while a
 fused LoRA kernel is enabled, because the kernel adds the adapter delta into the base matmul
 output in place, which invalidates the cached tensor.

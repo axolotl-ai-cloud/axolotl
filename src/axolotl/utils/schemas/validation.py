@@ -2101,11 +2101,6 @@ class ModelCompatibilityValidationMixin:
                 "selective_checkpointing requires non-reentrant checkpointing "
                 "(gradient_checkpointing_kwargs.use_reentrant: false)"
             )
-        if self.activation_offloading and self.activation_offloading != "hidden_states":
-            raise ValueError(
-                "selective_checkpointing is only compatible with "
-                "activation_offloading: hidden_states (or false)"
-            )
         sac = self.selective_checkpointing
         fused_lora = any(
             _lora_kernel_enabled(self, flag)
