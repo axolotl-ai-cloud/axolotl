@@ -373,6 +373,37 @@ def _add_fused_lm_head_to_base(model, **kwargs):
 
 
 _trl_tree_flash_attn = trl_packing._flash_attn
+_trl_flops_per_token = trl_async_module.compute_flops_per_token
+
+
+def _flops_per_token(config, seq_len: int) -> int:
+    """TRL's per-token FLOPs estimate (for its MFU metrics), dense where it cannot
+    read a MoE config.
+
+    TRL treats any config with ``num_experts_per_tok`` as Qwen-MoE-like and reads
+    ``decoder_sparse_step``; hybrids such as Nemotron-H have the one without the
+    other, which crashed the first step's metrics.
+    """
+    try:
+        return _trl_flops_per_token(config, seq_len)
+    except AttributeError as err:
+        LOG.warning_once(
+            f"MFU uses a dense estimate: TRL cannot read {type(config).__name__}'s "
+            f"MoE layout ({err})"
+        )
+        return _trl_flops_per_token(_DenseView(config), seq_len)
+
+
+class _DenseView:
+    """``config`` read as a dense model (configs are strict dataclasses)."""
+
+    num_experts_per_tok = None
+
+    def __init__(self, config):
+        self._config = config
+
+    def __getattr__(self, name):
+        return getattr(self._config, name)
 
 
 @functools.cache
@@ -618,6 +649,7 @@ class AxolotlAsyncGRPOTrainer(
             scorer.share_prefixes = self._share_prefixes
 
         trl_packing._flash_attn = _tree_flash_attn
+        trl_async_module.compute_flops_per_token = _flops_per_token
         with _patched_trl_module(**replacements), hide_layer_types:
             super().__init__(
                 model=model_id,
