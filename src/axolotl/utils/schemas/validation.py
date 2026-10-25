@@ -2203,13 +2203,6 @@ class ModelCompatibilityValidationMixin:
                 "recompute must reuse the forward's routing, which reentrant "
                 "checkpointing cannot guarantee"
             )
-        if self.gradient_checkpointing and self.activation_offloading is True:
-            raise ValueError(
-                "expert_parallel_backend: torch is incompatible with activation_offloading "
-                f"{self.activation_offloading!r}: the TRL offloader bypasses the "
-                "checkpointing policy that keeps recompute on the forward's routing. "
-                "Use activation_offloading: hidden_states or false."
-            )
         return self
 
     @model_validator(mode="after")

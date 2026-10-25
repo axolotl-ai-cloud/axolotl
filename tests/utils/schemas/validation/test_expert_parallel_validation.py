@@ -65,13 +65,13 @@ class TestTorchExpertParallelCheckpointing:
             ),
         ],
     )
-    def test_rejects_trl_activation_offloading(self, min_base_cfg, mode):
-        with pytest.raises(ValueError, match="incompatible with activation_offloading"):
-            _validate(
-                min_base_cfg,
-                expert_parallel_backend="torch",
-                activation_offloading=mode,
-            )
+    def test_accepts_trl_activation_offloading(self, min_base_cfg, mode):
+        cfg = _validate(
+            min_base_cfg,
+            expert_parallel_backend="torch",
+            activation_offloading=mode,
+        )
+        assert cfg.activation_offloading is True
 
     @pytest.mark.parametrize(
         "extra",
