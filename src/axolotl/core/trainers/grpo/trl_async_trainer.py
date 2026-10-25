@@ -86,6 +86,34 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 IMPORTANCE_SAMPLING_MODES = ("token_truncate", "token_mask")
+# Ratio thresholds of mu-GRPO's negative-advantage veto (arXiv 2605.17570), keyed by
+# metric suffix. 1e-4 is its default, which trainer/vLLM mismatch alone can reach.
+NAV_THRESHOLDS = {"1e-4": 1e-4, "1e-6": 1e-6}
+
+
+def negative_advantage_veto_counts(
+    ratio: torch.Tensor,
+    advantages: torch.Tensor,
+    segment_id: torch.Tensor,
+    thresholds: tuple[float, ...] = tuple(NAV_THRESHOLDS.values()),
+) -> torch.Tensor:
+    """Negative-advantage samples, then how many hold a token below each threshold.
+
+    ``ratio`` and ``advantages`` are per trained token, ``segment_id`` the sample each
+    token belongs to. mu-GRPO's veto masks such a sample whole.
+    """
+    counts = ratio.new_zeros(1 + len(thresholds), dtype=torch.float32)
+    if segment_id.numel() == 0:
+        return counts
+    num_samples = int(segment_id.max()) + 1
+    min_ratio = ratio.new_full((num_samples,), float("inf"), dtype=torch.float32)
+    min_ratio = min_ratio.scatter_reduce(0, segment_id, ratio.float(), reduce="amin")
+    negative = torch.zeros(num_samples, dtype=torch.bool, device=ratio.device)
+    negative[segment_id[advantages < 0]] = True
+    counts[0] = negative.sum()
+    for i, threshold in enumerate(thresholds, start=1):
+        counts[i] = (negative & (min_ratio < threshold)).sum()
+    return counts
 
 
 def resolve_rollout_loop(fqn: str) -> type[AxolotlRolloutLoop]:
@@ -681,6 +709,7 @@ class AxolotlAsyncGRPOTrainer(
         token_index = inputs["token_index"][selected]
         old_log_probs = inputs["old_log_probs"][selected]
         advantages = inputs["advantages"][selected]
+        segment_id = inputs["segment_id"][selected]
         tree_kwargs = {
             key: inputs[key][inputs[key] >= 0]
             for key in ("tree_kv_index", "tree_cu_seqlens_q", "tree_cu_seqlens_k")
@@ -732,17 +761,32 @@ class AxolotlAsyncGRPOTrainer(
                     entropy.sum(),
                     is_capped.float().sum(),
                     count,
+                    *negative_advantage_veto_counts(ratio, advantages, segment_id),
                 ]
             )
             stats = self.accelerator.reduce(stats, reduction="sum")
-            ratio_sum, kl_sum, entropy_sum, capped_sum, global_count = stats.unbind(0)
+            (
+                ratio_sum,
+                kl_sum,
+                entropy_sum,
+                capped_sum,
+                global_count,
+                negatives,
+                *vetoed,
+            ) = stats.tolist()
+            local_min = ratio.min() if ratio.numel() else ratio.new_tensor(float("inf"))
+            ratio_min = self.accelerator.gather(local_min.float().reshape(1)).min()
             metrics = self._metrics["train"]
-            metrics["ratio"].append((ratio_sum / global_count).item())
-            metrics["kl"].append((kl_sum / global_count).item())
-            metrics["entropy"].append((entropy_sum / global_count).item())
-            metrics["sampling/capped_token_frac"].append(
-                (capped_sum / global_count).item()
-            )
+            metrics["ratio"].append(ratio_sum / global_count)
+            metrics["kl"].append(kl_sum / global_count)
+            metrics["entropy"].append(entropy_sum / global_count)
+            metrics["sampling/capped_token_frac"].append(capped_sum / global_count)
+            if torch.isfinite(ratio_min):
+                metrics["sampling/ratio_min"].append(ratio_min.item())
+            for name, count_below in zip(NAV_THRESHOLDS, vetoed, strict=True):
+                metrics[f"sampling/nav_veto_frac_{name}"].append(
+                    (count_below, negatives)
+                )
 
             if self.aux_loss_enabled:
                 gathered_aux = self.accelerator.reduce(
