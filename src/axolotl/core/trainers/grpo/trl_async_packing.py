@@ -13,10 +13,17 @@ For other recurrent models every sample becomes its own chain (``ChainRow``). TR
 at 0 for each, tree attention reduces to plain varlen attention, and the recurrent
 mixers see each sample's boundaries through axolotl's sample packing patches, which
 derive ``cu_seqlens`` / ``seq_idx`` from those restarts.
+
+Everything here works around TRL refusing non-attention layers (it does so until
+huggingface/trl#7686 adds tree attention for linear attention through FLA). When a
+TRL release packs those models itself, ``shares_prefixes`` is the one switch the
+trainer reads: drop this module and the trainer's uses of it.
 """
 
 from __future__ import annotations
 
+import contextlib
+import importlib.util
 from typing import Any
 
 from trl.experimental.async_grpo.async_grpo_trainer import (
@@ -119,6 +126,41 @@ class ChainFixedCountBatcher(FixedCountBatcher):
             batch = []
 
 
+@contextlib.contextmanager
+def hidden_layer_types(model):
+    """Hide ``layer_types`` from TRL's ``__init__``.
+
+    TRL rejects any non-attention layer because its trie shares prompt prefixes,
+    which a recurrent layer cannot follow by itself; ``shares_prefixes`` has already
+    picked a packing those layers can take. The check is the only reader of
+    ``layer_types`` during ``__init__``.
+    """
+    text_config = model.config.get_text_config()
+    layer_types = text_config.layer_types
+    text_config.layer_types = None
+    try:
+        yield
+    finally:
+        text_config.layer_types = layer_types
+
+
+def sample_boundaries(tree_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """A chain row's samples as the varlen kwargs transformers' recurrent layers read.
+
+    Every segment of a chain row is a whole sample. Stock forwards that only take
+    boundaries from ``cu_seq_lens_q`` (transformers' GatedDeltaNet) then reset their
+    state per sample too; tree attention ignores these kwargs.
+    """
+    cu_seqlens = tree_kwargs["tree_cu_seqlens_q"]
+    max_length = tree_kwargs["tree_max_seqlen_q"]
+    return {
+        "cu_seq_lens_q": cu_seqlens,
+        "cu_seq_lens_k": cu_seqlens,
+        "max_length_q": max_length,
+        "max_length_k": max_length,
+    }
+
+
 def _gated_delta_nets(model) -> list:
     return [m for m in model.modules() if type(m).__name__.endswith("GatedDeltaNet")]
 
@@ -150,6 +192,13 @@ def shares_prefixes(model) -> bool:
             "Async GRPO packs rollouts into rows, but the model's GatedDeltaNet layers "
             "run the stock forward, which mixes state across packed samples. Load the "
             "model through axolotl, which applies its packing patch."
+        )
+    if mixers and importlib.util.find_spec("fla") is None:
+        # The packed GatedDeltaNet forward needs FLA's varlen kernels; without them
+        # transformers would scan in pure PyTorch (~20x slower) or mix samples.
+        raise ValueError(
+            "Async GRPO packs GatedDeltaNet layers with flash-linear-attention's varlen "
+            "kernels; install `flash-linear-attention`."
         )
     return bool(mixers) and all(
         getattr(f, "_axolotl_tree_routing", False) for f in forwards
