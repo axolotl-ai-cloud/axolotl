@@ -705,7 +705,9 @@ class TestTreeFlashAttn:
             )
 
         monkeypatch.setattr(trl_async_trainer, "_trl_tree_flash_attn", no_build)
-        assert trl_async_trainer._tree_flash_attn() == "kernels-community/flash-attn2"
+        assert trl_async_trainer._tree_flash_attn().kernel == (
+            "kernels-community/flash-attn2"
+        )
         assert loaded == [("kernels-community/flash-attn2", {"version": 3})]
 
     def test_keeps_flash_attn3_where_it_loads(self, tree_flash_attn, monkeypatch):
@@ -713,6 +715,75 @@ class TestTreeFlashAttn:
         monkeypatch.setattr(trl_async_trainer, "_trl_tree_flash_attn", lambda: "fa3")
         assert trl_async_trainer._tree_flash_attn() == "fa3"
         assert loaded == []
+
+    def test_flash_attn2_gets_values_as_wide_as_queries(self):
+        from axolotl.core.trainers.grpo.trl_async_trainer import _WideValues
+
+        seen = []
+
+        def flash_attn_varlen_func(query, key, value, *args, **kwargs):
+            seen.append(value.shape[-1])
+            return value * 2, "lse"
+
+        kernel = _WideValues(
+            types.SimpleNamespace(flash_attn_varlen_func=flash_attn_varlen_func)
+        )
+        # MLA: 48-wide queries and keys, 32-wide values
+        query, key, value = (
+            torch.randn(5, 2, 48),
+            torch.randn(5, 2, 48),
+            torch.randn(5, 2, 32),
+        )
+        out, lse = kernel.flash_attn_varlen_func(query, key, value)
+        assert seen == [48] and lse == "lse"
+        torch.testing.assert_close(out, value * 2)
+
+
+class TestTreeAttentionSwitch:
+    def _model(self, modules, switch):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.layers = torch.nn.ModuleList(modules)
+                self.config = types.SimpleNamespace(_attn_implementation="sdpa")
+
+            def set_attn_implementation(self, implementation):
+                switch(self, implementation)
+
+        return Model()
+
+    def _attention(self):
+        return type("MyAttention", (torch.nn.Module,), {})()
+
+    def test_switches_attention_models(self):
+        from axolotl.core.trainers.grpo.trl_async_trainer import (
+            TREE_ATTENTION,
+            _set_tree_attention,
+        )
+
+        def switch(model, implementation):
+            model.config._attn_implementation = implementation
+
+        model = self._model([self._attention()], switch)
+        _set_tree_attention(model)
+        assert model.config._attn_implementation == TREE_ATTENTION
+
+    def test_refuses_attention_that_keeps_another_implementation(self):
+        from axolotl.core.trainers.grpo.trl_async_trainer import _set_tree_attention
+
+        model = self._model([self._attention()], lambda model, implementation: None)
+        with pytest.raises(ValueError, match="kept attention implementation 'sdpa'"):
+            _set_tree_attention(model)
+
+    def test_models_without_attention_have_nothing_to_route(self):
+        from axolotl.core.trainers.grpo.trl_async_trainer import _set_tree_attention
+
+        def unsupported(model, implementation):
+            raise ValueError(
+                "Mamba2ForCausalLM does not support an attention implementation"
+            )
+
+        _set_tree_attention(self._model([torch.nn.Linear(2, 2)], unsupported))
 
 
 class TestAliasingVLLMClient:

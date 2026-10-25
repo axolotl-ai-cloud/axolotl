@@ -34,6 +34,7 @@ from typing import Any
 
 import requests
 import torch
+import torch.nn.functional as F
 from accelerate.utils import is_peft_model
 from datasets import Dataset
 from torch.distributed.tensor import DTensor
@@ -332,11 +333,35 @@ def _use_loaded_model(model: PreTrainedModel):
     """Stand-in for TRL's ``create_model_from_path`` that returns ``model``."""
 
     def load(_model_id, *_args, **_kwargs):
-        base = model.get_base_model() if is_peft_model(model) else model
-        base.set_attn_implementation(TREE_ATTENTION)
+        _set_tree_attention(model.get_base_model() if is_peft_model(model) else model)
         return model
 
     return load
+
+
+def _set_tree_attention(base: PreTrainedModel) -> None:
+    """Route the attention layers to TRL's tree attention.
+
+    Packed rows rely on it to keep samples (and trie branches) apart, so a model
+    that keeps another implementation is refused rather than trained on attention
+    across samples; models without attention layers (Mamba2) have none to route.
+    """
+    # class-name heuristic: transformers' own check scans the modeling source
+    has_attention = any(type(m).__name__.endswith("Attention") for m in base.modules())
+    try:
+        base.set_attn_implementation(TREE_ATTENTION)
+    except ValueError:
+        if has_attention:
+            raise
+        return
+    implementation = base.config._attn_implementation
+    if has_attention and implementation != TREE_ATTENTION:
+        raise ValueError(
+            f"{type(base).__name__} kept attention implementation {implementation!r} "
+            f"instead of {TREE_ATTENTION!r}, so its attention would not keep the packed "
+            "samples apart. Its attention layers need to dispatch through "
+            "ALL_ATTENTION_FUNCTIONS.get_interface for async GRPO."
+        )
 
 
 def _add_fused_lm_head_to_base(model, **kwargs):
@@ -362,7 +387,24 @@ def _tree_flash_attn():
         from kernels import get_kernel
 
         # Same varlen API, and it aligns the causal mask bottom-right like FA3.
-        return get_kernel("kernels-community/flash-attn2", version=3)
+        return _WideValues(get_kernel("kernels-community/flash-attn2", version=3))
+
+
+class _WideValues:
+    """FA2's varlen kernel needs values as wide as the queries, which FA3 (and
+    MLA's narrower value heads) do not; pad them and cut the output back."""
+
+    def __init__(self, kernel):
+        self.kernel = kernel
+
+    def flash_attn_varlen_func(self, query, key, value, *args, **kwargs):
+        width = value.shape[-1]
+        if width < query.shape[-1]:
+            value = F.pad(value, (0, query.shape[-1] - width))
+        out = self.kernel.flash_attn_varlen_func(query, key, value, *args, **kwargs)
+        if isinstance(out, tuple):
+            return (out[0][..., :width], *out[1:])
+        return out[..., :width]
 
 
 @contextlib.contextmanager
