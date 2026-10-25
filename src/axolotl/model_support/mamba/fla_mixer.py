@@ -17,7 +17,7 @@ def _kernel_bindings(family):
     from kernels import get_kernel
 
     ssm = get_kernel("kernels-community/mamba-ssm", version=2)
-    conv = get_kernel("kernels-community/causal-conv1d", version=1)
+    conv = get_kernel("kernels-community/causal-conv1d", version=2)
     names = {
         "selective_state_update": "ops.triton.selective_state_update",
     }

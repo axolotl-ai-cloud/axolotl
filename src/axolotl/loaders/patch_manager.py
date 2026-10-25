@@ -143,6 +143,7 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_model_support_registrations()
         self._apply_model_support_pre_load_hook()
+        self._apply_causal_conv1d_hub_patch()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -543,6 +544,15 @@ class PatchManager:
                 mct,
                 sorted(PatchManager._FUSED_ATTN_KERNEL_SUPPORTED),
             )
+
+    def _apply_causal_conv1d_hub_patch(self):
+        """Short causal convs on the hub kernel when the package is missing."""
+        if getattr(self.cfg, "use_kernels", None):
+            # kernelize maps these through transformers' own hub mapping
+            return
+        from axolotl.monkeypatch.models.causal_conv1d_hub import patch_causal_conv1d
+
+        patch_causal_conv1d(self.cfg.model_config_type)
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
