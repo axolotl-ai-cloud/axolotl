@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from axolotl.core.trainers.grpo.trl_async_scoring import pack_sequences
+from axolotl.monkeypatch.models import recurrent_tree
 from axolotl.monkeypatch.models.recurrent_tree import (
     RecurrentComponent,
     tree_conv,
@@ -53,15 +54,25 @@ def _sequences(rng):
     return [np.asarray(s) for s in sequences]
 
 
-@pytest.mark.parametrize("forks_state", [True, False])
-def test_tree_matches_each_sequence_alone(forks_state):
+@pytest.mark.parametrize(
+    "initial_state, min_saved, forks",
+    [(True, 0, True), (True, 10**9, False), (False, 0, False)],
+    ids=["fork", "paths-by-cost", "paths-without-initial-state"],
+)
+def test_tree_matches_each_sequence_alone(monkeypatch, initial_state, min_saved, forks):
+    monkeypatch.setattr(recurrent_tree, "FORK_MIN_SAVED_TOKENS", min_saved)
     rng = np.random.default_rng(0)
     sequences = _sequences(rng)
     torch.manual_seed(0)
     embed = torch.randn(50, DIM, requires_grad=True)
     decay = torch.randn(50, DIM, requires_grad=True)
     weight = torch.randn(DIM, WIDTH, requires_grad=True)
-    component = RecurrentComponent("toy", initial_state=forks_state)
+    component = RecurrentComponent("toy", initial_state=initial_state)
+    initial_states = []
+
+    def scan(inputs, cu_seqlens, initial):
+        initial_states.append(initial is not None)
+        return decayed_sum(inputs, cu_seqlens, initial)
 
     def run(ids, plan=None, cu_seqlens=None):
         x = embed[ids][None]
@@ -70,7 +81,7 @@ def test_tree_matches_each_sequence_alone(forks_state):
             mixed = causal_conv(x, cu_seqlens, weight)
             return decayed_sum([mixed, a], cu_seqlens, None)[0]
         mixed = tree_conv(lambda v, cu: causal_conv(v, cu, weight), x, plan, WIDTH)
-        return tree_scan(decayed_sum, [mixed, a], plan, component)
+        return tree_scan(scan, [mixed, a], plan, component)
 
     alone = [
         run(torch.as_tensor(s), cu_seqlens=torch.tensor([0, len(s)])) for s in sequences
@@ -96,6 +107,8 @@ def test_tree_matches_each_sequence_alone(forks_state):
     tree_out.square().sum().backward()
     for tensor, grad in zip((embed, decay, weight), alone_grads, strict=True):
         torch.testing.assert_close(tensor.grad, grad)
+    assert any(initial_states) == forks
+    assert len(initial_states) == (len(plan.levels) if forks else 1)
 
 
 def test_plan_is_built_once_per_row():
