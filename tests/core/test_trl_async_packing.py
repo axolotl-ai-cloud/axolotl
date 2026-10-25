@@ -18,6 +18,7 @@ from axolotl.core.trainers.grpo.trl_async_packing import (
     ChainFixedCountBatcher,
     ChainRow,
     ChainTokenBudgetBatcher,
+    sample_boundaries,
     shares_prefixes,
 )
 from axolotl.core.trainers.grpo.trl_async_scoring import pack_sequences
@@ -154,6 +155,16 @@ class TestSharesPrefixes:
         varlen_only = [_gated_delta_net(_axolotl_gdn_kernel_interface=True)]
         assert not shares_prefixes(_model("qwen3_5_text", HYBRID, varlen_only))
 
+    def test_gated_delta_nets_need_flash_linear_attention(self, monkeypatch):
+        from axolotl.core.trainers.grpo import trl_async_packing
+
+        monkeypatch.setattr(
+            trl_async_packing.importlib.util, "find_spec", lambda name: None
+        )
+        mixers = [_gated_delta_net(**TREE_ROUTED)]
+        with pytest.raises(ValueError, match="flash-linear-attention"):
+            shares_prefixes(_model("qwen3_5_text", HYBRID, mixers))
+
     def test_stock_gated_delta_net_raises(self):
         with pytest.raises(ValueError, match="stock forward"):
             shares_prefixes(_model("qwen3_5_text", HYBRID, [_gated_delta_net()]))
@@ -240,13 +251,19 @@ def qwen3_5_packing_patch(monkeypatch):
     )
 
 
-def test_gated_delta_net_on_the_trie_matches_unshared_rows(qwen3_5_packing_patch):
-    """Prefix sharing changes neither the log-probs nor the gradients."""
+def test_packed_hybrid_rows_match_each_sample_alone(qwen3_5_packing_patch):
+    """Packed rows, prompts shared or not, score every sample as it scores alone.
+
+    State leaking across samples or branches would show up as drift. Every path
+    runs axolotl's patched GatedDeltaNet forward: the rows through the trie
+    kwargs, the samples alone through the position_ids boundary detection.
+    """
     from trl.experimental.async_grpo import packing
 
     packing.register_tree_attention()
     model = _tiny_qwen3_5(64)
-    model.set_attn_implementation(packing.TREE_ATTENTION)
+    linear_attn = model.model.language_model.layers[0].linear_attn
+    assert type(linear_attn).forward._axolotl_tree_routing
     rng = np.random.default_rng(0)
     samples = []
     for group_id in range(2):
@@ -255,39 +272,72 @@ def test_gated_delta_net_on_the_trie_matches_unshared_rows(qwen3_5_packing_patch
             completion = rng.integers(1, 64, size=3 + g).tolist()
             samples.append(_sample(prompt + completion, len(prompt), group_id))
 
-    def score(row):
+    def grads():
+        found = {
+            n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
+        }
+        model.zero_grad()
+        return found
+
+    def score_row(row):
+        model.set_attn_implementation(packing.TREE_ATTENTION)
         for sample in samples:
             row.add(sample)
         packed = row.pack()
-        model.zero_grad()
+        tree = {
+            "tree_kv_index": packed["tree_kv_index"],
+            "tree_cu_seqlens_q": packed["tree_cu_seqlens_q"],
+            "tree_cu_seqlens_k": packed["tree_cu_seqlens_k"],
+            "tree_max_seqlen_q": int(packed["tree_max_seqlens"][0]),
+            "tree_max_seqlen_k": int(packed["tree_max_seqlens"][1]),
+        }
+        if isinstance(row, ChainRow):
+            tree.update(sample_boundaries(tree))
         logits = model(
             input_ids=packed["input_ids"][None],
             position_ids=packed["position_ids"][None],
-            tree_kv_index=packed["tree_kv_index"],
-            tree_cu_seqlens_q=packed["tree_cu_seqlens_q"],
-            tree_cu_seqlens_k=packed["tree_cu_seqlens_k"],
-            tree_max_seqlen_q=int(packed["tree_max_seqlens"][0]),
-            tree_max_seqlen_k=int(packed["tree_max_seqlens"][1]),
             use_cache=False,
+            **tree,
         ).logits[0]
         index = packed["token_index"]
         log_probs = torch.log_softmax(logits[index], -1).gather(
             1, packed["shift_labels"][index][:, None]
         )[:, 0]
         log_probs.sum().backward()
-        grads = {
-            n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
-        }
-        return len(packed["input_ids"]), log_probs.detach(), grads
+        return len(packed["input_ids"]), log_probs.detach(), grads()
 
-    shared_len, shared, shared_grads = score(TreeRow())
-    chain_len, chains, chain_grads = score(ChainRow())
+    def score_alone():
+        model.set_attn_implementation("sdpa")
+        log_probs = []
+        for sample in samples:
+            ids = torch.as_tensor(sample["input_ids"])[None]
+            logits = model(
+                input_ids=ids,
+                position_ids=torch.arange(ids.shape[1])[None],
+                use_cache=False,
+            ).logits[0, :-1]
+            trained = torch.as_tensor(sample["completion_mask"][1:]).bool()
+            log_probs.append(
+                torch.log_softmax(logits[trained], -1).gather(
+                    1, ids[0, 1:][trained][:, None]
+                )[:, 0]
+            )
+        torch.cat(log_probs).sum().backward()
+        return torch.cat(log_probs).detach(), grads()
+
+    shared_len, shared, shared_grads = score_row(TreeRow())
+    chain_len, chains, chain_grads = score_row(ChainRow())
+    alone, alone_grads = score_alone()
     assert shared_len < chain_len
-    torch.testing.assert_close(shared, chains, rtol=1e-5, atol=1e-5)
-    assert shared_grads.keys() == chain_grads.keys()
-    for name, grad in shared_grads.items():
-        torch.testing.assert_close(grad, chain_grads[name], rtol=1e-4, atol=1e-5)
-    # The conv ran over root-to-segment paths, not over the packed row.
+    for packed_log_probs, packed_grads in (
+        (shared, shared_grads),
+        (chains, chain_grads),
+    ):
+        torch.testing.assert_close(packed_log_probs, alone, rtol=1e-5, atol=1e-5)
+        assert packed_grads.keys() == alone_grads.keys()
+        for name, grad in packed_grads.items():
+            torch.testing.assert_close(grad, alone_grads[name], rtol=1e-4, atol=1e-5)
+    # The trie's conv ran over root-to-segment paths, not over the packed row.
     assert any(calls[-1] > shared_len for calls in qwen3_5_packing_patch.conv_calls)
 
 
@@ -358,6 +408,7 @@ def test_trains_hybrid_model_on_cpu(
         model,
         LoraConfig(r=4, target_modules=r".*language_model.*\.(q_proj|v_proj|out_proj)"),
     )
+    trainable_before = {n: p.requires_grad for n, p in model.named_parameters()}
 
     prompt = [{"role": "user", "content": "What is 2+2?"}]
     prompt_ids = tokenizer.apply_chat_template(
@@ -413,6 +464,7 @@ def test_trains_hybrid_model_on_cpu(
     assert text_config.layer_types == layer_types
     # TRL's VLM branch would have made the whole text model trainable.
     params = dict(trainer.model.named_parameters())
+    assert {n: p.requires_grad for n, p in params.items()} == trainable_before
     assert all("lora_" in n for n, p in params.items() if p.requires_grad)
 
     trained = {n: p.detach().clone() for n, p in params.items() if p.requires_grad}

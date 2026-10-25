@@ -56,6 +56,8 @@ from trl.trainer.utils import add_fused_lm_head, get_config_model_id
 from axolotl.core.trainers.grpo.trl_async_packing import (
     ChainFixedCountBatcher,
     ChainTokenBudgetBatcher,
+    hidden_layer_types,
+    sample_boundaries,
     shares_prefixes,
 )
 from axolotl.core.trainers.grpo.trl_async_rollout import (
@@ -375,25 +377,6 @@ def _patched_trl_module(**replacements):
             setattr(trl_async_module, name, value)
 
 
-@contextlib.contextmanager
-def _hidden_layer_types(model: PreTrainedModel):
-    """Hide ``layer_types`` from TRL's ``__init__``.
-
-    TRL rejects any non-attention layer because its trie shares prompt prefixes,
-    which a recurrent layer cannot follow by itself. axolotl's GatedDeltaNet patch
-    follows the trie, and other recurrent models pack each sample as its own chain
-    (see ``trl_async_packing``); the check is the only reader of ``layer_types``
-    during ``__init__``.
-    """
-    text_config = model.config.get_text_config()
-    layer_types = text_config.layer_types
-    text_config.layer_types = None
-    try:
-        yield
-    finally:
-        text_config.layer_types = layer_types
-
-
 def _is_quantized(model: PreTrainedModel) -> bool:
     base = model.get_base_model() if is_peft_model(model) else model
     return bool(getattr(base, "is_quantized", False)) or any(
@@ -588,7 +571,7 @@ class AxolotlAsyncGRPOTrainer(
             model_id = get_config_model_id(model.config)
             self._share_prefixes = shares_prefixes(model)
             if recurrent_layer_types(model.config):
-                hide_layer_types = _hidden_layer_types(model)
+                hide_layer_types = hidden_layer_types(model)
         for scorer in self._trainer_scorers:
             scorer.share_prefixes = self._share_prefixes
 
@@ -767,6 +750,8 @@ class AxolotlAsyncGRPOTrainer(
         tree_kwargs["tree_max_seqlen_q"], tree_kwargs["tree_max_seqlen_k"] = inputs[
             "tree_max_seqlens"
         ][0].tolist()
+        if not self._share_prefixes:
+            tree_kwargs.update(sample_boundaries(tree_kwargs))
 
         forward_start = time.time()
         router_kwargs = {"output_router_logits": True} if self.aux_loss_enabled else {}
