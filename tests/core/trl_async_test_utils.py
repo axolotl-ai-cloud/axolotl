@@ -1,8 +1,10 @@
 """CPU stand-ins for async GRPO tests: TRL's FA3 tree attention, a rollout worker
-fed from a list, and a weight transfer that records what it was sent."""
+fed from a list, a weight transfer that records what it was sent, and a parity
+check of packed rows against samples scored alone."""
 
 import queue
 
+import numpy as np
 import torch
 
 
@@ -80,3 +82,116 @@ class StubTransfer:
 
     def destroy(self):
         pass
+
+
+def _sample(ids, prompt_len, group_id):
+    ids = np.asarray(ids, dtype=np.int64)
+    return {
+        "input_ids": ids,
+        "completion_mask": np.asarray([0] * prompt_len + [1] * (len(ids) - prompt_len)),
+        "old_log_probs": np.zeros(len(ids), np.float32),
+        "advantage": 1.0,
+        "group_id": group_id,
+    }
+
+
+def branching_samples(vocab_size=64):
+    """Two prompts with three rollouts each, plus one branching off a rollout."""
+    rng = np.random.default_rng(0)
+    samples = []
+    for group_id in range(2):
+        prompt = rng.integers(1, vocab_size, size=6 + group_id).tolist()
+        for g in range(3):
+            completion = rng.integers(1, vocab_size, size=3 + g).tolist()
+            samples.append(_sample(prompt + completion, len(prompt), group_id))
+        branch = samples[-1]["input_ids"][: len(prompt) + 1].tolist() + [5, 6]
+        samples.append(_sample(branch, len(prompt), group_id))
+    return samples
+
+
+def _set_attention(model, implementation):
+    if any("Attention" in type(m).__name__ for m in model.modules()):
+        model.set_attn_implementation(implementation)
+
+
+def assert_tree_rows_match_alone(model, samples, on_row=None):
+    """Trie and chain rows score ``samples`` (log-probs and grads) as they score alone.
+
+    ``on_row(row_tokens)`` runs after each packed forward. Returns the trie's and
+    the chains' row lengths.
+    """
+    from trl.experimental.async_grpo import packing
+    from trl.experimental.async_grpo.packing import TreeRow
+
+    from axolotl.core.trainers.grpo.trl_async_packing import (
+        ChainRow,
+        sample_boundaries,
+    )
+
+    packing.register_tree_attention()
+
+    def grads():
+        found = {
+            n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
+        }
+        model.zero_grad()
+        return found
+
+    def score_row(row):
+        _set_attention(model, packing.TREE_ATTENTION)
+        for sample in samples:
+            row.add(sample)
+        packed = row.pack()
+        tree = {
+            "tree_kv_index": packed["tree_kv_index"],
+            "tree_cu_seqlens_q": packed["tree_cu_seqlens_q"],
+            "tree_cu_seqlens_k": packed["tree_cu_seqlens_k"],
+            "tree_max_seqlen_q": int(packed["tree_max_seqlens"][0]),
+            "tree_max_seqlen_k": int(packed["tree_max_seqlens"][1]),
+        }
+        if isinstance(row, ChainRow):
+            tree.update(sample_boundaries(tree))
+        logits = model(
+            input_ids=packed["input_ids"][None],
+            position_ids=packed["position_ids"][None],
+            use_cache=False,
+            **tree,
+        ).logits[0]
+        if on_row is not None:
+            on_row(len(packed["input_ids"]))
+        index = packed["token_index"]
+        log_probs = torch.log_softmax(logits[index], -1).gather(
+            1, packed["shift_labels"][index][:, None]
+        )[:, 0]
+        log_probs.sum().backward()
+        return len(packed["input_ids"]), log_probs.detach(), grads()
+
+    def score_alone():
+        _set_attention(model, "sdpa")
+        log_probs = []
+        for sample in samples:
+            ids = torch.as_tensor(sample["input_ids"])[None]
+            logits = model(input_ids=ids, use_cache=False).logits[0, :-1]
+            trained = torch.as_tensor(sample["completion_mask"][1:]).bool()
+            log_probs.append(
+                torch.log_softmax(logits[trained], -1).gather(
+                    1, ids[0, 1:][trained][:, None]
+                )[:, 0]
+            )
+        torch.cat(log_probs).sum().backward()
+        return torch.cat(log_probs).detach(), grads()
+
+    model.train()
+    shared_len, shared, shared_grads = score_row(TreeRow())
+    chain_len, chains, chain_grads = score_row(ChainRow())
+    alone, alone_grads = score_alone()
+    assert shared_len < chain_len
+    for packed_log_probs, packed_grads in (
+        (shared, shared_grads),
+        (chains, chain_grads),
+    ):
+        torch.testing.assert_close(packed_log_probs, alone, rtol=1e-5, atol=1e-5)
+        assert packed_grads.keys() == alone_grads.keys()
+        for name, grad in packed_grads.items():
+            torch.testing.assert_close(grad, alone_grads[name], rtol=1e-4, atol=1e-5)
+    return shared_len, chain_len
