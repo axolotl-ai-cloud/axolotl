@@ -618,9 +618,11 @@ class PatchManager:
             self._apply_ssm_packing_patches()
         if packs_async_grpo_rollouts(self.cfg):
             # outermost, so a tree row skips the packing patches' boundary handling
+            from axolotl.monkeypatch.models.lfm2_tree import patch_lfm2_tree
             from axolotl.monkeypatch.models.mamba2_tree import patch_mamba2_tree
 
             patch_mamba2_tree(self.cfg.model_config_type)
+            patch_lfm2_tree(self.cfg.model_config_type)
 
         # Patches requiring CUDA
         if torch.cuda.is_available():
