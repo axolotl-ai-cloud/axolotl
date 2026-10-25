@@ -52,51 +52,58 @@ def install_deep_ep(wheel_cache: str) -> bool:
     abi = subprocess.run(  # nosec
         [sys.executable, "-c", DEEP_EP_ABI], check=True, capture_output=True, text=True
     ).stdout.strip()
+
+    def install(wheels):
+        subprocess.run(  # nosec
+            ["uv", "pip", "install", "--no-deps", *map(str, wheels)], check=True
+        )
+        subprocess.run(  # nosec
+            [sys.executable, "-c", "import deep_ep; print('DeepEP:', deep_ep.Buffer)"],
+            check=True,
+        )
+
     wheel_dir = pathlib.Path(wheel_cache) / f"{DEEP_EP_REF}-sm{arch}-{abi}"
     wheels = sorted(wheel_dir.glob("deep_ep-*.whl"))
-    built = not wheels
-    if built:
-        print(f"DeepEP: building {wheel_dir.name}", flush=True)
-        with tempfile.TemporaryDirectory() as tmp:
-            src = f"{tmp}/DeepEP"
-            subprocess.run(  # nosec
-                [
-                    "git",
-                    "clone",
-                    "--depth=1",
-                    f"--branch={DEEP_EP_REF}",
-                    "https://github.com/deepseek-ai/DeepEP.git",
-                    src,
-                ],
-                check=True,
-            )
-            # CUDA 13.0 moved cuda/std under include/cccl
-            cccl = "-I/usr/local/cuda/include/cccl"
-            env = {
-                **os.environ,
-                "TORCH_CUDA_ARCH_LIST": arch,
-                "MAX_JOBS": "16",
-                "CFLAGS": cccl,
-                "CXXFLAGS": cccl,
-                "NVCC_PREPEND_FLAGS": cccl,
-            }
-            subprocess.run(  # nosec
-                [sys.executable, "setup.py", "bdist_wheel", "-d", f"{tmp}/dist"],
-                cwd=src,
-                env=env,
-                check=True,
-            )
-            wheel_dir.mkdir(parents=True, exist_ok=True)
-            for whl in pathlib.Path(tmp, "dist").glob("deep_ep-*.whl"):
-                partial = wheel_dir / f".{whl.name}.partial"
-                shutil.copyfile(whl, partial)
-                partial.rename(wheel_dir / whl.name)
-        wheels = sorted(wheel_dir.glob("deep_ep-*.whl"))
-    subprocess.run(  # nosec
-        ["uv", "pip", "install", "--no-deps", *map(str, wheels)], check=True
-    )
-    subprocess.run(  # nosec
-        [sys.executable, "-c", "import deep_ep; print('DeepEP:', deep_ep.Buffer)"],
-        check=True,
-    )
-    return built
+    if wheels:
+        install(wheels)
+        return False
+    print(f"DeepEP: building {wheel_dir.name}", flush=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = f"{tmp}/DeepEP"
+        subprocess.run(  # nosec
+            [
+                "git",
+                "clone",
+                "--depth=1",
+                f"--branch={DEEP_EP_REF}",
+                "https://github.com/deepseek-ai/DeepEP.git",
+                src,
+            ],
+            check=True,
+        )
+        # CUDA 13.0 moved cuda/std under include/cccl
+        cccl = "-I/usr/local/cuda/include/cccl"
+        env = {
+            **os.environ,
+            "TORCH_CUDA_ARCH_LIST": arch,
+            "MAX_JOBS": "16",
+            "CFLAGS": cccl,
+            "CXXFLAGS": cccl,
+            "NVCC_PREPEND_FLAGS": cccl,
+        }
+        subprocess.run(  # nosec
+            [sys.executable, "setup.py", "bdist_wheel", "-d", f"{tmp}/dist"],
+            cwd=src,
+            env=env,
+            check=True,
+        )
+        built = sorted(pathlib.Path(tmp, "dist").glob("deep_ep-*.whl"))
+        # validate before caching: the volume can commit in the background, and a cached wheel
+        # is never rebuilt
+        install(built)
+        wheel_dir.mkdir(parents=True, exist_ok=True)
+        for whl in built:
+            partial = wheel_dir / f".{whl.name}.partial"
+            shutil.copyfile(whl, partial)
+            partial.rename(wheel_dir / whl.name)
+    return True
