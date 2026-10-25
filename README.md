@@ -158,6 +158,7 @@ Other installation approaches are described [here](https://docs.axolotl.ai/docs/
 - [Novita](https://novita.ai/gpus-console?templateId=311)
 - [JarvisLabs.ai](https://jarvislabs.ai/templates/axolotl)
 - [Latitude.sh](https://latitude.sh/blueprint/989e0e79-3bf6-41ea-a46b-1f246e309d5c)
+- [Runcrate](https://docs.axolotl.ai/docs/runcrate.html)
 
 </details>
 

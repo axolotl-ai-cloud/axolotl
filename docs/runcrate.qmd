@@ -1,0 +1,79 @@
+---
+title: Runcrate
+description: How to run Axolotl training on a Runcrate GPU instance
+---
+
+[Runcrate](https://www.runcrate.ai/?utm_source=axolotl&utm_medium=directory&utm_campaign=gpu_pricing) rents GPU virtual machines by the hour, from an RTX A6000 up to H100, H200, B200 and B300. Its **Finetune** image (`ubuntu-train`) comes with Docker and the NVIDIA container runtime, so the Axolotl Docker image runs on it without any setup. This guide starts an instance with the `runcrate` CLI, trains a LoRA adapter in the Axolotl image, copies the result back and deletes the instance.
+
+## Setup
+
+Install the [Runcrate CLI](https://www.runcrate.ai/docs/cli/installation?utm_source=axolotl&utm_medium=directory&utm_campaign=gpu_pricing) and sign in:
+
+```bash
+curl -sSL https://runcrate.ai/install.sh | sh
+runcrate login
+```
+
+`runcrate login` opens the browser. On a machine without one, set `RUNCRATE_API_KEY` to an API key from **Dashboard > Keys** instead.
+
+## Start an instance
+
+List the machines that have the GPU you want, with their price per hour:
+
+```bash
+runcrate instances types --gpu A6000
+```
+
+Create the instance with the Finetune image. `--max-runtime` stops it after four hours, so a forgotten instance does not keep billing:
+
+```bash
+runcrate instances create --name axolotl --gpu A6000 \
+  --template ubuntu-train --max-runtime 4h
+```
+
+`runcrate instances status axolotl` reports `running` once the instance is ready, usually after a few minutes. You can also create it from the [deploy form](https://www.runcrate.ai/auth/signup?utm_source=axolotl&utm_medium=directory&utm_campaign=gpu_pricing&redirect=%2Fdashboard%2Finstances%3Faction%3Dcreate%26gpu%3DA6000%26template%3Dubuntu-train%26src%3Daxolotl).
+
+## A first run
+
+`runcrate ssh` runs a command on the instance over SSH, with no key setup. Pull the image, then train the bundled `examples/llama-3/lora-1b.yml` config for 10 steps as a trial run:
+
+```bash
+runcrate ssh axolotl -- docker pull axolotlai/axolotl:main-latest
+
+runcrate ssh axolotl -- "docker run --gpus all --ipc=host --rm \
+  -v /root/outputs:/workspace/axolotl/outputs \
+  axolotlai/axolotl:main-latest \
+  axolotl train examples/llama-3/lora-1b.yml --max-steps 10"
+```
+
+- The image's working directory is its Axolotl checkout, so the example configs are available by relative path. Its entrypoint sets up the CUDA libraries, so pass the `axolotl` command directly rather than replacing the entrypoint.
+- `-v /root/outputs:/workspace/axolotl/outputs` keeps the adapter on the instance after the container exits. The config writes it to `./outputs/lora-out`.
+- Drop `--max-steps 10` to train for the epochs set in the config.
+- For gated models, add `-e HF_TOKEN=<token>` to `docker run`.
+
+To train your own config, copy it to the instance and mount it into the container:
+
+```bash
+runcrate ssh axolotl -- mkdir -p /root/configs
+runcrate cp ./my_training.yml axolotl:/root/configs/my_training.yml
+
+runcrate ssh axolotl -- "docker run --gpus all --ipc=host --rm \
+  -v /root/configs:/configs -v /root/outputs:/workspace/axolotl/outputs \
+  axolotlai/axolotl:main-latest \
+  axolotl train /configs/my_training.yml"
+```
+
+Long runs keep going if your terminal disconnects when you start the container with `-d` instead of `--rm` and follow it with `runcrate ssh axolotl -- docker logs -f <container>`.
+
+## Copy the result and clean up
+
+Copy the adapter back, then delete the instance to stop billing. Everything on the instance's disk is deleted with it:
+
+```bash
+runcrate cp -r axolotl:/root/outputs/lora-out ./lora-out
+runcrate instances delete axolotl
+```
+
+## Several GPUs
+
+Create the instance with more GPUs on the same machine, for example `--gpu H100:4`, and launch the multi-GPU configs as described in the [multi-GPU guide](multi-gpu.qmd).

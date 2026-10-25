@@ -512,6 +512,7 @@ website:
             - docs/hf-jobs.qmd
             - docs/nebius-serverless.qmd
             - docs/coreweave.qmd
+            - docs/runcrate.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 
