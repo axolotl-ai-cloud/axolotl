@@ -151,26 +151,41 @@ class TestSharesPrefixes:
 
 
 def _tiny_qwen3_5(vocab_size):
-    from transformers import Qwen3_5TextConfig
-    from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForCausalLM
+    """A tiny Qwen3.5 checkpoint as axolotl loads it: the multimodal class."""
+    from transformers import Qwen3_5Config
+    from transformers.models.qwen3_5.modeling_qwen3_5 import (
+        Qwen3_5ForConditionalGeneration,
+    )
 
-    config = Qwen3_5TextConfig(
-        vocab_size=vocab_size,
-        hidden_size=32,
-        intermediate_size=64,
-        num_hidden_layers=2,
-        layer_types=["linear_attention", "full_attention"],
-        num_attention_heads=2,
-        num_key_value_heads=1,
-        head_dim=16,
-        linear_num_key_heads=2,
-        linear_num_value_heads=2,
-        linear_key_head_dim=8,
-        linear_value_head_dim=8,
-        linear_conv_kernel_dim=2,
+    config = Qwen3_5Config(
+        text_config={
+            "vocab_size": vocab_size,
+            "hidden_size": 32,
+            "intermediate_size": 64,
+            "num_hidden_layers": 2,
+            "layer_types": ["linear_attention", "full_attention"],
+            "num_attention_heads": 2,
+            "num_key_value_heads": 1,
+            "head_dim": 16,
+            "linear_num_key_heads": 2,
+            "linear_num_value_heads": 2,
+            "linear_key_head_dim": 8,
+            "linear_value_head_dim": 8,
+            "linear_conv_kernel_dim": 2,
+        },
+        vision_config={
+            "depth": 1,
+            "hidden_size": 16,
+            "intermediate_size": 32,
+            "num_heads": 2,
+            "out_hidden_size": 32,
+            "patch_size": 2,
+            "temporal_patch_size": 1,
+            "spatial_merge_size": 1,
+        },
     )
     torch.manual_seed(0)
-    return Qwen3_5ForCausalLM(config)
+    return Qwen3_5ForConditionalGeneration(config)
 
 
 def test_trains_hybrid_model_on_unshared_rows_on_cpu(
@@ -215,9 +230,10 @@ def test_trains_hybrid_model_on_unshared_rows_on_cpu(
 
     tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
     model = _tiny_qwen3_5(len(tokenizer))
-    layer_types = list(model.config.layer_types)
+    layer_types = list(model.config.get_text_config().layer_types)
     model = get_peft_model(
-        model, LoraConfig(r=4, target_modules=["q_proj", "v_proj", "out_proj"])
+        model,
+        LoraConfig(r=4, target_modules=r".*language_model.*\.(q_proj|v_proj|out_proj)"),
     )
 
     prompt = [{"role": "user", "content": "What is 2+2?"}]
@@ -270,13 +286,14 @@ def test_trains_hybrid_model_on_unshared_rows_on_cpu(
         weight_transfer=StubTransfer(),
     )
     assert not trainer._share_prefixes
-    assert trainer.model.get_base_model().config.layer_types == layer_types
+    text_config = trainer.model.get_base_model().config.get_text_config()
+    assert text_config.layer_types == layer_types
+    # TRL's VLM branch would have made the whole text model trainable.
+    params = dict(trainer.model.named_parameters())
+    assert all("lora_" in n for n, p in params.items() if p.requires_grad)
 
-    trained = {
-        n: p.detach().clone()
-        for n, p in trainer.model.named_parameters()
-        if p.requires_grad
-    }
+    trained = {n: p.detach().clone() for n, p in params.items() if p.requires_grad}
+    frozen = {n: p.detach().clone() for n, p in params.items() if not p.requires_grad}
     trainer.train()
 
     assert boundaries
@@ -284,8 +301,6 @@ def test_trains_hybrid_model_on_unshared_rows_on_cpu(
         # One segment per rollout; a shared prompt would show up as a shorter one.
         segments = np.diff(cu_seqlens).tolist()
         assert segments and set(segments) <= lengths
-    assert all(
-        not torch.equal(trained[n], p.detach())
-        for n, p in trainer.model.named_parameters()
-        if p.requires_grad
-    )
+    params = dict(trainer.model.named_parameters())
+    assert all(not torch.equal(trained[n], params[n].detach()) for n in trained)
+    assert all(torch.equal(frozen[n], params[n].detach()) for n in frozen)
