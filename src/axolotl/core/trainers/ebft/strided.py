@@ -37,7 +37,7 @@ from axolotl.core.trainers.mixins import (
     SchedulerMixin,
 )
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
-from axolotl.utils.distributed import get_device_count, get_device_type
+from axolotl.utils.distributed import get_device_type
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -323,6 +323,24 @@ def _feature_device_type(original_device: torch.device) -> str:
     return original_device.type
 
 
+def _device_count_for(device_type: str) -> int:
+    """Number of devices of ``device_type`` this run can use, at least 1.
+
+    ``get_device_count()`` only knows the cuda and npu counters, so it reports a
+    single device on any other accelerator. That decides which branch builds the
+    feature network, so ask the runtime of the actor's own backend instead and
+    keep 1 as the floor when the backend does not expose a counter.
+    """
+    backend = getattr(torch, device_type, None)
+    counter = getattr(backend, "device_count", None)
+    if counter is None:
+        return 1
+    try:
+        return max(1, int(counter()))
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return 1
+
+
 class AxolotlStridedEBFTTrainer(
     CheckpointWriteRetryMixin,
     RngLoaderMixin,
@@ -414,8 +432,8 @@ class AxolotlStridedEBFTTrainer(
         first_param = next(unwrapped.parameters())
         original_device = first_param.device
         actor_gpu = original_device.index if original_device.index is not None else 0
-        visible_gpus = get_device_count()
         feature_device_type = _feature_device_type(original_device)
+        visible_gpus = _device_count_for(feature_device_type)
 
         # Check if we can share weights (PEFT model on single GPU)
         from peft import PeftModel

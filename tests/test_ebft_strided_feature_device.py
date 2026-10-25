@@ -9,7 +9,7 @@ from cuda must not decide how the network is created on such a run.
 import pytest
 import torch
 
-from axolotl.core.trainers.ebft.strided import _feature_device_type
+from axolotl.core.trainers.ebft.strided import _device_count_for, _feature_device_type
 from axolotl.utils.distributed import get_device_type
 
 
@@ -38,3 +38,26 @@ def test_feature_device_keeps_the_actor_accelerator(device_type):
 @pytest.mark.parametrize("device_type", ["cpu", "meta"])
 def test_placeholder_device_falls_back_to_the_run_device(device_type):
     assert _feature_device_type(torch.device(device_type)) == str(get_device_type())
+
+
+def test_device_count_comes_from_the_actor_backend(monkeypatch):
+    # get_device_count() only counts cuda and npu, so it reports 1 on every other
+    # accelerator while an 8-card XPU host would still take the single-device branch.
+    backend = accelerator_device("xpu", 0).type
+    module = getattr(torch, backend)
+    monkeypatch.setattr(module, "device_count", lambda: 8, raising=False)
+    assert _device_count_for(backend) == 8
+
+
+def test_device_count_falls_back_to_one_without_a_counter(monkeypatch):
+    # A backend without a device_count attribute (or one that raises) still has to
+    # yield a usable count so the feature network is built.
+    assert _device_count_for("cpu") >= 1
+    backend = accelerator_device("xpu", 0).type
+    module = getattr(torch, backend)
+
+    def boom():
+        raise RuntimeError("no runtime")
+
+    monkeypatch.setattr(module, "device_count", boom, raising=False)
+    assert _device_count_for(backend) == 1
