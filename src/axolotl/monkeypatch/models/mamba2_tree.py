@@ -107,7 +107,9 @@ def patch_mamba2_tree(model_type: str) -> bool:
     @functools.wraps(original_forward)
     def forward(self, hidden_states, cache_params=None, attention_mask=None, **kwargs):
         plan = tree_plan(kwargs) if cache_params is None else None
-        if plan is None:
+        # Nothing shared: the samples restart position_ids, so the packing
+        # patches' seq_idx keeps them apart and the fused kernel can run.
+        if plan is None or len(plan.levels) == 1:
             return original_forward(
                 self,
                 hidden_states,
