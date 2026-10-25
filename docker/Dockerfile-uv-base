@@ -46,11 +46,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install packaging setuptools wheel psutil; \
     if [ -n "$TORCH_INDEX_URL" ]; then \
         uv pip install --extra-index-url "$TORCH_INDEX_URL" \
-            torch==${PYTORCH_VERSION} ${TVM_FFI} torchvision \
+            torch==${PYTORCH_VERSION} apache-tvm-ffi torchvision \
             "${CUTLASS_DSL}" nvidia-nvshmem-${NV_BACKEND}; \
     else \
         UV_TORCH_BACKEND=$TORCH_BACKEND uv pip install \
-            torch==${PYTORCH_VERSION} ${TVM_FFI} torchvision \
+            torch==${PYTORCH_VERSION} apache-tvm-ffi torchvision \
             "${CUTLASS_DSL}" nvidia-nvshmem-${NV_BACKEND}; \
     fi; \
     uv pip install awscli pydantic
