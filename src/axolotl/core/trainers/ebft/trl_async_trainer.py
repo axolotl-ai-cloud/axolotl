@@ -22,6 +22,7 @@ from transformers import PreTrainedModel
 
 from axolotl.core.trainers.ebft.args import EBFTFieldsMixin
 from axolotl.core.trainers.ebft.rewards import group_feature_rewards, pool_sequence
+from axolotl.core.trainers.grpo.trl_async_packing import sample_boundaries
 from axolotl.core.trainers.grpo.trl_async_scoring import (
     ScoredRow,
     TrainerScorer,
@@ -117,6 +118,8 @@ class EBFTScorer(TrainerScorer):
     @torch.no_grad()
     def features(self, trainer, inputs: dict[str, torch.Tensor]):
         unpacked = unpack_sequences(inputs)
+        if not self.share_prefixes:
+            unpacked["model_inputs"].update(sample_boundaries(unpacked["model_inputs"]))
         with self._feature_model(trainer) as model:
             outputs = model(
                 **unpacked["model_inputs"],
