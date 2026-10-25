@@ -61,7 +61,7 @@ GPU 1: Trainer (feature extraction, reward computation, GRPO training)
 
 `trl.async_prefetch: true` runs structured EBFT on [async GRPO](grpo.qmd) (TRL's `AsyncGRPOTrainer`): a CUDA-free rollout process keeps generating against the vLLM server while the trainer trains on finished rollouts up to `trl.max_staleness` weight syncs old. The feature-matching reward needs the feature network's hidden states, so it is computed on the trainer: each optimizer step holds whole prompt groups, every rank runs a no-grad forward of its completions and their references with adapters disabled, and the embeddings are all-gathered to score each group. This works under FSDP2.
 
-Only the first assistant turn is trained; with `remaining_turns`, the later assistant turns are generated as reward context. Differences from the sync trainer: rewards use the sampled token IDs; the adaptive max_tokens budget is set per prompt; the loss is TRL's token-level clipped loss (leave `loss_type` unset); replay, re-roll, streaming and `num_iterations > 1` are not available.
+Only the first assistant turn is trained; with `remaining_turns`, the later assistant turns are generated as reward context. Differences from the sync trainer: rewards use the sampled token IDs; the adaptive max_tokens budget is set per prompt; the loss is async GRPO's token-level loss, weighted by the policy/sampler ratio (leave `loss_type` unset); replay, re-roll, streaming and `num_iterations > 1` are not available.
 
 **When to use**: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by `vllm_sync_interval` and `max_staleness`).
 
