@@ -6,7 +6,9 @@ root-to-segment path. A recurrent or linear-attention layer (GatedDeltaNet, Mamb
 short convolutions) cannot follow such a path: it scans the row in order and
 carries its state from one segment into the next.
 
-For those models every sample becomes its own chain (``ChainRow``). TRL's
+axolotl's GatedDeltaNet patch (Qwen3.5, Qwen3-Next) follows the trie itself, so
+those models keep prefix sharing (see ``monkeypatch.models.gated_delta_net_tree``).
+For other recurrent models every sample becomes its own chain (``ChainRow``). TRL's
 ``TreeRow.pack`` then lays the samples end to end with ``position_ids`` restarting
 at 0 for each, tree attention reduces to plain varlen attention, and the recurrent
 mixers see each sample's boundaries through axolotl's sample packing patches, which
@@ -117,13 +119,18 @@ class ChainFixedCountBatcher(FixedCountBatcher):
             batch = []
 
 
-def shares_prefixes(config) -> bool:
+def _gated_delta_nets(model) -> list:
+    return [m for m in model.modules() if type(m).__name__.endswith("GatedDeltaNet")]
+
+
+def shares_prefixes(model) -> bool:
     """Whether a packed row may share prompt prefixes across its samples.
 
-    Only attention can follow the trie; a model with recurrent layers packs each
-    sample as its own chain, which needs axolotl's packed-sequence boundary patch
-    for its architecture.
+    Attention follows the trie, and so do GatedDeltaNet layers under axolotl's
+    packing patch. Other recurrent layers need each sample as its own chain, which
+    needs axolotl's packed-sequence boundary patch for their architecture.
     """
+    config = model.config
     types = {config.model_type, config.get_text_config().model_type}
     recurrent = recurrent_layer_types(config)
     if not recurrent and not types & RECURRENT_MODEL_TYPES:
@@ -136,4 +143,14 @@ def shares_prefixes(config) -> bool:
             "state would leak across the packed samples. Train it with synchronous "
             "GRPO (without `trl.async_prefetch`)."
         )
-    return False
+    mixers = _gated_delta_nets(model)
+    forwards = [type(m).forward for m in mixers]
+    if any(not getattr(f, "_axolotl_gdn_kernel_interface", False) for f in forwards):
+        raise ValueError(
+            "Async GRPO packs rollouts into rows, but the model's GatedDeltaNet layers "
+            "run the stock forward, which mixes state across packed samples. Load the "
+            "model through axolotl, which applies its packing patch."
+        )
+    return bool(mixers) and all(
+        getattr(f, "_axolotl_tree_routing", False) for f in forwards
+    )

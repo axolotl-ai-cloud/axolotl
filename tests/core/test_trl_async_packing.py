@@ -119,35 +119,176 @@ class TestChainBatchers:
         assert all(isinstance(row, ChainRow) for rows in ours for row in rows)
 
 
-def _config(model_type, layer_types=None):
+def _model(model_type, layer_types=None, mixers=()):
     config = types.SimpleNamespace(model_type=model_type, layer_types=layer_types)
     config.get_text_config = lambda: config
-    return config
+    return types.SimpleNamespace(config=config, modules=lambda: list(mixers))
+
+
+def _gated_delta_net(**marks):
+    def forward(self, *args, **kwargs):
+        pass
+
+    for name, value in marks.items():
+        setattr(forward, name, value)
+    return type("FakeGatedDeltaNet", (), {"forward": forward})()
+
+
+HYBRID = ["linear_attention", "full_attention"]
+TREE_ROUTED = {"_axolotl_gdn_kernel_interface": True, "_axolotl_tree_routing": True}
 
 
 class TestSharesPrefixes:
     def test_attention_models_share(self):
-        assert shares_prefixes(_config("llama"))
+        assert shares_prefixes(_model("llama"))
         assert shares_prefixes(
-            _config("gemma3", ["sliding_attention", "full_attention"])
+            _model("gemma3", ["sliding_attention", "full_attention"])
         )
 
-    def test_patched_recurrent_models_do_not_share(self):
-        assert not shares_prefixes(
-            _config("qwen3_5_text", ["linear_attention", "full_attention"])
-        )
-        assert not shares_prefixes(_config("mamba2"))
+    def test_trie_routed_gated_delta_nets_share(self):
+        mixers = [_gated_delta_net(**TREE_ROUTED)] * 2
+        assert shares_prefixes(_model("qwen3_5_text", HYBRID, mixers))
 
-    @pytest.mark.parametrize(
-        "config",
-        [
-            _config("jamba"),
-            _config("my_hybrid", ["linear_attention", "full_attention"]),
-        ],
-    )
-    def test_unsupported_recurrent_models_raise(self, config):
+    def test_other_patched_recurrent_models_pack_chains(self):
+        assert not shares_prefixes(_model("mamba2"))
+        varlen_only = [_gated_delta_net(_axolotl_gdn_kernel_interface=True)]
+        assert not shares_prefixes(_model("qwen3_5_text", HYBRID, varlen_only))
+
+    def test_stock_gated_delta_net_raises(self):
+        with pytest.raises(ValueError, match="stock forward"):
+            shares_prefixes(_model("qwen3_5_text", HYBRID, [_gated_delta_net()]))
+
+    @pytest.mark.parametrize("model", [_model("jamba"), _model("my_hybrid", HYBRID)])
+    def test_unsupported_recurrent_models_raise(self, model):
         with pytest.raises(ValueError, match="state would leak"):
-            shares_prefixes(config)
+            shares_prefixes(model)
+
+
+def _reference_causal_conv1d(x, weight, bias, activation, cu_seqlens):
+    """Pure-torch stand-in for FLA's varlen causal conv1d on ``[1, T, D]``."""
+    width = weight.shape[1]
+    outs = []
+    for start, end in zip(
+        cu_seqlens[:-1].tolist(), cu_seqlens[1:].tolist(), strict=True
+    ):
+        seq = torch.nn.functional.pad(x[:, start:end].transpose(1, 2), (width - 1, 0))
+        out = torch.nn.functional.conv1d(seq, weight[:, None], bias, groups=x.shape[-1])
+        outs.append(torch.nn.functional.silu(out).transpose(1, 2))
+    return torch.cat(outs, dim=1), None
+
+
+def _gated_delta_rule(query, key, value, g, beta):
+    """The gated delta rule token by token, on ``[1, T, H, D]`` inputs."""
+    query = torch.nn.functional.normalize(query.float(), dim=-1, eps=1e-6)
+    key = torch.nn.functional.normalize(key.float(), dim=-1, eps=1e-6)
+    query = query * query.shape[-1] ** -0.5
+    value, g, beta = value.float(), g.float(), beta.float()
+    state = query.new_zeros(query.shape[2], key.shape[-1], value.shape[-1])
+    outs = []
+    for t in range(query.shape[1]):
+        state = state * g[0, t].exp()[:, None, None]
+        delta = (value[0, t] - (state * key[0, t, :, :, None]).sum(-2)) * beta[
+            0, t, :, None
+        ]
+        state = state + key[0, t, :, :, None] * delta[:, None, :]
+        outs.append((state * query[0, t, :, :, None]).sum(-2))
+    return torch.stack(outs)[None].to(value.dtype)
+
+
+def _reference_chunk_gated_delta_rule(
+    query, key, value, *, g, beta, cu_seqlens, **kwargs
+):
+    """Pure-torch stand-in for FLA's varlen chunk_gated_delta_rule."""
+    bounds = cu_seqlens.tolist()
+    outs = [
+        _gated_delta_rule(*(x[:, a:b] for x in (query, key, value, g, beta)))
+        for a, b in zip(bounds[:-1], bounds[1:], strict=True)
+    ]
+    return torch.cat(outs, dim=1), None
+
+
+@pytest.fixture
+def qwen3_5_packing_patch(monkeypatch):
+    """axolotl's Qwen3.5 packing patch, with FLA swapped for reference kernels."""
+    from transformers.models.qwen3_5 import modeling_qwen3_5
+    from trl.experimental.async_grpo import packing
+
+    from axolotl.monkeypatch.models.qwen3_5 import modeling as qwen3_5_packing
+
+    monkeypatch.setattr(packing, "tree_attention", reference_tree_attention)
+    for cls in (
+        modeling_qwen3_5.Qwen3_5DecoderLayer,
+        modeling_qwen3_5.Qwen3_5GatedDeltaNet,
+    ):
+        monkeypatch.setattr(cls, "forward", cls.forward)
+    qwen3_5_packing.patch_qwen3_5_modeling_packing()
+    monkeypatch.setattr(qwen3_5_packing, "_FLA_COMPILED_OPS", False)
+    calls = []
+
+    def causal_conv1d(x, weight, bias, activation, cu_seqlens):
+        calls.append(cu_seqlens.tolist())
+        return _reference_causal_conv1d(x, weight, bias, activation, cu_seqlens)
+
+    monkeypatch.setattr(qwen3_5_packing, "fla_causal_conv1d", causal_conv1d)
+    monkeypatch.setattr(
+        qwen3_5_packing,
+        "fla_chunk_gated_delta_rule",
+        _reference_chunk_gated_delta_rule,
+    )
+    return types.SimpleNamespace(
+        conv_calls=calls, gated_delta_net=modeling_qwen3_5.Qwen3_5GatedDeltaNet
+    )
+
+
+def test_gated_delta_net_on_the_trie_matches_unshared_rows(qwen3_5_packing_patch):
+    """Prefix sharing changes neither the log-probs nor the gradients."""
+    from trl.experimental.async_grpo import packing
+
+    packing.register_tree_attention()
+    model = _tiny_qwen3_5(64)
+    model.set_attn_implementation(packing.TREE_ATTENTION)
+    rng = np.random.default_rng(0)
+    samples = []
+    for group_id in range(2):
+        prompt = rng.integers(1, 64, size=6 + group_id).tolist()
+        for g in range(3):
+            completion = rng.integers(1, 64, size=3 + g).tolist()
+            samples.append(_sample(prompt + completion, len(prompt), group_id))
+
+    def score(row):
+        for sample in samples:
+            row.add(sample)
+        packed = row.pack()
+        model.zero_grad()
+        logits = model(
+            input_ids=packed["input_ids"][None],
+            position_ids=packed["position_ids"][None],
+            tree_kv_index=packed["tree_kv_index"],
+            tree_cu_seqlens_q=packed["tree_cu_seqlens_q"],
+            tree_cu_seqlens_k=packed["tree_cu_seqlens_k"],
+            tree_max_seqlen_q=int(packed["tree_max_seqlens"][0]),
+            tree_max_seqlen_k=int(packed["tree_max_seqlens"][1]),
+            use_cache=False,
+        ).logits[0]
+        index = packed["token_index"]
+        log_probs = torch.log_softmax(logits[index], -1).gather(
+            1, packed["shift_labels"][index][:, None]
+        )[:, 0]
+        log_probs.sum().backward()
+        grads = {
+            n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
+        }
+        return len(packed["input_ids"]), log_probs.detach(), grads
+
+    shared_len, shared, shared_grads = score(TreeRow())
+    chain_len, chains, chain_grads = score(ChainRow())
+    assert shared_len < chain_len
+    torch.testing.assert_close(shared, chains, rtol=1e-5, atol=1e-5)
+    assert shared_grads.keys() == chain_grads.keys()
+    for name, grad in shared_grads.items():
+        torch.testing.assert_close(grad, chain_grads[name], rtol=1e-4, atol=1e-5)
+    # The conv ran over root-to-segment paths, not over the packed row.
+    assert any(calls[-1] > shared_len for calls in qwen3_5_packing_patch.conv_calls)
 
 
 def _tiny_qwen3_5(vocab_size):
@@ -188,45 +329,27 @@ def _tiny_qwen3_5(vocab_size):
     return Qwen3_5ForConditionalGeneration(config)
 
 
-def test_trains_hybrid_model_on_unshared_rows_on_cpu(
-    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
+@pytest.mark.parametrize("routes_trie", [True, False])
+def test_trains_hybrid_model_on_cpu(
+    download_smollm2_135m_instruct_model,
+    tmp_path,
+    monkeypatch,
+    qwen3_5_packing_patch,
+    routes_trie,
 ):
-    """Each rollout is its own chain, and its boundaries reach the GatedDeltaNet kernels."""
+    """Rollouts share prompts when the GatedDeltaNet patch follows the trie, else
+    each is its own chain; either way only the adapter trains."""
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
     from transformers import AutoTokenizer
-    from transformers.models.qwen3_5 import modeling_qwen3_5
-    from trl.experimental.async_grpo import async_grpo_trainer, packing
+    from trl.experimental.async_grpo import async_grpo_trainer
 
-    from axolotl.monkeypatch.models.qwen3_5 import modeling as qwen3_5_packing
-
-    monkeypatch.setattr(packing, "tree_attention", reference_tree_attention)
     monkeypatch.setattr(
         async_grpo_trainer, "get_peak_flops_per_device", lambda *a, **k: None
     )
-    for cls in (
-        modeling_qwen3_5.Qwen3_5DecoderLayer,
-        modeling_qwen3_5.Qwen3_5GatedDeltaNet,
-    ):
-        monkeypatch.setattr(cls, "forward", cls.forward)
-    qwen3_5_packing.patch_qwen3_5_modeling_packing()
-    monkeypatch.setattr(qwen3_5_packing, "_FLA_COMPILED_OPS", False)
-
-    # FLA's varlen kernels need a GPU: record the boundaries they would get.
-    boundaries = []
-
-    def causal_conv1d(x, weight, bias, activation, cu_seqlens):
-        boundaries.append(cu_seqlens.tolist())
-        return torch.nn.functional.silu(x), None
-
-    def chunk_gated_delta_rule(query, key, value, *, beta, cu_seqlens, **kwargs):
-        boundaries.append(cu_seqlens.tolist())
-        return value * beta[..., None], None
-
-    monkeypatch.setattr(qwen3_5_packing, "fla_causal_conv1d", causal_conv1d)
-    monkeypatch.setattr(
-        qwen3_5_packing, "fla_chunk_gated_delta_rule", chunk_gated_delta_rule
-    )
+    if not routes_trie:
+        forward = qwen3_5_packing_patch.gated_delta_net.forward
+        monkeypatch.setattr(forward, "_axolotl_tree_routing", False)
 
     tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
     model = _tiny_qwen3_5(len(tokenizer))
@@ -242,7 +365,7 @@ def test_trains_hybrid_model_on_unshared_rows_on_cpu(
     )
     rng = np.random.default_rng(0)
     samples, lengths = [], set()
-    for group_id in range(8):
+    for group_id in range(16):
         for g in range(4):
             completion = [*rng.integers(100, 1000, size=2 + g), tokenizer.eos_token_id]
             ids = np.asarray(prompt_ids + completion, dtype=np.int64)
@@ -271,7 +394,7 @@ def test_trains_hybrid_model_on_unshared_rows_on_cpu(
         learning_rate=1e-3,
         bf16=False,
         use_cpu=True,
-        token_budget=4 * max(lengths),
+        token_budget=0,
         report_to=[],
         save_strategy="no",
         gradient_checkpointing=False,
@@ -280,12 +403,12 @@ def test_trains_hybrid_model_on_unshared_rows_on_cpu(
         model,
         reward_funcs=[],
         args=args,
-        train_dataset=Dataset.from_dict({"prompt": [prompt] * 8}),
+        train_dataset=Dataset.from_dict({"prompt": [prompt] * 16}),
         processing_class=tokenizer,
         rollout_worker=StubWorker(samples),
         weight_transfer=StubTransfer(),
     )
-    assert not trainer._share_prefixes
+    assert trainer._share_prefixes is routes_trie
     text_config = trainer.model.get_base_model().config.get_text_config()
     assert text_config.layer_types == layer_types
     # TRL's VLM branch would have made the whole text model trainable.
@@ -296,11 +419,20 @@ def test_trains_hybrid_model_on_unshared_rows_on_cpu(
     frozen = {n: p.detach().clone() for n, p in params.items() if not p.requires_grad}
     trainer.train()
 
-    assert boundaries
-    for cu_seqlens in boundaries:
-        # One segment per rollout; a shared prompt would show up as a shorter one.
-        segments = np.diff(cu_seqlens).tolist()
-        assert segments and set(segments) <= lengths
+    ratios = [
+        log["batch/packing_ratio"]
+        for log in trainer.state.log_history
+        if "batch/packing_ratio" in log
+    ]
+    calls = qwen3_5_packing_patch.conv_calls
+    assert ratios and calls
+    if routes_trie:
+        assert min(ratios) > 1
+    else:
+        assert set(ratios) == {1.0}
+        # One sequence per rollout reaches the GatedDeltaNet kernels.
+        for cu_seqlens in calls:
+            assert set(np.diff(cu_seqlens).tolist()) <= lengths
     params = dict(trainer.model.named_parameters())
     assert all(not torch.equal(trained[n], params[n].detach()) for n in trained)
     assert all(torch.equal(frozen[n], params[n].detach()) for n in frozen)

@@ -9,6 +9,7 @@ from transformers.integrations.accelerate import force_accelerate_hooks
 from axolotl.monkeypatch.models.gated_delta_net_ops import (
     init_fla_compiled_ops as _init_fla_compiled_ops,
 )
+from axolotl.monkeypatch.models.gated_delta_net_tree import tree_paths
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -173,6 +174,10 @@ def patch_qwen3_next_gateddelta_layer():
             )
         use_cp_kernels = cp_conv is not None
 
+        # Async GRPO's packed rows: follow the prefix trie (see gated_delta_net_tree).
+        tree = None
+        if not use_precomputed_states and not use_cp_kernels and cache_params is None:
+            tree = tree_paths(kwargs)
         # Training, no cache: route the FLA kernels through opaque ops that derive cu_seqlens
         # eagerly inside the op, so aten.nonzero never enters the traced loop.
         use_compiled_ops = (
@@ -180,11 +185,14 @@ def patch_qwen3_next_gateddelta_layer():
             and not use_cp_kernels
             and cache_params is None
             and not use_precomputed_states
+            and tree is None
         )
         # Compute cu_seqlens early for use by both causal_conv1d and chunk_gated_delta_rule
         cu_seqlens = None
         pos_for_varlen = None
-        if (
+        if tree is not None:
+            cu_seqlens = tree.cu_seqlens
+        elif (
             not use_precomputed_states
             and not use_cp_kernels
             and position_ids is not None
@@ -216,6 +224,9 @@ def patch_qwen3_next_gateddelta_layer():
 
         mixed_qkv = torch.cat((query, key, value), dim=-1)  # [B, T, D]
         mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, D, T]
+        if tree is not None:
+            mixed_qkv = mixed_qkv[:, :, tree.kv_index]
+            b, a = b[:, tree.kv_index], a[:, tree.kv_index]
 
         if (
             use_precomputed_states
@@ -369,6 +380,8 @@ def patch_qwen3_next_gateddelta_layer():
         # Update cache
         if cache_params is not None:
             cache_params.update_recurrent_state(last_recurrent_state, self.layer_idx)
+        if tree is not None:
+            core_attn_out = core_attn_out[:, tree.select]
 
         z_shape_og = z.shape
         # reshape input data into 2D tensor
@@ -385,6 +398,7 @@ def patch_qwen3_next_gateddelta_layer():
 
     # Apply the patches
     patched_gated_delta_net_forward._axolotl_gdn_kernel_interface = True
+    patched_gated_delta_net_forward._axolotl_tree_routing = True
     modeling.Qwen3NextGatedDeltaNet.forward = patched_gated_delta_net_forward
 
     def unpatch():
