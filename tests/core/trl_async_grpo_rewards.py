@@ -26,12 +26,27 @@ def failing_reward(completions, **kwargs):
     raise ZeroDivisionError("bad completion")
 
 
-def start_time_reward(completions, **kwargs):
+def overlap_reward(completions, **kwargs):
+    """1.0 once two calls have run at the same time, 0.0 if none did within 10 s."""
     import time
+    import uuid
+    from pathlib import Path
 
-    start = time.time()
-    time.sleep(0.3)
-    return [start] * len(completions)
+    rendezvous = Path(os.environ["TRL_ASYNC_TEST_REWARD_RENDEZVOUS"])
+    overlapped = rendezvous / "overlapped"
+    running = rendezvous / f"running-{uuid.uuid4().hex}"
+    running.touch()
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if len(list(rendezvous.glob("running-*"))) > 1:
+                overlapped.touch()
+            if overlapped.exists():
+                return [1.0] * len(completions)
+            time.sleep(0.01)
+        return [0.0] * len(completions)
+    finally:
+        running.unlink()
 
 
 def lookup_tool(query: str) -> str:

@@ -385,15 +385,14 @@ class TestRolloutLoop:
         }
         assert all(s.metrics["rewards/alarm_reward"] == 1.0 for s in samples)
 
-    def test_score_loop_scores_groups_concurrently(self):
-        from trl_async_grpo_rewards import start_time_reward
+    def test_score_loop_scores_groups_concurrently(self, tmp_path, monkeypatch):
+        from trl_async_grpo_rewards import overlap_reward
 
-        loop = _rollout_loop([start_time_reward], reward_num_workers=2)
+        monkeypatch.setenv("TRL_ASYNC_TEST_REWARD_RENDEZVOUS", str(tmp_path))
+        loop = _rollout_loop([overlap_reward], reward_num_workers=2)
         samples = self._score_groups(loop, 4)
-        starts = sorted({s.metrics["rewards/start_time_reward"] for s in samples})
-        # One group at a time would start each 0.3 s after the previous one.
-        assert len(starts) == 4
-        assert min(b - a for a, b in zip(starts, starts[1:], strict=False)) < 0.15
+        assert sorted({s.group_id for s in samples}) == [0, 1, 2, 3]
+        assert all(s.metrics["rewards/overlap_reward"] == 1.0 for s in samples)
 
     def test_reward_pool_surfaces_reward_errors(self):
         from trl_async_grpo_rewards import failing_reward
