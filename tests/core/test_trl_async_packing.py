@@ -140,6 +140,15 @@ HYBRID = ["linear_attention", "full_attention"]
 TREE_ROUTED = {"_axolotl_gdn_kernel_interface": True, "_axolotl_recurrent_tree": True}
 
 
+@pytest.fixture
+def fla_installed(monkeypatch):
+    """Report flash-linear-attention installed: these GatedDeltaNets never reach it."""
+    from axolotl.core.trainers.grpo import trl_async_packing
+
+    monkeypatch.setattr(trl_async_packing, "_has_fla", lambda: True)
+
+
+@pytest.mark.usefixtures("fla_installed")
 class TestSharesPrefixes:
     def test_attention_models_share(self):
         assert shares_prefixes(_model("llama"))
@@ -159,9 +168,7 @@ class TestSharesPrefixes:
     def test_gated_delta_nets_need_flash_linear_attention(self, monkeypatch):
         from axolotl.core.trainers.grpo import trl_async_packing
 
-        monkeypatch.setattr(
-            trl_async_packing.importlib.util, "find_spec", lambda name: None
-        )
+        monkeypatch.setattr(trl_async_packing, "_has_fla", lambda: False)
         mixers = [_gated_delta_net(**TREE_ROUTED)]
         with pytest.raises(ValueError, match="flash-linear-attention"):
             shares_prefixes(_model("qwen3_5_text", HYBRID, mixers))
@@ -225,7 +232,7 @@ def _reference_chunk_gated_delta_rule(
 
 
 @pytest.fixture
-def qwen3_5_packing_patch(monkeypatch):
+def qwen3_5_packing_patch(monkeypatch, fla_installed):
     """axolotl's Qwen3.5 packing patch, with FLA swapped for reference kernels."""
     from transformers.models.qwen3_5 import modeling_qwen3_5
     from trl.experimental.async_grpo import packing
