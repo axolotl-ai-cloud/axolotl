@@ -739,6 +739,22 @@ class TestTreeFlashAttn:
         torch.testing.assert_close(out, value * 2)
 
 
+def test_flops_estimate_reads_unknown_moe_layouts_as_dense(monkeypatch):
+    from axolotl.core.trainers.grpo import trl_async_trainer
+
+    def trl_estimate(config, seq_len):
+        if config.num_experts_per_tok is not None:
+            return config.decoder_sparse_step  # what TRL reads for MoE configs
+        return config.hidden_size * seq_len
+
+    monkeypatch.setattr(trl_async_trainer, "_trl_flops_per_token", trl_estimate)
+    # Nemotron-H: num_experts_per_tok without the Qwen-MoE fields
+    hybrid = types.SimpleNamespace(num_experts_per_tok=2, hidden_size=8)
+    assert trl_async_trainer._flops_per_token(hybrid, 3) == 24
+    moe = types.SimpleNamespace(num_experts_per_tok=2, decoder_sparse_step=1)
+    assert trl_async_trainer._flops_per_token(moe, 3) == 1
+
+
 class TestTreeAttentionSwitch:
     def _model(self, modules, switch):
         class Model(torch.nn.Module):
