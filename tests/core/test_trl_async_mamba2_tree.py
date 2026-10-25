@@ -2,17 +2,15 @@
 
 import importlib
 
-import numpy as np
 import pytest
 import torch
-from trl.experimental.async_grpo.packing import TreeRow
-from trl_async_test_utils import reference_tree_attention
-
-from axolotl.core.trainers.grpo.trl_async_packing import (
-    ChainRow,
-    sample_boundaries,
-    shares_prefixes,
+from trl_async_test_utils import (
+    assert_tree_rows_match_alone,
+    branching_samples,
+    reference_tree_attention,
 )
+
+from axolotl.core.trainers.grpo.trl_async_packing import shares_prefixes
 
 
 def _segments(seq_idx, tokens):
@@ -217,109 +215,17 @@ def mamba2_family(request, monkeypatch):
     return model.float(), scans
 
 
-def _sample(ids, prompt_len, group_id):
-    ids = np.asarray(ids, dtype=np.int64)
-    return {
-        "input_ids": ids,
-        "completion_mask": np.asarray([0] * prompt_len + [1] * (len(ids) - prompt_len)),
-        "old_log_probs": np.zeros(len(ids), np.float32),
-        "advantage": 1.0,
-        "group_id": group_id,
-    }
-
-
-def _set_attention(model, implementation):
-    if hasattr(model.config, "_attn_implementation") and any(
-        "Attention" in type(m).__name__ for m in model.modules()
-    ):
-        model.set_attn_implementation(implementation)
-
-
 @pytest.mark.parametrize("mamba2_family", list(FAMILIES), indirect=True)
 def test_tree_rows_match_each_sample_alone(mamba2_family):
-    from trl.experimental.async_grpo import packing
-
     model, scans = mamba2_family
-    packing.register_tree_attention()
     assert shares_prefixes(model)
-    rng = np.random.default_rng(0)
-    samples = []
-    for group_id in range(2):
-        prompt = rng.integers(1, 64, size=6 + group_id).tolist()
-        for g in range(3):
-            completion = rng.integers(1, 64, size=3 + g).tolist()
-            samples.append(_sample(prompt + completion, len(prompt), group_id))
-        # a rollout branching off the last one after its first completion token
-        samples.append(
-            _sample(
-                samples[-1]["input_ids"][: len(prompt) + 1].tolist() + [5, 6],
-                len(prompt),
-                group_id,
-            )
-        )
+    rows = []
 
-    def grads():
-        found = {
-            n: p.grad.clone() for n, p in model.named_parameters() if p.grad is not None
-        }
-        model.zero_grad()
-        return found
-
-    def score_row(row):
-        _set_attention(model, packing.TREE_ATTENTION)
-        for sample in samples:
-            row.add(sample)
-        packed = row.pack()
-        tree = {
-            "tree_kv_index": packed["tree_kv_index"],
-            "tree_cu_seqlens_q": packed["tree_cu_seqlens_q"],
-            "tree_cu_seqlens_k": packed["tree_cu_seqlens_k"],
-            "tree_max_seqlen_q": int(packed["tree_max_seqlens"][0]),
-            "tree_max_seqlen_k": int(packed["tree_max_seqlens"][1]),
-        }
-        if isinstance(row, ChainRow):
-            tree.update(sample_boundaries(tree))
+    def on_row(row_tokens):
+        rows.append((row_tokens, list(scans)))
         scans.clear()
-        logits = model(
-            input_ids=packed["input_ids"][None],
-            position_ids=packed["position_ids"][None],
-            use_cache=False,
-            **tree,
-        ).logits[0]
-        index = packed["token_index"]
-        log_probs = torch.log_softmax(logits[index], -1).gather(
-            1, packed["shift_labels"][index][:, None]
-        )[:, 0]
-        log_probs.sum().backward()
-        return len(packed["input_ids"]), list(scans), log_probs.detach(), grads()
 
-    def score_alone():
-        _set_attention(model, "sdpa")
-        log_probs = []
-        for sample in samples:
-            ids = torch.as_tensor(sample["input_ids"])[None]
-            logits = model(input_ids=ids, use_cache=False).logits[0, :-1]
-            trained = torch.as_tensor(sample["completion_mask"][1:]).bool()
-            log_probs.append(
-                torch.log_softmax(logits[trained], -1).gather(
-                    1, ids[0, 1:][trained][:, None]
-                )[:, 0]
-            )
-        torch.cat(log_probs).sum().backward()
-        return torch.cat(log_probs).detach(), grads()
-
-    model.train()
-    shared_len, shared_scans, shared, shared_grads = score_row(TreeRow())
-    chain_len, _, chains, chain_grads = score_row(ChainRow())
-    alone, alone_grads = score_alone()
-    assert shared_len < chain_len
+    assert_tree_rows_match_alone(model, branching_samples(), on_row)
     # the trie's scan ran over every root-to-segment path
+    shared_len, shared_scans = rows[0]
     assert shared_scans and all(n > shared_len for n in shared_scans)
-    for packed_log_probs, packed_grads in (
-        (shared, shared_grads),
-        (chains, chain_grads),
-    ):
-        torch.testing.assert_close(packed_log_probs, alone, rtol=1e-5, atol=1e-5)
-        assert packed_grads.keys() == alone_grads.keys()
-        for name, grad in packed_grads.items():
-            torch.testing.assert_close(grad, alone_grads[name], rtol=1e-4, atol=1e-5)
