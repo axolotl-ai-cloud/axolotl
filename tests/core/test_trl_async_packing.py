@@ -26,6 +26,7 @@ from axolotl.core.trainers.grpo.trl_async_trainer import (
     AxolotlAsyncGRPOConfig,
     AxolotlAsyncGRPOTrainer,
 )
+from axolotl.monkeypatch.models import gated_delta_net_tree  # noqa: F401  registers GDN
 
 
 def _sample(ids, prompt_len, group_id=0):
@@ -132,11 +133,11 @@ def _gated_delta_net(**marks):
 
     for name, value in marks.items():
         setattr(forward, name, value)
-    return type("FakeGatedDeltaNet", (), {"forward": forward})()
+    return type("Qwen3_5GatedDeltaNet", (), {"forward": forward})()
 
 
 HYBRID = ["linear_attention", "full_attention"]
-TREE_ROUTED = {"_axolotl_gdn_kernel_interface": True, "_axolotl_tree_routing": True}
+TREE_ROUTED = {"_axolotl_gdn_kernel_interface": True, "_axolotl_recurrent_tree": True}
 
 
 class TestSharesPrefixes:
@@ -188,13 +189,14 @@ def _reference_causal_conv1d(x, weight, bias, activation, cu_seqlens):
     return torch.cat(outs, dim=1), None
 
 
-def _gated_delta_rule(query, key, value, g, beta):
-    """The gated delta rule token by token, on ``[1, T, H, D]`` inputs."""
+def _gated_delta_rule(query, key, value, g, beta, state=None):
+    """The gated delta rule token by token on ``[1, T, H, D]``; returns the final state."""
     query = torch.nn.functional.normalize(query.float(), dim=-1, eps=1e-6)
     key = torch.nn.functional.normalize(key.float(), dim=-1, eps=1e-6)
     query = query * query.shape[-1] ** -0.5
     value, g, beta = value.float(), g.float(), beta.float()
-    state = query.new_zeros(query.shape[2], key.shape[-1], value.shape[-1])
+    if state is None:
+        state = query.new_zeros(query.shape[2], key.shape[-1], value.shape[-1])
     outs = []
     for t in range(query.shape[1]):
         state = state * g[0, t].exp()[:, None, None]
@@ -203,19 +205,23 @@ def _gated_delta_rule(query, key, value, g, beta):
         ]
         state = state + key[0, t, :, :, None] * delta[:, None, :]
         outs.append((state * query[0, t, :, :, None]).sum(-2))
-    return torch.stack(outs)[None].to(value.dtype)
+    return torch.stack(outs)[None].to(value.dtype), state
 
 
 def _reference_chunk_gated_delta_rule(
-    query, key, value, *, g, beta, cu_seqlens, **kwargs
+    query, key, value, *, g, beta, cu_seqlens, initial_state=None, **kwargs
 ):
     """Pure-torch stand-in for FLA's varlen chunk_gated_delta_rule."""
     bounds = cu_seqlens.tolist()
-    outs = [
-        _gated_delta_rule(*(x[:, a:b] for x in (query, key, value, g, beta)))
-        for a, b in zip(bounds[:-1], bounds[1:], strict=True)
-    ]
-    return torch.cat(outs, dim=1), None
+    outs, finals = [], []
+    for i, (a, b) in enumerate(zip(bounds[:-1], bounds[1:], strict=True)):
+        out, final = _gated_delta_rule(
+            *(x[:, a:b] for x in (query, key, value, g, beta)),
+            state=None if initial_state is None else initial_state[i],
+        )
+        outs.append(out)
+        finals.append(final)
+    return torch.cat(outs, dim=1), torch.stack(finals)
 
 
 @pytest.fixture
@@ -263,7 +269,7 @@ def test_packed_hybrid_rows_match_each_sample_alone(qwen3_5_packing_patch):
     packing.register_tree_attention()
     model = _tiny_qwen3_5(64)
     linear_attn = model.model.language_model.layers[0].linear_attn
-    assert type(linear_attn).forward._axolotl_tree_routing
+    assert type(linear_attn).forward._axolotl_recurrent_tree
     rng = np.random.default_rng(0)
     samples = []
     for group_id in range(2):
@@ -399,7 +405,7 @@ def test_trains_hybrid_model_on_cpu(
     )
     if not routes_trie:
         forward = qwen3_5_packing_patch.gated_delta_net.forward
-        monkeypatch.setattr(forward, "_axolotl_tree_routing", False)
+        monkeypatch.setattr(forward, "_axolotl_recurrent_tree", False)
 
     tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
     model = _tiny_qwen3_5(len(tokenizer))
