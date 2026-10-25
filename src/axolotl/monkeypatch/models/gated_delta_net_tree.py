@@ -1,9 +1,9 @@
 """The GatedDeltaNet tree component (Qwen3.5, Qwen3.5-MoE, Qwen3-Next).
 
 FLA's chunk_gated_delta_rule takes per-sequence initial states with varlen
-boundaries and returns the final states, so the tree driver forks the delta-rule
-state at every branch of the trie (see ``recurrent_tree``); the short conv runs
-with each segment's path history.
+boundaries and returns the final states, so the tree driver can fork the
+delta-rule state at the trie's branches (``recurrent_tree`` says when it does);
+the short conv runs with each segment's path history.
 """
 
 from __future__ import annotations
