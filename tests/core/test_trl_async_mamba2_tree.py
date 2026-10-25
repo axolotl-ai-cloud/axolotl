@@ -202,6 +202,11 @@ def mamba2_family(request, monkeypatch):
         modeling, "mamba2_split_conv1d_scan_combined", lambda *a, **k: None
     )
     monkeypatch.setattr(modeling, "_axolotl_fused_scan_guard", True, raising=False)
+    if model_type == "mamba2":
+        from axolotl.monkeypatch.models.mamba import modeling as mamba_packing
+
+        # the reference kernels honor seq_idx on CPU
+        monkeypatch.setattr(mamba_packing, "_assert_packed_ready", lambda *a: None)
     apply_packing(modeling)
     assert patch_mamba2_tree(model_type)
 
