@@ -153,10 +153,9 @@ class TestActivationOffloading:
             assert captured.get("wrapped") is False
 
     @requires_flash_attn
-    def test_offload_is_adapter_aware(self, temp_dir, monkeypatch):
-        """With gradient_checkpointing, a full finetune recomputes through the
-        loader's checkpoint wrap and offloads only what is saved outside the
-        checkpointed layers."""
+    def test_offload_full_finetune_uses_hf_checkpointing(self, temp_dir, monkeypatch):
+        """With gradient_checkpointing, a full finetune checkpoints through HF as it
+        does without offloading, and offloads what is saved outside the layers."""
         captured = {}
         original_step = ActivationOffloadingMixin.training_step
 
@@ -164,6 +163,7 @@ class TestActivationOffloading:
             captured["wrapped"] = any(
                 "_checkpoint_wrapped_module" in n for n, _ in self.model.named_modules()
             )
+            captured["hf_checkpointing"] = self.model.is_gradient_checkpointing
             return original_step(self, *args, **kwargs)
 
         monkeypatch.setattr(ActivationOffloadingMixin, "training_step", capture_step)
@@ -197,7 +197,8 @@ class TestActivationOffloading:
         dataset_meta = load_datasets(cfg=cfg)
         train(cfg=cfg, dataset_meta=dataset_meta)
 
-        assert captured.get("wrapped") is True
+        assert captured.get("wrapped") is False
+        assert captured.get("hf_checkpointing") is True
 
     @requires_flash_attn
     @pytest.mark.parametrize("use_reentrant", [False, True])

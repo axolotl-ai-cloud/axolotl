@@ -2042,8 +2042,7 @@ class ModelCompatibilityValidationMixin:
         if self.activation_offloading not in (True, "disk"):
             return self
         if self.gradient_checkpointing:
-            # Only HF checkpointing (adapters) reads this; PEFT + ZeRO-3 keeps reentrant
-            # (non-reentrant recompute sees partitioned parameters).
+            # ZeRO-3 keeps reentrant: non-reentrant recompute sees partitioned parameters.
             if not is_deepspeed_zero3_config(self.deepspeed):
                 gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
                 gc_kwargs.setdefault("use_reentrant", False)

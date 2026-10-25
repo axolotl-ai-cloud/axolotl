@@ -697,17 +697,10 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["activation_offloading"] = (
                     self.cfg.activation_offloading
                 )
-        elif self.cfg.activation_offloading and not self.cfg.adapter:
-            # Full finetune: the model loader wraps the layers for recompute when
-            # gradient_checkpointing is on, so HF checkpointing stays off.
-            training_args_kwargs["gradient_checkpointing"] = False
-            training_args_kwargs["activation_offloading"] = (
-                self.cfg.activation_offloading
-            )
         else:
-            # Adapters checkpoint through HF exactly as without offloading; the TRL
-            # offloader then offloads whatever the step saves.
             if self.cfg.activation_offloading:
+                # checkpointing stays as configured; the TRL offloader offloads
+                # whatever the step saves
                 training_args_kwargs["activation_offloading"] = (
                     self.cfg.activation_offloading
                 )

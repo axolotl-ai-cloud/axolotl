@@ -56,6 +56,16 @@ def cpu_accelerator():
         yield
 
 
+@pytest.fixture(autouse=True)
+def torch_checkpoint(monkeypatch):
+    # an earlier legacy-mode run leaves transformers' checkpoint replaced by the
+    # CPU-offloading checkpointer
+    import transformers.modeling_utils
+    from torch.utils.checkpoint import checkpoint
+
+    monkeypatch.setattr(transformers.modeling_utils, "checkpoint", checkpoint)
+
+
 def _train_step(base_model_path, min_base_cfg, **overrides):
     from peft import LoraConfig, PeftModel, get_peft_model
     from transformers import LlamaForCausalLM
@@ -206,12 +216,10 @@ def test_offload_with_gc_recomputes_and_offloads_saved_tensors(
         **(LORA if adapter else {}),
     )
 
-    if adapter:
-        assert step.args["gradient_checkpointing"] is True
-        assert step.model.is_gradient_checkpointing
-    else:
-        assert step.args["gradient_checkpointing"] is False
-        assert _checkpoint_wrapped(step.model)
+    # adapters and full finetunes both checkpoint through HF, as without offloading
+    assert step.args["gradient_checkpointing"] is True
+    assert step.model.is_gradient_checkpointing
+    assert not _checkpoint_wrapped(step.model)
     assert step.args["activation_offloading"] == mode
     assert step.mlp_calls == 2 * NUM_LAYERS
     # The checkpointed layers keep their saves to themselves; the offloader still

@@ -7,12 +7,8 @@ import contextlib
 import torch
 from peft import PeftModel
 from torch import nn
-from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-    apply_activation_checkpointing,
-)
-from torch.distributed.fsdp.wrap import ModuleWrapPolicy
 from torch.distributed.tensor import DTensor
-from transformers import GradientCheckpointingLayer, Trainer
+from transformers import Trainer
 from trl.models.activation_offloading import (
     NoOpManager,
     OffloadActivations,
@@ -176,11 +172,6 @@ class ActivationOffloadingMixin(Trainer):
         )
         with self.activation_offload_context:
             return super().training_step(*args, **kwargs)
-
-
-def ac_wrap_hf_model(model: nn.Module, **kwargs):
-    auto_wrap_policy = ModuleWrapPolicy(set((GradientCheckpointingLayer,)))
-    apply_activation_checkpointing(model, auto_wrap_policy=auto_wrap_policy, **kwargs)
 
 
 def get_lora_act_offloading_ctx_manager(
