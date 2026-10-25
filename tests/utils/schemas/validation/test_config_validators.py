@@ -605,6 +605,42 @@ class TestAsyncGRPOCompat:
             validate_config(cfg)
         assert any("lr_scheduler: cosine" in c.args[0] for c in warning.call_args_list)
 
+    @pytest.mark.parametrize(
+        "trl,adapter,warns",
+        [
+            ({}, "lora", True),
+            (
+                {"loss_type": "dapo", "max_staleness": 3, "vllm_lora_sync": True},
+                "qlora",
+                True,
+            ),
+            ({"max_staleness": 2, "vllm_sync_interval": 2}, "lora", True),
+            ({"max_staleness": 2}, "lora", False),
+            ({"loss_type": "cispo"}, "lora", False),
+            ({}, None, False),
+        ],
+    )
+    def test_lora_with_stale_rollouts_recommends_cispo(
+        self, min_base_cfg, trl, adapter, warns
+    ):
+        extra = {}
+        if adapter:
+            extra = {
+                "adapter": adapter,
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_target_linear": True,
+            }
+            if adapter == "qlora":
+                extra["load_in_4bit"] = True
+        cfg = self._cfg(min_base_cfg, trl=trl, **extra)
+        with patch("axolotl.utils.schemas.validation.LOG.warning") as warning:
+            validate_config(cfg)
+        recommended = [
+            c for c in warning.call_args_list if "loss_type: cispo" in c.args[0]
+        ]
+        assert bool(recommended) == warns
+
 
 class TestDataProducerRemoval:
     """The data producer trainer is gone; its options fail with their replacement."""
