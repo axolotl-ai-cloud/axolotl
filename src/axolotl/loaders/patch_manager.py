@@ -29,7 +29,10 @@ from axolotl.model_support import (
     resolve_model_support,
     run_model_support_hooks,
 )
-from axolotl.monkeypatch.models.recurrent_support import trains_on_packed_rows
+from axolotl.monkeypatch.models.recurrent_support import (
+    packs_async_grpo_rollouts,
+    trains_on_packed_rows,
+)
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -613,6 +616,11 @@ class PatchManager:
         if packed_boundaries_needed:
             self._apply_linear_attention_packing_patches()
             self._apply_ssm_packing_patches()
+        if packs_async_grpo_rollouts(self.cfg):
+            # outermost, so a tree row skips the packing patches' boundary handling
+            from axolotl.monkeypatch.models.mamba2_tree import patch_mamba2_tree
+
+            patch_mamba2_tree(self.cfg.model_config_type)
 
         # Patches requiring CUDA
         if torch.cuda.is_available():
