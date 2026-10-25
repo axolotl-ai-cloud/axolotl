@@ -6,9 +6,10 @@ root-to-segment path. A recurrent or linear-attention layer (GatedDeltaNet, Mamb
 short convolutions) cannot follow such a path: it scans the row in order and
 carries its state from one segment into the next.
 
-axolotl's GatedDeltaNet patch (Qwen3.5, Qwen3-Next) follows the trie itself, so
-those models keep prefix sharing (see ``monkeypatch.models.gated_delta_net_tree``).
-For other recurrent models every sample becomes its own chain (``ChainRow``). TRL's
+Families registered in ``monkeypatch.models.recurrent_tree`` follow the trie
+themselves (their patched mixers fork state at its branches), so those models keep
+prefix sharing. For other recurrent models every sample becomes its own chain
+(``ChainRow``). TRL's
 ``TreeRow.pack`` then lays the samples end to end with ``position_ids`` restarting
 at 0 for each, tree attention reduces to plain varlen attention, and the recurrent
 mixers see each sample's boundaries through axolotl's sample packing patches, which
@@ -37,6 +38,7 @@ from axolotl.monkeypatch.models.recurrent_support import (
     RECURRENT_MODEL_TYPES,
     recurrent_layer_types,
 )
+from axolotl.monkeypatch.models.recurrent_tree import follows_trees, tree_family
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -168,9 +170,10 @@ def _gated_delta_nets(model) -> list:
 def shares_prefixes(model) -> bool:
     """Whether a packed row may share prompt prefixes across its samples.
 
-    Attention follows the trie, and so do GatedDeltaNet layers under axolotl's
-    packing patch. Other recurrent layers need each sample as its own chain, which
-    needs axolotl's packed-sequence boundary patch for their architecture.
+    Attention follows the trie, and so do recurrent layers of a registered tree
+    family whose patched forward is in place. Other recurrent layers need each
+    sample as its own chain, which needs axolotl's packed-sequence boundary patch
+    for their architecture.
     """
     config = model.config
     types = {config.model_type, config.get_text_config().model_type}
@@ -200,6 +203,8 @@ def shares_prefixes(model) -> bool:
             "Async GRPO packs GatedDeltaNet layers with flash-linear-attention's varlen "
             "kernels; install `flash-linear-attention`."
         )
-    return bool(mixers) and all(
-        getattr(f, "_axolotl_tree_routing", False) for f in forwards
-    )
+    family = tree_family(types)
+    recurrent_mixers = [
+        m for m in model.modules() if family and type(m).__name__ in family.mixers
+    ]
+    return bool(recurrent_mixers) and all(follows_trees(m) for m in recurrent_mixers)
