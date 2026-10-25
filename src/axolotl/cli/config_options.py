@@ -1516,7 +1516,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.loss-type",),
         "trl__loss_type",
         "str",
-        "Loss formulation to use. Supported values: grpo, bnpo, dr_grpo.",
+        "Loss formulation to use. Synchronous GRPO: grpo, bnpo, dr_grpo, dapo, cispo, and the others TRL's GRPOTrainer supports. Async GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler) or cispo (policy gradient weighted by the policy/sampler ratio, capped at vllm_importance_sampling_cap).",
     ),
     (
         ("--trl.mask-truncated-completions/--no-trl.mask-truncated-completions",),
@@ -1638,19 +1638,19 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ),
         "trl__vllm_importance_sampling_correction",
         None,
-        "Apply IS correction for distribution mismatch between vLLM and training model. Async GRPO weights each token by the policy/sampler ratio, bounded at vllm_importance_sampling_cap (default on).",
+        "Apply IS correction for distribution mismatch between vLLM and training model. Async GRPO: only with loss_type cispo, which always weights each token by the policy/sampler ratio.",
     ),
     (
         ("--trl.vllm-importance-sampling-mode",),
         "trl__vllm_importance_sampling_mode",
         None,
-        "IS mode: token_truncate, token_mask, sequence_truncate, or sequence_mask. Async GRPO supports the token modes: token_truncate caps the weight, token_mask drops tokens beyond the cap.",
+        "IS mode: token_truncate, token_mask, sequence_truncate, or sequence_mask. Async GRPO with loss_type cispo supports the token modes: token_truncate caps the weight, token_mask drops tokens beyond the cap.",
     ),
     (
         ("--trl.vllm-importance-sampling-cap",),
         "trl__vllm_importance_sampling_cap",
         "float",
-        "Cap C for IS ratio clipping/masking.",
+        "Cap C for IS ratio clipping/masking. Async GRPO with loss_type cispo: the weight bound (default 3.0).",
     ),
     (
         ("--trl.off-policy-mask-threshold",),

@@ -207,7 +207,7 @@ trl:
 
 - **Lower interval** (e.g., 1-3): Fresher generations, better on-policy data, but more sync overhead per step
 - **Higher interval** (e.g., 5-10): Less overhead, but generations become increasingly off-policy between syncs
-- **Recommended**: 3-5 for most setups. Axolotl includes importance sampling correction (`vllm_importance_sampling_correction: true`) to handle mild distribution mismatch from stale vLLM weights.
+- **Recommended**: 3-5 for most setups. Axolotl includes importance sampling correction (`vllm_importance_sampling_correction: true` for synchronous GRPO, `loss_type: cispo` for async GRPO) to handle mild distribution mismatch from stale vLLM weights.
 
 ### Sync Methods
 

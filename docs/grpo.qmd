@@ -366,7 +366,7 @@ Requirements:
 - FSDP2 or DDP. DeepSpeed and `context_parallel_size > 1` are not supported.
 - Conversational prompts (a list of messages in the `prompt` column). Text-only: multimodal datasets are not supported.
 - Reward functions get each completion as an assistant message. TRL splits out reasoning and tool calls only for the chat templates it ships a response parser for (Qwen, Llama 3.1/3.2, Gemma 4 and a few others); with any other template, including axolotl's `chatml` and `llama3`, the message content is the decoded completion.
-- No reference model: `beta` must be 0, and only the token-level loss (`loss_type: dapo`) is available.
+- No reference model: `beta` must be 0. The loss is `loss_type: dapo` (default) or `cispo`; see [Loss](#async-loss) below.
 - Reward functions run in a spawned process with no GPU, so they must be picklable (module-level functions, not lambdas). Reward models are not supported.
 - A quantized base model (QLoRA, FP8) needs `vllm_lora_sync: true`, since merged weights cannot be folded into quantized ones.
 - The trainer packs with TRL's tree attention, which uses the `kernels-community/flash-attn3` hub kernel. That kernel has builds for SM80 and SM90 only, so on other GPUs (Blackwell) axolotl falls back to `kernels-community/flash-attn2`.
@@ -382,7 +382,14 @@ Without `max_steps`, training stops after `num_epochs` passes over the prompts a
 
 **Reward options.** `reward_weights`, `multi_objective_aggregation` (including `normalize_then_sum` for GDPO), `scale_rewards` (`group` or `none`) and `mask_truncated_completions` keep their GRPO meaning. Advantages are normalized per group as each group finishes, so `scale_rewards: batch` is not available.
 
-**Importance weights instead of a sampler trust region** (`vllm_importance_sampling_correction`, default `true`). TRL clips the ratio between the policy and the vLLM sampler at 1 ± `epsilon`. That ratio grows with staleness and trainer/inference mismatch, so the clip stops the gradient of exactly the tokens whose probability is changing fastest. On Qwen2.5-1.5B LoRA with a GSM8K answer-format reward, TRL's loss took 28 to over 50 steps to reach a 0.9 format rate that axolotl's removed trainer reached in 15-18; with importance weights, async GRPO reaches it in 17. As in synchronous GRPO, each rollout is trained on once, so async GRPO takes the PPO ratio against the policy itself (never clipped; `epsilon` has no effect) and weights each token by the policy/sampler ratio: `vllm_importance_sampling_mode: token_truncate` (default) caps the weight at `vllm_importance_sampling_cap` (default 3.0), `token_mask` drops tokens beyond the cap from the loss. `ratio` and `kl` report the policy/sampler divergence, `sampling/capped_token_frac` how often the cap binds.
+[**Loss**]{#async-loss} (`loss_type`). Two objectives, which differ in what happens to a token whose probability has moved since vLLM sampled it:
+
+- `dapo` (default) is TRL's objective: the PPO surrogate with the ratio taken against the vLLM sampler's log-probabilities, clipped at `[1 - epsilon, 1 + epsilon_high]`. It logs TRL's `clip_ratio/*` metrics. Setting `vllm_importance_sampling_correction`, `_mode` or `_cap` with it is an error.
+- `cispo` (opt-in) keeps every token's gradient. Each rollout is trained on once, so, as in synchronous GRPO, the PPO ratio is taken against the policy itself and never clips, and the policy/sampler ratio becomes a detached per-token weight: `vllm_importance_sampling_mode: token_truncate` (default) caps it at `vllm_importance_sampling_cap` (default 3.0), `token_mask` drops tokens beyond the cap. It logs `sampling/capped_token_frac`. Setting `epsilon` or `epsilon_high` with it is an error: unlike synchronous GRPO's `cispo`, which caps at `epsilon_high`, async `cispo` caps at `vllm_importance_sampling_cap`.
+
+The policy/sampler ratio grows with staleness and trainer/inference mismatch. Under `dapo`, a token whose probability moved past `epsilon` since sampling stops getting gradient, and those are the tokens being learned. That matters when the policy moves far per step, as with LoRA or higher learning rates. On Qwen2.5-1.5B LoRA (lr 2e-5, `max_staleness: 4`) with a GSM8K answer-format reward, `dapo` took 28 to over 50 steps to reach a 0.9 format rate; `cispo` took 17, like axolotl's removed trainer (15-18), while completions shortened instead of growing.
+
+Both modes log `ratio` and `kl` (policy/sampler divergence), `sampling/ratio_min` (the step's smallest policy/sampler ratio) and `sampling/nav_veto_frac_1e-4` / `_1e-6`: the fraction of negative-advantage samples holding a token below that ratio, which [μ-GRPO](https://arxiv.org/abs/2605.17570)'s negative-advantage veto would mask. Trainer/vLLM mismatch alone already reaches ratios near 1e-4 before any update (a 1.2e-4 minimum at step 1 on Qwen2.5-1.5B), hence the stricter second threshold.
 
 **Out-of-place merged sync.** When the server has no LoRA support, TRL merges the adapter into the base weights for the send and unmerges it afterwards. In bf16 that round trip does not restore the weights: one sync changed 6% of a layer's frozen weights, and 1000 syncs with a moving adapter left 58% changed and a 1.3% relative drift. Async GRPO instead streams `W + ΔW` computed in fp32 per parameter, so the trained model is never written to. DoRA is supported this way on a single GPU or DDP, but not under FSDP.
 
@@ -404,14 +411,14 @@ Config validation rejects the trainer's other options and names what replaces ea
 | `batch_flattening` (with `rl: grpo`) | `token_budget`: rollouts are packed padding-free up to a token budget |
 | `off_policy_mask_threshold`, `use_bias_correction_kl` | Synchronous GRPO only |
 | `vllm_importance_sampling_mode: sequence_*` | Synchronous GRPO only; async GRPO uses the token modes |
-| `beta`, `sync_ref_model`, `loss_type` other than `dapo`, `num_iterations > 1` | Synchronous GRPO only |
+| `beta`, `sync_ref_model`, `loss_type` other than `dapo` or `cispo`, `num_iterations > 1` | Synchronous GRPO only |
 
 `skip_zero_advantage_batches` and `reward_num_workers` apply to async GRPO. Plugins' `on_rollouts_scored` hook is called once per optimizer step on rank 0, with the step's prompts, completions, per-function rewards and advantages.
 
 
 ## Importance Sampling and Off-Policy Correction
 
-Both GRPO trainers weight each token by the trainer/sampler ratio, capped at `vllm_importance_sampling_cap`. Async GRPO takes it from the training forward (see [above](#sec-async)); synchronous GRPO recomputes log-probabilities on the trainer and also offers sequence-level weights and OPSM:
+Synchronous GRPO recomputes log-probabilities on the trainer and weights each token by the trainer/sampler ratio, with sequence-level weights and OPSM as options. Async GRPO clips that ratio by default (`loss_type: dapo`) and weights by it with `loss_type: cispo`, taking it from the training forward (see [Loss](#async-loss)). Synchronous GRPO:
 
 ```yaml
 trl:
@@ -526,9 +533,9 @@ All GRPO-specific options live under the `trl:` key in your config. Standard tra
 | `max_completion_length` | int | `null` | Maximum tokens per completion |
 | `beta` | float | `null` | KL penalty coefficient |
 | `num_iterations` | int | `null` | Iterations per batch (mu in the GRPO paper) |
-| `epsilon` | float | `null` | PPO clipping lower bound |
-| `epsilon_high` | float | `null` | PPO clipping upper bound |
-| `loss_type` | str | `null` | Loss formulation: `grpo`, `bnpo`, or `dr_grpo` |
+| `epsilon` | float | `null` | PPO clipping lower bound (async GRPO: `loss_type: dapo` only) |
+| `epsilon_high` | float | `null` | PPO clipping upper bound (async GRPO: `loss_type: dapo` only) |
+| `loss_type` | str | `null` | Loss formulation: `grpo`, `bnpo`, `dr_grpo` and TRL's others; async GRPO: `dapo` (default) or `cispo` |
 | `scale_rewards` | bool or str | `true` | Reward std scaling: `group`, `batch`, or `none` (bool accepted: `true`->`group`, `false`->`none`) |
 | `mask_truncated_completions` | bool | `false` | Exclude truncated completions from loss |
 | `log_multimodal` | bool | `null` | Log multimodal content (images/videos) alongside completions (TRL >= 1.9) |
@@ -588,10 +595,10 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `vllm_importance_sampling_correction` | bool | `null` | Enable IS correction for async distribution shift (async GRPO: per-token importance weights, default on) |
+| `vllm_importance_sampling_correction` | bool | `null` | Enable IS correction for async distribution shift (async GRPO: implied by `loss_type: cispo`) |
 | `importance_sampling_level` | `"token"` or `"sequence"` | `null` | Granularity of IS ratios. Use `token` with Liger |
-| `vllm_importance_sampling_mode` | str | `null` | `token_mask`, `token_truncate`, `sequence_mask`, or `sequence_truncate` (async GRPO: token modes) |
-| `vllm_importance_sampling_cap` | float | `null` | Cap C for IS ratio clipping/masking |
+| `vllm_importance_sampling_mode` | str | `null` | `token_mask`, `token_truncate`, `sequence_mask`, or `sequence_truncate` (async GRPO: token modes, `loss_type: cispo`) |
+| `vllm_importance_sampling_cap` | float | `null` | Cap C for IS ratio clipping/masking (async GRPO: `loss_type: cispo`, default 3.0) |
 | `vllm_importance_sampling_clip_min` | float | `null` | Lower clip bound for the IS ratio (TRL >= 1.6) |
 | `vllm_importance_sampling_clip_max` | float | `null` | Upper clip bound for the IS ratio (TRL >= 1.6) |
 | `off_policy_mask_threshold` | float | `null` | KL threshold for off-policy sequence masking (OPSM), synchronous GRPO |
