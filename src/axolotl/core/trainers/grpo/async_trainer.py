@@ -54,20 +54,20 @@ from trl.experimental.async_grpo.packing import TREE_ATTENTION
 from trl.experimental.async_grpo.vllm_client import VLLMClient
 from trl.trainer.utils import add_fused_lm_head, get_config_model_id, nanmax, nanmin
 
-from axolotl.core.trainers.grpo.trl_async_packing import (
+from axolotl.core.trainers.grpo.async_packing import (
     ChainFixedCountBatcher,
     ChainTokenBudgetBatcher,
     hidden_layer_types,
     sample_boundaries,
     shares_prefixes,
 )
-from axolotl.core.trainers.grpo.trl_async_rollout import (
+from axolotl.core.trainers.grpo.async_rollout import (
     AGGREGATIONS,
     REWARD_SCALINGS,
     AxolotlAsyncRolloutWorker,
     AxolotlRolloutLoop,
 )
-from axolotl.core.trainers.grpo.trl_async_scoring import (
+from axolotl.core.trainers.grpo.async_scoring import (
     GroupedQueue,
     ScoringCollator,
     StepPlanner,
@@ -75,7 +75,7 @@ from axolotl.core.trainers.grpo.trl_async_scoring import (
     check_step_capacity,
     score_step,
 )
-from axolotl.core.trainers.grpo.trl_async_traces import (
+from axolotl.core.trainers.grpo.async_traces import (
     TraceCollator,
     TraceRecorder,
     rollout_traces,

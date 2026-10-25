@@ -25,7 +25,7 @@ class EBFTStrategy:
     """Strategy for EBFT training — dispatches between structured and strided modes."""
 
     @staticmethod
-    def uses_trl_async(cfg: DictDefault | None) -> bool:
+    def is_async(cfg: DictDefault | None) -> bool:
         """Structured mode with `async_prefetch` runs on TRL's AsyncGRPOTrainer."""
         return bool(
             cfg
@@ -41,12 +41,12 @@ class EBFTStrategy:
             from axolotl.core.trainers.ebft.strided import AxolotlStridedEBFTTrainer
 
             return AxolotlStridedEBFTTrainer
-        if cls.uses_trl_async(cfg):
-            from axolotl.core.trainers.ebft.trl_async_trainer import (
-                AxolotlTRLAsyncEBFTTrainer,
+        if cls.is_async(cfg):
+            from axolotl.core.trainers.ebft.async_trainer import (
+                AxolotlAsyncEBFTTrainer,
             )
 
-            return AxolotlTRLAsyncEBFTTrainer
+            return AxolotlAsyncEBFTTrainer
         from axolotl.core.trainers.ebft.trainer import AxolotlEBFTTrainer
 
         return AxolotlEBFTTrainer
@@ -56,12 +56,12 @@ class EBFTStrategy:
         mode = _get_ebft_mode(cfg) if cfg else "structured"
         if mode == "strided":
             return AxolotlStridedEBFTConfig
-        if cls.uses_trl_async(cfg):
-            from axolotl.core.trainers.ebft.trl_async_trainer import (
-                AxolotlTRLAsyncEBFTConfig,
+        if cls.is_async(cfg):
+            from axolotl.core.trainers.ebft.async_trainer import (
+                AxolotlAsyncEBFTConfig,
             )
 
-            return AxolotlTRLAsyncEBFTConfig
+            return AxolotlAsyncEBFTConfig
         return AxolotlEBFTConfig
 
     @classmethod
@@ -94,7 +94,7 @@ class EBFTStrategy:
             if getattr(ebft, "gt_length_multiplier", None) is not None:
                 kwargs["ebft_gt_length_multiplier"] = ebft.gt_length_multiplier
 
-        if cls.uses_trl_async(cfg):
+        if cls.is_async(cfg):
             from axolotl.core.trainers.grpo import GRPOStrategy
 
             kwargs.update(GRPOStrategy.set_async_training_args_kwargs(cfg))

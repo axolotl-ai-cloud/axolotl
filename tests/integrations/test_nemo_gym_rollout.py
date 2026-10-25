@@ -383,7 +383,7 @@ class TestPluginWiring:
         assert _plugin().get_reward_funcs(_cfg(nemo_gym_enabled=False)) is None
 
     def test_multi_turn_runs_the_agent_loop(self):
-        from axolotl.core.trainers.grpo.trl_async_trainer import AxolotlAsyncGRPOConfig
+        from axolotl.core.trainers.grpo.async_trainer import AxolotlAsyncGRPOConfig
 
         plugin = _plugin(multi_turn=True)
         cfg = _cfg(nemo_gym_multi_turn=True, nemo_gym_model_name="policy")

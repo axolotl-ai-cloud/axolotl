@@ -10,20 +10,20 @@ from collections import defaultdict
 import numpy as np
 import pytest
 import torch
+from async_test_utils import StubTransfer, StubWorker, reference_tree_attention
 from trl.experimental.async_grpo.async_rollout_worker import (
     RolloutGroup,
     RolloutSample,
     TrainingSequence,
 )
-from trl_async_test_utils import StubTransfer, StubWorker, reference_tree_attention
 
 from axolotl.core.trainers.grpo import GRPOStrategy
-from axolotl.core.trainers.grpo.trl_async_rollout import (
+from axolotl.core.trainers.grpo.async_rollout import (
     AxolotlRolloutLoop,
     RewardProcessPool,
     compute_group_advantages,
 )
-from axolotl.core.trainers.grpo.trl_async_trainer import (
+from axolotl.core.trainers.grpo.async_trainer import (
     AxolotlAsyncGRPOConfig,
     AxolotlAsyncGRPOTrainer,
     SampleFilterQueue,
@@ -293,7 +293,7 @@ class TestRolloutLoop:
         PartialState()
 
     def test_score_group_applies_weights(self):
-        from trl_async_grpo_rewards import length_reward
+        from async_grpo_rewards import length_reward
 
         def constant_reward(completions, **kwargs):
             return [1.0] * len(completions)
@@ -320,7 +320,7 @@ class TestRolloutLoop:
         return tokenizer
 
     def test_chat_template_trl_cannot_parse_decodes_completions(self, chatml_tokenizer):
-        from trl_async_grpo_rewards import length_reward
+        from async_grpo_rewards import length_reward
 
         loop = _rollout_loop([length_reward], processing_class=chatml_tokenizer)
         prompt = [{"role": "user", "content": "What is 2+2?"}]
@@ -345,7 +345,7 @@ class TestRolloutLoop:
     def test_chat_template_trl_cannot_parse_still_fails_with_tools(
         self, chatml_tokenizer
     ):
-        from trl_async_grpo_rewards import length_reward, lookup_tool
+        from async_grpo_rewards import length_reward, lookup_tool
 
         with pytest.raises(ValueError, match="Unrecognized chat template"):
             _rollout_loop(
@@ -353,7 +353,7 @@ class TestRolloutLoop:
             )
 
     def test_reward_weights_length_checked(self):
-        from trl_async_grpo_rewards import length_reward
+        from async_grpo_rewards import length_reward
 
         with pytest.raises(ValueError, match="reward_weights"):
             _rollout_loop([length_reward], reward_weights=[1.0, 2.0])
@@ -375,7 +375,7 @@ class TestRolloutLoop:
         return [loop.rollout_buffer.get_nowait() for _ in range(2 * num_groups)]
 
     def test_reward_pool_runs_rewards_on_worker_main_threads(self):
-        from trl_async_grpo_rewards import alarm_reward, pid_reward
+        from async_grpo_rewards import alarm_reward, pid_reward
 
         loop = _rollout_loop([pid_reward, alarm_reward], reward_num_workers=2)
         samples = self._score_groups(loop, 3)
@@ -386,7 +386,7 @@ class TestRolloutLoop:
         assert all(s.metrics["rewards/alarm_reward"] == 1.0 for s in samples)
 
     def test_score_loop_scores_groups_concurrently(self, tmp_path, monkeypatch):
-        from trl_async_grpo_rewards import overlap_reward
+        from async_grpo_rewards import overlap_reward
 
         monkeypatch.setenv("TRL_ASYNC_TEST_REWARD_RENDEZVOUS", str(tmp_path))
         loop = _rollout_loop([overlap_reward], reward_num_workers=2)
@@ -395,7 +395,7 @@ class TestRolloutLoop:
         assert all(s.metrics["rewards/overlap_reward"] == 1.0 for s in samples)
 
     def test_reward_pool_surfaces_reward_errors(self):
-        from trl_async_grpo_rewards import failing_reward
+        from async_grpo_rewards import failing_reward
 
         pool = RewardProcessPool([failing_reward], 1)
         try:
@@ -428,7 +428,7 @@ class TestGRPOStrategy:
 
         manager = PluginManager.get_instance()
         monkeypatch.setitem(manager.plugins, "reward_plugin", RewardPlugin())
-        cfg = self._cfg(reward_funcs=["trl_async_grpo_rewards.length_reward"])
+        cfg = self._cfg(reward_funcs=["async_grpo_rewards.length_reward"])
         (reward_funcs,) = GRPOStrategy.set_trainer_args(cfg)
         assert [f.__name__ for f in reward_funcs] == ["length_reward", "plugin_reward"]
         (reward_funcs,) = GRPOStrategy.set_trainer_args(self._cfg())
@@ -790,20 +790,20 @@ class TestTreeFlashAttn:
     def tree_flash_attn(self, monkeypatch):
         import kernels
 
-        from axolotl.core.trainers.grpo import trl_async_trainer
+        from axolotl.core.trainers.grpo import async_trainer
 
         loaded = []
         monkeypatch.setattr(
             kernels, "get_kernel", lambda repo, **kw: loaded.append((repo, kw)) or repo
         )
-        trl_async_trainer._tree_flash_attn.cache_clear()
-        yield trl_async_trainer, loaded
-        trl_async_trainer._tree_flash_attn.cache_clear()
+        async_trainer._tree_flash_attn.cache_clear()
+        yield async_trainer, loaded
+        async_trainer._tree_flash_attn.cache_clear()
 
     def test_falls_back_to_flash_attn2_where_flash_attn3_has_no_build(
         self, tree_flash_attn, monkeypatch
     ):
-        trl_async_trainer, loaded = tree_flash_attn
+        async_trainer, loaded = tree_flash_attn
 
         def no_build():
             raise RuntimeError(
@@ -811,20 +811,20 @@ class TestTreeFlashAttn:
                 "the architectures of the build: 8.0, 9.0a"
             )
 
-        monkeypatch.setattr(trl_async_trainer, "_trl_tree_flash_attn", no_build)
-        assert trl_async_trainer._tree_flash_attn().kernel == (
+        monkeypatch.setattr(async_trainer, "_trl_tree_flash_attn", no_build)
+        assert async_trainer._tree_flash_attn().kernel == (
             "kernels-community/flash-attn2"
         )
         assert loaded == [("kernels-community/flash-attn2", {"version": 3})]
 
     def test_keeps_flash_attn3_where_it_loads(self, tree_flash_attn, monkeypatch):
-        trl_async_trainer, loaded = tree_flash_attn
-        monkeypatch.setattr(trl_async_trainer, "_trl_tree_flash_attn", lambda: "fa3")
-        assert trl_async_trainer._tree_flash_attn() == "fa3"
+        async_trainer, loaded = tree_flash_attn
+        monkeypatch.setattr(async_trainer, "_trl_tree_flash_attn", lambda: "fa3")
+        assert async_trainer._tree_flash_attn() == "fa3"
         assert loaded == []
 
     def test_flash_attn2_gets_values_as_wide_as_queries(self):
-        from axolotl.core.trainers.grpo.trl_async_trainer import _WideValues
+        from axolotl.core.trainers.grpo.async_trainer import _WideValues
 
         seen = []
 
@@ -847,19 +847,19 @@ class TestTreeFlashAttn:
 
 
 def test_flops_estimate_reads_unknown_moe_layouts_as_dense(monkeypatch):
-    from axolotl.core.trainers.grpo import trl_async_trainer
+    from axolotl.core.trainers.grpo import async_trainer
 
     def trl_estimate(config, seq_len):
         if config.num_experts_per_tok is not None:
             return config.decoder_sparse_step  # what TRL reads for MoE configs
         return config.hidden_size * seq_len
 
-    monkeypatch.setattr(trl_async_trainer, "_trl_flops_per_token", trl_estimate)
+    monkeypatch.setattr(async_trainer, "_trl_flops_per_token", trl_estimate)
     # Nemotron-H: num_experts_per_tok without the Qwen-MoE fields
     hybrid = types.SimpleNamespace(num_experts_per_tok=2, hidden_size=8)
-    assert trl_async_trainer._flops_per_token(hybrid, 3) == 24
+    assert async_trainer._flops_per_token(hybrid, 3) == 24
     moe = types.SimpleNamespace(num_experts_per_tok=2, decoder_sparse_step=1)
-    assert trl_async_trainer._flops_per_token(moe, 3) == 1
+    assert async_trainer._flops_per_token(moe, 3) == 1
 
 
 class TestTreeAttentionSwitch:
@@ -879,7 +879,7 @@ class TestTreeAttentionSwitch:
         return type("MyAttention", (torch.nn.Module,), {})()
 
     def test_switches_attention_models(self):
-        from axolotl.core.trainers.grpo.trl_async_trainer import (
+        from axolotl.core.trainers.grpo.async_trainer import (
             TREE_ATTENTION,
             _set_tree_attention,
         )
@@ -892,14 +892,14 @@ class TestTreeAttentionSwitch:
         assert model.config._attn_implementation == TREE_ATTENTION
 
     def test_refuses_attention_that_keeps_another_implementation(self):
-        from axolotl.core.trainers.grpo.trl_async_trainer import _set_tree_attention
+        from axolotl.core.trainers.grpo.async_trainer import _set_tree_attention
 
         model = self._model([self._attention()], lambda model, implementation: None)
         with pytest.raises(ValueError, match="kept attention implementation 'sdpa'"):
             _set_tree_attention(model)
 
     def test_models_without_attention_have_nothing_to_route(self):
-        from axolotl.core.trainers.grpo.trl_async_trainer import _set_tree_attention
+        from axolotl.core.trainers.grpo.async_trainer import _set_tree_attention
 
         def unsupported(model, implementation):
             raise ValueError(
@@ -913,7 +913,7 @@ class TestAliasingVLLMClient:
     def test_sync_drains_and_moves_the_alias(self, monkeypatch):
         from trl.experimental.async_grpo import vllm_client
 
-        from axolotl.core.trainers.grpo import trl_async_trainer
+        from axolotl.core.trainers.grpo import async_trainer
 
         calls = []
 
@@ -921,9 +921,9 @@ class TestAliasingVLLMClient:
             calls.append((url.rsplit("/", 1)[-1], json or params))
             return types.SimpleNamespace(status_code=200, text="")
 
-        monkeypatch.setattr(trl_async_trainer.requests, "post", post)
+        monkeypatch.setattr(async_trainer.requests, "post", post)
         monkeypatch.setattr(vllm_client.requests, "post", post)
-        client = trl_async_trainer.AliasingVLLMClient("http://vllm", alias="policy")
+        client = async_trainer.AliasingVLLMClient("http://vllm", alias="policy")
         client.pause()
         client.load_lora_adapter("trl-policy-v2", "/adapters/v2")
         assert calls == [
@@ -962,7 +962,7 @@ def test_custom_rollout_loop_and_alias_wiring(tmp_path, monkeypatch):
     from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaConfig
     from trl.experimental.async_grpo import async_grpo_trainer, async_rollout_worker
 
-    from axolotl.core.trainers.grpo.trl_async_trainer import AliasingVLLMClient
+    from axolotl.core.trainers.grpo.async_trainer import AliasingVLLMClient
 
     monkeypatch.setattr(async_rollout_worker, "is_vllm_available", lambda: True)
     monkeypatch.setattr(

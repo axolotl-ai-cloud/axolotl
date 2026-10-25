@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from axolotl.core.trainers.grpo.trl_async_scoring import pack_sequences
+from axolotl.core.trainers.grpo.async_scoring import pack_sequences
 from axolotl.monkeypatch.models import recurrent_tree
 from axolotl.monkeypatch.models.recurrent_tree import (
     RecurrentComponent,

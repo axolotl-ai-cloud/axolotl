@@ -123,7 +123,7 @@ def assert_tree_rows_match_alone(model, samples, on_row=None):
     from trl.experimental.async_grpo import packing
     from trl.experimental.async_grpo.packing import TreeRow
 
-    from axolotl.core.trainers.grpo.trl_async_packing import (
+    from axolotl.core.trainers.grpo.async_packing import (
         ChainRow,
         sample_boundaries,
     )

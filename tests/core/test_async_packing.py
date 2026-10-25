@@ -6,23 +6,23 @@ from collections import defaultdict
 import numpy as np
 import pytest
 import torch
+from async_test_utils import StubTransfer, StubWorker, reference_tree_attention
 from trl.experimental.async_grpo.async_grpo_trainer import (
     FixedCountBatcher,
     TokenBudgetBatcher,
 )
 from trl.experimental.async_grpo.async_rollout_worker import RolloutSample
 from trl.experimental.async_grpo.packing import TreeRow
-from trl_async_test_utils import StubTransfer, StubWorker, reference_tree_attention
 
-from axolotl.core.trainers.grpo.trl_async_packing import (
+from axolotl.core.trainers.grpo.async_packing import (
     ChainFixedCountBatcher,
     ChainRow,
     ChainTokenBudgetBatcher,
     sample_boundaries,
     shares_prefixes,
 )
-from axolotl.core.trainers.grpo.trl_async_scoring import pack_sequences
-from axolotl.core.trainers.grpo.trl_async_trainer import (
+from axolotl.core.trainers.grpo.async_scoring import pack_sequences
+from axolotl.core.trainers.grpo.async_trainer import (
     AxolotlAsyncGRPOConfig,
     AxolotlAsyncGRPOTrainer,
 )
@@ -143,9 +143,9 @@ TREE_ROUTED = {"_axolotl_gdn_kernel_interface": True, "_axolotl_recurrent_tree":
 @pytest.fixture
 def fla_installed(monkeypatch):
     """Report flash-linear-attention installed: these GatedDeltaNets never reach it."""
-    from axolotl.core.trainers.grpo import trl_async_packing
+    from axolotl.core.trainers.grpo import async_packing
 
-    monkeypatch.setattr(trl_async_packing, "_has_fla", lambda: True)
+    monkeypatch.setattr(async_packing, "_has_fla", lambda: True)
 
 
 @pytest.mark.usefixtures("fla_installed")
@@ -166,9 +166,9 @@ class TestSharesPrefixes:
         assert not shares_prefixes(_model("qwen3_5_text", HYBRID, varlen_only))
 
     def test_gated_delta_nets_need_flash_linear_attention(self, monkeypatch):
-        from axolotl.core.trainers.grpo import trl_async_packing
+        from axolotl.core.trainers.grpo import async_packing
 
-        monkeypatch.setattr(trl_async_packing, "_has_fla", lambda: False)
+        monkeypatch.setattr(async_packing, "_has_fla", lambda: False)
         mixers = [_gated_delta_net(**TREE_ROUTED)]
         with pytest.raises(ValueError, match="flash-linear-attention"):
             shares_prefixes(_model("qwen3_5_text", HYBRID, mixers))

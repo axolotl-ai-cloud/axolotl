@@ -20,7 +20,7 @@ from trl.experimental.async_grpo.async_rollout_worker import (
     TrainingSequence,
 )
 
-from axolotl.core.trainers.grpo.trl_async_rollout import AxolotlRolloutLoop
+from axolotl.core.trainers.grpo.async_rollout import AxolotlRolloutLoop
 
 _NO_DRIFT = {
     "clean": 0.0,

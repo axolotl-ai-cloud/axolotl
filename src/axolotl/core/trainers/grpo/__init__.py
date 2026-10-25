@@ -11,14 +11,14 @@ from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
 from trl.trainer.grpo_trainer import RewardFunc
 
 from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
+from axolotl.core.trainers.grpo.async_trainer import (
+    AxolotlAsyncGRPOConfig,
+    AxolotlAsyncGRPOTrainer,
+)
 from axolotl.core.trainers.grpo.trainer import (
     AxolotlGRPOContextParallelTrainer,
     AxolotlGRPOSequenceParallelTrainer,  # noqa: F401  deprecated alias, kept importable
     AxolotlGRPOTrainer,
-)
-from axolotl.core.trainers.grpo.trl_async_trainer import (
-    AxolotlAsyncGRPOConfig,
-    AxolotlAsyncGRPOTrainer,
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.utils.dict import DictDefault

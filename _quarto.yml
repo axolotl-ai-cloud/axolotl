@@ -79,16 +79,16 @@ quartodoc:
         - core.trainers.ebft.rewards
         - core.trainers.ebft.strided
         - core.trainers.ebft.trainer
-        - core.trainers.ebft.trl_async_rollout
-        - core.trainers.ebft.trl_async_trainer
+        - core.trainers.ebft.async_rollout
+        - core.trainers.ebft.async_trainer
         - core.trainers.grpo
         - core.trainers.grpo.args
         - core.trainers.grpo.trainer
         - core.trainers.grpo.sampler
-        - core.trainers.grpo.trl_async_rollout
-        - core.trainers.grpo.trl_async_scoring
-        - core.trainers.grpo.trl_async_traces
-        - core.trainers.grpo.trl_async_trainer
+        - core.trainers.grpo.async_rollout
+        - core.trainers.grpo.async_scoring
+        - core.trainers.grpo.async_traces
+        - core.trainers.grpo.async_trainer
         - core.trainers.utils
     - title: Model Loading
       desc: Functionality for loading and patching models, tokenizers, etc.
