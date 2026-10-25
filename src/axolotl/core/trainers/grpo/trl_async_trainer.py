@@ -86,6 +86,7 @@ from axolotl.core.trainers.mixins import (
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
 from axolotl.core.training_args_base import AxolotlTrainingMixins
 from axolotl.integrations.base import PluginManager
+from axolotl.monkeypatch.models.recurrent_support import recurrent_layer_types
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -379,9 +380,10 @@ def _hidden_layer_types(model: PreTrainedModel):
     """Hide ``layer_types`` from TRL's ``__init__``.
 
     TRL rejects any non-attention layer because its trie shares prompt prefixes,
-    which a recurrent layer cannot follow. Rows that never share pack each sample as
-    its own chain, whose boundaries axolotl's packing patches thread into those
-    layers; the check is the only reader of ``layer_types`` during ``__init__``.
+    which a recurrent layer cannot follow by itself. axolotl's GatedDeltaNet patch
+    follows the trie, and other recurrent models pack each sample as its own chain
+    (see ``trl_async_packing``); the check is the only reader of ``layer_types``
+    during ``__init__``.
     """
     text_config = model.config.get_text_config()
     layer_types = text_config.layer_types
@@ -584,10 +586,8 @@ class AxolotlAsyncGRPOTrainer(
             replacements["create_model_from_path"] = _use_loaded_model(model)
             replacements["add_fused_lm_head"] = _add_fused_lm_head_to_base
             model_id = get_config_model_id(model.config)
-            self._share_prefixes = shares_prefixes(model.config)
-            if not self._share_prefixes and getattr(
-                model.config.get_text_config(), "layer_types", None
-            ):
+            self._share_prefixes = shares_prefixes(model)
+            if recurrent_layer_types(model.config):
                 hide_layer_types = _hidden_layer_types(model)
         for scorer in self._trainer_scorers:
             scorer.share_prefixes = self._share_prefixes
