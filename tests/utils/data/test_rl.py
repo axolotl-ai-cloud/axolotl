@@ -155,6 +155,36 @@ class TestLoadRLDatasetTransformFn(unittest.TestCase):
         fn = _load_rl_dataset_transform_fn(RLType.GDPO, "chat_template", self.cfg, 0)
         self.assertIsNone(fn)
 
+    def test_grpo_and_gdpo_resolve_user_module_transform(self):
+        import sys
+        import tempfile
+        import textwrap
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "grpo_user_transform.py").write_text(
+                textwrap.dedent(
+                    """
+                    def my_transform(cfg, **kwargs):
+                        def transform_fn(example):
+                            return {"prompt": example["question"]}
+
+                        return transform_fn
+                    """
+                )
+            )
+            sys.path.insert(0, tmp)
+            try:
+                for rl in (RLType.GRPO, RLType.GDPO):
+                    fn = _load_rl_dataset_transform_fn(
+                        rl, "grpo_user_transform.my_transform", self.cfg, 0
+                    )
+                    assert callable(fn)
+                    assert fn({"question": "q"}) == {"prompt": "q"}
+            finally:
+                sys.path.remove(tmp)
+                sys.modules.pop("grpo_user_transform", None)
+
 
 class TestRaiseOnLongSequences(unittest.TestCase):
     """Tests for _raise_on_long_sequences (excess_length_strategy='raise')."""
