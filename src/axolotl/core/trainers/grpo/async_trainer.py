@@ -362,6 +362,7 @@ class SampleFilterQueue:
         return None
 
     def get(self, timeout: float | None = None):
+        self._progress.check()
         deadline = None if timeout is None else time.monotonic() + timeout
         while True:
             remaining = (
@@ -895,7 +896,7 @@ class AxolotlAsyncGRPOTrainer(
                     metrics=self._metrics["train"],
                     token_budget=max(self.args.token_budget or 0, 0),
                     recorder=self._trace_recorder,
-                    progress=self._progress,
+                    # `score_step` reports which groups trained.
                     scorers=self._trainer_scorers,
                 ),
                 num_workers=0,
