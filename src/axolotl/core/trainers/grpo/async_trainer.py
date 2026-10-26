@@ -216,6 +216,15 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
             "groups at once. 1 keeps TRL's thread-based scoring."
         },
     )
+    scoring_token_budget: int | None = field(
+        default=None,
+        metadata={
+            "help": "Max tokens in one forward of a trainer-side scorer (EBFT's "
+            "feature network); a row's scored sequences are split into as many "
+            "forwards as needed. Defaults to token_budget; <= 0 scores each row in "
+            "one forward."
+        },
+    )
     loss_type: str = field(
         default="dapo",
         metadata={
@@ -837,6 +846,14 @@ class AxolotlAsyncGRPOTrainer(
                 progress=self._progress,
             )
             dataset = StopAwareDataset(dataset)
+            scoring_budget = self.args.scoring_token_budget
+            for scorer in self._trainer_scorers:
+                scorer.token_budget = max(
+                    self.args.token_budget
+                    if scoring_budget is None
+                    else scoring_budget,
+                    0,
+                )
         else:
             dataset = _EmptyIterableDataset()
         return self.accelerator.prepare(

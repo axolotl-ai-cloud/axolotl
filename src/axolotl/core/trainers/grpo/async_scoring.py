@@ -61,6 +61,8 @@ class TrainerScorer:
     name = "scorer"
     # False for models with recurrent layers: pack each sequence as its own chain.
     share_prefixes = True
+    # Tokens per scoring forward (see ``chunk_sequences``); 0 runs one per row.
+    token_budget = 0
 
     def group_extras(self, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Sequences scored with a group but not trained, e.g. a reference answer."""
@@ -74,14 +76,16 @@ class TrainerScorer:
         ``index`` is this scorer's position, which marks its entries in
         ``row.extras``. Every row must yield input for ``features``, also when it
         holds only filler samples (uid -1), so that collective forwards line up
-        across ranks.
+        across ranks. Keys prefixed ``c{j}_`` split a row into chunks, each scored
+        by its own ``features`` call; every row of a micro-batch must then have the
+        same number of chunks, for the same reason.
         """
         raise NotImplementedError
 
     def features(
         self, trainer, inputs: dict[str, torch.Tensor]
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """``(uids, features)`` of the sequences in one rank's micro-batch."""
+        """``(uids, features)`` of the sequences in one rank's chunk of a micro-batch."""
         raise NotImplementedError
 
     def group_rewards(
@@ -101,6 +105,49 @@ class ScoredRow(TreeRow):
 
 class ScoredChainRow(ChainRow, ScoredRow):
     """A ``ScoredRow`` that packs each sample as its own chain."""
+
+
+def chunk_sequences(
+    sequences: list[Any], token_budget: int, share_prefixes: bool
+) -> list[list[int]]:
+    """Indices of ``sequences`` split into chunks that pack to ``token_budget`` tokens.
+
+    Bounds the memory of a scoring forward, whose sequences (references, whole
+    conversations) the planner's budget for trained tokens does not cover. A
+    sequence longer than the budget is scored alone.
+    """
+    if token_budget <= 0 or not sequences:
+        return [list(range(len(sequences)))]
+    chunks: list[list[int]] = []
+    current: list[int] = []
+    for index in range(len(sequences)):
+        candidate = current + [index]
+        packed = pack_sequences([sequences[i] for i in candidate], share_prefixes)
+        if not current or int(packed["sizes"][0]) <= token_budget:
+            current = candidate
+            continue
+        chunks.append(current)
+        current = [index]
+    chunks.append(current)
+    for chunk in chunks:
+        if len(chunk) == 1 and len(sequences[chunk[0]]) > token_budget:
+            LOG.warning_once(
+                f"A scored sequence of {len(sequences[chunk[0]])} tokens exceeds the "
+                f"scoring token budget of {token_budget}; it is scored in a forward "
+                "of its own. Raise scoring_token_budget to silence this."
+            )
+    return chunks
+
+
+def chunk_inputs(inputs: dict[str, torch.Tensor]) -> list[dict[str, torch.Tensor]]:
+    """One scorer's micro-batch inputs, split into its ``c{j}_`` chunks in order."""
+    chunks: dict[int, dict[str, torch.Tensor]] = {}
+    for key, value in inputs.items():
+        head, _, name = key.partition("_")
+        if head[:1] != "c" or not head[1:].isdigit():
+            return [inputs]
+        chunks.setdefault(int(head[1:]), {})[name] = value
+    return [chunks[j] for j in sorted(chunks)]
 
 
 def pack_sequences(
@@ -474,10 +521,11 @@ def score_step(
                 for key, value in batch.items()
                 if key.startswith(prefix)
             }
-            uids, feats = scorer.features(trainer, inputs)
-            for uid, feat in zip(uids.tolist(), feats.float().cpu(), strict=True):
-                if uid >= 0:
-                    local[uid] = feat
+            for chunk in chunk_inputs(inputs):
+                uids, feats = scorer.features(trainer, chunk)
+                for uid, feat in zip(uids.tolist(), feats.float().cpu(), strict=True):
+                    if uid >= 0:
+                        local[uid] = feat
         local_features.append(local)
 
     local_records: dict[int, tuple[int, list[float], bool]] = {}
@@ -648,6 +696,8 @@ __all__ = [
     "StepPlanner",
     "TrainerScorer",
     "check_step_capacity",
+    "chunk_inputs",
+    "chunk_sequences",
     "pack_sequences",
     "score_step",
     "unpack_sequences",

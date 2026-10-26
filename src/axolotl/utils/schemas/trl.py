@@ -322,6 +322,15 @@ class TRLConfig(BaseModel):
             "micro_batch_size samples per rank instead."
         },
     )
+    scoring_token_budget: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO with rewards scored on the trainer (EBFT): max "
+            "tokens in one scoring forward. A row's scored sequences (completions, "
+            "references, whole conversations) are split into as many forwards as "
+            "needed. Defaults to token_budget; <= 0 scores each row in one forward."
+        },
+    )
     vllm_importance_sampling_correction: bool | None = Field(
         default=None,
         json_schema_extra={

@@ -273,6 +273,7 @@ class GRPOStrategy:
             "max_staleness": trl.max_staleness,
             "max_inflight_tasks": trl.max_inflight_tasks,
             "token_budget": trl.token_budget,
+            "scoring_token_budget": trl.scoring_token_budget,
             "reward_weights": trl.reward_weights,
             "multi_objective_aggregation": trl.multi_objective_aggregation,
             "scale_rewards": scale_rewards,
