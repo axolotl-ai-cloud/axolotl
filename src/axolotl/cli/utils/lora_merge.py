@@ -1641,10 +1641,19 @@ class _ExpertOutputTransfer:
         if len(self.pending) >= 2:
             self.pending[0][0].synchronize()
             self.pending.popleft()
-        outputs = tuple(
-            torch.empty_like(tensor, device="cpu", pin_memory=True)
-            for tensor in (packed, scale)
-        )
+        outputs = []
+        try:
+            for tensor in (packed, scale):
+                outputs.append(torch.empty_like(tensor, device="cpu", pin_memory=True))
+        except RuntimeError as exc:
+            outputs.clear()
+            LOG.warning(
+                "Pinned output allocation failed; using pageable copies: %s", exc
+            )
+        else:
+            outputs = tuple(outputs)
+        if not outputs:
+            return packed.cpu(), scale.cpu()
         self.stream.wait_stream(torch.cuda.current_stream(packed.device))
         with torch.cuda.stream(self.stream):
             for output, tensor in zip(outputs, (packed, scale), strict=True):

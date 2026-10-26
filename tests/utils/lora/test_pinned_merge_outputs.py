@@ -153,3 +153,54 @@ def test_consume_drains_output_transfers_on_return_and_error(
             assert all(ref() is None for ref in sources)
         outputs.clear()
         sources.clear()
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("failed_allocation", [1, 2])
+def test_pinned_allocation_failure_falls_back_and_recovers(
+    tmp_path, monkeypatch, caplog, failed_allocation
+):
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable")
+    packed = torch.arange(128, device="cuda").to(torch.uint8).reshape(2, 8, 8)
+    scale = torch.ones((2, 8, 2), device="cuda").to(torch.float8_e4m3fn)
+    original_empty_like = torch.empty_like
+    allocations, refs = [], []
+
+    def allocate(tensor, **kwargs):
+        allocations.append(kwargs)
+        if len(allocations) == failed_allocation:
+            raise RuntimeError("pinned allocation unavailable")
+        output = original_empty_like(tensor, **kwargs)
+        refs.append(weakref.ref(output))
+        return output
+
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream), lora_merge._ExpertOutputTransfer() as transfer:
+        torch.cuda._sleep(10_000_000)  # pylint: disable=protected-access
+        prior = transfer.copy(packed, scale)
+        with monkeypatch.context() as context:
+            context.setattr(torch, "empty_like", allocate)
+            fallback = transfer.copy(packed, scale)
+        assert len(allocations) == failed_allocation
+        assert all(ref() is None for ref in refs)
+        assert all(not tensor.is_pinned() for tensor in fallback)
+        for actual, expected in zip(fallback, (packed, scale), strict=True):
+            assert torch.equal(
+                actual.view(torch.uint8), expected.cpu().view(torch.uint8)
+            )
+        recovered = transfer.copy(packed, scale)
+        assert all(tensor.is_pinned() for tensor in recovered)
+    assert not transfer.pending
+    assert "using pageable copies" in caplog.text
+    for pair in (prior, recovered):
+        for actual, expected in zip(pair, fallback, strict=True):
+            assert torch.equal(actual.view(torch.uint8), expected.view(torch.uint8))
+    path = tmp_path / "fallback.safetensors"
+    safetensors.torch.save_file(
+        dict(zip(("weight", "scale"), fallback, strict=True)), path
+    )
+    loaded = safetensors.torch.load_file(path)
+    for name, expected in zip(("weight", "scale"), fallback, strict=True):
+        assert torch.equal(loaded[name].view(torch.uint8), expected.view(torch.uint8))
