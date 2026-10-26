@@ -132,6 +132,13 @@ FA4 is still a pre-release on PyPI, so `--pre` is required:
 pip install --pre flash-attn-4
 ```
 
+On CUDA 13, the `blackwell` extra installs the flash-attn-4 and quack-kernels versions Axolotl's
+B200 CI tests against:
+
+```bash
+pip install "axolotl[blackwell]"
+```
+
 Or from source:
 
 ```bash
