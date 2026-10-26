@@ -22,6 +22,7 @@ from axolotl.utils.schemas.enums import (
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
+from axolotl.utils.schemas.utils import is_deepspeed_zero3_config
 
 LOG = get_logger(__name__)
 
@@ -2009,29 +2010,79 @@ class ModelCompatibilityValidationMixin:
             raise ValueError("gradient_checkpointing is not supported for MPT models")
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_offload_modes(cls, data):
+        if not isinstance(data, dict):
+            return data
+        if (
+            data.get("activation_offloading") == "disk"
+            or data.get("gradient_checkpointing") == "offload_disk"
+        ):
+            raise ValueError(
+                "activation_offloading: disk is disabled: it never offloaded to disk "
+                "(it ran the same CPU offloader as activation_offloading: true). Use "
+                "activation_offloading: true or hidden_states."
+            )
+        if data.get("activation_offloading") == "legacy":
+            LOG.warning(
+                "activation_offloading: legacy is deprecated and is now an alias of "
+                "activation_offloading: true"
+            )
+            data["activation_offloading"] = True
+        return data
+
     @model_validator(mode="after")
     def check_gradient_checkpointing_w_offload(self):
         if self.gradient_checkpointing == "offload":
             LOG.warning(
-                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true` or `activation_offloading: legacy`"
+                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true`"
             )
             self.gradient_checkpointing = True
-            LOG.warning(
-                "`offload` now uses a new stream implementation; to use the previous implementation, use `activation_offloading: legacy`"
-            )
             self.activation_offloading = True
-        if self.gradient_checkpointing == "offload_disk":
-            LOG.warning(
-                "`offload_disk` is deprecated for gradient_checkpointing, use `activation_offloading: disk`"
-            )
-            self.gradient_checkpointing = True
-            self.activation_offloading = "disk"
         return self
 
     @model_validator(mode="after")
     def check_activation_offloading_wo_gc(self):
-        if self.activation_offloading and not self.gradient_checkpointing:
-            raise ValueError("activation_offloading requires gradient_checkpointing")
+        if (
+            self.activation_offloading == "hidden_states"
+            and not self.gradient_checkpointing
+        ):
+            raise ValueError(
+                "activation_offloading: hidden_states requires gradient_checkpointing"
+            )
+        if self.activation_offloading is not True:
+            return self
+        if self.gradient_checkpointing:
+            # ZeRO-3 keeps reentrant: non-reentrant recompute sees partitioned parameters.
+            if not is_deepspeed_zero3_config(self.deepspeed):
+                gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
+                gc_kwargs.setdefault("use_reentrant", False)
+                self.gradient_checkpointing_kwargs = gc_kwargs
+        elif self.process_reward_model or self.rl in (
+            RLType.ORPO,
+            RLType.SIMPO,
+            RLType.EBFT,
+        ):
+            # These trainers have no offload context, so nothing would be offloaded.
+            trainer = (
+                "process_reward_model"
+                if self.process_reward_model
+                else f"rl: {self.rl.value}"
+            )
+            raise ValueError(
+                f"activation_offloading: {self.activation_offloading} without "
+                f"gradient_checkpointing is not supported for {trainer}; set "
+                "gradient_checkpointing: true"
+            )
+        else:
+            LOG.warning(
+                f"activation_offloading: {self.activation_offloading} without "
+                "gradient_checkpointing offloads every activation with no recompute, "
+                "which is bound by host RAM and PCIe bandwidth; set "
+                "gradient_checkpointing: true to recompute the layers and offload only "
+                "what is saved outside them."
+            )
         return self
 
     @model_validator(mode="after")
@@ -2049,12 +2100,6 @@ class ModelCompatibilityValidationMixin:
             raise ValueError(
                 "selective_checkpointing requires non-reentrant checkpointing "
                 "(gradient_checkpointing_kwargs.use_reentrant: false)"
-            )
-        if self.activation_offloading and self.activation_offloading != "hidden_states":
-            raise ValueError(
-                "selective_checkpointing is only compatible with "
-                "activation_offloading: hidden_states (or false); the TRL offloader "
-                "paths bypass HF gradient checkpointing"
             )
         sac = self.selective_checkpointing
         fused_lora = any(
@@ -2158,17 +2203,6 @@ class ModelCompatibilityValidationMixin:
                 "recompute must reuse the forward's routing, which reentrant "
                 "checkpointing cannot guarantee"
             )
-        if self.gradient_checkpointing and self.activation_offloading in (
-            True,
-            "legacy",
-            "disk",
-        ):
-            raise ValueError(
-                "expert_parallel_backend: torch is incompatible with activation_offloading "
-                f"{self.activation_offloading!r}: the TRL offloader bypasses the "
-                "checkpointing policy that keeps recompute on the forward's routing. "
-                "Use activation_offloading: hidden_states or false."
-            )
         return self
 
     @model_validator(mode="after")
@@ -2196,8 +2230,9 @@ class ModelCompatibilityValidationMixin:
         if self.adapter:
             LOG.warning(
                 "activation_offloading: hidden_states uses gradient checkpointing; "
-                "with LoRA/QLoRA, activation_offloading: true can be faster because "
-                "it avoids recompute while offloading smaller adapter activations."
+                "with LoRA/QLoRA, activation_offloading: true with "
+                "gradient_checkpointing: false can be faster because it avoids "
+                "recompute while offloading smaller adapter activations."
             )
         return self
 
