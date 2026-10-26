@@ -114,6 +114,51 @@ Colocate mode runs a vLLM engine inside the trainer process, on the same GPU. No
 ```yaml
 base_model: Qwen/Qwen2.5-1.5B-Instruct
 rl: grpo
+`data_parallel_size` runs that many replicas of the model behind the same endpoint, for more generation throughput when the model already fits on `tensor_parallel_size` GPUs.
+
+## Multi-Node Serving {#sec-multi-node}
+
+When one node cannot generate fast enough, or cannot hold the model, `axolotl vllm-serve` can span several nodes as a single vLLM server. Node 0 runs the API server and dispatches to headless engines on the other nodes. The trainer only talks to node 0, and weight sync reaches every engine through it.
+
+Use the same config on every node and launch each with its `--node-rank`:
+
+```yaml
+vllm:
+  tensor_parallel_size: 2
+  data_parallel_size: 8     # total replicas across all nodes (4 per node here)
+  nnodes: 2
+  master_addr: 10.0.0.1     # node 0
+
+trl:
+  vllm_server_host: 10.0.0.1
+  vllm_server_port: 8000
+```
+
+```bash
+# Node 0 (10.0.0.1): API server + 4 replicas
+axolotl vllm-serve grpo_config.yaml --node-rank 0
+
+# Node 1: 4 headless replicas
+axolotl vllm-serve grpo_config.yaml --node-rank 1
+
+# Trainer node, once http://10.0.0.1:8000/health returns 200
+VLLM_HOST_IP=<trainer IP reachable from the vLLM nodes> axolotl train grpo_config.yaml
+```
+
+| Layout | Config | Link between vLLM nodes |
+|--------|--------|-------------------------|
+| Whole replicas on each node (recommended) | `data_parallel_size` is a multiple of `nnodes` | Ethernet is fine for dense models (replicas are independent). MoE models synchronize expert layers across all replicas every forward pass, so use InfiniBand or RoCE |
+| One replica spanning nodes (model does not fit on one node) | `data_parallel_size: 1`, `tensor_parallel_size` = GPUs per node, `pipeline_parallel_size` = `nnodes` | InfiniBand or RoCE |
+
+Requirements:
+
+- Every node needs the same model, packages, and config.
+- **NCCL weight sync** (full fine-tuning, or LoRA without `vllm_lora_sync`): trainer rank 0 joins an NCCL group with every vLLM GPU, so each vLLM node must reach the trainer at `VLLM_HOST_IP` on port 51216 (TRL's `vllm_group_port`). Each sync broadcasts the full model across the network, so prefer LoRA sync on Ethernet.
+- **LoRA sync**: every vLLM node loads the adapter from its own filesystem. The trainer writes it under `TMPDIR`, so point `TMPDIR` on the trainer at storage that all vLLM nodes mount at the same path.
+- If NCCL picks the wrong network interface, set `NCCL_SOCKET_IFNAME` (or `NCCL_IB_HCA`) on all nodes.
+
+These settings map to vLLM's [data parallel deployment](https://docs.vllm.ai/en/v0.30.0/serving/data_parallel_deployment/#internal-load-balancing) and [multi-node deployment](https://docs.vllm.ai/en/v0.30.0/serving/parallelism_scaling/#multi-node-deployment). vLLM's hybrid and external load-balancing modes are not supported: they expose one API server per node, but weight sync has to reach every engine through a single server.
+
 adapter: lora
 
 trl:
@@ -287,7 +332,10 @@ These control the vLLM server process started by `axolotl vllm-serve`, and the c
 | `port` | int | `8000` | Port for the vLLM server |
 | `device` | str | `auto` | Device to use for vLLM |
 | `tensor_parallel_size` | int | `None` | Number of GPUs for tensor parallelism |
-| `data_parallel_size` | int | `None` | Number of data parallel replicas |
+| `data_parallel_size` | int | `None` | Number of data parallel replicas (total across all nodes) |
+| `pipeline_parallel_size` | int | `None` | Number of pipeline stages; for a replica spanning nodes |
+| `nnodes` | int | `None` | Number of nodes for [multi-node serving](#sec-multi-node); launch each with `--node-rank` |
+| `master_addr` | str | `None` | Address of node 0 when `nnodes > 1` |
 | `gpu_memory_utilization` | float | `None` | Fraction of GPU memory for vLLM (0.0-1.0). Defaults to 0.9 for `vllm-serve` and 0.3 in colocate mode |
 | `dtype` | str | `auto` | Data type (`auto`, `float16`, `bfloat16`) |
 | `max_model_len` | int | `None` | Maximum model context length. Set explicitly if the default is too large for your GPU |
@@ -313,6 +361,7 @@ These control how the trainer interacts with vLLM.
 | `vllm_sync_interval` | int | `None` | Sync weights every N optimizer steps |
 | `vllm_enable_sleep_mode` | bool | `None` | Offload vLLM VRAM when idle (colocate mode) |
 | `vllm_guided_decoding_regex` | str | `None` | Regex constraint for structured/guided decoding (mapped to TRL's `vllm_structured_outputs_regex` on TRL >= 1.7) |
+| Multi-node training hangs at startup | A vLLM node cannot reach the trainer for the NCCL weight-sync group | Set `VLLM_HOST_IP` on the trainer to an address the vLLM nodes can reach, allow port 51216, and set `NCCL_SOCKET_IFNAME` if needed |
 
 For async pipeline and off-policy correction options, see the [GRPO Configuration Reference](grpo.qmd#configuration-reference).
 
