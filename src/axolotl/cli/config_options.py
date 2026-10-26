@@ -1627,6 +1627,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Async GRPO: max unique tokens packed into one rank's micro-batch. Defaults to the vLLM server's max_model_len; <= 0 packs micro_batch_size samples per rank instead.",
     ),
     (
+        ("--trl.scoring-token-budget",),
+        "trl__scoring_token_budget",
+        "int",
+        "Async GRPO with rewards scored on the trainer (EBFT): max tokens in one scoring forward. A row's scored sequences (completions, references, whole conversations) are split into as many forwards as needed. Defaults to token_budget; <= 0 scores each row in one forward.",
+    ),
+    (
         (
             "--trl.vllm-importance-sampling-correction/--no-trl.vllm-importance-sampling-correction",
         ),
