@@ -75,6 +75,12 @@ After `install`, build the trainer under
 its own chain. `tree_kwargs_from_batch` turns a collated batch of either format into
 forward kwargs.
 
+[`examples/trl_async_grpo.py`](examples/trl_async_grpo.py) trains Qwen3.5 with TRL
+1.16's `AsyncGRPOTrainer` this way. TRL loads the model inside its constructor, so the
+example hooks that loader to `install` the model and hide its `layer_types` until the
+trainer is built. `tests/test_example_trl.py` runs it for two steps on CPU, with a
+stub rollout worker in place of vLLM.
+
 huggingface/trl#7686 adds TRL's own Gated DeltaNet tree kernel, `patch_tree_gdn`.
 Each modeling module has one owner: a module TRL patched first is left to TRL, and a
 module patched here is recorded in TRL's patched set, so TRL does not wrap it again.
