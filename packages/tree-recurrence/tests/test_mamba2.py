@@ -147,7 +147,7 @@ def test_seq_idx_kernels(monkeypatch, caplog, model_type, gradient_checkpointing
     assert_tree_matches_alone(model, sequences, rtol=1e-4)
     row_tokens = len(pack(sequences).input_ids)
     tree_calls = [tokens for tokens, with_seq_idx in fused_calls if with_seq_idx]
-    # every root-to-segment path, laid end to end
+    # every root-to-leaf path, laid end to end
     assert tree_calls and all(tokens > row_tokens for tokens in tree_calls)
     assert "split_conv1d_scan_combined runs trees on a kernel" in caplog.text
 

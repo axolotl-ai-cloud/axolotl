@@ -54,11 +54,11 @@ without branches, so chains take the same path.
 - `tree_conv` puts each segment's path history in front of it, in one call; the
   conv needs no boundaries.
 - `tree_scan` either forks, scanning the trie level by level and starting each
-  segment from its parent's final state, or rescans every root-to-segment path in
-  one call and keeps each segment's tail. Forking needs a kernel that takes
-  per-sequence initial states with varlen boundaries (FLA's chunked kernels); it is
-  chosen when the prefix tokens it saves outweigh one more kernel call per level
-  (`Policy(fork_min_saved_tokens=...)`).
+  segment from its parent's final state, or rescans every root-to-leaf path (each
+  sample once) in one call and keeps each segment's outputs from a path through it.
+  Forking needs a kernel that takes per-sequence initial states with varlen
+  boundaries (FLA's chunked kernels); it is chosen when the prefix tokens it saves
+  outweigh one more kernel call per level (`Policy(fork_min_saved_tokens=...)`).
 - Mamba2's kernels reset at `seq_idx` but take initial states per batch row only, so
   Mamba2 rescans paths; the fused `mamba_split_conv1d_scan_combined` runs whole over
   the gathered paths.

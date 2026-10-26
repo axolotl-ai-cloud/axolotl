@@ -200,8 +200,25 @@ class TreePlan:
 
     @property
     def path_tokens(self) -> int:
-        """Tokens of every root-to-segment path together: what rescanning runs."""
-        return int(self.cu_seqlens_k[-1])
+        """Tokens of every root-to-leaf path together: what rescanning runs."""
+        leaves = self._leaves()[1]
+        return int(np.diff(self.cu_seqlens_k)[leaves].sum())
+
+    def _leaves(self) -> tuple[np.ndarray, np.ndarray]:
+        """Each segment's first leaf (itself for a leaf), and the leaves."""
+        key = ("leaves",)
+        if key not in self._tensors:
+            leaf_of = np.full(self.num_segments, -1, dtype=np.int64)
+            # children come after their parents, so each is done before its parent
+            for segment in range(self.num_segments - 1, -1, -1):
+                if leaf_of[segment] < 0:
+                    leaf_of[segment] = segment
+                parent = self.parents[segment]
+                if parent >= 0:
+                    leaf_of[parent] = leaf_of[segment]
+            leaves = np.flatnonzero(leaf_of == np.arange(self.num_segments))
+            self._tensors[key] = (leaf_of, leaves)
+        return self._tensors[key]
 
     def segment_cu_seqlens(self, device: torch.device) -> torch.Tensor:
         key = ("cu_seqlens", device)
@@ -237,14 +254,21 @@ class TreePlan:
         return self._tensors[key]
 
     def path_layout(self, device: torch.device) -> Layout:
-        """Gather index, ``cu_seqlens`` and kept positions running every whole path."""
+        """Gather index, ``cu_seqlens`` and kept positions running every root-to-leaf
+        path once. A segment keeps its outputs from its first leaf's path, which runs
+        through it: an inner segment's own path would only rescan a prefix."""
         key = ("paths", device)
         if key not in self._tensors:
+            leaf_of, leaves = self._leaves()
+            cu_k = self.cu_seqlens_k
+            path_lengths = np.diff(cu_k)
+            gather = self.kv_index[_ranges(cu_k[leaves], path_lengths[leaves])]
+            cu = np.concatenate([[0], np.cumsum(path_lengths[leaves])])
+            start = np.zeros(self.num_segments, dtype=np.int64)
+            start[leaves] = cu[:-1]
             lengths = self.lengths
-            keep = _ranges(self.cu_seqlens_k[1:] - lengths, lengths)
-            self._tensors[key] = self._layout(
-                self.kv_index, self.cu_seqlens_k, keep, device
-            )
+            keep = _ranges(start[leaf_of] + path_lengths - lengths, lengths)
+            self._tensors[key] = self._layout(gather, cu, keep, device)
         return self._tensors[key]
 
     def level_layout(

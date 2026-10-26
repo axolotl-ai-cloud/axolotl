@@ -62,8 +62,10 @@ def test_layouts():
     assert plan.parents.tolist() == [-1, 0, 0]
     cpu = torch.device("cpu")
     gather, cu, keep = plan.path_layout(cpu)
-    assert gather.tolist() == [0, 0, 1, 2, 0, 3, 4] and cu.tolist() == [0, 1, 4, 7]
-    assert keep.tolist() == [0, 2, 3, 5, 6]
+    # the two root-to-leaf paths; the root keeps its output from the first
+    assert gather.tolist() == [0, 1, 2, 0, 3, 4] and cu.tolist() == [0, 3, 6]
+    assert keep.tolist() == [0, 1, 2, 4, 5]
+    assert plan.path_tokens == 6
     gather, cu, keep = plan.conv_layout(3, cpu)
     # each segment preceded by two path tokens, or by zeros (index 5) before the root
     assert gather.tolist() == [5, 5, 0, 5, 0, 1, 2, 5, 0, 3, 4]

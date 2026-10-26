@@ -6,7 +6,7 @@
 FLA's ``chunk_gated_delta_rule`` takes per-sequence initial states with varlen
 boundaries and returns the final states, so the driver can fork the delta-rule state
 at the trie's branches. transformers' PyTorch reference takes neither, so it runs
-every root-to-segment path as one right-padded batch.
+every root-to-leaf path as one right-padded batch.
 """
 
 from __future__ import annotations

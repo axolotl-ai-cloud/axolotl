@@ -6,7 +6,8 @@
 ``tree_conv`` runs every segment with its path history prepended, in one call.
 ``tree_scan`` either forks, running the trie level by level and starting each
 segment from its parent's final state (the handoff stays in autograd), or runs every
-root-to-segment path in one call and keeps each segment's tail. A kernel that cannot
+root-to-leaf path (each sample once) in one call and keeps each segment's outputs
+from a path through it. A kernel that cannot
 take per-sequence initial states with varlen boundaries always takes paths; the
 others fork when the tokens it saves outweigh one more kernel call per level
 (``Policy``).

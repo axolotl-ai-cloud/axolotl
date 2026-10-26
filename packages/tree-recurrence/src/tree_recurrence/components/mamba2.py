@@ -4,11 +4,11 @@
 """The Mamba2 (SSD) component: Mamba2, Nemotron-H, Bamba, Granite-MoE-Hybrid.
 
 mamba-ssm's kernels reset their state at ``seq_idx`` boundaries but take initial
-states per batch row only, so the trie is not forked: every root-to-segment path is
-scanned in one call and each segment keeps its tail. The fused
-``mamba_split_conv1d_scan_combined`` runs that way whole (conv, scan, gated norm and
-output projection), on the input projection's rows gathered per path; the gather's
-backward sums the gradients of shared prefixes.
+states per batch row only, so the trie is not forked: every root-to-leaf path is
+scanned in one call and each segment keeps its outputs from a path through it. The
+fused ``mamba_split_conv1d_scan_combined`` runs that way whole (conv, scan, gated norm
+and output projection), on the input projection's rows gathered per path; the
+gather's backward sums the gradients of shared prefixes.
 
 Forking would need per-depth batches with ``initial_states`` and padding that leaves
 the state untouched (``dt`` masked to zero after its softplus), which no kernel
