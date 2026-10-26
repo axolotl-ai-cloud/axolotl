@@ -87,6 +87,9 @@ def main() -> None:
     parser.add_argument("--output-dir", default="outputs/async-grpo-tree-recurrence")
     parser.add_argument("--max-steps", type=int, default=200)
     parser.add_argument("--max-completion-length", type=int, default=1024)
+    parser.add_argument(
+        "--thinking", action=argparse.BooleanOptionalAction, default=True
+    )
     # prefix tokens a trie level must save to fork the state rather than rescan
     parser.add_argument("--fork-min-saved-tokens", type=int)
     args = parser.parse_args()
@@ -105,6 +108,7 @@ def main() -> None:
         num_generations=8,
         per_device_train_batch_size=8,
         max_completion_length=args.max_completion_length,
+        chat_template_kwargs={"enable_thinking": args.thinking},
         learning_rate=1e-6,
         gradient_checkpointing=True,
         logging_steps=1,

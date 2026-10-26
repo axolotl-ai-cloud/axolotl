@@ -36,7 +36,7 @@ EXAMPLES = {
     "trl_async_grpo": (
         "Qwen/Qwen3.5-2B",
         [],
-        "--max-completion-length 256 --fork-min-saved-tokens 0",
+        "--max-completion-length 1024 --no-thinking --fork-min-saved-tokens 0",
     ),
 }
 PACKAGE = Path(__file__).resolve().parents[1]
