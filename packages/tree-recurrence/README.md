@@ -87,8 +87,10 @@ stub rollout worker in place of vLLM.
 recipe for NVIDIA Nemotron 3.5 Lightning (30B-A3B, Mamba2/attention/MoE), with
 mamba-ssm's kernels from the Hub, and
 [`examples/modal_async_grpo.py`](examples/modal_async_grpo.py)
-runs either example for a few steps on two Hopper GPUs on Modal (`modal run
+runs any of the examples for a few steps on two Hopper GPUs on Modal (`modal run
 examples/modal_async_grpo.py --example nemotron_3_5_lightning`).
+[`examples/lfm2_5_8b_a1b.py`](examples/lfm2_5_8b_a1b.py) is the same kind of recipe
+for LiquidAI LFM2.5-8B-A1B (gated short convs, attention and MoE).
 
 huggingface/trl#7686 adds TRL's own Gated DeltaNet tree kernel, `patch_tree_gdn`.
 Each modeling module has one owner: a module TRL patched first is left to TRL, and a

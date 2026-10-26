@@ -9,6 +9,7 @@ lives on a Modal volume, so a rerun skips the download::
 
     modal run examples/modal_async_grpo.py --example nemotron_3_5_lightning
     modal run examples/modal_async_grpo.py --example trl_async_grpo
+    modal run examples/modal_async_grpo.py --example lfm2_5_8b_a1b
 
 ``--example-args`` replaces the short-run flags below.
 """
@@ -28,15 +29,22 @@ import modal
 EXAMPLES = {
     "nemotron_3_5_lightning": (
         "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
-        ["--mamba-ssm-cache-dtype", "float32"],
+        ["--max-model-len", "4096", "--mamba-ssm-cache-dtype", "float32"],
         "--prompts-per-step 2 --num-generations 4 --max-completion-length 256 "
         "--token-budget 8192",
     ),
     # Gated DeltaNet, forking its state at every branch of the trie
     "trl_async_grpo": (
         "Qwen/Qwen3.5-2B",
-        [],
+        ["--max-model-len", "4096"],
         "--max-completion-length 1024 --no-thinking --fork-min-saved-tokens 0",
+    ),
+    # a reasoning model: its completions need room to finish
+    "lfm2_5_8b_a1b": (
+        "LiquidAI/LFM2.5-8B-A1B",
+        ["--max-model-len", "8192"],
+        "--prompts-per-step 2 --num-generations 4 --max-completion-length 3072 "
+        "--token-budget 16384",
     ),
 }
 PACKAGE = Path(__file__).resolve().parents[1]
@@ -98,8 +106,6 @@ def train(example: str, model: str, vllm_args: list[str], args: list[str]) -> No
             "vllm",
             "serve",
             model,
-            "--max-model-len",
-            "4096",
             "--logprobs-mode",
             "processed_logprobs",
             "--weight-transfer-config",

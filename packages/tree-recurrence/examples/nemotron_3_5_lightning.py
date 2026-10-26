@@ -38,23 +38,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-from collections.abc import Callable
 
 MODEL = "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
 # the Mamba2 out_proj is read by the fused kernel directly, past any adapter
 LORA_TARGETS = ["in_proj", "q_proj", "k_proj", "v_proj", "o_proj"]
-
-
-def guarded_flops(
-    compute_flops_per_token: Callable[..., int],
-) -> Callable[..., int]:
-    def flops_per_token(config, seq_len):
-        try:
-            return compute_flops_per_token(config, seq_len)
-        except AttributeError:
-            return 0
-
-    return flops_per_token
 
 
 def main() -> None:
@@ -66,7 +53,7 @@ def main() -> None:
         async_grpo_trainer,
     )
     from trl.rewards import accuracy_reward
-    from trl_async_grpo import tree_recurrent_models
+    from trl_async_grpo import guarded_flops, tree_recurrent_models
 
     parser = argparse.ArgumentParser(description="Async GRPO on Nemotron 3.5 Lightning")
     parser.add_argument("--model", default=MODEL)

@@ -15,7 +15,9 @@ import numpy as np
 import pytest
 import torch
 from test_gated_delta_net import qwen3_5
+from test_lfm2 import build as build_lfm2
 from test_mamba2 import build as build_mamba2
+from tree_recurrence.components import short_conv
 from tree_recurrence.integrations import transformers as integration
 from tree_testing import branching_sequences, reference_tree_attention
 
@@ -47,11 +49,17 @@ def nemotron_h():
     return build_mamba2("nemotron_h")[1]
 
 
-def nemotron_lora():
-    from peft import LoraConfig
+def lfm2_moe():
+    return build_lfm2("lfm2_moe")[1]
 
-    targets = example("nemotron_3_5_lightning").LORA_TARGETS
-    return LoraConfig(r=4, lora_alpha=8, target_modules=targets)
+
+def recipe_lora(name):
+    def lora():
+        from peft import LoraConfig
+
+        return LoraConfig(r=4, lora_alpha=8, target_modules=example(name).LORA_TARGETS)
+
+    return lora
 
 
 # model, its recurrent mixer, a parameter name every step must change, LoRA config
@@ -62,10 +70,16 @@ MODELS = {
         nemotron_h,
         "NemotronHMamba2Mixer",
         "in_proj.lora_B",
-        nemotron_lora,
+        recipe_lora("nemotron_3_5_lightning"),
+    ),
+    "lfm2_moe-lora": (
+        lfm2_moe,
+        "Lfm2MoeShortConv",
+        "conv.in_proj.lora_B",
+        recipe_lora("lfm2_5_8b_a1b"),
     ),
 }
-MOE = {"nemotron_h", "nemotron_h-lora"}
+MOE = {"nemotron_h", "nemotron_h-lora", "lfm2_moe-lora"}
 
 
 class Rollouts:
@@ -200,7 +214,7 @@ def test_async_grpo_trains_a_hybrid_model_on_tree_rows(
 ):
     model, mixer, trained, peft_config = MODELS[name]
     if name in MOE:
-        guarded = example("nemotron_3_5_lightning").guarded_flops
+        guarded = example("trl_async_grpo").guarded_flops
         flops = async_grpo_trainer.compute_flops_per_token
         monkeypatch.setattr(
             async_grpo_trainer, "compute_flops_per_token", guarded(flops)
@@ -209,20 +223,26 @@ def test_async_grpo_trains_a_hybrid_model_on_tree_rows(
         pytest.importorskip("peft")
         peft_config = peft_config()
     trees = []
-    tree_scan = integration.tree_scan
 
-    def spy(scan, inputs, plan, **kwargs):
-        trees.append(plan.num_levels)
-        return tree_scan(scan, inputs, plan, **kwargs)
+    def spy(owner, name):
+        run = getattr(owner, name)
 
-    monkeypatch.setattr(integration, "tree_scan", spy)
+        def call(fn, x, plan, *args, **kwargs):
+            trees.append(plan.num_levels)
+            return run(fn, x, plan, *args, **kwargs)
+
+        monkeypatch.setattr(owner, name, call)
+
+    # the recurrences' scans, and LFM2's convs (it has no scan)
+    spy(integration, "tree_scan")
+    spy(short_conv, "tree_conv")
 
     with example("trl_async_grpo").tree_recurrent_models() as supports:
         trainer = build_trainer(tmp_path, model, peft_config)
     assert [s.owners for s in supports] == [{mixer: "tree_recurrence"}]
     # hidden from TRL's check only while it built the trainer
     layer_types = trainer.model.config.get_text_config().layer_types
-    assert "linear_attention" in layer_types
+    assert set(layer_types) & {"linear_attention", "conv"}
     before = {n: p.detach().clone() for n, p in trainer.model.named_parameters()}
 
     trainer.train()

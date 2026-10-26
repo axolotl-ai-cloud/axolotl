@@ -34,7 +34,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import tree_recurrence
 from tree_recurrence.integrations.trl import hidden_layer_types
@@ -75,6 +75,22 @@ def tree_recurrent_models(
             yield supports
         finally:
             async_grpo_trainer.create_model_from_path = load
+
+
+def guarded_flops(
+    compute_flops_per_token: Callable[..., int],
+) -> Callable[..., int]:
+    """TRL 1.16's FLOPs estimate reads ``decoder_sparse_step`` from every MoE config
+    (huggingface/trl#7069). Where the config has none, the MFU metrics read 0 instead
+    of the run ending at its first log."""
+
+    def flops_per_token(config, seq_len):
+        try:
+            return compute_flops_per_token(config, seq_len)
+        except AttributeError:
+            return 0
+
+    return flops_per_token
 
 
 def main() -> None:
