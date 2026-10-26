@@ -14,7 +14,12 @@ execute:
 
 GRPO (Group Relative Policy Optimization) trains a language model by generating completions, scoring them with reward functions, and updating the policy to favor higher-reward outputs. The generation step is the bottleneck: producing thousands of tokens per training step with the policy model is slow using standard HuggingFace generation.
 
-Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM's native OpenAI-compatible HTTP API. In [colocate mode](#sec-colocate-mode), the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. Axolotl requires `vllm>=0.30.0`. vLLM 0.31.0 caps `transformers<5.18`, so with Axolotl's transformers 5.20 pin the `vllm` extra resolves to vLLM 0.30.0. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.
+Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend, in one of two modes:
+
+- **[Server mode](#sec-server-mode)**: vLLM runs as a separate process on dedicated GPUs (or [dedicated nodes](#sec-multi-node)) and serves completions over its OpenAI-compatible HTTP API.
+- **[Colocate mode](#sec-colocate-mode)**: the trainer hosts a vLLM engine on its own GPU, so a single GPU is enough.
+
+Axolotl requires `vllm>=0.30.0`.
 
 ```
 ┌──────────────────────┐       HTTP        ┌──────────────────────┐
@@ -87,6 +92,8 @@ trl:
   vllm_server_timeout: 300
 ```
 
+For a full GRPO config with rewards, dataset, LoRA sync, and async generation, see the [GRPO Quick Start](grpo.qmd#quick-start).
+
 ### Multi-GPU vLLM
 
 For larger models, use tensor parallelism across multiple GPUs:
@@ -107,13 +114,6 @@ CUDA_VISIBLE_DEVICES=0,1 axolotl train grpo_config.yaml --num-processes 2
 Due to how TRL maps vLLM device indices, the vLLM instance should use the **last** N GPUs (highest device indices), while training uses the first N.
 :::
 
-## Colocate Mode {#sec-colocate-mode}
-
-Colocate mode runs a vLLM engine inside the trainer process, on the same GPU. No `axolotl vllm-serve` process is needed, so this is the way to run GRPO on a single GPU.
-
-```yaml
-base_model: Qwen/Qwen2.5-1.5B-Instruct
-rl: grpo
 `data_parallel_size` runs that many replicas of the model behind the same endpoint, for more generation throughput when the model already fits on `tensor_parallel_size` GPUs.
 
 ## Multi-Node Serving {#sec-multi-node}
@@ -159,6 +159,13 @@ Requirements:
 
 These settings map to vLLM's [data parallel deployment](https://docs.vllm.ai/en/v0.30.0/serving/data_parallel_deployment/#internal-load-balancing) and [multi-node deployment](https://docs.vllm.ai/en/v0.30.0/serving/parallelism_scaling/#multi-node-deployment). vLLM's hybrid and external load-balancing modes are not supported: they expose one API server per node, but weight sync has to reach every engine through a single server.
 
+## Colocate Mode {#sec-colocate-mode}
+
+Colocate mode runs a vLLM engine inside the trainer process, on the same GPU. No `axolotl vllm-serve` process is needed, so this is the way to run GRPO on a single GPU.
+
+```yaml
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+rl: grpo
 adapter: lora
 
 trl:
@@ -287,34 +294,15 @@ trl:
 **vLLM must be restarted between training runs.** Weight syncs from a previous run leave the server in a corrupted state. If you start a new training run against a stale vLLM server, the model may fail to learn.
 :::
 
-### When to Restart
-
-- Before every new training experiment
-- After a training run crashes or is interrupted
-- If you change the base model in your config
-
-### How to Restart
-
-Killing vLLM reliably requires terminating both the main process and its background EngineCore subprocess:
+Restart before every new experiment, after a crashed or interrupted run, and whenever the base model changes. A plain `kill` often leaves vLLM's EngineCore subprocess holding GPU memory, so kill both and check that memory is freed (on every node for [multi-node](#sec-multi-node)):
 
 ```bash
-# Kill all vLLM-related processes
 pkill -9 -f "vllm|EngineCore"
-
-# Verify GPU memory is freed
 nvidia-smi
-
-# Restart the server
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve grpo_config.yaml
 ```
 
-::: {.callout-tip}
-A single `kill` often does not fully stop vLLM. Always use `kill -9` and verify with `nvidia-smi` that GPU memory has been released before restarting.
-:::
-
-### Health Check
-
-The vLLM server exposes a health endpoint. Wait for it to return 200 before starting training:
+Wait for the health endpoint to return 200 before starting training:
 
 ```bash
 curl http://localhost:8000/health
@@ -361,24 +349,8 @@ These control how the trainer interacts with vLLM.
 | `vllm_sync_interval` | int | `None` | Sync weights every N optimizer steps |
 | `vllm_enable_sleep_mode` | bool | `None` | Offload vLLM VRAM when idle (colocate mode) |
 | `vllm_guided_decoding_regex` | str | `None` | Regex constraint for structured/guided decoding (mapped to TRL's `vllm_structured_outputs_regex` on TRL >= 1.7) |
-| Multi-node training hangs at startup | A vLLM node cannot reach the trainer for the NCCL weight-sync group | Set `VLLM_HOST_IP` on the trainer to an address the vLLM nodes can reach, allow port 51216, and set `NCCL_SOCKET_IFNAME` if needed |
 
 For async pipeline and off-policy correction options, see the [GRPO Configuration Reference](grpo.qmd#configuration-reference).
-
-## Complete Example {#sec-complete-example}
-
-For a full working GRPO config including vLLM, LoRA sync, async generation, rewards, and dataset setup, see the [GRPO Quick Start](grpo.qmd#quick-start). That config includes all the vLLM settings covered in this guide.
-
-```bash
-# Terminal 1: Start vLLM
-CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve grpo_config.yaml
-
-# Wait for health check to pass
-curl http://localhost:8000/health
-
-# Terminal 2: Start training
-CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
-```
 
 ## Troubleshooting {#sec-troubleshooting}
 
@@ -389,5 +361,6 @@ CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
 | OOM on training GPU | Batch too large for policy logprobs | Reduce `micro_batch_size` or `num_generations` |
 | Accuracy stays at zero | Stale vLLM from previous run | Restart vLLM: `pkill -9 -f "vllm\|EngineCore"`, verify with `nvidia-smi`, restart |
 | `ResponseValidationError` from vLLM | Missing logprobs in response | Start the server with `axolotl vllm-serve` (or the raw command above) so `--logprobs-mode processed_logprobs --max-logprobs -1` are set |
+| Multi-node training hangs at startup | A vLLM node cannot reach the trainer for the NCCL weight-sync group | Set `VLLM_HOST_IP` on the trainer to an address the vLLM nodes can reach, allow port 51216, and set `NCCL_SOCKET_IFNAME` if needed |
 | Weight sync takes 5+ seconds | NCCL contention with vLLM generation | Switch to `vllm_lora_sync: true` to eliminate NCCL |
 | `async_prefetch` deadlocks with FSDP | Background threads run unsynchronized FSDP collectives | Set `async_prefetch: false` when using FSDP or DeepSpeed multi-GPU |
