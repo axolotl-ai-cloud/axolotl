@@ -21,7 +21,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
-from trl.experimental.async_grpo.async_grpo_trainer import DataCollatorForRollout
+
+from axolotl.core.trainers.grpo.trl_compat import DataCollatorForRollout
 
 STOP_KEY = "rollout_stop"
 STOP_DONE = 1

@@ -15,12 +15,9 @@ import uuid
 from typing import Any
 
 import numpy as np
-from trl.experimental.async_grpo.async_rollout_worker import (
-    RolloutGroup,
-    TrainingSequence,
-)
 
 from axolotl.core.trainers.grpo.async_rollout import AxolotlRolloutLoop
+from axolotl.core.trainers.grpo.trl_compat import RolloutGroup, TrainingSequence
 
 _NO_DRIFT = {
     "clean": 0.0,
