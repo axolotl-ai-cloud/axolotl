@@ -39,7 +39,7 @@ from accelerate.utils import broadcast_object_list, is_peft_model
 from datasets import Dataset
 from torch.distributed.tensor import DTensor
 from torch.utils.data import DataLoader
-from transformers import PreTrainedModel
+from transformers import PreTrainedModel, TrainerCallback
 from transformers.trainer_utils import SaveStrategy
 from trl.experimental.async_grpo import (
     async_grpo_trainer as trl_async_module,
@@ -499,6 +499,30 @@ def _patched_trl_module(**replacements):
             setattr(trl_async_module, name, value)
 
 
+class _EmptyStepCallback(TrainerCallback):
+    """What an optimizer step whose micro-batches hold no trained token does.
+
+    Trainer-side scoring can exclude every sample of a step (constant rewards, all
+    truncated). The step still counts: ``global_step`` and the learning-rate
+    schedule advance with the rollouts it consumed. It updates nothing, though:
+    without a gradient, Adam's momentum and weight decay would still move the
+    weights, so the gradients are dropped and the optimizer skips every parameter,
+    leaving its moments and step counts as they were. With the weights as last
+    synced, the next weight sync is skipped and the policy version stays.
+    """
+
+    def __init__(self, trainer: "AxolotlAsyncGRPOTrainer"):
+        self._trainer = trainer
+
+    def on_pre_optimizer_step(self, args, state, control, **kwargs):
+        trainer = self._trainer
+        if trainer._step_trains_nothing:
+            trainer.model.zero_grad(set_to_none=True)
+            trainer._metrics["train"]["batch/empty_steps_total"].append(1.0)
+        else:
+            trainer._weights_updated = True
+
+
 def _stop_aware(batcher_cls):
     """A stand-in for one of TRL's batchers that ends its stream on ``RolloutStop``."""
 
@@ -747,6 +771,10 @@ class AxolotlAsyncGRPOTrainer(
             else None,
         )
         self._rollouts_stopped = False
+        # Both are decided from global token counts, so every rank agrees.
+        self._step_trains_nothing = False
+        self._weights_updated = True
+        self.add_callback(_EmptyStepCallback(self))
         if self.accelerator.is_main_process:
             queue_view = self.rollout_queue  # type: ignore[has-type]
             scored_here = bool(self._trainer_scorers)
@@ -887,6 +915,9 @@ class AxolotlAsyncGRPOTrainer(
         scored = None
         if self._trainer_scorers and batch_samples:
             scored = score_step(self, batch_samples)
+        self._step_trains_nothing = bool(batch_samples) and not any(
+            float(batch["global_n_tokens"][0]) for batch in batch_samples
+        )
         if self._trace_recorder is not None and batch_samples:
             self._notify_rollouts_scored(
                 self._trace_recorder.pop(batch_samples), scored
@@ -1070,6 +1101,14 @@ class AxolotlAsyncGRPOTrainer(
         self._step_samples += n_forward_tokens / mean_seq_len
         self._step_forward_s += self._last_forward_time_s
         return loss
+
+    def _sync_weight(self):
+        if not self._weights_updated:
+            # Only steps that trained nothing since the last sync: same policy.
+            self._metrics["train"]["perf/weight_sync_skipped_total"].append(1.0)
+            return
+        super()._sync_weight()
+        self._weights_updated = False
 
     def _sync_weight_merged(self, t0: float) -> tuple[float, float, float]:
         """TRL's merged sync, without folding the adapter into the trained weights.
