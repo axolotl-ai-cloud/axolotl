@@ -1,11 +1,11 @@
 name: publish tree-recurrence
 
 # Inert until the PyPI project's trusted publisher exists: it runs only for a
-# tree-recurrence-v<version> tag, which pypi.yml's "v*" filter does not match.
+# tree-recurrence/v<version> tag, which pypi.yml's "v*" filter does not match.
 on:
   push:
     tags:
-      - "tree-recurrence-v*"
+      - "tree-recurrence/v*"
 
 permissions: {}
 
@@ -31,7 +31,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           version="$(cat packages/tree-recurrence/VERSION)"
-          if [ "${TAG#tree-recurrence-v}" != "$version" ]; then
+          if [ "${TAG#tree-recurrence/v}" != "$version" ]; then
             echo "tag $TAG does not match packages/tree-recurrence/VERSION ($version)"
             exit 1
           fi
