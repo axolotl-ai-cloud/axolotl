@@ -28,18 +28,19 @@ import contextlib
 import functools
 import importlib
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sized
 from dataclasses import dataclass, field
 from typing import Any
 
 import requests
 import torch
 import torch.nn.functional as F
-from accelerate.utils import is_peft_model
+from accelerate.utils import broadcast_object_list, is_peft_model
 from datasets import Dataset
 from torch.distributed.tensor import DTensor
 from torch.utils.data import DataLoader
 from transformers import PreTrainedModel
+from transformers.trainer_utils import SaveStrategy
 from trl.experimental.async_grpo import (
     async_grpo_trainer as trl_async_module,
     packing as trl_packing,
@@ -47,7 +48,9 @@ from trl.experimental.async_grpo import (
 from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig
 from trl.experimental.async_grpo.async_grpo_trainer import (
     AsyncGRPOTrainer,
+    FixedCountBatcher,
     RolloutQueueDataset,
+    TokenBudgetBatcher,
     _EmptyIterableDataset,
 )
 from trl.experimental.async_grpo.packing import TREE_ATTENTION
@@ -60,6 +63,12 @@ from axolotl.core.trainers.grpo.async_packing import (
     hidden_layer_types,
     sample_boundaries,
     shares_prefixes,
+)
+from axolotl.core.trainers.grpo.async_progress import (
+    STOP_KEY,
+    STOP_STALLED,
+    RolloutProgress,
+    StopAwareDataset,
 )
 from axolotl.core.trainers.grpo.async_rollout import (
     AGGREGATIONS,
@@ -282,41 +291,58 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
 
 
 class SampleFilterQueue:
-    """A view of the rollout queue that drops samples no gradient can come from.
+    """A view of the rollout queue that drops samples which would train nothing.
 
-    A zero-advantage sample adds nothing to the policy loss but costs a full forward
-    and backward, and a truncated completion under ``mask_truncated_completions``
-    would be masked out of the loss anyway. Dropped samples still count as consumed
-    prompt groups, so epoch-bounded training and checkpoint resume stay keyed on the
-    prompts that were generated rather than on those that were trained.
+    - ``stale``: more than ``max_staleness`` policy versions old, TRL's rule, applied
+      here before TRL's dataset sees the sample so that the drop is accounted;
+    - ``oversize``: longer than ``token_budget``, the rule of TRL's batchers;
+    - ``zero_adv``: a zero advantage adds nothing to the policy loss but costs a full
+      forward and backward (``skip_zero_advantage_batches``);
+    - ``truncated``: masked out of the loss under ``mask_truncated_completions``.
 
-    TRL checks the epoch bound only when an optimizer step ends, and the rollout
-    worker cycles the prompts forever. Once the run's prompt groups are consumed,
-    samples are therefore passed on with a zero advantage instead of dropped, so the
-    step in progress completes, without gradient from them, and ends the run.
+    Each drop counts its prompt group as consumed in ``progress``, so epochs and
+    resume stay keyed on the prompts generated, and may end the stream (see
+    ``async_progress``).
     """
 
     def __init__(
         self,
         inner,
-        consumed_groups: set[int],
+        progress: RolloutProgress,
         metrics: dict[str, list],
         *,
-        skip_zero_advantage: bool,
-        stop_token_ids: frozenset[int] | None,
-        epoch_done: Callable[[], bool] = lambda: False,
+        model_version: Callable[[], int] | None = None,
+        max_staleness: int | None = None,
+        token_budget: Callable[[], int] = lambda: 0,
+        skip_zero_advantage: bool = False,
+        stop_token_ids: frozenset[int] | None = None,
     ):
         self._inner = inner
-        self._consumed_groups = consumed_groups
+        self._progress = progress
         self._metrics = metrics
+        self._model_version = model_version
+        self._max_staleness = max_staleness
+        self._token_budget = token_budget
         self._skip_zero_advantage = skip_zero_advantage
         self._stop_token_ids = stop_token_ids
-        self._epoch_done = epoch_done
 
     def qsize(self) -> int:
         return self._inner.qsize()
 
     def _drop_reason(self, sample) -> str | None:
+        if (
+            self._model_version is not None
+            and self._max_staleness is not None
+            and self._model_version() - sample.model_version > self._max_staleness
+        ):
+            return "stale"
+        budget = self._token_budget()
+        if budget > 0 and len(sample.input_ids) > budget:
+            LOG.warning_once(
+                f"Dropping rollout samples longer than token_budget={budget}; raise "
+                "token_budget to keep them (counted in sample/dropped_oversize_total)."
+            )
+            return "oversize"
         if self._stop_token_ids is not None and (
             len(sample.input_ids) == 0
             or int(sample.input_ids[-1]) not in self._stop_token_ids
@@ -334,16 +360,13 @@ class SampleFilterQueue:
             )
             sample = self._inner.get(timeout=remaining)
             reason = self._drop_reason(sample)
-            if reason is not None and self._epoch_done():
-                sample.advantage = 0.0
-                reason = None
             self._metrics["sample/dropped_frac"].append(
                 (float(reason is not None), 1.0)
             )
             if reason is None:
                 return sample
-            self._consumed_groups.add(sample.group_id)
             self._metrics[f"sample/dropped_{reason}_total"].append(1.0)
+            self._progress.drop(sample.group_id, reason)
 
 
 def _use_loaded_model(model: PreTrainedModel):
@@ -465,6 +488,15 @@ def _patched_trl_module(**replacements):
     finally:
         for name, value in originals.items():
             setattr(trl_async_module, name, value)
+
+
+def _stop_aware(batcher_cls):
+    """A stand-in for one of TRL's batchers that ends its stream on ``RolloutStop``."""
+
+    def build(*args, **kwargs):
+        return StopAwareDataset(batcher_cls(*args, **kwargs))
+
+    return build
 
 
 def _is_quantized(model: PreTrainedModel) -> bool:
@@ -696,26 +728,38 @@ class AxolotlAsyncGRPOTrainer(
                 "`axolotl vllm-serve`)."
             )
 
-        if self._trainer_scorers:
-            # Advantages exist only once the trainer scored a step; `score_step`
-            # takes zero-advantage and truncated samples out of the loss instead.
-            if self.accelerator.is_main_process:
-                self.rollout_queue = GroupedQueue(self.rollout_queue)
-        elif self.accelerator.is_main_process and (
-            args.skip_zero_advantage_batches or args.mask_truncated_completions
-        ):
-            stop_token_ids = None
-            if args.mask_truncated_completions:
-                stop_token_ids = frozenset(
-                    [*self.eos_token_ids, self.processing_class.pad_token_id]
-                )
+        # TRL's set of trained groups is what it counts epochs and resumes from, so
+        # it holds every consumed group; a pass over the prompts must train one.
+        self._progress = RolloutProgress(
+            self._trained_groups,
+            epochs_done=self._epochs_consumed,
+            stall_groups=len(train_dataset)
+            if isinstance(train_dataset, Sized)
+            else None,
+        )
+        self._rollouts_stopped = False
+        if self.accelerator.is_main_process:
+            queue_view = self.rollout_queue  # type: ignore[has-type]
+            scored_here = bool(self._trainer_scorers)
+            if scored_here:
+                # Advantages exist only once the trainer scored a step; `score_step`
+                # takes zero-advantage and truncated samples out of the loss instead,
+                # and the step planner drops groups too long for a step.
+                queue_view = GroupedQueue(queue_view)
             self.rollout_queue = SampleFilterQueue(
-                self.rollout_queue,  # type: ignore[has-type]
-                self._trained_groups,
+                queue_view,
+                self._progress,
                 self._metrics["train"],
-                skip_zero_advantage=args.skip_zero_advantage_batches,
-                stop_token_ids=stop_token_ids,
-                epoch_done=self._epochs_consumed,
+                model_version=lambda: self.model_version,
+                max_staleness=args.max_staleness,
+                token_budget=(lambda: 0)
+                if scored_here
+                else (lambda: max(self.args.token_budget or 0, 0)),
+                skip_zero_advantage=args.skip_zero_advantage_batches
+                and not scored_here,
+                stop_token_ids=self._stop_token_ids()
+                if args.mask_truncated_completions and not scored_here
+                else None,
             )
 
     def _epochs_consumed(self) -> bool:
@@ -734,14 +778,20 @@ class AxolotlAsyncGRPOTrainer(
             else None
         )
         if not self._trainer_scorers:
+            token_batcher, count_batcher = (
+                (TokenBudgetBatcher, FixedCountBatcher)
+                if self._share_prefixes
+                else (ChainTokenBudgetBatcher, ChainFixedCountBatcher)
+            )
             replacements: dict[str, Any] = {
+                "TokenBudgetBatcher": _stop_aware(token_batcher),
+                "FixedCountBatcher": _stop_aware(count_batcher),
                 "DataCollatorForRollout": functools.partial(
-                    TraceCollator, recorder=self._trace_recorder
-                )
+                    TraceCollator,
+                    recorder=self._trace_recorder,
+                    progress=self._progress,
+                ),
             }
-            if not self._share_prefixes:
-                replacements["TokenBudgetBatcher"] = ChainTokenBudgetBatcher
-                replacements["FixedCountBatcher"] = ChainFixedCountBatcher
             with _patched_trl_module(**replacements):
                 return super().get_train_dataloader()
         # TRL's dataloader with the step planner in place of its batchers.
@@ -784,7 +834,9 @@ class AxolotlAsyncGRPOTrainer(
                 stop_token_ids=self._stop_token_ids()
                 if self.args.mask_truncated_completions
                 else None,
+                progress=self._progress,
             )
+            dataset = StopAwareDataset(dataset)
         else:
             dataset = _EmptyIterableDataset()
         return self.accelerator.prepare(
@@ -798,6 +850,7 @@ class AxolotlAsyncGRPOTrainer(
                     metrics=self._metrics["train"],
                     token_budget=max(self.args.token_budget or 0, 0),
                     recorder=self._trace_recorder,
+                    progress=self._progress,
                     scorers=self._trainer_scorers,
                 ),
                 num_workers=0,
@@ -805,9 +858,15 @@ class AxolotlAsyncGRPOTrainer(
         )
 
     def get_batch_samples(self, epoch_iterator, num_batches, device):
+        if self._rollouts_stopped:
+            return [], None
         batch_samples, num_items_in_batch = super().get_batch_samples(
             epoch_iterator, num_batches, device
         )
+        for batch in batch_samples:
+            if STOP_KEY in batch:
+                self._stop_rollouts(int(batch[STOP_KEY].reshape(-1)[0]))
+                return [], None
         scored = None
         if self._trainer_scorers and batch_samples:
             scored = score_step(self, batch_samples)
@@ -816,6 +875,25 @@ class AxolotlAsyncGRPOTrainer(
                 self._trace_recorder.pop(batch_samples), scored
             )
         return batch_samples, num_items_in_batch
+
+    def _stop_rollouts(self, code: int) -> None:
+        """End training on every rank at the rollout stream's stop micro-batch.
+
+        The micro-batches of an optimizer step it interrupts are not trained: no
+        optimizer step would follow them. See ``async_progress``.
+        """
+        self._rollouts_stopped = True
+        if code == STOP_STALLED:
+            stop = self._progress.stop if self.accelerator.is_main_process else None
+            (error,) = broadcast_object_list([stop.error if stop else None])
+            raise RuntimeError(error or "Async GRPO's rollout stream stalled")
+        LOG.info(
+            "Every prompt group of num_train_epochs is consumed, the last ones "
+            "dropped before training; stopping."
+        )
+        self.control.should_training_stop = True
+        if self.args.save_strategy == SaveStrategy.STEPS:
+            self.control.should_save = True
 
     def _notify_rollouts_scored(self, samples, scored) -> None:
         """Hand one optimizer step's rollouts to plugins' ``on_rollouts_scored``."""

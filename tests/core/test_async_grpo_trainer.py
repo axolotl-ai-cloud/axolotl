@@ -18,6 +18,7 @@ from trl.experimental.async_grpo.async_rollout_worker import (
 )
 
 from axolotl.core.trainers.grpo import GRPOStrategy
+from axolotl.core.trainers.grpo.async_progress import RolloutProgress, RolloutStop
 from axolotl.core.trainers.grpo.async_rollout import (
     AxolotlRolloutLoop,
     RewardProcessPool,
@@ -82,12 +83,51 @@ class TestComputeGroupAdvantages:
             compute_group_advantages(np.zeros((1, 2)), ONES, scale_rewards="batch")
 
 
-def _sample(group_id, advantage, last_token=2):
+def _sample(group_id, advantage, last_token=2, model_version=0, length=3):
     return types.SimpleNamespace(
         group_id=group_id,
         advantage=advantage,
-        input_ids=np.array([5, 6, last_token]),
+        input_ids=np.array([5] * (length - 1) + [last_token]),
+        model_version=model_version,
     )
+
+
+def _progress(stall_groups=None, epochs_done=lambda: False):
+    return RolloutProgress(set(), epochs_done=epochs_done, stall_groups=stall_groups)
+
+
+class TestRolloutProgress:
+    def test_counts_a_dropped_group_once(self):
+        progress = _progress()
+        progress.drop(3, "zero_adv")
+        progress.drop(3, "zero_adv")
+        progress.train([4])
+        assert progress.consumed == {3, 4} and progress.trained == {4}
+        assert progress.dropped == {"zero_adv": 1}
+
+    def test_stalls_after_a_pass_without_training(self):
+        progress = _progress(stall_groups=3)
+        progress.drop(0, "oversize")
+        progress.train([1])
+        progress.drop(2, "zero_adv")
+        progress.drop(3, "oversize")
+        with pytest.raises(RolloutStop) as stop:
+            progress.drop(4, "oversize")
+        assert progress.stop is stop.value
+        assert "No rollout group trained in the last 3 groups" in stop.value.error
+        assert "2 did not fit token_budget, 1 had a zero advantage" in stop.value.error
+        assert "raise token_budget" in stop.value.error
+        assert progress.dropped == {"oversize": 3, "zero_adv": 1}
+
+    def test_a_drop_that_consumes_the_epochs_ends_the_stream(self):
+        consumed: set[int] = set()
+        progress = RolloutProgress(
+            consumed, epochs_done=lambda: len(consumed) >= 2, stall_groups=10
+        )
+        progress.train([0])
+        with pytest.raises(RolloutStop) as stop:
+            progress.drop(1, "stale")
+        assert stop.value.error is None
 
 
 class TestSampleFilterQueue:
@@ -95,9 +135,10 @@ class TestSampleFilterQueue:
         inner = queue.Queue()
         for sample in samples:
             inner.put(sample)
-        consumed, metrics = set(), defaultdict(list)
+        progress, metrics = _progress(), defaultdict(list)
         options = {"skip_zero_advantage": True, "stop_token_ids": None, **kwargs}
-        return SampleFilterQueue(inner, consumed, metrics, **options), consumed, metrics
+        filtered = SampleFilterQueue(inner, progress, metrics, **options)
+        return filtered, progress.consumed, metrics
 
     def test_drops_zero_advantage_and_counts_group_consumed(self):
         filtered, consumed, metrics = self._filter(
@@ -121,30 +162,22 @@ class TestSampleFilterQueue:
         assert consumed == {3}
         assert metrics["sample/dropped_truncated_total"] == [1.0]
 
-    def test_passes_samples_on_without_signal_once_the_epochs_are_consumed(self):
-        inner = queue.Queue()
-        for sample in [
-            _sample(0, 0.0),
-            _sample(1, 0.0),
-            _sample(2, 1.0, last_token=9),
-            _sample(3, 0.5),
-        ]:
-            inner.put(sample)
-        consumed: set[int] = set()
-        filtered = SampleFilterQueue(
-            inner,
-            consumed,
-            defaultdict(list),
-            skip_zero_advantage=True,
-            stop_token_ids=frozenset({2}),
-            epoch_done=lambda: len(consumed) >= 1,
+    def test_drops_stale_and_oversize_as_trls_dataset_and_batchers_would(self):
+        version = 5
+        filtered, consumed, metrics = self._filter(
+            [
+                _sample(0, 1.0, model_version=2),
+                _sample(1, 1.0, model_version=3, length=9),
+                _sample(2, 1.0, model_version=3, length=8),
+            ],
+            model_version=lambda: version,
+            max_staleness=2,
+            token_budget=lambda: 8,
         )
-        # Group 0 completes the epochs; later drops would leave the last step unfilled.
-        assert filtered.get(timeout=1).group_id == 1
-        truncated = filtered.get(timeout=1)
-        assert (truncated.group_id, truncated.advantage) == (2, 0.0)
-        assert filtered.get(timeout=1).advantage == 0.5
-        assert consumed == {0}
+        assert filtered.get(timeout=1).group_id == 2
+        assert consumed == {0, 1}
+        assert metrics["sample/dropped_stale_total"] == [1.0]
+        assert metrics["sample/dropped_oversize_total"] == [1.0]
 
     def test_timeout_spans_dropped_samples(self):
         filtered, _, _ = self._filter([_sample(0, 0.0)])
@@ -695,43 +728,55 @@ def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, num_groups=16, **args_kwa
     return trainer, worker, transfer, samples
 
 
-def test_filtering_every_sample_still_ends_the_epochs(
-    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
-):
-    """No group has a reward signal, yet consuming the prompts once ends the run.
+def _drained(stale_after_s):
+    raise RuntimeError("waited for rollouts past the run's prompts")
 
-    The stub worker holds a second pass over the prompts, as TRL's worker cycles them;
-    waiting for more rollouts than that fails the test instead of hanging it.
-    """
+
+@pytest.mark.parametrize(
+    "bound", [{"max_steps": -1, "num_train_epochs": 1}, {"max_steps": 3}]
+)
+def test_a_run_that_trains_nothing_fails_with_the_reasons(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch, bound
+):
+    """No group has a reward signal: a pass over the prompts ends the run with an
+    error, whether epochs or max_steps bound it. Waiting for more rollouts than the
+    stub worker holds fails the test instead of hanging it."""
     trainer, worker, _, samples = _cpu_trainer(
-        tmp_path,
-        monkeypatch,
-        old_log_probs=lambda g: 0.0,
-        num_groups=32,
-        max_steps=-1,
-        num_train_epochs=1,
+        tmp_path, monkeypatch, old_log_probs=lambda g: 0.0, **bound
     )
     for sample in samples:
         sample.advantage = 0.0
-    before = {
-        n: p.detach().clone()
-        for n, p in trainer.model.named_parameters()
-        if p.requires_grad
-    }
+    worker.check_health = _drained
 
-    def drained(stale_after_s):
-        raise RuntimeError("waited for rollouts past the run's prompts")
+    with pytest.raises(RuntimeError, match="No rollout group trained") as error:
+        trainer.train()
+    assert "16 had a zero advantage" in str(error.value)
+    assert trainer.state.global_step == 0
 
-    worker.check_health = drained
+
+def test_dropped_tail_ends_the_epochs_without_another_step(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
+):
+    """Groups 8-15 carry no reward signal. The run trains groups 0-7 in four steps,
+    then consumes the rest without training and stops: no optimizer step without
+    gradient follows, which Adam's momentum would still apply."""
+    trainer, worker, transfer, samples = _cpu_trainer(
+        tmp_path,
+        monkeypatch,
+        old_log_probs=lambda g: 0.0,
+        max_steps=-1,
+        num_train_epochs=1,
+    )
+    for index, sample in enumerate(samples):
+        sample.advantage = 0.0 if sample.group_id >= 8 else index % 4 - 1.5
+    worker.check_health = _drained
     trainer.train()
 
-    assert trainer.state.global_step == 1
-    assert set(range(16)) <= trainer._trained_groups
-    assert all(
-        torch.equal(before[n], p.detach())
-        for n, p in trainer.model.named_parameters()
-        if p.requires_grad
-    )
+    assert trainer.state.global_step == 4
+    assert transfer.syncs == 5 and worker.versions == [1, 2, 3, 4, 5]
+    assert trainer._trained_groups == set(range(16))
+    assert trainer._progress.trained == set(range(8))
+    assert trainer._progress.dropped == {"zero_adv": 8}
 
 
 def test_trains_axolotl_loaded_lora_model_on_cpu(
