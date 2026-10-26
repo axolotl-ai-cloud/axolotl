@@ -1,9 +1,8 @@
 """Sample-packing patches for the pure-SSM transformers models: Mamba, Mamba2, Falcon-Mamba.
 
 None of these forwards accept ``position_ids``, so the ForCausalLM wrapper turns
-them into ``seq_idx`` and stashes the boundaries (and a tree row's ``tree_*``
-kwargs, which the ForCausalLM forward drops) on every block, which passes them to
-its mixer as kwargs. The mixers forward kwargs into their kernels, so Mamba2
+them into ``seq_idx`` and stashes the boundaries on every block, which passes them
+to its mixer as a kwarg. The mixers forward kwargs into their kernels, so Mamba2
 needs nothing more than a live kernel that takes ``seq_idx``.
 
 Mamba1's selective scan has no such argument, so a packed row is scattered into
@@ -26,7 +25,6 @@ from axolotl.monkeypatch.models.mamba_utils import (
     kernel_accepts,
     require_seq_idx_kernels,
 )
-from axolotl.monkeypatch.models.recurrent_tree import tree_kwargs
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -254,10 +252,8 @@ def _patch_causal_lm(causal_lm_cls) -> None:
             ].clone()
             shifted[:, :-1].masked_fill_(position_ids[:, 1:] == 0, -100)
             kwargs["shift_labels"] = shifted
-        tree = tree_kwargs(kwargs)
         for block in self.backbone.layers:
             block._axolotl_segments = segments
-            block._axolotl_tree = tree
         return original_forward(self, *args, **kwargs)
 
     patched_forward._axolotl_seq_idx_patch = True
@@ -292,7 +288,7 @@ def _patch_block(block_cls) -> None:
             cache_params=cache_params,
             attention_mask=attention_mask,
             segments=segments,
-            **{**getattr(self, "_axolotl_tree", {}), **kwargs},
+            **kwargs,
         )
         return residual + hidden_states
 

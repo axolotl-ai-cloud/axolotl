@@ -17,7 +17,6 @@ from axolotl.monkeypatch.models.mamba_utils import (
     is_cp_active,
     mamba2_seq_idx_kernels_available,
 )
-from axolotl.monkeypatch.models.recurrent_tree import tree_kwargs
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -127,7 +126,6 @@ def patch_nemotron_h_modeling_packing(kernels_enabled: bool = False):
                 cache_params=past_key_values,
                 attention_mask=attention_mask,
                 seq_idx=seq_idx,
-                **tree_kwargs(kwargs),
             )
         elif self.block_type == "full_attention":
             hidden_states, _ = self.mixer(

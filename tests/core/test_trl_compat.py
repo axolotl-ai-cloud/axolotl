@@ -11,6 +11,11 @@ import inspect
 import types
 
 import pytest
+from tree_recurrence.integrations.trl import (
+    ChainFixedCountBatcher,
+    ChainRow,
+    ChainTokenBudgetBatcher,
+)
 from trl.experimental.async_grpo import (
     async_grpo_config,
     async_grpo_trainer,
@@ -21,11 +26,6 @@ from trl.experimental.async_grpo import (
 from axolotl.core.trainers.ebft.async_rollout import EBFTRolloutLoop
 from axolotl.core.trainers.ebft.async_trainer import AxolotlAsyncEBFTTrainer
 from axolotl.core.trainers.grpo import trl_compat
-from axolotl.core.trainers.grpo.async_packing import (
-    ChainFixedCountBatcher,
-    ChainRow,
-    ChainTokenBudgetBatcher,
-)
 from axolotl.core.trainers.grpo.async_progress import ProgressCollator
 from axolotl.core.trainers.grpo.async_rollout import (
     AxolotlAsyncRolloutWorker,
