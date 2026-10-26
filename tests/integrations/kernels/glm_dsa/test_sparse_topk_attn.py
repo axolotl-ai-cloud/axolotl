@@ -12,14 +12,16 @@ input gradients (dq/dk/dv) must agree. Also asserts the kernels are dispatcher-v
 import pytest
 import torch
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
+pytestmark = pytest.mark.skipif(not gpu_available(), reason="GPU required")
 
 import axolotl.integrations.kernels.libs.glm_dsa.attention_mla_absorb  # noqa: F401,E402
 from axolotl.integrations.kernels.libs.glm_dsa.attention_topk import (  # noqa: E402
     sparse_attn,
 )
 
-DEV = "cuda"
+DEV = DEVICE_TYPE
 
 
 def test_glm_dsa_ops_registered():
