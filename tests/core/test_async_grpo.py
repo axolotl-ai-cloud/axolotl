@@ -1189,6 +1189,48 @@ class TestComputeLossAuxLoss(unittest.TestCase):
         trainer._get_per_token_logps_and_entropies_flattened.assert_not_called()
 
 
+    def test_masked_extreme_logratio_preserves_valid_grpo_gradients(self):
+        """Masked padding must not poison the GRPO objective before reduction."""
+        for mode in ("token", "sequence"):
+            for padding_case in ("overflow", "negative_infinity"):
+                with self.subTest(mode=mode, padding_case=padding_case):
+                    trainer = self._make_trainer(aux_loss_enabled=False)
+                    trainer.importance_sampling_level = mode
+                    inputs = self._make_inputs()
+                    inputs["completion_mask"][0, 0] = 0
+
+                    old_logps = torch.full((2, 3), -1.0)
+                    current_logps = old_logps.clone()
+                    if padding_case == "overflow":
+                        old_logps[0, 0] = -1001.0
+                    else:
+                        old_logps[0, 0] = float("-inf")
+                        current_logps[0, 0] = float("-inf")
+                    current_logps.requires_grad_()
+                    inputs["old_per_token_logps"] = old_logps
+
+                    trainer._get_per_token_logps_and_entropies = MagicMock(
+                        return_value=(
+                            current_logps,
+                            torch.zeros_like(current_logps),
+                            None,
+                        )
+                    )
+                    loss = trainer._compute_loss(trainer.model, inputs)
+                    loss.backward()
+
+                    torch.testing.assert_close(loss, torch.tensor(-1.0))
+                    self.assertTrue(torch.isfinite(current_logps.grad).all())
+                    torch.testing.assert_close(
+                        current_logps.grad[0],
+                        torch.tensor([0.0, -0.25, -0.25]),
+                    )
+                    torch.testing.assert_close(
+                        current_logps.grad[1],
+                        torch.full((3,), -1.0 / 6.0),
+                    )
+
+
 class TestSliceMultimodalKwargs(unittest.TestCase):
     """_slice_multimodal_kwargs must slice image/tile-indexed tensors by
     cumulative image/tile offset, not by naive sample-range slicing."""
