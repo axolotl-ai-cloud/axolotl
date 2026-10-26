@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 import torch
 from peft import LoraConfig, get_peft_model
-from peft.tuners.lora.layer import Linear as LoraLinear
+from peft.tuners.lora.layer import Embedding as LoraEmbedding, Linear as LoraLinear
 from torch import nn
 
 from axolotl.monkeypatch.peft.exact_unmerge import patch_peft_lora_exact_unmerge
@@ -170,9 +170,82 @@ def test_unmerge_when_not_merged_still_warns():
 
 
 def test_patch_is_idempotent():
-    merge, unmerge = LoraLinear.merge, LoraLinear.unmerge
+    methods = [(c.merge, c.unmerge) for c in (LoraLinear, LoraEmbedding)]
     patch_peft_lora_exact_unmerge()
-    assert LoraLinear.merge is merge and LoraLinear.unmerge is unmerge
+    assert methods == [(c.merge, c.unmerge) for c in (LoraLinear, LoraEmbedding)]
+
+
+class _EmbeddingToy(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.emb = nn.Embedding(512, 64)
+
+    def forward(self, ids):
+        return self.emb(ids)
+
+
+def _peft_embedding():
+    torch.manual_seed(0)
+    base = _EmbeddingToy()
+    with torch.no_grad():
+        base.emb.weight.mul_(0.02)
+    model = get_peft_model(
+        base.to(torch.bfloat16),
+        LoraConfig(r=8, lora_alpha=16, target_modules=["emb"]),
+    )
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if "lora_embedding" in name:
+                param.normal_(0, 2e-2)
+    return model
+
+
+def test_embedding_round_trip_is_exact():
+    model = _peft_embedding()
+    base = _base_weights(model)
+    for _ in range(20):
+        _step(model)
+        model.merge_adapter()
+        model.unmerge_adapter()
+    _assert_restored(model, base)
+
+
+def test_unpatched_embedding_drifts_in_bf16():
+    model = _peft_embedding()
+    emb = model.base_model.model.emb
+    before = emb.base_layer.weight.detach().clone()
+    for _ in range(20):
+        _step(model)
+        inspect.unwrap(LoraEmbedding.merge)(emb)
+        inspect.unwrap(LoraEmbedding.unmerge)(emb)
+    assert not torch.equal(emb.base_layer.weight, before)
+
+
+def test_offloaded_base_layer_round_trips_and_keeps_fixes_on_cpu():
+    from accelerate.hooks import AlignDevicesHook, add_hook_to_module
+    from accelerate.utils import set_module_tensor_to_device
+
+    model = _peft()
+    q = model.base_model.model.q
+    original = q.base_layer.weight.detach().clone()
+    add_hook_to_module(
+        q.base_layer,
+        AlignDevicesHook(
+            execution_device="cpu",
+            offload=True,
+            weights_map={"weight": original.clone()},
+        ),
+    )
+    set_module_tensor_to_device(q.base_layer, "weight", "meta")
+    for _ in range(5):
+        _step(model)
+        # PEFT onloads the layer for merge() and offloads it again afterwards
+        model.merge_adapter()
+        assert q.base_layer.weight.device.type == "meta"
+        _, fix = q._axolotl_merge_groups[-1]
+        assert fix is not None and all(t.device.type == "cpu" for t in fix)
+        model.unmerge_adapter()
+    assert torch.equal(q.base_layer._hf_hook.weights_map["weight"], original)
 
 
 @pytest.mark.parametrize(

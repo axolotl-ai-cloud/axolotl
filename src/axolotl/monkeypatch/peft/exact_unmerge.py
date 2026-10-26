@@ -6,6 +6,9 @@ mostly where ``|W|`` is small next to ``|D|`` or ``W`` sits on a power of two. T
 vLLM weight sync merges and unmerges the adapter at every sync, so the frozen base
 weights the trainer uses drift further with each sync. Each merge records the entries
 the matching unmerge will get wrong, and the unmerge writes their original values back.
+
+Covers PEFT's LoRA ``Linear`` and ``Embedding`` layers. ``ParamWrapper`` targets
+(``lora_target_parameters``) keep PEFT's own merge and unmerge.
 """
 
 from functools import wraps
@@ -20,8 +23,15 @@ def _exact_unmerge_supported(module, adapters) -> bool:
         and weight.is_floating_point()
         and weight.is_contiguous()
         and all(a not in module.lora_variant for a in adapters)
-        and not any(module.lora_bias[a] for a in adapters)
+        and not any(module.lora_bias.get(a, False) for a in adapters)
     )
+
+
+def _offloaded(module) -> bool:
+    # accelerate offload hook: PEFT's onload_layer moves the base weight to the
+    # execution device only for the duration of merge() / unmerge()
+    hook = getattr(module.get_base_layer(), "_hf_hook", None)
+    return bool(getattr(hook, "offload", False))
 
 
 def _merge_groups(module) -> list:
@@ -31,13 +41,11 @@ def _merge_groups(module) -> list:
     return groups
 
 
-def patch_peft_lora_exact_unmerge():
-    from peft.tuners.lora.layer import Linear
-
-    if getattr(Linear.unmerge, "_axolotl_exact_unmerge", False):
+def _patch_layer_class(cls):
+    if getattr(cls.unmerge, "_axolotl_exact_unmerge", False):
         return
-    original_merge = Linear.merge
-    original_unmerge = Linear.unmerge
+    original_merge = cls.merge
+    original_unmerge = cls.unmerge
 
     @wraps(original_merge)
     def merge(self, safe_merge=False, adapter_names=None):
@@ -45,7 +53,10 @@ def patch_peft_lora_exact_unmerge():
         if isinstance(names, str):
             return original_merge(self, safe_merge, adapter_names)
         pending = [
-            a for a in names if a in self.lora_A and a not in self.merged_adapters
+            a
+            for a in names
+            if (a in self.lora_A or a in self.lora_embedding_A)
+            and a not in self.merged_adapters
         ]
         before = None
         if pending and _exact_unmerge_supported(self, pending):
@@ -63,6 +74,8 @@ def patch_peft_lora_exact_unmerge():
                 restored -= self.get_delta_weight(adapter).to(restored.dtype)
             wrong = torch.nonzero((restored != before).view(-1)).squeeze(1)
             fix = (wrong, before.view(-1)[wrong])
+            if _offloaded(self):
+                fix = (fix[0].cpu(), fix[1].cpu())
         _merge_groups(self).append((len(group), fix))
 
     @wraps(original_unmerge)
@@ -83,9 +96,17 @@ def patch_peft_lora_exact_unmerge():
             self.merged_adapters = remaining
             if fix is not None:
                 wrong, values = fix
-                self.get_base_layer().weight.data.view(-1)[wrong] = values
+                weight = self.get_base_layer().weight.data.view(-1)
+                weight[wrong.to(weight.device)] = values.to(weight.device)
 
     merge._axolotl_exact_unmerge = True
     unmerge._axolotl_exact_unmerge = True
-    Linear.merge = merge
-    Linear.unmerge = unmerge
+    cls.merge = merge
+    cls.unmerge = unmerge
+
+
+def patch_peft_lora_exact_unmerge():
+    from peft.tuners.lora.layer import Embedding, Linear
+
+    for cls in (Linear, Embedding):
+        _patch_layer_class(cls)
