@@ -898,9 +898,12 @@ class AxolotlAsyncGRPOTrainer(
             local_min = ratio.min() if ratio.numel() else ratio.new_tensor(float("inf"))
             ratio_min = self.accelerator.gather(local_min.float().reshape(1)).min()
             metrics = self._metrics["train"]
-            metrics["ratio"].append(ratio_sum / global_count)
-            metrics["kl"].append(kl_sum / global_count)
-            metrics["entropy"].append(entropy_sum / global_count)
+            # Trainer-side scoring can leave a micro-batch no trained token on any
+            # rank. The count is reduced, so every rank skips these together.
+            if global_count:
+                metrics["ratio"].append(ratio_sum / global_count)
+                metrics["kl"].append(kl_sum / global_count)
+                metrics["entropy"].append(entropy_sum / global_count)
             if torch.isfinite(ratio_min):
                 metrics["sampling/ratio_min"].append(ratio_min.item())
             for name, count_below in zip(NAV_THRESHOLDS, vetoed, strict=True):
@@ -908,14 +911,18 @@ class AxolotlAsyncGRPOTrainer(
                     (count_below, negatives)
                 )
             if cispo:
-                metrics["sampling/capped_token_frac"].append(
-                    bounded_sums[0] / global_count
-                )
+                if global_count:
+                    metrics["sampling/capped_token_frac"].append(
+                        bounded_sums[0] / global_count
+                    )
             else:
-                for name, clipped in zip(
-                    ("low_mean", "high_mean", "region_mean"), bounded_sums, strict=True
-                ):
-                    metrics[f"clip_ratio/{name}"].append(clipped / global_count)
+                if global_count:
+                    for name, clipped in zip(
+                        ("low_mean", "high_mean", "region_mean"),
+                        bounded_sums,
+                        strict=True,
+                    ):
+                        metrics[f"clip_ratio/{name}"].append(clipped / global_count)
 
                 num_seq = int(segment_id.max()) + 1 if segment_id.numel() else 0
 
@@ -929,8 +936,13 @@ class AxolotlAsyncGRPOTrainer(
                 per_seq_high = seg_sum(is_high_clipped.float()) / seq_tokens
                 gathered_low_min = self.accelerator.gather(nanmin(per_seq_low))
                 gathered_high_max = self.accelerator.gather(nanmax(per_seq_high))
-                metrics["clip_ratio/low_min"].append(nanmin(gathered_low_min).item())
-                metrics["clip_ratio/high_max"].append(nanmax(gathered_high_max).item())
+                if global_count:
+                    metrics["clip_ratio/low_min"].append(
+                        nanmin(gathered_low_min).item()
+                    )
+                    metrics["clip_ratio/high_max"].append(
+                        nanmax(gathered_high_max).item()
+                    )
 
             if self.aux_loss_enabled:
                 gathered_aux = self.accelerator.reduce(
