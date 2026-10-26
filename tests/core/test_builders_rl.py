@@ -189,12 +189,17 @@ def rand_reward_func(prompts, completions) -> list[float]:
             if str(rewards_dir) in sys.path:
                 sys.path.remove(str(rewards_dir))
 
-    def test_async_grpo_training_arguments(self, grpo_cfg, model, tokenizer):
+    def test_async_grpo_training_arguments(
+        self, grpo_cfg, model, tokenizer, tmp_path, monkeypatch
+    ):
         from axolotl.core.trainers.grpo import (
             AxolotlAsyncGRPOConfig,
             AxolotlAsyncGRPOTrainer,
         )
 
+        rewards_dir = tmp_path / "rewards_test"
+        self._write_rewards_file(rewards_dir)
+        monkeypatch.syspath_prepend(str(rewards_dir))
         cfg = grpo_cfg
         cfg.rl = RLType.GDPO
         cfg.trl.update(
