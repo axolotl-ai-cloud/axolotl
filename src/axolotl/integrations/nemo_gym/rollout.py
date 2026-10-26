@@ -25,12 +25,9 @@ import uuid
 from typing import Any
 
 import aiohttp
-from trl.experimental.async_grpo.async_rollout_worker import (
-    TurnRecord,
-    _chain_to_sequences,
-)
 
 from axolotl.core.trainers.grpo.async_rollout import AxolotlRolloutLoop
+from axolotl.core.trainers.grpo.trl_compat import TurnRecord, chain_to_sequences
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -204,7 +201,7 @@ class NemoGymRolloutLoop(AxolotlRolloutLoop):
         if not turns:
             self._counters["nemo_gym/empty_rollout_total"] += 1
             return self._UNSCORABLE
-        sequences, tally = _chain_to_sequences(
+        sequences, tally = chain_to_sequences(
             turns, uuid.uuid4().hex, self._fork_threshold_tokens
         )
         completion_ids = [token for turn in turns for token in turn.output_ids]

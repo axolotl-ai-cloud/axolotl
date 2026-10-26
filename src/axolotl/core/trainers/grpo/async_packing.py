@@ -27,12 +27,11 @@ import contextlib
 import importlib.util
 from typing import Any
 
-from trl.experimental.async_grpo.async_grpo_trainer import (
+from axolotl.core.trainers.grpo.trl_compat import (
     FixedCountBatcher,
     TokenBudgetBatcher,
+    TreeRow,
 )
-from trl.experimental.async_grpo.packing import TreeRow
-
 from axolotl.monkeypatch.models.recurrent_support import (
     PACKING_PATCHED,
     RECURRENT_MODEL_TYPES,

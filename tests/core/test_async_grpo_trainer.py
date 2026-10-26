@@ -908,20 +908,20 @@ class TestTreeFlashAttn:
     def tree_flash_attn(self, monkeypatch):
         import kernels
 
-        from axolotl.core.trainers.grpo import async_trainer
+        from axolotl.core.trainers.grpo import trl_compat
 
         loaded = []
         monkeypatch.setattr(
             kernels, "get_kernel", lambda repo, **kw: loaded.append((repo, kw)) or repo
         )
-        async_trainer._tree_flash_attn.cache_clear()
-        yield async_trainer, loaded
-        async_trainer._tree_flash_attn.cache_clear()
+        trl_compat.tree_flash_attn.cache_clear()
+        yield trl_compat, loaded
+        trl_compat.tree_flash_attn.cache_clear()
 
     def test_falls_back_to_flash_attn2_where_flash_attn3_has_no_build(
         self, tree_flash_attn, monkeypatch
     ):
-        async_trainer, loaded = tree_flash_attn
+        trl_compat, loaded = tree_flash_attn
 
         def no_build():
             raise RuntimeError(
@@ -929,20 +929,18 @@ class TestTreeFlashAttn:
                 "the architectures of the build: 8.0, 9.0a"
             )
 
-        monkeypatch.setattr(async_trainer, "_trl_tree_flash_attn", no_build)
-        assert async_trainer._tree_flash_attn().kernel == (
-            "kernels-community/flash-attn2"
-        )
+        monkeypatch.setattr(trl_compat, "_trl_flash_attn", no_build)
+        assert trl_compat.tree_flash_attn().kernel == ("kernels-community/flash-attn2")
         assert loaded == [("kernels-community/flash-attn2", {"version": 3})]
 
     def test_keeps_flash_attn3_where_it_loads(self, tree_flash_attn, monkeypatch):
-        async_trainer, loaded = tree_flash_attn
-        monkeypatch.setattr(async_trainer, "_trl_tree_flash_attn", lambda: "fa3")
-        assert async_trainer._tree_flash_attn() == "fa3"
+        trl_compat, loaded = tree_flash_attn
+        monkeypatch.setattr(trl_compat, "_trl_flash_attn", lambda: "fa3")
+        assert trl_compat.tree_flash_attn() == "fa3"
         assert loaded == []
 
     def test_flash_attn2_gets_values_as_wide_as_queries(self):
-        from axolotl.core.trainers.grpo.async_trainer import _WideValues
+        from axolotl.core.trainers.grpo.trl_compat import _WideValues
 
         seen = []
 
@@ -965,19 +963,19 @@ class TestTreeFlashAttn:
 
 
 def test_flops_estimate_reads_unknown_moe_layouts_as_dense(monkeypatch):
-    from axolotl.core.trainers.grpo import async_trainer
+    from axolotl.core.trainers.grpo import trl_compat
 
     def trl_estimate(config, seq_len):
         if config.num_experts_per_tok is not None:
             return config.decoder_sparse_step  # what TRL reads for MoE configs
         return config.hidden_size * seq_len
 
-    monkeypatch.setattr(async_trainer, "_trl_flops_per_token", trl_estimate)
+    monkeypatch.setattr(trl_compat, "_trl_flops_per_token", trl_estimate)
     # Nemotron-H: num_experts_per_tok without the Qwen-MoE fields
     hybrid = types.SimpleNamespace(num_experts_per_tok=2, hidden_size=8)
-    assert async_trainer._flops_per_token(hybrid, 3) == 24
+    assert trl_compat.flops_per_token(hybrid, 3) == 24
     moe = types.SimpleNamespace(num_experts_per_tok=2, decoder_sparse_step=1)
-    assert async_trainer._flops_per_token(moe, 3) == 1
+    assert trl_compat.flops_per_token(moe, 3) == 1
 
 
 class TestTreeAttentionSwitch:

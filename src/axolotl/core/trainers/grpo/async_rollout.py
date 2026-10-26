@@ -15,16 +15,17 @@ import warnings
 from typing import Any
 
 import numpy as np
-from trl.chat_template_utils import add_response_schema
-from trl.experimental.async_grpo.async_rollout_worker import (
+
+from axolotl.core.trainers.grpo.trl_compat import (
+    AsyncRolloutLoop,
     AsyncRolloutWorker,
     RolloutGroup,
     RolloutSample,
     TrainingSequence,
-    _AsyncRolloutLoop,
+    add_response_schema,
+    is_async_callable,
+    print_prompt_completions_sample,
 )
-from trl.trainer.utils import is_async_callable, print_prompt_completions_sample
-
 from axolotl.utils.logging import get_logger
 from axolotl.utils.reward_worker import reward_worker_main
 
@@ -165,7 +166,7 @@ def _decode_as_message(tokenizer, ids, *args, **kwargs) -> dict[str, str]:
     }
 
 
-class AxolotlRolloutLoop(_AsyncRolloutLoop):
+class AxolotlRolloutLoop(AsyncRolloutLoop):
     """TRL's rollout loop with GRPOTrainer's reward options and parallel scoring.
 
     Subclasses that score each rollout themselves set ``_provides_rollout_reward``
