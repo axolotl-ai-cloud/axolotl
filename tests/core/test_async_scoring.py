@@ -562,7 +562,7 @@ def test_collate_splits_rows_into_equal_numbers_of_budgeted_chunks():
     assert [int(chunk["sizes"][1, 0]) for chunk in chunks] == [5, 1]
 
 
-def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch, **overrides):
+def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch, passes=1, **overrides):
     from peft import LoraConfig, get_peft_model
 
     monkeypatch.setattr(
@@ -588,14 +588,13 @@ def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch, **overrides):
     loop = rollout_loop(tokenizer, rows, max_tokens=16, adaptive_max_tokens=False)
     samples = [
         s
-        for group_id, row in enumerate(rows)
+        for group_id, row in enumerate(rows * passes)
         for s in run_group(loop, group_id, row, sample, 4)
     ]
     assert all(np.isnan(s.advantage) for s in samples)
 
     args = AxolotlAsyncEBFTConfig(
         output_dir=str(tmp_path),
-        max_steps=2,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=2,
         num_generations=4,
@@ -609,7 +608,7 @@ def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch, **overrides):
         ebft_feature_layers=LAYER_FRACTIONS,
         ebft_embed_method="mean_pooling",
         ebft_diversity_coef=0.5,
-        **{"token_budget": 0, **overrides},
+        **{"max_steps": 2, "token_budget": 0, **overrides},
     )
     trainer = AxolotlAsyncEBFTTrainer(
         model,
@@ -712,6 +711,35 @@ def test_steps_with_no_trainable_samples_take_a_zero_loss(
     assert all(log["sample/excluded_frac"] == 1.0 for log in step_logs)
     assert not any("ratio" in log or "kl" in log for log in step_logs)
     # The cold sync only: neither step changed the weights.
+    assert trainer.weight_transfer.syncs == 1
+
+
+def test_constant_rewards_fail_the_run_after_a_pass_over_the_prompts(
+    tokenizer, tmp_path, monkeypatch
+):
+    """Scoring takes every sample out of the loss, so each step trains nothing. A
+    pass over the 8 prompts in such steps fails the run, as dropped rollouts do,
+    rather than stepping until max_steps."""
+    group_rewards = EBFTScorer.group_rewards
+
+    def constant(self, *args, **kwargs):
+        rewards, metrics = group_rewards(self, *args, **kwargs)
+        return torch.ones_like(rewards), metrics
+
+    monkeypatch.setattr(EBFTScorer, "group_rewards", constant)
+    trainer = _ebft_cpu_trainer(
+        tokenizer, tmp_path, monkeypatch, passes=2, max_steps=50
+    )
+
+    def drained(stale_after_s):
+        raise RuntimeError("waited for rollouts past the stub's")
+
+    trainer.rollout_worker.check_health = drained
+    with pytest.raises(RuntimeError, match=": 8 had a zero advantage"):
+        trainer.train()
+    # Steps 1-4 hold the 8 groups. Step 5 was planned before step 4 was scored, so
+    # the stream stops while planning step 6.
+    assert trainer.state.global_step == 5
     assert trainer.weight_transfer.syncs == 1
 
 

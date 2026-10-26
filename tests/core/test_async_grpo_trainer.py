@@ -119,6 +119,15 @@ class TestRolloutProgress:
         assert "raise token_budget" in stop.value.error
         assert progress.dropped == {"oversize": 3, "zero_adv": 1}
 
+    def test_scoring_exclusions_stall_at_the_streams_next_check(self):
+        progress = _progress(stall_groups=2)
+        progress.train([0])
+        progress.exclude(0, "zero_adv")
+        progress.exclude(1, "truncated")
+        assert progress.stop is None
+        with pytest.raises(RolloutStop, match="1 had a zero advantage, 1 were"):
+            progress.check()
+
     def test_a_drop_that_consumes_the_epochs_ends_the_stream(self):
         consumed: set[int] = set()
         progress = RolloutProgress(
