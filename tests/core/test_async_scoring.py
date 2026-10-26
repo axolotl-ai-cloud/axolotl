@@ -27,6 +27,7 @@ from axolotl.core.trainers.ebft.async_trainer import (
     feature_layer_indices,
 )
 from axolotl.core.trainers.ebft.trainer import EBFTMixin
+from axolotl.core.trainers.grpo.async_progress import RolloutProgress, RolloutStop
 from axolotl.core.trainers.grpo.async_rollout import SCORE_PAYLOAD
 from axolotl.core.trainers.grpo.async_scoring import (
     GroupedQueue,
@@ -405,7 +406,16 @@ class TestGroupedQueue:
 
 class TestStepPlanner:
     @staticmethod
-    def _plan(groups, steps, *, num_processes=1, token_budget=0, per_row=2, n=None):
+    def _plan(
+        groups,
+        steps,
+        *,
+        num_processes=1,
+        token_budget=0,
+        per_row=2,
+        n=None,
+        progress=None,
+    ):
         metrics = defaultdict(list)
         planner = StepPlanner(
             iter([s for group in groups for s in group]),
@@ -415,6 +425,7 @@ class TestStepPlanner:
             samples_per_row=per_row,
             scorers=[_ReferenceScorer()],
             metrics=metrics,
+            progress=progress,
         )
         return list(itertools.islice(iter(planner), n)), metrics
 
@@ -473,14 +484,33 @@ class TestStepPlanner:
             [_pending(0, 30, 2), _pending(0, 30, 2, offset=50)],
             *[[_pending(g, 5, 2, offset=10 * g) for _ in range(2)] for g in (1, 2, 3)],
         ]
-        micro_batches, metrics = self._plan(groups, steps=1, token_budget=16, n=1)
+        progress = RolloutProgress(set(), epochs_done=lambda: False, stall_groups=4)
+        micro_batches, metrics = self._plan(
+            groups, steps=1, token_budget=16, n=1, progress=progress
+        )
         assert sum(metrics["batch/dropped_oversize_group_total"]) == 1
         assert {
             s["group_id"] for mb in micro_batches for row in mb for s in row.samples
         } == {1, 2}
+        assert progress.consumed == {0} and progress.dropped == {"oversize": 1}
+
+    def test_stalls_when_no_group_fits_a_step(self):
+        """Groups too long for any step are consumed, and a pass of them ends the
+        stream instead of dropping rollouts forever."""
+        groups = [
+            [
+                _pending(g, 30, 2, offset=100 * g),
+                _pending(g, 30, 2, offset=100 * g + 50),
+            ]
+            for g in range(6)
+        ]
+        progress = RolloutProgress(set(), epochs_done=lambda: False, stall_groups=5)
+        with pytest.raises(RolloutStop, match="5 did not fit token_budget"):
+            self._plan(groups, steps=1, token_budget=16, progress=progress)
+        assert progress.consumed == set(range(5))
 
 
-def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch):
+def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch, **overrides):
     from peft import LoraConfig, get_peft_model
 
     monkeypatch.setattr(
@@ -520,7 +550,6 @@ def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch):
         learning_rate=1e-3,
         bf16=False,
         use_cpu=True,
-        token_budget=0,
         report_to=[],
         save_strategy="no",
         logging_steps=1,
@@ -528,6 +557,7 @@ def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch):
         ebft_feature_layers=LAYER_FRACTIONS,
         ebft_embed_method="mean_pooling",
         ebft_diversity_coef=0.5,
+        **{"token_budget": 0, **overrides},
     )
     trainer = AxolotlAsyncEBFTTrainer(
         model,
@@ -537,7 +567,7 @@ def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch):
         rollout_worker=StubWorker(samples),
         weight_transfer=StubTransfer(),
     )
-    assert isinstance(trainer.rollout_queue, GroupedQueue)
+    assert isinstance(trainer.rollout_queue._inner, GroupedQueue)
     return trainer
 
 
@@ -587,6 +617,20 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
         assert len(prompts) == len(completions) == len(advantages) == 8
         assert list(rewards) == ["ebft"] and len(rewards["ebft"]) == 8
         assert np.isfinite(advantages).all() and np.isfinite(rewards["ebft"]).all()
+
+
+def test_groups_too_long_for_any_step_fail_the_run(tokenizer, tmp_path, monkeypatch):
+    """No group fits token_budget: a pass over the prompts fails the run, naming the
+    cause, where the step planner used to drop rollouts forever."""
+    trainer = _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch, token_budget=8)
+
+    def drained(stale_after_s):
+        raise RuntimeError("waited for rollouts past the run's prompts")
+
+    trainer.rollout_worker.check_health = drained
+    with pytest.raises(RuntimeError, match=": 8 did not fit token_budget"):
+        trainer.train()
+    assert trainer.state.global_step == 0
 
 
 def test_steps_with_no_trainable_samples_take_a_zero_loss(

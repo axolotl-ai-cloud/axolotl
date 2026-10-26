@@ -36,6 +36,10 @@ from trl.experimental.async_grpo.packing import TreeRow
 from trl.trainer.utils import pad
 
 from axolotl.core.trainers.grpo.async_packing import ChainRow
+from axolotl.core.trainers.grpo.async_progress import (
+    STOP_KEY,
+    RolloutProgress,
+)
 from axolotl.core.trainers.grpo.async_rollout import (
     SCORE_PAYLOAD,
     compute_group_advantages,
@@ -250,6 +254,7 @@ class StepPlanner(torch.utils.data.IterableDataset):
         metrics: dict,
         share_prefixes: bool = True,
         stop_token_ids: frozenset[int] | None = None,
+        progress: RolloutProgress | None = None,
     ):
         self.dataset = dataset
         self.num_processes = num_processes
@@ -260,6 +265,7 @@ class StepPlanner(torch.utils.data.IterableDataset):
         self.metrics = metrics
         self.row_cls = ScoredRow if share_prefixes else ScoredChainRow
         self.stop_token_ids = stop_token_ids
+        self.progress = progress
         self.reward_names: list[str] | None = None
         self._uids = itertools.count()
 
@@ -282,6 +288,8 @@ class StepPlanner(torch.utils.data.IterableDataset):
                 )
                 self.metrics["batch/dropped_oversize_group_total"].append(1.0)
                 rows = self._new_rows()
+                if self.progress is not None:
+                    self.progress.drop(group.samples[0]["group_id"], "oversize")
                 continue
             yield from self._emit(accepted)
             accepted, rows, pending = [], self._new_rows(), group
@@ -392,6 +400,8 @@ class ScoringCollator(TraceCollator):
 
     def torch_call(self, examples: list[Any]) -> dict[str, Any]:
         batch = super().torch_call(examples)
+        if STOP_KEY in batch:
+            return batch
         (rows,) = examples
         per_row: dict[str, tuple[list[torch.Tensor], float]] = {
             "score_uid": ([], -1),

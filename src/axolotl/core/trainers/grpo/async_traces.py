@@ -13,7 +13,8 @@ from typing import Any
 
 import numpy as np
 import torch
-from trl.experimental.async_grpo.async_grpo_trainer import DataCollatorForRollout
+
+from axolotl.core.trainers.grpo.async_progress import STOP_KEY, ProgressCollator
 
 TRACE_ID = "trace_id"
 
@@ -41,14 +42,14 @@ class TraceRecorder:
 
 
 @dataclass
-class TraceCollator(DataCollatorForRollout):
+class TraceCollator(ProgressCollator):
     """TRL's collator that records each micro-batch's samples for the trace hook."""
 
     recorder: TraceRecorder | None = None
 
     def torch_call(self, examples: list[Any]) -> dict[str, Any]:
         batch = super().torch_call(examples)
-        if self.recorder is not None:
+        if self.recorder is not None and STOP_KEY not in batch:
             (rows,) = examples
             self.recorder.record(
                 batch,
