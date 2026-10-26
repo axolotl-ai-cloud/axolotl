@@ -289,6 +289,11 @@ class SampleFilterQueue:
     would be masked out of the loss anyway. Dropped samples still count as consumed
     prompt groups, so epoch-bounded training and checkpoint resume stay keyed on the
     prompts that were generated rather than on those that were trained.
+
+    TRL checks the epoch bound only when an optimizer step ends, and the rollout
+    worker cycles the prompts forever. Once the run's prompt groups are consumed,
+    samples are therefore passed on with a zero advantage instead of dropped, so the
+    step in progress completes, without gradient from them, and ends the run.
     """
 
     def __init__(
@@ -299,12 +304,14 @@ class SampleFilterQueue:
         *,
         skip_zero_advantage: bool,
         stop_token_ids: frozenset[int] | None,
+        epoch_done: Callable[[], bool] = lambda: False,
     ):
         self._inner = inner
         self._consumed_groups = consumed_groups
         self._metrics = metrics
         self._skip_zero_advantage = skip_zero_advantage
         self._stop_token_ids = stop_token_ids
+        self._epoch_done = epoch_done
 
     def qsize(self) -> int:
         return self._inner.qsize()
@@ -327,6 +334,9 @@ class SampleFilterQueue:
             )
             sample = self._inner.get(timeout=remaining)
             reason = self._drop_reason(sample)
+            if reason is not None and self._epoch_done():
+                sample.advantage = 0.0
+                reason = None
             self._metrics["sample/dropped_frac"].append(
                 (float(reason is not None), 1.0)
             )
@@ -705,7 +715,14 @@ class AxolotlAsyncGRPOTrainer(
                 self._metrics["train"],
                 skip_zero_advantage=args.skip_zero_advantage_batches,
                 stop_token_ids=stop_token_ids,
+                epoch_done=self._epochs_consumed,
             )
+
+    def _epochs_consumed(self) -> bool:
+        """Whether ``num_train_epochs`` passes over the prompts were consumed."""
+        target = self._epoch_stop_groups
+        consumed = self._groups_before_resume + len(self._trained_groups)
+        return target is not None and consumed >= target
 
     def _stop_token_ids(self) -> frozenset[int]:
         return frozenset([*self.eos_token_ids, self.processing_class.pad_token_id])

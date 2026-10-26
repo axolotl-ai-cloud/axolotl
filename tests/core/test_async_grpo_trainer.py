@@ -121,6 +121,31 @@ class TestSampleFilterQueue:
         assert consumed == {3}
         assert metrics["sample/dropped_truncated_total"] == [1.0]
 
+    def test_passes_samples_on_without_signal_once_the_epochs_are_consumed(self):
+        inner = queue.Queue()
+        for sample in [
+            _sample(0, 0.0),
+            _sample(1, 0.0),
+            _sample(2, 1.0, last_token=9),
+            _sample(3, 0.5),
+        ]:
+            inner.put(sample)
+        consumed: set[int] = set()
+        filtered = SampleFilterQueue(
+            inner,
+            consumed,
+            defaultdict(list),
+            skip_zero_advantage=True,
+            stop_token_ids=frozenset({2}),
+            epoch_done=lambda: len(consumed) >= 1,
+        )
+        # Group 0 completes the epochs; later drops would leave the last step unfilled.
+        assert filtered.get(timeout=1).group_id == 1
+        truncated = filtered.get(timeout=1)
+        assert (truncated.group_id, truncated.advantage) == (2, 0.0)
+        assert filtered.get(timeout=1).advantage == 0.5
+        assert consumed == {0}
+
     def test_timeout_spans_dropped_samples(self):
         filtered, _, _ = self._filter([_sample(0, 0.0)])
         start = time.monotonic()
@@ -596,8 +621,9 @@ class TestMergedWeightSync:
             torch.testing.assert_close(tensor, expected[name], rtol=0, atol=0)
 
 
-def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, **args_kwargs):
-    """A SmolLM2 LoRA trainer on CPU over 16 groups of 4 stub rollouts.
+def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, num_groups=16, **args_kwargs):
+    """A SmolLM2 LoRA trainer on CPU over 16 prompts and ``num_groups`` groups of 4
+    stub rollouts.
 
     ``old_log_probs(g)`` sets the sampled log-probabilities of a group's ``g``-th
     completion; group ids divisible by 4 carry no reward signal.
@@ -622,7 +648,7 @@ def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, **args_kwargs):
     )
     rng = np.random.default_rng(0)
     samples = []
-    for group_id in range(16):
+    for group_id in range(num_groups):
         for g in range(4):
             completion = [*rng.integers(100, 1000, size=4 + g), tokenizer.eos_token_id]
             ids = np.asarray(prompt_ids + completion, dtype=np.int64)
@@ -644,7 +670,6 @@ def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, **args_kwargs):
 
     args = AxolotlAsyncGRPOConfig(
         output_dir=str(tmp_path),
-        max_steps=3,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=2,
         learning_rate=1e-4,
@@ -654,7 +679,7 @@ def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, **args_kwargs):
         report_to=[],
         save_strategy="no",
         gradient_checkpointing=False,
-        **args_kwargs,
+        **{"max_steps": 3, **args_kwargs},
     )
     transfer = StubTransfer()
     worker = StubWorker(samples)
@@ -668,6 +693,45 @@ def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, **args_kwargs):
         weight_transfer=transfer,
     )
     return trainer, worker, transfer, samples
+
+
+def test_filtering_every_sample_still_ends_the_epochs(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
+):
+    """No group has a reward signal, yet consuming the prompts once ends the run.
+
+    The stub worker holds a second pass over the prompts, as TRL's worker cycles them;
+    waiting for more rollouts than that fails the test instead of hanging it.
+    """
+    trainer, worker, _, samples = _cpu_trainer(
+        tmp_path,
+        monkeypatch,
+        old_log_probs=lambda g: 0.0,
+        num_groups=32,
+        max_steps=-1,
+        num_train_epochs=1,
+    )
+    for sample in samples:
+        sample.advantage = 0.0
+    before = {
+        n: p.detach().clone()
+        for n, p in trainer.model.named_parameters()
+        if p.requires_grad
+    }
+
+    def drained(stale_after_s):
+        raise RuntimeError("waited for rollouts past the run's prompts")
+
+    worker.check_health = drained
+    trainer.train()
+
+    assert trainer.state.global_step == 1
+    assert set(range(16)) <= trainer._trained_groups
+    assert all(
+        torch.equal(before[n], p.detach())
+        for n, p in trainer.model.named_parameters()
+        if p.requires_grad
+    )
 
 
 def test_trains_axolotl_loaded_lora_model_on_cpu(
