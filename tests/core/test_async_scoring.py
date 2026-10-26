@@ -480,29 +480,12 @@ class TestStepPlanner:
         } == {1, 2}
 
 
-def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
-    """Pending EBFT rollouts are planned, scored on the trainer and trained on."""
+def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch):
     from peft import LoraConfig, get_peft_model
-
-    from axolotl.integrations.base import PluginManager
-    from axolotl.utils.dict import DictDefault
 
     monkeypatch.setattr(
         async_grpo_trainer, "get_peak_flops_per_device", lambda *a, **k: None
     )
-    calls = []
-
-    class Plugin:
-        def on_rollouts_scored(self, cfg, trainer, *args):
-            calls.append(args)
-
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: None
-
-    plugin = Plugin()
-    manager = PluginManager.get_instance()
-    monkeypatch.setitem(manager.plugins, "recorder", plugin)
-    monkeypatch.setattr(manager, "_cfg", DictDefault({"rl": "ebft"}))
     model = get_peft_model(
         tiny_model(tokenizer).train(),
         LoraConfig(r=8, target_modules=["q_proj", "v_proj"]),
@@ -555,16 +538,40 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
         weight_transfer=StubTransfer(),
     )
     assert isinstance(trainer.rollout_queue, GroupedQueue)
-    before = {
+    return trainer
+
+
+def _trainable(trainer):
+    return {
         n: p.detach().clone()
         for n, p in trainer.model.named_parameters()
         if p.requires_grad
     }
+
+
+def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
+    """Pending EBFT rollouts are planned, scored on the trainer and trained on."""
+    from axolotl.integrations.base import PluginManager
+    from axolotl.utils.dict import DictDefault
+
+    calls = []
+
+    class Plugin:
+        def on_rollouts_scored(self, cfg, trainer, *args):
+            calls.append(args)
+
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+
+    plugin = Plugin()
+    manager = PluginManager.get_instance()
+    monkeypatch.setitem(manager.plugins, "recorder", plugin)
+    monkeypatch.setattr(manager, "_cfg", DictDefault({"rl": "ebft"}))
+    trainer = _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch)
+    before = _trainable(trainer)
     trainer.train()
 
-    trained = {
-        n: p.detach() for n, p in trainer.model.named_parameters() if p.requires_grad
-    }
+    trained = _trainable(trainer)
     assert all(not torch.equal(before[n], p) for n, p in trained.items())
     assert all(torch.isfinite(p).all() for p in trained.values())
     assert {0, 1, 2, 3} <= trainer._trained_groups
@@ -580,6 +587,30 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
         assert len(prompts) == len(completions) == len(advantages) == 8
         assert list(rewards) == ["ebft"] and len(rewards["ebft"]) == 8
         assert np.isfinite(advantages).all() and np.isfinite(rewards["ebft"]).all()
+
+
+def test_steps_with_no_trainable_samples_take_a_zero_loss(
+    tokenizer, tmp_path, monkeypatch
+):
+    """Constant rewards zero every advantage, so scoring excludes every token."""
+    group_rewards = EBFTScorer.group_rewards
+
+    def constant(self, *args, **kwargs):
+        rewards, metrics = group_rewards(self, *args, **kwargs)
+        return torch.ones_like(rewards), metrics
+
+    monkeypatch.setattr(EBFTScorer, "group_rewards", constant)
+    trainer = _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch)
+    before = _trainable(trainer)
+    trainer.train()
+
+    assert trainer.state.global_step == 2
+    trained = _trainable(trainer)
+    assert all(torch.equal(before[n], p) for n, p in trained.items())
+    step_logs = [log for log in trainer.state.log_history if "loss" in log]
+    assert [log["loss"] for log in step_logs] == [0.0, 0.0]
+    assert all(log["sample/excluded_frac"] == 1.0 for log in step_logs)
+    assert not any("ratio" in log or "kl" in log for log in step_logs)
 
 
 def test_ebft_strategy_routes_async_prefetch_to_trl(tmp_path):
