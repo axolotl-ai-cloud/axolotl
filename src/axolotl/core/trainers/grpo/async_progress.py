@@ -60,6 +60,10 @@ class RolloutProgress:
     ``consumed`` is the trainer's set TRL counts epochs and resumes from: a group
     counts once it trained or its rollouts were dropped. ``stall_groups`` bounds how
     many groups may be consumed in a row without one training.
+
+    Only rank 0 reports, from the rollout stream and, with trainer-side scoring,
+    from ``score_step``; the stream raises the stop, so that it reaches every rank
+    as a stop micro-batch.
     """
 
     def __init__(
@@ -82,20 +86,36 @@ class RolloutProgress:
         if group_id in self.consumed:
             return
         self.consumed.add(group_id)
-        self.dropped[reason] += 1
-        self._since_trained[reason] += 1
-        if self._stall_groups and self._since_trained.total() >= self._stall_groups:
-            self._raise(RolloutStop(self._stall_message()))
+        self._untrained(reason)
+        self.check()
         if self._epochs_done():
             self._raise(RolloutStop())
 
+    def exclude(self, group_id: int, reason: str) -> None:
+        """Count a collated group whose every sample scoring took out of the loss.
+
+        Runs outside the stream, so the stall it may complete is raised by the
+        stream's next ``check``.
+        """
+        self.consumed.add(group_id)
+        self._untrained(reason)
+
+    def check(self) -> None:
+        """End the stream when a full pass over the prompts trained no group."""
+        if self._stall_groups and self._since_trained.total() >= self._stall_groups:
+            self._raise(RolloutStop(self._stall_message()))
+
     def train(self, group_ids: Iterable[int]) -> None:
-        """Record groups collated into a micro-batch."""
+        """Record groups that trained."""
         group_ids = set(group_ids)
         if group_ids:
             self.consumed.update(group_ids)
             self.trained.update(group_ids)
             self._since_trained.clear()
+
+    def _untrained(self, reason: str) -> None:
+        self.dropped[reason] += 1
+        self._since_trained[reason] += 1
 
     def _raise(self, stop: RolloutStop) -> None:
         self.stop = stop

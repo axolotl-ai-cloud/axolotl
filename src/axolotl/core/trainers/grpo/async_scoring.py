@@ -617,6 +617,17 @@ def score_step(
         for uid in records
         if (skip_zero and advantage[uid] == 0.0) or (mask_truncated and records[uid][2])
     }
+    progress = getattr(trainer, "_progress", None)
+    if progress is not None and trainer.accelerator.is_main_process:
+        progress.train(
+            group_id
+            for group_id, uids in members.items()
+            if any(uid not in excluded for uid in uids)
+        )
+        for group_id, uids in members.items():
+            if all(uid in excluded for uid in uids):
+                zero = skip_zero and any(advantage[uid] == 0.0 for uid in uids)
+                progress.exclude(group_id, "zero_adv" if zero else "truncated")
     counts = []
     for batch in batches:
         uids = batch["score_uid"][0]
