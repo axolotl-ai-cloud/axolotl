@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """The Mamba2 (SSD) component: Mamba2, Nemotron-H, Bamba, Granite-MoE-Hybrid.
 
 mamba-ssm's kernels reset their state at ``seq_idx`` boundaries but take initial

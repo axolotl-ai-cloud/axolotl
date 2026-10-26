@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """The prefix trie of a tree-packed row: its segments and their root-to-segment paths.
 
 A tree-packed row (TRL's ``TreeRow``) lays the segments of a prefix trie out

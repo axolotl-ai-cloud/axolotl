@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Mamba2 models on tree rows score every sample as it scores alone: through
 transformers' PyTorch reference (unfused, every path as one padded batch) and through
 kernels that reset at ``seq_idx`` (the fused mixer over every path in one call)."""

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """The package imports without axolotl, transformers or TRL."""
 
 import subprocess

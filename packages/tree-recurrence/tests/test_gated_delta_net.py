@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Qwen3.5 (Gated DeltaNet + attention) on tree rows scores every sample as it scores
 alone, through transformers' own forward with the module functions hooked."""
 

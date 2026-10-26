@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """The Gated DeltaNet component (Qwen3.5, Qwen3.5-MoE, Qwen3-Next, OLMo-Hybrid).
 
 FLA's ``chunk_gated_delta_rule`` takes per-sequence initial states with varlen

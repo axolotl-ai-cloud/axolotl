@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """The TRL adapter against TRL's own packing: kwargs from collated batches in either
 format, chain rows and batchers, and ``layer_types`` hidden from TRL's check."""
 

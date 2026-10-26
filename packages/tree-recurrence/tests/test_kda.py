@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Kimi Delta Attention on tree rows: a layer following trees through its own
 forward (as an in-tree model does), with FLA's API run by the PyTorch reference."""
 

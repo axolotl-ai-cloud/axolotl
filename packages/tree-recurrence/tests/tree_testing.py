@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Tree packing for tests: a packer laying rows out as TRL's ``TreeRow.pack`` does,
 a PyTorch stand-in for TRL's tree attention, and a check that a model scores
 tree-packed samples as it scores them alone."""

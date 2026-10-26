@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """PyTorch references of the kernels the components run, with the kernels' APIs.
 
 Each takes the boundaries its kernel takes (``cu_seqlens`` or ``seq_idx``) and

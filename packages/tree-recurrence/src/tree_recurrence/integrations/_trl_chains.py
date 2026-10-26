@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """TRL rows and batchers that never share tokens between samples."""
 
 from __future__ import annotations

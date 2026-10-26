@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """How each family's kernels run on a tree, independent of the model code."""
 
 from tree_recurrence.components.conv import channels_first_conv, fla_conv

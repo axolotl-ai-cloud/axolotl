@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Which recurrent mixers can follow a tree, and how they are made to.
 
 A ``TreeFamily`` names the recurrent mixer classes of some model types. Its

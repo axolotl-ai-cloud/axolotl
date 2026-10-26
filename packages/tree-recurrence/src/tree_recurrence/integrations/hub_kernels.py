@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Run transformers' short causal convs on the causal-conv1d hub kernel.
 
 transformers binds a modeling module's ``causal_conv1d_fn`` and

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Prefix-shared ("tree") packing for recurrent and linear-attention layers.
 
 Samples that share a prefix are packed into one row as a trie, so the prefix is

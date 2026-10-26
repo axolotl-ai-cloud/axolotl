@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Reversible replacement of module functions and class methods.
 
 A hook calls the attribute it replaced through ``Hook.original`` at call time, so

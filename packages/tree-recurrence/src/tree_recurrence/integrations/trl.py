@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Tree packing with TRL's experimental ``AsyncGRPOTrainer``.
 
 TRL packs each rank's samples into a prefix trie (``TreeRow``) and passes the model

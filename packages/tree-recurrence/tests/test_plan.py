@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """TreePlan from either TRL tree format, with or without collation padding."""
 
 import numpy as np

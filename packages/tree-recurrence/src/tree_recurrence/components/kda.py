@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """The Kimi Delta Attention component (Kimi-Linear, Bailing hybrid).
 
 FLA's ``chunk_kda`` takes per-sequence initial states with varlen boundaries and

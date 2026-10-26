@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Make transformers' recurrent mixers follow tree-packed rows.
 
 ``install(model)`` hooks the modeling module of every recurrent mixer in ``model`` at

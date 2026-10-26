@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """What ``install`` reports for models with and without recurrent layers."""
 
 import pytest

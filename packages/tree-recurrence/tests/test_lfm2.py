@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """LFM2 short-conv models on tree rows score every sample as it scores alone."""
 
 import importlib

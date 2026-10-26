@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Binding the causal-conv1d hub kernel beneath the tree hooks."""
 
 import types

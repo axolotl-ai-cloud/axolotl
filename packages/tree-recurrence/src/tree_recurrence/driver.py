@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Run a short causal conv or a recurrence over a tree-packed row.
 
 ``tree_conv`` runs every segment with its path history prepended, in one call.

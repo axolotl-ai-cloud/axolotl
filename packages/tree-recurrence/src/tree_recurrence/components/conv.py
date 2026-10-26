@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """Short causal convs as ``ConvFn``s for ``tree_conv``.
 
 ``tree_conv`` puts each segment's path history in front of it, so the conv needs

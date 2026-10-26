@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Axolotl AI
+
 """The gated short-conv component (LFM2, LFM2-MoE).
 
 LFM2's recurrent layers are a gated short causal conv with no scan, so a tree row
