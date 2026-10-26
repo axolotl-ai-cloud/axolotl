@@ -120,13 +120,9 @@ def assert_tree_rows_match_alone(model, samples, on_row=None):
     ``on_row(row_tokens)`` runs after each packed forward. Returns the trie's and
     the chains' row lengths.
     """
+    from tree_recurrence.integrations.trl import ChainRow, sample_boundaries
     from trl.experimental.async_grpo import packing
     from trl.experimental.async_grpo.packing import TreeRow
-
-    from axolotl.core.trainers.grpo.async_packing import (
-        ChainRow,
-        sample_boundaries,
-    )
 
     packing.register_tree_attention()
 

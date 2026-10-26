@@ -50,14 +50,10 @@ except ImportError as err:
         "Please run `pip install fla-core==0.5.2 flash-linear-attention==0.5.2`"
     ) from err
 
+from tree_recurrence import mark_tree_forward, tree_conv, tree_plan, tree_scan
+from tree_recurrence.components.kda import kda_scan, short_convolution
+
 from axolotl.model_support.kimi_linear.configuration_kimi import KimiLinearConfig
-from axolotl.monkeypatch.models.kda_tree import KDA, kda_scan, short_convolution
-from axolotl.monkeypatch.models.recurrent_tree import (
-    mark_tree_forward,
-    tree_conv,
-    tree_plan,
-    tree_scan,
-)
 from axolotl.monkeypatch.utils import cu_seqlens_from_position_ids, get_unpad_data
 
 assert version.parse(transformers.__version__) >= version.parse("4.56.0"), (
@@ -622,7 +618,7 @@ class KimiDeltaAttention(nn.Module):
         v = rearrange(v, "... (h d) -> ... h d", d=self.head_dim)
 
         if tree is not None:
-            o = tree_scan(kda_scan(chunk_kda), [q, k, v, g, beta], tree, KDA)
+            o = tree_scan(kda_scan(chunk_kda), [q, k, v, g, beta], tree)
         elif mode == "chunk":
             o, recurrent_state = chunk_kda(
                 q=q,

@@ -9,8 +9,9 @@ from async_test_utils import (
     branching_samples,
     reference_tree_attention,
 )
+from tree_recurrence import uninstall
 
-from axolotl.core.trainers.grpo.async_packing import shares_prefixes
+from axolotl.monkeypatch.models.tree_packing import packing_support
 
 
 def _segments(seq_idx, tokens):
@@ -71,43 +72,12 @@ def reference_scan(
     return torch.stack(outs)[None].to(x.dtype)
 
 
-def _patch_nemotron_h(modeling):
-    from axolotl.monkeypatch.models.nemotron_h.modeling import (
-        patch_nemotron_h_modeling_packing,
-    )
-
-    patch_nemotron_h_modeling_packing(kernels_enabled=True)
-
-
-def _patch_bamba(modeling):
-    from axolotl.monkeypatch.models.mamba_utils import patch_model_forward_seq_idx
-
-    patch_model_forward_seq_idx(modeling.BambaModel)
-
-
-def _patch_granitemoehybrid(modeling):
-    from axolotl.monkeypatch.models.granitemoehybrid.modeling import (
-        patch_granitemoehybrid_modeling_packing,
-    )
-
-    patch_granitemoehybrid_modeling_packing()
-
-
-def _patch_mamba2(modeling):
-    from axolotl.monkeypatch.models.mamba.modeling import (
-        patch_mamba2_modeling_packing,
-    )
-
-    patch_mamba2_modeling_packing(kernels_enabled=True)
-
-
 MAMBA2 = {"mamba_n_heads": 4, "mamba_d_head": 16, "mamba_n_groups": 2}
 MAMBA2.update(mamba_d_state=8, mamba_d_conv=4, mamba_expand=2, mamba_chunk_size=8)
 ATTENTION = {"num_attention_heads": 2, "num_key_value_heads": 1}
-# model type -> (packing patch, classes it patches, causal LM, config kwargs)
+# model type -> (classes whose forward a test may touch, causal LM, config kwargs)
 FAMILIES = {
     "nemotron_h": (
-        _patch_nemotron_h,
         ("NemotronHBlock", "NemotronHMamba2Mixer"),
         "NemotronHForCausalLM",
         {
@@ -129,7 +99,6 @@ FAMILIES = {
         },
     ),
     "bamba": (
-        _patch_bamba,
         ("BambaModel", "BambaMixer"),
         "BambaForCausalLM",
         {
@@ -141,7 +110,6 @@ FAMILIES = {
         },
     ),
     "granitemoehybrid": (
-        _patch_granitemoehybrid,
         ("GraniteMoeHybridModel", "GraniteMoeHybridMambaLayer"),
         "GraniteMoeHybridForCausalLM",
         {
@@ -156,7 +124,6 @@ FAMILIES = {
         },
     ),
     "mamba2": (
-        _patch_mamba2,
         ("Mamba2ForCausalLM", "Mamba2Block", "Mamba2Mixer"),
         "Mamba2ForCausalLM",
         {
@@ -175,14 +142,13 @@ FAMILIES = {
 
 @pytest.fixture
 def mamba2_family(request, monkeypatch):
-    """A tiny model of one family, with axolotl's packing and tree patches applied
-    over reference kernels; returns it and the token count of every scan call."""
+    """A tiny model of one family following trees through tree-recurrence's hooks
+    over reference kernels, as async GRPO loads it (axolotl's packing patches off);
+    returns it and the token count of every scan call."""
     from trl.experimental.async_grpo import packing
 
-    from axolotl.monkeypatch.models.mamba2_tree import patch_mamba2_tree
-
     model_type = request.param
-    apply_packing, classes, causal_lm, config_kwargs = FAMILIES[model_type]
+    classes, causal_lm, config_kwargs = FAMILIES[model_type]
     modeling = importlib.import_module(
         f"transformers.models.{model_type}.modeling_{model_type}"
     )
@@ -201,14 +167,6 @@ def mamba2_family(request, monkeypatch):
     monkeypatch.setattr(
         modeling, "mamba2_split_conv1d_scan_combined", lambda *a, **k: None
     )
-    monkeypatch.setattr(modeling, "_axolotl_fused_scan_guard", True, raising=False)
-    if model_type == "mamba2":
-        from axolotl.monkeypatch.models.mamba import modeling as mamba_packing
-
-        # the reference kernels honor seq_idx on CPU
-        monkeypatch.setattr(mamba_packing, "_assert_packed_ready", lambda *a: None)
-    apply_packing(modeling)
-    assert patch_mamba2_tree(model_type)
 
     model_cls = getattr(modeling, causal_lm)
     config = model_cls.config_class(vocab_size=64, hidden_size=32, **config_kwargs)
@@ -217,13 +175,15 @@ def mamba2_family(request, monkeypatch):
     for name, param in model.named_parameters():
         if name.endswith(("A_log", "D", "dt_bias")):
             torch.nn.init.normal_(param, std=0.5)
-    return model.float(), scans
+    # the hooks wrap the reference kernels set above
+    assert packing_support(model).shares_prefixes
+    yield model.float(), scans
+    uninstall()
 
 
 @pytest.mark.parametrize("mamba2_family", list(FAMILIES), indirect=True)
 def test_tree_rows_match_each_sample_alone(mamba2_family):
     model, scans = mamba2_family
-    assert shares_prefixes(model)
     rows = []
 
     def on_row(row_tokens):

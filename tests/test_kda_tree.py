@@ -10,9 +10,14 @@ pytest.importorskip("fla.ops.kda", reason="the KDA layers import fla-core")
 
 from fla.ops.kda.gate import naive_kda_gate  # noqa: E402
 from fla.ops.kda.naive import naive_recurrent_kda  # noqa: E402
+from tree_recurrence import (  # noqa: E402
+    Policy,
+    driver as tree_driver,  # noqa: E402
+    follows_trees,
+    tree_plan,
+)
 
 from axolotl.core.trainers.grpo.async_scoring import pack_sequences  # noqa: E402
-from axolotl.monkeypatch.models import recurrent_tree  # noqa: E402
 
 HIDDEN, HEADS, HEAD_DIM, WIDTH = 32, 4, 8, 4
 
@@ -176,9 +181,8 @@ def _sequences():
 @pytest.mark.parametrize("build", [_kimi, _bailing], ids=["kimi_linear", "bailing"])
 @pytest.mark.parametrize("forks", [True, False], ids=["fork", "paths"])
 def test_tree_rows_match_each_sequence_alone(monkeypatch, build, forks):
-    from axolotl.monkeypatch.models.recurrent_tree import follows_trees
-
-    monkeypatch.setattr(recurrent_tree, "FORK_MIN_SAVED_TOKENS", 0 if forks else 10**9)
+    policy = Policy(fork_min_saved_tokens=0 if forks else 10**9)
+    monkeypatch.setattr(tree_driver, "DEFAULT_POLICY", policy)
     torch.manual_seed(0)
     layer = build(monkeypatch)
     assert follows_trees(layer)
@@ -212,4 +216,4 @@ def test_tree_rows_match_each_sequence_alone(monkeypatch, build, forks):
     out.square().sum().backward()
     for grad, expected in zip(grads(), alone_grads, strict=True):
         torch.testing.assert_close(grad, expected, rtol=1e-4, atol=1e-5)
-    assert recurrent_tree.tree_plan(tree).forks() == forks
+    assert policy.forks(tree_plan(tree)) == forks

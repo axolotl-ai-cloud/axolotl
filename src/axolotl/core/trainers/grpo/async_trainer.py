@@ -40,14 +40,14 @@ from torch.distributed.tensor import DTensor
 from torch.utils.data import DataLoader
 from transformers import PreTrainedModel, TrainerCallback
 from transformers.trainer_utils import SaveStrategy
-
-from axolotl.core.trainers.grpo.async_packing import (
+from tree_recurrence.integrations.trl import (
     ChainFixedCountBatcher,
     ChainTokenBudgetBatcher,
     hidden_layer_types,
     sample_boundaries,
-    shares_prefixes,
+    tree_kwargs_from_batch,
 )
+
 from axolotl.core.trainers.grpo.async_progress import (
     STOP_KEY,
     STOP_STALLED,
@@ -102,6 +102,7 @@ from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, Optimizer
 from axolotl.core.training_args_base import AxolotlTrainingMixins
 from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.models.recurrent_support import recurrent_layer_types
+from axolotl.monkeypatch.models.tree_packing import packing_support
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -651,7 +652,7 @@ class AxolotlAsyncGRPOTrainer(
             replacements["create_model_from_path"] = _use_loaded_model(model)
             replacements["add_fused_lm_head"] = _add_fused_lm_head_to_base
             model_id = get_config_model_id(model.config)
-            self._share_prefixes = shares_prefixes(model)
+            self._share_prefixes = packing_support(model).shares_prefixes
             if recurrent_layer_types(model.config):
                 hide_layer_types = hidden_layer_types(model)
         for scorer in self._trainer_scorers:
@@ -894,13 +895,7 @@ class AxolotlAsyncGRPOTrainer(
         old_log_probs = inputs["old_log_probs"][selected]
         advantages = inputs["advantages"][selected]
         segment_id = inputs["segment_id"][selected]
-        tree_kwargs = {
-            key: inputs[key][inputs[key] >= 0]
-            for key in ("tree_kv_index", "tree_cu_seqlens_q", "tree_cu_seqlens_k")
-        }
-        tree_kwargs["tree_max_seqlen_q"], tree_kwargs["tree_max_seqlen_k"] = inputs[
-            "tree_max_seqlens"
-        ][0].tolist()
+        tree_kwargs = tree_kwargs_from_batch(inputs)
         if not self._share_prefixes:
             tree_kwargs.update(sample_boundaries(tree_kwargs))
 

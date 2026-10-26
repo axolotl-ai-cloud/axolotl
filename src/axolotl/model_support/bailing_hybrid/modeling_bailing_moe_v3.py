@@ -41,16 +41,11 @@ from transformers.processing_utils import Unpack
 from transformers.utils import TransformersKwargs, can_return_tuple
 from transformers.utils.generic import is_flash_attention_requested
 from transformers.utils.output_capturing import capture_outputs
+from tree_recurrence import mark_tree_forward, tree_conv, tree_plan, tree_scan
+from tree_recurrence.components.kda import kda_scan, short_convolution
 
 from axolotl.model_support.bailing_hybrid.configuration_bailing_moe_v3 import (
     BailingMoeV3Config,
-)
-from axolotl.monkeypatch.models.kda_tree import KDA, kda_scan, short_convolution
-from axolotl.monkeypatch.models.recurrent_tree import (
-    mark_tree_forward,
-    tree_conv,
-    tree_plan,
-    tree_scan,
 )
 from axolotl.monkeypatch.utils import cu_seqlens_from_position_ids, get_unpad_data
 from axolotl.utils.logging import get_logger
@@ -372,7 +367,6 @@ class BailingMoeV3KimiDeltaAttention(nn.Module):
                 kda_scan(chunk_kda),
                 [q, k, v, self._forget_gate(hidden_states), beta],
                 tree,
-                KDA,
             )
         else:
             kernel = chunk_kda if self.training or q_len > 64 else fused_recurrent_kda

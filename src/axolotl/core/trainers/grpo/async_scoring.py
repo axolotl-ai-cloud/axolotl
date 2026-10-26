@@ -32,8 +32,8 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from accelerate.utils import gather_object
+from tree_recurrence.integrations.trl import ChainRow
 
-from axolotl.core.trainers.grpo.async_packing import ChainRow
 from axolotl.core.trainers.grpo.async_progress import (
     STOP_KEY,
     RolloutProgress,

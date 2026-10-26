@@ -9,17 +9,6 @@ from transformers.integrations.accelerate import force_accelerate_hooks
 from axolotl.monkeypatch.models.gated_delta_net_ops import (
     init_fla_compiled_ops as _init_fla_compiled_ops,
 )
-from axolotl.monkeypatch.models.gated_delta_net_tree import (
-    GATED_DELTA_RULE,
-    gated_delta_rule_scan,
-    varlen_conv,
-)
-from axolotl.monkeypatch.models.recurrent_tree import (
-    mark_tree_forward,
-    tree_conv,
-    tree_plan,
-    tree_scan,
-)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -184,10 +173,6 @@ def patch_qwen3_next_gateddelta_layer():
             )
         use_cp_kernels = cp_conv is not None
 
-        # Async GRPO's packed rows: follow the prefix trie (see recurrent_tree).
-        tree = None
-        if not use_precomputed_states and not use_cp_kernels and cache_params is None:
-            tree = tree_plan(kwargs)
         # Training, no cache: route the FLA kernels through opaque ops that derive cu_seqlens
         # eagerly inside the op, so aten.nonzero never enters the traced loop.
         use_compiled_ops = (
@@ -195,12 +180,11 @@ def patch_qwen3_next_gateddelta_layer():
             and not use_cp_kernels
             and cache_params is None
             and not use_precomputed_states
-            and tree is None
         )
         # Compute cu_seqlens early for use by both causal_conv1d and chunk_gated_delta_rule
         cu_seqlens = None
         pos_for_varlen = None
-        if tree is None and (
+        if (
             not use_precomputed_states
             and not use_cp_kernels
             and position_ids is not None
@@ -210,7 +194,7 @@ def patch_qwen3_next_gateddelta_layer():
             else:
                 cu_seqlens = get_cu_seqlens(position_ids=position_ids)
 
-        if (tree is not None or cu_seqlens is not None) and (
+        if cu_seqlens is not None and (
             fla_causal_conv1d is None or fla_chunk_gated_delta_rule is None
         ):
             # the transformers fallbacks accept cu_seqlens but ignore it, which would
@@ -233,17 +217,7 @@ def patch_qwen3_next_gateddelta_layer():
         mixed_qkv = torch.cat((query, key, value), dim=-1)  # [B, T, D]
         mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, D, T]
 
-        if tree is not None:
-            conv = varlen_conv(
-                fla_causal_conv1d,
-                self.conv1d.weight.squeeze(1),
-                self.conv1d.bias,
-                self.activation,
-            )
-            mixed_qkv = tree_conv(
-                conv, mixed_qkv.transpose(1, 2), tree, self.conv_kernel_size
-            ).transpose(1, 2)  # back to [B, D, T]
-        elif (
+        if (
             use_precomputed_states
             and seq_len == 1
             and not cache_params.layers[self.layer_idx].record_past
@@ -331,15 +305,7 @@ def patch_qwen3_next_gateddelta_layer():
             if use_precomputed_states
             else None
         )
-        if tree is not None:
-            core_attn_out = tree_scan(
-                gated_delta_rule_scan(fla_chunk_gated_delta_rule),
-                [query, key, value, g, beta],
-                tree,
-                GATED_DELTA_RULE,
-            )
-            last_recurrent_state = None
-        elif use_cp_kernels:
+        if use_cp_kernels:
             core_attn_out, last_recurrent_state = cp_chunk(
                 query,
                 key,
@@ -419,7 +385,6 @@ def patch_qwen3_next_gateddelta_layer():
 
     # Apply the patches
     patched_gated_delta_net_forward._axolotl_gdn_kernel_interface = True
-    mark_tree_forward(patched_gated_delta_net_forward)
     modeling.Qwen3NextGatedDeltaNet.forward = patched_gated_delta_net_forward
 
     def unpatch():
