@@ -982,9 +982,25 @@ class LoRAValidationMixin:
                 f"{', '.join(kernels)} (the fused kernels bypass the LoRA linear forward)"
             )
         if data.get("fsdp_config"):
-            problems.append("FSDP")
+            # FSDP2 casts parameters to the policy's param_dtype when gathering them; the
+            # factors must stay FP32 so the forward's delta matches the served merge.
+            if data.get("lora_fp32_gradients") is False:
+                problems.append(
+                    "FSDP with lora_fp32_gradients: false (FSDP2 would gather the LoRA "
+                    "factors in BF16)"
+                )
+            elif not data.get("lora_fp32_gradients"):
+                LOG.info(
+                    "lora_merge_aware under FSDP2: enabling lora_fp32_gradients so the "
+                    "LoRA factors are gathered in FP32"
+                )
+                data["lora_fp32_gradients"] = True
         if is_deepspeed_zero3_config(data.get("deepspeed")):
-            problems.append("DeepSpeed ZeRO-3")
+            problems.append(
+                "DeepSpeed ZeRO-3 (the merge-aware forward reads the base and LoRA "
+                "weights of submodules whose forwards it skips, so ZeRO-3 never "
+                "gathers them)"
+            )
         if (data.get("tensor_parallel_size") or 1) > 1:
             problems.append("tensor_parallel_size > 1")
         trl = data.get("trl") or {}

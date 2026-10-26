@@ -116,6 +116,7 @@ jobs:
             tests/monkeypatch/test_fsdp2_sharded_adapter.py \
             tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \
             tests/monkeypatch/test_fsdp2_mixed_dtype_groups.py \
+            tests/monkeypatch/test_lora_merge_aware_distributed.py \
             tests/integrations/test_expert_parallel_bnb.py \
             tests/integrations/expert_parallel/test_ep_checkpoint_resume.py \
             tests/integrations/expert_parallel/test_ep_lora_adapter_save_distributed.py \

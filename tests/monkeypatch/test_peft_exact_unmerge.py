@@ -338,7 +338,9 @@ def test_grpo_trainer_wraps_its_vllm_sync():
         model.unmerge_adapter()
 
     def stub_init(self, *args, **kwargs):
-        self.args = types.SimpleNamespace(activation_offloading=False)
+        self.args = types.SimpleNamespace(
+            activation_offloading=False, vllm_merge_check_interval=0
+        )
         self.optimizer = self.optimizer_cls_and_kwargs = None
         self.model = model
         self.vllm_generation = types.SimpleNamespace(

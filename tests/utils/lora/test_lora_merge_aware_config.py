@@ -45,12 +45,16 @@ def test_lora_merge_aware_rejects_unknown_mode():
         ({"peft_use_dora": True}, "peft_use_dora"),
         ({"lora_mlp_kernel": True}, "fused kernels"),
         (
-            {"fsdp_version": 2, "fsdp_config": {"reshard_after_forward": True}},
-            "FSDP",
+            {
+                "fsdp_version": 2,
+                "fsdp_config": {"reshard_after_forward": True},
+                "lora_fp32_gradients": False,
+            },
+            "lora_fp32_gradients: false",
         ),
         (
             {"deepspeed": {"zero_optimization": {"stage": 3}}},
-            "DeepSpeed ZeRO-3",
+            "DeepSpeed ZeRO-3 .*never gathers them",
         ),
         ({"rl": "grpo", "trl": {"vllm_lora_sync": True}}, "vllm_lora_sync"),
     ],
@@ -58,6 +62,14 @@ def test_lora_merge_aware_rejects_unknown_mode():
 def test_lora_merge_aware_rejects_unsupported_combinations(overrides, message):
     with pytest.raises(ValueError, match=message):
         validate_config(_cfg(**overrides))
+
+
+def test_lora_merge_aware_under_fsdp2_gathers_fp32_factors():
+    cfg = validate_config(
+        _cfg(fsdp_version=2, fsdp_config={"reshard_after_forward": True})
+    )
+    assert cfg.lora_merge_aware == "bf16"
+    assert cfg.lora_fp32_gradients is True
 
 
 def test_lora_merge_aware_allows_deepspeed_zero2():

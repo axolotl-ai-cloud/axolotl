@@ -51,6 +51,7 @@ from axolotl.core.trainers.mixins import (
     SchedulerMixin,
 )
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
+from axolotl.monkeypatch.lora_merge_aware import merge_aware_vllm_sync
 from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.monkeypatch.ring_attn import get_ring_attn_group
 
@@ -80,6 +81,7 @@ class AxolotlGRPOTrainer(
             self.data_collator = data_collator
         if getattr(self, "vllm_generation", None) is not None:
             exact_unmerge_vllm_sync(self.vllm_generation)
+            merge_aware_vllm_sync(self.vllm_generation)
 
 
 class AxolotlAsyncGRPOTrainer(

@@ -96,6 +96,7 @@ try:
 except ImportError:
     _fused_selective_log_softmax = None
 
+from axolotl.monkeypatch.lora_merge_aware import merge_aware_vllm_sync
 from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.utils.logging import get_logger
 from axolotl.utils.lora_merge_precision import MergeRetention, lora_delta
@@ -892,6 +893,7 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
         # The stock merged sync merges and unmerges the adapter in place.
         if getattr(self, "vllm_generation", None) is not None:
             exact_unmerge_vllm_sync(self.vllm_generation)
+            merge_aware_vllm_sync(self.vllm_generation)
 
         # FP8 models: zero out the pad token embedding so that padding
         # positions have zero hidden states throughout the network.

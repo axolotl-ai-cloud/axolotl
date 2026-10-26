@@ -12,6 +12,7 @@ low-rank LoRA gradients, computed without materializing a dense ``dW``. The merg
 weight is recomputed in backward instead of being saved for it.
 """
 
+import functools
 import types
 
 import torch
@@ -184,3 +185,99 @@ def configure_lora_merge_aware(cfg, model) -> None:
             "; ".join(skipped[:5]),
             " ..." if len(skipped) > 5 else "",
         )
+
+
+def _full_tensor(tensor: torch.Tensor, device) -> torch.Tensor:
+    from torch.distributed.tensor import DTensor
+
+    if tensor.is_cpu and device is not None:
+        tensor = tensor.to(device)
+    return tensor.full_tensor() if isinstance(tensor, DTensor) else tensor
+
+
+def iter_merge_aware_vllm_params(vllm_generation):
+    """Yield the model's weights under the names vLLM expects, merging each LoRA linear out
+    of place from the full base weight and factors with ``merged_lora_weight``.
+
+    Replaces TRL's FSDP2 sync, which merges the adapter into the sharded weights in place
+    and unmerges afterwards: the sharded merge does not reproduce the merge-aware forward's
+    rounding, and the round trip drifts the base weights. Every rank must iterate, since
+    gathering a sharded tensor is a collective.
+    """
+    from peft.tuners.lora.layer import Linear as LoraLinear
+
+    model = vllm_generation.model
+    device = getattr(vllm_generation.accelerator, "device", None)
+    lora_linears = {
+        name: module
+        for name, module in model.named_modules()
+        if isinstance(module, LoraLinear)
+    }
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            vllm_name = name.removeprefix("base_model.model.").replace(
+                ".base_layer", ""
+            )
+            if model.prefix in vllm_name or "original_module" in vllm_name:
+                continue
+            vllm_name = vllm_generation._fix_param_name_to_vllm(
+                vllm_name, extra_prefixes=["modules_to_save.default."]
+            )
+            tensor = _full_tensor(param, device)
+            owner, _, leaf = name.rpartition(".base_layer.")
+            module = lora_linears.get(owner) if leaf == "weight" else None
+            adapters = (
+                [a for a in module.active_adapters if a in module.lora_A]
+                if module is not None and not module.disable_adapters
+                else []
+            )
+            for adapter in adapters:
+                tensor = merged_lora_weight(
+                    tensor,
+                    _full_tensor(module.lora_A[adapter].weight, device),
+                    _full_tensor(module.lora_B[adapter].weight, device),
+                    module.scaling[adapter],
+                    getattr(module, "_axolotl_lora_merge_aware_dtype", None)
+                    or param.dtype,
+                )
+            yield vllm_name, tensor
+
+
+def merge_aware_vllm_sync(vllm_generation) -> None:
+    """Under FSDP2, make a TRL ``VLLMGeneration`` serve merge-aware LoRA weights computed
+    out of place, exactly as the merge-aware forward computes them."""
+    from peft.tuners.lora.layer import LoraLayer
+
+    dist = getattr(vllm_generation, "_dist", None)
+    model = getattr(vllm_generation, "model", None)
+    if (
+        model is None
+        or not getattr(dist, "is_fsdp", False)
+        or getattr(dist, "fsdp_version", None) != 2
+    ):
+        return
+    lora_layers = [m for m in model.modules() if isinstance(m, LoraLayer)]
+    if not any(
+        getattr(m, "_axolotl_lora_merge_aware_dtype", None) is not None
+        for m in lora_layers
+    ):
+        return
+    from peft.tuners.lora.layer import Linear as LoraLinear
+
+    unsupported = sorted(
+        {
+            type(m).__name__
+            for m in lora_layers
+            if not isinstance(m, LoraLinear)
+            or m.lora_variant
+            or any(m.lora_bias.values())
+        }
+    )
+    if unsupported:
+        raise ValueError(
+            "lora_merge_aware under FSDP2 merges LoRA linears out of place for the vLLM "
+            f"sync; these LoRA layers cannot be merged that way: {', '.join(unsupported)}"
+        )
+    vllm_generation._iter_named_params = functools.partial(
+        iter_merge_aware_vllm_params, vllm_generation
+    )
