@@ -925,6 +925,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--merge-num-threads",),
+        None,
+        None,
+        "PyTorch CPU intra-op threads during LoRA merging (default: 2). Set before compilation; the previous thread count is restored after merging.",
+    ),
+    (
         ("--merge-compile/--no-merge-compile",),
         None,
         None,

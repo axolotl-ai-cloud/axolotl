@@ -189,6 +189,14 @@ class LoraConfig(BaseModel):
     )
 
     merge_lora: bool | None = None
+    merge_num_threads: int = Field(
+        default=2,
+        ge=1,
+        strict=True,
+        json_schema_extra={
+            "description": "PyTorch CPU intra-op threads during LoRA merging (default: 2). Set before compilation; the previous thread count is restored after merging."
+        },
+    )
     merge_compile: bool = Field(
         default=False,
         json_schema_extra={
