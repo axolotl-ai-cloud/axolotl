@@ -1146,7 +1146,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </blockquote>
 <p>**Q: <code>ValueError("Backward pass should have cleared tracker of all tensors")</code></p>
 <blockquote class="blockquote">
-<p>A: This may happen due to edge cases in using the modern OffloadActivations context manager for CUDA streams. If you encounter this error, you may have success using the naive implementation with <code>offload_activations: legacy</code> in your YAML.</p>
+<p>A: This may happen due to edge cases in the OffloadActivations context manager. <code>activation_offloading: legacy</code> is now an alias of <code>true</code>, so it is no longer a workaround; try <code>activation_offloading: hidden_states</code> instead, and please report the config that triggers it.</p>
 </blockquote>
 <p>**Q: <code>Error parsing tool_calls arguments as JSON.</code></p>
 <blockquote class="blockquote">

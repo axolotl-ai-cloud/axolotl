@@ -1579,7 +1579,7 @@ Warning
 <tr class="odd">
 <td>Activation offloading</td>
 <td><code>activation_offloading:</code></td>
-<td>requires gradient checkpointing; ⚪ CUDA only (no CPU-only training)</td>
+<td><code>hidden_states</code> requires gradient checkpointing; <code>true</code> without it offloads with no recompute; <code>legacy</code> is a deprecated alias of <code>true</code>; <code>disk</code> is disabled; ⚪ CUDA only (no CPU-only training)</td>
 </tr>
 </tbody>
 </table>

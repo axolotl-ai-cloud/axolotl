@@ -957,7 +957,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#enabling-gradient-checkpointing" id="toc-enabling-gradient-checkpointing" class="nav-link active" data-scroll-target="#enabling-gradient-checkpointing">Enabling Gradient Checkpointing</a></li>
+  <li><a href="#how-it-works" id="toc-how-it-works" class="nav-link active" data-scroll-target="#how-it-works">How it works</a></li>
+  <li><a href="#enabling-gradient-checkpointing" id="toc-enabling-gradient-checkpointing" class="nav-link" data-scroll-target="#enabling-gradient-checkpointing">Enabling Gradient Checkpointing</a></li>
   <li><a href="#enabling-activation-offloading" id="toc-enabling-activation-offloading" class="nav-link" data-scroll-target="#enabling-activation-offloading">Enabling Activation Offloading</a></li>
   <li><a href="#choosing-a-mode" id="toc-choosing-a-mode" class="nav-link" data-scroll-target="#choosing-a-mode">Choosing a mode</a></li>
   <li><a href="#selective-activation-checkpointing-sac" id="toc-selective-activation-checkpointing-sac" class="nav-link" data-scroll-target="#selective-activation-checkpointing-sac">Selective Activation Checkpointing (SAC)</a></li>
@@ -987,11 +988,85 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </header>
 
 
-<p>Gradient checkpointing and activation offloading are techniques used to optimize the performance of deep learning
-models by reducing the memory footprint and improving computational efficiency.</p>
+<p>Gradient checkpointing, activation offloading and layer offloading reduce GPU memory during
+training. Each trades it for something else: extra compute, host memory, or PCIe bandwidth.</p>
+<section id="how-it-works" class="level3">
+<h3 class="anchored" data-anchor-id="how-it-works">How it works</h3>
+<p>In the forward pass, each layer keeps some of its intermediate tensors (activations), because the
+backward pass needs them to compute gradients. With long sequences these activations, not the
+weights, take most of the GPU memory: they grow with batch size, sequence length, hidden size and
+the number of layers.</p>
+<ul>
+<li><strong>Gradient checkpointing</strong> (<code>gradient_checkpointing: true</code>) keeps only each decoder layer’s input
+during forward and drops the rest. In backward, each layer runs its forward again (<em>recompute</em>)
+to rebuild what it needs. Memory drops to about one hidden-state tensor per layer, at the cost of
+roughly one extra forward pass per step.</li>
+<li><strong>Activation offloading</strong> (<code>activation_offloading</code>) keeps activations, but in CPU RAM until
+backward needs them: it spends PCIe bandwidth and host memory instead of compute.</li>
+<li><strong>Selective checkpointing</strong> (<code>selective_checkpointing</code>) recomputes each layer except for the ops
+it saves, attention by default, which is usually the most expensive part to recompute.</li>
+</ul>
+<p>How the settings combine (decoder layers; the output head always stays on GPU):</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th><code>gradient_checkpointing</code></th>
+<th><code>activation_offloading</code></th>
+<th>Recomputed in backward</th>
+<th>Moved to CPU</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>false</code></td>
+<td><code>false</code></td>
+<td>nothing</td>
+<td>nothing: every activation stays on GPU</td>
+</tr>
+<tr class="even">
+<td><code>true</code></td>
+<td><code>false</code></td>
+<td>every layer</td>
+<td>nothing: each layer’s input stays on GPU</td>
+</tr>
+<tr class="odd">
+<td><code>true</code></td>
+<td><code>true</code></td>
+<td>every layer</td>
+<td>each layer’s input, and what is saved outside the layers</td>
+</tr>
+<tr class="even">
+<td><code>false</code></td>
+<td><code>true</code></td>
+<td>nothing</td>
+<td>every saved activation</td>
+</tr>
+<tr class="odd">
+<td><code>true</code></td>
+<td><code>hidden_states</code></td>
+<td>every layer</td>
+<td>each layer’s input only</td>
+</tr>
+</tbody>
+</table>
+<p>Adding <code>selective_checkpointing</code> to any row with <code>gradient_checkpointing: true</code> skips recomputing
+the saved ops. Their outputs stay on GPU, or move to CPU with <code>selective_checkpointing.offload: true</code>.
+For example, to offload each layer’s input and not recompute attention:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">activation_offloading</span><span class="kw">:</span><span class="at"> hidden_states</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">  # optional: keep the saved attention outputs in CPU RAM too</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
 <section id="enabling-gradient-checkpointing" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-gradient-checkpointing">Enabling Gradient Checkpointing</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Unless <code>gradient_checkpointing_kwargs.use_reentrant</code> is set, Axolotl uses PyTorch’s recommended
 non-reentrant checkpointing (<code>use_reentrant: false</code>). SFT runs on DeepSpeed ZeRO-3 default to
 <code>use_reentrant: true</code>, since non-reentrant recompute raises a <code>CheckpointError</code> there; <code>rl:</code> runs
@@ -999,14 +1074,23 @@ on ZeRO-3 need it set explicitly.</p>
 </section>
 <section id="enabling-activation-offloading" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-activation-offloading">Enabling Activation Offloading</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">  # required for activation offloading</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">activation_offloading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">activation_offloading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>With <code>activation_offloading: true</code>, <code>gradient_checkpointing</code> controls recompute:</p>
+<ul>
+<li><code>true</code>: decoder layers are recomputed in backward; only tensors saved outside them are offloaded.</li>
+<li><code>false</code>: nothing is recomputed and every saved activation is offloaded, bounded by host RAM and
+PCIe bandwidth. Can be faster for LoRA/QLoRA, whose activations are small. Not supported for
+ORPO, SimPO, EBFT or process reward models.</li>
+</ul>
+<p>Checkpointing runs exactly as it would without offloading, for adapters and full finetunes alike,
+honoring <code>gradient_checkpointing_kwargs</code>; the non-reentrant default above applies to <code>rl:</code> runs as
+well (DeepSpeed ZeRO-3 stays reentrant). <code>hidden_states</code> requires <code>gradient_checkpointing: true</code>.</p>
 <p>Activation offloading variants:</p>
 <p>The default <code>activation_offloading: true</code> offloads activations to CPU and uses CUDA streams
 to overlap the communications and computations when offloading.</p>
-<p>The <code>activation_offloading: legacy</code> naively offloads activations to CPU and without additional optimizations.</p>
-<p>For resource constrained environments with limited CPU memory, <code>activation_offloading: disk</code> offloads
-activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.</p>
+<p><code>activation_offloading: legacy</code> is a deprecated alias of <code>true</code>. <code>activation_offloading: disk</code> is
+disabled: it ran the same CPU offloader as <code>true</code> and never offloaded to disk.</p>
 <p>The <code>activation_offloading: hidden_states</code> mode keeps gradient checkpointing enabled and moves only
 the decoder-layer checkpoint input (<code>hidden_states</code>) to CPU. With the default
 <code>gradient_checkpointing_kwargs.use_reentrant: false</code>, Axolotl uses Transformers’ non-reentrant
@@ -1034,18 +1118,8 @@ parallelism.</p>
 <tbody>
 <tr class="odd">
 <td><code>true</code></td>
-<td>All activations → CPU, stream-overlapped</td>
-<td>General use; LoRA/QLoRA (offloads instead of recomputing)</td>
-</tr>
-<tr class="even">
-<td><code>legacy</code></td>
-<td>All activations → CPU, synchronous</td>
-<td>Lowest resident GPU memory; when the streamed path’s in-flight buffering inflates peak</td>
-</tr>
-<tr class="odd">
-<td><code>disk</code></td>
-<td>Activations → disk</td>
-<td>Severely CPU-RAM-constrained hosts</td>
+<td>Saved activations → CPU, stream-overlapped</td>
+<td>General use; LoRA/QLoRA without recompute (<code>gradient_checkpointing: false</code>)</td>
 </tr>
 <tr class="even">
 <td><code>hidden_states</code></td>
@@ -1054,14 +1128,14 @@ parallelism.</p>
 </tr>
 </tbody>
 </table>
-<p><code>hidden_states</code> uses gradient checkpointing and recomputes each layer during backward. With LoRA/QLoRA,
-<code>activation_offloading: true</code> can still be faster because adapter activations are smaller and pure offload
-avoids the recompute cost.</p>
+<p><code>hidden_states</code> always recomputes each layer. For LoRA/QLoRA, <code>activation_offloading: true</code> with
+<code>gradient_checkpointing: false</code> can be faster: adapter activations are small and pure offload skips
+recompute.</p>
 </section>
 <section id="selective-activation-checkpointing-sac" class="level3">
 <h3 class="anchored" data-anchor-id="selective-activation-checkpointing-sac">Selective Activation Checkpointing (SAC)</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Plain gradient checkpointing recomputes every op in a decoder layer during backward. Selective
 checkpointing keeps the recompute for cheap ops but <em>saves</em> the outputs of expensive ones — by
 default the attention op — so backward skips re-running them. At long context, attention dominates
@@ -1082,10 +1156,10 @@ calls under <code>torch.compile</code> go to FA4 directly and are recomputed as 
 <code>kernels-community/flash-attn4</code> hub kernel is not covered: use <code>flash_attention_4</code> with
 <code>flash-attn-4</code> installed.</p>
 <p>The explicit form lets you save additional ops, matched as substrings of the qualified op name:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> attention</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> aten::mm</span><span class="co">        # example: also save all matmuls</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> attention</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> aten::mm</span><span class="co">        # example: also save all matmuls</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>For hybrid models mixing full attention and sliding-window attention (SWA), only full-attention
 calls are saved by default — SWA is cheap to recompute and not worth the memory. Hybrid layers are
 detected two ways: the flash-attention window arguments, and the model’s <code>layer_types</code> (published
@@ -1096,15 +1170,13 @@ layer types recompute with <code>selective_checkpointing.recompute_layer_types</
 attention op, so they need no entry).</p>
 <p>To offload the saved tensors to pinned CPU memory instead of keeping them on GPU — asynchronous
 side-stream copies during forward, prefetched back one region ahead during backward — set:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This makes the saved attention outputs cost ~zero GPU memory at the price of CPU RAM and PCIe
-traffic, and stacks with <code>activation_offloading: hidden_states</code>.</p>
-<p>Requires non-reentrant checkpointing (the default). Composes with
-<code>activation_offloading: hidden_states</code>: layer inputs go to CPU while attention outputs are saved
-(on GPU, or on CPU with <code>offload: true</code>). It is incompatible with the TRL-offloader modes
-(<code>true</code>/<code>legacy</code>/<code>disk</code>), which replace gradient checkpointing instead of running inside it.
+traffic, and stacks with <code>activation_offloading: hidden_states</code> or <code>true</code>.</p>
+<p>Requires non-reentrant checkpointing (the default). Composes with <code>activation_offloading: hidden_states</code> or <code>true</code>: layer inputs go to CPU (with <code>true</code>, so does what is saved outside the
+layers) while the saved ops’ outputs stay on GPU, or go to CPU with <code>offload: true</code>.
 Saving matmul ops (via <code>save</code>, <code>save_modules</code> or <code>save_matmul_min_k</code>) is rejected while a
 fused LoRA kernel is enabled, because the kernel adds the adapter delta into the base matmul
 output in place, which invalidates the cached tensor.</p>
@@ -1113,9 +1185,9 @@ output in place, which invalidates the cached tensor.</p>
 <p>All projections dispatch the same <code>aten::mm</code>/<code>aten::addmm</code>, so <code>save: [aten::mm]</code> saves every
 one of them. Two rules target individual projections instead; both also work with <code>offload: true</code>.</p>
 <p><code>save_modules</code> saves the matmuls that run inside the named modules:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save_modules</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">o_proj</span><span class="kw">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save_modules</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">o_proj</span><span class="kw">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>An entry matches a module name exactly, as a trailing dotted suffix (<code>o_proj</code>,
 <code>self_attn.o_proj</code>), or as a glob over the full name when it contains <code>*</code>, <code>?</code> or <code>[</code>. Names are
 those of the base model, before PEFT wraps it, and a PEFT-wrapped match resolves to its
@@ -1123,9 +1195,9 @@ those of the base model, before PEFT wraps it, and a PEFT-wrapped match resolves
 enclose the decoder layers, or run outside them (<code>lm_head</code>, <code>embed_tokens</code>), are never in scope.</p>
 <p><code>save_matmul_min_k</code> saves every matmul whose contraction dim K (a linear’s <code>in_features</code>) is at
 least the threshold, including MoE expert (<code>aten::_grouped_mm</code>) and bitsandbytes 4-bit gemms:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save_matmul_min_k</span><span class="kw">:</span><span class="at"> </span><span class="dv">8192</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">selective_checkpointing</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">attention</span><span class="kw">]</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">save_matmul_min_k</span><span class="kw">:</span><span class="at"> </span><span class="dv">8192</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Saving only helps for ops that recompute would otherwise re-run. Recompute stops at the last
 tensor backward needs, so a layer’s final projection (<code>down_proj</code> in Llama/Qwen3-style layers,
 whose output only feeds the residual add) is never replayed; saving it costs memory for no
@@ -1152,7 +1224,7 @@ own; under plain <code>gradient_checkpointing</code> a plugin installs them with
 </section>
 <section id="enabling-layer-offloading" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-layer-offloading">Enabling Layer Offloading</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">layer_offloading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">layer_offloading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Layer offloading reduces GPU memory usage by moving frozen (non-trainable) decoder layer parameters to CPU
 and streaming them back to GPU one layer at a time during the forward and backward passes. This is
 particularly useful for LoRA/QLoRA training where most of the model’s parameters are frozen — only the
