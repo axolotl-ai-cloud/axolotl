@@ -1189,46 +1189,102 @@ class TestComputeLossAuxLoss(unittest.TestCase):
         trainer._get_per_token_logps_and_entropies_flattened.assert_not_called()
 
 
+    @staticmethod
+    def _mock_loss_scoring_path(trainer, per_token_logps, flattened):
+        """Exercise the selected scorer while retaining the real _compute_loss."""
+        entropies = torch.zeros_like(per_token_logps)
+        if flattened:
+            trainer._get_per_token_logps_and_entropies_flattened = MagicMock(
+                return_value=(per_token_logps, entropies)
+            )
+            trainer._get_per_token_logps_and_entropies = MagicMock(
+                side_effect=AssertionError("non-flattened scorer must not run")
+            )
+        else:
+            trainer._get_per_token_logps_and_entropies = MagicMock(
+                return_value=(per_token_logps, entropies, None)
+            )
+            trainer._get_per_token_logps_and_entropies_flattened = MagicMock(
+                side_effect=AssertionError("flattened scorer must not run")
+            )
+
     def test_masked_extreme_logratio_preserves_valid_grpo_gradients(self):
-        """Masked padding must not poison the GRPO objective before reduction."""
+        """Mask before exp in both IS modes and both model-forward paths."""
         for mode in ("token", "sequence"):
             for padding_case in ("overflow", "negative_infinity"):
-                with self.subTest(mode=mode, padding_case=padding_case):
-                    trainer = self._make_trainer(aux_loss_enabled=False)
-                    trainer.importance_sampling_level = mode
-                    inputs = self._make_inputs()
-                    inputs["completion_mask"][0, 0] = 0
-
-                    old_logps = torch.full((2, 3), -1.0)
-                    current_logps = old_logps.clone()
-                    if padding_case == "overflow":
-                        old_logps[0, 0] = -1001.0
-                    else:
-                        old_logps[0, 0] = float("-inf")
-                        current_logps[0, 0] = float("-inf")
-                    current_logps.requires_grad_()
-                    inputs["old_per_token_logps"] = old_logps
-
-                    trainer._get_per_token_logps_and_entropies = MagicMock(
-                        return_value=(
-                            current_logps,
-                            torch.zeros_like(current_logps),
-                            None,
+                for flattened in (False, True):
+                    with self.subTest(
+                        mode=mode, padding_case=padding_case, flattened=flattened
+                    ):
+                        trainer = self._make_trainer(
+                            aux_loss_enabled=False, batch_flattening=flattened
                         )
-                    )
-                    loss = trainer._compute_loss(trainer.model, inputs)
-                    loss.backward()
+                        trainer.importance_sampling_level = mode
+                        inputs = self._make_inputs()
+                        inputs["completion_mask"][0, 0] = 0
 
-                    torch.testing.assert_close(loss, torch.tensor(-1.0))
-                    self.assertTrue(torch.isfinite(current_logps.grad).all())
-                    torch.testing.assert_close(
-                        current_logps.grad[0],
-                        torch.tensor([0.0, -0.25, -0.25]),
-                    )
-                    torch.testing.assert_close(
-                        current_logps.grad[1],
-                        torch.full((3,), -1.0 / 6.0),
-                    )
+                        old_logps = torch.full((2, 3), -1.0)
+                        current_logps = old_logps.clone()
+                        if padding_case == "overflow":
+                            old_logps[0, 0] = -1001.0
+                        else:
+                            old_logps[0, 0] = float("-inf")
+                            current_logps[0, 0] = float("-inf")
+                        current_logps.requires_grad_()
+                        inputs["old_per_token_logps"] = old_logps
+                        self._mock_loss_scoring_path(
+                            trainer, current_logps, flattened
+                        )
+
+                        loss = trainer._compute_loss(trainer.model, inputs)
+                        loss.backward()
+
+                        if flattened:
+                            trainer._get_per_token_logps_and_entropies_flattened.assert_called_once()
+                            trainer._get_per_token_logps_and_entropies.assert_not_called()
+                        else:
+                            trainer._get_per_token_logps_and_entropies.assert_called_once()
+                            trainer._get_per_token_logps_and_entropies_flattened.assert_not_called()
+
+                        torch.testing.assert_close(loss, torch.tensor(-1.0))
+                        self.assertTrue(torch.isfinite(current_logps.grad).all())
+                        torch.testing.assert_close(
+                            current_logps.grad[0], torch.tensor([0.0, -0.25, -0.25])
+                        )
+                        torch.testing.assert_close(
+                            current_logps.grad[1],
+                            torch.full((3,), -1.0 / 6.0),
+                        )
+
+    def test_sequence_importance_uses_masked_token_count(self):
+        """Excluded slots must not dilute a nonzero sequence log-ratio mean."""
+        for flattened in (False, True):
+            with self.subTest(flattened=flattened):
+                trainer = self._make_trainer(
+                    aux_loss_enabled=False, batch_flattening=flattened
+                )
+                trainer.importance_sampling_level = "sequence"
+                inputs = self._make_inputs()
+                inputs["completion_mask"][0, 0] = 0
+
+                old_logps = torch.full((2, 3), -1.0)
+                old_logps[0, 0] = -1001.0
+                current_logps = torch.full((2, 3), -0.9, requires_grad=True)
+                inputs["old_per_token_logps"] = old_logps
+                self._mock_loss_scoring_path(trainer, current_logps, flattened)
+
+                loss = trainer._compute_loss(trainer.model, inputs)
+                loss.backward()
+
+                # Both sequences have mean log-ratio 0.1 over valid tokens:
+                # the first has 2 valid slots, the second has 3.
+                expected_ratio = torch.exp(torch.tensor(0.1))
+                torch.testing.assert_close(loss, -expected_ratio)
+                expected_grad = -expected_ratio * torch.tensor(
+                    [[0.0, 1.0 / 4.0, 1.0 / 4.0],
+                     [1.0 / 6.0, 1.0 / 6.0, 1.0 / 6.0]]
+                )
+                torch.testing.assert_close(current_logps.grad, expected_grad)
 
 
 class TestSliceMultimodalKwargs(unittest.TestCase):
