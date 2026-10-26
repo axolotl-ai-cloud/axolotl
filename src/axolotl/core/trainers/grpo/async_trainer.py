@@ -92,6 +92,7 @@ from axolotl.core.trainers.grpo.trl_compat import (
     patched_trainer_module,
 )
 from axolotl.core.trainers.mixins import (
+    ActivationOffloadingMixin,
     CheckpointWriteRetryMixin,
     DistributedParallelMixin,
     RngLoaderMixin,
@@ -533,6 +534,7 @@ class AxolotlAsyncGRPOTrainer(
     OptimizerMixin,
     OptimizerInitMixin,
     DistributedParallelMixin,
+    ActivationOffloadingMixin,
     AsyncGRPOTrainer,
 ):
     """TRL's ``AsyncGRPOTrainer`` adapted to axolotl and extended (see module doc)."""
