@@ -642,7 +642,7 @@ class AxolotlInputConfig(
     gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
         default=False,
         json_schema_extra={
-            "description": "Whether to use gradient checkpointing. Available options are: true, false, 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing"
+            "description": "Whether to use gradient checkpointing. Available options are: true, false, 'offload' (deprecated, use activation_offloading: true). https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing"
         },
     )
     gradient_checkpointing_kwargs: dict[str, Any] | None = Field(
@@ -662,18 +662,17 @@ class AxolotlInputConfig(
             )
         },
     )
-    activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
-        Field(
-            default=False,
-            json_schema_extra={
-                "description": (
-                    "Whether to offload activations. Options: true/false, 'legacy', "
-                    "'disk' (TRL offloader), or 'hidden_states' (checkpoint input "
-                    "offload; non-reentrant by default, ALST-style when "
-                    "gradient_checkpointing_kwargs.use_reentrant is true)."
-                )
-            },
-        )
+    activation_offloading: Literal["hidden_states"] | bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Whether to offload activations. Options: true/false (TRL offloader; "
+                "gradient_checkpointing decides whether layers recompute), or "
+                "'hidden_states' (checkpoint input offload; non-reentrant by default, "
+                "ALST-style when gradient_checkpointing_kwargs.use_reentrant is true). "
+                "'legacy' is a deprecated alias of true; 'disk' is disabled."
+            )
+        },
     )
     layer_offloading: bool | None = Field(
         default=False,

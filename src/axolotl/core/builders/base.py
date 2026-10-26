@@ -697,25 +697,25 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["activation_offloading"] = (
                     self.cfg.activation_offloading
                 )
-        elif self.cfg.activation_offloading:
-            # TRL offloader replaces HF recompute (re-added for full finetune in the
-            # model loader), so disable HF checkpointing and pass the mode through.
-            training_args_kwargs["gradient_checkpointing"] = False
-            training_args_kwargs["activation_offloading"] = (
-                self.cfg.activation_offloading
-            )
-        elif self.cfg.gradient_checkpointing is not None:
-            training_args_kwargs["gradient_checkpointing"] = (
-                self.cfg.gradient_checkpointing
-            )
-            if self.cfg.gradient_checkpointing_kwargs is not None:
-                training_args_kwargs["gradient_checkpointing_kwargs"] = (
-                    self.cfg.gradient_checkpointing_kwargs
+        else:
+            if self.cfg.activation_offloading:
+                # checkpointing stays as configured; the TRL offloader offloads
+                # whatever the step saves
+                training_args_kwargs["activation_offloading"] = (
+                    self.cfg.activation_offloading
                 )
-            else:
-                training_args_kwargs["gradient_checkpointing_kwargs"] = {
-                    "use_reentrant": False
-                }
+            if self.cfg.gradient_checkpointing is not None:
+                training_args_kwargs["gradient_checkpointing"] = (
+                    self.cfg.gradient_checkpointing
+                )
+                if self.cfg.gradient_checkpointing_kwargs is not None:
+                    training_args_kwargs["gradient_checkpointing_kwargs"] = (
+                        self.cfg.gradient_checkpointing_kwargs
+                    )
+                else:
+                    training_args_kwargs["gradient_checkpointing_kwargs"] = {
+                        "use_reentrant": False
+                    }
 
     def _set_base_training_args(
         self, total_num_steps

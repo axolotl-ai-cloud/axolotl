@@ -2,8 +2,46 @@
 title: Gradient Checkpointing, Activation Offloading, and Layer Offloading
 ---
 
-Gradient checkpointing and activation offloading are techniques used to optimize the performance of deep learning
-models by reducing the memory footprint and improving computational efficiency.
+Gradient checkpointing, activation offloading and layer offloading reduce GPU memory during
+training. Each trades it for something else: extra compute, host memory, or PCIe bandwidth.
+
+### How it works
+
+In the forward pass, each layer keeps some of its intermediate tensors (activations), because the
+backward pass needs them to compute gradients. With long sequences these activations, not the
+weights, take most of the GPU memory: they grow with batch size, sequence length, hidden size and
+the number of layers.
+
+- **Gradient checkpointing** (`gradient_checkpointing: true`) keeps only each decoder layer's input
+  during forward and drops the rest. In backward, each layer runs its forward again (*recompute*)
+  to rebuild what it needs. Memory drops to about one hidden-state tensor per layer, at the cost of
+  roughly one extra forward pass per step.
+- **Activation offloading** (`activation_offloading`) keeps activations, but in CPU RAM until
+  backward needs them: it spends PCIe bandwidth and host memory instead of compute.
+- **Selective checkpointing** (`selective_checkpointing`) recomputes each layer except for the ops
+  it saves, attention by default, which is usually the most expensive part to recompute.
+
+How the settings combine (decoder layers; the output head always stays on GPU):
+
+| `gradient_checkpointing` | `activation_offloading` | Recomputed in backward | Moved to CPU |
+|---|---|---|---|
+| `false` | `false` | nothing | nothing: every activation stays on GPU |
+| `true` | `false` | every layer | nothing: each layer's input stays on GPU |
+| `true` | `true` | every layer | each layer's input, and what is saved outside the layers |
+| `false` | `true` | nothing | every saved activation |
+| `true` | `hidden_states` | every layer | each layer's input only |
+
+Adding `selective_checkpointing` to any row with `gradient_checkpointing: true` skips recomputing
+the saved ops. Their outputs stay on GPU, or move to CPU with `selective_checkpointing.offload: true`.
+For example, to offload each layer's input and not recompute attention:
+
+```yaml
+gradient_checkpointing: true
+activation_offloading: hidden_states
+selective_checkpointing:
+  save: [attention]
+  offload: true  # optional: keep the saved attention outputs in CPU RAM too
+```
 
 ### Enabling Gradient Checkpointing
 
@@ -19,19 +57,28 @@ on ZeRO-3 need it set explicitly.
 ### Enabling Activation Offloading
 
 ```yaml
-gradient_checkpointing: true  # required for activation offloading
+gradient_checkpointing: true
 activation_offloading: true
 ```
+
+With `activation_offloading: true`, `gradient_checkpointing` controls recompute:
+
+- `true`: decoder layers are recomputed in backward; only tensors saved outside them are offloaded.
+- `false`: nothing is recomputed and every saved activation is offloaded, bounded by host RAM and
+  PCIe bandwidth. Can be faster for LoRA/QLoRA, whose activations are small. Not supported for
+  ORPO, SimPO, EBFT or process reward models.
+
+Checkpointing runs exactly as it would without offloading, for adapters and full finetunes alike,
+honoring `gradient_checkpointing_kwargs`; the non-reentrant default above applies to `rl:` runs as
+well (DeepSpeed ZeRO-3 stays reentrant). `hidden_states` requires `gradient_checkpointing: true`.
 
 Activation offloading variants:
 
 The default `activation_offloading: true` offloads activations to CPU and uses CUDA streams
 to overlap the communications and computations when offloading.
 
-The `activation_offloading: legacy` naively offloads activations to CPU and without additional optimizations.
-
-For resource constrained environments with limited CPU memory, `activation_offloading: disk` offloads
-activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.
+`activation_offloading: legacy` is a deprecated alias of `true`. `activation_offloading: disk` is
+disabled: it ran the same CPU offloader as `true` and never offloaded to disk.
 
 The `activation_offloading: hidden_states` mode keeps gradient checkpointing enabled and moves only
 the decoder-layer checkpoint input (`hidden_states`) to CPU. With the default
@@ -47,14 +94,12 @@ parallelism.
 
 | Mode | What moves | Best for |
 |------|-----------|----------|
-| `true` | All activations → CPU, stream-overlapped | General use; LoRA/QLoRA (offloads instead of recomputing) |
-| `legacy` | All activations → CPU, synchronous | Lowest resident GPU memory; when the streamed path's in-flight buffering inflates peak |
-| `disk` | Activations → disk | Severely CPU-RAM-constrained hosts |
+| `true` | Saved activations → CPU, stream-overlapped | General use; LoRA/QLoRA without recompute (`gradient_checkpointing: false`) |
 | `hidden_states` | Per-layer checkpoint input only → CPU, stream-overlapped | Long-context training where full activation offload is CPU-memory or bandwidth-bound |
 
-`hidden_states` uses gradient checkpointing and recomputes each layer during backward. With LoRA/QLoRA,
-`activation_offloading: true` can still be faster because adapter activations are smaller and pure offload
-avoids the recompute cost.
+`hidden_states` always recomputes each layer. For LoRA/QLoRA, `activation_offloading: true` with
+`gradient_checkpointing: false` can be faster: adapter activations are small and pure offload skips
+recompute.
 
 ### Selective Activation Checkpointing (SAC)
 
@@ -113,12 +158,11 @@ selective_checkpointing:
 ```
 
 This makes the saved attention outputs cost ~zero GPU memory at the price of CPU RAM and PCIe
-traffic, and stacks with `activation_offloading: hidden_states`.
+traffic, and stacks with `activation_offloading: hidden_states` or `true`.
 
-Requires non-reentrant checkpointing (the default). Composes with
-`activation_offloading: hidden_states`: layer inputs go to CPU while attention outputs are saved
-(on GPU, or on CPU with `offload: true`). It is incompatible with the TRL-offloader modes
-(`true`/`legacy`/`disk`), which replace gradient checkpointing instead of running inside it.
+Requires non-reentrant checkpointing (the default). Composes with `activation_offloading:
+hidden_states` or `true`: layer inputs go to CPU (with `true`, so does what is saved outside the
+layers) while the saved ops' outputs stay on GPU, or go to CPU with `offload: true`.
 Saving matmul ops (via `save`, `save_modules` or `save_matmul_min_k`) is rejected while a
 fused LoRA kernel is enabled, because the kernel adds the adapter delta into the base matmul
 output in place, which invalidates the cached tensor.

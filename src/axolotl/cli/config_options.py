@@ -877,6 +877,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--merge-num-threads",),
+        None,
+        None,
+        "PyTorch CPU intra-op threads during LoRA merging (default: 2). Set before compilation; the previous thread count is restored after merging.",
+    ),
+    (
         ("--merge-compile/--no-merge-compile",),
         None,
         None,
@@ -2340,7 +2346,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--gradient-checkpointing",),
         None,
         None,
-        "Whether to use gradient checkpointing. Available options are: true, false, 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing",
+        "Whether to use gradient checkpointing. Available options are: true, false, 'offload' (deprecated, use activation_offloading: true). https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing",
     ),
     (
         ("--gradient-checkpointing-kwargs",),
@@ -2390,7 +2396,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--activation-offloading",),
         None,
         None,
-        "Whether to offload activations. Options: true/false, 'legacy', 'disk' (TRL offloader), or 'hidden_states' (checkpoint input offload; non-reentrant by default, ALST-style when gradient_checkpointing_kwargs.use_reentrant is true).",
+        "Whether to offload activations. Options: true/false (TRL offloader; gradient_checkpointing decides whether layers recompute), or 'hidden_states' (checkpoint input offload; non-reentrant by default, ALST-style when gradient_checkpointing_kwargs.use_reentrant is true). 'legacy' is a deprecated alias of true; 'disk' is disabled.",
     ),
     (
         ("--layer-offloading/--no-layer-offloading",),

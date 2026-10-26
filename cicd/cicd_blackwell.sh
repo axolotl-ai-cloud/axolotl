@@ -2,21 +2,20 @@
 # Single-GPU tests that cannot run on the L40S lanes (pytest -m gpu_blackwell, see tests/conftest.py).
 set -euo pipefail
 
-# Blackwell-only kernel stack, pinned to docker/Dockerfile-cloud-blackwell-uv; the shared CI
-# image stays L40S-sized. torch is pinned so the resolver cannot swap the image's build.
-torch_version=$(python -c "import torch; print(torch.__version__)")
-uv pip install --python "$(command -v python)" \
-  "torch==${torch_version}" \
-  "flash-attn-4[cu13]==4.0.0b35" \
-  "quack-kernels[cu13]==0.6.5"
+# The image installs axolotl's `blackwell` extra (AXOLOTL_EXTRAS) and cicd/deep_ep.py installs DeepEP
+# before this runs; log what resolved. A missing one raises here instead of a skip-only run.
 python - <<'BLACKWELL_DEPS'
 import importlib.metadata as md
 
-for dist in ("flash-attn-4", "quack-kernels", "nvidia-cutlass-dsl", "triton", "torchao"):
-    try:
-        print(f"{dist}=={md.version(dist)}", flush=True)
-    except md.PackageNotFoundError:
-        print(f"{dist}: not installed", flush=True)
+from packaging.requirements import Requirement
+
+stack = [
+    Requirement(r).name
+    for r in md.requires("axolotl") or []
+    if 'extra == "blackwell"' in r
+]
+for dist in [*stack, "nvidia-cutlass-dsl", "deep-ep", "triton", "torchao"]:
+    print(f"{dist}=={md.version(dist)}", flush=True)
 BLACKWELL_DEPS
 
 python - <<'BLACKWELL_ENV'
