@@ -6,7 +6,7 @@
 LFM2.5-8B-A1B (8.3B total, 1.5B active) has 18 gated short-conv layers and 6
 attention layers, with MoE feed-forwards (32 experts, 4 active). TRL 1.16 refuses it
 for its conv layers; ``tree_recurrence`` runs each conv over its own path in the
-prefix trie (see ``trl_async_grpo.py``). The conv is the layers' only recurrence, so
+prefix trie (``tree_recurrent_models``). The conv is the layers' only recurrence, so
 every shared token runs once.
 
 - ``use_kernels=True`` takes the causal conv from the Hub
@@ -16,15 +16,18 @@ every shared token runs once.
 - TRL 1.16's FLOPs estimate fails on its MoE config (huggingface/trl#7069);
   ``guarded_flops`` makes the MFU metrics read 0 instead.
 
-Two GPUs (the bf16 weights are ~17 GB; TRL's tree attention needs Hopper), the vLLM
-server on one and training on the other::
+This file runs on its own. Install, then, on two GPUs (the bf16 weights are ~17 GB;
+TRL's tree attention needs Hopper), start the vLLM server on one and train on the
+other::
+
+    pip install "tree-recurrence[transformers,trl]" peft vllm math-verify
 
     CUDA_VISIBLE_DEVICES=0 VLLM_SERVER_DEV_MODE=1 vllm serve LiquidAI/LFM2.5-8B-A1B \\
         --max-model-len 8192 \\
         --logprobs-mode processed_logprobs \\
         --weight-transfer-config '{"backend":"nccl"}'
 
-    CUDA_VISIBLE_DEVICES=1 python examples/lfm2_5_8b_a1b.py
+    CUDA_VISIBLE_DEVICES=1 python lfm2_5_8b_a1b.py
 
 ``modal_async_grpo.py --example lfm2_5_8b_a1b`` runs both on Modal for a few steps.
 """
@@ -43,13 +46,13 @@ LORA_TARGETS = ["in_proj", "out_proj", "q_proj", "k_proj", "v_proj", "w1", "w2",
 def main() -> None:
     from datasets import load_dataset
     from peft import LoraConfig
+    from tree_recurrence.integrations.trl import guarded_flops, tree_recurrent_models
     from trl.experimental.async_grpo import (
         AsyncGRPOConfig,
         AsyncGRPOTrainer,
         async_grpo_trainer,
     )
     from trl.rewards import accuracy_reward
-    from trl_async_grpo import guarded_flops, tree_recurrent_models
 
     parser = argparse.ArgumentParser(description="Async GRPO on LFM2.5-8B-A1B")
     parser.add_argument("--model", default=MODEL)

@@ -6,6 +6,10 @@
 TRL packs each rank's samples into a prefix trie (``TreeRow``) and passes the model
 the ``tree_*`` kwargs the hooks read. Besides ``install``, a trainer needs:
 
+- ``tree_recurrent_models``: TRL 1.16 loads the model inside ``AsyncGRPOTrainer``'s
+  constructor and refuses recurrent layers right away; while the trainer is built,
+  this installs the hooks on the model TRL loads and hides its ``layer_types``;
+- ``guarded_flops``: TRL 1.16's FLOPs estimate fails on some MoE configs;
 - ``tree_kwargs_from_batch``: a collated batch's tree as forward kwargs, from either
   TRL format;
 - ``hidden_layer_types``: TRL 1.16 refuses a model with any non-attention
@@ -19,10 +23,13 @@ the ``tree_*`` kwargs the hooks read. Besides ``install``, a trainer needs:
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
 import torch
+
+from tree_recurrence.driver import Policy
+from tree_recurrence.integrations.transformers import Support, install
 
 _CHAINS = ("ChainRow", "ChainTokenBudgetBatcher", "ChainFixedCountBatcher")
 
@@ -110,3 +117,52 @@ def hidden_layer_types(model: torch.nn.Module) -> Iterator[None]:
         yield
     finally:
         text_config.layer_types = layer_types
+
+
+@contextlib.contextmanager
+def tree_recurrent_models(policy: Policy | None = None) -> Iterator[list[Support]]:
+    """While TRL builds an ``AsyncGRPOTrainer``, make the model it loads follow
+    tree-packed rows.
+
+    Yields the ``Support`` of each model loaded meanwhile. A model whose recurrent
+    layers cannot follow a trie is refused, as TRL would refuse it.
+    """
+    from trl.experimental.async_grpo import async_grpo_trainer
+
+    load = async_grpo_trainer.create_model_from_path
+    supports: list[Support] = []
+    with contextlib.ExitStack() as hidden:
+
+        def create_model_from_path(*args, **kwargs):
+            model = load(*args, **kwargs)
+            support = install(model, policy=policy)
+            if not support.shares_prefixes:
+                raise ValueError(
+                    f"{type(model).__name__} cannot share prefixes in a packed row: "
+                    f"{support.reason}"
+                )
+            supports.append(support)
+            hidden.enter_context(hidden_layer_types(model))
+            return model
+
+        async_grpo_trainer.create_model_from_path = create_model_from_path
+        try:
+            yield supports
+        finally:
+            async_grpo_trainer.create_model_from_path = load
+
+
+def guarded_flops(
+    compute_flops_per_token: Callable[..., int],
+) -> Callable[..., int]:
+    """TRL 1.16's FLOPs estimate reads ``decoder_sparse_step`` from every MoE config
+    (huggingface/trl#7069). Where the config has none, the MFU metrics read 0 instead
+    of the run ending at its first log."""
+
+    def flops_per_token(config, seq_len):
+        try:
+            return compute_flops_per_token(config, seq_len)
+        except AttributeError:
+            return 0
+
+    return flops_per_token

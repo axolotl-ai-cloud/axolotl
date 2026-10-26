@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Axolotl AI
 
-"""The TRL examples end to end on CPU: TRL's AsyncGRPOTrainer builds and trains tiny
-Qwen3.5 and Nemotron-H models (the latter with the Nemotron recipe's LoRA) on tree
-rows, fed by a stub rollout worker, with no weight sync and a PyTorch stand-in for
-TRL's FA3 tree attention."""
+"""The TRL examples' setup end to end on CPU: under ``tree_recurrent_models``, TRL's
+AsyncGRPOTrainer builds and trains tiny Qwen3.5, Nemotron-H and LFM2-MoE models (with
+the recipes' LoRA) on tree rows, fed by a stub rollout worker, with no weight sync and
+a PyTorch stand-in for TRL's FA3 tree attention."""
 
 import importlib.util
 import itertools
@@ -18,7 +18,10 @@ from test_gated_delta_net import qwen3_5
 from test_lfm2 import build as build_lfm2
 from test_mamba2 import build as build_mamba2
 from tree_recurrence.components import short_conv
-from tree_recurrence.integrations import transformers as integration
+from tree_recurrence.integrations import (
+    transformers as integration,
+    trl as trl_integration,
+)
 from tree_testing import branching_sequences, reference_tree_attention
 
 pytest.importorskip("trl.experimental.async_grpo")
@@ -214,7 +217,7 @@ def test_async_grpo_trains_a_hybrid_model_on_tree_rows(
 ):
     model, mixer, trained, peft_config = MODELS[name]
     if name in MOE:
-        guarded = example("trl_async_grpo").guarded_flops
+        guarded = trl_integration.guarded_flops
         flops = async_grpo_trainer.compute_flops_per_token
         monkeypatch.setattr(
             async_grpo_trainer, "compute_flops_per_token", guarded(flops)
@@ -237,7 +240,7 @@ def test_async_grpo_trains_a_hybrid_model_on_tree_rows(
     spy(integration, "tree_scan")
     spy(short_conv, "tree_conv")
 
-    with example("trl_async_grpo").tree_recurrent_models() as supports:
+    with trl_integration.tree_recurrent_models() as supports:
         trainer = build_trainer(tmp_path, model, peft_config)
     assert [s.owners for s in supports] == [{mixer: "tree_recurrence"}]
     # hidden from TRL's check only while it built the trainer

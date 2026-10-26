@@ -14,6 +14,30 @@ of its own path.
 It depends on `torch`, `numpy` and `kernels`. It does not depend on axolotl, and TRL
 can use it directly.
 
+## Install
+
+From PyPI, with the transformers and TRL integrations:
+
+```bash
+pip install "tree-recurrence[transformers,trl]"
+```
+
+The core alone (`pip install tree-recurrence`) has the plan, the driver and the
+kernel references. From source, the package lives in the axolotl repository:
+
+```bash
+pip install "tree-recurrence[transformers,trl] @ git+https://github.com/axolotl-ai-cloud/axolotl.git#subdirectory=packages/tree-recurrence"
+```
+
+or, from a checkout of it:
+
+```bash
+pip install -e "packages/tree-recurrence[transformers,trl]"
+```
+
+The scripts in [`examples/`](examples) run on their own: each says what to install
+and how to launch it.
+
 ## Use with transformers
 
 ```python
@@ -70,27 +94,38 @@ APIs, so all of this is tested on CPU against samples run alone.
 
 ## With TRL
 
-TRL 1.16's `AsyncGRPOTrainer` refuses models with non-attention `layer_types`.
-After `install`, build the trainer under
-`tree_recurrence.integrations.trl.hidden_layer_types(model)`. For `chains` support,
-`ChainRow`, `ChainTokenBudgetBatcher` and `ChainFixedCountBatcher` make every sample
-its own chain. `tree_kwargs_from_batch` turns a collated batch of either format into
-forward kwargs.
+TRL 1.16's `AsyncGRPOTrainer` loads the model inside its constructor and refuses
+recurrent layers right away. Build it under `tree_recurrent_models`, which installs
+the hooks on the model TRL loads and hides its `layer_types` until the trainer is
+built:
 
-[`examples/trl_async_grpo.py`](examples/trl_async_grpo.py) trains Qwen3.5 with TRL
-1.16's `AsyncGRPOTrainer` this way. TRL loads the model inside its constructor, so the
-example hooks that loader to `install` the model and hide its `layer_types` until the
-trainer is built. `tests/test_example_trl.py` runs it for two steps on CPU, with a
-stub rollout worker in place of vLLM.
+```python
+from tree_recurrence.integrations.trl import tree_recurrent_models
+from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
 
-[`examples/nemotron_3_5_lightning.py`](examples/nemotron_3_5_lightning.py) is a LoRA
-recipe for NVIDIA Nemotron 3.5 Lightning (30B-A3B, Mamba2/attention/MoE), with
-mamba-ssm's kernels from the Hub, and
-[`examples/modal_async_grpo.py`](examples/modal_async_grpo.py)
-runs any of the examples for a few steps on two Hopper GPUs on Modal (`modal run
-examples/modal_async_grpo.py --example nemotron_3_5_lightning`).
-[`examples/lfm2_5_8b_a1b.py`](examples/lfm2_5_8b_a1b.py) is the same kind of recipe
-for LiquidAI LFM2.5-8B-A1B (gated short convs, attention and MoE).
+config = AsyncGRPOConfig(output_dir="out", model_init_kwargs={"use_kernels": True})
+with tree_recurrent_models() as supports:
+    trainer = AsyncGRPOTrainer(model="Qwen/Qwen3.5-2B", args=config, ...)
+trainer.train()
+```
+
+For `chains` support, `ChainRow`, `ChainTokenBudgetBatcher` and
+`ChainFixedCountBatcher` make every sample its own chain. `tree_kwargs_from_batch`
+turns a collated batch of either format into forward kwargs. `guarded_flops` works
+around TRL 1.16's FLOPs estimate failing on some MoE configs (huggingface/trl#7069).
+
+Examples, each runnable on its own:
+
+- [`examples/trl_async_grpo.py`](examples/trl_async_grpo.py): Qwen3.5 (Gated DeltaNet).
+  `tests/test_example_trl.py` runs it for two steps on CPU, with a stub rollout
+  worker in place of vLLM.
+- [`examples/nemotron_3_5_lightning.py`](examples/nemotron_3_5_lightning.py): LoRA on
+  NVIDIA Nemotron 3.5 Lightning (30B-A3B; Mamba2, attention and MoE).
+- [`examples/lfm2_5_8b_a1b.py`](examples/lfm2_5_8b_a1b.py): LoRA on LiquidAI
+  LFM2.5-8B-A1B (gated short convs, attention and MoE).
+- [`examples/modal_async_grpo.py`](examples/modal_async_grpo.py) runs any of them for
+  a few steps on two H200s on Modal, from a checkout (`modal run
+  examples/modal_async_grpo.py --example lfm2_5_8b_a1b`).
 
 huggingface/trl#7686 adds TRL's own Gated DeltaNet tree kernel, `patch_tree_gdn`.
 Each modeling module has one owner: a module TRL patched first is left to TRL, and a
@@ -124,8 +159,6 @@ runs on transformers' PyTorch references, and the hooks log a warning that it is
 FLA prefers TileLang for the delta rule's backward when `tilelang` is importable (vLLM
 installs it). If TileLang cannot compile in your environment, `FLA_TILELANG=0` keeps
 FLA on its Triton kernels.
-
-Extras: `transformers`, `trl`.
 
 ## Not yet
 

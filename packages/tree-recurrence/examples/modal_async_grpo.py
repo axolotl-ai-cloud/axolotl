@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Axolotl AI
 
-"""Run an async GRPO example for a few steps on Modal.
+"""Run an async GRPO example for a few steps on Modal, from a checkout of the repo.
 
 One container with two H200s (TRL's tree attention needs Hopper): the vLLM server on
 the first, training on the second. The Hugging Face cache (weights and hub kernels)

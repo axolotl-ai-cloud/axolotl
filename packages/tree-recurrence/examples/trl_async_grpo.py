@@ -6,95 +6,36 @@
 TRL's ``AsyncGRPOTrainer`` packs each rank's rollouts into a prefix trie, so the
 prompt a group's completions share is forwarded once. TRL 1.16 refuses models with
 recurrent layers (Gated DeltaNet, Mamba2, short convs), since they would scan across
-the packed samples; ``tree_recurrence.install`` makes them follow the trie instead.
-
-TRL loads the model inside the trainer's constructor and checks its layer types
-straight away, so ``tree_recurrent_models`` hooks that loader: the loaded model gets
-``install``ed, and its ``layer_types`` stay hidden from the check until the trainer
-is built.
+the packed samples. ``tree_recurrent_models`` installs ``tree_recurrence`` on the
+model TRL loads, which makes those layers follow the trie, and keeps the model's
+``layer_types`` from TRL's check until the trainer is built.
 
 The model loads with ``use_kernels=True``, which takes FLA's and mamba-ssm's kernels
-from the Hub, so the same install serves every family and nothing is compiled::
+from the Hub, so one install serves every family and nothing is compiled. This file
+runs on its own; install, then start the vLLM server on one GPU and train on
+another::
 
     pip install "tree-recurrence[transformers,trl]" vllm math-verify
-
-Then, with two GPUs, the vLLM server on one and training on the other::
 
     CUDA_VISIBLE_DEVICES=0 VLLM_SERVER_DEV_MODE=1 vllm serve Qwen/Qwen3.5-2B \\
         --max-model-len 4096 \\
         --logprobs-mode processed_logprobs \\
         --weight-transfer-config '{"backend":"nccl"}'
 
-    CUDA_VISIBLE_DEVICES=1 accelerate launch examples/trl_async_grpo.py \\
-        --model Qwen/Qwen3.5-2B
+    CUDA_VISIBLE_DEVICES=1 accelerate launch trl_async_grpo.py --model Qwen/Qwen3.5-2B
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import logging
-from collections.abc import Callable, Iterator
-
-import tree_recurrence
-from tree_recurrence.integrations.trl import hidden_layer_types
-from trl.experimental.async_grpo import (
-    AsyncGRPOConfig,
-    AsyncGRPOTrainer,
-    async_grpo_trainer,
-)
-
-
-@contextlib.contextmanager
-def tree_recurrent_models(
-    policy: tree_recurrence.Policy | None = None,
-) -> Iterator[list[tree_recurrence.Support]]:
-    """While TRL builds a trainer, make the model it loads follow tree-packed rows.
-
-    Yields the ``Support`` of each model loaded meanwhile. A model whose recurrent
-    layers cannot follow a trie is refused, as TRL would refuse it.
-    """
-    load = async_grpo_trainer.create_model_from_path
-    supports: list[tree_recurrence.Support] = []
-    with contextlib.ExitStack() as hidden:
-
-        def create_model_from_path(*args, **kwargs):
-            model = load(*args, **kwargs)
-            support = tree_recurrence.install(model, policy=policy)
-            if not support.shares_prefixes:
-                raise ValueError(
-                    f"{type(model).__name__} cannot share prefixes in a packed row: "
-                    f"{support.reason}"
-                )
-            supports.append(support)
-            hidden.enter_context(hidden_layer_types(model))
-            return model
-
-        async_grpo_trainer.create_model_from_path = create_model_from_path
-        try:
-            yield supports
-        finally:
-            async_grpo_trainer.create_model_from_path = load
-
-
-def guarded_flops(
-    compute_flops_per_token: Callable[..., int],
-) -> Callable[..., int]:
-    """TRL 1.16's FLOPs estimate reads ``decoder_sparse_step`` from every MoE config
-    (huggingface/trl#7069). Where the config has none, the MFU metrics read 0 instead
-    of the run ending at its first log."""
-
-    def flops_per_token(config, seq_len):
-        try:
-            return compute_flops_per_token(config, seq_len)
-        except AttributeError:
-            return 0
-
-    return flops_per_token
 
 
 def main() -> None:
+    import tree_recurrence
     from datasets import load_dataset
+    from tree_recurrence.integrations.trl import tree_recurrent_models
+    from trl.experimental.async_grpo import AsyncGRPOConfig, AsyncGRPOTrainer
     from trl.rewards import accuracy_reward
 
     parser = argparse.ArgumentParser(description="Async GRPO with tree_recurrence")

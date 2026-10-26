@@ -5,11 +5,11 @@
 
 Nemotron 3.5 Lightning is a hybrid: 23 Mamba2 layers, 6 attention layers and 23 MoE
 layers (128 experts, 6 active). TRL 1.16 refuses it for its Mamba2 layers;
-``tree_recurrence`` makes them follow TRL's prefix trie (see ``trl_async_grpo.py``),
+``tree_recurrence`` makes them follow TRL's prefix trie (``tree_recurrent_models``),
 so each prompt is forwarded once for all its completions.
 
 - ``use_kernels=True`` takes mamba-ssm's fused kernels from the Hub
-  (``kernels-community/mamba-ssm``), so nothing has to be compiled. Every root-to-segment
+  (``kernels-community/mamba-ssm``), so nothing has to be compiled. Every root-to-leaf
   path then runs through the fused Mamba2 mixer in one call.
 - LoRA leaves the Mamba2 ``out_proj`` out: the fused kernel reads its weight
   directly, so an adapter there would be skipped in training.
@@ -18,8 +18,10 @@ so each prompt is forwarded once for all its completions.
   Nemotron-H lacks (huggingface/trl#7069), and would end the run at its first log;
   ``guarded_flops`` makes the MFU metrics read 0 instead.
 
-Two H200s (the bf16 weights are ~63 GB), the vLLM server on one and training on the
-other::
+This file runs on its own. Install, then, on two H200s (the bf16 weights are ~63 GB),
+start the vLLM server on one and train on the other::
+
+    pip install "tree-recurrence[transformers,trl]" peft vllm math-verify
 
     CUDA_VISIBLE_DEVICES=0 VLLM_SERVER_DEV_MODE=1 vllm serve \\
         nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 \\
@@ -28,7 +30,7 @@ other::
         --logprobs-mode processed_logprobs \\
         --weight-transfer-config '{"backend":"nccl"}'
 
-    CUDA_VISIBLE_DEVICES=1 python examples/nemotron_3_5_lightning.py
+    CUDA_VISIBLE_DEVICES=1 python nemotron_3_5_lightning.py
 
 ``modal_async_grpo.py --example nemotron_3_5_lightning`` runs both on Modal for a few
 steps.
@@ -47,13 +49,13 @@ LORA_TARGETS = ["in_proj", "q_proj", "k_proj", "v_proj", "o_proj"]
 def main() -> None:
     from datasets import load_dataset
     from peft import LoraConfig
+    from tree_recurrence.integrations.trl import guarded_flops, tree_recurrent_models
     from trl.experimental.async_grpo import (
         AsyncGRPOConfig,
         AsyncGRPOTrainer,
         async_grpo_trainer,
     )
     from trl.rewards import accuracy_reward
-    from trl_async_grpo import guarded_flops, tree_recurrent_models
 
     parser = argparse.ArgumentParser(description="Async GRPO on Nemotron 3.5 Lightning")
     parser.add_argument("--model", default=MODEL)
