@@ -31,6 +31,7 @@ class Hook:
     enabled: bool = True
     # (original, its instance forward, whether it runs a kernel), as last checked
     _kernel_check: tuple[Any, Any, bool] | None = None
+    announced: bool = False
 
     def kernel_backed(self) -> bool:
         """Whether ``original`` runs a kernel rather than its torch reference (see
@@ -138,7 +139,8 @@ def dispatches_to_kernel(fn: Any) -> bool:
             and getattr(bound, "__func__", None) is not type(fn).forward
         ):
             return True
-        fn = _nonlocals(type(fn).forward).get("func", fn)
+        inner = _nonlocals(type(fn).forward).get("func")
+        return True if inner is None else dispatches_to_kernel(inner)
     resolved = _nonlocals(fn).get("is_new_implementation")
     return True if resolved is None else bool(resolved)
 

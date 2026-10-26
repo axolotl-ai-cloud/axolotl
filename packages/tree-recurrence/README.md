@@ -11,14 +11,16 @@ its sibling. This package makes those layers follow the trie: each segment start
 from the state its parent ends in, and each short causal conv reads the last inputs
 of its own path.
 
-It depends on `torch` and `numpy` only. It does not depend on axolotl, and TRL can
-use it directly.
+It depends on `torch`, `numpy` and `kernels`. It does not depend on axolotl, and TRL
+can use it directly.
 
 ## Use with transformers
 
 ```python
 import tree_recurrence
+from transformers import AutoModelForCausalLM
 
+model = AutoModelForCausalLM.from_pretrained(model_id, use_kernels=True)
 support = tree_recurrence.install(model)  # after loading (and kernelizing) the model
 if support.mode == "none":
     raise ValueError(support.reason)  # some layer would mix packed samples
@@ -81,6 +83,13 @@ example hooks that loader to `install` the model and hide its `layer_types` unti
 trainer is built. `tests/test_example_trl.py` runs it for two steps on CPU, with a
 stub rollout worker in place of vLLM.
 
+[`examples/nemotron_3_5_lightning.py`](examples/nemotron_3_5_lightning.py) is a LoRA
+recipe for NVIDIA Nemotron 3.5 Lightning (30B-A3B, Mamba2/attention/MoE), with
+mamba-ssm's kernels from the Hub, and
+[`examples/modal_nemotron_3_5_lightning.py`](examples/modal_nemotron_3_5_lightning.py)
+runs it for a few steps on two H200s on Modal (`modal run
+examples/modal_nemotron_3_5_lightning.py --max-steps 3`).
+
 huggingface/trl#7686 adds TRL's own Gated DeltaNet tree kernel, `patch_tree_gdn`.
 Each modeling module has one owner: a module TRL patched first is left to TRL, and a
 module patched here is recorded in TRL's patched set, so TRL does not wrap it again.
@@ -95,12 +104,16 @@ adapters in `tree_recurrence.components` (`kda_scan`, `short_convolution`, ...),
 marks its mixer's forward with `mark_tree_forward`, and registers a `TreeFamily`
 naming its model types and mixer classes.
 
-## Extras
+## Kernels
 
-- `fla`: flash-linear-attention, the varlen Gated DeltaNet and KDA kernels
-- `mamba`: mamba-ssm and causal-conv1d
-- `kernels`: hub kernels, e.g. `integrations.hub_kernels.use_hub_causal_conv1d`
-- `transformers`, `trl`
+The fast paths need FLA's varlen kernels (Gated DeltaNet, KDA) and mamba-ssm's
+(Mamba2). Load the model with `use_kernels=True` and transformers takes them from the
+Hub (`kernels-community/fla`, `kernels-community/mamba-ssm`), so nothing is compiled
+or pinned here. If flash-linear-attention, mamba-ssm or causal-conv1d are installed,
+transformers uses them instead and the hooks run on those. With neither, every tree
+runs on transformers' PyTorch references, and the hooks log a warning that it is slow.
+
+Extras: `transformers`, `trl`.
 
 ## Not yet
 

@@ -431,6 +431,21 @@ def _bind(signature: inspect.Signature, args, kwargs) -> dict[str, Any]:
     return bound.arguments
 
 
+def _announce(hook: Hook, kernel: bool, strategy: str) -> None:
+    """Say once per hook how it runs trees, loudly when on a PyTorch reference."""
+    if hook.announced:
+        return
+    hook.announced = True
+    where = f"{hook.owner.__name__}.{hook.name}"
+    if kernel:
+        LOG.info(f"tree_recurrence: {where} runs trees on a kernel ({strategy})")
+    else:
+        LOG.warning(
+            f"tree_recurrence: {where} has no kernel, so trees run on its PyTorch "
+            "reference, every path as one padded batch (slow)"
+        )
+
+
 def _no_cache(*states: Any) -> None:
     if any(state is not None and state is not False for state in states):
         raise ValueError(
@@ -463,6 +478,7 @@ def _gated_delta_rule_hook(hook: Hook) -> Callable[..., Any]:
         bound = _bind(_GATED_DELTA_RULE, args, kwargs)
         _no_cache(bound["initial_state"], bound["output_final_state"])
         varlen = hook.kernel_backed()
+        _announce(hook, varlen, "forking or rescanning paths by policy")
         scan = gated_delta_rule_scan(
             hook.original,
             use_qk_l2norm_in_kernel=bound["use_qk_l2norm_in_kernel"],
@@ -485,10 +501,12 @@ def _ssd_hook(hook: Hook) -> Callable[..., Any]:
         _no_cache(bound["initial_states"], bound["return_final_states"])
         if bound["kwargs"].get("z") is not None:
             raise NotImplementedError("a gated scan (z) on a tree")
+        varlen = hook.kernel_backed()
+        _announce(hook, varlen, "rescanning paths")
         scan = ssd_scan(
             hook.original,
             bound["A"],
-            varlen=hook.kernel_backed(),
+            varlen=varlen,
             chunk_size=bound["chunk_size"],
             D=bound["D"],
             dt_bias=bound["dt_bias"],
@@ -514,6 +532,7 @@ def _split_conv1d_scan_hook(hook: Hook) -> Callable[..., Any]:
         # transformers' reference returns None: the mixer then runs the unfused path
         if plan is None or not hook.kernel_backed():
             return hook.original(*args, **kwargs)
+        _announce(hook, True, "the fused mixer over every path")
         bound = _bind(_SPLIT_CONV1D_SCAN, args, kwargs)
         _no_cache(bound["initial_states"], bound["return_final_states"])
         params = {name: bound[name] for name in _SPLIT_CONV1D_SCAN_PARAMS}

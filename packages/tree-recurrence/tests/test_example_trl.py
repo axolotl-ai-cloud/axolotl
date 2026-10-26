@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Axolotl AI
 
-"""examples/trl_async_grpo.py end to end on CPU: TRL's AsyncGRPOTrainer builds and
-trains a tiny Qwen3.5 on tree rows, fed by a stub rollout worker, with no weight sync
-and a PyTorch stand-in for TRL's FA3 tree attention."""
+"""The TRL examples end to end on CPU: TRL's AsyncGRPOTrainer builds and trains tiny
+Qwen3.5 and Nemotron-H models (the latter with the Nemotron recipe's LoRA) on tree
+rows, fed by a stub rollout worker, with no weight sync and a PyTorch stand-in for
+TRL's FA3 tree attention."""
 
 import importlib.util
 import itertools
@@ -14,6 +15,7 @@ import numpy as np
 import pytest
 import torch
 from test_gated_delta_net import qwen3_5
+from test_mamba2 import build as build_mamba2
 from tree_recurrence.integrations import transformers as integration
 from tree_testing import branching_sequences, reference_tree_attention
 
@@ -29,16 +31,41 @@ from trl.experimental.async_grpo import (  # noqa: E402
 )
 from trl.experimental.async_grpo.async_rollout_worker import RolloutSample  # noqa: E402
 
-EXAMPLE = Path(__file__).parents[1] / "examples" / "trl_async_grpo.py"
+EXAMPLES = Path(__file__).parents[1] / "examples"
 PROMPT = 6
 
 
-def example():
-    spec = importlib.util.spec_from_file_location("trl_async_grpo", EXAMPLE)
+def example(name):
+    spec = importlib.util.spec_from_file_location(name, EXAMPLES / f"{name}.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def nemotron_h():
+    return build_mamba2("nemotron_h")[1]
+
+
+def nemotron_lora():
+    from peft import LoraConfig
+
+    targets = example("nemotron_3_5_lightning").LORA_TARGETS
+    return LoraConfig(r=4, lora_alpha=8, target_modules=targets)
+
+
+# model, its recurrent mixer, a parameter name every step must change, LoRA config
+MODELS = {
+    "qwen3_5": (qwen3_5, "Qwen3_5GatedDeltaNet", "linear_attn", None),
+    "nemotron_h": (nemotron_h, "NemotronHMamba2Mixer", "mixer.in_proj", None),
+    "nemotron_h-lora": (
+        nemotron_h,
+        "NemotronHMamba2Mixer",
+        "in_proj.lora_B",
+        nemotron_lora,
+    ),
+}
+MOE = {"nemotron_h", "nemotron_h-lora"}
 
 
 class Rollouts:
@@ -146,9 +173,9 @@ def config(tmp_path):
     )
 
 
-def build_trainer(tmp_path):
+def build_trainer(tmp_path, model=qwen3_5, peft_config=None):
     model_dir = tmp_path / "model"
-    qwen3_5().save_pretrained(model_dir)
+    model().save_pretrained(model_dir)
     return AsyncGRPOTrainer(
         model=str(model_dir),
         args=config(tmp_path),
@@ -158,6 +185,7 @@ def build_trainer(tmp_path):
         processing_class=tokenizer(),
         rollout_worker=Rollouts(branching_sequences(vocab_size=62)),
         weight_transfer=NoWeightSync(),
+        peft_config=peft_config,
     )
 
 
@@ -166,7 +194,20 @@ def test_trl_refuses_the_model_by_itself(tmp_path, cpu_trl):
         build_trainer(tmp_path)
 
 
-def test_async_grpo_trains_a_hybrid_model_on_tree_rows(tmp_path, monkeypatch, cpu_trl):
+@pytest.mark.parametrize("name", list(MODELS))
+def test_async_grpo_trains_a_hybrid_model_on_tree_rows(
+    tmp_path, monkeypatch, cpu_trl, name
+):
+    model, mixer, trained, peft_config = MODELS[name]
+    if name in MOE:
+        guarded = example("nemotron_3_5_lightning").guarded_flops
+        flops = async_grpo_trainer.compute_flops_per_token
+        monkeypatch.setattr(
+            async_grpo_trainer, "compute_flops_per_token", guarded(flops)
+        )
+    if peft_config is not None:
+        pytest.importorskip("peft")
+        peft_config = peft_config()
     trees = []
     tree_scan = integration.tree_scan
 
@@ -176,22 +217,23 @@ def test_async_grpo_trains_a_hybrid_model_on_tree_rows(tmp_path, monkeypatch, cp
 
     monkeypatch.setattr(integration, "tree_scan", spy)
 
-    with example().tree_recurrent_models() as supports:
-        trainer = build_trainer(tmp_path)
-    assert [s.owners for s in supports] == [{"Qwen3_5GatedDeltaNet": "tree_recurrence"}]
+    with example("trl_async_grpo").tree_recurrent_models() as supports:
+        trainer = build_trainer(tmp_path, model, peft_config)
+    assert [s.owners for s in supports] == [{mixer: "tree_recurrence"}]
     # hidden from TRL's check only while it built the trainer
-    assert trainer.model.config.get_text_config().layer_types[0] == "linear_attention"
+    layer_types = trainer.model.config.get_text_config().layer_types
+    assert "linear_attention" in layer_types
     before = {n: p.detach().clone() for n, p in trainer.model.named_parameters()}
 
     trainer.train()
 
     losses = [log["loss"] for log in trainer.state.log_history if "loss" in log]
     assert len(losses) == 2 and all(np.isfinite(losses))
-    # the GDN layers ran on rows whose samples shared prefixes
+    # the recurrent layers ran on rows whose samples shared prefixes
     assert trees and max(trees) > 1
     moved = [
         n
         for n, p in trainer.model.named_parameters()
-        if "linear_attn" in n and not torch.equal(p, before[n])
+        if trained in n and not torch.equal(p, before[n])
     ]
     assert moved

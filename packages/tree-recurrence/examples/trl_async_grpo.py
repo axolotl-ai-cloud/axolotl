@@ -13,13 +13,12 @@ straight away, so ``tree_recurrent_models`` hooks that loader: the loaded model 
 ``install``ed, and its ``layer_types`` stay hidden from the check until the trainer
 is built.
 
-Install::
+The model loads with ``use_kernels=True``, which takes FLA's and mamba-ssm's kernels
+from the Hub, so the same install serves every family and nothing is compiled::
 
-    pip install "tree-recurrence[transformers,trl,fla]" vllm math-verify
+    pip install "tree-recurrence[transformers,trl]" vllm math-verify
 
-(``mamba`` instead of ``fla`` for Nemotron-H, Bamba, Granite-MoE-Hybrid or Mamba2;
-LFM2 needs neither.) Then, with two GPUs, the vLLM server on one and training on the
-other::
+Then, with two GPUs, the vLLM server on one and training on the other::
 
     CUDA_VISIBLE_DEVICES=0 VLLM_SERVER_DEV_MODE=1 vllm serve Qwen/Qwen3.5-2B \\
         --max-model-len 4096 \\
@@ -91,6 +90,7 @@ def main() -> None:
     config = AsyncGRPOConfig(
         output_dir=args.output_dir,
         max_steps=args.max_steps,
+        model_init_kwargs={"use_kernels": True},
         num_generations=8,
         per_device_train_batch_size=8,
         max_completion_length=1024,

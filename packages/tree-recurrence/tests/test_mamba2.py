@@ -111,11 +111,12 @@ def scans(monkeypatch):
 
 
 @pytest.mark.parametrize("model_type", list(FAMILIES))
-def test_torch_reference_kernels(model_type, scans):
+def test_torch_reference_kernels(model_type, scans, caplog):
     modeling, model = build(model_type)
     support = install(model)
     assert support.mode == "tree", support.reason
     assert_tree_matches_alone(model, branching_sequences(), rtol=1e-4)
+    assert "mamba2_chunk_scan has no kernel" in caplog.text
     mixers = sum(type(m).__name__ in support.owners for m in model.modules())
     assert len(scans) == mixers
 
@@ -124,7 +125,7 @@ def test_torch_reference_kernels(model_type, scans):
 @pytest.mark.parametrize(
     "gradient_checkpointing", [False, True], ids=["", "checkpointed"]
 )
-def test_seq_idx_kernels(monkeypatch, model_type, gradient_checkpointing):
+def test_seq_idx_kernels(monkeypatch, caplog, model_type, gradient_checkpointing):
     """Kernels that reset at seq_idx: the fused mixer runs every path in one call."""
     modeling, model = build(model_type, gradient_checkpointing)
     fused_calls = []
@@ -141,12 +142,14 @@ def test_seq_idx_kernels(monkeypatch, model_type, gradient_checkpointing):
     )
     monkeypatch.setattr(modeling, "causal_conv1d_fn", reference.causal_conv1d)
     assert install(model).mode == "tree"
+    caplog.set_level("INFO", logger="tree_recurrence")
     sequences = branching_sequences()
     assert_tree_matches_alone(model, sequences, rtol=1e-4)
     row_tokens = len(pack(sequences).input_ids)
     tree_calls = [tokens for tokens, with_seq_idx in fused_calls if with_seq_idx]
     # every root-to-segment path, laid end to end
     assert tree_calls and all(tokens > row_tokens for tokens in tree_calls)
+    assert "split_conv1d_scan_combined runs trees on a kernel" in caplog.text
 
 
 def test_chains_and_collation_padding():
