@@ -3199,7 +3199,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
             )
 
         # --- Importance weights ---
-        log_ratio = per_token_logps - old_per_token_logps
+        # Padded and tool-excluded positions must not be exponentiated: a
+        # discarded exp(large log-ratio) can overflow and poison the loss.
+        log_ratio = torch.where(
+            mask.bool(),
+            per_token_logps - old_per_token_logps,
+            torch.zeros_like(per_token_logps),
+        )
         is_level = getattr(
             self,
             "importance_sampling_level",
