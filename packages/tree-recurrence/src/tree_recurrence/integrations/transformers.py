@@ -154,6 +154,8 @@ class _ModuleState:
     hooks: dict[tuple[Any, str], Hook] = field(default_factory=dict)
     # TRL's packing module whose record of patched modules lists this one
     claimed: ModuleType | None = None
+    # the installed models that run on these hooks
+    models: weakref.WeakSet[torch.nn.Module] = field(default_factory=weakref.WeakSet)
 
     def add(self, hook: Hook) -> None:
         self.hooks[(hook.owner, hook.name)] = hook
@@ -173,9 +175,15 @@ def install(
 ) -> Support:
     """Make ``model``'s recurrent mixers follow tree-packed rows, where they can.
 
-    Installing is idempotent per modeling module (a second call updates its
-    ``policy``) and undone by ``uninstall``. Call it once the model is loaded: a
-    mixer whose forward ``kernelize`` replaced cannot be hooked.
+    Hooks are per modeling module, so models of one architecture share them and
+    their ``policy`` (the latest install's). Installing again is a no-op beyond
+    that, and ``uninstall`` takes the hooks off once no installed model uses them.
+    Call it once the model is loaded: a mixer whose forward ``kernelize`` replaced
+    cannot be hooked.
+
+    A recurrent layer no family covers makes the answer ``none``: one whose
+    ``layer_types`` entry no found family implements, or a module outside every
+    covered mixer with a state-space decay (``A_log``) or a causal depthwise conv.
 
     ``backends`` picks who runs a family's trees: ``{"gated_delta_net": "trl"}`` uses
     TRL's ``patch_tree_gdn`` when TRL has it, and this package otherwise.
@@ -190,22 +198,10 @@ def install(
     for module in model.modules():
         if mixer_family(type(module).__name__) is not None:
             mixers.setdefault(type(module), []).append(module)
+    uncovered = _uncovered_recurrence(model, model_types, mixers)
+    if uncovered:
+        return Support("none", "; ".join(uncovered))
     if not mixers:
-        expected = tree_family(model_types)
-        if expected is not None:
-            return Support(
-                "none",
-                f"{'/'.join(sorted(model_types))} should have {', '.join(expected.mixers)} "
-                "layers, and none were found",
-            )
-        recurrent = _recurrent_layer_types(model)
-        if recurrent or model_types & RECURRENT_MODEL_TYPES:
-            what = f" ({', '.join(sorted(recurrent))} layers)" if recurrent else ""
-            return Support(
-                "none",
-                f"{'/'.join(sorted(model_types))}{what} has recurrent layers without "
-                "tree support, which would mix packed samples",
-            )
         return Support("tree", "no recurrent layers")
 
     _skip_the_cache(model)
@@ -252,7 +248,10 @@ def install(
 
 
 def uninstall(model: torch.nn.Module | None = None) -> None:
-    """Undo ``install`` for ``model``'s modeling modules, or for every module."""
+    """Undo ``install`` for ``model``, or for every model.
+
+    A modeling module keeps its hooks while another installed model still uses them.
+    """
     if model is None:
         names = set(_INSTALLED)
     else:
@@ -267,9 +266,14 @@ def uninstall(model: torch.nn.Module | None = None) -> None:
         if handle is not None:
             handle.remove()
     for name in names:
-        state = _INSTALLED.pop(name, None)
+        state = _INSTALLED.get(name)
         if state is None:
             continue
+        if model is not None:
+            state.models.discard(model)
+            if state.models:
+                continue
+        del _INSTALLED[name]
         for hook in state.hooks.values():
             remove_hook(hook)
         if state.claimed is not None:
@@ -284,6 +288,59 @@ def _model_types(model: torch.nn.Module) -> set[str]:
     with contextlib.suppress(Exception):
         types.add(config.get_text_config().model_type)
     return {t for t in types if t}
+
+
+def _looks_recurrent(module: torch.nn.Module) -> bool:
+    """A state-space decay, or a causal depthwise short conv."""
+    if "A_log" in module._parameters:
+        return True
+    if not isinstance(module, torch.nn.Conv1d) or not isinstance(module.padding, tuple):
+        return False
+    width = module.kernel_size[0]
+    depthwise = module.groups == module.in_channels > 1
+    return depthwise and width > 1 and module.padding[0] == width - 1
+
+
+def _uncovered_recurrence(
+    model: torch.nn.Module,
+    model_types: set[str],
+    mixers: Mapping[type[torch.nn.Module], list[torch.nn.Module]],
+) -> list[str]:
+    """Why some recurrent layer of ``model`` follows no tree, if one does not."""
+    found = {mixer_family(cls.__name__) for cls in mixers}
+    names = "/".join(sorted(model_types)) or type(model).__name__
+    reasons = []
+    expected = tree_family(model_types)
+    if expected is not None and expected not in found:
+        reasons.append(
+            f"{names} should have {', '.join(expected.mixers)} layers, and none were "
+            "found"
+        )
+    elif not found and model_types & RECURRENT_MODEL_TYPES:
+        reasons.append(f"{names} has recurrent layers without tree support")
+    covered = {t for family in found if family for t in family.layer_types}
+    layers = _recurrent_layer_types(model) - covered
+    if layers:
+        reasons.append(
+            f"{names} has {', '.join(sorted(layers))} layers that no tree family covers"
+        )
+    inside = {
+        id(module)
+        for instances in mixers.values()
+        for mixer in instances
+        for module in mixer.modules()
+    }
+    loose: dict[str, list[str]] = {}
+    for path, module in model.named_modules():
+        if id(module) not in inside and _looks_recurrent(module):
+            loose.setdefault(type(module).__name__, []).append(path)
+    for cls, paths in loose.items():
+        reasons.append(
+            f"{cls} at {paths[0]}{f' and {len(paths) - 1} more' if len(paths) > 1 else ''}"
+            " looks recurrent (a state-space decay or a causal depthwise conv) and no "
+            "tree family covers it"
+        )
+    return reasons
 
 
 def _recurrent_layer_types(model: torch.nn.Module) -> set[str]:
@@ -329,11 +386,12 @@ def _policy(module_name: str) -> Policy:
     return DEFAULT_POLICY if state is None else state.policy
 
 
-def _state(modeling: ModuleType, policy: Policy) -> _ModuleState:
+def _state(modeling: ModuleType, context: InstallContext) -> _ModuleState:
     state = _INSTALLED.get(modeling.__name__)
     if state is None:
-        state = _INSTALLED[modeling.__name__] = _ModuleState(policy)
-    state.policy = policy
+        state = _INSTALLED[modeling.__name__] = _ModuleState(context.policy)
+    state.policy = context.policy
+    state.models.add(context.model)
     return state
 
 
@@ -635,7 +693,7 @@ def _install_gated_delta_net(modeling: ModuleType, context: InstallContext) -> s
             "TRL's patch_tree_gdn is unavailable or declined the model; Gated "
             "DeltaNet follows trees through tree_recurrence"
         )
-    state = _state(modeling, context.policy)
+    state = _state(modeling, context)
     state.add(install_hook(modeling, "causal_conv1d_fn", _conv_hook))
     state.add(
         install_hook(modeling, "torch_chunk_gated_delta_rule", _gated_delta_rule_hook)
@@ -657,7 +715,7 @@ def _install_mamba2(modeling: ModuleType, context: InstallContext) -> str:
     if any(loads_global(cls.forward, fused) for cls in context.mixer_classes):
         names += (fused,)
     _require(modeling, context.mixer_classes, names)
-    state = _state(modeling, context.policy)
+    state = _state(modeling, context)
     state.add(install_hook(modeling, "causal_conv1d_fn", _conv_hook))
     state.add(install_hook(modeling, "mamba2_chunk_scan", _ssd_hook))
     if fused in names:
@@ -681,7 +739,7 @@ def _install_short_conv(modeling: ModuleType, context: InstallContext) -> str:
     for cls, _ in layers:
         if cls.__module__ != modeling.__name__:
             raise SeamMissing(f"{cls.__name__} is not from {modeling.__name__}")
-    state = _state(modeling, context.policy)
+    state = _state(modeling, context)
     for cls, attribute in layers:
         state.add(
             install_hook(
@@ -710,6 +768,7 @@ register_family(
             "Qwen3_5GatedDeltaNet",
             "Qwen3_5MoeGatedDeltaNet",
         ),
+        layer_types=("linear_attention",),
         install=_install_gated_delta_net,
     )
 )
@@ -723,6 +782,7 @@ register_family(
             "Mamba2Mixer",
             "NemotronHMamba2Mixer",
         ),
+        layer_types=("linear_attention", "mamba"),
         install=_install_mamba2,
     )
 )
@@ -731,6 +791,7 @@ register_family(
         "short_conv",
         model_types=("lfm2", "lfm2_moe"),
         mixers=("Lfm2MoeShortConv", "Lfm2ShortConv"),
+        layer_types=("conv",),
         install=_install_short_conv,
     )
 )

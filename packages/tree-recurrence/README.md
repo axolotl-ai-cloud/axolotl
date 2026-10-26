@@ -86,9 +86,9 @@ stub rollout worker in place of vLLM.
 [`examples/nemotron_3_5_lightning.py`](examples/nemotron_3_5_lightning.py) is a LoRA
 recipe for NVIDIA Nemotron 3.5 Lightning (30B-A3B, Mamba2/attention/MoE), with
 mamba-ssm's kernels from the Hub, and
-[`examples/modal_nemotron_3_5_lightning.py`](examples/modal_nemotron_3_5_lightning.py)
-runs it for a few steps on two H200s on Modal (`modal run
-examples/modal_nemotron_3_5_lightning.py --max-steps 3`).
+[`examples/modal_async_grpo.py`](examples/modal_async_grpo.py)
+runs either example for a few steps on two Hopper GPUs on Modal (`modal run
+examples/modal_async_grpo.py --example nemotron_3_5_lightning`).
 
 huggingface/trl#7686 adds TRL's own Gated DeltaNet tree kernel, `patch_tree_gdn`.
 Each modeling module has one owner: a module TRL patched first is left to TRL, and a
@@ -102,7 +102,13 @@ A model that follows trees in its own code (an in-tree Kimi-Linear, say) builds 
 with `tree_plan(kwargs)`, runs its kernels with `tree_conv` / `tree_scan` and the
 adapters in `tree_recurrence.components` (`kda_scan`, `short_convolution`, ...),
 marks its mixer's forward with `mark_tree_forward`, and registers a `TreeFamily`
-naming its model types and mixer classes.
+naming its model types, mixer classes and the config `layer_types` they implement.
+
+`install` answers `none` for any recurrent layer no family covers: a `layer_types`
+entry no found family implements, or a module outside every covered mixer with a
+state-space decay (`A_log`) or a causal depthwise conv. Models of one architecture
+share their modeling module's hooks (and the latest `policy`); `uninstall(model)`
+takes them off once no installed model uses them.
 
 ## Kernels
 

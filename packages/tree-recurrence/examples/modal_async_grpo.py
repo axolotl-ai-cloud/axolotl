@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Axolotl AI
 
-"""Run ``nemotron_3_5_lightning.py`` for a few steps on Modal.
+"""Run an async GRPO example for a few steps on Modal.
 
-One container with two H200s: the vLLM server on the first, training on the second.
-The Hugging Face cache (weights and hub kernels) lives on a Modal volume, so a rerun
-skips the download::
+One container with two H200s (TRL's tree attention needs Hopper): the vLLM server on
+the first, training on the second. The Hugging Face cache (weights and hub kernels)
+lives on a Modal volume, so a rerun skips the download::
 
-    modal run examples/modal_nemotron_3_5_lightning.py --max-steps 3
+    modal run examples/modal_async_grpo.py --example nemotron_3_5_lightning
+    modal run examples/modal_async_grpo.py --example trl_async_grpo
+
+``--example-args`` replaces the short-run flags below.
 """
 
 from __future__ import annotations
@@ -21,7 +24,21 @@ from pathlib import Path
 
 import modal
 
-MODEL = "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+# example -> (model, extra vLLM flags, example flags for a short run)
+EXAMPLES = {
+    "nemotron_3_5_lightning": (
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        ["--mamba-ssm-cache-dtype", "float32"],
+        "--prompts-per-step 2 --num-generations 4 --max-completion-length 256 "
+        "--token-budget 8192",
+    ),
+    # Gated DeltaNet, forking its state at every branch of the trie
+    "trl_async_grpo": (
+        "Qwen/Qwen3.5-2B",
+        [],
+        "--max-completion-length 256 --fork-min-saved-tokens 0",
+    ),
+}
 PACKAGE = Path(__file__).resolve().parents[1]
 REMOTE_PACKAGE = "/root/tree-recurrence"
 HF_CACHE = "/root/.cache/huggingface"
@@ -38,7 +55,7 @@ image = (
         "datasets",
         "accelerate",
     )
-    # vLLM caps transformers below the release the hooks are tested against
+    # vLLM pins its own transformers; train on the release the hooks are tested against
     .uv_pip_install("transformers==5.20.1", extra_options="--no-deps")
     .env({"TRL_EXPERIMENTAL_SILENCE": "1", "PYTHONUNBUFFERED": "1"})
     .add_local_dir(
@@ -50,7 +67,7 @@ image = (
     .run_commands(f"python -m pip install --no-deps {REMOTE_PACKAGE}")
 )
 hf_cache = modal.Volume.from_name("tree-recurrence-hf-cache", create_if_missing=True)
-app = modal.App("tree-recurrence-nemotron", image=image)
+app = modal.App("tree-recurrence-async-grpo", image=image)
 
 
 def _wait_for(server: subprocess.Popen, timeout_s: float) -> None:
@@ -67,20 +84,19 @@ def _wait_for(server: subprocess.Popen, timeout_s: float) -> None:
 
 
 @app.function(gpu="H200:2", volumes={HF_CACHE: hf_cache}, timeout=2 * 60 * 60)
-def train(recipe_args: str) -> None:
+def train(example: str, model: str, vllm_args: list[str], args: list[str]) -> None:
     server = subprocess.Popen(  # nosec B603 B607
         [
             "vllm",
             "serve",
-            MODEL,
+            model,
             "--max-model-len",
             "4096",
-            "--mamba-ssm-cache-dtype",
-            "float32",
             "--logprobs-mode",
             "processed_logprobs",
             "--weight-transfer-config",
             '{"backend":"nccl"}',
+            *vllm_args,
         ],
         env={**os.environ, "CUDA_VISIBLE_DEVICES": "0", "VLLM_SERVER_DEV_MODE": "1"},
     )
@@ -88,11 +104,7 @@ def train(recipe_args: str) -> None:
         _wait_for(server, timeout_s=45 * 60)
         hf_cache.commit()
         subprocess.run(  # nosec B603 B607
-            [
-                "python",
-                f"{REMOTE_PACKAGE}/examples/nemotron_3_5_lightning.py",
-                *shlex.split(recipe_args),
-            ],
+            ["python", f"{REMOTE_PACKAGE}/examples/{example}.py", *args],
             env={**os.environ, "CUDA_VISIBLE_DEVICES": "1"},
             cwd=f"{REMOTE_PACKAGE}/examples",
             check=True,
@@ -105,8 +117,17 @@ def train(recipe_args: str) -> None:
 
 @app.local_entrypoint()
 def main(
-    max_steps: int = 3,
-    recipe_args: str = "--prompts-per-step 2 --num-generations 4 "
-    "--max-completion-length 256 --token-budget 8192",
+    example: str = "nemotron_3_5_lightning", max_steps: int = 3, example_args: str = ""
 ) -> None:
-    train.remote(f"--max-steps {max_steps} --output-dir /tmp/run {recipe_args}")
+    model, vllm_args, short_run = EXAMPLES[example]
+    args = [
+        "--model",
+        model,
+        "--max-steps",
+        str(max_steps),
+        "--output-dir",
+        "/root/run",
+    ]
+    train.remote(
+        example, model, vllm_args, args + shlex.split(example_args or short_run)
+    )

@@ -46,7 +46,15 @@ def test_recurrent_models_without_a_family_are_refused():
 
 
 def test_a_chains_family():
-    register_family(TreeFamily("mamba1", ("mamba",), ("MambaMixer",), support="chains"))
+    register_family(
+        TreeFamily(
+            "mamba1",
+            ("mamba",),
+            ("MambaMixer",),
+            layer_types=("linear_attention",),
+            support="chains",
+        )
+    )
     try:
         support = install(tiny_mamba())
     finally:
@@ -117,3 +125,38 @@ def test_tree_rows_build_no_cache():
     assert plain.past_key_values is not None  # untouched without a tree
     uninstall(model)
     assert not any(module._forward_pre_hooks for module in model.modules())
+
+
+def test_an_uncovered_recurrent_layer_beside_a_covered_one_is_refused():
+    from test_gated_delta_net import qwen3_5
+
+    model = qwen3_5()
+    model.model.layers[1].extra = tiny_mamba().backbone.layers[0].mixer
+    support = install(model)
+    assert support.mode == "none"
+    assert "MambaMixer at model.layers.1.extra" in support.reason
+
+
+def test_an_uncovered_layer_type_is_refused():
+    from test_gated_delta_net import qwen3_5
+
+    model = qwen3_5()
+    model.config.layer_types = ["linear_attention", "full_attention", "conv"]
+    support = install(model)
+    assert support.mode == "none" and "conv layers" in support.reason
+
+
+def test_models_sharing_an_architecture_share_its_hooks():
+    from test_gated_delta_net import modeling, qwen3_5
+    from tree_recurrence import uninstall
+    from tree_recurrence._hooks import hook_of
+    from tree_testing import assert_tree_matches_alone, branching_sequences
+
+    first, second = qwen3_5(), qwen3_5()
+    install(first)
+    install(second)
+    uninstall(first)
+    assert hook_of(modeling, "torch_chunk_gated_delta_rule") is not None
+    assert_tree_matches_alone(second, branching_sequences())
+    uninstall(second)
+    assert hook_of(modeling, "torch_chunk_gated_delta_rule") is None

@@ -30,7 +30,8 @@ other::
 
     CUDA_VISIBLE_DEVICES=1 python examples/nemotron_3_5_lightning.py
 
-``modal_nemotron_3_5_lightning.py`` runs both on Modal for a few steps.
+``modal_async_grpo.py --example nemotron_3_5_lightning`` runs both on Modal for a few
+steps.
 """
 
 from __future__ import annotations
@@ -82,7 +83,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig()
+    logging.getLogger("tree_recurrence").setLevel(logging.INFO)
     async_grpo_trainer.compute_flops_per_token = guarded_flops(
         async_grpo_trainer.compute_flops_per_token
     )

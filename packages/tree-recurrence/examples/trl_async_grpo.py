@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import logging
 from collections.abc import Iterator
 
 import tree_recurrence
@@ -85,28 +86,38 @@ def main() -> None:
     parser.add_argument("--dataset", default="trl-lib/DeepMath-103K")
     parser.add_argument("--output-dir", default="outputs/async-grpo-tree-recurrence")
     parser.add_argument("--max-steps", type=int, default=200)
+    parser.add_argument("--max-completion-length", type=int, default=1024)
+    # prefix tokens a trie level must save to fork the state rather than rescan
+    parser.add_argument("--fork-min-saved-tokens", type=int)
     args = parser.parse_args()
 
+    logging.basicConfig()
+    logging.getLogger("tree_recurrence").setLevel(logging.INFO)
+    policy = None
+    if args.fork_min_saved_tokens is not None:
+        policy = tree_recurrence.Policy(
+            fork_min_saved_tokens=args.fork_min_saved_tokens
+        )
     config = AsyncGRPOConfig(
         output_dir=args.output_dir,
         max_steps=args.max_steps,
         model_init_kwargs={"use_kernels": True},
         num_generations=8,
         per_device_train_batch_size=8,
-        max_completion_length=1024,
+        max_completion_length=args.max_completion_length,
         learning_rate=1e-6,
         gradient_checkpointing=True,
         logging_steps=1,
         report_to="none",
     )
-    with tree_recurrent_models() as supports:
+    with tree_recurrent_models(policy) as supports:
         trainer = AsyncGRPOTrainer(
             model=args.model,
             reward_funcs=accuracy_reward,
             args=config,
             train_dataset=load_dataset(args.dataset, split="train"),
         )
-    print(f"tree_recurrence: {supports[0].reason}")
+    print(f"tree_recurrence: {supports[0].reason}", flush=True)
     trainer.train()
 
 

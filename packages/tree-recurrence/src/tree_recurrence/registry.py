@@ -25,6 +25,8 @@ class TreeFamily:
     model_types: tuple[str, ...]
     # every recurrent mixer class those model types use
     mixers: tuple[str, ...]
+    # the config ``layer_types`` those mixers implement
+    layer_types: tuple[str, ...] = ()
     # "chains": the mixers keep whole samples apart but cannot follow a trie, so
     # each sample has to be its own chain
     support: Literal["tree", "chains"] = "tree"
