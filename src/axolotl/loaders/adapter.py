@@ -418,12 +418,6 @@ def load_lora(
     config_only: bool = False,
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     _patch_peft_clippable_linear()
-    if not inference and not cfg.merge_lora:
-        from axolotl.monkeypatch.peft.exact_unmerge import (
-            patch_peft_lora_exact_unmerge,
-        )
-
-        patch_peft_lora_exact_unmerge()
     lora_config = _build_peft_lora_config(model, cfg)
 
     if config_only:
