@@ -110,7 +110,9 @@ def requires_sm_ge_100(test_case):
         and torch.version.cuda
         and torch.cuda.get_device_capability() >= (10, 0)
     )
-    return unittest.skipUnless(is_sm_ge_100, "test requires sm>=100")(test_case)
+    return pytest.mark.gpu_blackwell(
+        unittest.skipUnless(is_sm_ge_100, "test requires sm>=100")(test_case)
+    )
 
 
 def requires_cuda_ge_8_9(test_case):

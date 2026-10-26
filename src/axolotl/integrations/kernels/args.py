@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, model_validator
 
 from axolotl.utils.logging import get_logger
@@ -57,20 +59,61 @@ class KernelsArgs(BaseModel):
     # JSON file of Triton autotune winners (kernel, shape key, chosen tile). When it exists and
     # was measured on this GPU model, the kernels' autotune caches are seeded from it before the
     # first forward, so no training step benchmarks configs (and EP ranks stay in lockstep). It is
-    # rewritten at every checkpoint and at train end with the merged winners of all ranks.
+    # rewritten at every checkpoint and at train end with the merged winners of all ranks, with
+    # each measured key's per-config timings. With use_sonicmoe, the quack winners are written
+    # next to it as <stem>.quack.json.
     autotune_cache_path: str | None = None
-    # Pin or narrow Triton autotune search spaces per kernel: a list of
-    # {kernel, gpu?, match?, configs} entries (see integrations/kernels/autotune_profiles.py).
-    # One config = no benchmarking for any unseen key; several = a short search.
+    # Pin or narrow autotune search spaces per kernel: a list of
+    # {kernel, backend?, gpu?, match?, configs | allow} entries; backend is triton (default) or
+    # quack (SonicMoE), and quack entries match on argument values, shapes and dims and can
+    # filter candidates by field value with allow (see the kernels README). One config = no
+    # benchmarking for a matched key; several = a short search.
     autotune_profiles: list[dict] | None = None
     # Narrow a kernel's autotune search for a new size bucket to configs within this many
     # parameter changes of its winner for the same shape (1 = one of BLOCK_M/N/K, warps, stages;
     # 2 = pairs). Only applies once that kernel has a measured or seeded winner.
     autotune_neighborhood: int | None = None
+    # SonicMoE: round the routed row/pair dims of quack's autotune key for grouped GEMMs up to a
+    # power of two, so one sweep serves every count in a bucket ("pow2", the default with
+    # use_sonicmoe), drop them so one sweep per weight shape serves every token count ("shape"), or
+    # key on exact shapes ("none"). A reused winner is checked against quack's
+    # validity pruning for the actual call; a rejected one tunes that exact shape instead.
+    quack_autotune_key_buckets: Literal["pow2", "shape", "none"] | None = None
+    # SonicMoE: false = never benchmark quack configs; each GEMM key gets one config from a fixed
+    # per-kernel rule (by output width and reduction size; autotune_profiles still decide when they
+    # match), so a new shape costs at most a compile. Default true (sweep).
+    quack_autotune: bool | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
     use_sonicmoe: bool | None = None
+    # SonicMoE under expert parallelism pads each rank's received tokens so quack's autotuner sees
+    # few distinct shapes. "pow2" (default): the next power of two. "highwater": the largest count
+    # seen so far times sonicmoe_ep_row_padding_headroom (default 1.03), rounded up to
+    # sonicmoe_ep_row_padding_granule tokens (default 4096), tracked separately for training and
+    # eval. pow2 can pad a rank's typical receive by half again (see the kernels README).
+    sonicmoe_ep_row_padding: Literal["pow2", "highwater"] | None = None
+    sonicmoe_ep_row_padding_granule: int | None = None
+    sonicmoe_ep_row_padding_headroom: float | None = None
+    # Hand the bf16 SonicMoE EP kernel only the (token, local expert) pairs instead of the
+    # tokens x top_k grid of mostly remote-slot sentinels, which shrinks its expert buffers about
+    # top_k / (local experts hit per token) times. The pair count is padded high-water style to
+    # sonicmoe_ep_pair_padding_granule pairs (default 32768) with the row-padding headroom.
+    sonicmoe_ep_compact_routing: bool | None = None
+    sonicmoe_ep_pair_padding_granule: int | None = None
+    # Start the training padding marks at the per-rank token cap (sequence_len x micro_batch_size x
+    # expert_parallel_size / context_parallel_size) instead of zero, so the first step pads every MoE layer to one size
+    # rather than producing a quack shape per layer. With sonicmoe_ep_compact_routing, also start
+    # the pair mark at sonicmoe_ep_pair_seed_factor x the average pairs per rank (cap x top_k /
+    # expert_parallel_size); routing imbalance puts the busiest rank well above the average (about
+    # 2.75x on Beam at EP=8). Unset factor: only the token mark is seeded. Marks still grow.
+    sonicmoe_ep_padding_seed: bool | None = None
+    sonicmoe_ep_pair_seed_factor: float | None = None
+    # bf16 SonicMoE expert LoRA without building W + scaling * B @ A: the frozen base stays in
+    # sonic-moe's fused GEMMs, the LoRA enters them as a low-rank addend, and the LoRA grads come
+    # from rank-r GEMMs (no full-rank expert weight gradient). Falls back to materializing, with
+    # a warning, for trainable base weights, expert bias, non-GLU activations or non-bf16 experts.
+    sonicmoe_lora_split: bool | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
     use_dsv4_kernels: bool | None = None
     # GLM-5.2 (glm_moe_dsa) DSA fused attention: MLA-absorption head-batched sparse-gather attn
@@ -112,6 +155,70 @@ class KernelsArgs(BaseModel):
     # of max steps. Default 0 (on from the first step). A short warm-up avoids STE oscillation
     # while the adapter is near its zero init (standard QAT practice).
     nvfp4_merge_aware_start_step: int | float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_quack_autotune(cls, data):
+        data = cls._canonicalize_expert_backend(data)
+        buckets = data.get("quack_autotune_key_buckets")
+        if buckets is not None and buckets not in ("pow2", "shape", "none"):
+            raise ValueError(
+                "quack_autotune_key_buckets must be 'pow2', 'shape' or 'none'"
+            )
+        tune = data.get("quack_autotune")
+        if tune is not None and not isinstance(tune, bool):
+            raise ValueError("quack_autotune must be true or false")
+        if (buckets is not None or tune is not None) and not data.get("use_sonicmoe"):
+            raise ValueError(
+                "quack_autotune and quack_autotune_key_buckets only apply with use_sonicmoe"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sonicmoe_ep_row_padding(cls, data):
+        granule = data.get("sonicmoe_ep_row_padding_granule")
+        headroom = data.get("sonicmoe_ep_row_padding_headroom")
+        if granule is not None and granule < 1:
+            raise ValueError("sonicmoe_ep_row_padding_granule must be at least 1")
+        if headroom is not None and headroom < 1:
+            raise ValueError("sonicmoe_ep_row_padding_headroom must be at least 1.0")
+        highwater = data.get("sonicmoe_ep_row_padding") == "highwater"
+        compact = bool(data.get("sonicmoe_ep_compact_routing"))
+        if granule is not None and not highwater:
+            LOG.warning(
+                "sonicmoe_ep_row_padding_granule only applies with "
+                "sonicmoe_ep_row_padding: highwater"
+            )
+        if headroom is not None and not (highwater or compact):
+            LOG.warning(
+                "sonicmoe_ep_row_padding_headroom only applies with "
+                "sonicmoe_ep_row_padding: highwater or sonicmoe_ep_compact_routing"
+            )
+        pair_granule = data.get("sonicmoe_ep_pair_padding_granule")
+        if pair_granule is not None and pair_granule < 1:
+            raise ValueError("sonicmoe_ep_pair_padding_granule must be at least 1")
+        if pair_granule is not None and not compact:
+            LOG.warning(
+                "sonicmoe_ep_pair_padding_granule only applies with "
+                "sonicmoe_ep_compact_routing: true"
+            )
+        factor = data.get("sonicmoe_ep_pair_seed_factor")
+        if factor is not None and factor <= 0:
+            raise ValueError("sonicmoe_ep_pair_seed_factor must be positive")
+        if data.get("sonicmoe_ep_padding_seed") and not (highwater or compact):
+            LOG.warning(
+                "sonicmoe_ep_padding_seed only applies with "
+                "sonicmoe_ep_row_padding: highwater or sonicmoe_ep_compact_routing"
+            )
+        if factor is not None and not (
+            data.get("sonicmoe_ep_padding_seed") and compact
+        ):
+            LOG.warning(
+                "sonicmoe_ep_pair_seed_factor only applies with sonicmoe_ep_padding_seed "
+                "and sonicmoe_ep_compact_routing"
+            )
+        return data
 
     @model_validator(mode="before")
     @classmethod

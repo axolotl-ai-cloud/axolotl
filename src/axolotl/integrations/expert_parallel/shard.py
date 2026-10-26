@@ -558,6 +558,56 @@ def _gather_adapter_tensor(parameter: torch.Tensor) -> torch.Tensor:
         del temporary
 
 
+def _keep_for_writer(tensor: torch.Tensor) -> torch.Tensor:
+    """Rank 0 (the only writer) keeps a CPU copy; other ranks keep a storage-free placeholder."""
+    if not dist.is_initialized() or dist.get_rank() == 0:
+        return tensor.detach().cpu()
+    return torch.empty_like(tensor, device="meta")
+
+
+def _wrapper_lora_weights(wrappers) -> dict:
+    return {
+        id(mod.weight): mod.weight
+        for _wname, wrapper in wrappers
+        for sub in ("lora_A", "lora_B")
+        for mod in getattr(wrapper, sub, {}).values()
+    }
+
+
+def _replicated_adapter_state(model, deferred: dict) -> tuple[dict, set]:
+    """Gathered ``lora_`` params under canonical PEFT keys, plus the keys still owed by ``deferred``
+    params (meta placeholders here, gathered later per wrapper)."""
+    from peft.utils.save_and_load import get_peft_model_state_dict
+
+    from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
+
+    sd, placeholders = {}, set()
+    for name, p in model.named_parameters():
+        if "lora_" not in name:
+            continue
+        if id(p) in deferred:
+            value = torch.empty(p.shape, dtype=p.dtype, device="meta")
+            placeholders.add(id(value))
+        else:
+            value = _keep_for_writer(_gather_adapter_tensor(p))
+        sd[_strip_checkpoint_wrapper(name)] = value
+    add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
+    # sd holds only LoRA weights; an explicit flag skips PEFT's Hub vocab-size lookup
+    adapter_sd = _canonical_adapter_keys(
+        get_peft_model_state_dict(model, state_dict=sd, save_embedding_layers=False)
+    )
+    return adapter_sd, {k for k, v in adapter_sd.items() if id(v) in placeholders}
+
+
+def _raise_on_unfilled(pending: set, what: str) -> None:
+    # every rank tracks the same keys, so all ranks raise together instead of one hanging
+    if pending:
+        raise ValueError(
+            f"{what}: no gathered tensor for adapter keys {sorted(pending)[:8]}"
+            f"{' ...' if len(pending) > 8 else ''}; refusing to write a partial adapter."
+        )
+
+
 _PEFT_KEY_PREFIX = "base_model.model."
 
 
@@ -584,7 +634,6 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     """
     from pathlib import Path
 
-    from peft.utils.save_and_load import get_peft_model_state_dict
     from safetensors.torch import save_file
 
     from axolotl.monkeypatch.peft.state_dict import (
@@ -636,16 +685,8 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
         ep_group = stashed
 
     # Replicated (attention/router) LoRA: full tensors via FSDP all-gather, canonical PEFT keys.
-    sd = {
-        _strip_checkpoint_wrapper(name): _gather_adapter_tensor(p)
-        for name, p in model.named_parameters()
-        if "lora_" in name
-    }
-    from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
-
-    add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
-    adapter_sd = _canonical_adapter_keys(
-        get_peft_model_state_dict(model, state_dict=sd)
+    adapter_sd, pending = _replicated_adapter_state(
+        model, _wrapper_lora_weights(expert_wrappers)
     )
 
     # Expert LoRA: gather each wrapper's adapter across FSDP (dp_shard) + EP, key by module name.
@@ -662,6 +703,8 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
                     if ep_sharded
                     else full_local
                 )
+                full = _keep_for_writer(full)
+                del full_local
                 key = _strip_checkpoint_wrapper(f"{wname}.{sub}.weight")
                 target = (
                     key
@@ -677,9 +720,11 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
                 )
                 if target is not None:
                     adapter_sd[target] = full
+                    pending.discard(target)
                     gathered += 1
                 else:
                     LOG.warning(f"EP-LoRA save: no adapter key for {key!r}.")
+    _raise_on_unfilled(pending, "EP-LoRA save")
 
     if dist.get_rank() == 0:
         out = Path(output_dir)
@@ -711,7 +756,6 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
     """
     from pathlib import Path
 
-    from peft.utils.save_and_load import get_peft_model_state_dict
     from safetensors.torch import save_file
 
     from axolotl.monkeypatch.peft.state_dict import (
@@ -730,25 +774,16 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
 
     # Replicated + dp-sharded LoRA: full tensors via FSDP all-gather (collective — same iteration
     # order on every rank). Canonical PEFT keys via get_peft_model_state_dict.
-    sd = {
-        _strip_checkpoint_wrapper(name): _gather_adapter_tensor(p)
-        for name, p in model.named_parameters()
-        if "lora_" in name
-    }
-    from axolotl.utils.lora_tying import add_tied_lora_state_dict_weights
-
-    add_tied_lora_state_dict_weights(model, sd, _strip_checkpoint_wrapper)
-    adapter_sd = _canonical_adapter_keys(
-        get_peft_model_state_dict(model, state_dict=sd)
+    wrappers = [(n, m) for n, m in model.named_modules() if _is_param_wrapper(m)]
+    adapter_sd, pending = _replicated_adapter_state(
+        model, _wrapper_lora_weights(wrappers)
     )
 
     gathered = 0
-    for wname, wrapper in model.named_modules():
-        if not _is_param_wrapper(wrapper):
-            continue
+    for wname, wrapper in wrappers:
         for sub in ("lora_A", "lora_B"):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
-                full = _gather_adapter_tensor(w)
+                full = _keep_for_writer(_gather_adapter_tensor(w))
                 key = _strip_checkpoint_wrapper(f"{wname}.{sub}.weight")
                 target = (
                     key
@@ -764,7 +799,9 @@ def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
                 )
                 if target is not None:
                     adapter_sd[target] = full
+                    pending.discard(target)
                     gathered += 1
+    _raise_on_unfilled(pending, "FSDP2 LoRA save")
 
     if not dist.is_initialized() or dist.get_rank() == 0:
         out = Path(output_dir)

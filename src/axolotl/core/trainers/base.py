@@ -52,6 +52,7 @@ from axolotl.core.trainers.mixins import (
     PackingMixin,
     RngLoaderMixin,
     SchedulerMixin,
+    ShardedAdapterSaveMixin,
     with_checkpoint_write_retry,
 )
 from axolotl.core.trainers.utils import (
@@ -68,6 +69,7 @@ from axolotl.utils.distributed import (
     is_distributed,
     is_main_process,
 )
+from axolotl.utils.label_dropout import LabelDropout
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import (
     LabelBalancedRandomSampler,
@@ -128,6 +130,7 @@ class AxolotlTrainer(
     CheckpointSaveMixin,
     LayerOffloadingMixin,
     ActivationOffloadingMixin,
+    ShardedAdapterSaveMixin,
     DistributedParallelMixin,
     Trainer,
 ):
@@ -201,6 +204,12 @@ class AxolotlTrainer(
         )
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+        label_keep_prob = getattr(self.args, "label_keep_prob", None)
+        self._label_dropout = (
+            LabelDropout(label_keep_prob, seed=self.args.seed)
+            if label_keep_prob
+            else None
+        )
 
     def _init_training_state(
         self,
@@ -695,6 +704,26 @@ class AxolotlTrainer(
         from deepspeed.utils import groups
 
         return groups._get_sequence_parallel_group()
+
+    @override
+    def get_batch_samples(self, epoch_iterator, num_batches, device):
+        dropout = self._label_dropout
+        if dropout is None:
+            return super().get_batch_samples(epoch_iterator, num_batches, device)
+        step, rank = self.state.global_step, self.args.process_index
+        if self.args.label_keep_prob_normalize == "original":
+            # count trained tokens before masking so other tokens' weights are unchanged
+            batch_samples, num_items_in_batch = super().get_batch_samples(
+                epoch_iterator, num_batches, device
+            )
+            for micro_step, batch in enumerate(batch_samples):
+                dropout.apply(batch, dropout.generator(step, rank, micro_step))
+            return batch_samples, num_items_in_batch
+        return super().get_batch_samples(
+            dropout.iter_applied(epoch_iterator, num_batches, step, rank),
+            num_batches,
+            device,
+        )
 
     @override
     def _get_num_items_in_batch(self, batch_samples, device):
@@ -1395,6 +1424,21 @@ class AxolotlTrainer(
             if not is_peft_available()
             else (PreTrainedModel, PeftModel)
         )
+        save_kwargs = {}
+        if getattr(self, "is_fsdp_enabled", False) and is_peft_available():
+            unwrapped = (
+                self.model
+                if isinstance(self.model, supported_classes)
+                else self.accelerator.unwrap_model(self.model, keep_torch_compile=False)
+            )
+            if isinstance(unwrapped, PeftModel):
+                from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+                    peft_save_embedding_layers,
+                )
+
+                save_kwargs["save_embedding_layers"] = peft_save_embedding_layers(
+                    unwrapped
+                )
         # Save a trained model and configuration using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
         if not isinstance(self.model, supported_classes):
@@ -1411,6 +1455,7 @@ class AxolotlTrainer(
                     output_dir,
                     state_dict=state_dict,
                     is_main_process=self.accelerator.is_main_process,
+                    **save_kwargs,
                 )
             else:
                 LOG.info(
@@ -1426,6 +1471,7 @@ class AxolotlTrainer(
                 output_dir,
                 state_dict=state_dict,
                 is_main_process=self.accelerator.is_main_process,
+                **save_kwargs,
             )
 
         if self.processing_class is not None:

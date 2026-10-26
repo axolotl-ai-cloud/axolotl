@@ -14,6 +14,8 @@ Speed is ratio-based and marked `perf` (noisy).
 
 from __future__ import annotations
 
+import gc
+
 import pytest
 import torch
 
@@ -229,8 +231,11 @@ def test_no_oom_all_to_one_under_cap():
     # cap this process to a fraction that comfortably fits the robust path but not an E*cap blowup
     hidden, idx, wts, gu_nv, dn_nv, _, _, lora = _build(_CFG, "all_to_one")
     needed = _CFG["N"] * _CFG["topk"] * max(2 * _CFG["I"], _CFG["H"]) * 2
+    # budget on top of what this process already holds (earlier tests' caches + this build)
+    gc.collect()
+    torch.cuda.empty_cache()
     frac = min(
-        0.5, (needed * 12 + 4 * 2**30) / total
+        0.5, (torch.cuda.memory_reserved() + needed * 12 + 4 * 2**30) / total
     )  # robust needs ~12x routed + model; blowup needs ~Ex more
     torch.cuda.set_per_process_memory_fraction(frac, 0)
     try:

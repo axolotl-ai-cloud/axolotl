@@ -45,58 +45,32 @@ TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=16 uv pip install --no-build-isolation .
 python -c "import deep_ep; print(deep_ep.Buffer)"
 ```
 
-**Hopper (sm_90, H100), single-node intranode-only (no OFED):**
+**Hopper (sm_90, H100) or Blackwell (sm_100, B200), node-local EP on CUDA 13.0:**
+
+DeepEP `main` requires CUDA 13.1; `v1.2.1` builds against the CUDA 13.0 toolkit
+that the Axolotl images ship once CUDA 13's relocated `cuda/std/*` headers (`include/cccl`) are on the
+include path. It links the `nvidia-nvshmem-cu13` wheel that torch already depends on, so it needs no
+source patches, system NVSHMEM or Mellanox OFED; beyond CUDA, the only system headers it compiles
+against are rdma-core's `infiniband/mlx5dv.h` (`libibverbs-dev`), which the Axolotl images include.
+No GPU is needed for the build; the wheel can be built once and installed on every node.
+Set `TORCH_CUDA_ARCH_LIST=9.0` for H100 or `10.0` for B200:
 
 ```bash
-git clone https://github.com/deepseek-ai/DeepEP.git
+git clone --depth 1 --branch v1.2.1 https://github.com/deepseek-ai/DeepEP.git
 cd DeepEP
-git checkout v1.2.1
-# Patch 1: setup.py — honor DISABLE_NVSHMEM=1
-git apply <<'EOF'
---- a/setup.py
-+++ b/setup.py
-@@ -19,7 +19,10 @@ if __name__ == '__main__':
-     disable_nvshmem = False
-     nvshmem_dir = os.getenv('NVSHMEM_DIR', None)
-     nvshmem_host_lib = 'libnvshmem_host.so'
--    if nvshmem_dir is None:
-+    if int(os.getenv('DISABLE_NVSHMEM', '0')):
-+        disable_nvshmem = True
-+        nvshmem_dir = None
-+    elif nvshmem_dir is None:
-         try:
-             nvshmem_dir = importlib.util.find_spec("nvidia.nvshmem").submodule_search_locations[0]
-             nvshmem_host_lib = get_nvshmem_host_lib_name(nvshmem_dir)
-EOF
-
-# Patch 2: setup.py — drop -rdc=true when NVSHMEM is disabled
-git apply <<'EOF'
---- a/setup.py
-+++ b/setup.py
-@@ -71,7 +71,9 @@ if __name__ == '__main__':
-         os.environ['TORCH_CUDA_ARCH_LIST'] = os.getenv('TORCH_CUDA_ARCH_LIST', '9.0')
-
-         # CUDA 12 flags
--        nvcc_flags.extend(['-rdc=true', '--ptxas-options=--register-usage-level=10'])
-+        nvcc_flags.append('--ptxas-options=--register-usage-level=10')
-+        if not disable_nvshmem:
-+            nvcc_flags.append('-rdc=true')
-
-     # Disable LD/ST tricks, as some CUDA version does not support `.L1::no_allocate`
-     if os.environ['TORCH_CUDA_ARCH_LIST'].strip() != '9.0':
-EOF
-
-DISABLE_NVSHMEM=1 TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=16 \
-  uv pip install --no-build-isolation .
+export TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=16 \
+  CFLAGS=-I/usr/local/cuda/include/cccl CXXFLAGS=-I/usr/local/cuda/include/cccl \
+  NVCC_PREPEND_FLAGS=-I/usr/local/cuda/include/cccl
+python setup.py bdist_wheel -d dist     # uv pip install . fails in the build backend on this tag
+uv pip install --no-deps dist/deep_ep-*.whl
 python -c "import deep_ep; print(deep_ep.Buffer)"
 ```
 
 Notes:
 
-- Hopper kernels (FP8, TMA, etc.) are preserved; only intranode dispatch/combine is built — appropriate for single-node H100×{4,8}.
-- Patch 1 lets `DISABLE_NVSHMEM=1` skip the NVSHMEM build path, which would otherwise need Mellanox OFED dev headers (`infiniband/mlx5dv.h`).
-- Patch 2 drops `-rdc=true` when NVSHMEM is off; otherwise the device-link step has nothing to link against and import fails with `__cudaRegisterLinkedBinary_*` undefined symbol.
-- The `v1.2.1` pin is required: it is the last release whose `setup.py` still carries the `disable_nvshmem` path the two patches edit. DeepEP `main` restructured `setup.py` and removed that path ([DeepEP #664](https://github.com/deepseek-ai/DeepEP/pull/664)), so against HEAD the patches fail with `patch failed: setup.py:19`. The pin also sidesteps DeepEP HEAD's `csrc/elastic/` (Engram/EPv2, commit `b306af0`), which needs `ncclGinRequest_t` from NCCL 2.29+.
+- `TORCH_CUDA_ARCH_LIST=10.0` makes `setup.py` set `DISABLE_AGGRESSIVE_PTX_INSTRS=1` on its own; the sm_90-only PTX tricks are not built. Hopper features (FP8 dispatch, TMA) stay on.
+- Axolotl's mesh keeps `ep` as the innermost axis, so EP groups are node-local and DeepEP only uses its NVLink intranode path; the NVSHMEM/RDMA path is linked but idle (`num_rdma_bytes` stays 0).
+- The `axolotlai/axolotl-cloud` `-blackwell` image tags ship the `10.0` wheel together with the rest of the Blackwell kernel stack (see the [Docker docs](https://docs.axolotl.ai/docs/docker.html)).
 
 **Ampere (sm_80, A100, intranode-only)** — needs two small source patches gated on `DISABLE_NVSHMEM=1`:
 
@@ -169,30 +143,10 @@ DISABLE_NVSHMEM=1 DISABLE_SM90_FEATURES=1 TORCH_CUDA_ARCH_LIST=8.0 MAX_JOBS=16 \
 python -c "import deep_ep; print(deep_ep.Buffer)"
 ```
 
-**Blackwell (sm_100, B200), node-local EP on CUDA 13.0:**
-
-DeepEP `main` requires CUDA 13.1; `v1.2.1` builds against the CUDA 13.0 toolkit
-that the Axolotl images ship once CUDA 13's relocated `cuda/std/*` headers (`include/cccl`) are on the
-include path. It links the `nvidia-nvshmem-cu13` wheel that torch already depends on, so no OFED headers
-or system NVSHMEM are needed. No GPU is needed for the build; the wheel can be built once and installed
-on every node.
-
-```bash
-git clone --depth 1 --branch v1.2.1 https://github.com/deepseek-ai/DeepEP.git
-cd DeepEP
-export TORCH_CUDA_ARCH_LIST=10.0 MAX_JOBS=16 \
-  CFLAGS=-I/usr/local/cuda/include/cccl CXXFLAGS=-I/usr/local/cuda/include/cccl \
-  NVCC_PREPEND_FLAGS=-I/usr/local/cuda/include/cccl
-python setup.py bdist_wheel -d dist     # uv pip install . fails in the build backend on this tag
-uv pip install --no-deps dist/deep_ep-*.whl
-python -c "import deep_ep; print(deep_ep.Buffer)"
-```
-
 Notes:
 
-- `TORCH_CUDA_ARCH_LIST=10.0` makes `setup.py` set `DISABLE_AGGRESSIVE_PTX_INSTRS=1` on its own; the sm_90-only PTX tricks are not built. Hopper features (FP8 dispatch, TMA) stay on.
-- Axolotl's mesh keeps `ep` as the innermost axis, so EP groups are node-local and DeepEP only uses its NVLink intranode path; the NVSHMEM/RDMA path is linked but idle (`num_rdma_bytes` stays 0).
-- The `axolotlai/axolotl-cloud` `-blackwell` image tags ship this wheel together with the rest of the Blackwell kernel stack (see the [Docker docs](https://docs.axolotl.ai/docs/docker.html)).
+- Patch 1 is required because `DISABLE_SM90_FEATURES=1` asserts a build without NVSHMEM, and `setup.py` otherwise picks up the `nvidia-nvshmem` wheel that torch depends on.
+- The `v1.2.1` pin is required: it is the last release whose `setup.py` still carries the `disable_nvshmem` path that patch 1 edits. DeepEP `main` restructured `setup.py` and removed that path ([DeepEP #664](https://github.com/deepseek-ai/DeepEP/pull/664)), so against HEAD the patch fails with `patch failed: setup.py:19`. The pin also sidesteps DeepEP HEAD's `csrc/elastic/` (Engram/EPv2, commit `b306af0`), which needs `ncclGinRequest_t` from NCCL 2.29+.
 
 ## Usage
 
@@ -255,12 +209,18 @@ for quantization, memory, and mesh compatibility limits.
 - `pytorch_model_fsdp.bin` is the native model checkpoint used by
   `resume_from_checkpoint` and best-model loading. Trainer LoRA/QLoRA checkpoints
   include PEFT export state, including frozen adapter factors, saved modules, and
-  required embeddings; the frozen base model is loaded separately.
+  required embeddings; the frozen base model is loaded separately. In model-only
+  checkpoints of a single-adapter PEFT model, and in every checkpoint written with
+  `adapter_checkpoint_format: sharded`, this file only references the
+  `adapter_model.safetensors` beside it, and restore reads the adapter from there.
+  Full-parameter and multi-adapter checkpoints, and checkpoints from earlier
+  versions, hold the complete state in this file.
 - `optimizer.bin` preserves every expert owner's optimizer state. It is absent
   when `save_only_model: true`.
 - `adapter_model.safetensors` is the ordinary PEFT adapter export used by
   `lora_model_dir`. Model-only intermediate checkpoints also include the native
-  resume file; final exports do not.
+  resume file; final exports do not. Keep it with the native resume file when
+  copying model-only checkpoints, since the resume file may reference it.
 
 Native checkpoints and final exports need not have the same layout. For example,
 Mixtral full-model exports unpack fused expert weights, while native checkpoints

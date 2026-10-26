@@ -43,7 +43,13 @@ class QuackAutotuner:
 def modules():
     from axolotl.integrations.kernels.sonicmoe_autotune import _is_sonic_module
 
-    with patch.dict(sys.modules, {k: None for k in sys.modules if _is_sonic_module(k)}):
+    # axolotl's own sonicmoe_* modules must stay importable
+    hidden = {
+        k: None
+        for k in sys.modules
+        if _is_sonic_module(k) and not k.startswith("axolotl.")
+    }
+    with patch.dict(sys.modules, hidden):
         yield
 
 
@@ -157,6 +163,39 @@ def test_callback_winners_and_final_coverage():
         calls[1].kwargs["properties"]["autotuner_coverage"][0]["status"]
         == "cache_populated"
     )
+
+
+def test_callback_reports_source_and_fastest_timings():
+    timings = {f'{{"tile_n": {n}}}': 1.0 + n / 1000 for n in range(20)}
+    records = [
+        {"kernel": "gemm_tuned", "source": "measured", "timings_ms": dict(timings)},
+        {"kernel": "gemm_dgated_tuned", "source": "profile"},
+    ]
+    with (
+        patch("axolotl.telemetry.manager.TelemetryManager") as tm,
+        patch(
+            "axolotl.integrations.kernels.sonicmoe_autotune.collect_sonicmoe_autotune_configs",
+            return_value=records,
+        ) as collect,
+        patch.object(SonicMoEAutotuneReportCallback, "_hardware_info", return_value={}),
+    ):
+        tm.get_instance.return_value.enabled = True
+        callback = SonicMoEAutotuneReportCallback()
+        callback.on_step_end(None, SimpleNamespace(global_step=1), None)
+        props = tm.get_instance.return_value.send_event.call_args.kwargs["properties"]
+    assert collect.call_args.kwargs == {"with_timings": True}
+    measured, pinned = props["kernels"]
+    assert measured["source"] == "measured"
+    assert list(measured["timings_ms"]) == list(timings)[:8]
+    assert measured["timings_ms_dropped"] == 12
+    assert measured["best_ms"] == 1.0
+    assert measured["worst_ms"] == 1.019  # from the full table, not the kept 8
+    assert measured["worst_regret_pct"] == 1.9
+    assert measured["runner_up_regret_pct"] == 0.1
+    assert "best_ms" not in pinned
+    assert pinned["source"] == "profile"
+    assert "timings_ms_dropped" not in pinned
+    json.dumps(props)
 
 
 @pytest.mark.usefixtures("modules")

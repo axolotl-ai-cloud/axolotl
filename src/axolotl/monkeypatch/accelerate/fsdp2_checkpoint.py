@@ -5,9 +5,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import inspect
 import math
+import os
+import time
 from functools import wraps
 from pathlib import Path
 
@@ -17,6 +20,10 @@ from accelerate.utils.fsdp_utils import fsdp2_canonicalize_names
 from accelerate.utils.modeling import is_peft_model
 from torch.distributed.tensor import DTensor
 from torch.distributed.tensor._utils import compute_local_shape_and_global_offset
+
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 _QUANTIZED = "_axolotl_optim_state_8bit"
 _VERSION = "_axolotl_full_optimizer_version"
@@ -156,56 +163,388 @@ def _check_errors(error):
         )
 
 
-def _transfer(value, shape, dtype, source, receiver=0):
-    count = math.prod(shape)
-    output = torch.empty(shape, dtype=dtype) if dist.get_rank() == receiver else None
-    device = (
-        torch.device("cuda", torch.cuda.current_device())
-        if dist.get_backend() == "nccl"
-        else torch.device("cpu")
+def _device_backends(group=None) -> dict[str, str]:
+    """``{device type: backend name}`` registered on ``group`` (default: WORLD)."""
+    try:
+        config = str(dist.get_backend_config(group))
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        config = ""
+    backends = dict(
+        item.strip().split(":", 1) for item in config.split(",") if ":" in item
     )
+    if backends:
+        return {device: name.lower() for device, name in backends.items()}
+    for device_type in ("cuda", "cpu"):
+        try:
+            pg = group or dist.distributed_c10d._get_default_group()
+            backend = pg._get_backend(torch.device(device_type))
+        except Exception:  # noqa: BLE001  pylint: disable=broad-except
+            backend = None
+        if backend is not None:
+            backends[device_type] = (
+                type(backend).__name__.removeprefix("ProcessGroup").lower()
+            )
+    return backends
+
+
+def collective_device(group=None) -> torch.device:
+    """The device to stage tensors on for collectives over ``group``.
+
+    ``dist.get_backend()`` is not usable for this: a default group created implicitly by
+    ``init_device_mesh`` (no backend given) reports ``"undefined"`` while registering only
+    the accelerator backend (``cuda:nccl``), so CPU tensors fail with "No backend type
+    associated with device type cpu".
+    """
+    backends = _device_backends(group)
+    if not backends:
+        try:
+            name = str(dist.get_backend(group))
+        except Exception:  # noqa: BLE001  pylint: disable=broad-except
+            name = ""
+        backends = {"cuda": "nccl"} if "nccl" in name else {"cpu": name or "gloo"}
+    cuda = backends.get("cuda")
+    # gloo registers for cuda too, but over CPU tensors it skips the device round trip
+    if (
+        cuda is not None
+        and torch.cuda.is_available()
+        and (cuda != "gloo" or "cpu" not in backends)
+    ):
+        return torch.device("cuda", torch.cuda.current_device())
+    return torch.device("cpu")
+
+
+def _transfer_device():
+    return collective_device()
+
+
+_STAGING: dict = {}
+
+
+def _staging(dtype, count):
+    buffer = _STAGING.get(dtype)
+    if buffer is None or buffer.numel() < count:
+        buffer = _STAGING[dtype] = torch.empty(count, dtype=dtype, pin_memory=True)
+    return buffer[:count]
+
+
+def _segments(shape, start, stop):
+    """Indices of the row-major boxes covering flat elements ``[start, stop)`` of ``shape``."""
+    if start >= stop:
+        return
+    if not shape:
+        yield ()
+        return
+    inner = math.prod(shape[1:])
+    row, column = divmod(start, inner)
+    end_row, end_column = divmod(stop, inner)
+    if row == end_row:
+        for index in _segments(shape[1:], column, end_column):
+            yield (row, *index)
+        return
+    if column:
+        for index in _segments(shape[1:], column, inner):
+            yield (row, *index)
+        row += 1
+    if end_row > row:
+        yield (slice(row, end_row),)
+    if end_column:
+        for index in _segments(shape[1:], 0, end_column):
+            yield (end_row, *index)
+
+
+# measured on 32-core B200 pods: 8-16 threads copy ~14x faster than 32 (OpenMP oversubscription)
+_MAX_COPY_THREADS = 8
+
+
+@contextlib.contextmanager
+def _copy_threads():
+    """Raise torch's intra-op threads for the receiver's CPU copies, then restore them.
+
+    torchrun starts trainers with OMP_NUM_THREADS=1, which leaves the assembly of a large
+    checkpoint on one core.
+    """
+    before = torch.get_num_threads()
+    try:
+        available = len(os.sched_getaffinity(0))
+    except AttributeError:
+        available = os.cpu_count() or 1
+    wanted = min(_MAX_COPY_THREADS, available)
+    if wanted > before:
+        torch.set_num_threads(wanted)
+    if _TIMING is not None:
+        _TIMING["threads"] = torch.get_num_threads()
+    try:
+        yield
+    finally:
+        if torch.get_num_threads() != before:
+            torch.set_num_threads(before)
+
+
+# AXOLOTL_CHECKPOINT_TIMING=1: rank 0 debug-logs where assembly time goes (per phase, slowest tensors)
+_TIMING: dict | None = None
+
+
+def _timed(phase, start, nbytes=0):
+    if _TIMING is not None:
+        now = time.perf_counter()
+        _TIMING["seconds"][phase] = _TIMING["seconds"].get(phase, 0.0) + now - start
+        _TIMING["bytes"][phase] = _TIMING["bytes"].get(phase, 0) + nbytes
+        return now
+    return start
+
+
+def _log_timing(total):
+    if _TIMING is None or dist.get_rank() != 0:
+        return
+    phases = ", ".join(
+        f"{phase} {seconds:.1f}s/{_TIMING['bytes'][phase] / 2**30:.1f}GiB"
+        for phase, seconds in sorted(_TIMING["seconds"].items(), key=lambda kv: -kv[1])
+    )
+    LOG.debug(
+        "checkpoint assembly %.1fs over %d tensors (%d copy threads): %s",
+        total,
+        len(_TIMING["tensors"]),
+        _TIMING.get("threads", torch.get_num_threads()),
+        phases,
+    )
+    for row in sorted(_TIMING["tensors"], key=lambda r: -r[0])[:8]:
+        LOG.debug("checkpoint assembly slowest: %.2fs %s", row[0], row[1])
+
+
+def _write(out, start, data):
+    offset = 0
+    for index in _segments(list(out.shape), start, start + data.numel()):
+        view = out[index]
+        view.copy_(data[offset : offset + view.numel()].view(view.shape))
+        offset += view.numel()
+
+
+def _transfer(value, shape, dtype, source, receiver=0, out=None):
+    """Send ``source``'s tensor to ``receiver``'s CPU, into ``out`` (any strided view) when given."""
+    count = math.prod(shape)
+    rank = dist.get_rank()
+    if source == receiver and rank != receiver:
+        return None
+    if rank == receiver and out is None:
+        out = torch.empty(shape, dtype=dtype)
+    flat = value.detach().reshape(-1) if rank == source else None
     chunk_size = max(1, _TRANSFER_BYTES // torch.empty((), dtype=dtype).element_size())
+    threads = _copy_threads() if rank == receiver else contextlib.nullcontext()
+    with threads:
+        _transfer_chunks(flat, out, count, chunk_size, dtype, source, receiver, rank)
+    return out if rank == receiver else None
+
+
+def _transfer_chunks(flat, out, count, chunk_size, dtype, source, receiver, rank):
+    buffer = None
     # Keep GPU staging bounded even when the complete checkpoint lives on CPU.
     for start in range(0, count, chunk_size):
         length = min(chunk_size, count - start)
-        buffer = torch.empty(length, dtype=dtype, device=device)
-        if dist.get_rank() == source:
-            buffer.copy_(value.detach().reshape(-1)[start : start + length])
-        dist.broadcast(buffer, src=source)
-        if output is not None:
-            output.reshape(-1)[start : start + length].copy_(buffer)
-    return output
+        if source == receiver:
+            piece = flat[start : start + length]
+        else:
+            if buffer is None:
+                buffer = torch.empty(
+                    min(chunk_size, count), dtype=dtype, device=_transfer_device()
+                )
+            piece = buffer[:length]
+            if rank == source:
+                piece.copy_(flat[start : start + length])
+            began = time.perf_counter() if _TIMING is not None else 0.0
+            dist.broadcast(piece, src=source)
+            if _TIMING is not None:
+                if piece.device.type == "cuda":
+                    torch.cuda.current_stream(piece.device).synchronize()
+                _timed("broadcast", began, piece.numel() * piece.element_size())
+        if rank != receiver:
+            continue
+        began = time.perf_counter() if _TIMING is not None else 0.0
+        if piece.device.type != "cpu":
+            staged = _staging(dtype, length)
+            staged.copy_(piece, non_blocking=True)
+            torch.cuda.current_stream(piece.device).synchronize()
+            piece = staged
+            began = _timed("stage", began, piece.numel() * piece.element_size())
+        _write(out, start, piece)
+        _timed("write", began, piece.numel() * piece.element_size())
 
 
 def _quantized(value):
     return type(_local(value)).__name__ == "OptimState8bit"
 
 
-def _gather_tensor(value, owner=None):
+def _tensor_record(value, owner):
     local = _local(value)
-    error = None
-    try:
-        layout = _layout(value, owner)
-    except ValueError as exc:
-        layout, error = None, str(exc)
-    _check_errors(error)
-    quantized = _quantized(value)
-    record = dict(layout, dtype=str(local.dtype), quantized=quantized)
-    if quantized:
+    record = dict(
+        _layout(value, owner), dtype=str(local.dtype), quantized=_quantized(value)
+    )
+    if record["quantized"]:
         record.update(block_size=local.block_size, signed=local.signed)
-    records = [None] * dist.get_world_size()
-    dist.all_gather_object(records, record)
+    return record
+
+
+def _gather_records(items):
+    """Every rank's layout of each ``(value, owner)`` in one collective; raises on every rank
+    when any rank failed."""
+    records, error = None, None
+    try:
+        records = [_tensor_record(value, owner) for value, owner in items]
+    except ValueError as exc:
+        error = str(exc)
+    gathered = [None] * dist.get_world_size()
+    dist.all_gather_object(gathered, (error, records))
+    errors = [error for error, _ in gathered if error]
+    if errors:
+        raise ValueError("Full checkpoint failed: " + "; ".join(errors))
+    return [[ranks[i] for _, ranks in gathered] for i in range(len(items))]
+
+
+def _box(info):
+    """``(view shape, starts, lengths)`` of the dense box a chunk fills, or ``None`` when its
+    coordinates do not form one (``_StridedShard``)."""
+    axes = _coordinates(info)
+    shape = list(info["shape"])
+    owner = info["owner"]
+    if owner is not None and owner["kind"] == "B":
+        # experts are innermost in the [out, r * E] columns: a box of [out, r, E]
+        total, local = owner["total"], owner["local"]
+        columns = axes[1]
+        if len(shape) < 2 or shape[1] % total or columns.numel() % local:
+            return None
+        rows = columns.numel() // local
+        row, expert = divmod(int(columns[0]), total) if columns.numel() else (0, 0)
+        rows_axis = torch.arange(row, row + rows)
+        experts_axis = torch.arange(expert, expert + local)
+        if not torch.equal(
+            columns, (rows_axis[:, None] * total + experts_axis).flatten()
+        ):
+            return None
+        shape[1:2] = [shape[1] // total, total]
+        axes[1:2] = [rows_axis, experts_axis]
+    starts = []
+    for axis in axes:
+        start = int(axis[0]) if axis.numel() else 0
+        if not torch.equal(axis, torch.arange(start, start + axis.numel())):
+            return None
+        starts.append(start)
+    return shape, starts, [axis.numel() for axis in axes]
+
+
+def _boxes(chunks):
+    """Shared view shape and per-chunk ``(starts, lengths)``, or ``None`` to fall back to index
+    assembly; raises unless the boxes tile the tensor exactly once."""
+    boxes = [_box(info) for _, info in chunks]
+    if any(box is None or box[0] != boxes[0][0] for box in boxes):
+        return None
+    view = boxes[0][0]
+    filled = [box for box in boxes if math.prod(box[2])]
+    if any(
+        start < 0 or start + length > size
+        for _, starts, lengths in filled
+        for start, length, size in zip(starts, lengths, view, strict=True)
+    ):
+        raise ValueError("Full checkpoint failed: Checkpoint shard exceeds the tensor")
+    for i, (_, starts, lengths) in enumerate(filled):
+        for _, other_starts, other_lengths in filled[i + 1 :]:
+            if all(
+                a < b + m and b < a + n
+                for a, n, b, m in zip(
+                    starts, lengths, other_starts, other_lengths, strict=True
+                )
+            ):
+                raise ValueError("Full checkpoint failed: Checkpoint shards overlap")
+    if sum(math.prod(lengths) for _, _, lengths in filled) != math.prod(view):
+        raise ValueError(
+            "Full checkpoint failed: Checkpoint does not cover every expert and shard"
+        )
+    return view, [(starts, lengths) for _, starts, lengths in boxes]
+
+
+def _gather_tensor(value, owner=None, records=None):
+    if records is None:
+        (records,) = _gather_records([(value, owner)])
+    local = _local(value)
+    rank = dist.get_rank()
     chunks, seen = [], set()
-    for rank, info in enumerate(records):
+    for source, info in enumerate(records):
         identity = repr(
             (info["owner"], info["offset"], info["local_shape"], info.get("axes"))
         )
-        if identity in seen:
+        if identity not in seen:
+            seen.add(identity)
+            chunks.append((source, info))
+    shape = records[0]["shape"]
+    # records are identical on every rank, so every rank raises the same errors without a collective
+    if any(info["shape"] != shape for _, info in chunks):
+        raise ValueError(
+            "Full checkpoint failed: Checkpoint shards disagree on the global tensor shape"
+        )
+    if any(info["quantized"] for _, info in chunks):
+        return _gather_quantized(local, chunks, shape)
+    plan = _boxes(chunks)
+    began = time.perf_counter()
+    full = torch.empty(shape, dtype=_dtype(records[0]["dtype"])) if rank == 0 else None
+    _timed("alloc", began)
+    if plan is None:
+        return _gather_indexed(local, chunks, full)
+    view, boxes = plan
+    view = full.view(view) if rank == 0 else None
+    destination = None
+    for (source, info), (starts, lengths) in zip(chunks, boxes, strict=True):
+        if not math.prod(lengths):
             continue
-        seen.add(identity)
+        destination = None
+        if rank == 0:
+            destination = view
+            for dim, (start, length) in enumerate(zip(starts, lengths, strict=True)):
+                destination = destination.narrow(dim, start, length)
+        _transfer(
+            local if rank == source else None,
+            info["local_shape"],
+            _dtype(info["dtype"]),
+            source,
+            out=destination,
+        )
+    if _TIMING is not None and rank == 0:
+        _TIMING["tensors"].append(
+            (
+                time.perf_counter() - began,
+                f"{records[0]['dtype']} {list(shape)} view {list(view.shape)} "
+                f"stride {list(destination.stride()) if destination is not None else None} "
+                f"from {len(chunks)} chunk(s)",
+            )
+        )
+    return full
+
+
+def _gather_indexed(local, chunks, full):
+    rank = dist.get_rank()
+    covered = torch.zeros(full.shape, dtype=torch.bool) if rank == 0 else None
+    for source, info in chunks:
+        tensor = _transfer(
+            local if rank == source else None,
+            info["local_shape"],
+            _dtype(info["dtype"]),
+            source,
+        )
+        if rank == 0:
+            indices = _index(_coordinates(info))
+            full[indices] = tensor
+            covered[indices] = True
+    error = None
+    if rank == 0 and not covered.all():
+        error = "Checkpoint does not cover every expert and shard"
+    _check_errors(error)
+    return full
+
+
+def _gather_quantized(local, chunks, shape):
+    rank = dist.get_rank()
+    gathered = []
+    for source, info in chunks:
         chunk = dict(info)
         if info["quantized"]:
-            for attr, shape, dtype in (
+            for attr, size, dtype in (
                 ("codes", info["local_shape"], torch.uint8),
                 (
                     "scale",
@@ -215,37 +554,22 @@ def _gather_tensor(value, owner=None):
                 ("qmap", [256], torch.float32),
             ):
                 chunk[attr] = _transfer(
-                    getattr(local, attr) if dist.get_rank() == rank else None,
-                    shape,
+                    getattr(local, attr) if rank == source else None,
+                    size,
                     dtype,
-                    rank,
+                    source,
                 )
         else:
             chunk["tensor"] = _transfer(
-                local if dist.get_rank() == rank else None,
+                local if rank == source else None,
                 info["local_shape"],
                 _dtype(info["dtype"]),
-                rank,
+                source,
             )
-        if dist.get_rank() == 0:
-            chunks.append(chunk)
-    full, error = None, None
-    if dist.get_rank() == 0:
-        if any(c["shape"] != records[0]["shape"] for c in chunks):
-            error = "Checkpoint shards disagree on the global tensor shape"
-        elif any(c["quantized"] for c in chunks):
-            full = {_QUANTIZED: 1, "shape": records[0]["shape"], "chunks": chunks}
-        else:
-            full = torch.empty(records[0]["shape"], dtype=local.dtype)
-            covered = torch.zeros(records[0]["shape"], dtype=torch.bool)
-            for chunk in chunks:
-                indices = _index(_coordinates(chunk))
-                full[indices] = chunk["tensor"]
-                covered[indices] = True
-            if not covered.all():
-                error = "Checkpoint does not cover every expert and shard"
-    _check_errors(error)
-    return full
+        gathered.append(chunk)
+    if rank != 0:
+        return None
+    return {_QUANTIZED: 1, "shape": shape, "chunks": gathered}
 
 
 def _gather_value(value, owner):
@@ -276,9 +600,7 @@ def _gather_value(value, owner):
     return copy.deepcopy(value) if dist.get_rank() == 0 else None
 
 
-def _adapter_model_state(model):
-    from peft.utils.save_and_load import get_peft_model_state_dict
-
+def _adapter_values(model):
     values = {}
     for prefix, module in model.named_modules(remove_duplicate=False):
         prefix = prefix + "." if prefix else ""
@@ -288,39 +610,197 @@ def _adapter_model_state(model):
         for name, value in module._buffers.items():
             if value is not None and name not in module._non_persistent_buffers_set:
                 values[prefix + name] = value
-    values = fsdp2_canonicalize_names(values)
+    return fsdp2_canonicalize_names(values)
+
+
+def _base_config_dir(model):
+    """Local directory holding the base model's config.json, without a Hub request."""
+    configs = getattr(model, "peft_config", {}).values()
+    model_id = next((c.base_model_name_or_path for c in configs), None)
+    if not model_id:
+        return None
+    if os.path.isfile(os.path.join(model_id, "config.json")):
+        return model_id
+    try:
+        from huggingface_hub import try_to_load_from_cache
+
+        cached = try_to_load_from_cache(model_id, "config.json")
+    except Exception:  # pylint: disable=broad-except
+        return None
+    return os.path.dirname(cached) if isinstance(cached, str) else None
+
+
+def peft_save_embedding_layers(model):
+    """Explicit PEFT ``save_embedding_layers``: ``"auto"`` asks the Hub for the base model's
+    config.json on every save, on every rank, to detect a resized vocabulary."""
+    from peft.tuners.trainable_tokens.layer import TrainableTokensLayer
+    from peft.tuners.tuners_utils import BaseTunerLayer
+    from peft.utils.other import AuxiliaryTrainingWrapper
+    from peft.utils.peft_types import PeftType
+
+    # as in PEFT's "auto": trainable tokens never resize the vocabulary
+    using_trainable_tokens = any(
+        config.peft_type == PeftType.TRAINABLE_TOKENS
+        or getattr(config, "trainable_token_indices", None) is not None
+        for config in getattr(model, "peft_config", {}).values()
+    )
+    for getter in ("get_input_embeddings", "get_output_embeddings"):
+        try:
+            layer = getattr(model, getter)()
+        except (AttributeError, NotImplementedError):
+            continue
+        # modules_to_save and trainable-token wrappers export their own trained copy
+        if layer is None or isinstance(layer, AuxiliaryTrainingWrapper):
+            continue
+        if isinstance(layer, BaseTunerLayer):
+            if not (isinstance(layer, TrainableTokensLayer) or using_trainable_tokens):
+                return True
+        elif any(p.requires_grad for p in layer.parameters()):
+            return True
+    vocab_size = getattr(getattr(model, "config", None), "vocab_size", None)
+    directory = _base_config_dir(model) if vocab_size else None
+    if directory is None:
+        return False
+    try:
+        base = type(model.config).from_pretrained(directory)
+    except (OSError, ValueError):
+        return False
+    return vocab_size != getattr(base, "vocab_size", vocab_size)
+
+
+def _adapter_export_names(model, values, adapter):
+    """PEFT export key -> canonical parameter/buffer names it holds."""
+    from peft.utils.save_and_load import get_peft_model_state_dict
+
     # PEFT rewrites export keys; string values retain raw names without gathering DTensors.
-    markers = {name: name for name in values}
+    exported = get_peft_model_state_dict(
+        model,
+        state_dict={name: name for name in values},
+        adapter_name=adapter,
+        unwrap_compiled=True,
+        save_embedding_layers=peft_save_embedding_layers(model),
+    )
+    mapping = {}
+    for key, value in exported.items():
+        if isinstance(value, str):
+            mapping[key] = (value,)
+            continue
+        names = tuple(name for name, parameter in values.items() if parameter is value)
+        if not names:
+            raise ValueError("PEFT export state is not a model parameter or buffer")
+        mapping[key] = names
+    return mapping
+
+
+def _adapter_model_state(model, exports=None):
+    """Canonical name -> parameter/buffer of every tensor the PEFT export holds; ``exports``
+    (when given) receives each adapter's export-key mapping."""
+    values = _adapter_values(model)
     selected, error = set(), None
     try:
         for adapter in model.peft_config:
-            exported = get_peft_model_state_dict(
-                model, state_dict=markers, adapter_name=adapter, unwrap_compiled=True
-            )
-            for value in exported.values():
-                if isinstance(value, str):
-                    selected.add(value)
-                else:
-                    names = {
-                        name for name, parameter in values.items() if parameter is value
-                    }
-                    if not names:
-                        raise ValueError(
-                            "PEFT export state is not a model parameter or buffer"
-                        )
-                    selected.update(names)
+            mapping = _adapter_export_names(model, values, adapter)
+            if exports is not None:
+                exports[adapter] = mapping
+            for names in mapping.values():
+                selected.update(names)
     except Exception as exc:  # pylint: disable=broad-except
         error = f"Adapter checkpoint selection failed: {exc}"
-    _check_errors(error)
-    signatures = [None] * dist.get_world_size()
-    dist.all_gather_object(signatures, sorted(selected))
-    if any(names != sorted(selected) for names in signatures):
+    gathered = [None] * dist.get_world_size()
+    dist.all_gather_object(gathered, (error, sorted(selected)))
+    errors = [error for error, _ in gathered if error]
+    if errors:
+        raise ValueError("Full checkpoint failed: " + "; ".join(errors))
+    if any(names != sorted(selected) for _, names in gathered):
         raise ValueError("Adapter checkpoint keys differ across ranks")
+    _warn_unsaved_trainable(model, {id(values[name]) for name in selected})
     return {name: values[name] for name in sorted(selected)}
+
+
+def _warn_unsaved_trainable(model, saved):
+    unsaved = sorted(
+        name
+        for name, parameter in _parameters(model).items()
+        if parameter.requires_grad and id(parameter) not in saved
+    )
+    if unsaved:
+        LOG.warning_once(
+            f"{len(unsaved)} trainable parameters are not part of the PEFT adapter and are "
+            f"not saved in adapter checkpoints or exports: {unsaved[:8]}. Add their modules "
+            "to lora_modules_to_save (or freeze them) to keep their updates."
+        )
+
+
+_ADAPTER_REFERENCE = "_axolotl_adapter_reference"
+_ADAPTER_FILES = ("adapter_model.safetensors", "adapter_model.bin")
+
+
+def adapter_reference(model):
+    """Model-only ``pytorch_model_fsdp.bin`` payload pointing at the PEFT adapter file saved
+    beside it, or ``None`` when that file cannot stand in for the full state."""
+    if not is_peft_model(model) or len(getattr(model, "peft_config", {})) != 1:
+        return None
+    return {_ADAPTER_REFERENCE: 1}
+
+
+def _load_referenced_adapter(model, directory):
+    """Rank 0: the referenced adapter file keyed by canonical names (other ranks: ``{}``)."""
+    state, error = {}, None
+    if dist.get_rank() == 0:
+        try:
+            if not is_peft_model(model) or len(model.peft_config) != 1:
+                raise ValueError(
+                    "An adapter-reference checkpoint restores a single-adapter PEFT model"
+                )
+            from .fsdp2_sharded_adapter import complete_interrupted_consolidation
+
+            complete_interrupted_consolidation(directory)
+            (adapter,) = model.peft_config
+            # PEFT saves a non-default adapter in a subdirectory named after it
+            folders = [directory] + (
+                [directory / adapter] if adapter != "default" else []
+            )
+            path = next(
+                (
+                    folder / name
+                    for folder in folders
+                    for name in _ADAPTER_FILES
+                    if (folder / name).is_file()
+                ),
+                None,
+            )
+            if path is None:
+                raise FileNotFoundError(
+                    f"{directory} references a PEFT adapter but has none of {_ADAPTER_FILES}"
+                )
+            if path.suffix == ".safetensors":
+                from safetensors.torch import load_file
+
+                saved = load_file(str(path), device="cpu")
+            else:
+                saved = torch.load(path, map_location="cpu", weights_only=True)
+            mapping = _adapter_export_names(model, _adapter_values(model), adapter)
+            unknown = sorted(set(saved) - set(mapping))
+            if unknown:
+                raise ValueError(f"Adapter file has unexpected keys: {unknown[:8]}")
+            state = {
+                name: value for key, value in saved.items() for name in mapping[key]
+            }
+        except Exception as exc:  # pylint: disable=broad-except
+            error = f"Referenced adapter load failed: {exc}"
+    _check_errors(error)
+    return state
 
 
 def full_model_state(model, adapter_only=False):
     # TODO: stream checkpoint assembly layerwise to reduce rank-0 host memory.
+    global _TIMING
+    _TIMING = (
+        {"seconds": {}, "bytes": {}, "tensors": []}
+        if os.environ.get("AXOLOTL_CHECKPOINT_TIMING") == "1"
+        else None
+    )
+    began = time.perf_counter()
     adapter_only = adapter_only and is_peft_model(model)
     if adapter_only:
         values = _adapter_model_state(model)
@@ -341,9 +821,26 @@ def full_model_state(model, adapter_only=False):
         _check_errors(error)
         values = fsdp2_canonicalize_names(dict(model.state_dict()))
     owners = expert_ownership(model)
+    tensors = [
+        name
+        for name, value in values.items()
+        if torch.is_tensor(value) and value.ndim > 0
+    ]
+    records = dict(
+        zip(
+            tensors,
+            _gather_records([(values[name], owners.get(name)) for name in tensors]),
+            strict=True,
+        )
+    )
     state = {
-        name: _gather_value(value, owners.get(name)) for name, value in values.items()
+        name: _gather_tensor(value, owners.get(name), records[name])
+        if name in records
+        else _gather_value(value, owners.get(name))
+        for name, value in values.items()
     }
+    _log_timing(time.perf_counter() - began)
+    _TIMING = None
     return state if dist.get_rank() == 0 else {}
 
 
@@ -808,7 +1305,16 @@ def patch_fsdp2_full_checkpoint():
                     f"{basename}_{index}.bin" if index else f"{basename}.bin"
                 )
                 if "save" in operation:
-                    if packed:
+                    reference = None
+                    if not optimizer_operation and adapter_only:
+                        from .fsdp2_sharded_adapter import is_sharded_export
+
+                        # the adapter file being consolidated beside it holds this state
+                        if is_sharded_export(path):
+                            reference = adapter_reference(model)
+                    if reference is not None:
+                        state = reference
+                    elif packed:
                         from .fsdp2_bnb_checkpoint import full_packed_model_state
 
                         state = full_packed_model_state(model, packed)
@@ -839,12 +1345,26 @@ def patch_fsdp2_full_checkpoint():
                         error = str(exc)
                 _check_errors(error)
                 envelope = [
-                    "_axolotl_full_model_version" in state
+                    (
+                        "_axolotl_full_model_version" in state,
+                        _ADAPTER_REFERENCE in state,
+                    )
                     if accelerator.is_main_process and not optimizer_operation
-                    else False
+                    else (False, False)
                 ]
                 dist.broadcast_object_list(envelope, src=0)
-                if envelope[0] and adapter_only:
+                packed_envelope, referenced = envelope[0]
+                if referenced:
+                    _check_errors(
+                        "Unsupported adapter-reference checkpoint version"
+                        if accelerator.is_main_process
+                        and state.get(_ADAPTER_REFERENCE) != 1
+                        else None
+                    )
+                    result = restore_model_state(
+                        model, _load_referenced_adapter(model, path), adapter_only=True
+                    )
+                elif packed_envelope and adapter_only:
                     error = None
                     if accelerator.is_main_process:
                         if state.get("_axolotl_full_model_version") != 1:
@@ -884,7 +1404,8 @@ def patch_fsdp2_full_checkpoint():
     def get_state_dict(self, model, unwrap=True):
         plugin = getattr(self.state, "fsdp_plugin", None)
         if plugin is not None and _full(plugin) and _model_needs_ownership(model):
-            return full_model_state(model)
+            # PEFT saves select the adapter from this; never gather the frozen base to rank 0
+            return full_model_state(model, adapter_only=is_peft_model(model))
         return original_get(self, model, unwrap=unwrap)
 
     accelerate.Accelerator.get_state_dict = get_state_dict
