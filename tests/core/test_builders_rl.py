@@ -209,6 +209,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
             vllm_sync_interval=2,
             max_staleness=3,
             reward_num_workers=2,
+            scoring_token_budget=64,
         )
         builder = HFRLTrainerBuilder(cfg, model, tokenizer)
         training_arguments, _ = builder._build_training_arguments(100)
@@ -219,6 +220,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
         assert training_arguments.weight_sync_steps == 2
         assert training_arguments.max_staleness == 3
         assert training_arguments.reward_num_workers == 2
+        assert training_arguments.scoring_token_budget == 64
         assert training_arguments.num_generations == 4
         assert training_arguments.multi_objective_aggregation == "normalize_then_sum"
         assert not hasattr(training_arguments, "beta")

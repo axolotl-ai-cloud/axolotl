@@ -26,6 +26,7 @@ from axolotl.core.trainers.grpo.async_packing import sample_boundaries
 from axolotl.core.trainers.grpo.async_scoring import (
     ScoredRow,
     TrainerScorer,
+    chunk_sequences,
     pack_sequences,
     unpack_sequences,
 )
@@ -81,23 +82,44 @@ class EBFTScorer(TrainerScorer):
         ]
 
     def collate(self, rows: list[ScoredRow], index: int):
-        per_row: dict[str, tuple[list[torch.Tensor], float]] = {}
+        row_chunks: list[list[list[tuple[Any, int, int]]]] = []
         for row in rows:
-            extras = [extra for extra in row.extras if extra["scorer"] == index]
-            sequences = [s["score_payload"]["feature_ids"] for s in row.samples]
-            sequences += [extra["input_ids"] for extra in extras]
-            packed = pack_sequences(sequences, self.share_prefixes)
-            packed["uids"] = torch.tensor(
-                [s["score_uid"] for s in row.samples] + [e["uid"] for e in extras],
-                dtype=torch.long,
+            items = [
+                (
+                    s["score_payload"]["feature_ids"],
+                    s["score_uid"],
+                    s["score_payload"]["pool_start"],
+                )
+                for s in row.samples
+            ]
+            items += [
+                (extra["input_ids"], extra["uid"], extra["pool_start"])
+                for extra in row.extras
+                if extra["scorer"] == index
+            ]
+            index_chunks = chunk_sequences(
+                [sequence for sequence, _, _ in items],
+                self.token_budget,
+                self.share_prefixes,
             )
-            packed["pool_start"] = torch.tensor(
-                [s["score_payload"]["pool_start"] for s in row.samples]
-                + [e["pool_start"] for e in extras],
-                dtype=torch.long,
-            )
-            for key, value in packed.items():
-                per_row.setdefault(key, ([], 0))[0].append(value)
+            row_chunks.append([[items[i] for i in chunk] for chunk in index_chunks])
+        num_chunks = max(len(chunks) for chunks in row_chunks)
+        per_row: dict[str, tuple[list[torch.Tensor], float]] = {}
+        for chunks in row_chunks:
+            # One token scored for no sample, so every rank runs as many forwards.
+            chunks += [[([0], -1, 0)]] * (num_chunks - len(chunks))
+            for j, chunk in enumerate(chunks):
+                packed = pack_sequences(
+                    [sequence for sequence, _, _ in chunk], self.share_prefixes
+                )
+                packed["uids"] = torch.tensor(
+                    [uid for _, uid, _ in chunk], dtype=torch.long
+                )
+                packed["pool_start"] = torch.tensor(
+                    [start for _, _, start in chunk], dtype=torch.long
+                )
+                for key, value in packed.items():
+                    per_row.setdefault(f"c{j}_{key}", ([], 0))[0].append(value)
         return per_row
 
     @contextlib.contextmanager

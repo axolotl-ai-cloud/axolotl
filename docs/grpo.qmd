@@ -588,6 +588,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `max_staleness` | int | `null` (4) | Async GRPO: drop rollouts more than N weight syncs old |
 | `max_inflight_tasks` | int | `null` | Async GRPO: concurrent generation requests (default `max_staleness` x samples per step) |
 | `token_budget` | int | `null` | Async GRPO: max tokens per rank's micro-batch (default: vLLM `max_model_len`; <= 0 packs `micro_batch_size` samples) |
+| `scoring_token_budget` | int | `null` | Async GRPO with rewards scored on the trainer (EBFT): max tokens per scoring forward; a rank's scored sequences are split into as many forwards as needed (default: `token_budget`; <= 0 one forward per micro-batch) |
 | `skip_zero_advantage_batches` | bool | `true` | Async GRPO: drop zero-advantage samples |
 | `reward_num_workers` | int | `1` | Processes for synchronous reward functions |
 | `use_data_producer` | bool | `false` | Deprecated: `async_prefetch: true` with `max_staleness: 0`, slower than the default staleness ([migration](#sec-data-producer-migration)) |

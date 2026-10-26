@@ -34,6 +34,7 @@ from axolotl.core.trainers.grpo.async_scoring import (
     ScoredRow,
     StepPlanner,
     TrainerScorer,
+    chunk_inputs,
 )
 
 MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
@@ -170,8 +171,10 @@ def score_with(scorer, samples):
         key: pad(tensors, padding_value=padding)
         for key, (tensors, padding) in scorer.collate([row], 0).items()
     }
-    uid_list, features = scorer.features(None, inputs)
-    features = dict(zip(uid_list.tolist(), features, strict=True))
+    features = {}
+    for chunk in chunk_inputs(inputs):
+        uid_list, chunk_features = scorer.features(None, chunk)
+        features.update(zip(uid_list.tolist(), chunk_features, strict=True))
     rewards = []
     for group_id, entries in by_group.items():
         reference = [e["uid"] for e in row.extras if e["group_id"] == group_id]
@@ -225,11 +228,15 @@ def feature_matching_reward(tokenizer, model, embed_method, use_whitening, **kwa
     )
 
 
+# A budget below a group's packed sequences scores them over several forwards.
+@pytest.mark.parametrize("scoring_budget", [0, 48])
 @pytest.mark.parametrize("use_whitening", [False, True])
 @pytest.mark.parametrize(
     "embed_method", ["last_token", "mean_pooling", "completion_mean", "concat"]
 )
-def test_rewards_match_feature_matching_reward(tokenizer, embed_method, use_whitening):
+def test_rewards_match_feature_matching_reward(
+    tokenizer, embed_method, use_whitening, scoring_budget
+):
     model = tiny_model(tokenizer)
     expected = feature_matching_reward(tokenizer, model, embed_method, use_whitening)
 
@@ -243,6 +250,7 @@ def test_rewards_match_feature_matching_reward(tokenizer, embed_method, use_whit
         diversity_coef=0.5,
         feature_network=tree_model,
     )
+    scorer.token_budget = scoring_budget
     samples = []
     for group_id, (prompt, completions, truth) in enumerate(
         zip(PROMPTS, COMPLETIONS, GROUND_TRUTH, strict=True)
@@ -277,7 +285,8 @@ def test_rewards_match_feature_matching_reward(tokenizer, embed_method, use_whit
     )
 
 
-def test_multi_turn_rewards_match_feature_matching_reward(tokenizer):
+@pytest.mark.parametrize("scoring_budget", [0, 48])
+def test_multi_turn_rewards_match_feature_matching_reward(tokenizer, scoring_budget):
     turns = [
         {"role": "user", "content": "And three plus three?"},
         {"role": "assistant", "content": "Six."},
@@ -313,6 +322,7 @@ def test_multi_turn_rewards_match_feature_matching_reward(tokenizer):
         diversity_coef=0.5,
         feature_network=tree_model,
     )
+    scorer.token_budget = scoring_budget
     samples = []
     for group_id, (prompt, completions, truth) in enumerate(
         zip(PROMPTS, COMPLETIONS, GROUND_TRUTH, strict=True)
@@ -510,6 +520,43 @@ class TestStepPlanner:
         assert progress.consumed == set(range(5))
 
 
+def test_collate_splits_rows_into_equal_numbers_of_budgeted_chunks():
+    scorer = EBFTScorer([0], "mean_pooling", False, 1.0, 0.5)
+    scorer.token_budget = 20
+
+    def scored(uid, length, offset):
+        feature_ids = list(range(offset, offset + length))
+        return {
+            "score_uid": uid,
+            "score_payload": {"feature_ids": feature_ids, "pool_start": 0},
+        }
+
+    long_row, short_row = ScoredRow(), ScoredRow()
+    long_row.samples += [scored(0, 10, 0), scored(1, 10, 100)]
+    long_row.extras.append(
+        {"scorer": 0, "uid": 2, "input_ids": list(range(200, 230)), "pool_start": 0}
+    )
+    short_row.samples.append(scored(3, 5, 300))
+
+    inputs = {
+        key: pad(tensors, padding_value=padding)
+        for key, (tensors, padding) in scorer.collate([long_row, short_row], 0).items()
+    }
+    chunks = chunk_inputs(inputs)
+
+    def uids(row, chunk):
+        return chunk["uids"][row, : int(chunk["sizes"][row, 3]) - 1].tolist()
+
+    # Both rows run two forwards; the short row's second scores no sample.
+    assert [[uids(row, chunk) for chunk in chunks] for row in (0, 1)] == [
+        [[0, 1], [2]],
+        [[3], [-1]],
+    ]
+    # The 30-token reference exceeds the budget alone; everything else fits it.
+    assert [int(chunk["sizes"][0, 0]) for chunk in chunks] == [20, 30]
+    assert [int(chunk["sizes"][1, 0]) for chunk in chunks] == [5, 1]
+
+
 def _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch, **overrides):
     from peft import LoraConfig, get_peft_model
 
@@ -579,8 +626,10 @@ def _trainable(trainer):
     }
 
 
-def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
-    """Pending EBFT rollouts are planned, scored on the trainer and trained on."""
+@pytest.mark.parametrize("scoring_token_budget", [None, 16])
+def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch, scoring_token_budget):
+    """Pending EBFT rollouts are planned, scored on the trainer and trained on, in
+    one feature forward per row or, under a small scoring budget, several."""
     from axolotl.integrations.base import PluginManager
     from axolotl.utils.dict import DictDefault
 
@@ -597,7 +646,9 @@ def test_trains_ebft_on_cpu(tokenizer, tmp_path, monkeypatch):
     manager = PluginManager.get_instance()
     monkeypatch.setitem(manager.plugins, "recorder", plugin)
     monkeypatch.setattr(manager, "_cfg", DictDefault({"rl": "ebft"}))
-    trainer = _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch)
+    trainer = _ebft_cpu_trainer(
+        tokenizer, tmp_path, monkeypatch, scoring_token_budget=scoring_token_budget
+    )
     before = _trainable(trainer)
     trainer.train()
 
