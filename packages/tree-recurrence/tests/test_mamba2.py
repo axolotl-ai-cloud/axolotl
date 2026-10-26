@@ -152,6 +152,26 @@ def test_seq_idx_kernels(monkeypatch, caplog, model_type, gradient_checkpointing
     assert "split_conv1d_scan_combined runs trees on a kernel" in caplog.text
 
 
+@pytest.mark.parametrize("model_type", list(FAMILIES))
+def test_declining_fused_kernel_falls_back_to_the_unfused_path(monkeypatch, model_type):
+    """A fused kernel that returns None (a guard for quantized out_proj, say) leaves
+    the tree to the unfused path's conv and scan hooks."""
+    modeling, model = build(model_type)
+    declined = []
+
+    def fused(zxbcdt, *args, **kwargs):
+        declined.append(zxbcdt.shape[1])
+
+    monkeypatch.setattr(modeling, "mamba2_split_conv1d_scan_combined", fused)
+    monkeypatch.setattr(
+        modeling, "mamba2_chunk_scan", reference.mamba_chunk_scan_combined
+    )
+    monkeypatch.setattr(modeling, "causal_conv1d_fn", reference.causal_conv1d)
+    assert install(model).mode == "tree"
+    assert_tree_matches_alone(model, branching_sequences(), rtol=1e-4)
+    assert declined
+
+
 def test_chains_and_collation_padding():
     _, model = build("nemotron_h")
     install(model)
