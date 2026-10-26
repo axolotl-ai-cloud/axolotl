@@ -5,12 +5,12 @@ on:
       - "main"
     paths:
       - "packages/tree-recurrence/**"
-      - ".github/workflows/tree-recurrence.yml"
+      - ".github/workflows/tree-recurrence*.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "packages/tree-recurrence/**"
-      - ".github/workflows/tree-recurrence.yml"
+      - ".github/workflows/tree-recurrence*.yml"
   workflow_dispatch:
 
 concurrency:
@@ -21,6 +21,25 @@ permissions:
   contents: read
 
 jobs:
+  # Tests' pre-commit job skips changes confined to the package
+  pre-commit:
+    name: tree-recurrence pre-commit
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: "pip"
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        env:
+          SKIP: no-commit-to-branch,check-cli-config-options
+        with:
+          extra_args: --files $(git ls-files packages/tree-recurrence .github/workflows/tree-recurrence*.yml)
+
   test:
     name: tree-recurrence (py${{ matrix.python }}, ${{ matrix.extras }})
     runs-on: ubuntu-latest

@@ -11,6 +11,9 @@ on:
       - ".github/workflows/*.yml"
       - "cicd/*.sh"
       - "cicd/*.jinja"
+      # tree-recurrence has its own workflow until axolotl depends on it
+      - "!packages/tree-recurrence/**"
+      - "!.github/workflows/tree-recurrence*.yml"
   pull_request:
     # GPU tests are label-gated, so adding the label re-runs this workflow via
     # gpu-label.yml after the initial CPU run has completed.
@@ -21,6 +24,9 @@ on:
       - ".github/workflows/*.yml"
       - "cicd/*.sh"
       - "cicd/*.jinja"
+      # tree-recurrence has its own workflow until axolotl depends on it
+      - "!packages/tree-recurrence/**"
+      - "!.github/workflows/tree-recurrence*.yml"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
