@@ -120,12 +120,12 @@ Due to how TRL maps vLLM device indices, the vLLM instance should use the **last
 
 When one node cannot generate fast enough, or cannot hold the model, `axolotl vllm-serve` can span several nodes as a single vLLM server. Node 0 runs the API server and dispatches to headless engines on the other nodes. The trainer only talks to node 0, and weight sync reaches every engine through it.
 
-Use the same config on every node and launch each with its `--node-rank`:
+For example, a 16-GPU setup (2 nodes x 8 GPUs) running 8 replicas at TP=2 (4 replicas per node). Use the same config on every node and launch each with its `--node-rank`:
 
 ```yaml
 vllm:
   tensor_parallel_size: 2
-  data_parallel_size: 8     # total replicas across all nodes (4 per node here)
+  data_parallel_size: 8     # total replicas across all nodes; GPUs = TP x PP x DP = 16
   nnodes: 2
   master_addr: 10.0.0.1     # node 0
 
