@@ -57,7 +57,15 @@ image = (
     )
     # vLLM pins its own transformers; train on the release the hooks are tested against
     .uv_pip_install("transformers==5.20.1", extra_options="--no-deps")
-    .env({"TRL_EXPERIMENTAL_SILENCE": "1", "PYTHONUNBUFFERED": "1"})
+    .env(
+        {
+            "TRL_EXPERIMENTAL_SILENCE": "1",
+            "PYTHONUNBUFFERED": "1",
+            # vLLM brings TileLang, which FLA prefers for the delta rule's backward,
+            # but its JIT cannot compile against the pip CUDA toolkit here
+            "FLA_TILELANG": "0",
+        }
+    )
     .add_local_dir(
         PACKAGE,
         REMOTE_PACKAGE,

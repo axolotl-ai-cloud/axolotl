@@ -119,6 +119,10 @@ or pinned here. If flash-linear-attention, mamba-ssm or causal-conv1d are instal
 transformers uses them instead and the hooks run on those. With neither, every tree
 runs on transformers' PyTorch references, and the hooks log a warning that it is slow.
 
+FLA prefers TileLang for the delta rule's backward when `tilelang` is importable (vLLM
+installs it). If TileLang cannot compile in your environment, `FLA_TILELANG=0` keeps
+FLA on its Triton kernels.
+
 Extras: `transformers`, `trl`.
 
 ## Not yet
