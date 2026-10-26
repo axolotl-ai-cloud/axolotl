@@ -11,7 +11,12 @@ import pytest
 import torch
 from async_test_utils import StubTransfer, StubWorker, reference_tree_attention
 from datasets import Dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaConfig
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    LlamaConfig,
+    TrainerCallback,
+)
 from trl.experimental.async_grpo import async_grpo_trainer, packing
 from trl.experimental.async_grpo.async_rollout_worker import RolloutGroup
 from trl.trainer.utils import pad
@@ -706,6 +711,56 @@ def test_steps_with_no_trainable_samples_take_a_zero_loss(
     assert [log["loss"] for log in step_logs] == [0.0, 0.0]
     assert all(log["sample/excluded_frac"] == 1.0 for log in step_logs)
     assert not any("ratio" in log or "kl" in log for log in step_logs)
+    # The cold sync only: neither step changed the weights.
+    assert trainer.weight_transfer.syncs == 1
+
+
+def test_a_step_that_trains_nothing_updates_neither_weights_nor_policy_version(
+    tokenizer, tmp_path, monkeypatch
+):
+    """Step 1 trains. Step 2's groups get constant rewards, so scoring excludes every
+    sample. Step 2 still counts (global step and learning-rate schedule advance),
+    but Adam's momentum from step 1 must not move the weights, its state stays as
+    step 1 left it, and with nothing to sync the policy version stays."""
+    group_rewards = EBFTScorer.group_rewards
+    calls = itertools.count()
+
+    def constant_after_the_first_step(self, *args, **kwargs):
+        rewards, metrics = group_rewards(self, *args, **kwargs)
+        # A step holds two groups, scored one call each.
+        if next(calls) >= 2:
+            rewards = torch.ones_like(rewards)
+        return rewards, metrics
+
+    monkeypatch.setattr(EBFTScorer, "group_rewards", constant_after_the_first_step)
+    trainer = _ebft_cpu_trainer(tokenizer, tmp_path, monkeypatch)
+    after_first: dict[str, torch.Tensor] = {}
+
+    class AfterFirstStep(TrainerCallback):
+        def on_step_end(self, args, state, control, **kwargs):
+            if state.global_step == 1:
+                after_first.update(_trainable(trainer))
+
+    trainer.add_callback(AfterFirstStep())
+    before = _trainable(trainer)
+    trainer.train()
+
+    assert trainer.state.global_step == 2
+    # LoRA's B starts at zero, so only it moves in step 1, gaining momentum.
+    assert any(not torch.equal(before[n], p) for n, p in after_first.items())
+    assert all(torch.equal(after_first[n], p) for n, p in _trainable(trainer).items())
+    optimizer_state = trainer.optimizer.optimizer.state
+    assert optimizer_state and all(
+        int(param_state["step"]) == 1 for param_state in optimizer_state.values()
+    )
+    assert trainer.lr_scheduler.last_epoch == 2
+    # The cold sync and step 1's.
+    assert trainer.weight_transfer.syncs == 2
+    assert trainer.rollout_worker.versions == [1, 2]
+    first, second = [log for log in trainer.state.log_history if "loss" in log]
+    assert "batch/empty_steps_total" not in first and first["loss"] != 0.0
+    assert second["batch/empty_steps_total"] == 1.0 and second["loss"] == 0.0
+    assert second["perf/weight_sync_skipped_total"] == 1.0
 
 
 def test_ebft_strategy_routes_async_prefetch_to_trl(tmp_path):
