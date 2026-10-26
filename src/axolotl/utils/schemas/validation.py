@@ -97,7 +97,7 @@ def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     The single source of truth for ``check_auto_enable_lora_kernels`` and for the
     validators that must predict its outcome.
     """
-    if get("rl") or get("nvfp4_merge_aware"):
+    if get("rl") or get("nvfp4_merge_aware") or get("lora_merge_aware"):
         return False
     adapter = get("adapter")
     if adapter not in ("lora", "qlora"):
@@ -954,6 +954,53 @@ class LoRAValidationMixin:
                     "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
                     "compatible with 8-bit LoRA a the moment."
                 )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_merge_aware(cls, data):
+        mode = data.get("lora_merge_aware")
+        if not mode:
+            return data
+        problems = []
+        if data.get("adapter") != "lora":
+            problems.append(f"adapter: {data.get('adapter')} (requires adapter: lora)")
+        problems.extend(
+            f"{key}: true"
+            for key in ("load_in_4bit", "load_in_8bit", "gptq")
+            if data.get(key)
+        )
+        if data.get("peft_use_dora"):
+            problems.append("peft_use_dora: true")
+        kernels = [
+            flag
+            for flag in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
+            if data.get(flag)
+        ]
+        if kernels:
+            problems.append(
+                f"{', '.join(kernels)} (the fused kernels bypass the LoRA linear forward)"
+            )
+        if data.get("fsdp_config"):
+            problems.append("FSDP")
+        if is_deepspeed_zero3_config(data.get("deepspeed")):
+            problems.append("DeepSpeed ZeRO-3")
+        if (data.get("tensor_parallel_size") or 1) > 1:
+            problems.append("tensor_parallel_size > 1")
+        trl = data.get("trl") or {}
+        if (
+            trl.get("vllm_lora_sync")
+            if isinstance(trl, dict)
+            else getattr(trl, "vllm_lora_sync", False)
+        ):
+            problems.append(
+                "trl.vllm_lora_sync: true (vLLM then serves the adapter unmerged, "
+                "which already keeps the whole update)"
+            )
+        if problems:
+            raise ValueError(
+                f"lora_merge_aware: {mode} is not supported with " + "; ".join(problems)
+            )
         return data
 
     @model_validator(mode="before")

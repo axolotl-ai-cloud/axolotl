@@ -280,6 +280,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | `use_dsv4_kernels` | attention-level LoRA | experts-only (fused indexer is gradientless) |
 | FSDP2 | 4/8-bit + DPO/KTO/ORPO/IPO | use DeepSpeed |
 | LoRA kernels | `trust_remote_code` / RLHF | SFT + FSDP2 only |
+| `lora_merge_aware` | DoRA, LoRA kernels, 4/8-bit bases, FSDP, DeepSpeed ZeRO-3, TP, `vllm_lora_sync` | rejected at config validation; see [merged sync rounding](vllm_serving.qmd#sec-merge-rounding) |
 | `batch_flattening` | `sample_packing` | choose one |
 | FP8 + DDP | `torch.compile` | ⚪ known-broken; drop compile or use FSDP2 |
 

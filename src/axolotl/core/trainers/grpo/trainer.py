@@ -41,6 +41,7 @@ from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
 from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
+from axolotl.core.trainers.grpo.merge_check import LoraMergeCheckMixin
 from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
@@ -65,6 +66,7 @@ class AxolotlGRPOTrainer(
     OptimizerInitMixin,
     DistributedParallelMixin,
     ActivationOffloadingMixin,
+    LoraMergeCheckMixin,
     GRPOTrainer,
 ):
     """Extend the base GRPOTrainer for axolotl helpers"""

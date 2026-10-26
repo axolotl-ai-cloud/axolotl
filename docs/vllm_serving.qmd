@@ -222,6 +222,28 @@ If you are training with LoRA (which is recommended for GRPO), always enable `vl
 NCCL merge sync folds the adapter into the base weights out of place. FP8 base weights are requantized with fresh block scales before being sent. DoRA adapters and bitsandbytes 4-bit bases (QLoRA) cannot be merged this way and raise an error; use `vllm_lora_sync: true` for them.
 :::
 
+### Merged Sync Rounding {#sec-merge-rounding}
+
+Merged sync serves `bf16(W + scaling * B @ A)`, or its FP8 requantization for FP8 bases, while the trainer optimizes the unrounded `W + scaling * B @ A`. At RL learning rates most entries of the LoRA delta are smaller than half a BF16 step of the base weight (about 0.2% of `|w|`). The cast rounds those entries back to the base value, so vLLM samples from a policy that has only part of the trained update. On Qwen3-1.7B-Base with Dr.GRPO and rank-16 LoRA on all linear layers, the merged weights at step 100 kept about 24% of the update at `learning_rate: 1e-5` and about 2.5% at `1e-6`. Full fine-tuning is not affected, because the trainer and vLLM hold the same BF16 weights.
+
+The trainer measures this at the first merged sync and then every `trl.vllm_merge_check_interval` optimizer steps (default 50; `0` disables). It logs two metrics:
+
+- `lora_merge/retained`: the share of the LoRA delta that survives the cast, as the projection of the served weight change onto the delta.
+- `lora_merge/changed_fraction`: the share of weight entries the merge changes.
+
+When less than half of the update survives, every check after the first logs a warning. Parameters sharded by FSDP or DeepSpeed ZeRO-3 are not measured.
+
+There are two ways to keep the whole update:
+
+| Option | Config | What vLLM serves | Use when |
+|---|---|---|---|
+| LoRA sync | `trl.vllm_lora_sync: true` | Base weights plus the unmerged adapter | Server mode with the async GRPO trainer (`use_data_producer` or `async_prefetch`). It is also the faster sync. |
+| Merge-aware LoRA | `lora_merge_aware: bf16` | Merged BF16 weights, which the trainer now optimizes | Weights must be merged: colocate mode, the standard GRPO trainer (neither `use_data_producer` nor `async_prefetch`), or a merged BF16 checkpoint |
+
+With `lora_merge_aware: bf16`, each LoRA linear computes `x @ bf16(W + scaling * B @ A)^T`, bitwise equal to the merged weight that is sent to vLLM, and gradients reach `A` and `B` straight through the cast. The forward and backward passes rebuild every LoRA linear's merged weight, at the cost of a few passes over the targeted base weights per micro-batch, and no more activations are saved than with ordinary LoRA. `lora_merge_aware: bf16` requires `adapter: lora` on an unquantized base. Config validation rejects it with DoRA, the fused LoRA kernels (`lora_*_kernel`), FSDP, DeepSpeed ZeRO-3, tensor parallelism and `vllm_lora_sync`. LoRA linears whose base weight is FP8 or otherwise quantized keep the ordinary forward, with a warning.
+
+`axolotl merge-lora` (memory-efficient method) reports the same retained share when it merges into a BF16 or FP16 base, and warns below one half unless the config sets `lora_merge_aware`.
+
 ### Importance Sampling Correction
 
 When vLLM weights are stale (between syncs), the generated data is slightly off-policy. Axolotl can correct for this:
@@ -311,6 +333,7 @@ These control how the trainer interacts with vLLM.
 | `vllm_server_timeout` | int | `None` | Timeout in seconds for vLLM requests |
 | `vllm_lora_sync` | bool | `false` | Sync LoRA adapters via filesystem instead of NCCL merge |
 | `vllm_sync_interval` | int | `None` | Sync weights every N optimizer steps |
+| `vllm_merge_check_interval` | int | `50` | Measure how much of the LoRA update survives merged sync every N steps; `0` disables. See [Merged Sync Rounding](#sec-merge-rounding) |
 | `vllm_enable_sleep_mode` | bool | `None` | Offload vLLM VRAM when idle (colocate mode) |
 | `vllm_guided_decoding_regex` | str | `None` | Regex constraint for structured/guided decoding (mapped to TRL's `vllm_structured_outputs_regex` on TRL >= 1.7) |
 

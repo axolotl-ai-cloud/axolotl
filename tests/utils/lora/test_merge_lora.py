@@ -4126,3 +4126,87 @@ def test_merge_aware_bf16_writer_widens_standard_and_paramwrapper_factors():
         )
         assert square_delta.shape == square_base.shape
         assert torch.equal(square_delta, expected_square)
+
+
+class TestMergeRoundingReport:
+    """merge-lora reports how much of the adapter survives the cast to a half base."""
+
+    @staticmethod
+    def _lora_state(key, hidden, r, b_scale):
+        module = f"base_model.model.{key.removesuffix('.weight')}"
+        return {
+            f"{module}.lora_A.weight": torch.randn(r, hidden),
+            f"{module}.lora_B.weight": torch.randn(hidden, r) * b_scale,
+        }
+
+    @pytest.mark.parametrize(
+        "dtype, b_scale, recorded",
+        [(torch.bfloat16, 1e-7, True), (torch.float32, 1e-7, False)],
+    )
+    def test_merge_tensor_records_half_precision_rounding(
+        self, dtype, b_scale, recorded
+    ):
+        from axolotl.utils.lora_merge_precision import MergeRetention
+
+        torch.manual_seed(0)
+        hidden, r, key = 32, 4, "layers.0.q_proj.weight"
+        retention = MergeRetention()
+        merged, was_merged = _merge_tensor_with_lora(
+            torch.randn(hidden, hidden).to(dtype),
+            key,
+            self._lora_state(key, hidden, r, b_scale),
+            2.0,
+            {"r": r, "lora_alpha": 2 * r},
+            "cpu",
+            retention=retention,
+        )
+        assert was_merged and merged.dtype == dtype
+        assert retention.modules == int(recorded)
+        if recorded:
+            assert retention.retained < 0.05
+
+    @pytest.mark.parametrize("merge_aware", [None, "bf16"])
+    def test_sharded_merge_warns_unless_trained_merge_aware(
+        self, tmp_path, caplog, merge_aware
+    ):
+        import logging
+
+        torch.manual_seed(0)
+        hidden, r, key = 32, 4, "model.layers.0.self_attn.q_proj.weight"
+        model_dir = tmp_path / "base_model"
+        model_dir.mkdir()
+        safetensors.torch.save_file(
+            {key: torch.randn(hidden, hidden).to(torch.bfloat16)},
+            model_dir / "model.safetensors",
+        )
+        (model_dir / "config.json").write_text("{}")
+        adapter_dir = tmp_path / "adapter"
+        adapter_dir.mkdir()
+        (adapter_dir / "adapter_config.json").write_text(
+            json.dumps(
+                {
+                    "r": r,
+                    "lora_alpha": 2 * r,
+                    "target_modules": ["q_proj"],
+                    "task_type": "CAUSAL_LM",
+                    "bias": "none",
+                }
+            )
+        )
+        safetensors.torch.save_file(
+            self._lora_state(key, hidden, r, 1e-7),
+            adapter_dir / "adapter_model.safetensors",
+        )
+
+        with caplog.at_level(logging.INFO, logger="axolotl.utils.lora_merge_precision"):
+            merge_lora_sharded_efficient(
+                base_model_path=model_dir,
+                lora_adapter_path=adapter_dir,
+                output_path=tmp_path / "merged",
+                device="cpu",
+                lora_merge_aware=merge_aware,
+            )
+        reports = [r for r in caplog.records if "merge-lora" in r.getMessage()]
+        assert len(reports) == 1
+        expected = logging.INFO if merge_aware else logging.WARNING
+        assert reports[0].levelno == expected
