@@ -72,6 +72,8 @@ src/axolotl/
     async_rollout.py               # Async GRPO rollout process: rewards, advantages, reward pool
     async_scoring.py               # Async GRPO: rewards scored on the trainer (EBFT)
     async_traces.py                # Async GRPO: the on_rollouts_scored plugin hook
+    async_progress.py              # Async GRPO: consumed/trained groups, end-of-run and stall stops
+    trl_compat.py                  # Every TRL import, module swap and patch; pins in tests/core/test_trl_compat.py
     sampler.py                     # Sampling utilities
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
   utils/schemas/trl.py             # TRL config schema (all trl: options)

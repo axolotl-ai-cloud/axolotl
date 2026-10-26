@@ -34,28 +34,12 @@ from typing import Any
 
 import requests
 import torch
-import torch.nn.functional as F
 from accelerate.utils import broadcast_object_list, is_peft_model
 from datasets import Dataset
 from torch.distributed.tensor import DTensor
 from torch.utils.data import DataLoader
 from transformers import PreTrainedModel, TrainerCallback
 from transformers.trainer_utils import SaveStrategy
-from trl.experimental.async_grpo import (
-    async_grpo_trainer as trl_async_module,
-    packing as trl_packing,
-)
-from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig
-from trl.experimental.async_grpo.async_grpo_trainer import (
-    AsyncGRPOTrainer,
-    FixedCountBatcher,
-    RolloutQueueDataset,
-    TokenBudgetBatcher,
-    _EmptyIterableDataset,
-)
-from trl.experimental.async_grpo.packing import TREE_ATTENTION
-from trl.experimental.async_grpo.vllm_client import VLLMClient
-from trl.trainer.utils import add_fused_lm_head, get_config_model_id, nanmax, nanmin
 
 from axolotl.core.trainers.grpo.async_packing import (
     ChainFixedCountBatcher,
@@ -88,6 +72,24 @@ from axolotl.core.trainers.grpo.async_traces import (
     TraceCollator,
     TraceRecorder,
     rollout_traces,
+)
+from axolotl.core.trainers.grpo.trl_compat import (
+    TREE_ATTENTION,
+    AsyncGRPOConfig,
+    AsyncGRPOTrainer,
+    EmptyIterableDataset,
+    FixedCountBatcher,
+    RolloutQueueDataset,
+    TokenBudgetBatcher,
+    VLLMClient,
+    add_fused_lm_head,
+    check_version,
+    get_config_model_id,
+    install_runtime_patches,
+    iter_vllm_named_params,
+    nanmax,
+    nanmin,
+    patched_trainer_module,
 )
 from axolotl.core.trainers.mixins import (
     CheckpointWriteRetryMixin,
@@ -422,84 +424,6 @@ def _add_fused_lm_head_to_base(model, **kwargs):
     )
 
 
-_trl_tree_flash_attn = trl_packing._flash_attn
-_trl_flops_per_token = trl_async_module.compute_flops_per_token
-
-
-def _flops_per_token(config, seq_len: int) -> int:
-    """TRL's per-token FLOPs estimate (for its MFU metrics), dense where it cannot
-    read a MoE config.
-
-    TRL treats any config with ``num_experts_per_tok`` as Qwen-MoE-like and reads
-    ``decoder_sparse_step``; hybrids such as Nemotron-H have the one without the
-    other, which crashed the first step's metrics.
-    """
-    try:
-        return _trl_flops_per_token(config, seq_len)
-    except AttributeError as err:
-        LOG.warning_once(
-            f"MFU uses a dense estimate: TRL cannot read {type(config).__name__}'s "
-            f"MoE layout ({err})"
-        )
-        return _trl_flops_per_token(_DenseView(config), seq_len)
-
-
-class _DenseView:
-    """``config`` read as a dense model (configs are strict dataclasses)."""
-
-    num_experts_per_tok = None
-
-    def __init__(self, config):
-        self._config = config
-
-    def __getattr__(self, name):
-        return getattr(self._config, name)
-
-
-@functools.cache
-def _tree_flash_attn():
-    """TRL's FA3 kernel, or FA2's where FA3 has no build for the GPU (Blackwell)."""
-    try:
-        return _trl_tree_flash_attn()
-    except RuntimeError as err:
-        LOG.warning(
-            f"Tree attention uses flash-attn2: flash-attn3 failed to load: {err}"
-        )
-        from kernels import get_kernel
-
-        # Same varlen API, and it aligns the causal mask bottom-right like FA3.
-        return _WideValues(get_kernel("kernels-community/flash-attn2", version=3))
-
-
-class _WideValues:
-    """FA2's varlen kernel needs values as wide as the queries, which FA3 (and
-    MLA's narrower value heads) do not; pad them and cut the output back."""
-
-    def __init__(self, kernel):
-        self.kernel = kernel
-
-    def flash_attn_varlen_func(self, query, key, value, *args, **kwargs):
-        width = value.shape[-1]
-        if width < query.shape[-1]:
-            value = F.pad(value, (0, query.shape[-1] - width))
-        out = self.kernel.flash_attn_varlen_func(query, key, value, *args, **kwargs)
-        if isinstance(out, tuple):
-            return (out[0][..., :width], *out[1:])
-        return out[..., :width]
-
-
-@contextlib.contextmanager
-def _patched_trl_module(**replacements):
-    originals = {name: getattr(trl_async_module, name) for name in replacements}
-    try:
-        for name, value in replacements.items():
-            setattr(trl_async_module, name, value)
-        yield
-    finally:
-        for name, value in originals.items():
-            setattr(trl_async_module, name, value)
-
-
 class _EmptyStepCallback(TrainerCallback):
     """What an optimizer step whose micro-batches hold no trained token does.
 
@@ -731,9 +655,9 @@ class AxolotlAsyncGRPOTrainer(
         for scorer in self._trainer_scorers:
             scorer.share_prefixes = self._share_prefixes
 
-        trl_packing._flash_attn = _tree_flash_attn
-        trl_async_module.compute_flops_per_token = _flops_per_token
-        with _patched_trl_module(**replacements), hide_layer_types:
+        check_version()
+        install_runtime_patches()
+        with patched_trainer_module(**replacements), hide_layer_types:
             super().__init__(
                 model=model_id,
                 reward_funcs=reward_funcs,
@@ -830,7 +754,7 @@ class AxolotlAsyncGRPOTrainer(
                     progress=self._progress,
                 ),
             }
-            with _patched_trl_module(**replacements):
+            with patched_trainer_module(**replacements):
                 return super().get_train_dataloader()
         # TRL's dataloader with the step planner in place of its batchers.
         num_processes = self.accelerator.num_processes
@@ -884,7 +808,7 @@ class AxolotlAsyncGRPOTrainer(
                     0,
                 )
         else:
-            dataset = _EmptyIterableDataset()
+            dataset = EmptyIterableDataset()
         return self.accelerator.prepare(
             DataLoader(
                 dataset,
@@ -1147,7 +1071,7 @@ class AxolotlAsyncGRPOTrainer(
         merges = _out_of_place_merges(model)
         device = self.accelerator.device
         # The same walk as the weight manifest TRL sends the server at init.
-        for name, param in trl_async_module._iter_vllm_named_params(model):
+        for name, param in iter_vllm_named_params(model):
             with torch.no_grad():
                 merge = merges.get(id(param))
                 tensor = merge(param) if merge is not None else _full(param)

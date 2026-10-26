@@ -32,8 +32,6 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from accelerate.utils import gather_object
-from trl.experimental.async_grpo.packing import TreeRow
-from trl.trainer.utils import pad
 
 from axolotl.core.trainers.grpo.async_packing import ChainRow
 from axolotl.core.trainers.grpo.async_progress import (
@@ -45,6 +43,7 @@ from axolotl.core.trainers.grpo.async_rollout import (
     compute_group_advantages,
 )
 from axolotl.core.trainers.grpo.async_traces import TraceCollator
+from axolotl.core.trainers.grpo.trl_compat import TreeRow, pad
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
