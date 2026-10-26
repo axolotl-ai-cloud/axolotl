@@ -11,17 +11,6 @@ from axolotl.monkeypatch.lora_kernels import LINEAR_ATTN_IN_PROJS
 from axolotl.monkeypatch.models.gated_delta_net_ops import (
     init_fla_compiled_ops as _init_fla_compiled_ops,
 )
-from axolotl.monkeypatch.models.gated_delta_net_tree import (
-    GATED_DELTA_RULE,
-    gated_delta_rule_scan,
-    varlen_conv,
-)
-from axolotl.monkeypatch.models.recurrent_tree import (
-    mark_tree_forward,
-    tree_conv,
-    tree_plan,
-    tree_scan,
-)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -176,21 +165,16 @@ def _make_qwen3_5_gated_delta_forward(module):
             )
         use_cp_kernels = cp_conv is not None
 
-        # Async GRPO's packed rows: follow the prefix trie (see recurrent_tree).
-        tree = None
-        if not use_precomputed_states and not use_cp_kernels and cache_params is None:
-            tree = tree_plan(kwargs)
         # Training, no cache: route the FLA kernels through opaque ops that take position_ids and derive cu_seqlens eagerly, so aten.nonzero never enters the traced loop.
         use_compiled_ops = (
             _FLA_COMPILED_OPS
             and not use_cp_kernels
             and cache_params is None
             and not use_precomputed_states
-            and tree is None
         )
         cu_seqlens = None
         pos_for_varlen = None
-        if tree is None and (
+        if (
             not use_precomputed_states
             and not use_cp_kernels
             and position_ids is not None
@@ -200,7 +184,7 @@ def _make_qwen3_5_gated_delta_forward(module):
             else:
                 cu_seqlens = get_cu_seqlens(position_ids=position_ids)
 
-        if (tree is not None or cu_seqlens is not None) and (
+        if cu_seqlens is not None and (
             fla_causal_conv1d is None or fla_chunk_gated_delta_rule is None
         ):
             # the transformers fallbacks accept cu_seqlens but ignore it, which would
@@ -222,15 +206,7 @@ def _make_qwen3_5_gated_delta_forward(module):
         b = in_proj["in_proj_b"]
         a = in_proj["in_proj_a"]
 
-        if tree is not None:
-            conv = varlen_conv(
-                fla_causal_conv1d,
-                self.conv1d.weight.squeeze(1),
-                self.conv1d.bias,
-                self.activation,
-            )
-            mixed_qkv = tree_conv(conv, mixed_qkv, tree, self.conv_kernel_size)
-        elif (
+        if (
             use_precomputed_states
             and seq_len == 1
             and not cache_params.layers[self.layer_idx].record_past
@@ -309,15 +285,7 @@ def _make_qwen3_5_gated_delta_forward(module):
             if use_precomputed_states
             else None
         )
-        if tree is not None:
-            core_attn_out = tree_scan(
-                gated_delta_rule_scan(fla_chunk_gated_delta_rule),
-                [query, key, value, g, beta],
-                tree,
-                GATED_DELTA_RULE,
-            )
-            last_recurrent_state = None
-        elif use_cp_kernels:
+        if use_cp_kernels:
             core_attn_out, last_recurrent_state = cp_chunk(
                 query,
                 key,
@@ -390,7 +358,7 @@ def _make_qwen3_5_gated_delta_forward(module):
         return _la_proj_fwd(self, "out_proj", core_attn_out)
 
     patched_forward._axolotl_gdn_kernel_interface = True
-    return mark_tree_forward(patched_forward)
+    return patched_forward
 
 
 def _apply_packing_patches(

@@ -9,8 +9,9 @@ from async_test_utils import (
     branching_samples,
     reference_tree_attention,
 )
+from tree_recurrence import uninstall
 
-from axolotl.core.trainers.grpo.async_packing import shares_prefixes
+from axolotl.monkeypatch.models.tree_packing import packing_support
 
 LAYERS = {"layer_types": ["conv", "full_attention", "conv"], "conv_L_cache": 3}
 FAMILIES = {
@@ -32,9 +33,6 @@ FAMILIES = {
 def lfm2_family(request, monkeypatch):
     from trl.experimental.async_grpo import packing
 
-    from axolotl.monkeypatch.models.lfm2_tree import patch_lfm2_tree
-    from axolotl.monkeypatch.models.mamba_utils import patch_model_forward_seq_idx
-
     model_type = request.param
     prefix, config_kwargs = FAMILIES[model_type]
     modeling = importlib.import_module(
@@ -52,8 +50,6 @@ def lfm2_family(request, monkeypatch):
         return causal_conv1d_fn(x, *args, **kwargs)
 
     monkeypatch.setattr(modeling, "causal_conv1d_fn", conv)
-    patch_model_forward_seq_idx(getattr(modeling, f"{prefix}Model"))
-    assert patch_lfm2_tree(model_type)
 
     model_cls = getattr(modeling, f"{prefix}ForCausalLM")
     config = model_cls.config_class(
@@ -66,13 +62,16 @@ def lfm2_family(request, monkeypatch):
         **config_kwargs,
     )
     torch.manual_seed(0)
-    return model_cls(config).float(), convs
+    model = model_cls(config).float()
+    # as async GRPO loads it: tree-recurrence's hooks, axolotl's packing patches off
+    assert packing_support(model).shares_prefixes
+    yield model, convs
+    uninstall()
 
 
 @pytest.mark.parametrize("lfm2_family", list(FAMILIES), indirect=True)
 def test_tree_rows_match_each_sample_alone(lfm2_family):
     model, convs = lfm2_family
-    assert shares_prefixes(model)
     rows = []
 
     def on_row(row_tokens):

@@ -19,10 +19,10 @@ import torch
 from accelerate.utils import is_peft_model
 from datasets import Dataset
 from transformers import PreTrainedModel
+from tree_recurrence.integrations.trl import sample_boundaries
 
 from axolotl.core.trainers.ebft.args import EBFTFieldsMixin
 from axolotl.core.trainers.ebft.rewards import group_feature_rewards, pool_sequence
-from axolotl.core.trainers.grpo.async_packing import sample_boundaries
 from axolotl.core.trainers.grpo.async_scoring import (
     ScoredRow,
     TrainerScorer,
