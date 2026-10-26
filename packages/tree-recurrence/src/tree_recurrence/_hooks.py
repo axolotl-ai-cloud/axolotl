@@ -29,6 +29,8 @@ class Hook:
     original: Any
     wrapper: Any = None
     enabled: bool = True
+    # whether a class owner defined ``name`` itself rather than inheriting it
+    owned: bool = True
     # (original, its instance forward, whether it runs a kernel), as last checked
     _kernel_check: tuple[Any, Any, bool] | None = None
     announced: bool = False
@@ -77,11 +79,13 @@ def install_hook(owner: Any, name: str, build: Callable[[Hook], Callable]) -> Ho
     if stale is not None:  # wrapped by someone else since: let it pass through
         stale.enabled = False
     original = getattr(owner, name)
+    owned = not isinstance(owner, type) or name in owner.__dict__
     previous = _ours(original)
     if previous is not None:  # a hook of ours left on the attribute: replace it
         previous.enabled = False
         original = previous.original
-    hook = Hook(owner, name, original)
+        owned = previous.owned
+    hook = Hook(owner, name, original, owned=owned)
     wrapper = build(hook)
     functools.update_wrapper(
         wrapper,
@@ -100,7 +104,10 @@ def remove_hook(hook: Hook) -> None:
     """Restore the original, or, if something wrapped the hook since, make the hook
     pass everything through."""
     if _current(hook.owner, hook.name) is hook.wrapper:
-        setattr(hook.owner, hook.name, hook.original)
+        if hook.owned:
+            setattr(hook.owner, hook.name, hook.original)
+        else:
+            delattr(hook.owner, hook.name)
     else:
         hook.enabled = False
     if _HOOKS.get((hook.owner, hook.name)) is hook:
