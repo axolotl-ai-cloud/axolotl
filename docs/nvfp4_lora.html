@@ -1173,6 +1173,13 @@ warning when this option is active. Compare model quality before using its outpu
 time as well as subsequent chunk throughput before enabling this for routine
 exports. CPU tests cover arithmetic and final NVFP4 byte parity; qualify the CUDA
 path on the GPU and software stack used for the export.</p>
+<p>Merging defaults to two PyTorch CPU threads. Override this with
+<code>--merge-num-threads 4</code> or <code>merge_num_threads: 4</code> in YAML. The setting applies
+before compilation and is restored when merging finishes.</p>
+<p>On CUDA, the memory-efficient NVFP4 expert merge automatically copies quantized
+outputs into pinned CPU memory on a dedicated D2H stream and overlaps shard
+writes with subsequent merging. No additional flag is needed; these transfers
+and writes also work without <code>--merge-compile</code>.</p>
 </section>
 <section id="merging-without-merge-aware-training" class="level3">
 <h3 class="anchored" data-anchor-id="merging-without-merge-aware-training">Merging without merge-aware training</h3>
