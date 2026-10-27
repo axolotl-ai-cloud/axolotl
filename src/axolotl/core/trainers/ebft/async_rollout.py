@@ -17,7 +17,11 @@ from typing import Any
 import numpy as np
 
 from axolotl.core.trainers.grpo.async_rollout import AxolotlRolloutLoop
-from axolotl.core.trainers.grpo.trl_compat import RolloutGroup, TrainingSequence
+from axolotl.core.trainers.grpo.trl_compat import (
+    RolloutGroup,
+    TrainingSequence,
+    unsampled_sequence_fields,
+)
 
 _NO_DRIFT = {
     "clean": 0.0,
@@ -177,6 +181,7 @@ class EBFTRolloutLoop(AxolotlRolloutLoop):
             input_ids=prompt_ids + list(ids),
             completion_mask=[0] * len(prompt_ids) + [1] * len(ids),
             old_log_probs=[0.0] * len(prompt_ids) + list(logprobs),
+            **unsampled_sequence_fields(len(prompt_ids) + len(ids)),
             rollout_id=uuid.uuid4().hex,
         )
         self._features[sequence.rollout_id] = {

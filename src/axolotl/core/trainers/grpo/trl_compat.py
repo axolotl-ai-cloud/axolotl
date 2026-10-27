@@ -12,9 +12,14 @@ naming the function, when an upgrade changes one.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
+import math
 from importlib.metadata import version
+from itertools import chain, repeat
+from typing import Any
 
+import numpy as np
 import torch.nn.functional as F
 from trl.chat_template_utils import add_response_schema
 from trl.experimental.async_grpo import (
@@ -58,12 +63,16 @@ LOG = get_logger(__name__)
 
 # The release the overrides and copies below were written against (pyproject's pin).
 TRL_VERSION = "1.16.0"
+# TRL main, experimental: the version it reports and the commit last checked against.
+TRL_MAIN_VERSION = "1.17.0.dev0"
+TRL_MAIN_COMMIT = "636cb0fc"
 
 # TRL code axolotl copies or re-implements rather than subclasses; the drift test
 # pins these besides every TRL method an axolotl subclass overrides.
 UPSTREAM = {
     "AsyncGRPOTrainer.compute_loss": "copied into AxolotlAsyncGRPOTrainer, with "
     "the loss behind loss_type",
+    "TreeRow.pack": "packs ChainRow and ScoredRow rows; compute_loss reads its keys",
     "AsyncGRPOConfig": "its defaults are mirrored in axolotl's validation "
     "(max_staleness, weight_sync_steps), and its dispatch_batches/split_batches "
     "carry the rollout stream's stop micro-batch to every rank",
@@ -84,12 +93,85 @@ UPSTREAM = {
 
 def check_version() -> None:
     installed = version("trl")
-    if installed != TRL_VERSION:
+    if installed == TRL_MAIN_VERSION:
+        LOG.warning_once(
+            f"Async GRPO on trl {installed} (TRL main) is experimental: it was checked "
+            f"against TRL main at {TRL_MAIN_COMMIT}, and later commits may break it."
+        )
+    elif installed != TRL_VERSION:
         LOG.warning_once(
             f"Async GRPO extends trl {TRL_VERSION}'s experimental AsyncGRPOTrainer; "
             f"trl {installed} is installed. Re-check "
             "axolotl/core/trainers/grpo/trl_compat.py before trusting a run."
         )
+
+
+def _field_names(cls) -> frozenset[str]:
+    return frozenset(field.name for field in dataclasses.fields(cls))
+
+
+_SAMPLE_FIELDS = _field_names(RolloutSample)
+_SEQUENCE_FIELDS = _field_names(TrainingSequence)
+
+# TRL main's score centering (huggingface/trl#7760); no release has it yet.
+SCORE_CENTERING = "score_centering" in _field_names(AsyncGRPOConfig)
+
+
+def score_centering_unavailable() -> str:
+    return (
+        "`loss_type: score_centering` needs TRL's score centering, which only TRL "
+        f"main has (trl {version('trl')} is installed). Install the commit async GRPO "
+        "was checked against: pip install "
+        f"'trl @ git+https://github.com/huggingface/trl.git@{TRL_MAIN_COMMIT}'"
+    )
+
+
+def sampler_fields(sequence: TrainingSequence) -> dict[str, Any]:
+    """The ``RolloutSample`` fields TRL main derives from a ``TrainingSequence``'s
+    per-token sampler record, as its ``_score_group`` does; none on TRL 1.16."""
+    fields: dict[str, Any] = {}
+    if "sampling_mask" in _SAMPLE_FIELDS:
+        fields["sampling_mask"] = sequence.sampling_mask
+    if "sampler_ids" in _SAMPLE_FIELDS:
+        tops = sequence.sampler_logprobs
+        width = max(map(len, tops), default=0)
+        shape = (len(tops), width)
+        fields["sampler_ids"] = np.fromiter(
+            chain.from_iterable(
+                chain(top, repeat(-1, width - len(top))) for top in tops
+            ),
+            dtype=np.int64,
+            count=shape[0] * width,
+        ).reshape(shape)
+        fields["sampler_log_probs"] = np.fromiter(
+            chain.from_iterable(
+                chain(top.values(), repeat(-math.inf, width - len(top))) for top in tops
+            ),
+            dtype=np.float32,
+            count=shape[0] * width,
+        ).reshape(shape)
+    return fields
+
+
+def unsampled_fields(n_tokens: int) -> dict[str, Any]:
+    """``sampler_fields`` of ``n_tokens`` tokens the sampler recorded nothing for."""
+    fields: dict[str, Any] = {}
+    if "sampling_mask" in _SAMPLE_FIELDS:
+        fields["sampling_mask"] = [[] for _ in range(n_tokens)]
+    if "sampler_ids" in _SAMPLE_FIELDS:
+        fields["sampler_ids"] = np.full((n_tokens, 0), -1, dtype=np.int64)
+        fields["sampler_log_probs"] = np.full((n_tokens, 0), -math.inf, np.float32)
+    return fields
+
+
+def unsampled_sequence_fields(n_tokens: int) -> dict[str, Any]:
+    """The per-token sampler record TRL main's ``TrainingSequence`` requires, empty."""
+    fields: dict[str, Any] = {}
+    if "sampling_mask" in _SEQUENCE_FIELDS:
+        fields["sampling_mask"] = [[] for _ in range(n_tokens)]
+    if "sampler_logprobs" in _SEQUENCE_FIELDS:
+        fields["sampler_logprobs"] = [{} for _ in range(n_tokens)]
+    return fields
 
 
 @contextlib.contextmanager
@@ -184,7 +266,10 @@ class _WideValues:
 
 
 __all__ = [
+    "SCORE_CENTERING",
     "TREE_ATTENTION",
+    "TRL_MAIN_COMMIT",
+    "TRL_MAIN_VERSION",
     "TRL_VERSION",
     "UPSTREAM",
     "AsyncGRPOConfig",
@@ -217,6 +302,10 @@ __all__ = [
     "pad",
     "patched_trainer_module",
     "print_prompt_completions_sample",
+    "sampler_fields",
+    "score_centering_unavailable",
     "trainer_module",
     "tree_flash_attn",
+    "unsampled_fields",
+    "unsampled_sequence_fields",
 ]

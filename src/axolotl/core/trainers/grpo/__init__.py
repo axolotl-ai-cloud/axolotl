@@ -277,6 +277,10 @@ class GRPOStrategy:
             "reward_num_workers": trl.reward_num_workers,
             "vllm_importance_sampling_mode": trl.vllm_importance_sampling_mode,
             "vllm_importance_sampling_cap": trl.vllm_importance_sampling_cap,
+            # TRL main only; validation rejects them on releases.
+            "vllm_importance_sampling_clip_min": trl.vllm_importance_sampling_clip_min,
+            "vllm_importance_sampling_clip_max": trl.vllm_importance_sampling_clip_max,
+            "num_sampler_logprobs": trl.num_sampler_logprobs,
         }
         kwargs.update(
             {key: value for key, value in optional.items() if value is not None}
