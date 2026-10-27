@@ -95,6 +95,7 @@ try:
 except ImportError:
     _fused_selective_log_softmax = None
 
+from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.utils.logging import get_logger
 
 # ---------------------------------------------------------------------------
@@ -885,6 +886,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
         # GRPOTrainer hardcodes an identity collator.
         if data_collator is not None:
             self.data_collator = data_collator
+
+        # The stock merged sync merges and unmerges the adapter in place.
+        if getattr(self, "vllm_generation", None) is not None:
+            exact_unmerge_vllm_sync(self.vllm_generation)
 
         # FP8 models: zero out the pad token embedding so that padding
         # positions have zero hidden states throughout the network.

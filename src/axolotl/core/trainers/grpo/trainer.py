@@ -50,6 +50,7 @@ from axolotl.core.trainers.mixins import (
     SchedulerMixin,
 )
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
+from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.monkeypatch.ring_attn import get_ring_attn_group
 
 if is_peft_available():
@@ -75,6 +76,8 @@ class AxolotlGRPOTrainer(
         # GRPOTrainer hardcodes an identity collator.
         if data_collator is not None:
             self.data_collator = data_collator
+        if getattr(self, "vllm_generation", None) is not None:
+            exact_unmerge_vllm_sync(self.vllm_generation)
 
 
 class AxolotlAsyncGRPOTrainer(
