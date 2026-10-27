@@ -253,6 +253,31 @@ class TestDPOTrainerLossMask:
         expected = -F.logsigmoid(trainer.beta * delta).mean().item()
         assert _loss(trainer, rows) == pytest.approx(expected, abs=1e-5)
 
+    def test_loss_mask_reaches_fused_head_labels(self, tokenizer, tmp_path):
+        """Tool results and other masked tokens are -100 in the head's labels, so they are never scored."""
+        rows = _rows(tokenizer)
+        trainer = _trainer(tokenizer, tmp_path, rows, ["sigmoid"])
+        batch = trainer.data_collator(rows)
+        assert (batch["completion_mask"] < batch["attention_mask"]).any()
+
+        calls = []
+        fused_forward = trainer.model.forward
+
+        def recording_forward(*args, **kwargs):
+            out = fused_forward(*args, **kwargs)
+            calls.append((kwargs, out))
+            return out
+
+        trainer.model.forward = recording_forward
+        with torch.no_grad():
+            trainer.compute_loss(trainer.model, batch)
+
+        kwargs, out = calls[0]
+        expected = batch["completion_mask"].bool()
+        assert torch.equal(kwargs["labels"] != -100, expected)
+        assert torch.equal(out.label_mask, expected[:, 1:])
+        assert (out.log_probs[~out.label_mask] == 0).all()
+
     @pytest.mark.parametrize("loss_type", [["sigmoid"], ["apo_zero"]])
     def test_train_step(self, tokenizer, tmp_path, loss_type):
         trainer = _trainer(tokenizer, tmp_path, _rows(tokenizer), loss_type)
