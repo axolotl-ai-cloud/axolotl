@@ -1238,13 +1238,15 @@ class TestScoreCenteringConfig:
         monkeypatch.setattr(async_trainer, "SCORE_CENTERING", False)
         with pytest.raises(ValueError, match="only TRL main has"):
             AxolotlAsyncGRPOConfig(
-                output_dir=str(tmp_path), loss_type="score_centering"
+                output_dir=str(tmp_path), use_cpu=True, loss_type="score_centering"
             )
 
     @needs_score_centering
     @pytest.mark.parametrize("loss_type", ["dapo", "cispo", "score_centering"])
     def test_loss_type_decides_trls_objective(self, tmp_path, loss_type):
-        args = AxolotlAsyncGRPOConfig(output_dir=str(tmp_path), loss_type=loss_type)
+        args = AxolotlAsyncGRPOConfig(
+            output_dir=str(tmp_path), use_cpu=True, loss_type=loss_type
+        )
         assert args.score_centering is (loss_type == "score_centering")
 
     def test_custom_rollout_loops_cannot_score_center(self, tmp_path, monkeypatch):
@@ -1252,6 +1254,7 @@ class TestScoreCenteringConfig:
         with pytest.raises(ValueError, match="only TRL's own rollout loop"):
             AxolotlAsyncGRPOConfig(
                 output_dir=str(tmp_path),
+                use_cpu=True,
                 loss_type="score_centering",
                 rollout_loop="axolotl.core.trainers.ebft.async_rollout.EBFTRolloutLoop",
             )
