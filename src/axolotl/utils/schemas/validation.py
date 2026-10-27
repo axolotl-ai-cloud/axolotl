@@ -1224,6 +1224,10 @@ class RLValidationMixin:
                 "With num_generations=1, every group has zero advantage and "
                 "the policy never updates."
             )
+        if trl_cfg.get("async_prefetch") or trl_cfg.get("use_data_producer"):
+            # Async GRPO generates each prompt's group in its rollout worker and packs
+            # trained samples by token budget, so a step need not hold whole groups.
+            return data
 
         # Without `capabilities` populated yet (mode='before'), fall back to
         # user-set distributed fields.
