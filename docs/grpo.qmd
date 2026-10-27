@@ -445,6 +445,10 @@ For detailed coverage of IS modes (`token_mask`, `token_truncate`, etc.), cappin
 
 TRL scores GRPO and GDPO tokens, and structured EBFT's, with a fused LM head: per-token log-probabilities are computed in chunks from the hidden states, so the `[batch, seq, vocab]` logits are never built. The head bypasses the model's own forward, so `cut_cross_entropy` and `liger_fused_linear_cross_entropy` are not applied to these trainers (a warning says so), and `trl.use_liger_loss` only applies Liger's layer kernels. A LoRA adapter on `lm_head` is rejected; train the head with `lora_modules_to_save: [lm_head]`.
 
+### Gradient checkpointing and activation offloading
+
+Both GRPO trainers, synchronous and async, take `gradient_checkpointing`, `selective_checkpointing` and `activation_offloading` (`true` or `hidden_states`) as described in [Gradient Checkpointing](gradient_checkpointing.qmd). TRL's GRPO trainers have no activation offloading of their own, so axolotl runs their training step inside its offload context. Selective checkpointing keeps saving attention after the synchronous trainer turns checkpointing off for its scoring pass and back on. All three are off unless the config sets them; TRL's `AsyncGRPOConfig` alone would turn checkpointing on.
+
 ### FP8 training
 
 FP8 quantization halves model VRAM usage with minimal impact on training quality. It does not significantly speed up computation for small models but allows larger models to fit in memory.
