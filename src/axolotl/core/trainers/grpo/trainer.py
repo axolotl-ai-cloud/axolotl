@@ -41,13 +41,18 @@ from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
 from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
+from axolotl.core.trainers.grpo.merge_check import LoraMergeCheckMixin
 from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
+    ActivationOffloadingMixin,
+    CheckpointWriteRetryMixin,
     DistributedParallelMixin,
     RngLoaderMixin,
     SchedulerMixin,
 )
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
+from axolotl.monkeypatch.lora_merge_aware import merge_aware_vllm_sync
+from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.monkeypatch.ring_attn import get_ring_attn_group
 
 if is_peft_available():
@@ -55,11 +60,14 @@ if is_peft_available():
 
 
 class AxolotlGRPOTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,
     OptimizerInitMixin,
     DistributedParallelMixin,
+    ActivationOffloadingMixin,
+    LoraMergeCheckMixin,
     GRPOTrainer,
 ):
     """Extend the base GRPOTrainer for axolotl helpers"""
@@ -71,14 +79,19 @@ class AxolotlGRPOTrainer(
         # GRPOTrainer hardcodes an identity collator.
         if data_collator is not None:
             self.data_collator = data_collator
+        if getattr(self, "vllm_generation", None) is not None:
+            exact_unmerge_vllm_sync(self.vllm_generation)
+            merge_aware_vllm_sync(self.vllm_generation)
 
 
 class AxolotlAsyncGRPOTrainer(
+    CheckpointWriteRetryMixin,
     RngLoaderMixin,
     SchedulerMixin,
     OptimizerMixin,
     OptimizerInitMixin,
     DistributedParallelMixin,
+    ActivationOffloadingMixin,
     FastAsyncGRPOTrainer,
 ):
     """Extend AsyncGRPOTrainer with axolotl helpers"""

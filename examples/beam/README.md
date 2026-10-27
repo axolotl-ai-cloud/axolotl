@@ -74,7 +74,13 @@ fails fast with the fix if they disagree.
 
 The bf16 config pins the ScatterMoE LoRA tiles with `autotune_profiles` (measured on B200 and H100,
 identical across every routed-row bucket) and enables `autotune_neighborhood: 1`, so no training or eval
-step benchmarks kernel configs while expert-parallel peers wait.
+step benchmarks kernel configs while expert-parallel peers wait. It also carries the B200 quack profiles for
+`use_sonicmoe: true` (EP=8, `sonicmoe_ep_compact_routing` with `highwater` row padding): pins for the
+forward and backward expert GEMMs at training sizes, measured per routed-pair bucket from 98k to 1M rows
+(the pinned configs were within about 2% of each other wherever both ran; every other tile was at least 3%
+slower and non-persistent scheduling up to 22% slower on the weight gradients), and narrowed searches
+for everything else. The pins match Beam's expert shapes at EP=8 (32 local experts); another EP size or
+GPU falls through to the narrowed or full search.
 
 ## Related Resources
 

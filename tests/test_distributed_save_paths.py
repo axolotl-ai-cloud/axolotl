@@ -151,6 +151,60 @@ def test_non_ep_bf16_lora_checkpoint_uses_default_save(monkeypatch, tmp_path):
     saves.fsdp2.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "state_dict_type,needs_ownership,peft,streamed",
+    [
+        ("FULL_STATE_DICT", True, True, True),
+        ("SHARDED_STATE_DICT", True, True, False),
+        ("FULL_STATE_DICT", False, True, False),
+        ("FULL_STATE_DICT", True, False, False),
+    ],
+)
+def test_final_ep_lora_save_route(
+    monkeypatch, tmp_path, state_dict_type, needs_ownership, peft, streamed
+):
+    """FULL_STATE_DICT EP runs export through the streamed trainer save the checkpoints use;
+    the per-tensor GPU gather is only the fallback."""
+    from axolotl.integrations.expert_parallel import shard
+    from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint
+    from axolotl.train import save_trained_model
+    from axolotl.utils.dict import DictDefault
+
+    ep_save = MagicMock(return_value=True)
+    monkeypatch.setattr(shard, "save_ep_lora_adapter", ep_save)
+    monkeypatch.setattr(
+        ExpertParallelPlugin, "_resolve_ep_group", MagicMock(return_value=object())
+    )
+    monkeypatch.setattr(
+        fsdp2_checkpoint, "_model_needs_ownership", lambda model: needs_ownership
+    )
+    monkeypatch.setattr("accelerate.utils.modeling.is_peft_model", lambda model: peft)
+    model = torch.nn.Linear(1, 1)
+    trainer = SimpleNamespace(
+        model=model,
+        is_fsdp_enabled=True,
+        accelerator=SimpleNamespace(
+            state=SimpleNamespace(
+                fsdp_plugin=SimpleNamespace(
+                    fsdp_version=2, state_dict_type=state_dict_type
+                )
+            )
+        ),
+        save_model=MagicMock(),
+    )
+    cfg = DictDefault(
+        {"adapter": "lora", "expert_parallel_size": 2, "output_dir": str(tmp_path)}
+    )
+    save_trained_model(cfg, trainer, model)
+    if streamed:
+        trainer.save_model.assert_called_once_with(str(tmp_path))
+        ep_save.assert_not_called()
+    else:
+        trainer.save_model.assert_not_called()
+        ep_save.assert_called_once()
+
+
 def _count_trainer(*, tp_size, cp_size, average_tokens_across_devices=False):
     trainer = object.__new__(AxolotlTrainer)
     trainer.model = SimpleNamespace(_tp_size=tp_size)

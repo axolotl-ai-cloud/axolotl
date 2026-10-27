@@ -757,6 +757,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Train supported NVFP4 LoRA targets against their merged quantized weights. Defaults to enabled for supported backends; false opts out with a warning.",
     ),
     (
+        ("--lora-merge-aware",),
+        None,
+        None,
+        "Train LoRA linears against their merged weights rounded to this dtype, bf16(W + scaling * B @ A), with a straight-through cast so A and B still get gradients. Use when the adapter is served merged (vLLM merged weight sync, or a bf16 merge-lora checkpoint): at RL learning rates most of an ordinary LoRA update rounds away in the merge.",
+    ),
+    (
         ("--lora-r",),
         None,
         None,
@@ -923,6 +929,24 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         None,
+    ),
+    (
+        ("--merge-num-threads",),
+        None,
+        None,
+        "PyTorch CPU intra-op threads during LoRA merging (default: 2). Set before compilation; the previous thread count is restored after merging.",
+    ),
+    (
+        ("--merge-compile/--no-merge-compile",),
+        None,
+        None,
+        "Compile merge-aware NVFP4 expert-chunk arithmetic, using strict precision by default. Requires memory_efficient merging; other targets remain eager.",
+    ),
+    (
+        ("--merge-compile-precision",),
+        None,
+        None,
+        "Compiled merge precision: strict preserves eager rounding and validates each specialization against PEFT; relaxed uses compiler defaults without equivalence checks and may change merged NVFP4 bytes. Only used with merge_compile.",
     ),
     (
         ("--merge-method",),
@@ -1689,6 +1713,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. Enables LoRA on the native vLLM server and registers each synced adapter under a versioned name via /v1/load_lora_adapter. Syncs only LoRA adapter weights vs full merged model.",
     ),
     (
+        ("--trl.vllm-merge-check-interval",),
+        "trl__vllm_merge_check_interval",
+        "int",
+        "With LoRA and merged vLLM weight sync (vllm_lora_sync off), measure how much of the adapter update survives rounding the merged weights to vLLM's dtype at the first sync and then every N optimizer steps. Logged as lora_merge/retained, with a warning when most of the update is lost. Defaults to 50; 0 disables.",
+    ),
+    (
         ("--vllm.device",),
         "vllm__device",
         "str",
@@ -1704,7 +1734,25 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.data-parallel-size",),
         "vllm__data_parallel_size",
         "int",
-        "Data parallel size for VLLM",
+        "Data parallel size for VLLM (total replicas across all nodes)",
+    ),
+    (
+        ("--vllm.pipeline-parallel-size",),
+        "vllm__pipeline_parallel_size",
+        "int",
+        "Pipeline parallel size for VLLM",
+    ),
+    (
+        ("--vllm.nnodes",),
+        "vllm__nnodes",
+        "int",
+        "Number of nodes `vllm-serve` spans. Launch it on each node with `--node-rank`.",
+    ),
+    (
+        ("--vllm.master-addr",),
+        "vllm__master_addr",
+        "str",
+        "Address of node 0 (which serves the API) when `nnodes > 1`",
     ),
     (
         ("--vllm.gpu-memory-utilization",),
@@ -2382,7 +2430,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--gradient-checkpointing",),
         None,
         None,
-        "Whether to use gradient checkpointing. Available options are: true, false, 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing",
+        "Whether to use gradient checkpointing. Available options are: true, false, 'offload' (deprecated, use activation_offloading: true). https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing",
     ),
     (
         ("--gradient-checkpointing-kwargs",),
@@ -2432,7 +2480,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--activation-offloading",),
         None,
         None,
-        "Whether to offload activations. Options: true/false, 'legacy', 'disk' (TRL offloader), or 'hidden_states' (checkpoint input offload; non-reentrant by default, ALST-style when gradient_checkpointing_kwargs.use_reentrant is true).",
+        "Whether to offload activations. Options: true/false (TRL offloader; gradient_checkpointing decides whether layers recompute), or 'hidden_states' (checkpoint input offload; non-reentrant by default, ALST-style when gradient_checkpointing_kwargs.use_reentrant is true). 'legacy' is a deprecated alias of true; 'disk' is disabled.",
     ),
     (
         ("--layer-offloading/--no-layer-offloading",),
@@ -2499,6 +2547,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only.",
+    ),
+    (
+        ("--label-keep-prob",),
+        None,
+        None,
+        "Advanced: {token_id: keep_prob}. Each trained label equal to a listed token id is kept with probability keep_prob and otherwise masked to -100, re-drawn independently per position every optimizer step (inputs unchanged; eval is not masked). Ids must be exactly what the chat template emits; find them with `axolotl preprocess --debug` or tokenizer.convert_tokens_to_ids.",
+    ),
+    (
+        ("--label-keep-prob-normalize",),
+        None,
+        None,
+        "Loss normalization with label_keep_prob. 'dropped' (default) divides by the trained-token count after masking, like ordinary label masking. 'original' divides by the count before masking, so each other token's weight is unchanged.",
     ),
     (
         ("--sample-packing-group-size",),
@@ -3137,6 +3197,54 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Checkpoints saved at a time",
     ),
     (
+        ("--checkpoint-save-retry.wait-seconds",),
+        "checkpoint_save_retry__wait_seconds",
+        "float",
+        "Seconds to wait before rewriting the file, for example while space is freed. Other ranks wait at their next collective meanwhile, so keep wait_seconds * retries below ddp_timeout.",
+    ),
+    (
+        ("--checkpoint-save-retry.retries",),
+        "checkpoint_save_retry__retries",
+        "int",
+        "Retries per file before the error is raised and the save fails.",
+    ),
+    (
+        ("--checkpoint-mirror.dir",),
+        "checkpoint_mirror__dir",
+        "str",
+        "Directory on a shared filesystem (e.g. NFS) that receives a copy of every checkpoint and, at the end of training, the final outputs. A checkpoint appears there only once it is complete, so it can be resumed from.",
+    ),
+    (
+        ("--checkpoint-mirror.delete",),
+        "checkpoint_mirror__delete",
+        None,
+        "`mirror` keeps as many checkpoints in `dir` as save_total_limit keeps in output_dir. `keep` never deletes from `dir`, unless checkpoint_mirror.save_total_limit is set.",
+    ),
+    (
+        ("--checkpoint-mirror.save-total-limit",),
+        "checkpoint_mirror__save_total_limit",
+        "int",
+        "With `delete: keep`, the number of newest checkpoints to keep in `dir` (the best checkpoint is always kept). Unset keeps all.",
+    ),
+    (
+        ("--checkpoint-mirror.max-pending",),
+        "checkpoint_mirror__max_pending",
+        "int",
+        "Checkpoints queued for copying at once. A save that finds the queue full is not mirrored (training never waits); the newest checkpoint is retried at the end of training. Bounds the local disk held by queued checkpoints when the shared filesystem is slower than the save interval.",
+    ),
+    (
+        ("--checkpoint-mirror.copy-threads",),
+        "checkpoint_mirror__copy_threads",
+        "int",
+        "Files copied in parallel per checkpoint.",
+    ),
+    (
+        ("--checkpoint-mirror.resume/--no-checkpoint-mirror.resume",),
+        "checkpoint_mirror__resume",
+        None,
+        "Let auto_resume_from_checkpoints resume from `dir` when it holds a newer checkpoint than output_dir, or when output_dir is local to each node of a multi-node run.",
+    ),
+    (
         ("--save-first-step/--no-save-first-step",),
         None,
         None,
@@ -3171,6 +3279,18 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         "Save only the model weights, skipping the optimizer. Using this means you can't resume from checkpoints.",
+    ),
+    (
+        ("--adapter-checkpoint-format",),
+        None,
+        None,
+        "How FSDP2 writes PEFT adapters, for checkpoint-N saves and the end-of-training export to output_dir. 'gather' assembles every adapter tensor on rank 0 before writing adapter_model.safetensors. 'sharded' has every rank write the slices it holds to <dir>/.adapter_shards/, with no cross-rank tensor transfer when every rank sees the output directory, then rank 0 consolidates them into the same adapter_model.safetensors. Checkpoints consolidate on a background thread while training continues: one consolidation runs at a time, and a save that finds one running and one queued waits. Until a checkpoint is consolidated, its on_save callbacks (checkpoint mirror, publishers) and save_total_limit rotation are held back, and training end waits for it; a resume from an unconsolidated checkpoint finishes the consolidation first. The final export waits for outstanding checkpoint consolidations, then consolidates its own shards before training returns. Requires an adapter, fsdp_version 2 with state_dict_type FULL_STATE_DICT (with or without expert_parallel_size), tensor_parallel_size 1, no rl, load_best_model_at_end false, and hub_strategy end when hub_model_id is set; config validation rejects anything else. Single-process runs, multiple adapters, and quantized adapter tensors fall back to 'gather' at save time.",
+    ),
+    (
+        ("--adapter-final-save-format",),
+        None,
+        None,
+        "Override adapter_checkpoint_format for the end-of-training export only. Unset follows adapter_checkpoint_format; 'gather' keeps sharded checkpoints but writes the final adapter through the rank 0 gather, e.g. to byte-compare a sharded checkpoint against a gathered export of the same weights.",
     ),
     (
         ("--use-tensorboard/--no-use-tensorboard",),

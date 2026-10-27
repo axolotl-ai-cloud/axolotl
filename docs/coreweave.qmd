@@ -100,6 +100,7 @@ workload identity (a projected service-account token), so no access keys are sto
 - Topology comes from `nodes` and `gpus_per_node`; pod 0 is the rendezvous host.
 - `setup_commands` run in the container before the launcher (extra wheels from the PVC, for example).
 - The Hugging Face cache is pointed at `<pvc_mount>/hf` because the image pins `HF_HUB_CACHE` to the container's overlay disk; the Triton cache stays on node-local scratch, which must not be shared over NFS.
+- An absolute `output_dir` must be under `pvc_mount`, or under node-local `/scratch` when `checkpoint_mirror.dir` is under `pvc_mount`; scratch is lost with the pod.
 - `memory_request` has to hold the whole checkpoint in host RAM on rank 0 when `cpu_ram_efficient_loading` is on.
 :::
 

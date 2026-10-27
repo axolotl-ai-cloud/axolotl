@@ -20,7 +20,26 @@ class VllmConfig(BaseModel):
     )
     data_parallel_size: int | None = Field(
         default=None,
-        json_schema_extra={"description": "Data parallel size for VLLM"},
+        json_schema_extra={
+            "description": "Data parallel size for VLLM (total replicas across all nodes)"
+        },
+    )
+    pipeline_parallel_size: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Pipeline parallel size for VLLM"},
+    )
+    nnodes: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of nodes `vllm-serve` spans. Launch it on each node "
+            "with `--node-rank`."
+        },
+    )
+    master_addr: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Address of node 0 (which serves the API) when `nnodes > 1`"
+        },
     )
     gpu_memory_utilization: float | None = Field(
         default=None,

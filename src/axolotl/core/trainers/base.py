@@ -40,16 +40,20 @@ from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
 from trl.experimental.utils import pad_to_length
 from typing_extensions import override
 
+from axolotl.core.checkpoint_retry import retry_call
 from axolotl.core.trainers.constants import TOKENS_STATE_FILE
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
     CheckpointSaveMixin,
+    CheckpointWriteRetryMixin,
     DistributedParallelMixin,
     LayerOffloadingMixin,
     OptimizerMixin,
     PackingMixin,
     RngLoaderMixin,
     SchedulerMixin,
+    ShardedAdapterSaveMixin,
+    with_checkpoint_write_retry,
 )
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
@@ -65,6 +69,7 @@ from axolotl.utils.distributed import (
     is_distributed,
     is_main_process,
 )
+from axolotl.utils.label_dropout import LabelDropout
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import (
     LabelBalancedRandomSampler,
@@ -75,6 +80,11 @@ from axolotl.utils.samplers.utils import get_dataset_label_counts
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
 
 LOG = get_logger(__name__)
+
+
+def _write_json(path: str, data: Any, **kwargs) -> None:
+    with open(path, "w", encoding="utf-8") as stream:
+        json.dump(data, stream, **kwargs)
 
 
 def model_loss_accepts_num_items_in_batch(model) -> bool:
@@ -112,6 +122,7 @@ REDUCTION_FNS = {
 
 
 class AxolotlTrainer(
+    CheckpointWriteRetryMixin,
     PackingMixin,
     SchedulerMixin,
     OptimizerMixin,
@@ -119,6 +130,7 @@ class AxolotlTrainer(
     CheckpointSaveMixin,
     LayerOffloadingMixin,
     ActivationOffloadingMixin,
+    ShardedAdapterSaveMixin,
     DistributedParallelMixin,
     Trainer,
 ):
@@ -192,6 +204,12 @@ class AxolotlTrainer(
         )
         if self.args.orpo_alpha:
             self.loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+        label_keep_prob = getattr(self.args, "label_keep_prob", None)
+        self._label_dropout = (
+            LabelDropout(label_keep_prob, seed=self.args.seed)
+            if label_keep_prob
+            else None
+        )
 
     def _init_training_state(
         self,
@@ -686,6 +704,26 @@ class AxolotlTrainer(
         from deepspeed.utils import groups
 
         return groups._get_sequence_parallel_group()
+
+    @override
+    def get_batch_samples(self, epoch_iterator, num_batches, device):
+        dropout = self._label_dropout
+        if dropout is None:
+            return super().get_batch_samples(epoch_iterator, num_batches, device)
+        step, rank = self.state.global_step, self.args.process_index
+        if self.args.label_keep_prob_normalize == "original":
+            # count trained tokens before masking so other tokens' weights are unchanged
+            batch_samples, num_items_in_batch = super().get_batch_samples(
+                epoch_iterator, num_batches, device
+            )
+            for micro_step, batch in enumerate(batch_samples):
+                dropout.apply(batch, dropout.generator(step, rank, micro_step))
+            return batch_samples, num_items_in_batch
+        return super().get_batch_samples(
+            dropout.iter_applied(epoch_iterator, num_batches, step, rank),
+            num_batches,
+            device,
+        )
 
     @override
     def _get_num_items_in_batch(self, batch_samples, device):
@@ -1246,6 +1284,8 @@ class AxolotlTrainer(
             )
             return False
 
+    # this override writes before reaching the mixins, so it opens the retry scope itself
+    @with_checkpoint_write_retry
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey
         checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
@@ -1275,10 +1315,8 @@ class AxolotlTrainer(
                     "Resume requires ignore_data_skip: true, which does not restore the previous data position.",
                     exc,
                 )
-            with open(
-                os.path.join(output_dir, "balanced_sampler.json"), "w", encoding="utf-8"
-            ) as stream:
-                json.dump(saved, stream, indent=2)
+            sampler_path = os.path.join(output_dir, "balanced_sampler.json")
+            retry_call(sampler_path, _write_json, sampler_path, saved, indent=2)
 
         # EP-sharded expert LoRA is never gathered by the FSDP/DCP saves, and FSDP2 + a quantized
         # (NVFP4/Float8) frozen base breaks the DCP sharded save ("Failed to validate global plan").
@@ -1318,8 +1356,7 @@ class AxolotlTrainer(
                 ),
             }
             tokens_state_path = os.path.join(output_dir, TOKENS_STATE_FILE)
-            with open(tokens_state_path, "w", encoding="utf-8") as f:
-                json.dump(tokens_state, f)
+            retry_call(tokens_state_path, _write_json, tokens_state_path, tokens_state)
 
         engine = getattr(self, "model_wrapped", None)
         save_checkpoint = getattr(engine, "save_checkpoint", None)
@@ -1387,6 +1424,21 @@ class AxolotlTrainer(
             if not is_peft_available()
             else (PreTrainedModel, PeftModel)
         )
+        save_kwargs = {}
+        if getattr(self, "is_fsdp_enabled", False) and is_peft_available():
+            unwrapped = (
+                self.model
+                if isinstance(self.model, supported_classes)
+                else self.accelerator.unwrap_model(self.model, keep_torch_compile=False)
+            )
+            if isinstance(unwrapped, PeftModel):
+                from axolotl.monkeypatch.accelerate.fsdp2_checkpoint import (
+                    peft_save_embedding_layers,
+                )
+
+                save_kwargs["save_embedding_layers"] = peft_save_embedding_layers(
+                    unwrapped
+                )
         # Save a trained model and configuration using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
         if not isinstance(self.model, supported_classes):
@@ -1403,6 +1455,7 @@ class AxolotlTrainer(
                     output_dir,
                     state_dict=state_dict,
                     is_main_process=self.accelerator.is_main_process,
+                    **save_kwargs,
                 )
             else:
                 LOG.info(
@@ -1418,6 +1471,7 @@ class AxolotlTrainer(
                 output_dir,
                 state_dict=state_dict,
                 is_main_process=self.accelerator.is_main_process,
+                **save_kwargs,
             )
 
         if self.processing_class is not None:

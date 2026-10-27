@@ -46,6 +46,7 @@ from axolotl.utils.collators import (
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
+from axolotl.utils.label_dropout import check_label_keep_prob_ids
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -281,6 +282,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["label_balance_window_optim_steps"] = (
             self.cfg.label_balance_window_optim_steps or 1
         )
+        if self.cfg.label_keep_prob:
+            check_label_keep_prob_ids(self.cfg.label_keep_prob, self.tokenizer)
+            training_arguments_kwargs["label_keep_prob"] = dict(
+                self.cfg.label_keep_prob
+            )
+            training_arguments_kwargs["label_keep_prob_normalize"] = (
+                self.cfg.label_keep_prob_normalize or "dropped"
+            )
         training_arguments_kwargs["sample_packing_drop_attention_mask"] = (
             self.cfg.attn_decontaminates_packing
         )

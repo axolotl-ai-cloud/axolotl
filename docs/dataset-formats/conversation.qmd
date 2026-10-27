@@ -456,6 +456,30 @@ datasets:
 - Rows with `training_detail`, a trainable non-assistant turn, or blocks that don't match the turns use the default labeling. `train_on_inputs` or non-assistant `roles_to_train` turn it off.
 - Not supported with a processor, mistral-common, or slow tokenizers.
 
+#### Stochastic label dropout for structural tokens (advanced)
+
+Tool-heavy chat data repeats structural tokens (channel/message/end markers, tool-call tags) thousands of times, so they dominate the training signal. `label_keep_prob` down-weights them in expectation without changing the loss: on every optimizer step, each trained label whose token id is listed is kept with probability `keep_prob` and otherwise set to `-100`. Draws are independent per position and re-drawn every step. Inputs are unchanged, and labels that are already masked (system/user/tool turns) are never touched.
+
+```yaml
+# Reflection Beam (Harmony-style template): ids as the template emits them
+label_keep_prob:
+  151672: 0.3   # <|channel|>
+  151671: 0.3   # <|message|>
+  151670: 0.5   # <|end|>
+  151675: 0.5   # <|call|>
+  151679: 0.3   # <rfl:parameter name="   (one added token, includes the quote)
+  151680: 0.3   # \n</rfl:parameter>      (one added token, includes the newline)
+label_keep_prob_normalize: dropped  # default; or `original`
+```
+
+Keys are **token ids**, not strings. Give the exact ids the chat template emits: a string typed by hand can tokenize into different pieces than the template produces (e.g. `<rfl:parameter name=` typed as text is six ordinary pieces, while the template emits the single added token `<rfl:parameter name="`). Find ids with `axolotl preprocess config.yaml --debug` or `tokenizer.convert_tokens_to_ids(...)`. At startup each configured id is logged with the token it decodes to, and ids outside the tokenizer vocabulary are rejected.
+
+Behavior:
+
+- Masking is applied to collated training batches inside the trainer, so it works with every SFT collator, sample packing, and any loss that reads `labels` (model cross entropy, Cut Cross Entropy, Liger). Evaluation batches are not masked.
+- Draws come from a generator seeded by `seed`, the global step, the process rank and the micro-batch index, so runs (and resumes) are reproducible.
+- `label_keep_prob_normalize: dropped` (default) normalizes by the trained-token count after masking, as ordinary label masking does, so the other tokens are slightly upweighted. `original` normalizes by the count before masking, so every other token's weight is exactly unchanged and a listed token's expected weight is exactly `keep_prob`.
+- Only supported for SFT / causal LM training; it is rejected with `rl`, reward models, KD and diffusion LM.
 
 ## sharegpt
 

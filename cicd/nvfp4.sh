@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+export COVERAGE_CORE=sysmon
+
 python - <<'NVFP4_ENV'
 import importlib.metadata
 import os

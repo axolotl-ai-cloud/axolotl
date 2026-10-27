@@ -27,6 +27,19 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
+    threads = cfg.get("merge_num_threads", 2)
+    if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
+        raise ValueError("merge_num_threads must be a positive integer")
+    previous_threads = torch.get_num_threads()
+    try:
+        torch.set_num_threads(threads)
+        LOG.info("Using %s CPU threads for LoRA merge", threads)
+        _do_merge_lora(cfg=cfg)
+    finally:
+        torch.set_num_threads(previous_threads)
+
+
+def _do_merge_lora(*, cfg: DictDefault) -> None:
     if str(getattr(cfg, "adapter", None)) == "mixlora":
         raise NotImplementedError(
             "merge-lora is not supported for `adapter: mixlora` — MixLoRA experts "
@@ -41,6 +54,8 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     if resolve_merge_method is not None:
         merge_method = resolve_merge_method(cfg, configured_merge_method)
     if merge_method == "legacy":
+        if cfg.get("merge_compile"):
+            raise ValueError("merge_compile requires merge_method: memory_efficient")
         if (
             getattr(cfg, "_original_nf4_backend", None) or cfg.nf4_backend
         ) == "torchao" or getattr(cfg, "_original_staged_nf4", False):
@@ -186,6 +201,9 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         dequant=bool(getattr(cfg, "merge_dequant", False)),
         override_quantizer=bool(getattr(cfg, "merge_override_quantizer", False)),
         revision=cfg.revision_of_model,
+        merge_compile=bool(cfg.get("merge_compile", False)),
+        merge_compile_precision=cfg.get("merge_compile_precision") or "strict",
+        lora_merge_aware=cfg.get("lora_merge_aware"),
     )
     PluginManager.get_instance().post_lora_merge(
         cfg,

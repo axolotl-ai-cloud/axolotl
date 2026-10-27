@@ -503,3 +503,29 @@ class TestQwen3IdenticalToolsParameters:
         # Check that both argument values are present
         assert "hello" in decoded
         assert "42" in decoded
+
+
+def test_load_honors_field_tools(qwen3_tokenizer):
+    strategy = load(
+        qwen3_tokenizer,
+        DictDefault({"train_on_inputs": False, "sequence_len": 512}),
+        DictDefault({"chat_template": "qwen3", "field_tools": "functions"}),
+    )
+    sample = {
+        "functions": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_current_weather",
+                    "description": "Get the weather",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+        "messages": [
+            {"role": "user", "content": "What is the weather?"},
+            {"role": "assistant", "content": "Sunny."},
+        ],
+    }
+    decoded = qwen3_tokenizer.decode(strategy.tokenize_prompt(sample)["input_ids"])
+    assert "get_current_weather" in decoded
