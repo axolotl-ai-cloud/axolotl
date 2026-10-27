@@ -130,36 +130,8 @@ LOG = get_logger(__name__)
 
 LOSS_TYPES = ("dapo", "cispo", "score_centering")
 IMPORTANCE_SAMPLING_MODES = ("token_truncate", "token_mask")
-# Ratio thresholds of mu-GRPO's negative-advantage veto (arXiv 2605.17570), keyed by
-# metric suffix. 1e-4 is its default, which trainer/vLLM mismatch alone can reach.
-NAV_THRESHOLDS = {"1e-4": 1e-4, "1e-6": 1e-6}
 # Kept beside the versioned adapter directories, dot-prefixed like TRL's staging ones.
 RETIRED_ADAPTER_WEIGHTS = f".retired-{SAFETENSORS_WEIGHTS_NAME}"
-
-
-def negative_advantage_veto_counts(
-    ratio: torch.Tensor,
-    advantages: torch.Tensor,
-    segment_id: torch.Tensor,
-    thresholds: tuple[float, ...] = tuple(NAV_THRESHOLDS.values()),
-) -> torch.Tensor:
-    """Negative-advantage samples, then how many hold a token below each threshold.
-
-    ``ratio`` and ``advantages`` are per trained token, ``segment_id`` the sample each
-    token belongs to. mu-GRPO's veto masks such a sample whole.
-    """
-    counts = ratio.new_zeros(1 + len(thresholds), dtype=torch.float32)
-    if segment_id.numel() == 0:
-        return counts
-    num_samples = int(segment_id.max()) + 1
-    min_ratio = ratio.new_full((num_samples,), float("inf"), dtype=torch.float32)
-    min_ratio = min_ratio.scatter_reduce(0, segment_id, ratio.float(), reduce="amin")
-    negative = torch.zeros(num_samples, dtype=torch.bool, device=ratio.device)
-    negative[segment_id[advantages < 0]] = True
-    counts[0] = negative.sum()
-    for i, threshold in enumerate(thresholds, start=1):
-        counts[i] = (negative & (min_ratio < threshold)).sum()
-    return counts
 
 
 def resolve_rollout_loop(fqn: str) -> type[AxolotlRolloutLoop]:
@@ -1122,13 +1094,11 @@ class AxolotlAsyncGRPOTrainer(
                     entropy.sum(),
                     count,
                     *(value.float().sum() for value in token_means.values()),
-                    *negative_advantage_veto_counts(ratio, advantages, segment_id),
                 ]
             )
             stats = self.accelerator.reduce(stats, reduction="sum").tolist()
             ratio_sum, kl_sum, entropy_sum, global_count = stats[:4]
-            token_sums = stats[4 : 4 + len(token_means)]
-            negatives, *vetoed = stats[4 + len(token_means) :]
+            token_sums = stats[4:]
             local_min = ratio.min() if ratio.numel() else ratio.new_tensor(float("inf"))
             ratio_min = self.accelerator.gather(local_min.float().reshape(1)).min()
             metrics = self._metrics["train"]
@@ -1138,15 +1108,10 @@ class AxolotlAsyncGRPOTrainer(
                 metrics["ratio"].append(ratio_sum / global_count)
                 metrics["kl"].append(kl_sum / global_count)
                 metrics["entropy"].append(entropy_sum / global_count)
-            if torch.isfinite(ratio_min):
-                metrics["sampling/ratio_min"].append(ratio_min.item())
-            for name, count_below in zip(NAV_THRESHOLDS, vetoed, strict=True):
-                metrics[f"sampling/nav_veto_frac_{name}"].append(
-                    (count_below, negatives)
-                )
-            if global_count:
                 for name, total in zip(token_means, token_sums, strict=True):
                     metrics[name].append(total / global_count)
+            if torch.isfinite(ratio_min):
+                metrics["sampling/ratio_min"].append(ratio_min.item())
             if loss_type == "dapo":
                 num_seq = int(segment_id.max()) + 1 if segment_id.numel() else 0
 
