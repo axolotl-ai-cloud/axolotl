@@ -39,7 +39,6 @@ from axolotl.core.trainers.grpo.async_trainer import (
     AxolotlAsyncGRPOConfig,
     AxolotlAsyncGRPOTrainer,
     SampleFilterQueue,
-    negative_advantage_veto_counts,
 )
 from axolotl.core.trainers.grpo.trl_compat import (
     SCORE_CENTERING,
@@ -320,25 +319,6 @@ class TestPolicyLoss:
         assert loss[2] == 0.0 and grad[2] == 0.0
         assert loss[1] == pytest.approx(1.0)
         assert grad[0] == pytest.approx(-0.5)
-
-
-class TestNegativeAdvantageVetoCounts:
-    def test_counts_negative_samples_below_each_threshold(self):
-        # Per-sample min ratios: 1e-5, 1e-7 and 0.5 (negative), 1e-8 (positive).
-        ratio = torch.tensor([1.0, 1e-5, 0.9, 1e-7, 0.5, 2.0, 1e-8])
-        segment_id = torch.tensor([0, 0, 1, 1, 2, 2, 3])
-        advantages = torch.tensor([-1.0, -1.0, -0.5, -0.5, -2.0, -2.0, 1.0])
-        counts = negative_advantage_veto_counts(
-            ratio, advantages, segment_id, (1e-4, 1e-6)
-        )
-        assert counts.tolist() == [3.0, 2.0, 1.0]
-
-    def test_no_trained_tokens(self):
-        empty = torch.zeros(0)
-        counts = negative_advantage_veto_counts(
-            empty, empty, torch.zeros(0, dtype=torch.long), (1e-4, 1e-6)
-        )
-        assert counts.tolist() == [0.0, 0.0, 0.0]
 
 
 class TestConfig:
@@ -1090,10 +1070,6 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
         log["sampling/ratio_min"] for log in logs if "sampling/ratio_min" in log
     ]
     assert ratio_mins and max(ratio_mins) < 1.0
-    vetoes = [
-        log[key] for log in logs for key in log if key.startswith("sampling/nav_")
-    ]
-    assert len(vetoes) == 2 * len(ratio_mins) and all(v == 0.0 for v in vetoes)
 
 
 def test_default_loss_is_trls(
