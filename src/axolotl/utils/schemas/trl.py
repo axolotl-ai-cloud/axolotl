@@ -393,3 +393,13 @@ class TRLConfig(BaseModel):
             "Syncs only LoRA adapter weights vs full merged model."
         },
     )
+    vllm_merge_check_interval: int | None = Field(
+        default=None,
+        ge=0,
+        json_schema_extra={
+            "description": "With LoRA and merged vLLM weight sync (vllm_lora_sync off), measure how much of "
+            "the adapter update survives rounding the merged weights to vLLM's dtype at the first sync and then "
+            "every N optimizer steps. Logged as lora_merge/retained, with a warning when most of the update is "
+            "lost. Defaults to 50; 0 disables."
+        },
+    )

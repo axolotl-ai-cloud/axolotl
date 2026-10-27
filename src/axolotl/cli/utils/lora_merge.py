@@ -24,6 +24,7 @@ from axolotl.cli.utils.param_wrapper_merge import (
     build_param_wrapper_map,
 )
 from axolotl.utils.logging import get_logger
+from axolotl.utils.lora_merge_precision import MergeRetention, log_merge_retention
 
 LOG = get_logger(__name__)
 
@@ -2206,6 +2207,16 @@ def _should_nf4_roundtrip(
     return False
 
 
+def _record_merge_retention(retention, base, delta, merged) -> None:
+    if retention is None or merged.dtype not in (torch.bfloat16, torch.float16):
+        return
+    retention.update(
+        delta.to(torch.float32),
+        merged.float() - base.to(merged.dtype).float(),
+    )
+    retention.modules += 1
+
+
 def _merge_tensor_with_lora(
     tensor: torch.Tensor,
     key: str,
@@ -2226,6 +2237,7 @@ def _merge_tensor_with_lora(
     layer_type_map: Optional[Dict[str, str]] = None,
     param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
     canonical_fp32: bool = False,
+    retention: Optional[MergeRetention] = None,
 ) -> tuple[torch.Tensor, bool]:
     """
     Helper function to merge a single tensor with its corresponding LoRA weights.
@@ -2243,6 +2255,8 @@ def _merge_tensor_with_lora(
         nf4_double_quant: Whether to use double quantization
         use_dora: Whether to apply DoRA (Weight-Decomposed LoRA) merging
         weight_renamings: Optional key renamings from transformers conversion mapping
+        retention: Accumulates how much of each delta survives the cast back to a
+            half-precision base dtype
 
     Returns:
         Tuple of (merged tensor, whether LoRA was applied)
@@ -2308,11 +2322,12 @@ def _merge_tensor_with_lora(
         # Look up layer type from meta-device model introspection
         _layer_type = _lookup_layer_type(layer_type_map, key)
 
+        base = tensor.to(device)
         delta = _build_peft_layer_and_get_delta(
             lora_a.to(device),
             lora_b.to(device),
             lora_config_dict,
-            tensor.to(device),
+            base,
             magnitude=magnitude.to(device) if magnitude is not None else None,
             layer_type=_layer_type,
             lora_alpha_override=_resolve_lora_alpha_for_key(
@@ -2320,13 +2335,11 @@ def _merge_tensor_with_lora(
             ),
             canonical_fp32=canonical_fp32,
         )
-        merged_tensor = (
-            (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
-            .to(original_dtype)
-            .detach()
-            .cpu()
+        merged_tensor = (base.to(torch.float32) + delta.to(torch.float32)).to(
+            original_dtype
         )
-        return merged_tensor, True
+        _record_merge_retention(retention, base, delta, merged_tensor)
+        return merged_tensor.detach().cpu(), True
     else:
         # Try ParamWrapper LoRA (lora_target_parameters) — the LoRA targets a
         # parent module and this weight is a sub-parameter of that module.
@@ -2354,11 +2367,12 @@ def _merge_tensor_with_lora(
                         device=device,
                     )
                 original_dtype = tensor.dtype
+                base = tensor.to(device)
                 delta = _build_peft_layer_and_get_delta(
                     pw_a.to(device),
                     pw_b.to(device),
                     lora_config_dict,
-                    tensor.to(device),
+                    base,
                     is_param_wrapper=True,
                     is_transposed=target.is_transposed if target else None,
                     lora_alpha_override=target.alpha
@@ -2368,13 +2382,11 @@ def _merge_tensor_with_lora(
                     ),
                     canonical_fp32=canonical_fp32,
                 )
-                merged = (
-                    (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
-                    .to(original_dtype)
-                    .detach()
-                    .cpu()
+                merged = (base.to(torch.float32) + delta.to(torch.float32)).to(
+                    original_dtype
                 )
-                return merged, True
+                _record_merge_retention(retention, base, delta, merged)
+                return merged.detach().cpu(), True
 
         if do_nf4:
             tensor = _simulate_nf4_roundtrip(
@@ -2825,6 +2837,7 @@ def merge_lora_sharded_efficient(
     shard_sink: Optional[Callable[[dict[str, torch.Tensor], Path, dict], None]] = None,
     merge_compile: bool = False,
     merge_compile_precision: str = "strict",
+    lora_merge_aware: Optional[str] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -2859,6 +2872,9 @@ def merge_lora_sharded_efficient(
             "expert" in the key name and ndim >= 3.
         trust_remote_code: Whether to trust remote code when loading model
             config for layer-type introspection. Defaults to False for safety.
+        lora_merge_aware: The ``lora_merge_aware`` mode the adapter was trained with;
+            its merged half-precision weights are then exactly what training optimized,
+            so their rounding is reported without a warning.
     """
     base_model_path = Path(base_model_path)
     lora_adapter_path = Path(lora_adapter_path)
@@ -3140,6 +3156,7 @@ def merge_lora_sharded_efficient(
     total_size_bytes = 0
     total_parameters = 0
 
+    retention = MergeRetention()
     write_queue = _ShardWriteQueue()
     try:
         for shard_path, shard_tensors, metadata in tqdm(
@@ -3307,6 +3324,8 @@ def merge_lora_sharded_efficient(
                     layer_type_map=layer_type_map,
                     param_wrapper_map=param_wrapper_map,
                     canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
+                    # re-quantized weights are no longer served in the merge dtype
+                    retention=None if key in requant_plan else retention,
                 )
                 merged_tensors[key] = merged_tensor
                 if was_merged:
@@ -3431,3 +3450,16 @@ def merge_lora_sharded_efficient(
             "and the LoRA adapter. Consider using merge_method: legacy."
         )
     LOG.info(f"Applied LoRA to {merged_count}/{total_tensors} tensors")
+    log_merge_retention(
+        retention,
+        "merge-lora"
+        + (
+            f" of a lora_merge_aware: {lora_merge_aware} adapter, whose training "
+            "optimized these merged weights"
+            if lora_merge_aware
+            else ""
+        ),
+        "Serve the base model with the adapter unmerged, or retrain with "
+        "lora_merge_aware: bf16 so training optimizes the merged weights.",
+        warn=not lora_merge_aware,
+    )

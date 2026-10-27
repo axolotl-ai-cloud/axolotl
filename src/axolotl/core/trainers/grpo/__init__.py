@@ -253,6 +253,10 @@ class GRPOStrategy:
             )
         if getattr(trl, "vllm_lora_sync", None) is not None:
             grpo_args_kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
+        if trl.vllm_merge_check_interval is not None:
+            grpo_args_kwargs["vllm_merge_check_interval"] = (
+                trl.vllm_merge_check_interval
+            )
 
         # Batch flattening (top-level config, not under trl)
         if getattr(cfg, "batch_flattening", None):
