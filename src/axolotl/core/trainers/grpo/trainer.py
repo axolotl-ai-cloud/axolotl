@@ -40,15 +40,15 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
-from axolotl.core.trainers.grpo.async_trainer import (
+from axolotl.core.trainers.async_grpo.trainer import (
     AxolotlAsyncGRPOTrainer,  # noqa: F401
 )
-from axolotl.core.trainers.grpo.merge_check import LoraMergeCheckMixin
 from axolotl.core.trainers.grpo.sampler import ContextParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
     CheckpointWriteRetryMixin,
     DistributedParallelMixin,
+    LoraMergeCheckMixin,
     RngLoaderMixin,
     SchedulerMixin,
 )

@@ -2910,7 +2910,7 @@ class GRPOVllmValidationMixin:
                     "down-weight or drop every token the sampler agrees with"
                 )
         elif trl.loss_type == "score_centering":
-            from axolotl.core.trainers.grpo import trl_compat
+            from axolotl.core.trainers.async_grpo import trl_compat
 
             if not trl_compat.SCORE_CENTERING:
                 problems.append(trl_compat.score_centering_unavailable())

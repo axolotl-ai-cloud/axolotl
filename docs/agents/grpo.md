@@ -69,13 +69,17 @@ src/axolotl/
   cli/vllm_serve.py                # Launches vLLM's native OpenAI server (dev mode, NCCL weight transfer, optional LoRA)
   core/trainers/grpo/
     trainer.py                     # AxolotlGRPOTrainer (sync) and its context-parallel variant
-    async_trainer.py               # Async GRPO: TRL's AsyncGRPOTrainer + axolotl extensions
-    async_rollout.py               # Async GRPO rollout process: rewards, advantages, reward pool
-    async_scoring.py               # Async GRPO: rewards scored on the trainer (EBFT)
-    async_traces.py                # Async GRPO: the on_rollouts_scored plugin hook
-    async_progress.py              # Async GRPO: consumed/trained groups, end-of-run and stall stops
-    trl_compat.py                  # Every TRL import, module swap and patch; pins in tests/core/test_trl_compat.py
     sampler.py                     # Sampling utilities
+  core/trainers/async_grpo/        # Async GRPO on TRL's AsyncGRPOTrainer (package doc lists the extensions)
+    config.py                      # AxolotlAsyncGRPOConfig
+    trainer.py                     # AxolotlAsyncGRPOTrainer: model loading, sample filtering, dataloader, stop
+    loss.py                        # compute_loss with loss_type dapo / cispo / score_centering
+    weight_sync.py                 # Out-of-place merged sync, adapter retiring, vllm_lora_alias client
+    progress.py                    # Sample filter, consumed/trained groups, end-of-run and stall stops
+    rollout.py                     # Rollout process: rewards, advantages, reward pool, custom rollout loops
+    scoring.py                     # Rewards scored on the trainer (EBFT)
+    traces.py                      # The on_rollouts_scored plugin hook
+    trl_compat.py                  # Every TRL import, module swap and patch; pins in tests/core/test_trl_compat.py
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
   utils/schemas/trl.py             # TRL config schema (all trl: options)
 

@@ -34,16 +34,16 @@ import torch.distributed as dist
 from accelerate.utils import gather_object
 from tree_recurrence.integrations.trl import ChainRow
 
-from axolotl.core.trainers.grpo.async_progress import (
+from axolotl.core.trainers.async_grpo.progress import (
     STOP_KEY,
     RolloutProgress,
 )
-from axolotl.core.trainers.grpo.async_rollout import (
+from axolotl.core.trainers.async_grpo.rollout import (
     SCORE_PAYLOAD,
     compute_group_advantages,
 )
-from axolotl.core.trainers.grpo.async_traces import TraceCollator
-from axolotl.core.trainers.grpo.trl_compat import TreeRow, pad
+from axolotl.core.trainers.async_grpo.traces import TraceCollator
+from axolotl.core.trainers.async_grpo.trl_compat import TreeRow, pad
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)

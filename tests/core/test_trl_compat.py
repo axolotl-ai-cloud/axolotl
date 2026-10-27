@@ -27,24 +27,28 @@ from trl.experimental.async_grpo import (
     packing,
 )
 
-from axolotl.core.trainers.ebft.async_rollout import EBFTRolloutLoop
-from axolotl.core.trainers.ebft.async_trainer import AxolotlAsyncEBFTTrainer
-from axolotl.core.trainers.grpo import trl_compat
-from axolotl.core.trainers.grpo.async_progress import ProgressCollator
-from axolotl.core.trainers.grpo.async_rollout import (
+from axolotl.core.trainers.async_grpo import trl_compat
+from axolotl.core.trainers.async_grpo.loss import AsyncGRPOLossMixin
+from axolotl.core.trainers.async_grpo.progress import ProgressCollator
+from axolotl.core.trainers.async_grpo.rollout import (
     AxolotlAsyncRolloutWorker,
     AxolotlRolloutLoop,
 )
-from axolotl.core.trainers.grpo.async_scoring import ScoredRow, ScoringCollator
-from axolotl.core.trainers.grpo.async_traces import TraceCollator
-from axolotl.core.trainers.grpo.async_trainer import (
+from axolotl.core.trainers.async_grpo.scoring import ScoredRow, ScoringCollator
+from axolotl.core.trainers.async_grpo.traces import TraceCollator
+from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
+from axolotl.core.trainers.async_grpo.weight_sync import (
     AliasingVLLMClient,
-    AxolotlAsyncGRPOTrainer,
+    WeightSyncMixin,
 )
+from axolotl.core.trainers.ebft.async_rollout import EBFTRolloutLoop
+from axolotl.core.trainers.ebft.async_trainer import AxolotlAsyncEBFTTrainer
 from axolotl.integrations.nemo_gym.rollout import NemoGymRolloutLoop
 
 SUBCLASSES = [
     AxolotlAsyncGRPOTrainer,
+    AsyncGRPOLossMixin,
+    WeightSyncMixin,
     AxolotlAsyncEBFTTrainer,
     AxolotlRolloutLoop,
     EBFTRolloutLoop,

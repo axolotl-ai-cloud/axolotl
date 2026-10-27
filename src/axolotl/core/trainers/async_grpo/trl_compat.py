@@ -105,7 +105,7 @@ def check_version() -> None:
         LOG.warning_once(
             f"Async GRPO extends trl {TRL_VERSION}'s experimental AsyncGRPOTrainer; "
             f"trl {installed} is installed. Re-check "
-            "axolotl/core/trainers/grpo/trl_compat.py before trusting a run."
+            "axolotl/core/trainers/async_grpo/trl_compat.py before trusting a run."
         )
 
 

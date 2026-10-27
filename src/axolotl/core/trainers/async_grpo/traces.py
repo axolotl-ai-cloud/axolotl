@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from axolotl.core.trainers.grpo.async_progress import STOP_KEY, ProgressCollator
+from axolotl.core.trainers.async_grpo.progress import STOP_KEY, ProgressCollator
 
 TRACE_ID = "trace_id"
 

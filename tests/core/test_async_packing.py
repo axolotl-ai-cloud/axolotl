@@ -15,12 +15,10 @@ from async_test_utils import (
 from tree_recurrence import Support, uninstall
 from trl.experimental.async_grpo.async_rollout_worker import RolloutSample
 
-from axolotl.core.trainers.grpo.async_scoring import pack_sequences
-from axolotl.core.trainers.grpo.async_trainer import (
-    AxolotlAsyncGRPOConfig,
-    AxolotlAsyncGRPOTrainer,
-)
-from axolotl.core.trainers.grpo.trl_compat import unsampled_fields
+from axolotl.core.trainers.async_grpo.config import AxolotlAsyncGRPOConfig
+from axolotl.core.trainers.async_grpo.scoring import pack_sequences
+from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
+from axolotl.core.trainers.async_grpo.trl_compat import unsampled_fields
 from axolotl.monkeypatch.models.tree_packing import packing_support
 
 
@@ -152,7 +150,7 @@ def test_trains_hybrid_model_on_cpu(
     from transformers import AutoTokenizer
     from trl.experimental.async_grpo import async_grpo_trainer
 
-    from axolotl.core.trainers.grpo import async_trainer
+    from axolotl.core.trainers.async_grpo import trainer as async_trainer
 
     monkeypatch.setattr(
         async_grpo_trainer, "get_peak_flops_per_device", lambda *a, **k: None

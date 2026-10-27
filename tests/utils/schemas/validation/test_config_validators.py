@@ -621,7 +621,7 @@ class TestAsyncGRPOCompat:
 
     @pytest.fixture
     def score_centering(self, monkeypatch):
-        from axolotl.core.trainers.grpo import trl_compat
+        from axolotl.core.trainers.async_grpo import trl_compat
 
         monkeypatch.setattr(trl_compat, "SCORE_CENTERING", True)
 
@@ -668,7 +668,7 @@ class TestAsyncGRPOCompat:
             validate_config(cfg)
 
     def test_score_centering_needs_trl_main(self, min_base_cfg, monkeypatch):
-        from axolotl.core.trainers.grpo import trl_compat
+        from axolotl.core.trainers.async_grpo import trl_compat
 
         monkeypatch.setattr(trl_compat, "SCORE_CENTERING", False)
         with pytest.raises(ValueError, match="only TRL main has"):

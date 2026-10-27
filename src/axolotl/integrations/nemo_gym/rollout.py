@@ -26,8 +26,8 @@ from typing import Any
 
 import aiohttp
 
-from axolotl.core.trainers.grpo.async_rollout import AxolotlRolloutLoop
-from axolotl.core.trainers.grpo.trl_compat import TurnRecord, chain_to_sequences
+from axolotl.core.trainers.async_grpo.rollout import AxolotlRolloutLoop
+from axolotl.core.trainers.async_grpo.trl_compat import TurnRecord, chain_to_sequences
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
