@@ -449,7 +449,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                     _orig_validate_quant
                 )
         if self.cfg.fsdp_config or self.cfg.fsdp:
-            ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
+            from axolotl.utils.lora_precision import is_lora_tensor_name
+
+            ensure_dtype(
+                trainer.model,
+                dtype=self.cfg.torch_dtype,
+                keep=is_lora_tensor_name if self.cfg.lora_fp32_gradients else None,
+            )
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:
                 ensure_dtype(trainer.ref_model, dtype=self.cfg.torch_dtype)
 
