@@ -1426,16 +1426,26 @@ class TestTreeFlashAttn:
         yield trl_compat, loaded
         trl_compat.tree_flash_attn.cache_clear()
 
-    def test_falls_back_to_flash_attn2_where_flash_attn3_has_no_build(
-        self, tree_flash_attn, monkeypatch
+    @pytest.mark.parametrize(
+        "error",
+        [
+            # flash-attn3 has no Blackwell build
+            RuntimeError(
+                "CUDA capability 12.0 of the current device is not supported by "
+                "the architectures of the build: 8.0, 9.0a"
+            ),
+            # TRL main's flash-attn4 v0 under nvidia-cutlass-dsl 4.7
+            AttributeError("module 'cutlass.cute.core' has no attribute 'ThrMma'"),
+        ],
+        ids=["fa3_no_build", "fa4_import"],
+    )
+    def test_falls_back_to_flash_attn2_where_trls_kernel_cannot_load(
+        self, tree_flash_attn, monkeypatch, error
     ):
         trl_compat, loaded = tree_flash_attn
 
         def no_build():
-            raise RuntimeError(
-                "CUDA capability 12.0 of the current device is not supported by "
-                "the architectures of the build: 8.0, 9.0a"
-            )
+            raise error
 
         monkeypatch.setattr(trl_compat, "_trl_flash_attn", no_build)
         assert trl_compat.tree_flash_attn().kernel == ("kernels-community/flash-attn2")
