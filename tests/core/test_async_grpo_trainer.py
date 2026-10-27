@@ -553,6 +553,14 @@ class TestGRPOStrategy:
         assert "beta" not in kwargs
         assert "loss_type" not in kwargs
 
+    def test_use_liger_loss_warns_that_trl_deprecated_it(self):
+        cfg = self._cfg(use_liger_loss=True)
+        cfg.context_parallel_size = 1
+        with patch("axolotl.core.trainers.grpo.LOG.warning") as warning:
+            kwargs = GRPOStrategy.set_training_args_kwargs(cfg)
+        assert kwargs["use_liger_kernel"] is True
+        assert any("use_liger_loss" in c.args[0] for c in warning.call_args_list)
+
     def test_async_score_centering_kwargs(self):
         cfg = self._cfg(
             async_prefetch=True,

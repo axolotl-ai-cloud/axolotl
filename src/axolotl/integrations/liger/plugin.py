@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from axolotl.integrations.base import BasePlugin
 from axolotl.model_support import check_capability, get_model_support
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.enums import RLType, rl_uses_fused_lm_head
 
 LOG = get_logger(__name__)
 
@@ -162,6 +163,15 @@ class LigerPlugin(BasePlugin):
             cfg.liger_fused_linear_cross_entropy
             and getattr(cfg, "adapter", None) != "multilora"
         )
+        if patch_fused_linear_cross_entropy and rl_uses_fused_lm_head(cfg):
+            LOG.warning(
+                "Liger fused linear cross entropy is not applied for rl: %s: TRL "
+                "scores its tokens with a fused LM head, which already avoids the full "
+                "logits and bypasses the CausalLM forward Liger patches. Liger's other "
+                "kernels still apply.",
+                RLType(cfg.rl).value,
+            )
+            patch_fused_linear_cross_entropy = False
 
         if cfg.liger_use_token_scaling and getattr(cfg, "adapter", None) != "multilora":
             # Patch FLCE to set token_scaling=True for function and class API
@@ -242,7 +252,7 @@ class LigerPlugin(BasePlugin):
                 from transformers.loss.loss_utils import nn as loss_nn
 
                 loss_nn.functional.cross_entropy = liger_cross_entropy
-            if cfg.liger_fused_linear_cross_entropy:
+            if patch_fused_linear_cross_entropy:
                 from .models.base import patch_lce_forward
 
                 patch_lce_forward(cfg.model_config_type)

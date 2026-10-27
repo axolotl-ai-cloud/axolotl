@@ -175,7 +175,10 @@ class TRLConfig(BaseModel):
     )
     use_liger_loss: bool | None = Field(
         default=None,
-        json_schema_extra={"description": "Whether to use Liger loss for GRPO."},
+        json_schema_extra={
+            "description": "Deprecated by TRL: GRPO scores tokens with TRL's fused LM "
+            "head, so this only applies Liger's layer kernels."
+        },
     )
     loss_type: str | None = Field(
         default=None,

@@ -441,6 +441,10 @@ For detailed coverage of IS modes (`token_mask`, `token_truncate`, etc.), cappin
 
 ## Scaling
 
+### Fused LM head
+
+TRL scores GRPO and GDPO tokens, and structured EBFT's, with a fused LM head: per-token log-probabilities are computed in chunks from the hidden states, so the `[batch, seq, vocab]` logits are never built. The head bypasses the model's own forward, so `cut_cross_entropy` and `liger_fused_linear_cross_entropy` are not applied to these trainers (a warning says so), and `trl.use_liger_loss` only applies Liger's layer kernels. A LoRA adapter on `lm_head` is rejected; train the head with `lora_modules_to_save: [lm_head]`.
+
 ### FP8 training
 
 FP8 quantization halves model VRAM usage with minimal impact on training quality. It does not significantly speed up computation for small models but allows larger models to fit in memory.
@@ -627,4 +631,4 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 |--------|------|---------|-------------|
 | `log_completions` | bool | `false` | Log sample completions to W&B |
 | `num_completions_to_print` | int | `null` | Number of completions to print per step |
-| `use_liger_loss` | bool | `null` | Use Liger fused kernel for GRPO loss (reduces VRAM) |
+| `use_liger_loss` | bool | `null` | Deprecated by TRL: GRPO scores tokens with TRL's fused LM head, so this only applies Liger's layer kernels |

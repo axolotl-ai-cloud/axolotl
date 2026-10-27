@@ -19,6 +19,7 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RLType,
+    rl_uses_fused_lm_head,
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
@@ -1170,6 +1171,24 @@ class RLValidationMixin:
                 f"but got {rl=}, {dpo_loss_type=} and {dpo_loss_weights=}"
             )
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_fused_lm_head_rl(cls, data):
+        rl = data.get("rl")
+        if not rl_uses_fused_lm_head(data):
+            return data
+        targets = data.get("lora_target_modules") or []
+        if isinstance(targets, str):
+            targets = [targets]
+        if data.get("adapter") and any("lm_head" in t for t in targets):
+            raise ValueError(
+                f"rl: {rl} scores tokens with TRL's fused LM head, which reads "
+                "`lm_head.weight` directly, so a LoRA adapter on `lm_head` would never "
+                "train. Remove `lm_head` from `lora_target_modules` and add it to "
+                "`lora_modules_to_save` to train the head."
+            )
         return data
 
     @model_validator(mode="before")

@@ -1510,7 +1510,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.use-liger-loss/--no-trl.use-liger-loss",),
         "trl__use_liger_loss",
         None,
-        "Whether to use Liger loss for GRPO.",
+        "Deprecated by TRL: GRPO scores tokens with TRL's fused LM head, so this only applies Liger's layer kernels.",
     ),
     (
         ("--trl.loss-type",),
@@ -2046,7 +2046,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--dpo-use-liger-kernel/--no-dpo-use-liger-kernel",),
         None,
         None,
-        "Whether to use Liger kernel for DPO loss.",
+        "Deprecated by TRL. Apply Liger's layer kernels in DPO; TRL's fused LM head scores the tokens and keeps Liger's fused linear cross entropy off.",
     ),
     (
         ("--dpo-padding-free/--no-dpo-padding-free",),

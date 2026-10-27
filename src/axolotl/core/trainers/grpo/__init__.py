@@ -179,6 +179,12 @@ class GRPOStrategy:
             grpo_args_kwargs["epsilon_high"] = trl.epsilon_high
 
         if trl.use_liger_loss is not None:
+            if trl.use_liger_loss:
+                LOG.warning(
+                    "`trl.use_liger_loss` is deprecated by TRL and no longer selects "
+                    "Liger's fused GRPO loss: GRPO scores tokens with TRL's fused LM "
+                    "head, so only Liger's layer kernels apply."
+                )
             grpo_args_kwargs["use_liger_kernel"] = trl.use_liger_loss
 
         if trl.multi_objective_aggregation is not None:
