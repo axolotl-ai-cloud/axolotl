@@ -501,6 +501,7 @@ DeepSpeed ZeRO-3 requires `use_reentrant: true` for gradient checkpointing. This
 |---------|---------------|
 | vLLM GPU allocation | Dedicate one or more GPUs to vLLM; do not share with trainer GPUs |
 | Weight sync contention | Use `vllm_lora_sync: true` to avoid NCCL contention between training and vLLM |
+| Generation bottleneck | Add vLLM nodes; see [Multi-Node Serving](vllm_serving.qmd#sec-multi-node) |
 | FSDP + async | Use `async_prefetch: false` or rely on rank-0-only background generation |
 | DeepSpeed + gradient checkpoint | Must use `use_reentrant: true` |
 | OOM during scoring | Reduce `micro_batch_size` or `num_generations`. The logits tensor scales with `batch_size * vocab_size` |

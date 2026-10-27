@@ -44,6 +44,10 @@ class VllmServeArguments:
     revision: str | None = None
     tensor_parallel_size: int = 1
     data_parallel_size: int = 1
+    pipeline_parallel_size: int = 1
+    nnodes: int = 1
+    node_rank: int = 0
+    master_addr: str | None = None
     host: str = "0.0.0.0"  # nosec B104
     port: int = 8000
     gpu_memory_utilization: float = 0.9
@@ -73,6 +77,48 @@ def _vllm_at_least(min_version: str) -> bool:
         return False
 
 
+def build_multinode_args(script_args: VllmServeArguments) -> list[str]:
+    nnodes, node_rank = script_args.nnodes, script_args.node_rank
+    dp_size = script_args.data_parallel_size
+    if not 0 <= node_rank < nnodes:
+        raise ValueError(
+            f"--node-rank must be in [0, {nnodes - 1}] for vllm.nnodes={nnodes}, got {node_rank}"
+        )
+    if nnodes == 1:
+        return []
+    if not script_args.master_addr:
+        raise ValueError(
+            "vllm.master_addr (the node 0 address) is required when vllm.nnodes > 1"
+        )
+    # Only node 0 runs the API server; TRL's weight sync needs every engine behind it.
+    headless = ["--headless"] if node_rank > 0 else []
+    if dp_size % nnodes == 0:
+        dp_local = dp_size // nnodes
+        args = [
+            "--data-parallel-size-local",
+            str(dp_local),
+            "--data-parallel-address",
+            script_args.master_addr,
+        ]
+        if node_rank > 0:
+            args += [*headless, "--data-parallel-start-rank", str(node_rank * dp_local)]
+        return args
+    if dp_size == 1:
+        return [
+            "--nnodes",
+            str(nnodes),
+            "--node-rank",
+            str(node_rank),
+            "--master-addr",
+            script_args.master_addr,
+            *headless,
+        ]
+    raise ValueError(
+        f"vllm.data_parallel_size ({dp_size}) must be 1 (one replica spanning all nodes) "
+        f"or a multiple of vllm.nnodes ({nnodes}) (whole replicas on each node)"
+    )
+
+
 def build_command(script_args: VllmServeArguments) -> list[str]:
     command = [
         sys.executable,
@@ -99,6 +145,9 @@ def build_command(script_args: VllmServeArguments) -> list[str]:
         "--uvicorn-log-level",
         script_args.log_level,
     ]
+    if script_args.pipeline_parallel_size > 1:
+        command += ["--pipeline-parallel-size", str(script_args.pipeline_parallel_size)]
+    command += build_multinode_args(script_args)
     if script_args.revision is not None:
         command += ["--revision", script_args.revision]
     if script_args.max_model_len is not None:
@@ -122,11 +171,12 @@ def build_command(script_args: VllmServeArguments) -> list[str]:
             str(round_max_lora_rank(script_args.max_lora_rank)),
             "--max-loras",
             str(script_args.max_loras),
-            # With data parallelism vLLM starts one API server per rank, and a
-            # runtime-loaded adapter only registers on the server that loaded it.
-            "--api-server-count",
-            "1",
         ]
+        # With data parallelism vLLM starts one API server per rank, and a
+        # runtime-loaded adapter only registers on the server that loaded it.
+        # Headless nodes run no API server and reject the flag.
+        if script_args.node_rank == 0:
+            command += ["--api-server-count", "1"]
     if script_args.worker_extension_cls:
         command += ["--worker-extension-cls", script_args.worker_extension_cls]
     # Same fixed flags as TRL's `trl vllm-serve`: scale-out adds the render and
@@ -221,6 +271,10 @@ def do_vllm_serve(
         trust_remote_code=bool(cfg.trust_remote_code),
         tensor_parallel_size=cli_or_cfg("tensor_parallel_size", 1),
         data_parallel_size=cli_or_cfg("data_parallel_size", 1),
+        pipeline_parallel_size=vllm_cfg.pipeline_parallel_size or 1,
+        nnodes=vllm_cfg.nnodes or 1,
+        node_rank=cli_args.get("node_rank", 0),
+        master_addr=vllm_cfg.master_addr,
         host=cli_or_cfg("host"),
         port=cli_or_cfg("port"),
         gpu_memory_utilization=cli_or_cfg("gpu_memory_utilization", 0.9),
