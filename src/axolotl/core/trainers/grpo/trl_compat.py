@@ -35,6 +35,7 @@ from trl.experimental.async_grpo.async_grpo_trainer import (
     TokenBudgetBatcher,
     _EmptyIterableDataset as EmptyIterableDataset,
     _iter_vllm_named_params as iter_vllm_named_params,
+    save_lora_adapter,
 )
 from trl.experimental.async_grpo.async_rollout_worker import (
     AsyncRolloutWorker,
@@ -85,6 +86,8 @@ UPSTREAM = {
     "_TrainBeginCallback.on_train_begin": "its cold weight sync must run in "
     "AxolotlAsyncGRPOTrainer._sync_weight",
     "_iter_vllm_named_params": "walked by the out-of-place merged weight sync",
+    "save_lora_adapter": "retiring an adapter relinks the adapter_model.safetensors "
+    "it writes",
     "_flash_attn": "replaced by tree_flash_attn",
     "compute_flops_per_token": "wrapped by flops_per_token",  # nosec B105
     "_chain_to_sequences": "used by NeMo Gym's rollout loop",
@@ -303,6 +306,7 @@ __all__ = [
     "patched_trainer_module",
     "print_prompt_completions_sample",
     "sampler_fields",
+    "save_lora_adapter",
     "score_centering_unavailable",
     "trainer_module",
     "tree_flash_attn",
