@@ -1572,6 +1572,127 @@ class TestAliasingVLLMClient:
         ]
 
 
+class _QueuingVLLM:
+    """vLLM 0.30 under adapter-only sync: loading an adapter reads it into a cache of
+    ``max_loras``, unloading only forgets its name, and a queued request keeps the
+    adapter's path and reloads it from there once the adapter was evicted."""
+
+    def __init__(self, max_loras: int):
+        self.max_loras = max_loras
+        self.registered: dict[str, str] = {}
+        self.cache: dict[str, dict[str, torch.Tensor]] = {}
+        self.queued: list[tuple[str, str]] = []
+
+    def pause(self):
+        pass
+
+    def resume(self):
+        pass
+
+    def load_lora_adapter(self, name, path):
+        self.registered[name] = path
+        self._load(name, path)
+
+    def unload_lora_adapter(self, name):
+        del self.registered[name]
+
+    def submit(self, name):
+        self.queued.append((name, self.registered[name]))
+
+    def serve_queued(self) -> list[dict[str, torch.Tensor]]:
+        served = [self._load(name, path) for name, path in self.queued]
+        self.queued.clear()
+        return served
+
+    def _load(self, name, path):
+        from safetensors.torch import load_file
+
+        if name not in self.cache:
+            # A missing file is fatal in vLLM: it kills the engine.
+            self.cache[name] = load_file(
+                os.path.join(path, "adapter_model.safetensors")
+            )
+            while len(self.cache) > self.max_loras:
+                del self.cache[next(iter(self.cache))]
+        self.cache[name] = self.cache.pop(name)
+        return self.cache[name]
+
+
+class TestLoraSyncRetiresAdapters:
+    MAX_STALENESS = 1
+
+    def _trainer(self, tmp_path):
+        trainer = object.__new__(AxolotlAsyncGRPOTrainer)
+        trainer.model = _peft_model(dtype=torch.float32)
+        trainer.accelerator = types.SimpleNamespace(
+            unwrap_model=lambda m: m,
+            device=torch.device("cpu"),
+            is_main_process=True,
+            wait_for_everyone=lambda: None,
+        )
+        trainer.args = types.SimpleNamespace(max_staleness=self.MAX_STALENESS)
+        trainer.model_version = 0
+        trainer._lora_name = "trl-policy"
+        trainer._lora_dir = str(tmp_path / ".vllm_lora")
+        trainer._adapter_name = "default"
+        # TRL requires `--max-loras` of at least max_staleness + 2.
+        trainer.vllm_client = _QueuingVLLM(max_loras=self.MAX_STALENESS + 2)
+        trainer.rollout_worker = None
+        return trainer
+
+    def _sync(self, trainer):
+        # Every version's adapter differs, so each one's file can be told apart.
+        with torch.no_grad():
+            trainer.model.base_model.model.proj.lora_B["default"].weight.fill_(
+                trainer.model_version + 1
+            )
+        trainer._sync_weight_lora(time.time())
+
+    def _weights(self, trainer, version):
+        return os.path.join(
+            trainer._lora_dir, f"trl-policy-v{version}", "adapter_model.safetensors"
+        )
+
+    def test_queued_request_still_loads_its_retired_adapter(self, tmp_path):
+        trainer = self._trainer(tmp_path)
+        vllm = trainer.vllm_client
+        self._sync(trainer)
+        # Waits in vLLM's queue while the trainer outpaces generation.
+        vllm.submit("trl-policy-v1")
+        for _ in range(6):
+            self._sync(trainer)
+        assert trainer.model_version == 7
+        assert "trl-policy-v1" not in vllm.registered
+        assert "trl-policy-v1" not in vllm.cache
+
+        # TRL deletes v1's directory by v4, so vLLM's reload killed the engine.
+        (served,) = vllm.serve_queued()
+        assert served.keys() == vllm.cache["trl-policy-v7"].keys()
+
+    def test_retired_adapters_share_one_copy_of_the_weights(self, tmp_path):
+        from safetensors.torch import load_file
+
+        trainer = self._trainer(tmp_path)
+        for _ in range(7):
+            self._sync(trainer)
+        # v6 and v7 can still be requested, and v5 unloaded only at the last sync.
+        live = range(7 - self.MAX_STALENESS - 1, 8)
+        for version in live:
+            weights = self._weights(trainer, version)
+            assert not os.path.islink(weights)
+            (lora_b,) = (
+                tensor
+                for name, tensor in load_file(weights).items()
+                if "proj.lora_B" in name
+            )
+            assert (lora_b == version).all()
+        kept = os.path.join(trainer._lora_dir, ".retired-adapter_model.safetensors")
+        for version in range(1, live.start):
+            weights = self._weights(trainer, version)
+            assert os.path.islink(weights)
+            assert os.path.realpath(weights) == os.path.realpath(kept)
+
+
 class _RolloutRewardLoop(AxolotlRolloutLoop):
     _provides_rollout_reward = True
 

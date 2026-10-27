@@ -20,6 +20,8 @@ On top of TRL, this trainer:
 - syncs merged LoRA weights without merging into the trained model, bitwise equal to
   the ``lora_merge_aware`` forward, and measures how much of the update the merge
   keeps (``vllm_merge_check_interval``);
+- with adapter-only sync, keeps each adapter it retires loadable by vLLM, which may
+  still hold requests for it, rather than deleting it;
 - runs a custom rollout loop (``rollout_loop``), e.g. one that delegates whole
   rollouts to an agent server, and serves the synced adapter under a fixed name
   for clients that cannot follow TRL's versioned one (``vllm_lora_alias``).
@@ -30,6 +32,8 @@ from __future__ import annotations
 import contextlib
 import functools
 import importlib
+import os
+import shutil
 import time
 from collections.abc import Callable, Sized
 from dataclasses import dataclass, field
@@ -39,6 +43,7 @@ import requests
 import torch
 from accelerate.utils import broadcast_object_list, is_peft_model
 from datasets import Dataset
+from peft.utils.constants import SAFETENSORS_WEIGHTS_NAME
 from torch.distributed.tensor import DTensor
 from torch.utils.data import DataLoader
 from transformers import PreTrainedModel, TrainerCallback
@@ -99,6 +104,7 @@ from axolotl.core.trainers.grpo.trl_compat import (
     nanmax,
     nanmin,
     patched_trainer_module,
+    save_lora_adapter,
     score_centering_unavailable,
 )
 from axolotl.core.trainers.mixins import (
@@ -127,6 +133,8 @@ IMPORTANCE_SAMPLING_MODES = ("token_truncate", "token_mask")
 # Ratio thresholds of mu-GRPO's negative-advantage veto (arXiv 2605.17570), keyed by
 # metric suffix. 1e-4 is its default, which trainer/vLLM mismatch alone can reach.
 NAV_THRESHOLDS = {"1e-4": 1e-4, "1e-6": 1e-6}
+# Kept beside the versioned adapter directories, dot-prefixed like TRL's staging ones.
+RETIRED_ADAPTER_WEIGHTS = f".retired-{SAFETENSORS_WEIGHTS_NAME}"
 
 
 def negative_advantage_veto_counts(
@@ -676,6 +684,9 @@ class AxolotlAsyncGRPOTrainer(
 
     _tag_names = ["trl", "async-grpo", "axolotl"]
     rollout_queue: Any
+    model_version: int
+    # Whether this process wrote the weights that retired adapters link to.
+    _wrote_retired_weights = False
 
     def __init__(
         self,
@@ -1207,6 +1218,70 @@ class AxolotlAsyncGRPOTrainer(
             if self.rollout_worker:
                 self.rollout_worker.update_model_version(self.model_version)
         return t_pause, t_barrier, t_transfer
+
+    def _sync_weight_lora(self, t0: float) -> tuple[float, float, float]:
+        """TRL's adapter sync, except that an adapter leaving the staleness window is
+        retired rather than deleted.
+
+        TRL pauses vLLM with ``mode=keep``, so requests for an adapter it unloaded can
+        stay queued. vLLM's adapter cache evicts it all the same, so serving them
+        reloads it from disk, and a missing directory kills the engine.
+        """
+        version = self.model_version + 1
+        name = f"{self._lora_name}-v{version}"
+        adapter_dir = os.path.join(self._lora_dir, name)
+        model = self.accelerator.unwrap_model(self.model)
+        if self.accelerator.is_main_process:
+            self.vllm_client.pause()
+        t_pause = time.time()
+        self.accelerator.wait_for_everyone()
+        t_barrier = time.time()
+        # Every rank gathers its shards of the adapter; only the main process writes.
+        save_lora_adapter(model, self.accelerator, self._adapter_name, adapter_dir)
+        t_transfer = time.time()
+        self.accelerator.wait_for_everyone()
+        if self.accelerator.is_main_process:
+            # Loaded before the version moves: rollouts request the adapter it names.
+            self.vllm_client.load_lora_adapter(name, adapter_dir)
+            self.vllm_client.resume()
+            stale_version = version - (self.args.max_staleness + 1)
+            if stale_version > 0:
+                self.vllm_client.unload_lora_adapter(
+                    f"{self._lora_name}-v{stale_version}"
+                )
+            if stale_version > 1:
+                self._retire_adapter(
+                    os.path.join(
+                        self._lora_dir, f"{self._lora_name}-v{stale_version - 1}"
+                    )
+                )
+            self.model_version = version
+            if self.rollout_worker:
+                self.rollout_worker.update_model_version(self.model_version)
+        return t_pause, t_barrier, t_transfer
+
+    def _retire_adapter(self, adapter_dir: str) -> None:
+        """Point ``adapter_dir``'s weights at one kept copy, so it stays loadable
+        without its own copy of the weights.
+
+        Requests still naming it are over ``max_staleness`` versions old, so their
+        samples are dropped and any weights of the adapter's shape can serve them.
+        """
+        weights = os.path.join(adapter_dir, SAFETENSORS_WEIGHTS_NAME)
+        if os.path.islink(weights) or not os.path.isfile(weights):
+            return
+        kept = os.path.join(self._lora_dir, RETIRED_ADAPTER_WEIGHTS)
+        if not self._wrote_retired_weights:
+            # Rewritten by each process, so it has the shape of this run's adapter.
+            shutil.copyfile(weights, f"{kept}.tmp")
+            os.replace(f"{kept}.tmp", kept)
+            self._wrote_retired_weights = True
+        link = f"{weights}.tmp"
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(link)
+        os.symlink(os.path.relpath(kept, adapter_dir), link)
+        # Atomic: vLLM reading the adapter sees either file, never neither.
+        os.replace(link, weights)
 
     def _streaming_iter(self):
         model = self.accelerator.unwrap_model(self.model)

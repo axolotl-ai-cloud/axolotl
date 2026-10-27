@@ -67,6 +67,7 @@ PINNED = {
     "AsyncGRPOTrainer.__init__": "8ef1227654a229e7",
     "AsyncGRPOTrainer._streaming_iter": "56159bc6237badc9",
     "AsyncGRPOTrainer._sync_weight": "38e9a8cb3b240a06",
+    "AsyncGRPOTrainer._sync_weight_lora": "4a4ad08eb92eaf64",
     "AsyncGRPOTrainer._sync_weight_merged": "ab2541763c20cba1",
     "AsyncGRPOTrainer.compute_loss": "5c0c485d130acb07",
     "AsyncGRPOTrainer.get_train_dataloader": "2950938428f1c183",
@@ -97,6 +98,7 @@ PINNED = {
     "_flash_attn": "26d2f930796627de",
     "_iter_vllm_named_params": "7df575a1c1116a8d",
     "compute_flops_per_token": "c24cff3a04b72fdb",
+    "save_lora_adapter": "d41565a2df3e71d8",
 }
 
 # trl_compat.TRL_MAIN_COMMIT
@@ -105,6 +107,7 @@ PINNED_MAIN = {
     "AsyncGRPOTrainer.__init__": "9d79fa63af8c7932",
     "AsyncGRPOTrainer._streaming_iter": "56159bc6237badc9",
     "AsyncGRPOTrainer._sync_weight": "38e9a8cb3b240a06",
+    "AsyncGRPOTrainer._sync_weight_lora": "4a4ad08eb92eaf64",
     "AsyncGRPOTrainer._sync_weight_merged": "e0a40ea9e210ca13",
     "AsyncGRPOTrainer.compute_loss": "38ddff39cf4d2a24",
     "AsyncGRPOTrainer.get_train_dataloader": "2950938428f1c183",
@@ -135,6 +138,7 @@ PINNED_MAIN = {
     "_flash_attn": "3476fb91552cfc9a",
     "_iter_vllm_named_params": "7df575a1c1116a8d",
     "compute_flops_per_token": "c24cff3a04b72fdb",
+    "save_lora_adapter": "d41565a2df3e71d8",
 }
 
 
