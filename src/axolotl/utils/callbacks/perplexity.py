@@ -53,6 +53,8 @@ class Perplexity:
         )
         input_ids: Tensor = references_tokenized["input_ids"]  # type: ignore
         input_ids = input_ids.to(model.device)
+        attention_mask: Tensor = references_tokenized["attention_mask"]  # type: ignore
+        attention_mask = attention_mask.to(model.device)
 
         sequence_length = input_ids.size(1)
 
@@ -64,12 +66,17 @@ class Perplexity:
             end_loc = min(begin_loc + self.max_seq_len, sequence_length)
             trg_len = end_loc - prev_end_loc
             input_ids_slice = input_ids[:, begin_loc:end_loc]
+            attention_mask_slice = attention_mask[:, begin_loc:end_loc]
             labels_slice = input_ids_slice.clone()
             labels_slice[:, :-trg_len] = -100
+            # Padding is not part of the text being measured.
+            labels_slice[attention_mask_slice == 0] = -100
 
             with torch.no_grad():
                 outputs: CausalLMOutput = model(
-                    input_ids=input_ids_slice, labels=labels_slice
+                    input_ids=input_ids_slice,
+                    attention_mask=attention_mask_slice,
+                    labels=labels_slice,
                 )
 
             losses.append(outputs.loss)
