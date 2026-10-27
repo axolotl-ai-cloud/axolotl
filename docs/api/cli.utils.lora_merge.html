@@ -1098,7 +1098,8 @@ runtime model key names used by the LoRA adapter.</p>
 <span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    shard_sink<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>    merge_compile<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    merge_compile_precision<span class="op">=</span><span class="st">'strict'</span>,</span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    lora_merge_aware<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Memory-efficient LoRA merging that processes shards individually
 without loading the full model into memory.</p>
 <section id="if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips" class="level4 doc-section doc-section-if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips">
@@ -1192,6 +1193,12 @@ adapter (encoder version drift); see <code>_resolve_nvfp4_scale_mode</code>.</p>
 <td>bool</td>
 <td>Whether to trust remote code when loading model config for layer-type introspection. Defaults to False for safety.</td>
 <td><code>False</code></td>
+</tr>
+<tr class="even">
+<td>lora_merge_aware</td>
+<td>Optional[str]</td>
+<td>The <code>lora_merge_aware</code> mode the adapter was trained with; its merged half-precision weights are then exactly what training optimized, so their rounding is reported without a warning.</td>
+<td><code>None</code></td>
 </tr>
 </tbody>
 </table>

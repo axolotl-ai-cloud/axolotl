@@ -1021,12 +1021,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    skip_zero_advantage_batches<span class="op">=</span><span class="va">True</span>,</span>
 <span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    context_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    vllm_merge_check_interval<span class="op">=</span>DEFAULT_MERGE_CHECK_INTERVAL,</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Axolotl Async GRPO Config — adds async prefetch, streaming scoring, and IS correction.</p>
 </section>
 <section id="axolotl.core.trainers.grpo.args.AxolotlGRPOConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.args.AxolotlGRPOConfig">AxolotlGRPOConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.args.AxolotlGRPOConfig(context_parallel_size<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.args.AxolotlGRPOConfig(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    context_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    vllm_merge_check_interval<span class="op">=</span>DEFAULT_MERGE_CHECK_INTERVAL,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Axolotl GRPO Config for GRPO training</p>
 
 

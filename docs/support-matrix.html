@@ -1905,11 +1905,6 @@ Warning
 <section id="incompatible" class="level3">
 <h3 class="anchored" data-anchor-id="incompatible">Incompatible</h3>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>✕</th>
@@ -1979,11 +1974,16 @@ Warning
 <td>SFT + FSDP2 only</td>
 </tr>
 <tr class="odd">
+<td><code>lora_merge_aware</code></td>
+<td>DoRA, LoRA kernels, 4/8-bit bases, DeepSpeed ZeRO-3, TP, <code>vllm_lora_sync</code></td>
+<td>rejected at config validation (FSDP2 is supported and turns on <code>lora_fp32_gradients</code>); see <a href="../docs/vllm_serving.html#sec-merge-rounding">merged sync rounding</a></td>
+</tr>
+<tr class="even">
 <td><code>batch_flattening</code></td>
 <td><code>sample_packing</code></td>
 <td>choose one</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>FP8 + DDP</td>
 <td><code>torch.compile</code></td>
 <td>⚪ known-broken; drop compile or use FSDP2</td>

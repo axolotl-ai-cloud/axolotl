@@ -1013,7 +1013,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="#axolotl.core.builders.rl.HFRLTrainerBuilder.hook_post_create_trainer">hook_post_create_trainer</a></td>
-<td>Attach the fused LoRA kernels to the adapter TRL built inside the trainer.</td>
+<td>Attach the fused LoRA kernels and the merge-aware forward to the adapter TRL</td>
 </tr>
 </tbody>
 </table>
@@ -1030,7 +1030,8 @@ falls back to the TRL default).</p>
 <section id="axolotl.core.builders.rl.HFRLTrainerBuilder.hook_post_create_trainer" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.core.builders.rl.HFRLTrainerBuilder.hook_post_create_trainer">hook_post_create_trainer</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.builders.rl.HFRLTrainerBuilder.hook_post_create_trainer(trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Attach the fused LoRA kernels to the adapter TRL built inside the trainer.</p>
+<p>Attach the fused LoRA kernels and the merge-aware forward to the adapter TRL
+built inside the trainer.</p>
 
 
 </section>

@@ -976,7 +976,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#reward-models-neural-network-rewards" id="toc-reward-models-neural-network-rewards" class="nav-link" data-scroll-target="#reward-models-neural-network-rewards">Reward models (neural network rewards)</a></li>
   <li><a href="#using-math_verify" id="toc-using-math_verify" class="nav-link" data-scroll-target="#using-math_verify">Using math_verify</a></li>
   </ul></li>
-  <li><a href="#vllm-setup" id="toc-vllm-setup" class="nav-link" data-scroll-target="#vllm-setup">vLLM Setup</a></li>
+  <li><a href="#vllm-setup" id="toc-vllm-setup" class="nav-link" data-scroll-target="#vllm-setup">vLLM Setup</a>
+  <ul class="collapse">
+  <li><a href="#lora-weight-sync-precision" id="toc-lora-weight-sync-precision" class="nav-link" data-scroll-target="#lora-weight-sync-precision">LoRA weight sync precision</a></li>
+  </ul></li>
   <li><a href="#async-training-features" id="toc-async-training-features" class="nav-link" data-scroll-target="#async-training-features">Async Training Features</a>
   <ul class="collapse">
   <li><a href="#enabling-async-prefetch" id="toc-enabling-async-prefetch" class="nav-link" data-scroll-target="#enabling-async-prefetch">Enabling async prefetch</a></li>
@@ -1342,6 +1345,15 @@ Warning
 <p>vLLM must be restarted between experiments — stale weight syncs corrupt server state. See <a href="../docs/vllm_serving.html#sec-restart">Restart Requirements</a>.</p>
 </div>
 </div>
+<section id="lora-weight-sync-precision" class="level3">
+<h3 class="anchored" data-anchor-id="lora-weight-sync-precision">LoRA weight sync precision</h3>
+<p>Without <code>vllm_lora_sync</code>, the adapter reaches vLLM merged into BF16 weights. At GRPO learning rates the BF16 cast drops most of the LoRA update: vLLM generates from a policy that kept about 24% of the update at <code>learning_rate: 1e-5</code> and about 2.5% at <code>1e-6</code> (Qwen3-1.7B-Base, rank-16 LoRA on all linear layers, step 100). The trainer logs <code>lora_merge/retained</code> at the first sync and every <code>trl.vllm_merge_check_interval</code> steps, and warns when less than half the update survives. Keep the update with one of these options:</p>
+<ul>
+<li><code>trl.vllm_lora_sync: true</code> with the async trainer (<code>use_data_producer</code> or <code>async_prefetch</code>) in server mode. vLLM then applies the adapter unmerged.</li>
+<li><code>lora_merge_aware: bf16</code> when weights must be merged: colocate mode, or the standard trainer without <code>use_data_producer</code> or <code>async_prefetch</code>. The trainer then optimizes the merged BF16 weights directly.</li>
+</ul>
+<p>See <a href="../docs/vllm_serving.html#sec-merge-rounding">Merged Sync Rounding</a> for details and restrictions.</p>
+</section>
 </section>
 <section id="async-training-features" class="level2">
 <h2 class="anchored" data-anchor-id="async-training-features">Async Training Features</h2>
@@ -1901,30 +1913,36 @@ Tip
 <td>Use filesystem LoRA sync instead of NCCL merge</td>
 </tr>
 <tr class="even">
+<td><code>vllm_merge_check_interval</code></td>
+<td>int</td>
+<td><code>50</code></td>
+<td>Log how much of the LoRA update survives merged weight sync every N steps; <code>0</code> disables</td>
+</tr>
+<tr class="odd">
 <td><code>streaming_partial_batch</code></td>
 <td>bool</td>
 <td><code>null</code></td>
 <td>Score prompt groups incrementally</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>streaming_min_groups</code></td>
 <td>int</td>
 <td><code>null</code></td>
 <td>Minimum groups per streaming chunk</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>skip_zero_advantage_batches</code></td>
 <td>bool</td>
 <td><code>true</code></td>
 <td>Skip micro-batches with zero learning signal</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>reward_num_workers</code></td>
 <td>int</td>
 <td><code>1</code></td>
 <td>Subprocess workers for reward computation</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>vllm_enable_sleep_mode</code></td>
 <td>bool</td>
 <td><code>null</code></td>

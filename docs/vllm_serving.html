@@ -976,7 +976,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#sync-interval" id="toc-sync-interval" class="nav-link" data-scroll-target="#sync-interval"><span class="header-section-number">5.1</span> Sync Interval</a></li>
   <li><a href="#sync-methods" id="toc-sync-methods" class="nav-link" data-scroll-target="#sync-methods"><span class="header-section-number">5.2</span> Sync Methods</a></li>
-  <li><a href="#importance-sampling-correction" id="toc-importance-sampling-correction" class="nav-link" data-scroll-target="#importance-sampling-correction"><span class="header-section-number">5.3</span> Importance Sampling Correction</a></li>
+  <li><a href="#sec-merge-rounding" id="toc-sec-merge-rounding" class="nav-link" data-scroll-target="#sec-merge-rounding"><span class="header-section-number">5.3</span> Merged Sync Rounding</a></li>
+  <li><a href="#importance-sampling-correction" id="toc-importance-sampling-correction" class="nav-link" data-scroll-target="#importance-sampling-correction"><span class="header-section-number">5.4</span> Importance Sampling Correction</a></li>
   </ul></li>
   <li><a href="#sec-restart" id="toc-sec-restart" class="nav-link" data-scroll-target="#sec-restart"><span class="header-section-number">6</span> Restart Requirements</a>
   <ul class="collapse">
@@ -1283,8 +1284,65 @@ Tip
 </div>
 </div>
 </section>
-<section id="importance-sampling-correction" class="level3" data-number="5.3">
-<h3 data-number="5.3" class="anchored" data-anchor-id="importance-sampling-correction"><span class="header-section-number">5.3</span> Importance Sampling Correction</h3>
+<section id="sec-merge-rounding" class="level3" data-number="5.3">
+<h3 data-number="5.3" class="anchored" data-anchor-id="sec-merge-rounding"><span class="header-section-number">5.3</span> Merged Sync Rounding</h3>
+<p>Merged sync serves <code>bf16(W + scaling * B @ A)</code>, or its FP8 requantization for FP8 bases, while the trainer optimizes the unrounded <code>W + scaling * B @ A</code>. At RL learning rates most entries of the LoRA delta are smaller than half a BF16 step of the base weight (about 0.2% of <code>|w|</code>). The cast rounds those entries back to the base value, so vLLM samples from a policy that has only part of the trained update. On Qwen3-1.7B-Base with Dr.GRPO and rank-16 LoRA on all linear layers, the merged weights at step 100 kept about 24% of the update at <code>learning_rate: 1e-5</code> and about 2.5% at <code>1e-6</code>. Full fine-tuning is not affected, because the trainer and vLLM hold the same BF16 weights.</p>
+<p>The trainer measures this at the first merged sync and then every <code>trl.vllm_merge_check_interval</code> optimizer steps (default 50; <code>0</code> disables). It logs two metrics:</p>
+<ul>
+<li><code>lora_merge/retained</code>: the share of the LoRA delta that survives the cast, as the projection of the served weight change onto the delta.</li>
+<li><code>lora_merge/changed_fraction</code>: the share of weight entries the merge changes.</li>
+</ul>
+<p>When less than half of the update survives, every check after the first logs a warning. Parameters sharded by FSDP or DeepSpeed ZeRO-3 are not measured.</p>
+<p>There are two ways to keep the whole update:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Option</th>
+<th>Config</th>
+<th>What vLLM serves</th>
+<th>Use when</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LoRA sync</td>
+<td><code>trl.vllm_lora_sync: true</code></td>
+<td>Base weights plus the unmerged adapter</td>
+<td>Server mode with the async GRPO trainer (<code>use_data_producer</code> or <code>async_prefetch</code>). It is also the faster sync.</td>
+</tr>
+<tr class="even">
+<td>Merge-aware LoRA</td>
+<td><code>lora_merge_aware: bf16</code></td>
+<td>Merged BF16 weights, which the trainer now optimizes</td>
+<td>Weights must be merged: colocate mode, the standard GRPO trainer (neither <code>use_data_producer</code> nor <code>async_prefetch</code>), or a merged BF16 checkpoint</td>
+</tr>
+</tbody>
+</table>
+<p>With <code>lora_merge_aware: bf16</code>, each LoRA linear computes <code>x @ bf16(W + scaling * B @ A)^T</code>, bitwise equal to the merged weight that is sent to vLLM, and gradients reach <code>A</code> and <code>B</code> straight through the cast. The forward and backward passes rebuild every LoRA linear’s merged weight, at the cost of a few passes over the targeted base weights per micro-batch, and no more activations are saved than with ordinary LoRA. <code>lora_merge_aware: bf16</code> requires <code>adapter: lora</code> on an unquantized base. It works on a single GPU and with DDP, DeepSpeed ZeRO-1/2 and FSDP2:</p>
+<ul>
+<li>Without FSDP, the sync merges in place inside <code>temporarily_merge_adapter</code>, which restores the base weights exactly afterwards.</li>
+<li>Under FSDP2, <code>lora_fp32_gradients</code> is enabled automatically. FSDP2 then gathers the LoRA factors in FP32 rather than casting them to BF16, so the forward and the served merge compute the same delta. The vLLM sync merges each LoRA linear out of place from its gathered weights instead of merging the sharded weights in place.</li>
+</ul>
+<p>Config validation rejects it with:</p>
+<ul>
+<li>DoRA;</li>
+<li>the fused LoRA kernels (<code>lora_*_kernel</code>);</li>
+<li>4/8-bit bases;</li>
+<li>DeepSpeed ZeRO-3, because the merge-aware forward reads weights of submodules whose forwards it skips, so ZeRO-3 never gathers them;</li>
+<li>tensor parallelism;</li>
+<li><code>vllm_lora_sync</code>.</li>
+</ul>
+<p>LoRA linears whose base weight is FP8 or otherwise quantized keep the ordinary forward, with a warning.</p>
+<p><code>axolotl merge-lora</code> (memory-efficient method) reports the same retained share when it merges into a BF16 or FP16 base, and warns below one half unless the config sets <code>lora_merge_aware</code>.</p>
+</section>
+<section id="importance-sampling-correction" class="level3" data-number="5.4">
+<h3 data-number="5.4" class="anchored" data-anchor-id="importance-sampling-correction"><span class="header-section-number">5.4</span> Importance Sampling Correction</h3>
 <p>When vLLM weights are stale (between syncs), the generated data is slightly off-policy. Axolotl can correct for this:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_importance_sampling_correction</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
@@ -1462,12 +1520,6 @@ Tip
 <h3 data-number="7.2" class="anchored" data-anchor-id="trainer-vllm-options-trl-section"><span class="header-section-number">7.2</span> Trainer vLLM Options (<code>trl:</code> section)</h3>
 <p>These control how the trainer interacts with vLLM.</p>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 22%">
-<col style="width: 16%">
-<col style="width: 25%">
-<col style="width: 36%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Option</th>
@@ -1520,12 +1572,18 @@ Tip
 <td>Sync weights every N optimizer steps</td>
 </tr>
 <tr class="even">
+<td><code>vllm_merge_check_interval</code></td>
+<td>int</td>
+<td><code>50</code></td>
+<td>Measure how much of the LoRA update survives merged sync every N steps; <code>0</code> disables. See <a href="#sec-merge-rounding">Merged Sync Rounding</a></td>
+</tr>
+<tr class="odd">
 <td><code>vllm_enable_sleep_mode</code></td>
 <td>bool</td>
 <td><code>None</code></td>
 <td>Offload vLLM VRAM when idle (colocate mode)</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>vllm_guided_decoding_regex</code></td>
 <td>str</td>
 <td><code>None</code></td>
