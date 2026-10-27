@@ -36,13 +36,15 @@ def reference_tree_attention(
         ks, ke = int(tree_cu_seqlens_k[s]), int(tree_cu_seqlens_k[s + 1])
         lq, lk = qe - qs, ke - ks
         mask = torch.arange(lk)[None, :] <= (lk - lq + torch.arange(lq))[:, None]
+        # Batched (4D): torch 2.13 runs 3D CPU SDPA as its math decomposition, which
+        # neither selective checkpointing nor AttentionForwards can see.
         out[qs:qe] = torch.nn.functional.scaled_dot_product_attention(
-            q[qs:qe].transpose(0, 1),
-            k[ks:ke].repeat_interleave(groups, 1).transpose(0, 1),
-            v[ks:ke].repeat_interleave(groups, 1).transpose(0, 1),
+            q[qs:qe].transpose(0, 1)[None],
+            k[ks:ke].repeat_interleave(groups, 1).transpose(0, 1)[None],
+            v[ks:ke].repeat_interleave(groups, 1).transpose(0, 1)[None],
             attn_mask=mask,
             scale=scaling,
-        ).transpose(0, 1)
+        )[0].transpose(0, 1)
     return out.unsqueeze(0), None
 
 
