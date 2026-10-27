@@ -16,8 +16,8 @@ from typing import Any
 
 import numpy as np
 
-from axolotl.core.trainers.grpo.async_rollout import AxolotlRolloutLoop
-from axolotl.core.trainers.grpo.trl_compat import (
+from axolotl.core.trainers.async_grpo.rollout import AxolotlRolloutLoop
+from axolotl.core.trainers.async_grpo.trl_compat import (
     RolloutGroup,
     TrainingSequence,
     unsampled_sequence_fields,

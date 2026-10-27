@@ -28,26 +28,28 @@ from trl.experimental.async_grpo.async_rollout_worker import (
     TrainingSequence,
 )
 
-from axolotl.core.trainers.grpo import GRPOStrategy, async_trainer
-from axolotl.core.trainers.grpo.async_progress import RolloutProgress, RolloutStop
-from axolotl.core.trainers.grpo.async_rollout import (
+from axolotl.core.trainers.async_grpo import rollout, weight_sync
+from axolotl.core.trainers.async_grpo.config import AxolotlAsyncGRPOConfig
+from axolotl.core.trainers.async_grpo.progress import (
+    RolloutProgress,
+    RolloutStop,
+    SampleFilterQueue,
+)
+from axolotl.core.trainers.async_grpo.rollout import (
     GROUP_ROWS,
     AxolotlAsyncRolloutWorker,
     AxolotlRolloutLoop,
     RewardProcessPool,
     compute_group_advantages,
 )
-from axolotl.core.trainers.grpo.async_trainer import (
-    AxolotlAsyncGRPOConfig,
-    AxolotlAsyncGRPOTrainer,
-    SampleFilterQueue,
-)
-from axolotl.core.trainers.grpo.trl_compat import (
+from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
+from axolotl.core.trainers.async_grpo.trl_compat import (
     SCORE_CENTERING,
     sampler_fields,
     unsampled_fields,
     unsampled_sequence_fields,
 )
+from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.lora_merge_precision import merged_lora_weight
 
@@ -1256,7 +1258,7 @@ class TestTreeFlashAttn:
     def tree_flash_attn(self, monkeypatch):
         import kernels
 
-        from axolotl.core.trainers.grpo import trl_compat
+        from axolotl.core.trainers.async_grpo import trl_compat
 
         loaded = []
         monkeypatch.setattr(
@@ -1318,7 +1320,7 @@ class TestTreeFlashAttn:
         assert installed == ([kernel] if routed else [])
 
     def test_flash_attn2_gets_values_as_wide_as_queries(self):
-        from axolotl.core.trainers.grpo.trl_compat import _WideValues
+        from axolotl.core.trainers.async_grpo.trl_compat import _WideValues
 
         seen = []
 
@@ -1341,7 +1343,7 @@ class TestTreeFlashAttn:
 
 
 def test_flops_estimate_reads_unknown_moe_layouts_as_dense(monkeypatch):
-    from axolotl.core.trainers.grpo import trl_compat
+    from axolotl.core.trainers.async_grpo import trl_compat
 
     def trl_estimate(config, seq_len):
         if config.num_experts_per_tok is not None:
@@ -1373,7 +1375,7 @@ class TestTreeAttentionSwitch:
         return type("MyAttention", (torch.nn.Module,), {})()
 
     def test_switches_attention_models(self):
-        from axolotl.core.trainers.grpo.async_trainer import (
+        from axolotl.core.trainers.async_grpo.trainer import (
             TREE_ATTENTION,
             _set_tree_attention,
         )
@@ -1386,14 +1388,14 @@ class TestTreeAttentionSwitch:
         assert model.config._attn_implementation == TREE_ATTENTION
 
     def test_refuses_attention_that_keeps_another_implementation(self):
-        from axolotl.core.trainers.grpo.async_trainer import _set_tree_attention
+        from axolotl.core.trainers.async_grpo.trainer import _set_tree_attention
 
         model = self._model([self._attention()], lambda model, implementation: None)
         with pytest.raises(ValueError, match="kept attention implementation 'sdpa'"):
             _set_tree_attention(model)
 
     def test_models_without_attention_have_nothing_to_route(self):
-        from axolotl.core.trainers.grpo.async_trainer import _set_tree_attention
+        from axolotl.core.trainers.async_grpo.trainer import _set_tree_attention
 
         def unsupported(model, implementation):
             raise ValueError(
@@ -1407,17 +1409,15 @@ class TestAliasingVLLMClient:
     def test_sync_drains_and_moves_the_alias(self, monkeypatch):
         from trl.experimental.async_grpo import vllm_client
 
-        from axolotl.core.trainers.grpo import async_trainer
-
         calls = []
 
         def post(url, json=None, params=None, timeout=None):
             calls.append((url.rsplit("/", 1)[-1], json or params))
             return types.SimpleNamespace(status_code=200, text="")
 
-        monkeypatch.setattr(async_trainer.requests, "post", post)
+        monkeypatch.setattr(weight_sync.requests, "post", post)
         monkeypatch.setattr(vllm_client.requests, "post", post)
-        client = async_trainer.AliasingVLLMClient("http://vllm", alias="policy")
+        client = weight_sync.AliasingVLLMClient("http://vllm", alias="policy")
         client.pause()
         client.load_lora_adapter("trl-policy-v2", "/adapters/v2")
         assert calls == [
@@ -1577,7 +1577,7 @@ def test_custom_rollout_loop_and_alias_wiring(tmp_path, monkeypatch):
     from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaConfig
     from trl.experimental.async_grpo import async_grpo_trainer, async_rollout_worker
 
-    from axolotl.core.trainers.grpo.async_trainer import AliasingVLLMClient
+    from axolotl.core.trainers.async_grpo.weight_sync import AliasingVLLMClient
 
     monkeypatch.setattr(async_rollout_worker, "is_vllm_available", lambda: True)
     monkeypatch.setattr(
@@ -1640,7 +1640,7 @@ def test_custom_rollout_loop_and_alias_wiring(tmp_path, monkeypatch):
 
 def test_rollout_loop_must_be_an_axolotl_rollout_loop():
     with pytest.raises(ValueError, match="AxolotlRolloutLoop"):
-        async_trainer.resolve_rollout_loop("queue.Queue")
+        rollout.resolve_rollout_loop("queue.Queue")
 
 
 class _RecordingPlugin:

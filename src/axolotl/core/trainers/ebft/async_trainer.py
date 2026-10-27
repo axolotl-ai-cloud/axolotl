@@ -5,7 +5,7 @@ The rollout process (``EBFTRolloutLoop``) generates and leaves the advantage pen
 every rank: a no-grad forward of each completion's feature sequence and its group's
 reference through the frozen feature network (the actor with adapters disabled, or a
 frozen copy for full fine-tuning), pooled hidden states at ``ebft_feature_layers``,
-then ``group_feature_rewards``. See ``axolotl.core.trainers.grpo.async_scoring``.
+then ``group_feature_rewards``. See ``axolotl.core.trainers.async_grpo.scoring``.
 """
 
 from __future__ import annotations
@@ -21,19 +21,17 @@ from datasets import Dataset
 from transformers import PreTrainedModel
 from tree_recurrence.integrations.trl import sample_boundaries
 
-from axolotl.core.trainers.ebft.args import EBFTFieldsMixin
-from axolotl.core.trainers.ebft.rewards import group_feature_rewards, pool_sequence
-from axolotl.core.trainers.grpo.async_scoring import (
+from axolotl.core.trainers.async_grpo.config import AxolotlAsyncGRPOConfig
+from axolotl.core.trainers.async_grpo.scoring import (
     ScoredRow,
     TrainerScorer,
     chunk_sequences,
     pack_sequences,
     unpack_sequences,
 )
-from axolotl.core.trainers.grpo.async_trainer import (
-    AxolotlAsyncGRPOConfig,
-    AxolotlAsyncGRPOTrainer,
-)
+from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
+from axolotl.core.trainers.ebft.args import EBFTFieldsMixin
+from axolotl.core.trainers.ebft.rewards import group_feature_rewards, pool_sequence
 
 EBFT_ROLLOUT_LOOP = "axolotl.core.trainers.ebft.async_rollout.EBFTRolloutLoop"
 

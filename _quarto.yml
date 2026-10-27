@@ -85,10 +85,15 @@ quartodoc:
         - core.trainers.grpo.args
         - core.trainers.grpo.trainer
         - core.trainers.grpo.sampler
-        - core.trainers.grpo.async_rollout
-        - core.trainers.grpo.async_scoring
-        - core.trainers.grpo.async_traces
-        - core.trainers.grpo.async_trainer
+        - core.trainers.async_grpo
+        - core.trainers.async_grpo.config
+        - core.trainers.async_grpo.trainer
+        - core.trainers.async_grpo.loss
+        - core.trainers.async_grpo.weight_sync
+        - core.trainers.async_grpo.progress
+        - core.trainers.async_grpo.rollout
+        - core.trainers.async_grpo.scoring
+        - core.trainers.async_grpo.traces
         - core.trainers.utils
     - title: Model Loading
       desc: Functionality for loading and patching models, tokenizers, etc.
@@ -107,6 +112,7 @@ quartodoc:
         - core.trainers.mixins.checkpoints
         - core.trainers.mixins.distributed_parallel
         - core.trainers.mixins.layer_offloading
+        - core.trainers.mixins.lora_merge_check
         - core.trainers.mixins.optimizer
         - core.trainers.mixins.packing
         - core.trainers.mixins.rng_state_loader

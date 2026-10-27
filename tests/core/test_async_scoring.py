@@ -21,6 +21,16 @@ from trl.experimental.async_grpo import async_grpo_trainer, packing
 from trl.experimental.async_grpo.async_rollout_worker import RolloutGroup
 from trl.trainer.utils import pad
 
+from axolotl.core.trainers.async_grpo.progress import RolloutProgress, RolloutStop
+from axolotl.core.trainers.async_grpo.rollout import SCORE_PAYLOAD
+from axolotl.core.trainers.async_grpo.scoring import (
+    GroupedQueue,
+    ScoredRow,
+    StepPlanner,
+    TrainerScorer,
+    chunk_inputs,
+)
+from axolotl.core.trainers.async_grpo.trl_compat import unsampled_fields
 from axolotl.core.trainers.ebft.async_rollout import (
     EBFTRolloutLoop,
     reference_ids,
@@ -32,16 +42,6 @@ from axolotl.core.trainers.ebft.async_trainer import (
     feature_layer_indices,
 )
 from axolotl.core.trainers.ebft.trainer import EBFTMixin
-from axolotl.core.trainers.grpo.async_progress import RolloutProgress, RolloutStop
-from axolotl.core.trainers.grpo.async_rollout import SCORE_PAYLOAD
-from axolotl.core.trainers.grpo.async_scoring import (
-    GroupedQueue,
-    ScoredRow,
-    StepPlanner,
-    TrainerScorer,
-    chunk_inputs,
-)
-from axolotl.core.trainers.grpo.trl_compat import unsampled_fields
 
 MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 PROMPTS = [

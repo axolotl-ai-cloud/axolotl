@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import importlib
 import multiprocessing as mp
 import queue
 import time
@@ -16,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from axolotl.core.trainers.grpo.trl_compat import (
+from axolotl.core.trainers.async_grpo.trl_compat import (
     AsyncRolloutLoop,
     AsyncRolloutWorker,
     RolloutGroup,
@@ -546,3 +547,11 @@ class AxolotlAsyncRolloutWorker(AsyncRolloutWorker):
             self._process = None
             return
         super().stop()
+
+
+def resolve_rollout_loop(fqn: str) -> type[AxolotlRolloutLoop]:
+    module_name, _, attr = fqn.rpartition(".")
+    loop_cls = getattr(importlib.import_module(module_name), attr, None)
+    if not (isinstance(loop_cls, type) and issubclass(loop_cls, AxolotlRolloutLoop)):
+        raise ValueError(f"rollout_loop {fqn!r} is not an AxolotlRolloutLoop subclass")
+    return loop_cls

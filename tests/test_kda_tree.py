@@ -17,7 +17,7 @@ from tree_recurrence import (  # noqa: E402
     tree_plan,
 )
 
-from axolotl.core.trainers.grpo.async_scoring import pack_sequences  # noqa: E402
+from axolotl.core.trainers.async_grpo.scoring import pack_sequences  # noqa: E402
 
 HIDDEN, HEADS, HEAD_DIM, WIDTH = 32, 4, 8, 4
 

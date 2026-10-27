@@ -11,7 +11,7 @@ import pytest
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
-from axolotl.core.trainers.grpo.trl_compat import unsampled_fields
+from axolotl.core.trainers.async_grpo.trl_compat import unsampled_fields
 
 
 def reference_tree_attention(
