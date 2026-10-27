@@ -6,6 +6,7 @@ import queue
 import time
 import types
 from collections import defaultdict
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -37,6 +38,7 @@ from axolotl.core.trainers.grpo.trl_compat import (
     unsampled_sequence_fields,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.lora_merge_precision import merged_lora_weight
 
 ONES = np.ones(1)
 
@@ -601,14 +603,21 @@ def _peft_model(dtype=torch.bfloat16, **lora_kwargs):
     return model
 
 
-def _stream(model):
-    stub = types.SimpleNamespace(
-        model=model,
-        accelerator=types.SimpleNamespace(
-            unwrap_model=lambda m: m, device=torch.device("cpu")
-        ),
+def _sync_trainer(model, merge_check_interval=0, step=3):
+    """Just enough of a trainer for the merged sync's weight stream."""
+    trainer = object.__new__(AxolotlAsyncGRPOTrainer)
+    trainer.model = model
+    trainer.accelerator = types.SimpleNamespace(
+        unwrap_model=lambda m: m, device=torch.device("cpu"), is_main_process=True
     )
-    return dict(AxolotlAsyncGRPOTrainer._streaming_iter(stub))
+    trainer.args = types.SimpleNamespace(vllm_merge_check_interval=merge_check_interval)
+    trainer.state = types.SimpleNamespace(global_step=step)
+    trainer._metrics = {"train": defaultdict(list)}
+    return trainer
+
+
+def _stream(model, **kwargs):
+    return dict(_sync_trainer(model, **kwargs)._streaming_iter())
 
 
 def _manifest(model):
@@ -636,11 +645,13 @@ class TestMergedWeightSync:
             _manifest(model)
         )
         proj = model.base_model.model.proj
-        delta = (
-            proj.lora_B["default"].weight.float()
-            @ proj.lora_A["default"].weight.float()
-        ) * proj.scaling["default"]
-        expected = (proj.base_layer.weight.float() + delta).to(torch.bfloat16)
+        expected = merged_lora_weight(
+            proj.base_layer.weight,
+            proj.lora_A["default"].weight,
+            proj.lora_B["default"].weight,
+            proj.scaling["default"],
+            torch.bfloat16,
+        )
         torch.testing.assert_close(streamed["proj.weight"], expected, rtol=0, atol=0)
         assert not torch.equal(streamed["proj.weight"], proj.base_layer.weight)
         assert torch.equal(streamed["proj.bias"], proj.base_layer.bias)
@@ -666,6 +677,30 @@ class TestMergedWeightSync:
         streamed = _stream(model)
         for name, tensor in streamed.items():
             torch.testing.assert_close(tensor, reference[name], msg=name)
+
+    @pytest.mark.parametrize("factors", [torch.bfloat16, torch.float32])
+    def test_serves_the_weights_merge_aware_lora_trains(self, factors):
+        """vLLM gets the merged weights the lora_merge_aware forward computes, for
+        BF16 factors and for FP32 ones (lora_fp32_gradients, as under FSDP2)."""
+        from axolotl.monkeypatch.lora_merge_aware import (
+            install_lora_merge_aware_linears,
+        )
+
+        # A scaling that is not a power of two rounds differently in BF16 depending
+        # on where the delta is computed.
+        model = _peft_model(target_modules=["proj"], lora_alpha=3)
+        for name, param in model.named_parameters():
+            if "lora_" in name:
+                param.data = param.data.to(factors)
+        assert install_lora_merge_aware_linears(model)[0] == 1
+        model.eval()
+        streamed = _stream(model)
+        x = torch.randn(3, 16, dtype=torch.bfloat16)
+        proj = model.base_model.model.proj
+        served = torch.nn.functional.linear(
+            x, streamed["proj.weight"], streamed["proj.bias"]
+        )
+        assert torch.equal(proj(x), served)
 
     def test_fsdp_sharded_weights(self, tmp_path):
         import torch.distributed as dist
@@ -694,6 +729,44 @@ class TestMergedWeightSync:
         for name, tensor in streamed.items():
             assert not isinstance(tensor, torch.distributed.tensor.DTensor)
             torch.testing.assert_close(tensor, expected[name], rtol=0, atol=0)
+
+
+class TestMergedSyncRetentionCheck:
+    """The merged sync measures how much of the LoRA update its rounding keeps."""
+
+    @staticmethod
+    def _model():
+        model = _peft_model(target_modules=["proj"])
+        with torch.no_grad():
+            model.base_model.model.proj.lora_B["default"].weight.normal_(std=1e-5)
+        return model
+
+    def test_logs_retention_of_the_sent_weights(self):
+        trainer = _sync_trainer(self._model(), merge_check_interval=10, step=3)
+        with patch("axolotl.utils.lora_merge_precision.LOG.info") as info:
+            dict(trainer._streaming_iter())
+        retained = trainer._metrics["train"]["lora_merge/retained"]
+        assert len(retained) == 1 and retained[0] < 0.5
+        assert trainer._metrics["train"]["lora_merge/changed_fraction"]
+        assert trainer._lora_merge_check_step == 3
+        assert "1 merged LoRA linears" in info.call_args.args[-1]
+
+    def test_waits_for_the_interval(self):
+        trainer = _sync_trainer(self._model(), merge_check_interval=10, step=5)
+        trainer._lora_merge_check_step = 1
+        dict(trainer._streaming_iter())
+        assert "lora_merge/retained" not in trainer._metrics["train"]
+
+    def test_merge_aware_modules_are_not_measured(self):
+        from axolotl.monkeypatch.lora_merge_aware import (
+            install_lora_merge_aware_linears,
+        )
+
+        model = self._model()
+        install_lora_merge_aware_linears(model)
+        trainer = _sync_trainer(model, merge_check_interval=10)
+        dict(trainer._streaming_iter())
+        assert "lora_merge/retained" not in trainer._metrics["train"]
 
 
 def _sampler_record(rng, ids, prompt_len, top_k, candidates=0):

@@ -231,18 +231,19 @@ The trainer measures this at the first merged sync and then every `trl.vllm_merg
 - `lora_merge/retained`: the share of the LoRA delta that survives the cast, as the projection of the served weight change onto the delta.
 - `lora_merge/changed_fraction`: the share of weight entries the merge changes.
 
-When less than half of the update survives, every check after the first logs a warning. Parameters sharded by FSDP or DeepSpeed ZeRO-3 are not measured.
+When less than half of the update survives, every check after the first logs a warning. The standard trainer does not measure parameters sharded by FSDP or DeepSpeed ZeRO-3; async GRPO measures the gathered weights it sends.
 
 There are two ways to keep the whole update:
 
 | Option | Config | What vLLM serves | Use when |
 |---|---|---|---|
-| LoRA sync | `trl.vllm_lora_sync: true` | Base weights plus the unmerged adapter | Server mode with the async GRPO trainer (`use_data_producer` or `async_prefetch`). It is also the faster sync. |
-| Merge-aware LoRA | `lora_merge_aware: bf16` | Merged BF16 weights, which the trainer now optimizes | Weights must be merged: colocate mode, the standard GRPO trainer (neither `use_data_producer` nor `async_prefetch`), or a merged BF16 checkpoint |
+| LoRA sync | `trl.vllm_lora_sync: true` | Base weights plus the unmerged adapter | Async GRPO (`async_prefetch`), in server mode. It is also the faster sync. |
+| Merge-aware LoRA | `lora_merge_aware: bf16` | Merged BF16 weights, which the trainer now optimizes | Weights must be merged: colocate mode, the standard GRPO trainer, async GRPO without `vllm_lora_sync`, or a merged BF16 checkpoint |
 
 With `lora_merge_aware: bf16`, each LoRA linear computes `x @ bf16(W + scaling * B @ A)^T`, bitwise equal to the merged weight that is sent to vLLM, and gradients reach `A` and `B` straight through the cast. The forward and backward passes rebuild every LoRA linear's merged weight, at the cost of a few passes over the targeted base weights per micro-batch, and no more activations are saved than with ordinary LoRA. `lora_merge_aware: bf16` requires `adapter: lora` on an unquantized base. It works on a single GPU and with DDP, DeepSpeed ZeRO-1/2 and FSDP2:
 
-- Without FSDP, the sync merges in place inside `temporarily_merge_adapter`, which restores the base weights exactly afterwards.
+- Async GRPO's merged sync always merges out of place, from the gathered base weight and LoRA factors.
+- With the standard trainer and without FSDP, the sync merges in place inside `temporarily_merge_adapter`, which restores the base weights exactly afterwards.
 - Under FSDP2, `lora_fp32_gradients` is enabled automatically. FSDP2 then gathers the LoRA factors in FP32 rather than casting them to BF16, so the forward and the served merge compute the same delta. The vLLM sync merges each LoRA linear out of place from its gathered weights instead of merging the sharded weights in place.
 
 Config validation rejects it with:
