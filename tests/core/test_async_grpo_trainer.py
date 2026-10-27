@@ -1457,6 +1457,26 @@ class TestTreeFlashAttn:
         assert trl_compat.tree_flash_attn() == "fa3"
         assert loaded == []
 
+    @pytest.mark.parametrize(
+        ("attrs", "routed"),
+        [({"__version__": "4.0.0.beta8"}, True), ({}, False)],
+        ids=["flash_attn4", "flash_attn3"],
+    )
+    def test_routes_flash_attn4_for_selective_checkpointing(
+        self, tree_flash_attn, monkeypatch, attrs, routed
+    ):
+        """TRL main's FA4 kernel registers no torch op; routed through axolotl's FA4
+        op, selective checkpointing can save tree attention."""
+        from axolotl.monkeypatch.attention import flash_attn_4_ops
+
+        trl_compat, _ = tree_flash_attn
+        kernel = types.SimpleNamespace(**attrs)
+        installed = []
+        monkeypatch.setattr(flash_attn_4_ops, "install_fa4_ops", installed.append)
+        monkeypatch.setattr(trl_compat, "_trl_flash_attn", lambda: kernel)
+        assert trl_compat.tree_flash_attn() is kernel
+        assert installed == ([kernel] if routed else [])
+
     def test_flash_attn2_gets_values_as_wide_as_queries(self):
         from axolotl.core.trainers.grpo.trl_compat import _WideValues
 

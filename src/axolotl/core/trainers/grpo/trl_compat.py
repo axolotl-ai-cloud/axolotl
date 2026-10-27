@@ -242,7 +242,7 @@ def tree_flash_attn():
     load: FA3 has no Blackwell build, and FA4's CuTe DSL code fails to import under
     nvidia-cutlass-dsl releases it was not built against."""
     try:
-        return _trl_flash_attn()
+        kernel = _trl_flash_attn()
     except Exception as err:  # pylint: disable=broad-exception-caught
         LOG.warning(
             f"Tree attention uses flash-attn2: TRL's kernel failed to load: {err!r}"
@@ -251,6 +251,13 @@ def tree_flash_attn():
 
         # Same varlen API, and it aligns the causal mask bottom-right like FA3.
         return _WideValues(get_kernel("kernels-community/flash-attn2", version=3))
+    if str(getattr(kernel, "__version__", "")).startswith("4."):
+        # FA4's CuTe kernels register no torch op, so selective checkpointing could
+        # not save tree attention and would recompute it.
+        from axolotl.monkeypatch.attention.flash_attn_4_ops import install_fa4_ops
+
+        install_fa4_ops(kernel)
+    return kernel
 
 
 class _WideValues:
