@@ -38,12 +38,37 @@ Do not `pip install -r llama.cpp/requirements/...` into your training environmen
 axolotl export config.yml --quantize Q4_K_M,Q8_0
 ```
 
+### Exporting a full model (merged)
+
 LoRA/QLoRA runs must be merged first — export refuses an adapter-only directory:
 
 ```bash
 axolotl merge-lora config.yml
 axolotl export config.yml
 ```
+
+### Exporting a LoRA adapter as a standalone GGUF
+
+You can export a LoRA adapter directly to GGUF without merging, using llama.cpp's `convert_lora_to_gguf.py`. The adapter is auto-detected when `output_dir` holds an `adapter_config.json` and no `merged/` directory:
+
+```bash
+axolotl export config.yml
+```
+
+If your run has both a `merged/` directory and an adapter, set `export.lora: true` to choose the adapter:
+
+```yaml
+export:
+  lora: true
+```
+
+The resulting `.gguf` is a standalone LoRA that llama.cpp runtimes load on top of a base GGUF:
+
+```bash
+llama-cli -m base-f16.gguf --lora my-adapter.gguf
+```
+
+The adapter must be paired with a GGUF of the same base model at runtime.
 
 ## Configuration
 
@@ -56,9 +81,10 @@ export:
   quantize: [Q4_K_M]   # Optional[list[str]] = []. Additional llama.cpp quant types to emit.
   outfile:             # Optional[str]. Defaults to {output_dir}/gguf/{run}-{ftype}.gguf.
   llama_cpp_dir:       # Optional[str]. Defaults to $LLAMA_CPP_DIR.
+  lora: false          # Optional[bool] = false. Export a LoRA adapter as a standalone GGUF.
 ```
 
-Every key can be overridden from the CLI (`--outtype`, `--quantize`, `--outfile`, `--llama-cpp-dir`), and `--model-dir` exports an arbitrary checkpoint instead of the one in `output_dir`.
+Every key can be overridden from the CLI (`--outtype`, `--quantize`, `--outfile`, `--llama-cpp-dir`, `--lora`), and `--model-dir` exports an arbitrary checkpoint instead of the one in `output_dir`.
 
 As in llama.cpp, `{ftype}` in `outfile` is replaced by the weight type, so each requested quant type is written as its own file alongside the unquantized conversion:
 
@@ -69,6 +95,14 @@ outputs/my-run/gguf/
 └── my-run-Q8_0.gguf
 ```
 
+### LoRA adapter export
+
+When exporting a LoRA adapter (`export.lora: true` or auto-detected):
+
+- `outtype` must be one of `f32`, `f16`, `bf16`, `q8_0`, `auto` (default `f32`). The `tq1_0`/`tq2_0` types are not supported by `convert_lora_to_gguf.py`.
+- `quantize` is not supported — `llama-quantize` only accepts full models, not adapters.
+- The base model is read from `adapter_config.json` (`base_model_name_or_path`). If `base_model` in your config is a local path, it is passed as `--base` to avoid a Hub fetch.
+
 ## Preflight checks
 
 Conversion is slow, so a few failure modes are caught up front:
@@ -78,6 +112,11 @@ Conversion is slow, so a few failure modes are caught up front:
 - **Multi-token-prediction layers** (`num_nextn_predict_layers`), which llama.cpp cannot load. See the [GLM-4.5 example](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm45).
 - **Missing chat template**, which is only a warning but usually means the runtime will fall back to a default template and undo your fine-tune.
 
+### LoRA adapter preflight
+
+- **embed_tokens / lm_head tensors** in the adapter (from `lora_modules_to_save` or adding tokens during fine-tuning) — llama.cpp errors with "Embeddings is present in the adapter".
+- **DoRA adapters** (`peft_use_dora`) — the converter only handles `lora_A` / `lora_B` tensors.
+
 ## Known gaps
 
-Not yet supported: importance-matrix (`imatrix`) calibration, `gguf-split` for large models, multimodal `mmproj` files, exporting a LoRA adapter as a standalone GGUF, and pushing to the Hub.
+Not yet supported: importance-matrix (`imatrix`) calibration, `gguf-split` for large models, multimodal `mmproj` files, and pushing to the Hub.

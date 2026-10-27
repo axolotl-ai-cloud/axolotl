@@ -151,6 +151,12 @@ class ExportCliArgs:
             "help": "Path to a built llama.cpp checkout. Default: $LLAMA_CPP_DIR."
         },
     )
+    lora: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Export a LoRA adapter as a standalone GGUF. Auto-detected from the output directory; set explicitly when both merged/ and an adapter are present."
+        },
+    )
 
 
 @dataclass
