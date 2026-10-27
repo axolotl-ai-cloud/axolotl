@@ -1,6 +1,7 @@
 """Unit tests for GRPO trainer selection and FP8 quantization helpers."""
 
 import unittest
+from unittest.mock import MagicMock
 
 import torch
 
