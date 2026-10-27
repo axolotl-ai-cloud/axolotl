@@ -2,7 +2,9 @@
 
 import asyncio
 import multiprocessing as mp
+import os
 import queue
+import threading
 import time
 import types
 from collections import defaultdict
@@ -21,6 +23,7 @@ from trl.experimental.async_grpo.async_rollout_worker import (
 from axolotl.core.trainers.grpo import GRPOStrategy, async_trainer
 from axolotl.core.trainers.grpo.async_progress import RolloutProgress, RolloutStop
 from axolotl.core.trainers.grpo.async_rollout import (
+    AxolotlAsyncRolloutWorker,
     AxolotlRolloutLoop,
     RewardProcessPool,
     compute_group_advantages,
@@ -491,6 +494,45 @@ class TestRolloutLoop:
                 asyncio.run(pool.call(0, {"completions": []}))
         finally:
             pool.close()
+
+
+def _wait_on_stop_then_die(stop_event):
+    # A rollout child that raised: TRL's stop watcher was waiting on the event.
+    threading.Thread(target=stop_event.wait, daemon=True).start()
+    time.sleep(1.0)
+    os._exit(1)
+
+
+@pytest.mark.skipif(
+    "fork" not in mp.get_all_start_methods(), reason="needs the fork start method"
+)
+def test_worker_stop_returns_after_the_child_died():
+    from accelerate.state import PartialState
+
+    PartialState()
+    ctx = mp.get_context("fork")
+    worker = AxolotlAsyncRolloutWorker.__new__(AxolotlAsyncRolloutWorker)
+    worker._stop_event_mp = ctx.Event()
+    worker._process = ctx.Process(
+        target=_wait_on_stop_then_die, args=(worker._stop_event_mp,)
+    )
+    worker._process.start()
+    worker._process.join()
+
+    errors = []
+
+    def stop():
+        try:
+            worker.stop()
+        except Exception as error:  # noqa: BLE001
+            errors.append(error)
+
+    stopper = threading.Thread(target=stop, daemon=True)
+    stopper.start()
+    stopper.join(timeout=30)
+    assert not stopper.is_alive(), "stop() hung on the dead child's stop event"
+    assert not errors
+    assert worker._process is None
 
 
 class TestGRPOStrategy:
