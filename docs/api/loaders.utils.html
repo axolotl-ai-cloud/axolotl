@@ -998,7 +998,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="#axolotl.loaders.utils.ensure_dtype">ensure_dtype</a></td>
-<td>Ensures all modules in the model are converted to the specified data type.</td>
+<td>Ensures all modules in the model, except those named by <code>keep</code>, are converted to</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.loaders.utils.get_linear_embedding_layers">get_linear_embedding_layers</a></td>
@@ -1091,8 +1091,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.loaders.utils.ensure_dtype" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.loaders.utils.ensure_dtype">ensure_dtype</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.utils.ensure_dtype(model, dtype<span class="op">=</span>torch.bfloat16)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Ensures all modules in the model are converted to the specified data type.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>loaders.utils.ensure_dtype(model, dtype<span class="op">=</span>torch.bfloat16, keep<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Ensures all modules in the model, except those named by <code>keep</code>, are converted to
+the specified data type.</p>
 </section>
 <section id="axolotl.loaders.utils.get_linear_embedding_layers" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.loaders.utils.get_linear_embedding_layers">get_linear_embedding_layers</h3>
