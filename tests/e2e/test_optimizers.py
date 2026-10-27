@@ -558,7 +558,6 @@ class TestCustomOptimizers(unittest.TestCase):
         assert trainer.optimizer.optimizer.__class__.__name__ == "Adam_mini"
 
     @with_temp_dir
-    @require_torch_2_6_0
     def test_came_pytorch(self, temp_dir):
         pytest.importorskip("came_pytorch")
         cfg = DictDefault(
