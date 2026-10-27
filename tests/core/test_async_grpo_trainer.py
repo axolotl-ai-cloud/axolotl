@@ -17,6 +17,8 @@ from async_test_utils import (
     AttentionForwards,
     StubTransfer,
     StubWorker,
+    assert_step_matches_plain,
+    checkpointing_and_offloading,
     offload_activations_on_cpu,
     reference_tree_attention,
 )
@@ -1072,43 +1074,76 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
     assert ratio_mins and max(ratio_mins) < 1.0
 
 
-def test_default_loss_is_trls(
-    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
-):
-    """With the default loss_type, compute_loss is TRL's AsyncGRPOTrainer's."""
-    from trl.experimental.async_grpo.async_grpo_trainer import (
-        AsyncGRPOTrainer,
-        DataCollatorForRollout,
-    )
+_PACKED_FIELDS = (
+    "input_ids",
+    "completion_mask",
+    "old_log_probs",
+    "advantage",
+    "group_id",
+    "metrics",
+)
+
+
+def _packed_batch(trainer, samples):
+    """``samples`` packed into one row and collated, as TRL's dataloader yields them."""
+    from trl.experimental.async_grpo.async_grpo_trainer import DataCollatorForRollout
     from trl.experimental.async_grpo.packing import TreeRow
 
-    # Sampled log-probabilities around the policy's put ratios on both sides of the
-    # trust region, for both advantage signs.
-    trainer, _, _, samples = _cpu_trainer(
-        tmp_path, monkeypatch, old_log_probs=lambda g: (-12.0, -8.0, -12.0, -8.0)[g]
-    )
-    assert trainer.args.loss_type == "dapo"
-    if SCORE_CENTERING:
+    # Plus the sampler fields this TRL version's samples carry.
+    keys = (*_PACKED_FIELDS, *unsampled_fields(0))
+    row = TreeRow()
+    for sample in samples:
+        row.add({key: getattr(sample, key) for key in keys})
+    collate = DataCollatorForRollout(pad_token_id=trainer.processing_class.pad_token_id)
+    return collate([[row]])
+
+
+# loss_type: (_cpu_trainer arguments, metrics that show its bounds bind, prefixes of
+# the metrics that must match TRL's)
+TRL_LOSSES = {
+    "dapo": (
+        # Ratios on both sides of the trust region, for both advantage signs.
+        {"old_log_probs": lambda g: (-12.0, -8.0, -12.0, -8.0)[g]},
+        ("clip_ratio/low_mean", "clip_ratio/high_mean"),
+        ("clip_ratio/", "ratio", "kl", "entropy"),
+    ),
+    "score_centering": (
+        # Around the policy's log-prob over 12 candidates, on both sides of the mask.
+        {
+            "old_log_probs": lambda g: (-3.0, -1.5, -3.0, -1.5)[g],
+            "sampler_top_k": 4,
+            "sampler_candidates": 8,
+            "loss_type": "score_centering",
+        },
+        ("sampling/masked_mean",),
+        ("sampling/masked_mean", "sampling/sampler_mass", "ratio", "kl"),
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "loss_type",
+    ["dapo", pytest.param("score_centering", marks=needs_score_centering)],
+)
+def test_loss_is_trls(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch, loss_type
+):
+    """compute_loss is TRL's AsyncGRPOTrainer's: dapo, the default, its clipped
+    objective, and score_centering TRL main's score centering, with the log-probs
+    renormalized over each token's top-k/top-p candidates as TRL does."""
+    from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer
+
+    trainer_kwargs, binding, compared = TRL_LOSSES[loss_type]
+    trainer, _, _, samples = _cpu_trainer(tmp_path, monkeypatch, **trainer_kwargs)
+    assert trainer.args.loss_type == loss_type
+    if SCORE_CENTERING and loss_type == "dapo":
         # TRL main's clipped objective also drops tokens outside its importance
         # sampling bounds, which dapo does not; open them so the objectives compare.
         trainer.args.vllm_importance_sampling_clip_min = 0.0
         trainer.args.vllm_importance_sampling_clip_max = float("inf")
-    row = TreeRow()
-    for sample in samples[4:12]:
-        row.add(
-            {
-                "input_ids": sample.input_ids,
-                "completion_mask": sample.completion_mask,
-                "old_log_probs": sample.old_log_probs,
-                **unsampled_fields(len(sample.input_ids)),
-                "advantage": sample.advantage,
-                "group_id": sample.group_id,
-                "metrics": sample.metrics,
-            }
-        )
-    batch = DataCollatorForRollout(pad_token_id=trainer.processing_class.pad_token_id)(
-        [[row]]
-    )
+    batch = _packed_batch(trainer, samples[4:12])
+    if loss_type == "score_centering":
+        assert batch["sampling_mask_counts"].max() == 12
     model = trainer.model
     model.train()
     trainer.current_gradient_accumulation_steps = 1
@@ -1128,19 +1163,16 @@ def test_default_loss_is_trls(
     torch.testing.assert_close(loss, trl_loss, rtol=0, atol=0)
     for grad, trl_grad in zip(grads, trl_grads, strict=True):
         torch.testing.assert_close(grad, trl_grad, rtol=0, atol=0)
-    assert trl_metrics["clip_ratio/low_mean"] > 0
-    assert trl_metrics["clip_ratio/high_mean"] > 0
+    for key in binding:
+        assert 0 < trl_metrics[key] < 1, key
     for key, value in trl_metrics.items():
-        if key.startswith(("clip_ratio/", "ratio", "kl", "entropy")):
+        if key.startswith(compared):
             assert metrics[key] == pytest.approx(value), key
 
 
 def _one_training_step(tmp_path, monkeypatch, sac=None, **args):
     """Loss, trainable gradients and attention forwards (recomputed ones included) of
     one ``training_step`` on a fixed packed row."""
-    from trl.experimental.async_grpo.async_grpo_trainer import DataCollatorForRollout
-    from trl.experimental.async_grpo.packing import TreeRow
-
     from axolotl.monkeypatch.selective_checkpointing import (
         apply_selective_checkpointing,
     )
@@ -1152,22 +1184,7 @@ def _one_training_step(tmp_path, monkeypatch, sac=None, **args):
     if sac is not None:
         # As the model loader applies it, before training enables checkpointing.
         apply_selective_checkpointing(trainer.model.get_base_model(), **sac)
-    row = TreeRow()
-    for sample in samples[4:12]:
-        row.add(
-            {
-                "input_ids": sample.input_ids,
-                "completion_mask": sample.completion_mask,
-                "old_log_probs": sample.old_log_probs,
-                **unsampled_fields(len(sample.input_ids)),
-                "advantage": sample.advantage,
-                "group_id": sample.group_id,
-                "metrics": sample.metrics,
-            }
-        )
-    batch = DataCollatorForRollout(pad_token_id=trainer.processing_class.pad_token_id)(
-        [[row]]
-    )
+    batch = _packed_batch(trainer, samples[4:12])
     model = trainer.model
     if trainer.args.gradient_checkpointing:
         # What Trainer.train does before the first step.
@@ -1181,59 +1198,19 @@ def _one_training_step(tmp_path, monkeypatch, sac=None, **args):
     return trainer, loss, grads, attention.count
 
 
-CHECKPOINTING_AND_OFFLOADING = {
-    "checkpointing": ({"gradient_checkpointing": True}, None),
-    "offloading": ({"activation_offloading": True}, None),
-    "both": ({"gradient_checkpointing": True, "activation_offloading": True}, None),
-    "hidden_states": (
-        {"gradient_checkpointing": True, "activation_offloading": "hidden_states"},
-        None,
-    ),
-    "selective": ({"gradient_checkpointing": True}, {"save": ["attention"]}),
-    "selective_offload": (
-        {"gradient_checkpointing": True},
-        {"save": ["attention"], "offload": True},
-    ),
-    "selective_and_offloading": (
-        {"gradient_checkpointing": True, "activation_offloading": True},
-        {"save": ["attention"]},
-    ),
-}
-
-
-@pytest.mark.parametrize(
-    ("args", "sac"),
-    list(CHECKPOINTING_AND_OFFLOADING.values()),
-    ids=list(CHECKPOINTING_AND_OFFLOADING),
-)
+@checkpointing_and_offloading
 def test_checkpointing_and_offloading_keep_the_gradients(
     download_smollm2_135m_instruct_model, tmp_path, monkeypatch, args, sac
 ):
     """Gradient checkpointing, selective checkpointing, and the activation offloaders
     ActivationOffloadingMixin wraps the step in give a plain step's loss and LoRA
-    gradients. Checkpointing recomputes attention in backward unless selective
-    checkpointing saves it."""
-    import contextlib
-
+    gradients."""
     offload_activations_on_cpu(monkeypatch)
-    _, loss, grads, attention = _one_training_step(tmp_path / "plain", monkeypatch)
-    variant, variant_loss, variant_grads, variant_attention = _one_training_step(
+    _, *plain = _one_training_step(tmp_path / "plain", monkeypatch)
+    variant, *step = _one_training_step(
         tmp_path / "variant", monkeypatch, sac=sac, **args
     )
-    assert variant.model.is_gradient_checkpointing is bool(
-        args.get("gradient_checkpointing")
-    )
-    offloads = not isinstance(
-        variant.activation_offload_context, contextlib.nullcontext
-    )
-    assert offloads is bool(args.get("activation_offloading"))
-    recomputes = args.get("gradient_checkpointing") and sac is None
-    assert variant_attention == (2 if recomputes else 1) * attention > 0
-    assert any(g.abs().sum() > 0 for g in grads.values())
-    torch.testing.assert_close(variant_loss, loss, rtol=0, atol=0)
-    assert variant_grads.keys() == grads.keys()
-    for name, grad in grads.items():
-        torch.testing.assert_close(variant_grads[name], grad, msg=name)
+    assert_step_matches_plain(variant, args, sac, plain, step)
 
 
 def test_score_centering_centers_the_masked_score():
@@ -1270,74 +1247,6 @@ def test_score_centering_centers_the_masked_score():
         (sampler.exp() * -weight * torch.log_softmax(logits, -1)).sum(), logits
     )
     assert uncentered.abs().max() > 1e-2
-
-
-@needs_score_centering
-def test_score_centering_is_trls(
-    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
-):
-    """loss_type score_centering computes TRL main's score-centering loss, with the
-    log-probs renormalized over each token's top-k/top-p candidates as TRL does."""
-    from trl.experimental.async_grpo.async_grpo_trainer import (
-        AsyncGRPOTrainer,
-        DataCollatorForRollout,
-    )
-    from trl.experimental.async_grpo.packing import TreeRow
-
-    trainer, _, _, samples = _cpu_trainer(
-        tmp_path,
-        monkeypatch,
-        # Around the policy's log-prob over 12 candidates, on both sides of the mask.
-        old_log_probs=lambda g: (-3.0, -1.5, -3.0, -1.5)[g],
-        sampler_top_k=4,
-        sampler_candidates=8,
-        loss_type="score_centering",
-    )
-    assert trainer.args.score_centering
-    row = TreeRow()
-    for sample in samples[4:12]:
-        row.add(
-            {
-                key: getattr(sample, key)
-                for key in (
-                    "input_ids",
-                    "completion_mask",
-                    "old_log_probs",
-                    "sampling_mask",
-                    "sampler_ids",
-                    "sampler_log_probs",
-                    "advantage",
-                    "group_id",
-                    "metrics",
-                )
-            }
-        )
-    batch = DataCollatorForRollout(pad_token_id=trainer.processing_class.pad_token_id)(
-        [[row]]
-    )
-    model = trainer.model
-    model.train()
-    trainer.current_gradient_accumulation_steps = 1
-    params = [p for p in model.parameters() if p.requires_grad]
-    results = []
-    for compute_loss in (
-        AxolotlAsyncGRPOTrainer.compute_loss,
-        AsyncGRPOTrainer.compute_loss,
-    ):
-        model.zero_grad()
-        trainer._metrics["train"].clear()
-        loss = compute_loss(trainer, model, batch)
-        loss.backward()
-        metrics = {k: v[0] for k, v in trainer._metrics["train"].items()}
-        results.append((loss.detach(), [p.grad.clone() for p in params], metrics))
-    (loss, grads, metrics), (trl_loss, trl_grads, trl_metrics) = results
-    torch.testing.assert_close(loss, trl_loss, rtol=0, atol=0)
-    for grad, trl_grad in zip(grads, trl_grads, strict=True):
-        torch.testing.assert_close(grad, trl_grad, rtol=0, atol=0)
-    assert batch["sampling_mask_counts"].max() == 12
-    assert 0 < trl_metrics["sampling/masked_mean"] < 1
-    for key in ("sampling/masked_mean", "sampling/sampler_mass", "ratio", "kl"):
-        assert metrics[key] == pytest.approx(trl_metrics[key]), key
 
 
 @needs_score_centering
