@@ -13,7 +13,13 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import torch
-from async_test_utils import StubTransfer, StubWorker, reference_tree_attention
+from async_test_utils import (
+    AttentionForwards,
+    StubTransfer,
+    StubWorker,
+    offload_activations_on_cpu,
+    reference_tree_attention,
+)
 from trl.experimental.async_grpo.async_rollout_worker import (
     RolloutGroup,
     RolloutSample,
@@ -965,8 +971,7 @@ def _cpu_trainer(
         token_budget=0,
         report_to=[],
         save_strategy="no",
-        gradient_checkpointing=False,
-        **{"max_steps": 3, **args_kwargs},
+        **{"gradient_checkpointing": False, "max_steps": 3, **args_kwargs},
     )
     transfer = StubTransfer()
     worker = StubWorker(samples)
@@ -1152,6 +1157,107 @@ def test_default_loss_is_trls(
     for key, value in trl_metrics.items():
         if key.startswith(("clip_ratio/", "ratio", "kl", "entropy")):
             assert metrics[key] == pytest.approx(value), key
+
+
+def _one_training_step(tmp_path, monkeypatch, sac=None, **args):
+    """Loss, trainable gradients and attention forwards (recomputed ones included) of
+    one ``training_step`` on a fixed packed row."""
+    from trl.experimental.async_grpo.async_grpo_trainer import DataCollatorForRollout
+    from trl.experimental.async_grpo.packing import TreeRow
+
+    from axolotl.monkeypatch.selective_checkpointing import (
+        apply_selective_checkpointing,
+    )
+
+    torch.manual_seed(0)
+    trainer, _, _, samples = _cpu_trainer(
+        tmp_path, monkeypatch, old_log_probs=lambda g: (-9.0, -8.0)[g % 2], **args
+    )
+    if sac is not None:
+        # As the model loader applies it, before training enables checkpointing.
+        apply_selective_checkpointing(trainer.model.get_base_model(), **sac)
+    row = TreeRow()
+    for sample in samples[4:12]:
+        row.add(
+            {
+                "input_ids": sample.input_ids,
+                "completion_mask": sample.completion_mask,
+                "old_log_probs": sample.old_log_probs,
+                **unsampled_fields(len(sample.input_ids)),
+                "advantage": sample.advantage,
+                "group_id": sample.group_id,
+                "metrics": sample.metrics,
+            }
+        )
+    batch = DataCollatorForRollout(pad_token_id=trainer.processing_class.pad_token_id)(
+        [[row]]
+    )
+    model = trainer.model
+    if trainer.args.gradient_checkpointing:
+        # What Trainer.train does before the first step.
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+    trainer.current_gradient_accumulation_steps = 1
+    with AttentionForwards() as attention:
+        loss = trainer.training_step(model, batch, None)
+    grads = {n: p.grad.clone() for n, p in model.named_parameters() if p.requires_grad}
+    return trainer, loss, grads, attention.count
+
+
+CHECKPOINTING_AND_OFFLOADING = {
+    "checkpointing": ({"gradient_checkpointing": True}, None),
+    "offloading": ({"activation_offloading": True}, None),
+    "both": ({"gradient_checkpointing": True, "activation_offloading": True}, None),
+    "hidden_states": (
+        {"gradient_checkpointing": True, "activation_offloading": "hidden_states"},
+        None,
+    ),
+    "selective": ({"gradient_checkpointing": True}, {"save": ["attention"]}),
+    "selective_offload": (
+        {"gradient_checkpointing": True},
+        {"save": ["attention"], "offload": True},
+    ),
+    "selective_and_offloading": (
+        {"gradient_checkpointing": True, "activation_offloading": True},
+        {"save": ["attention"]},
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("args", "sac"),
+    list(CHECKPOINTING_AND_OFFLOADING.values()),
+    ids=list(CHECKPOINTING_AND_OFFLOADING),
+)
+def test_checkpointing_and_offloading_keep_the_gradients(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch, args, sac
+):
+    """Gradient checkpointing, selective checkpointing, and the activation offloaders
+    ActivationOffloadingMixin wraps the step in give a plain step's loss and LoRA
+    gradients. Checkpointing recomputes attention in backward unless selective
+    checkpointing saves it."""
+    import contextlib
+
+    offload_activations_on_cpu(monkeypatch)
+    _, loss, grads, attention = _one_training_step(tmp_path / "plain", monkeypatch)
+    variant, variant_loss, variant_grads, variant_attention = _one_training_step(
+        tmp_path / "variant", monkeypatch, sac=sac, **args
+    )
+    assert variant.model.is_gradient_checkpointing is bool(
+        args.get("gradient_checkpointing")
+    )
+    offloads = not isinstance(
+        variant.activation_offload_context, contextlib.nullcontext
+    )
+    assert offloads is bool(args.get("activation_offloading"))
+    recomputes = args.get("gradient_checkpointing") and sac is None
+    assert variant_attention == (2 if recomputes else 1) * attention > 0
+    assert any(g.abs().sum() > 0 for g in grads.values())
+    torch.testing.assert_close(variant_loss, loss, rtol=0, atol=0)
+    assert variant_grads.keys() == grads.keys()
+    for name, grad in grads.items():
+        torch.testing.assert_close(variant_grads[name], grad, msg=name)
 
 
 def test_score_centering_centers_the_masked_score():

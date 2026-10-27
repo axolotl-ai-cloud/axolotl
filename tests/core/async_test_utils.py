@@ -6,6 +6,7 @@ import queue
 
 import numpy as np
 import torch
+from torch.utils._python_dispatch import TorchDispatchMode
 
 from axolotl.core.trainers.grpo.trl_compat import unsampled_fields
 
@@ -194,3 +195,41 @@ def assert_tree_rows_match_alone(model, samples, on_row=None):
         for name, grad in packed_grads.items():
             torch.testing.assert_close(grad, alone_grads[name], rtol=1e-4, atol=1e-5)
     return shared_len, chain_len
+
+
+def offload_activations_on_cpu(monkeypatch):
+    """Run axolotl's activation offload contexts on a CPU-only host: no accelerator,
+    streams or pinned memory. Tensors already on the CPU stay where they are, so this
+    covers the wiring and the gradients, not the device-to-host copies."""
+    from axolotl.core.trainers.mixins import activation_checkpointing
+
+    monkeypatch.setattr(
+        torch.accelerator, "current_accelerator", lambda *a, **k: torch.device("cpu")
+    )
+    monkeypatch.setattr(torch.cpu, "empty_cache", lambda: None, raising=False)
+    for name in (
+        "get_lora_act_offloading_ctx_manager",
+        "get_act_offloading_ctx_manager",
+    ):
+        offloader = getattr(activation_checkpointing, name)
+        monkeypatch.setattr(
+            activation_checkpointing,
+            name,
+            lambda model, offloader=offloader: offloader(
+                model, use_pin_memory=False, use_streams=False
+            ),
+        )
+
+
+class AttentionForwards(TorchDispatchMode):
+    """Counts attention forwards, including those a backward pass recomputes."""
+
+    def __init__(self):
+        super().__init__()
+        self.count = 0
+
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        name = func.name()
+        if "scaled_dot_product" in name and "backward" not in name:
+            self.count += 1
+        return func(*args, **(kwargs or {}))

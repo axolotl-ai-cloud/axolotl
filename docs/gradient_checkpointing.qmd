@@ -68,6 +68,9 @@ With `activation_offloading: true`, `gradient_checkpointing` controls recompute:
   PCIe bandwidth. Can be faster for LoRA/QLoRA, whose activations are small. Not supported for
   ORPO, SimPO, EBFT or process reward models.
 
+Activation offloading and selective checkpointing also apply to synchronous and async GRPO, whose
+TRL trainers do not offload on their own.
+
 Checkpointing runs exactly as it would without offloading, for adapters and full finetunes alike,
 honoring `gradient_checkpointing_kwargs`; the non-reentrant default above applies to `rl:` runs as
 well (DeepSpeed ZeRO-3 stays reentrant). `hidden_states` requires `gradient_checkpointing: true`.
