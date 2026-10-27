@@ -286,6 +286,7 @@ class GRPOStrategy:
             "vllm_importance_sampling_clip_min": trl.vllm_importance_sampling_clip_min,
             "vllm_importance_sampling_clip_max": trl.vllm_importance_sampling_clip_max,
             "num_sampler_logprobs": trl.num_sampler_logprobs,
+            "vllm_merge_check_interval": trl.vllm_merge_check_interval,
         }
         kwargs.update(
             {key: value for key, value in optional.items() if value is not None}

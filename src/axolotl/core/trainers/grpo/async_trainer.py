@@ -17,7 +17,9 @@ On top of TRL, this trainer:
 - offers ``loss_type: cispo``, which weights each token by its policy/sampler ratio,
   capped at ``vllm_importance_sampling_cap``, instead of clipping that ratio, and,
   experimentally on TRL main, ``loss_type: score_centering``, TRL's score centering;
-- syncs merged LoRA weights without merging into the trained model;
+- syncs merged LoRA weights without merging into the trained model, bitwise equal to
+  the ``lora_merge_aware`` forward, and measures how much of the update the merge
+  keeps (``vllm_merge_check_interval``);
 - runs a custom rollout loop (``rollout_loop``), e.g. one that delegates whole
   rollouts to an agent server, and serves the synced adapter under a fixed name
   for clients that cannot follow TRL's versioned one (``vllm_lora_alias``).
@@ -74,6 +76,10 @@ from axolotl.core.trainers.grpo.async_traces import (
     TraceRecorder,
     rollout_traces,
 )
+from axolotl.core.trainers.grpo.merge_check import (
+    DEFAULT_MERGE_CHECK_INTERVAL,
+    LoraMergeCheckMixin,
+)
 from axolotl.core.trainers.grpo.trl_compat import (
     SCORE_CENTERING,
     TREE_ATTENTION,
@@ -107,6 +113,11 @@ from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.models.recurrent_support import recurrent_layer_types
 from axolotl.monkeypatch.models.tree_packing import packing_support
 from axolotl.utils.logging import get_logger
+from axolotl.utils.lora_merge_precision import (
+    MergeRetention,
+    lora_delta,
+    served_dtype_for,
+)
 
 LOG = get_logger(__name__)
 
@@ -267,6 +278,14 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
     rollout_loop_kwargs: dict | None = field(
         default=None,
         metadata={"help": "Extra keyword arguments for rollout_loop."},
+    )
+    vllm_merge_check_interval: int = field(
+        default=DEFAULT_MERGE_CHECK_INTERVAL,
+        metadata={
+            "help": "With merged weight sync, measure how much of the LoRA update "
+            "survives rounding the merged weights at the first sync and then every N "
+            "optimizer steps (lora_merge/retained). 0 disables."
+        },
     )
     vllm_lora_alias: str | None = field(
         default=None,
@@ -491,12 +510,49 @@ def _full(tensor: torch.Tensor) -> torch.Tensor:
     return tensor.full_tensor() if isinstance(tensor, DTensor) else tensor.detach()
 
 
-def _merged_weight(module, adapters: list[str], weight: torch.Tensor) -> torch.Tensor:
-    """``weight`` with ``adapters`` folded in, leaving ``weight`` itself untouched."""
-    merged = _full(weight).float()
+def _lora_delta(module, adapter: str) -> torch.Tensor:
+    """FP32 delta of ``adapter``. A LoRA linear's comes from its gathered factors, as
+    the ``lora_merge_aware`` forward and PEFT's merge compute it; other layers'
+    from PEFT."""
+    from peft.tuners.lora.layer import Linear as LoraLinear
+
+    if isinstance(module, LoraLinear) and not module.fan_in_fan_out:
+        return lora_delta(
+            _full(module.lora_A[adapter].weight),
+            _full(module.lora_B[adapter].weight),
+            module.scaling[adapter],
+        )
+    return _full(module.get_delta_weight(adapter)).float()
+
+
+def _measures_merge(module, adapters: list[str]) -> bool:
+    """Whether ``measure_lora_merge_retention`` would count this layer's rounding:
+    a plain single-adapter LoRA linear that does not already train merge-aware."""
+    from peft.tuners.lora.layer import Linear as LoraLinear
+
+    return (
+        isinstance(module, LoraLinear)
+        and not module.fan_in_fan_out
+        and len(adapters) == 1
+        and adapters[0] not in module.lora_variant
+        and getattr(module, "_axolotl_lora_merge_aware_dtype", None) is None
+    )
+
+
+def _merged_weight(
+    module,
+    adapters: list[str],
+    weight: torch.Tensor,
+    retention: MergeRetention | None = None,
+) -> torch.Tensor:
+    """``weight`` with ``adapters`` folded in and rounded once, leaving ``weight``
+    itself untouched; with ``retention``, also how much of the delta the rounding
+    keeps."""
+    base = _full(weight).float()
+    merged = base
     for adapter in adapters:
         if adapter not in module.lora_variant:
-            merged = merged + _full(module.get_delta_weight(adapter)).float()
+            merged = merged + _lora_delta(module, adapter)
             continue
         # Variants (DoRA) rebuild the merge from the module's own sharded weights.
         if isinstance(weight, DTensor) or len(adapters) > 1:
@@ -505,10 +561,21 @@ def _merged_weight(module, adapters: list[str], weight: torch.Tensor) -> torch.T
                 "adapter is only supported for a single adapter without FSDP."
             )
         merged = module.lora_variant[adapter].merge_safe(module, adapter, merged)
+    if retention is not None and _measures_merge(module, adapters):
+        served = served_dtype_for(weight.dtype)
+        retention.update(
+            merged - base, merged.to(served).float() - base.to(served).float()
+        )
+        retention.modules += 1
     return merged.to(weight.dtype)
 
 
-def _merged_bias(module, adapters: list[str], bias: torch.Tensor) -> torch.Tensor:
+def _merged_bias(
+    module,
+    adapters: list[str],
+    bias: torch.Tensor,
+    retention: MergeRetention | None = None,
+) -> torch.Tensor:
     merged = _full(bias).float()
     for adapter in adapters:
         if module.lora_bias.get(adapter):
@@ -580,6 +647,7 @@ class AxolotlAsyncGRPOTrainer(
     OptimizerInitMixin,
     DistributedParallelMixin,
     ActivationOffloadingMixin,
+    LoraMergeCheckMixin,
     AsyncGRPOTrainer,
 ):
     """TRL's ``AsyncGRPOTrainer`` adapted to axolotl and extended (see module doc)."""
@@ -1125,12 +1193,15 @@ class AxolotlAsyncGRPOTrainer(
             return
         merges = _out_of_place_merges(model)
         device = self.accelerator.device
+        retention = MergeRetention() if self._lora_merge_check_due() else None
         # The same walk as the weight manifest TRL sends the server at init.
         for name, param in iter_vllm_named_params(model):
             with torch.no_grad():
                 merge = merges.get(id(param))
-                tensor = merge(param) if merge is not None else _full(param)
+                tensor = merge(param, retention) if merge is not None else _full(param)
             yield name, tensor.to(device)
+        if retention is not None:
+            self._record_lora_merge_check(retention)
 
     def _policy_loss(
         self,
