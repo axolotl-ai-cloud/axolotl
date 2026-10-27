@@ -15,7 +15,8 @@ On top of TRL, this trainer:
   (``reward_num_workers``);
 - honors ``reward_weights``, ``multi_objective_aggregation`` and ``scale_rewards``;
 - offers ``loss_type: cispo``, which weights each token by its policy/sampler ratio,
-  capped at ``vllm_importance_sampling_cap``, instead of clipping that ratio;
+  capped at ``vllm_importance_sampling_cap``, instead of clipping that ratio, and,
+  experimentally on TRL main, ``loss_type: score_centering``, TRL's score centering;
 - syncs merged LoRA weights without merging into the trained model;
 - runs a custom rollout loop (``rollout_loop``), e.g. one that delegates whole
   rollouts to an agent server, and serves the synced adapter under a fixed name
@@ -74,6 +75,7 @@ from axolotl.core.trainers.grpo.async_traces import (
     rollout_traces,
 )
 from axolotl.core.trainers.grpo.trl_compat import (
+    SCORE_CENTERING,
     TREE_ATTENTION,
     AsyncGRPOConfig,
     AsyncGRPOTrainer,
@@ -90,6 +92,7 @@ from axolotl.core.trainers.grpo.trl_compat import (
     nanmax,
     nanmin,
     patched_trainer_module,
+    score_centering_unavailable,
 )
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
@@ -107,7 +110,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-LOSS_TYPES = ("dapo", "cispo")
+LOSS_TYPES = ("dapo", "cispo", "score_centering")
 IMPORTANCE_SAMPLING_MODES = ("token_truncate", "token_mask")
 # Ratio thresholds of mu-GRPO's negative-advantage veto (arXiv 2605.17570), keyed by
 # metric suffix. 1e-4 is its default, which trainer/vLLM mismatch alone can reach.
@@ -235,7 +238,12 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
             "help": "'dapo' is TRL's objective, the PPO surrogate against the vLLM "
             "sampler's log-probabilities clipped at [1 - epsilon, 1 + epsilon_high]. "
             "'cispo' weights each token's policy gradient by the policy/sampler "
-            "ratio, bounded at vllm_importance_sampling_cap, and clips nothing."
+            "ratio, bounded at vllm_importance_sampling_cap, and clips nothing. "
+            "'score_centering' (TRL main only) is TRL's score centering: the "
+            "importance-weighted score minus its expectation over the sampler's "
+            "num_sampler_logprobs most likely tokens, dropping tokens whose ratio "
+            "falls outside [vllm_importance_sampling_clip_min, "
+            "vllm_importance_sampling_clip_max]."
         },
     )
     vllm_importance_sampling_mode: str = field(
@@ -270,9 +278,21 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
     )
 
     def __post_init__(self):
+        if SCORE_CENTERING:
+            # TRL main trains with score centering by default; loss_type decides here,
+            # so that the rollout worker requests top log-probs only when it is used.
+            self.score_centering = self.loss_type == "score_centering"
+        elif self.loss_type == "score_centering":
+            raise ValueError(score_centering_unavailable())
         super().__post_init__()
         if self.rollout_loop is not None:
             resolve_rollout_loop(self.rollout_loop)
+            if self.loss_type == "score_centering":
+                raise ValueError(
+                    "loss_type 'score_centering' centers over the vLLM sampler's top "
+                    "log-probs, which only TRL's own rollout loop requests; "
+                    f"rollout_loop {self.rollout_loop!r} does not"
+                )
         if self.multi_objective_aggregation not in AGGREGATIONS:
             raise ValueError(
                 f"multi_objective_aggregation must be one of {AGGREGATIONS}, got "
@@ -526,6 +546,30 @@ def _out_of_place_merges(model) -> dict[int, Callable[[torch.Tensor], torch.Tens
                 _merged_bias, module, adapters
             )
     return merges
+
+
+def _support_ids(
+    inputs: dict[str, torch.Tensor], mask_bool: torch.Tensor
+) -> torch.Tensor | None:
+    """Each position's top-k/top-p candidate set, padded with -1, which TRL main's
+    fused head renormalizes the log-probs over as the sampler did; None without
+    truncation, and on TRL releases, which do not record the sets."""
+    if "sampling_mask_counts" not in inputs:
+        return None
+    counts = inputs["sampling_mask_counts"][mask_bool]
+    width = int(counts.max()) if counts.numel() else 0
+    if not width:
+        return None
+    candidates = inputs["sampling_mask"][inputs["sampling_mask"] >= 0]
+    row = torch.repeat_interleave(
+        torch.arange(len(counts), device=counts.device), counts
+    )
+    col = torch.arange(len(candidates), device=counts.device) - torch.repeat_interleave(
+        counts.cumsum(0) - counts, counts
+    )
+    support = candidates.new_full((len(counts), width), -1)
+    support[row, col] = candidates
+    return support.unsqueeze(0)
 
 
 class AxolotlAsyncGRPOTrainer(
@@ -898,6 +942,13 @@ class AxolotlAsyncGRPOTrainer(
         tree_kwargs = tree_kwargs_from_batch(inputs)
         if not self._share_prefixes:
             tree_kwargs.update(sample_boundaries(tree_kwargs))
+        score_centering = self.args.loss_type == "score_centering"
+        sampler_kwargs = {}
+        support_ids = _support_ids(inputs, mask_bool)
+        if support_ids is not None:
+            sampler_kwargs["support_ids"] = support_ids
+        if score_centering:
+            sampler_kwargs["score_ids"] = inputs["sampler_ids"][mask_bool].unsqueeze(0)
 
         forward_start = time.time()
         router_kwargs = {"output_router_logits": True} if self.aux_loss_enabled else {}
@@ -906,15 +957,20 @@ class AxolotlAsyncGRPOTrainer(
             position_ids=position_ids,
             shift_labels=shift_labels,
             fused_lm_head=True,
+            **sampler_kwargs,
             **router_kwargs,
             **tree_kwargs,
         )
         log_probs = outputs.log_probs.flatten()[token_index]
         entropy = outputs.entropy.flatten()[token_index]
         self._last_forward_time_s = time.time() - forward_start
+        score_log_probs = sampler_log_probs = None
+        if score_centering:
+            score_log_probs = outputs.score_log_probs[0][token_index]
+            sampler_log_probs = inputs["sampler_log_probs"][mask_bool][token_index]
 
         per_token_loss, ratio, log_ratio = self._policy_loss(
-            log_probs, old_log_probs, advantages
+            log_probs, old_log_probs, advantages, score_log_probs, sampler_log_probs
         )
 
         loss = per_token_loss.sum()
@@ -934,17 +990,29 @@ class AxolotlAsyncGRPOTrainer(
             )
 
         with torch.no_grad():
-            cispo = self.args.loss_type == "cispo"
-            if cispo:
-                bounded = [ratio > self.args.vllm_importance_sampling_cap]
+            loss_type = self.args.loss_type
+            # Per-token values logged as their mean over trained tokens.
+            if loss_type == "cispo":
+                token_means = {
+                    "sampling/capped_token_frac": ratio
+                    > self.args.vllm_importance_sampling_cap
+                }
+            elif loss_type == "score_centering":
+                token_means = {
+                    "sampling/masked_mean": (
+                        ratio < self.args.vllm_importance_sampling_clip_min
+                    )
+                    | (ratio > self.args.vllm_importance_sampling_clip_max),
+                    "sampling/sampler_mass": sampler_log_probs.exp().sum(-1),
+                }
             else:
                 is_low_clipped = (ratio < 1 - self.epsilon_low) & (advantages < 0)
                 is_high_clipped = (ratio > 1 + self.epsilon_high) & (advantages > 0)
-                bounded = [
-                    is_low_clipped,
-                    is_high_clipped,
-                    is_low_clipped | is_high_clipped,
-                ]
+                token_means = {
+                    "clip_ratio/low_mean": is_low_clipped,
+                    "clip_ratio/high_mean": is_high_clipped,
+                    "clip_ratio/region_mean": is_low_clipped | is_high_clipped,
+                }
             count = torch.full_like(ratio.sum(), float(log_probs.numel()))
             stats = torch.stack(
                 [
@@ -952,14 +1020,14 @@ class AxolotlAsyncGRPOTrainer(
                     ((ratio - 1) - log_ratio).sum(),
                     entropy.sum(),
                     count,
-                    *(mask.float().sum() for mask in bounded),
+                    *(value.float().sum() for value in token_means.values()),
                     *negative_advantage_veto_counts(ratio, advantages, segment_id),
                 ]
             )
             stats = self.accelerator.reduce(stats, reduction="sum").tolist()
             ratio_sum, kl_sum, entropy_sum, global_count = stats[:4]
-            bounded_sums = stats[4 : 4 + len(bounded)]
-            negatives, *vetoed = stats[4 + len(bounded) :]
+            token_sums = stats[4 : 4 + len(token_means)]
+            negatives, *vetoed = stats[4 + len(token_means) :]
             local_min = ratio.min() if ratio.numel() else ratio.new_tensor(float("inf"))
             ratio_min = self.accelerator.gather(local_min.float().reshape(1)).min()
             metrics = self._metrics["train"]
@@ -975,20 +1043,10 @@ class AxolotlAsyncGRPOTrainer(
                 metrics[f"sampling/nav_veto_frac_{name}"].append(
                     (count_below, negatives)
                 )
-            if cispo:
-                if global_count:
-                    metrics["sampling/capped_token_frac"].append(
-                        bounded_sums[0] / global_count
-                    )
-            else:
-                if global_count:
-                    for name, clipped in zip(
-                        ("low_mean", "high_mean", "region_mean"),
-                        bounded_sums,
-                        strict=True,
-                    ):
-                        metrics[f"clip_ratio/{name}"].append(clipped / global_count)
-
+            if global_count:
+                for name, total in zip(token_means, token_sums, strict=True):
+                    metrics[name].append(total / global_count)
+            if loss_type == "dapo":
                 num_seq = int(segment_id.max()) + 1 if segment_id.numel() else 0
 
                 def seg_sum(vals):
@@ -1079,6 +1137,8 @@ class AxolotlAsyncGRPOTrainer(
         log_probs: torch.Tensor,
         old_log_probs: torch.Tensor,
         advantages: torch.Tensor,
+        score_log_probs: torch.Tensor | None = None,
+        sampler_log_probs: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Per-token loss, with the policy/sampler ratio and its log (detached).
 
@@ -1090,13 +1150,37 @@ class AxolotlAsyncGRPOTrainer(
         on once, so the policy ratio is taken against itself (1, never clipped) and the
         policy/sampler ratio is a detached weight, capped at
         ``vllm_importance_sampling_cap`` (``token_truncate``) or zero beyond it
-        (``token_mask``).
+        (``token_mask``). ``score_centering`` is TRL main's: the policy/sampler-weighted
+        score, zero outside [``vllm_importance_sampling_clip_min``,
+        ``vllm_importance_sampling_clip_max``], minus its expectation over the sampler's
+        top tokens (``score_log_probs`` under the policy, ``sampler_log_probs`` under
+        the sampler).
         """
         log_ratio = log_probs - old_log_probs
         if self.args.loss_type == "dapo":
             coef_1 = torch.exp(log_ratio)
             coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
             per_token_loss = -torch.min(coef_1 * advantages, coef_2 * advantages)
+            return per_token_loss, coef_1.detach(), log_ratio.detach()
+        if self.args.loss_type == "score_centering":
+            assert score_log_probs is not None and sampler_log_probs is not None
+            low = self.args.vllm_importance_sampling_clip_min
+            high = self.args.vllm_importance_sampling_clip_max
+            coef_1 = torch.exp(log_ratio)
+            is_masked = (coef_1 < low) | (coef_1 > high)
+            # arXiv 2609.20807, Appendix A.2, as TRL computes it.
+            with torch.no_grad():
+                q = sampler_log_probs.exp()
+                p = score_log_probs.exp() * (q > 0)
+                head = torch.where((p >= low * q) & (p <= high * q), p, 0.0)
+                tail_ratio = (1 - p.sum(-1)).clamp(min=1e-6) / (1 - q.sum(-1)).clamp(
+                    min=1e-6
+                )
+                tail = ((tail_ratio >= low) & (tail_ratio <= high)).float()
+                residual = head - tail.unsqueeze(-1) * p
+                weight = torch.where(is_masked, 0.0, coef_1)
+            correction = (residual * score_log_probs).sum(-1)
+            per_token_loss = -advantages * (weight * log_probs - correction)
             return per_token_loss, coef_1.detach(), log_ratio.detach()
         log_ratio = log_ratio.detach()
         ratio = torch.exp(log_ratio)

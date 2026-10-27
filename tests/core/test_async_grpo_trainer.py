@@ -17,7 +17,7 @@ from trl.experimental.async_grpo.async_rollout_worker import (
     TrainingSequence,
 )
 
-from axolotl.core.trainers.grpo import GRPOStrategy
+from axolotl.core.trainers.grpo import GRPOStrategy, async_trainer
 from axolotl.core.trainers.grpo.async_progress import RolloutProgress, RolloutStop
 from axolotl.core.trainers.grpo.async_rollout import (
     AxolotlRolloutLoop,
@@ -29,6 +29,12 @@ from axolotl.core.trainers.grpo.async_trainer import (
     AxolotlAsyncGRPOTrainer,
     SampleFilterQueue,
     negative_advantage_veto_counts,
+)
+from axolotl.core.trainers.grpo.trl_compat import (
+    SCORE_CENTERING,
+    sampler_fields,
+    unsampled_fields,
+    unsampled_sequence_fields,
 )
 from axolotl.utils.dict import DictDefault
 
@@ -333,8 +339,21 @@ def _rollout_loop(reward_funcs, processing_class=None, **kwargs):
     )
 
 
+# TRL main's _generate_one_turn also returns the sampling mask and top log-probs.
+_TURN_EXTRAS = (None, None) if SCORE_CENTERING else ()
+needs_score_centering = pytest.mark.skipif(
+    not SCORE_CENTERING, reason="score centering is on TRL main only"
+)
+
+
 def _group(group_id, contents):
-    seq = TrainingSequence([1, 2, 3], [0, 1, 1], [0.0, -1.0, -1.0], "r")
+    seq = TrainingSequence(
+        input_ids=[1, 2, 3],
+        completion_mask=[0, 1, 1],
+        old_log_probs=[0.0, -1.0, -1.0],
+        **unsampled_sequence_fields(3),
+        rollout_id="r",
+    )
     size = len(contents)
     return RolloutGroup(
         prompts=[[{"role": "user", "content": "q"}]] * size,
@@ -396,7 +415,7 @@ class TestRolloutLoop:
         )["input_ids"]
 
         async def generate_one_turn(prompt_ids):
-            return answer, [-0.5] * len(answer)
+            return answer, [-0.5] * len(answer), *_TURN_EXTRAS
 
         loop._generate_one_turn = generate_one_turn
         completion, completion_ids, sequences, *_ = loop._loop.run_until_complete(
@@ -532,6 +551,20 @@ class TestGRPOStrategy:
         assert "beta" not in kwargs
         assert "loss_type" not in kwargs
 
+    def test_async_score_centering_kwargs(self):
+        cfg = self._cfg(
+            async_prefetch=True,
+            loss_type="score_centering",
+            vllm_importance_sampling_clip_min=0.25,
+            vllm_importance_sampling_clip_max=4.0,
+            num_sampler_logprobs=16,
+        )
+        kwargs = GRPOStrategy.set_async_training_args_kwargs(cfg)
+        assert kwargs["loss_type"] == "score_centering"
+        assert kwargs["vllm_importance_sampling_clip_min"] == 0.25
+        assert kwargs["vllm_importance_sampling_clip_max"] == 4.0
+        assert kwargs["num_sampler_logprobs"] == 16
+
     def test_async_cispo_kwargs(self):
         cfg = self._cfg(
             async_prefetch=True,
@@ -663,12 +696,43 @@ class TestMergedWeightSync:
             torch.testing.assert_close(tensor, expected[name], rtol=0, atol=0)
 
 
-def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, num_groups=16, **args_kwargs):
+def _sampler_record(rng, ids, prompt_len, top_k, candidates=0):
+    """What vLLM reports with ``logprobs=top_k``: at each completion token, the sampled
+    token and ``top_k - 1`` others, with log-probs that leave mass to the tail. With
+    ``candidates``, each token was drawn from a top-k/top-p set of that many more."""
+    tops = [{} for _ in range(prompt_len)]
+    sampling_mask: list[list[int]] = [[] for _ in range(prompt_len)]
+    for token in ids[prompt_len:]:
+        others = rng.choice(
+            np.setdiff1d(np.arange(100, 1000), [token]),
+            size=top_k - 1 + candidates,
+            replace=False,
+        )
+        log_probs = np.log(rng.dirichlet(np.ones(top_k + 1)))[:top_k]
+        top_ids = [int(token), *map(int, others[: top_k - 1])]
+        tops.append(dict(zip(top_ids, map(float, log_probs), strict=True)))
+        sampling_mask.append(
+            sorted([*top_ids, *map(int, others[top_k - 1 :])]) if candidates else []
+        )
+    return types.SimpleNamespace(sampling_mask=sampling_mask, sampler_logprobs=tops)
+
+
+def _cpu_trainer(
+    tmp_path,
+    monkeypatch,
+    old_log_probs,
+    num_groups=16,
+    sampler_top_k=0,
+    sampler_candidates=0,
+    **args_kwargs,
+):
     """A SmolLM2 LoRA trainer on CPU over 16 prompts and ``num_groups`` groups of 4
     stub rollouts.
 
     ``old_log_probs(g)`` sets the sampled log-probabilities of a group's ``g``-th
-    completion; group ids divisible by 4 carry no reward signal.
+    completion; group ids divisible by 4 carry no reward signal. ``sampler_top_k``
+    records that many of the sampler's top tokens at every completion token, and
+    ``sampler_candidates`` that the sampler drew from that many more.
     """
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
@@ -703,6 +767,19 @@ def _cpu_trainer(tmp_path, monkeypatch, old_log_probs, num_groups=16, **args_kwa
                         [0] * len(prompt_ids) + [1] * len(completion), dtype=np.int64
                     ),
                     old_log_probs=np.full(len(ids), old_log_probs(g), np.float32),
+                    **(
+                        sampler_fields(
+                            _sampler_record(
+                                rng,
+                                ids,
+                                len(prompt_ids),
+                                sampler_top_k,
+                                sampler_candidates,
+                            )
+                        )
+                        if sampler_top_k
+                        else unsampled_fields(len(ids))
+                    ),
                     advantage=0.0 if group_id % 4 == 0 else float(g) - 1.5,
                     model_version=0,
                     group_id=group_id,
@@ -862,6 +939,11 @@ def test_default_loss_is_trls(
         tmp_path, monkeypatch, old_log_probs=lambda g: (-12.0, -8.0, -12.0, -8.0)[g]
     )
     assert trainer.args.loss_type == "dapo"
+    if SCORE_CENTERING:
+        # TRL main's clipped objective also drops tokens outside its importance
+        # sampling bounds, which dapo does not; open them so the objectives compare.
+        trainer.args.vllm_importance_sampling_clip_min = 0.0
+        trainer.args.vllm_importance_sampling_clip_max = float("inf")
     row = TreeRow()
     for sample in samples[4:12]:
         row.add(
@@ -869,6 +951,7 @@ def test_default_loss_is_trls(
                 "input_ids": sample.input_ids,
                 "completion_mask": sample.completion_mask,
                 "old_log_probs": sample.old_log_probs,
+                **unsampled_fields(len(sample.input_ids)),
                 "advantage": sample.advantage,
                 "group_id": sample.group_id,
                 "metrics": sample.metrics,
@@ -901,6 +984,154 @@ def test_default_loss_is_trls(
     for key, value in trl_metrics.items():
         if key.startswith(("clip_ratio/", "ratio", "kl", "entropy")):
             assert metrics[key] == pytest.approx(value), key
+
+
+def test_score_centering_centers_the_masked_score():
+    """Over the whole vocabulary, a constant advantage's expected gradient is zero,
+    although masking leaves the importance-weighted score alone off center."""
+    torch.manual_seed(0)
+    vocab = 6
+    logits = torch.randn(vocab, requires_grad=True)
+    sampler = torch.log_softmax(torch.randn(vocab) * 2, -1)
+    trainer = types.SimpleNamespace(
+        args=types.SimpleNamespace(
+            loss_type="score_centering",
+            vllm_importance_sampling_clip_min=0.5,
+            vllm_importance_sampling_clip_max=5.0,
+        )
+    )
+    policy = torch.log_softmax(logits, -1)
+    ratio = (policy - sampler).exp().detach()
+    masked = (ratio < 0.5) | (ratio > 5.0)
+    assert masked.any() and not masked.all()
+    # Every token sampled at the same position, weighted by how often it is drawn.
+    per_token_loss, _, _ = AxolotlAsyncGRPOTrainer._policy_loss(
+        trainer,
+        policy,
+        sampler,
+        torch.ones(vocab),
+        policy.expand(vocab, vocab),
+        sampler.expand(vocab, vocab),
+    )
+    (centered,) = torch.autograd.grad((sampler.exp() * per_token_loss).sum(), logits)
+    torch.testing.assert_close(centered, torch.zeros(vocab), rtol=0, atol=1e-6)
+    weight = torch.where(masked, 0.0, ratio)
+    (uncentered,) = torch.autograd.grad(
+        (sampler.exp() * -weight * torch.log_softmax(logits, -1)).sum(), logits
+    )
+    assert uncentered.abs().max() > 1e-2
+
+
+@needs_score_centering
+def test_score_centering_is_trls(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
+):
+    """loss_type score_centering computes TRL main's score-centering loss, with the
+    log-probs renormalized over each token's top-k/top-p candidates as TRL does."""
+    from trl.experimental.async_grpo.async_grpo_trainer import (
+        AsyncGRPOTrainer,
+        DataCollatorForRollout,
+    )
+    from trl.experimental.async_grpo.packing import TreeRow
+
+    trainer, _, _, samples = _cpu_trainer(
+        tmp_path,
+        monkeypatch,
+        # Around the policy's log-prob over 12 candidates, on both sides of the mask.
+        old_log_probs=lambda g: (-3.0, -1.5, -3.0, -1.5)[g],
+        sampler_top_k=4,
+        sampler_candidates=8,
+        loss_type="score_centering",
+    )
+    assert trainer.args.score_centering
+    row = TreeRow()
+    for sample in samples[4:12]:
+        row.add(
+            {
+                key: getattr(sample, key)
+                for key in (
+                    "input_ids",
+                    "completion_mask",
+                    "old_log_probs",
+                    "sampling_mask",
+                    "sampler_ids",
+                    "sampler_log_probs",
+                    "advantage",
+                    "group_id",
+                    "metrics",
+                )
+            }
+        )
+    batch = DataCollatorForRollout(pad_token_id=trainer.processing_class.pad_token_id)(
+        [[row]]
+    )
+    model = trainer.model
+    model.train()
+    trainer.current_gradient_accumulation_steps = 1
+    params = [p for p in model.parameters() if p.requires_grad]
+    results = []
+    for compute_loss in (
+        AxolotlAsyncGRPOTrainer.compute_loss,
+        AsyncGRPOTrainer.compute_loss,
+    ):
+        model.zero_grad()
+        trainer._metrics["train"].clear()
+        loss = compute_loss(trainer, model, batch)
+        loss.backward()
+        metrics = {k: v[0] for k, v in trainer._metrics["train"].items()}
+        results.append((loss.detach(), [p.grad.clone() for p in params], metrics))
+    (loss, grads, metrics), (trl_loss, trl_grads, trl_metrics) = results
+    torch.testing.assert_close(loss, trl_loss, rtol=0, atol=0)
+    for grad, trl_grad in zip(grads, trl_grads, strict=True):
+        torch.testing.assert_close(grad, trl_grad, rtol=0, atol=0)
+    assert batch["sampling_mask_counts"].max() == 12
+    assert 0 < trl_metrics["sampling/masked_mean"] < 1
+    for key in ("sampling/masked_mean", "sampling/sampler_mass", "ratio", "kl"):
+        assert metrics[key] == pytest.approx(trl_metrics[key]), key
+
+
+@needs_score_centering
+def test_trains_with_score_centering_on_cpu(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
+):
+    trainer, _, _, _ = _cpu_trainer(
+        tmp_path,
+        monkeypatch,
+        old_log_probs=lambda g: -9.0,
+        sampler_top_k=4,
+        loss_type="score_centering",
+    )
+    params = dict(trainer.model.named_parameters())
+    trained = {n: p.detach().clone() for n, p in params.items() if p.requires_grad}
+    trainer.train()
+    logged = {key for log in trainer.state.log_history for key in log}
+    assert {"sampling/masked_mean", "sampling/sampler_mass"} <= logged
+    params = dict(trainer.model.named_parameters())
+    assert all(not torch.equal(trained[n], params[n].detach()) for n in trained)
+
+
+class TestScoreCenteringConfig:
+    def test_needs_trl_main(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(async_trainer, "SCORE_CENTERING", False)
+        with pytest.raises(ValueError, match="only TRL main has"):
+            AxolotlAsyncGRPOConfig(
+                output_dir=str(tmp_path), loss_type="score_centering"
+            )
+
+    @needs_score_centering
+    @pytest.mark.parametrize("loss_type", ["dapo", "cispo", "score_centering"])
+    def test_loss_type_decides_trls_objective(self, tmp_path, loss_type):
+        args = AxolotlAsyncGRPOConfig(output_dir=str(tmp_path), loss_type=loss_type)
+        assert args.score_centering is (loss_type == "score_centering")
+
+    def test_custom_rollout_loops_cannot_score_center(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(async_trainer, "SCORE_CENTERING", True)
+        with pytest.raises(ValueError, match="only TRL's own rollout loop"):
+            AxolotlAsyncGRPOConfig(
+                output_dir=str(tmp_path),
+                loss_type="score_centering",
+                rollout_loop="axolotl.core.trainers.ebft.async_rollout.EBFTRolloutLoop",
+            )
 
 
 class TestTreeFlashAttn:
@@ -1236,6 +1467,7 @@ def test_staleness_zero_trains_on_fresh_samples_and_reports_rollouts(
                 [0] * len(prompt_ids) + [1] * len(completion), dtype=np.int64
             ),
             old_log_probs=np.full(len(prompt_ids) + len(completion), -1.0),
+            **unsampled_fields(len(prompt_ids) + len(completion)),
             advantage=float(g) - 1.5,
             model_version=version,
             group_id=index // 4,

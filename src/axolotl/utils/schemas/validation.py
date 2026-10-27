@@ -2878,10 +2878,35 @@ class GRPOVllmValidationMixin:
                     "`vllm_importance_sampling_mode` must be `token_truncate` or "
                     "`token_mask`"
                 )
+        elif trl.loss_type == "score_centering":
+            from axolotl.core.trainers.grpo import trl_compat
+
+            if not trl_compat.SCORE_CENTERING:
+                problems.append(trl_compat.score_centering_unavailable())
+            eps_options = [
+                f"`{option}`"
+                for option in ("epsilon", "epsilon_high")
+                if getattr(trl, option) is not None
+            ]
+            if eps_options or is_options:
+                problems.append(
+                    "`loss_type: score_centering` ignores "
+                    f"{', '.join(eps_options + is_options)}; it drops the tokens whose "
+                    "policy/sampler ratio falls outside "
+                    "`vllm_importance_sampling_clip_min` / "
+                    "`vllm_importance_sampling_clip_max`"
+                )
+            if structured_ebft or getattr(self, "nemo_gym_multi_turn", None):
+                problems.append(
+                    "`loss_type: score_centering` centers over the vLLM sampler's top "
+                    "log-probs, which only TRL's own rollout loop requests; EBFT and "
+                    "NeMo Gym multi-turn rollouts run their own"
+                )
         else:
             problems.append(
-                "`loss_type` must be `dapo` (TRL's clipped objective, the default) or "
-                "`cispo` (policy gradient weighted by the capped policy/sampler ratio)"
+                "`loss_type` must be `dapo` (TRL's clipped objective, the default), "
+                "`cispo` (policy gradient weighted by the capped policy/sampler "
+                "ratio), or `score_centering` (TRL's score centering, TRL main only)"
             )
         if trl.importance_sampling_level not in (None, "token"):
             problems.append("only `importance_sampling_level: token` is supported")
@@ -2894,14 +2919,20 @@ class GRPOVllmValidationMixin:
                 "`scale_rewards: batch` is not supported: groups are scored as they "
                 "finish, so use `group` or `none`"
             )
-        if (
-            trl.vllm_importance_sampling_clip_min is not None
-            or trl.vllm_importance_sampling_clip_max is not None
-        ):
-            problems.append(
-                "`vllm_importance_sampling_clip_min/max` are not supported; with "
-                "`loss_type: cispo`, use `vllm_importance_sampling_cap`"
-            )
+        if trl.loss_type != "score_centering":
+            if (
+                trl.vllm_importance_sampling_clip_min is not None
+                or trl.vllm_importance_sampling_clip_max is not None
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_clip_min/max` bound "
+                    "`loss_type: score_centering` only; with `loss_type: cispo`, use "
+                    "`vllm_importance_sampling_cap`"
+                )
+            if trl.num_sampler_logprobs is not None:
+                problems.append(
+                    "`num_sampler_logprobs` is for `loss_type: score_centering` only"
+                )
         if trl.use_liger_loss:
             problems.append("`use_liger_loss` is not supported")
         if trl.entropy_coef or trl.use_adaptive_entropy:

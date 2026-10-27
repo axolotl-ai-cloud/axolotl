@@ -1516,7 +1516,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.loss-type",),
         "trl__loss_type",
         "str",
-        "Loss formulation to use. Synchronous GRPO: grpo, bnpo, dr_grpo, dapo, cispo, and the others TRL's GRPOTrainer supports. Async GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler) or cispo (policy gradient weighted by the policy/sampler ratio, capped at vllm_importance_sampling_cap).",
+        "Loss formulation to use. Synchronous GRPO: grpo, bnpo, dr_grpo, dapo, cispo, and the others TRL's GRPOTrainer supports. Async GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler), cispo (policy gradient weighted by the policy/sampler ratio, capped at vllm_importance_sampling_cap), or, experimentally and with TRL installed from main, score_centering (TRL's score centering with masked importance sampling).",
     ),
     (
         ("--trl.mask-truncated-completions/--no-trl.mask-truncated-completions",),
@@ -1564,13 +1564,19 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.vllm-importance-sampling-clip-min",),
         "trl__vllm_importance_sampling_clip_min",
         "float",
-        "Lower clip bound for the vLLM/training importance-sampling ratio.",
+        "Lower clip bound for the vLLM/training importance-sampling ratio. Async GRPO with loss_type score_centering: tokens whose ratio is below it are dropped (TRL's default 0.5).",
     ),
     (
         ("--trl.vllm-importance-sampling-clip-max",),
         "trl__vllm_importance_sampling_clip_max",
         "float",
-        "Upper clip bound for the vLLM/training importance-sampling ratio.",
+        "Upper clip bound for the vLLM/training importance-sampling ratio. Async GRPO with loss_type score_centering: tokens whose ratio is above it are dropped (TRL's default 5.0).",
+    ),
+    (
+        ("--trl.num-sampler-logprobs",),
+        "trl__num_sampler_logprobs",
+        "int",
+        "Async GRPO with loss_type score_centering: how many of the vLLM sampler's most likely tokens, with their log-probs, are requested for every generated token to center the score over (TRL's default 8). The server's --max-logprobs bounds it.",
     ),
     (
         ("--trl.log-multimodal/--no-trl.log-multimodal",),
