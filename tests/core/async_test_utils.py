@@ -1,10 +1,13 @@
 """CPU stand-ins for async GRPO tests: TRL's FA3 tree attention, a rollout worker
 fed from a list, a weight transfer that records what it was sent, and a parity
-check of packed rows against samples scored alone."""
+check of packed rows against samples scored alone. Also the checkpointing and
+activation offloading settings both GRPO trainers are checked under."""
 
+import contextlib
 import queue
 
 import numpy as np
+import pytest
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
@@ -235,3 +238,52 @@ class AttentionForwards(TorchDispatchMode):
         if "scaled_dot_product" in name and "backward" not in name:
             self.count += 1
         return func(*args, **(kwargs or {}))
+
+
+# id: (trainer arguments, apply_selective_checkpointing arguments)
+CHECKPOINTING_AND_OFFLOADING = {
+    "checkpointing": ({"gradient_checkpointing": True}, None),
+    "offloading": ({"activation_offloading": True}, None),
+    "both": ({"gradient_checkpointing": True, "activation_offloading": True}, None),
+    "hidden_states": (
+        {"gradient_checkpointing": True, "activation_offloading": "hidden_states"},
+        None,
+    ),
+    "selective": ({"gradient_checkpointing": True}, {"save": ["attention"]}),
+    "selective_offload": (
+        {"gradient_checkpointing": True},
+        {"save": ["attention"], "offload": True},
+    ),
+    "selective_and_offloading": (
+        {"gradient_checkpointing": True, "activation_offloading": True},
+        {"save": ["attention"]},
+    ),
+}
+
+checkpointing_and_offloading = pytest.mark.parametrize(
+    ("args", "sac"),
+    list(CHECKPOINTING_AND_OFFLOADING.values()),
+    ids=list(CHECKPOINTING_AND_OFFLOADING),
+)
+
+
+def assert_step_matches_plain(trainer, args, sac, plain, step):
+    """``step``, the (loss, gradients, attention forwards) of ``trainer`` set up with
+    ``args`` and ``sac``, gives ``plain``'s loss and gradients. Checkpointing
+    recomputes attention in backward unless selective checkpointing saves it."""
+    loss, grads, attention = plain
+    step_loss, step_grads, step_attention = step
+    assert trainer.model.is_gradient_checkpointing is bool(
+        args.get("gradient_checkpointing")
+    )
+    offloads = not isinstance(
+        trainer.activation_offload_context, contextlib.nullcontext
+    )
+    assert offloads is bool(args.get("activation_offloading"))
+    recomputes = args.get("gradient_checkpointing") and sac is None
+    assert step_attention == (2 if recomputes else 1) * attention > 0
+    assert any(g.abs().sum() > 0 for g in grads.values())
+    torch.testing.assert_close(step_loss, loss, rtol=0, atol=0)
+    assert step_grads.keys() == grads.keys()
+    for name, grad in grads.items():
+        torch.testing.assert_close(step_grads[name], grad, msg=name)

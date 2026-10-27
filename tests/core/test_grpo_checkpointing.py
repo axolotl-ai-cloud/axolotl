@@ -1,33 +1,16 @@
 """Checkpointing, selective checkpointing and activation offloading in the synchronous
 GRPO trainer: one training step gives a plain step's loss and LoRA gradients."""
 
-import contextlib
-
-import pytest
 import torch
-from async_test_utils import AttentionForwards, offload_activations_on_cpu
+from async_test_utils import (
+    AttentionForwards,
+    assert_step_matches_plain,
+    checkpointing_and_offloading,
+    offload_activations_on_cpu,
+)
 
 MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 PROMPT = [{"role": "user", "content": "What is 2+2?"}]
-
-CHECKPOINTING_AND_OFFLOADING = {
-    "checkpointing": ({"gradient_checkpointing": True}, None),
-    "offloading": ({"activation_offloading": True}, None),
-    "both": ({"gradient_checkpointing": True, "activation_offloading": True}, None),
-    "hidden_states": (
-        {"gradient_checkpointing": True, "activation_offloading": "hidden_states"},
-        None,
-    ),
-    "selective": ({"gradient_checkpointing": True}, {"save": ["attention"]}),
-    "selective_offload": (
-        {"gradient_checkpointing": True},
-        {"save": ["attention"], "offload": True},
-    ),
-    "selective_and_offloading": (
-        {"gradient_checkpointing": True, "activation_offloading": True},
-        {"save": ["attention"]},
-    ),
-}
 
 
 def _length_reward(completions, **kwargs):
@@ -99,35 +82,16 @@ def _step(trainer, inputs):
     return loss, grads, attention.count
 
 
-@pytest.mark.parametrize(
-    ("args", "sac"),
-    list(CHECKPOINTING_AND_OFFLOADING.values()),
-    ids=list(CHECKPOINTING_AND_OFFLOADING),
-)
+@checkpointing_and_offloading
 def test_checkpointing_and_offloading_keep_the_gradients(
     download_smollm2_135m_instruct_model, tmp_path, monkeypatch, args, sac
 ):
-    """Checkpointing recomputes attention in backward unless selective checkpointing
-    saves it, including after TRL's scoring pass turned checkpointing off and on."""
+    """Including after TRL's scoring pass turned checkpointing off and on."""
     offload_activations_on_cpu(monkeypatch)
     plain = _trainer(tmp_path / "plain")
     plain.model.train()
     inputs = plain._generate_and_score_completions(_prompts(plain))
     assert inputs["advantages"].abs().sum() > 0
-    loss, grads, attention = _step(plain, inputs)
-
+    plain_step = _step(plain, inputs)
     variant = _trainer(tmp_path / "variant", sac=sac, **args)
-    variant_loss, variant_grads, variant_attention = _step(variant, inputs)
-    assert variant.model.is_gradient_checkpointing is bool(
-        args.get("gradient_checkpointing")
-    )
-    offloads = not isinstance(
-        variant.activation_offload_context, contextlib.nullcontext
-    )
-    assert offloads is bool(args.get("activation_offloading"))
-    recomputes = args.get("gradient_checkpointing") and sac is None
-    assert variant_attention == (2 if recomputes else 1) * attention > 0
-    torch.testing.assert_close(variant_loss, loss, rtol=0, atol=0)
-    assert variant_grads.keys() == grads.keys()
-    for name, grad in grads.items():
-        torch.testing.assert_close(variant_grads[name], grad, msg=name)
+    assert_step_matches_plain(variant, args, sac, plain_step, _step(variant, inputs))
