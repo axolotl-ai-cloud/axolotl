@@ -596,6 +596,23 @@ class TestAsyncGRPOCompat:
         with pytest.raises(ValueError, match=match):
             validate_config(self._cfg(min_base_cfg, trl=trl, **extra))
 
+    def test_generation_groups_need_not_fill_a_step(self, min_base_cfg):
+        """Async GRPO packs trained samples by token budget, apart from the groups
+        the rollout worker generates, so the synchronous batch shape does not apply."""
+        validated = validate_config(
+            self._cfg(
+                min_base_cfg,
+                trl={"num_generations": 8, "token_budget": 4096},
+                micro_batch_size=1,
+                gradient_accumulation_steps=1,
+            )
+        )
+        assert validated.trl.num_generations == 8
+
+    def test_groups_still_need_two_generations(self, min_base_cfg):
+        with pytest.raises(ValueError, match="num_generations >= 2"):
+            validate_config(self._cfg(min_base_cfg, trl={"num_generations": 1}))
+
     @pytest.fixture
     def score_centering(self, monkeypatch):
         from axolotl.core.trainers.grpo import trl_compat
