@@ -35,9 +35,12 @@ Any model type in liger-kernel's native dispatch table (`liger_kernel.transforme
 
 On top of the native table, axolotl hand-patches these types (not covered upstream, or extended with kernels the native path lacks):
 
+- cohere_compass
 - gemma4_unified / gemma4_unified_text
+- glm4_moe_lite
 - granitemoe
 - jamba
+- mistral3 / ministral3
 - qwen3_5 / qwen3_5_moe (adds the fused gated-RMSNorm kernel for linear-attention layers)
 
 ## Citation
