@@ -23,6 +23,7 @@ from trl.experimental.async_grpo.async_rollout_worker import (
 from axolotl.core.trainers.grpo import GRPOStrategy, async_trainer
 from axolotl.core.trainers.grpo.async_progress import RolloutProgress, RolloutStop
 from axolotl.core.trainers.grpo.async_rollout import (
+    GROUP_ROWS,
     AxolotlAsyncRolloutWorker,
     AxolotlRolloutLoop,
     RewardProcessPool,
@@ -94,12 +95,15 @@ class TestComputeGroupAdvantages:
             compute_group_advantages(np.zeros((1, 2)), ONES, scale_rewards="batch")
 
 
-def _sample(group_id, advantage, last_token=2, model_version=0, length=3):
+def _sample(
+    group_id, advantage, last_token=2, model_version=0, length=3, group_rows=None
+):
     return types.SimpleNamespace(
         group_id=group_id,
         advantage=advantage,
         input_ids=np.array([5] * (length - 1) + [last_token]),
         model_version=model_version,
+        metrics={} if group_rows is None else {GROUP_ROWS: group_rows},
     )
 
 
@@ -151,11 +155,11 @@ class TestRolloutProgress:
 
 
 class TestSampleFilterQueue:
-    def _filter(self, samples, **kwargs):
+    def _filter(self, samples, progress=None, **kwargs):
         inner = queue.Queue()
         for sample in samples:
             inner.put(sample)
-        progress, metrics = _progress(), defaultdict(list)
+        progress, metrics = progress or _progress(), defaultdict(list)
         options = {"skip_zero_advantage": True, "stop_token_ids": None, **kwargs}
         filtered = SampleFilterQueue(inner, progress, metrics, **options)
         return filtered, progress.consumed, metrics
@@ -198,6 +202,46 @@ class TestSampleFilterQueue:
         assert consumed == {0, 1}
         assert metrics["sample/dropped_stale_total"] == [1.0]
         assert metrics["sample/dropped_oversize_total"] == [1.0]
+
+    def test_a_group_that_keeps_a_row_is_not_dropped(self):
+        """One prompt with advantages [0, -1, +1]: the zero-advantage row is dropped,
+        but its group still trains, so a pass over the one prompt has not stalled."""
+        rows = [_sample(0, a, group_rows=3) for a in (0.0, -1.0, 1.0)]
+        filtered, consumed, metrics = self._filter(
+            rows, progress=_progress(stall_groups=1)
+        )
+        assert filtered.get(timeout=1).advantage == -1.0
+        assert filtered.get(timeout=1).advantage == 1.0
+        assert consumed == set()
+        assert metrics["sample/dropped_zero_adv_total"] == [1.0]
+
+    def test_a_group_is_dropped_once_its_last_row_is(self):
+        """Rows of different groups interleave in the queue."""
+        filtered, consumed, _ = self._filter(
+            [
+                _sample(0, 0.0, group_rows=2),
+                _sample(1, 1.0, group_rows=1),
+                _sample(0, 0.0, group_rows=2),
+            ]
+        )
+        kept = filtered.get(timeout=1)
+        assert kept.group_id == 1 and consumed == set()
+        assert GROUP_ROWS not in kept.metrics
+        with pytest.raises(queue.Empty):
+            filtered.get(timeout=0.2)
+        assert consumed == {0}
+
+    def test_the_epoch_limit_waits_for_a_groups_last_row(self):
+        consumed: set[int] = set()
+        progress = RolloutProgress(
+            consumed, epochs_done=lambda: len(consumed) >= 1, stall_groups=None
+        )
+        filtered, _, _ = self._filter(
+            [_sample(0, 0.0, group_rows=2), _sample(0, 1.0, group_rows=2)],
+            progress=progress,
+        )
+        assert filtered.get(timeout=1).advantage == 1.0
+        assert progress.stop is None
 
     def test_timeout_spans_dropped_samples(self):
         filtered, _, _ = self._filter([_sample(0, 0.0)])
@@ -399,6 +443,7 @@ class TestRolloutLoop:
         assert samples[0].advantage < 0 < samples[1].advantage
         assert samples[0].metrics["rewards/length_reward"] == 1.0
         assert {s.group_id for s in samples} == {7}
+        assert [s.metrics[GROUP_ROWS] for s in samples] == [2, 2]
 
     @pytest.fixture
     def chatml_tokenizer(self, download_smollm2_135m_instruct_model):

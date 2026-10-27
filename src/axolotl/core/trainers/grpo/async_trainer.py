@@ -59,6 +59,7 @@ from axolotl.core.trainers.grpo.async_progress import (
 )
 from axolotl.core.trainers.grpo.async_rollout import (
     AGGREGATIONS,
+    GROUP_ROWS,
     REWARD_SCALINGS,
     AxolotlAsyncRolloutWorker,
     AxolotlRolloutLoop,
@@ -352,9 +353,10 @@ class SampleFilterQueue:
       forward and backward (``skip_zero_advantage_batches``);
     - ``truncated``: masked out of the loss under ``mask_truncated_completions``.
 
-    Each drop counts its prompt group as consumed in ``progress``, so epochs and
-    resume stay keyed on the prompts generated, and may end the stream (see
-    ``async_progress``).
+    A group whose every row was dropped counts as consumed in ``progress``, so
+    epochs and resume stay keyed on the prompts generated, and may end the stream
+    (see ``async_progress``). Rows are dropped one by one, so a group is settled
+    once all of them arrived; one that keeps a row is counted when it trains.
     """
 
     def __init__(
@@ -377,6 +379,8 @@ class SampleFilterQueue:
         self._token_budget = token_budget
         self._skip_zero_advantage = skip_zero_advantage
         self._stop_token_ids = stop_token_ids
+        # group_id -> (rows seen, whether one was kept), for groups still arriving
+        self._arriving: dict[int, tuple[int, bool]] = {}
 
     def qsize(self) -> int:
         return self._inner.qsize()
@@ -412,14 +416,32 @@ class SampleFilterQueue:
                 None if deadline is None else max(0.0, deadline - time.monotonic())
             )
             sample = self._inner.get(timeout=remaining)
+            group_rows = sample.metrics.pop(GROUP_ROWS, None)
             reason = self._drop_reason(sample)
             self._metrics["sample/dropped_frac"].append(
                 (float(reason is not None), 1.0)
             )
+            if reason is not None:
+                self._metrics[f"sample/dropped_{reason}_total"].append(1.0)
+            self._settle(sample.group_id, group_rows, reason)
             if reason is None:
                 return sample
-            self._metrics[f"sample/dropped_{reason}_total"].append(1.0)
-            self._progress.drop(sample.group_id, reason)
+
+    def _settle(self, group_id: int, group_rows: int | None, reason: str | None):
+        """Report ``group_id`` as dropped once its last row arrived and none was kept.
+
+        Rows without a group size (loops that do not record it) settle alone.
+        """
+        if group_rows is None:
+            if reason is not None:
+                self._progress.drop(group_id, reason)
+            return
+        seen, kept = self._arriving.pop(group_id, (0, False))
+        seen, kept = seen + 1, kept or reason is None
+        if seen < group_rows:
+            self._arriving[group_id] = (seen, kept)
+        elif not kept and reason is not None:
+            self._progress.drop(group_id, reason)
 
 
 def _use_loaded_model(model: PreTrainedModel):

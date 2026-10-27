@@ -37,6 +37,9 @@ REWARD_SCALINGS = ("group", "none")
 # Key in `RolloutSample.metrics` carrying what the trainer needs to score a sample whose
 # advantage is still pending; the trainer pops it before metrics are logged.
 SCORE_PAYLOAD = "_trainer_score"
+# Rows a sample's group produced, in its metrics until the trainer's sample filter
+# takes it out, so the filter can tell when it has seen the whole group.
+GROUP_ROWS = "_group_rows"
 
 
 def compute_group_advantages(
@@ -491,6 +494,7 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
     def _make_sample(
         group, prompt, completion, seq, advantage, metrics
     ) -> RolloutSample:
+        group_rows = sum(len(sequences) for sequences in group.completions_sequences)
         return RolloutSample(
             prompt=prompt,
             completion=completion,
@@ -501,7 +505,7 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
             advantage=float(advantage),
             model_version=group.model_version,
             group_id=group.group_id,
-            metrics=dict(metrics),
+            metrics={**metrics, GROUP_ROWS: group_rows},
         )
 
     @staticmethod
