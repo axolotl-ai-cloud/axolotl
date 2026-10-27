@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+export COVERAGE_CORE=sysmon
+
 case "${NF4_TEST_STACK:-pinned}" in
   pinned|nightly) ;;
   *) echo "Unknown NF4_TEST_STACK: $NF4_TEST_STACK" >&2; exit 1 ;;

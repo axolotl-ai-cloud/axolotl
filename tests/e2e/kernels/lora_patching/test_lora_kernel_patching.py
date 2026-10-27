@@ -58,7 +58,9 @@ MODEL_CONFIGS = [
     {
         "name": "axolotl-ai-co/tiny-gemma2-137m",
         "expected_activation": apply_lora_mlp_geglu,
-        "dtype": torch.float16,
+        "dtype": torch.float32,
+        # erf vs tanh GELU differs by ~5e-3 in fp32 logits; 1e-2 would hide it
+        "tol": 1e-3,
     },
 ]
 
@@ -352,21 +354,7 @@ def get_test_inputs(model, seq_length=20):
     )
 
 
-@pytest.mark.parametrize(
-    "model_config",
-    [
-        pytest.param(
-            config,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="fused GEGLU is exact-erf GELU; gemma2 uses gelu_pytorch_tanh",
-            ),
-        )
-        if config["expected_activation"] is apply_lora_mlp_geglu
-        else config
-        for config in MODEL_CONFIGS
-    ],
-)
+@pytest.mark.parametrize("model_config", MODEL_CONFIGS)
 def test_model_architecture(model_config):
     """Test LoRA kernel patches across different model architectures."""
     # Load model with appropriate dtype
@@ -397,7 +385,8 @@ def test_model_architecture(model_config):
         patched_output = patched_model(inputs).logits
 
     # Check outputs match
-    assert torch.allclose(original_output, patched_output, atol=1e-2, rtol=1e-2), (
+    tol = model_config.get("tol", 1e-2)
+    assert torch.allclose(original_output, patched_output, atol=tol, rtol=tol), (
         f"Outputs don't match for {model_config['name']}"
     )
 

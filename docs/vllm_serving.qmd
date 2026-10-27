@@ -14,7 +14,12 @@ execute:
 
 GRPO (Group Relative Policy Optimization) trains a language model by generating completions, scoring them with reward functions, and updating the policy to favor higher-reward outputs. The generation step is the bottleneck: producing thousands of tokens per training step with the policy model is slow using standard HuggingFace generation.
 
-Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM's native OpenAI-compatible HTTP API. In [colocate mode](#sec-colocate-mode), the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. Axolotl requires `vllm>=0.30.0`. vLLM 0.31.0 caps `transformers<5.18`, so with Axolotl's transformers 5.20 pin the `vllm` extra resolves to vLLM 0.30.0. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.
+Axolotl uses [vLLM](https://github.com/vllm-project/vllm) as a high-throughput generation backend, in one of two modes:
+
+- **[Server mode](#sec-server-mode)**: vLLM runs as a separate process on dedicated GPUs (or [dedicated nodes](#sec-multi-node)) and serves completions over its OpenAI-compatible HTTP API.
+- **[Colocate mode](#sec-colocate-mode)**: the trainer hosts a vLLM engine on its own GPU, so a single GPU is enough.
+
+Axolotl requires `vllm>=0.30.0`.
 
 ```
 ┌──────────────────────┐       HTTP        ┌──────────────────────┐
@@ -87,6 +92,8 @@ trl:
   vllm_server_timeout: 300
 ```
 
+For a full GRPO config with rewards, dataset, LoRA sync, and async generation, see the [GRPO Quick Start](grpo.qmd#quick-start).
+
 ### Multi-GPU vLLM
 
 For larger models, use tensor parallelism across multiple GPUs:
@@ -106,6 +113,52 @@ CUDA_VISIBLE_DEVICES=0,1 axolotl train grpo_config.yaml --num-processes 2
 ::: {.callout-note}
 Due to how TRL maps vLLM device indices, the vLLM instance should use the **last** N GPUs (highest device indices), while training uses the first N.
 :::
+
+`data_parallel_size` runs that many replicas of the model behind the same endpoint, for more generation throughput when the model already fits on `tensor_parallel_size` GPUs.
+
+## Multi-Node Serving {#sec-multi-node}
+
+When one node cannot generate fast enough, or cannot hold the model, `axolotl vllm-serve` can span several nodes as a single vLLM server. Node 0 runs the API server and dispatches to headless engines on the other nodes. The trainer only talks to node 0, and weight sync reaches every engine through it.
+
+For example, a 16-GPU setup (2 nodes x 8 GPUs) running 8 replicas at TP=2 (4 replicas per node). Use the same config on every node and launch each with its `--node-rank`:
+
+```yaml
+vllm:
+  tensor_parallel_size: 2
+  data_parallel_size: 8     # total replicas across all nodes; GPUs = TP x PP x DP = 16
+  nnodes: 2
+  master_addr: 10.0.0.1     # node 0
+
+trl:
+  vllm_server_host: 10.0.0.1
+  vllm_server_port: 8000
+```
+
+```bash
+# Node 0 (10.0.0.1): API server + 4 replicas
+axolotl vllm-serve grpo_config.yaml --node-rank 0
+
+# Node 1: 4 headless replicas
+axolotl vllm-serve grpo_config.yaml --node-rank 1
+
+# Trainer node (10.0.0.3, must be reachable from the vLLM nodes).
+# Start once http://10.0.0.1:8000/health returns 200.
+VLLM_HOST_IP=10.0.0.3 axolotl train grpo_config.yaml
+```
+
+| Layout | Config | Link between vLLM nodes |
+|--------|--------|-------------------------|
+| Whole replicas on each node (recommended) | `data_parallel_size` is a multiple of `nnodes` | Ethernet is fine for dense models (replicas are independent). MoE models synchronize expert layers across all replicas every forward pass, so use InfiniBand or RoCE |
+| One replica spanning nodes (model does not fit on one node) | `data_parallel_size: 1`, `tensor_parallel_size` = GPUs per node, `pipeline_parallel_size` = `nnodes` | InfiniBand or RoCE |
+
+Requirements:
+
+- Every node needs the same model, packages, and config.
+- **NCCL weight sync** (full fine-tuning, or LoRA without `vllm_lora_sync`): trainer rank 0 joins an NCCL group with every vLLM GPU, so each vLLM node must reach the trainer at `VLLM_HOST_IP` on port 51216 (TRL's `vllm_group_port`). Each sync broadcasts the full model across the network, so prefer LoRA sync on Ethernet.
+- **LoRA sync**: every vLLM node loads the adapter from its own filesystem. The trainer writes it under `TMPDIR`, so point `TMPDIR` on the trainer at storage that all vLLM nodes mount at the same path.
+- If NCCL picks the wrong network interface, set `NCCL_SOCKET_IFNAME` (or `NCCL_IB_HCA`) on all nodes.
+
+These settings map to vLLM's [data parallel deployment](https://docs.vllm.ai/en/v0.30.0/serving/data_parallel_deployment/#internal-load-balancing) and [multi-node deployment](https://docs.vllm.ai/en/v0.30.0/serving/parallelism_scaling/#multi-node-deployment). vLLM's hybrid and external load-balancing modes are not supported: they expose one API server per node, but weight sync has to reach every engine through a single server.
 
 ## Colocate Mode {#sec-colocate-mode}
 
@@ -222,6 +275,42 @@ If you are training with LoRA (which is recommended for GRPO), always enable `vl
 NCCL merge sync folds the adapter into the base weights out of place. FP8 base weights are requantized with fresh block scales before being sent. DoRA adapters and bitsandbytes 4-bit bases (QLoRA) cannot be merged this way and raise an error; use `vllm_lora_sync: true` for them.
 :::
 
+### Merged Sync Rounding {#sec-merge-rounding}
+
+Merged sync serves `bf16(W + scaling * B @ A)`, or its FP8 requantization for FP8 bases, while the trainer optimizes the unrounded `W + scaling * B @ A`. At RL learning rates most entries of the LoRA delta are smaller than half a BF16 step of the base weight (about 0.2% of `|w|`). The cast rounds those entries back to the base value, so vLLM samples from a policy that has only part of the trained update. On Qwen3-1.7B-Base with Dr.GRPO and rank-16 LoRA on all linear layers, the merged weights at step 100 kept about 24% of the update at `learning_rate: 1e-5` and about 2.5% at `1e-6`. Full fine-tuning is not affected, because the trainer and vLLM hold the same BF16 weights.
+
+The trainer measures this at the first merged sync and then every `trl.vllm_merge_check_interval` optimizer steps (default 50; `0` disables). It logs two metrics:
+
+- `lora_merge/retained`: the share of the LoRA delta that survives the cast, as the projection of the served weight change onto the delta.
+- `lora_merge/changed_fraction`: the share of weight entries the merge changes.
+
+When less than half of the update survives, every check after the first logs a warning. Parameters sharded by FSDP or DeepSpeed ZeRO-3 are not measured.
+
+There are two ways to keep the whole update:
+
+| Option | Config | What vLLM serves | Use when |
+|---|---|---|---|
+| LoRA sync | `trl.vllm_lora_sync: true` | Base weights plus the unmerged adapter | Server mode with the async GRPO trainer (`use_data_producer` or `async_prefetch`). It is also the faster sync. |
+| Merge-aware LoRA | `lora_merge_aware: bf16` | Merged BF16 weights, which the trainer now optimizes | Weights must be merged: colocate mode, the standard GRPO trainer (neither `use_data_producer` nor `async_prefetch`), or a merged BF16 checkpoint |
+
+With `lora_merge_aware: bf16`, each LoRA linear computes `x @ bf16(W + scaling * B @ A)^T`, bitwise equal to the merged weight that is sent to vLLM, and gradients reach `A` and `B` straight through the cast. The forward and backward passes rebuild every LoRA linear's merged weight, at the cost of a few passes over the targeted base weights per micro-batch, and no more activations are saved than with ordinary LoRA. `lora_merge_aware: bf16` requires `adapter: lora` on an unquantized base. It works on a single GPU and with DDP, DeepSpeed ZeRO-1/2 and FSDP2:
+
+- Without FSDP, the sync merges in place inside `temporarily_merge_adapter`, which restores the base weights exactly afterwards.
+- Under FSDP2, `lora_fp32_gradients` is enabled automatically. FSDP2 then gathers the LoRA factors in FP32 rather than casting them to BF16, so the forward and the served merge compute the same delta. The vLLM sync merges each LoRA linear out of place from its gathered weights instead of merging the sharded weights in place.
+
+Config validation rejects it with:
+
+- DoRA;
+- the fused LoRA kernels (`lora_*_kernel`);
+- 4/8-bit bases;
+- DeepSpeed ZeRO-3, because the merge-aware forward reads weights of submodules whose forwards it skips, so ZeRO-3 never gathers them;
+- tensor parallelism;
+- `vllm_lora_sync`.
+
+LoRA linears whose base weight is FP8 or otherwise quantized keep the ordinary forward, with a warning.
+
+`axolotl merge-lora` (memory-efficient method) reports the same retained share when it merges into a BF16 or FP16 base, and warns below one half unless the config sets `lora_merge_aware`.
+
 ### Importance Sampling Correction
 
 When vLLM weights are stale (between syncs), the generated data is slightly off-policy. Axolotl can correct for this:
@@ -242,34 +331,19 @@ trl:
 **vLLM must be restarted between training runs.** Weight syncs from a previous run leave the server in a corrupted state. If you start a new training run against a stale vLLM server, the model may fail to learn.
 :::
 
-### When to Restart
+Restart before every new experiment, after a crashed or interrupted run, or when the base model changes.
 
-- Before every new training experiment
-- After a training run crashes or is interrupted
-- If you change the base model in your config
-
-### How to Restart
-
-Killing vLLM reliably requires terminating both the main process and its background EngineCore subprocess:
+A plain `kill` can leave vLLM's EngineCore subprocess holding GPU memory. Kill both, then confirm the memory is freed:
 
 ```bash
-# Kill all vLLM-related processes
 pkill -9 -f "vllm|EngineCore"
-
-# Verify GPU memory is freed
 nvidia-smi
-
-# Restart the server
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve grpo_config.yaml
 ```
 
-::: {.callout-tip}
-A single `kill` often does not fully stop vLLM. Always use `kill -9` and verify with `nvidia-smi` that GPU memory has been released before restarting.
-:::
+For [multi-node](#sec-multi-node), do this on every node and relaunch each with its `--node-rank`.
 
-### Health Check
-
-The vLLM server exposes a health endpoint. Wait for it to return 200 before starting training:
+Wait for the health endpoint to return 200 before starting training:
 
 ```bash
 curl http://localhost:8000/health
@@ -287,7 +361,10 @@ These control the vLLM server process started by `axolotl vllm-serve`, and the c
 | `port` | int | `8000` | Port for the vLLM server |
 | `device` | str | `auto` | Device to use for vLLM |
 | `tensor_parallel_size` | int | `None` | Number of GPUs for tensor parallelism |
-| `data_parallel_size` | int | `None` | Number of data parallel replicas |
+| `data_parallel_size` | int | `None` | Number of data parallel replicas (total across all nodes) |
+| `pipeline_parallel_size` | int | `None` | Number of pipeline stages; for a replica spanning nodes |
+| `nnodes` | int | `None` | Number of nodes for [multi-node serving](#sec-multi-node); launch each with `--node-rank` |
+| `master_addr` | str | `None` | Address of node 0 when `nnodes > 1` |
 | `gpu_memory_utilization` | float | `None` | Fraction of GPU memory for vLLM (0.0-1.0). Defaults to 0.9 for `vllm-serve` and 0.3 in colocate mode |
 | `dtype` | str | `auto` | Data type (`auto`, `float16`, `bfloat16`) |
 | `max_model_len` | int | `None` | Maximum model context length. Set explicitly if the default is too large for your GPU |
@@ -311,25 +388,11 @@ These control how the trainer interacts with vLLM.
 | `vllm_server_timeout` | int | `None` | Timeout in seconds for vLLM requests |
 | `vllm_lora_sync` | bool | `false` | Sync LoRA adapters via filesystem instead of NCCL merge |
 | `vllm_sync_interval` | int | `None` | Sync weights every N optimizer steps |
+| `vllm_merge_check_interval` | int | `50` | Measure how much of the LoRA update survives merged sync every N steps; `0` disables. See [Merged Sync Rounding](#sec-merge-rounding) |
 | `vllm_enable_sleep_mode` | bool | `None` | Offload vLLM VRAM when idle (colocate mode) |
 | `vllm_guided_decoding_regex` | str | `None` | Regex constraint for structured/guided decoding (mapped to TRL's `vllm_structured_outputs_regex` on TRL >= 1.7) |
 
 For async pipeline and off-policy correction options, see the [GRPO Configuration Reference](grpo.qmd#configuration-reference).
-
-## Complete Example {#sec-complete-example}
-
-For a full working GRPO config including vLLM, LoRA sync, async generation, rewards, and dataset setup, see the [GRPO Quick Start](grpo.qmd#quick-start). That config includes all the vLLM settings covered in this guide.
-
-```bash
-# Terminal 1: Start vLLM
-CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve grpo_config.yaml
-
-# Wait for health check to pass
-curl http://localhost:8000/health
-
-# Terminal 2: Start training
-CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
-```
 
 ## Troubleshooting {#sec-troubleshooting}
 
@@ -340,5 +403,6 @@ CUDA_VISIBLE_DEVICES=1 axolotl train grpo_config.yaml
 | OOM on training GPU | Batch too large for policy logprobs | Reduce `micro_batch_size` or `num_generations` |
 | Accuracy stays at zero | Stale vLLM from previous run | Restart vLLM: `pkill -9 -f "vllm\|EngineCore"`, verify with `nvidia-smi`, restart |
 | `ResponseValidationError` from vLLM | Missing logprobs in response | Start the server with `axolotl vllm-serve` (or the raw command above) so `--logprobs-mode processed_logprobs --max-logprobs -1` are set |
+| Multi-node training hangs at startup | A vLLM node cannot reach the trainer for the NCCL weight-sync group | Set `VLLM_HOST_IP` on the trainer to an address the vLLM nodes can reach, allow port 51216, and set `NCCL_SOCKET_IFNAME` if needed |
 | Weight sync takes 5+ seconds | NCCL contention with vLLM generation | Switch to `vllm_lora_sync: true` to eliminate NCCL |
 | `async_prefetch` deadlocks with FSDP | Background threads run unsynchronized FSDP collectives | Set `async_prefetch: false` when using FSDP or DeepSpeed multi-GPU |

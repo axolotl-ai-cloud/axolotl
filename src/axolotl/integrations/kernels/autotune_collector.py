@@ -70,13 +70,14 @@ def _find_lora_ops_module() -> ModuleType | None:
 
 
 # Substrings identifying the kernel-bearing modules to scan in sys.modules. Covers the HF-`kernels`
-# hash-suffixed scattermoe copies, the normally-imported dsv4 kernels, and the glm_dsa (GLM-5.2
-# sparse-MLA) kernels.
+# hash-suffixed scattermoe copies, the normally-imported dsv4 kernels, the glm_dsa (GLM-5.2
+# sparse-MLA) kernels, and cut_cross_entropy (autotuned only with CCE_AUTOTUNE=1).
 _KERNEL_MODULE_HINTS: tuple[str, ...] = (
     "lora_ops",
     "scattermoe_lora",
     "cut_cross_entropy",
     "axolotl.monkeypatch.attention.flash_attn_d512",
+    "axolotl.kernels.gemma4_fused_rope",
     "libs.dsv4.attention",
     "libs.dsv4.attention_csa",
     "libs.dsv4.attention_gather",

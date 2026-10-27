@@ -334,7 +334,6 @@ quartodoc:
         - integrations.liger.plugin
         - integrations.liger.utils
         - integrations.liger.models.base
-        - integrations.liger.models.deepseekv2
         - integrations.liger.models.jamba
         - integrations.liger.models.qwen3_5
         - integrations.liger.models.qwen3_5_moe

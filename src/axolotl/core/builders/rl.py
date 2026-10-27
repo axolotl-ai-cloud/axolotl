@@ -42,7 +42,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         return callbacks
 
     def hook_post_create_trainer(self, trainer):
-        """Attach the fused LoRA kernels to the adapter TRL built inside the trainer."""
+        """Attach the fused LoRA kernels and the merge-aware forward to the adapter TRL
+        built inside the trainer."""
         from peft import PeftModel
 
         from axolotl.loaders.patch_manager import rl_trainer_builds_adapter
@@ -61,6 +62,14 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # the kernels fall back to the plain forward while adapters are disabled, so
             # the reference-model pass through the same module stays unpatched
             apply_lora_kernel_patches(model=trainer.model, cfg=self.cfg)
+        if (
+            self.cfg.lora_merge_aware
+            and rl_trainer_builds_adapter(self.cfg)
+            and isinstance(trainer.model, PeftModel)
+        ):
+            from axolotl.monkeypatch.lora_merge_aware import configure_lora_merge_aware
+
+            configure_lora_merge_aware(self.cfg, trainer.model)
         return trainer
 
     def _get_trainer_cls(self, trainer_kwargs: dict):
@@ -449,7 +458,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                     _orig_validate_quant
                 )
         if self.cfg.fsdp_config or self.cfg.fsdp:
-            ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
+            from axolotl.utils.lora_precision import is_lora_tensor_name
+
+            ensure_dtype(
+                trainer.model,
+                dtype=self.cfg.torch_dtype,
+                keep=is_lora_tensor_name if self.cfg.lora_fp32_gradients else None,
+            )
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:
                 ensure_dtype(trainer.ref_model, dtype=self.cfg.torch_dtype)
 

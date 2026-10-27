@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tree-recurrence"
+dynamic = ["version"]
+description = "Prefix-shared (tree) packing for recurrent and linear-attention layers"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Axolotl AI" }]
+dependencies = [
+    "kernels>=0.17.2",
+    "numpy>=1.24",
+    "torch>=2.4",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+transformers = ["transformers>=5.15"]
+trl = ["trl>=1.16"]
+
+[project.urls]
+Repository = "https://github.com/axolotl-ai-cloud/axolotl/tree/main/packages/tree-recurrence"
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tree_recurrence = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 import addict
 import torch
-import transformers
 from transformers import (
     PretrainedConfig,
     PreTrainedModel,
@@ -146,7 +145,7 @@ class PatchManager:
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
-        self._apply_gradient_checkpointing_patches()
+        self._apply_trl_offload_patches()
         self._patch_attention()
         self._apply_multipack_patches()
         self._apply_sdpa_varlen_patch()
@@ -852,28 +851,17 @@ class PatchManager:
 
             patch_fa_peft_integration()
 
-    def _apply_gradient_checkpointing_patches(self):
-        """Apply patches for gradient checkpointing."""
-        if (
-            self.cfg.gradient_checkpointing
-            and self.cfg.activation_offloading == "legacy"
-        ):
-            from axolotl.monkeypatch.gradient_checkpointing import (
-                hf_grad_checkpoint_offload_wrapper,
+    def _apply_trl_offload_patches(self):
+        """Keep saved-tensor layouts intact under TRL's activation offloader."""
+        # TRL's own trainers (DPO, KTO) run their offloader for any truthy mode, hidden_states too
+        if self.cfg.activation_offloading:
+            from axolotl.monkeypatch.trainer.trl_offload import (
+                patch_trl_logprob_entropy_saved_layout,
+                patch_trl_offload_dense_layout,
             )
 
-            transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
-        elif (
-            self.cfg.gradient_checkpointing
-            and self.cfg.activation_offloading == "offload_disk"
-        ):
-            from axolotl.monkeypatch.gradient_checkpointing import (
-                hf_grad_checkpoint_disk_offload_wrapper,
-            )
-
-            transformers.modeling_utils.checkpoint = (
-                hf_grad_checkpoint_disk_offload_wrapper
-            )
+            patch_trl_offload_dense_layout()
+            patch_trl_logprob_entropy_saved_layout()
 
     def _apply_mistral_cross_entropy_patch(self):
         """Apply Mistral cross entropy patch if configured."""

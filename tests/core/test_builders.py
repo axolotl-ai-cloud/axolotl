@@ -206,6 +206,39 @@ class TestHFCausalTrainerBuilder:
         assert training_arguments.sample_packing is False
         assert training_arguments.eval_sample_packing is False
 
+    def test_checkpoint_save_retry_reaches_training_arguments(
+        self, sft_cfg, model, tokenizer
+    ):
+        args = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100).args
+        assert args.checkpoint_save_retry_wait is None
+
+        sft_cfg["checkpoint_save_retry"] = {"wait_seconds": 120, "retries": 2}
+        args = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100).args
+        assert (args.checkpoint_save_retry_wait, args.checkpoint_save_retries) == (
+            120,
+            2,
+        )
+
+    def test_checkpoint_mirror_adds_callback(self, sft_cfg, model, tokenizer, tmp_path):
+        from axolotl.core.checkpoint_mirror import CheckpointMirrorCallback
+
+        sft_cfg["checkpoint_mirror"] = {
+            "dir": str(tmp_path / "nfs"),
+            "delete": "keep",
+            "save_total_limit": 3,
+            "max_pending": 1,
+            "copy_threads": 2,
+        }
+        trainer = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100)
+        (callback,) = [
+            cb
+            for cb in trainer.callback_handler.callbacks
+            if isinstance(cb, CheckpointMirrorCallback)
+        ]
+        assert callback.mirror_dir == str(tmp_path / "nfs")
+        assert (callback.delete, callback.save_total_limit) == ("keep", 3)
+        assert (callback.max_pending, callback.copy_threads) == (1, 2)
+
     @pytest.mark.parametrize(
         "cfg_string",
         [
@@ -316,6 +349,19 @@ class TestHFCausalTrainerBuilder:
         }
         assert decays <= {weight_decay, 0.0}
         assert weight_decay in decays
+
+    def test_label_keep_prob(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["label_keep_prob"] = {1: 0.25, 2: 0.0}
+        cfg["label_keep_prob_normalize"] = "original"
+        trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        assert trainer.args.label_keep_prob == {1: 0.25, 2: 0.0}
+        assert trainer.args.label_keep_prob_normalize == "original"
+        assert trainer._label_dropout.token_ids.tolist() == [1, 2]
+
+        cfg["label_keep_prob"] = {len(tokenizer): 0.5}
+        with pytest.raises(ValueError, match="outside the tokenizer vocabulary"):
+            HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
 
     def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()

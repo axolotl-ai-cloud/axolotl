@@ -8,11 +8,19 @@ from axolotl.prompt_strategies.alpaca_w_system import (
     InstructionWSystemPromptTokenizingStrategy,
     SystemDataPrompter,
 )
+from axolotl.prompt_strategies.bradley_terry.chat_template import load as bt_load
 from axolotl.prompt_strategies.llama2_chat import (
     Llama2ChatPrompter,
     LLama2ChatTokenizingStrategy,
 )
-from axolotl.prompt_strategies.orpo.chat_template import load
+from axolotl.prompt_strategies.orpo.chat_template import (
+    ORPODatasetParsingStrategy,
+    load,
+)
+from axolotl.prompt_strategies.user_defined import (
+    UserDefinedDatasetConfig,
+    load as user_defined_load,
+)
 from axolotl.prompt_tokenizers import AlpacaPromptTokenizingStrategy
 from axolotl.prompters import AlpacaPrompter, PromptStyle
 from axolotl.utils.dict import DictDefault
@@ -130,6 +138,28 @@ class TestInstructionWSystemPromptTokenizingStrategy:
         assert example["input_ids"][5:7] == [671, 20118]  # " use cot"
         assert example["input_ids"][8] == 11889  # USER
 
+    @enable_hf_offline
+    def test_user_defined_null_system_uses_system_prompt(
+        self, tokenizer_huggyllama_w_special_tokens
+    ):
+        strat = user_defined_load(
+            tokenizer_huggyllama_w_special_tokens,
+            DictDefault({"train_on_inputs": False, "sequence_len": 2048}),
+            UserDefinedDatasetConfig(
+                system_prompt="use cot", system_format="SYSTEM: {system}\n"
+            ),
+        )
+        sample = {"system": None, "instruction": "hello!", "output": "Hi!"}
+        example = strat.tokenize_prompt(sample)
+        decoded = tokenizer_huggyllama_w_special_tokens.decode(example["input_ids"])
+        assert "SYSTEM: use cot" in decoded
+
+        sample = {"system": "be brief", "instruction": "hello!", "output": "Hi!"}
+        example = strat.tokenize_prompt(sample)
+        decoded = tokenizer_huggyllama_w_special_tokens.decode(example["input_ids"])
+        assert "SYSTEM: be brief" in decoded
+        assert "use cot" not in decoded
+
 
 class TestLlama2ChatTokenization:
     """
@@ -198,3 +228,39 @@ class TestOrpoTokenization:
 
         assert res["prompt_attention_mask"][0] == 1
         assert res["prompt_attention_mask"][-1] == 0
+
+    def test_orpo_null_prompt_uses_chosen_turn(self):
+        sample = {
+            "prompt": None,
+            "chosen": [
+                {"role": "user", "content": "q"},
+                {"role": "assistant", "content": "good"},
+            ],
+            "rejected": [
+                {"role": "user", "content": "q"},
+                {"role": "assistant", "content": "bad"},
+            ],
+        }
+        messages = ORPODatasetParsingStrategy().get_prompt(sample).messages
+        assert messages[-1].content == "q"
+
+
+class TestBradleyTerryTokenization:
+    """test case for the Bradley-Terry chat_template tokenization"""
+
+    @enable_hf_offline
+    def test_bt_null_system(self, tokenizer_huggyllama_w_special_tokens):
+        strat = bt_load(
+            tokenizer_huggyllama_w_special_tokens,
+            DictDefault(
+                {
+                    "train_on_inputs": False,
+                    "sequence_len": 2048,
+                    "chat_template": "chatml",
+                    "reward_model": True,
+                }
+            ),
+        )
+        sample = {"system": None, "input": "hi", "chosen": "a", "rejected": "b"}
+        res = strat.tokenize_prompt(sample)
+        assert res["chosen_ids"] and res["rejected_ids"]

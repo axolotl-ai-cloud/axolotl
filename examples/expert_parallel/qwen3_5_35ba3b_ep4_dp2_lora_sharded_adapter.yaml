@@ -1,0 +1,89 @@
+# Sharded LoRA adapter checkpoints on Qwen3.5-35B-A3B under FSDP2 + EP=4 x dp_shard 2 on
+# one 8xB200 node: attention + routed-expert LoRA plus trained lm_head / embed_tokens copies
+# (modules_to_save), bf16, no quantization. Each expert slice is owned by one EP rank and
+# FSDP2-sharded again over its two dp_shard peers.
+#
+#   axolotl train examples/expert_parallel/qwen3_5_35ba3b_ep4_dp2_lora_sharded_adapter.yaml --num-processes 8
+#
+# The only checkpoint lands at step 4 (sharded, consolidated in the background). The final
+# export would be sharded too, but adapter_final_save_format: gather below sends it through
+# the rank 0 gather at the same step, so the two adapter files must be byte-identical:
+#
+#   python tests/e2e/multigpu/test_fsdp2_sharded_adapter_save.py \
+#     ./outputs/qwen3_5-35ba3b-ep4-dp2-sharded-adapter/checkpoint-4/adapter_model.safetensors \
+#     ./outputs/qwen3_5-35ba3b-ep4-dp2-sharded-adapter/adapter_model.safetensors
+#
+# Then check the sharded final export: rerun with --adapter-final-save-format sharded and a
+# fresh --output-dir, and compare that run's two files the same way. After "Training
+# completed! Saving trained model", rank 0 logs "Consolidated <output_dir>/adapter_model
+# .safetensors" before the run exits, and no .adapter_shards/ is left in output_dir.
+base_model: Qwen/Qwen3.5-35B-A3B
+experts_implementation: grouped_mm
+
+plugins:
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+expert_parallel_size: 4
+expert_parallel_backend: torch
+dp_shard_size: 2
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+    split: train[:1%]
+val_set_size: 0
+dataset_prepared_path: ./prepared/qwen3_5-35ba3b-alpaca-1pct
+output_dir: ./outputs/qwen3_5-35ba3b-ep4-dp2-sharded-adapter
+
+sequence_len: 1024
+sample_packing: false
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+# PEFT's ParamWrapper rejects dropout on target_parameters
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+lora_modules_to_save:
+  - lm_head
+  - embed_tokens
+lora_mlp_kernel: false
+lora_qkv_kernel: false
+lora_o_kernel: false
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+max_steps: 4
+optimizer: adamw_torch
+lr_scheduler: constant
+learning_rate: 1.0e-4
+warmup_steps: 0
+
+bf16: true
+tf32: true
+attn_implementation: flash_attention_2
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3_5MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  activation_checkpointing: true
+
+adapter_checkpoint_format: sharded
+adapter_final_save_format: gather
+save_only_model: true
+save_strategy: steps
+save_steps: 4
+
+logging_steps: 1
+seed: 42

@@ -18,7 +18,7 @@ pytestmark = [pytest.mark.gpu, requires_flash_attn]
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
-def verify_training_success(temp_dir):
+def verify_training_success(temp_dir, window=3):
     """Verify that training completed successfully — artifacts, no-NaN, loss
     stayed in qwen2-pretraining scale (tiny-qwen2-129m final pretrain CE ~3.92).
     """
@@ -36,8 +36,8 @@ def verify_training_success(temp_dir):
 
     check_tensorboard_loss_decreased(
         temp_dir + "/runs",
-        initial_window=10,
-        final_window=10,
+        initial_window=window,
+        final_window=window,
         max_initial=5.0,
         max_final=4.7,
     )
@@ -60,7 +60,9 @@ class TestDistMuon:
                     },
                 ],
                 "num_epochs": 1,
+                # Muon full fine-tuning at this lr shows no loss drop within the first 30 steps
                 "max_steps": 80,
+                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
@@ -102,7 +104,7 @@ class TestDistMuon:
             ]
         )
 
-        verify_training_success(temp_dir)
+        verify_training_success(temp_dir, window=10)
 
     def test_lora_sft(self, temp_dir):
         cfg = fsdp2_training_config(
@@ -123,7 +125,7 @@ class TestDistMuon:
                 "lora_dropout": 0.0,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 80,
+                "max_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,

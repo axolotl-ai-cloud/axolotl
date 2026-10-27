@@ -131,3 +131,39 @@ def test_retention_materializes_internal_symlinks_and_rejects_external_ones(tmp_
     (source / "outside").symlink_to(retained / "weights.bin")
     with pytest.raises(ValueError, match="Invalid checkpoint"):
         retain_checkpoint(source, tmp_path / "other")
+
+
+def test_max_pending_waits_for_the_oldest_publication(tmp_path):
+    entered, release = threading.Event(), threading.Event()
+    published = []
+
+    def upload(directory, step):
+        if step == 1:
+            entered.set()
+            assert release.wait(5)
+        published.append(step)
+
+    worker = BackgroundCheckpointPublisher(upload, tmp_path / "queue", max_pending=1)
+    try:
+        worker.submit(checkpoint(tmp_path, 1), 1)
+        assert entered.wait(5)
+        second = threading.Thread(
+            target=worker.submit, args=(checkpoint(tmp_path, 2), 2)
+        )
+        second.start()
+        second.join(0.3)
+        assert second.is_alive()
+        release.set()
+        second.join(5)
+        worker.wait()
+        assert published == [1, 2]
+    finally:
+        release.set()
+        worker.close(cancel_pending=True)
+
+
+def test_max_pending_must_be_positive(tmp_path):
+    with pytest.raises(ValueError, match="max_pending"):
+        BackgroundCheckpointPublisher(
+            lambda *_: None, tmp_path / "queue", max_pending=0
+        )

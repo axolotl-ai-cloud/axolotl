@@ -2,8 +2,11 @@
 # Copyright (c) Axolotl AI
 # Licensed under the Apache License, Version 2.0
 
+import functools
 import importlib
+import inspect
 import os
+import sys
 
 import torch
 
@@ -15,6 +18,55 @@ from axolotl.integrations.kernels.quant_training_guard import (
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+def _preload_sonicmoe_kernel() -> bool:
+    """Import the hub sonic-moe kernel now so its quack autotuners exist before any forward.
+
+    Otherwise the first MoE forward imports it, and with ``eval_on_start`` that forward is in
+    the step-0 eval, which runs after ``on_train_begin`` and before the first ``on_step_begin``:
+    neither hook could attach autotune profiles or seed the quack cache for that eval.
+    """
+    try:
+        from transformers.integrations.sonicmoe import load_sonicmoe_kernel
+
+        load_sonicmoe_kernel()
+    except Exception as exc:  # pylint: disable=broad-except
+        LOG.warning(
+            "Could not preload the sonic-moe kernel (%s); its autotune profiles attach "
+            "at the first training step instead",
+            exc,
+        )
+        return False
+    return True
+
+
+def _quack_policy(cfg) -> tuple[str, bool] | None:
+    """(key buckets, sweep) for the quack autotuners, or None without SonicMoE."""
+    if not cfg.use_sonicmoe:
+        return None
+    return cfg.quack_autotune_key_buckets or "pow2", cfg.quack_autotune is not False
+
+
+def _seed_ep_padding(cfg, model) -> None:
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import seed_ep_padding_marks
+
+    ep = cfg.expert_parallel_size or 1
+    cp = getattr(cfg, "context_parallel_size", None) or 1
+    tokens = (cfg.sequence_len or 0) * (cfg.micro_batch_size or 1) * ep // cp
+    pairs = None
+    if cfg.sonicmoe_ep_compact_routing and cfg.sonicmoe_ep_pair_seed_factor:
+        config = getattr(model, "config", None)
+        config = getattr(config, "text_config", None) or config
+        top_k = getattr(config, "num_experts_per_tok", None)
+        if top_k:
+            pairs = int(tokens * top_k / ep * cfg.sonicmoe_ep_pair_seed_factor)
+        else:
+            LOG.warning(
+                "sonicmoe_ep_pair_seed_factor: no num_experts_per_tok on the model config"
+            )
+    seed_ep_padding_marks(rows=tokens, pairs=pairs)
+    LOG.info("Seeded SonicMoE EP padding marks: %d tokens, %s pairs", tokens, pairs)
 
 
 def _check_sonicmoe_gpu_compat():
@@ -57,6 +109,60 @@ def _check_sonicmoe_gpu_compat():
             )
 
     _check_sonicmoe_cutlass_dsl()
+    _shim_nvvm_mbarrier_arrive()
+
+
+def _shim_nvvm_mbarrier_arrive():
+    """Accept the pre-4.8 ``nvvm.mbarrier_arrive(res, addr, ...)`` call form on cutlass-dsl 4.8+.
+
+    cutlass-dsl 4.8 moved the leading result type to the keyword-only ``results=``; the quack
+    0.6.1 vendored in kernels-community/sonic-moe still passes it positionally (``None`` = no
+    result) and fails to compile its cluster-scope barrier arrive.
+    """
+    try:
+        from cutlass._mlir.dialects import nvvm
+    except ImportError:
+        return
+    fn = getattr(nvvm, "mbarrier_arrive", None)
+    if fn is None or getattr(fn, "_axolotl_legacy_shim", False):
+        return
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return
+    positional = [
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    if len(positional) != 1:
+        return
+
+    @functools.wraps(fn)
+    def mbarrier_arrive(*args, **kwargs):
+        if len(args) == 2:
+            result_type, args = args[0], args[1:]
+            if result_type is not None:
+                kwargs.setdefault("results", [result_type])
+        return fn(*args, **kwargs)
+
+    mbarrier_arrive._axolotl_legacy_shim = True  # type: ignore[attr-defined]
+    nvvm.mbarrier_arrive = mbarrier_arrive
+    LOG.info(
+        "cutlass-dsl nvvm.mbarrier_arrive: legacy positional result-type form shimmed"
+    )
+
+
+def _loaded_vendored_quack() -> dict[str, str]:
+    """``{module: __version__}`` for quack copies bundled in a loaded hub kernel."""
+    found = {}
+    for name, module in list(sys.modules.items()):
+        if module is None or name == "quack" or not name.endswith(".quack"):
+            continue
+        if name.startswith("torch."):
+            continue
+        version = getattr(module, "__version__", None)
+        if version is not None:
+            found[name] = str(version)
+    return found
 
 
 def _check_sonicmoe_cutlass_dsl():
@@ -88,8 +194,27 @@ def _check_sonicmoe_cutlass_dsl():
         if requirement.name == "nvidia-cutlass-dsl" and requirement.marker is None:
             cutlass_spec = requirement.specifier
             break
+    vendored = _loaded_vendored_quack()
+    if vendored:
+        # the installed quack-kernels is not the quack that runs: its cutlass pin says nothing
+        LOG.info(
+            "SonicMoE runs a vendored quack (%s) on nvidia-cutlass-dsl %s; installed "
+            "quack-kernels %s (requires nvidia-cutlass-dsl%s) is not the one in use",
+            ", ".join(f"{name} {v}" for name, v in vendored.items()),
+            cutlass_dsl_version,
+            quack_version,
+            cutlass_spec or "",
+        )
+    elif quack_version is not None:
+        LOG.info(
+            "SonicMoE: quack-kernels %s, nvidia-cutlass-dsl %s (a hub sonic-moe kernel "
+            "may load its own vendored quack later)",
+            quack_version,
+            cutlass_dsl_version,
+        )
     if (
-        cutlass_dsl_version is not None
+        not vendored
+        and cutlass_dsl_version is not None
         and cutlass_spec is not None
         and not cutlass_spec.contains(cutlass_dsl_version, prereleases=True)
     ):
@@ -202,10 +327,25 @@ class KernelsPlugin(BasePlugin):
             _check_sonicmoe_gpu_compat()
 
             from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+                configure_ep_compact_routing,
+                configure_ep_row_padding,
                 register_sonicmoe_experts,
+            )
+            from axolotl.integrations.kernels.libs.sonicmoe.lora_split import (
+                configure_lora_split,
             )
 
             register_sonicmoe_experts()
+            configure_ep_row_padding(
+                cfg.sonicmoe_ep_row_padding or "pow2",
+                granule=cfg.sonicmoe_ep_row_padding_granule or 4096,
+                headroom=cfg.sonicmoe_ep_row_padding_headroom or 1.03,
+            )
+            configure_ep_compact_routing(
+                bool(cfg.sonicmoe_ep_compact_routing),
+                granule=cfg.sonicmoe_ep_pair_padding_granule or 32768,
+            )
+            configure_lora_split(bool(cfg.sonicmoe_lora_split))
             if not ep_active:
                 cfg.experts_implementation = "sonicmoe"
             LOG.info("Registered 'sonicmoe' in transformers ExpertsInterface")
@@ -251,10 +391,20 @@ class KernelsPlugin(BasePlugin):
             adapter.pre_lora_load(cfg, model)
 
     def post_model_load(self, cfg, model):
+        if cfg.use_sonicmoe and cfg.sonicmoe_ep_padding_seed:
+            _seed_ep_padding(cfg, model)
+        sonic_loaded = bool(cfg.use_sonicmoe) and _preload_sonicmoe_kernel()
         if cfg.autotune_cache_path:
             from axolotl.integrations.kernels.autotune_cache import load_autotune_cache
 
             load_autotune_cache(cfg.autotune_cache_path)
+            if sonic_loaded:
+                from axolotl.integrations.kernels.autotune_cache import (
+                    load_quack_cache,
+                    quack_cache_path,
+                )
+
+                load_quack_cache(quack_cache_path(cfg.autotune_cache_path))
         if cfg.autotune_profiles:
             from axolotl.integrations.kernels.autotune_profiles import (
                 apply_autotune_profiles,
@@ -267,6 +417,13 @@ class KernelsPlugin(BasePlugin):
             )
 
             install_neighborhood_search(cfg.autotune_neighborhood)
+        policy = _quack_policy(cfg)
+        if policy is not None:
+            from axolotl.integrations.kernels.quack_autotune_policy import (
+                install_quack_key_policy,
+            )
+
+            install_quack_key_policy(*policy)
         if cfg.use_sonicmoe:
             from axolotl.integrations.kernels.libs.sonicmoe.epilogue import (
                 check_model_epilogues,
@@ -296,6 +453,7 @@ class KernelsPlugin(BasePlugin):
             cfg.autotune_cache_path
             or cfg.autotune_profiles
             or cfg.autotune_neighborhood
+            or cfg.use_sonicmoe
         ):
             from axolotl.integrations.kernels.autotune_cache import (
                 AutotuneCacheCallback,
@@ -306,8 +464,19 @@ class KernelsPlugin(BasePlugin):
                     cfg.autotune_cache_path,
                     cfg.autotune_profiles,
                     neighborhood=cfg.autotune_neighborhood,
+                    sonicmoe=bool(cfg.use_sonicmoe),
+                    quack_policy=_quack_policy(cfg),
                 )
             )
+        if cfg.use_sonicmoe and (
+            cfg.sonicmoe_ep_row_padding == "highwater"
+            or cfg.sonicmoe_ep_compact_routing
+        ):
+            from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+                EPPaddingMarksCallback,
+            )
+
+            callbacks.append(EPPaddingMarksCallback())
         if cfg.use_sonicmoe and cfg.nvfp4_merge_aware:
             from axolotl.integrations.kernels.merge_aware_callback import (
                 MergeAwareScheduleCallback,
