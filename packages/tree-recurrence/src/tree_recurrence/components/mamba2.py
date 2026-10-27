@@ -63,7 +63,9 @@ def split_conv1d_scan_on_tree(
 ) -> torch.Tensor:
     """The fused Mamba2 mixer over ``zxbcdt`` (``[1, T, P]``, row order) on a tree.
 
-    ``kwargs`` are the kernel's other arguments; it must reset at ``seq_idx``.
+    ``kwargs`` are the kernel's other arguments; it must reset at ``seq_idx``. A kernel
+    that declines (returns ``None``, as a guard for quantized weights may) declines
+    here too, and the mixer runs its unfused path.
     """
     check_row(zxbcdt, plan)
     total, device = zxbcdt.shape[1], zxbcdt.device
@@ -77,6 +79,8 @@ def split_conv1d_scan_on_tree(
     out = mamba_split_conv1d_scan_combined(
         rows, seq_idx=segment_ids(cu_seqlens, rows.shape[1]), **kwargs
     )
+    if out is None:
+        return None
     if keep is not None:
         out = out[:, keep]
     return restore_tail(out, total)
