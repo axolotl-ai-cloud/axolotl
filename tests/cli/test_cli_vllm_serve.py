@@ -228,3 +228,65 @@ def test_reasoning_parser_without_enable_flag(cli_runner, tmp_path, native_serve
     _run(cli_runner, tmp_path)
     cmd = calls[0][1]
     assert cmd[cmd.index("--reasoning-parser") + 1] == "deepseek_r1"
+
+
+def _flag(cmd, name):
+    return cmd[cmd.index(name) + 1] if name in cmd else None
+
+
+@pytest.mark.parametrize(
+    "vllm, node_rank, expected",
+    [
+        (
+            {"data_parallel_size": 4},
+            0,
+            {"--data-parallel-size-local": "2", "--data-parallel-start-rank": None},
+        ),
+        (
+            {"data_parallel_size": 4},
+            1,
+            {"--data-parallel-size-local": "2", "--data-parallel-start-rank": "2"},
+        ),
+        (
+            {"tensor_parallel_size": 8, "pipeline_parallel_size": 2},
+            1,
+            {"--nnodes": "2", "--node-rank": "1", "--pipeline-parallel-size": "2"},
+        ),
+    ],
+)
+def test_native_multinode(
+    cli_runner, tmp_path, native_serve, vllm, node_rank, expected
+):
+    calls = native_serve(
+        vllm={"nnodes": 2, "master_addr": "10.0.0.1", **vllm},
+        trl={"vllm_lora_sync": True},
+        lora_r=16,
+    )
+    _run(cli_runner, tmp_path, ["--node-rank", str(node_rank)])
+    cmd = calls[0][1]
+    for name, value in expected.items():
+        assert _flag(cmd, name) == value
+    assert ("--headless" in cmd) is (node_rank > 0)
+    assert ("--api-server-count" in cmd) is (node_rank == 0)
+    assert "--enable-lora" in cmd
+
+
+@pytest.mark.parametrize(
+    "vllm, node_rank",
+    [
+        ({"data_parallel_size": 2}, 0),
+        ({"data_parallel_size": 2, "master_addr": "10.0.0.1"}, 2),
+        ({"data_parallel_size": 3, "master_addr": "10.0.0.1"}, 0),
+        ({"nnodes": 1}, 1),
+    ],
+)
+def test_native_multinode_rejects_invalid_layout(
+    cli_runner, tmp_path, native_serve, vllm, node_rank
+):
+    native_serve(vllm={"nnodes": 2, **vllm})
+    config = tmp_path / "config.yml"
+    config.write_text("base_model: dummy-model\n")
+    result = cli_runner.invoke(
+        cli, ["vllm-serve", str(config), "--node-rank", str(node_rank)]
+    )
+    assert isinstance(result.exception, ValueError)

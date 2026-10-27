@@ -206,6 +206,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         revision=cfg.revision_of_model,
         merge_compile=bool(cfg.get("merge_compile", False)),
         merge_compile_precision=cfg.get("merge_compile_precision") or "strict",
+        lora_merge_aware=cfg.get("lora_merge_aware"),
     )
     PluginManager.get_instance().post_lora_merge(
         cfg,

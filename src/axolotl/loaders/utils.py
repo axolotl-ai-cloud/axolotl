@@ -2,7 +2,7 @@
 
 import contextlib
 import importlib
-from typing import Type
+from typing import Callable, Type
 
 import torch
 import transformers
@@ -226,9 +226,16 @@ def load_model_config(cfg: DictDefault) -> PretrainedConfig:
     return model_config
 
 
-def ensure_dtype(model: PreTrainedModel, dtype: torch.dtype = torch.bfloat16):
-    """Ensures all modules in the model are converted to the specified data type."""
+def ensure_dtype(
+    model: PreTrainedModel,
+    dtype: torch.dtype = torch.bfloat16,
+    keep: Callable[[str], bool] | None = None,
+):
+    """Ensures all modules in the model, except those named by ``keep``, are converted to
+    the specified data type."""
     for name, module in model.named_modules():
+        if keep is not None and keep(name):
+            continue
         weight_mismatch = False
         with contextlib.suppress(AttributeError):
             weight_mismatch = module.weight.dtype != dtype
@@ -244,7 +251,28 @@ def ensure_dtype(model: PreTrainedModel, dtype: torch.dtype = torch.bfloat16):
         if bias_mismatch:
             LOG.debug(f"Converting module {name}.bias: {module.bias.dtype} -> {dtype}")
         if weight_mismatch or bias_mismatch:
-            module.to(dtype)
+            if keep is None:
+                module.to(dtype)
+            else:
+                _to_dtype_except(module, name, dtype, keep)
+
+
+def _to_dtype_except(
+    module: torch.nn.Module,
+    prefix: str,
+    dtype: torch.dtype,
+    keep: Callable[[str], bool],
+):
+    # module.to() would recurse into kept children, e.g. a LoRA wrapper's lora_A/lora_B
+    for name, submodule in module.named_modules(prefix=prefix):
+        if keep(name):
+            continue
+        for param in submodule.parameters(recurse=False):
+            if param.is_floating_point():
+                param.data = param.data.to(dtype)
+        for buffer_name, buffer in submodule.named_buffers(recurse=False):
+            if buffer.is_floating_point():
+                setattr(submodule, buffer_name, buffer.to(dtype))
 
 
 def _cpu_storage_like(tensor: torch.Tensor) -> torch.Tensor | None:

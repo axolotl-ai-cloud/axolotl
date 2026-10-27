@@ -64,6 +64,16 @@ class LoraConfig(BaseModel):
             "Defaults to enabled for supported backends; false opts out with a warning."
         ),
     )
+    lora_merge_aware: Literal["bf16"] | None = Field(
+        default=None,
+        description=(
+            "Train LoRA linears against their merged weights rounded to this dtype, "
+            "bf16(W + scaling * B @ A), with a straight-through cast so A and B still get "
+            "gradients. Use when the adapter is served merged (vLLM merged weight sync, or "
+            "a bf16 merge-lora checkpoint): at RL learning rates most of an ordinary LoRA "
+            "update rounds away in the merge."
+        ),
+    )
     lora_r: int | None = None
     lora_alpha: int | None = None
     lora_fan_in_fan_out: bool | None = None
