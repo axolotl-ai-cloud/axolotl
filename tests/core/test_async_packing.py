@@ -20,21 +20,8 @@ from axolotl.core.trainers.grpo.async_trainer import (
     AxolotlAsyncGRPOConfig,
     AxolotlAsyncGRPOTrainer,
 )
+from axolotl.core.trainers.grpo.trl_compat import unsampled_fields
 from axolotl.monkeypatch.models.tree_packing import packing_support
-
-
-def _sample(ids, prompt_len, group_id=0):
-    ids = np.asarray(ids, dtype=np.int64)
-    return {
-        "input_ids": ids,
-        "completion_mask": np.asarray(
-            [0] * prompt_len + [1] * (len(ids) - prompt_len), dtype=np.int64
-        ),
-        "old_log_probs": np.zeros(len(ids), np.float32),
-        "advantage": 1.0,
-        "group_id": group_id,
-        "metrics": {},
-    }
 
 
 def test_pack_sequences_without_sharing():
@@ -206,6 +193,7 @@ def test_trains_hybrid_model_on_cpu(
                         [0] * len(prompt_ids) + [1] * len(completion), dtype=np.int64
                     ),
                     old_log_probs=np.zeros(len(ids), np.float32),
+                    **unsampled_fields(len(ids)),
                     advantage=float(g) - 1.5,
                     model_version=0,
                     group_id=group_id,

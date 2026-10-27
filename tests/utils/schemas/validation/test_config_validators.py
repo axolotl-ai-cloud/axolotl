@@ -580,11 +580,71 @@ class TestAsyncGRPOCompat:
             ),
             ({"use_vllm": False}, {}, "use_vllm: true"),
             ({}, {"load_in_4bit": True, "adapter": "qlora"}, "vllm_lora_sync"),
+            (
+                {"vllm_importance_sampling_clip_min": 0.5},
+                {},
+                "bound `loss_type: score_centering` only",
+            ),
+            (
+                {"loss_type": "cispo", "num_sampler_logprobs": 8},
+                {},
+                "`num_sampler_logprobs` is for `loss_type: score_centering` only",
+            ),
         ],
     )
     def test_unsupported_settings_raise(self, min_base_cfg, trl, extra, match):
         with pytest.raises(ValueError, match=match):
             validate_config(self._cfg(min_base_cfg, trl=trl, **extra))
+
+    @pytest.fixture
+    def score_centering(self, monkeypatch):
+        from axolotl.core.trainers.grpo import trl_compat
+
+        monkeypatch.setattr(trl_compat, "SCORE_CENTERING", True)
+
+    @pytest.mark.usefixtures("score_centering")
+    def test_score_centering_takes_its_bounds(self, min_base_cfg):
+        validated = validate_config(
+            self._cfg(
+                min_base_cfg,
+                trl={
+                    "loss_type": "score_centering",
+                    "vllm_importance_sampling_clip_min": 0.25,
+                    "vllm_importance_sampling_clip_max": 4.0,
+                    "num_sampler_logprobs": 16,
+                },
+            )
+        )
+        assert validated.trl.loss_type == "score_centering"
+        assert validated.trl.num_sampler_logprobs == 16
+
+    @pytest.mark.usefixtures("score_centering")
+    @pytest.mark.parametrize(
+        "trl,match",
+        [
+            ({"epsilon_high": 0.28}, "ignores `epsilon_high`"),
+            (
+                {"vllm_importance_sampling_cap": 3.0},
+                "ignores `vllm_importance_sampling_cap`",
+            ),
+        ],
+    )
+    def test_score_centering_rejects_other_losses_bounds(
+        self, min_base_cfg, trl, match
+    ):
+        with pytest.raises(ValueError, match=match):
+            validate_config(
+                self._cfg(min_base_cfg, trl={"loss_type": "score_centering", **trl})
+            )
+
+    def test_score_centering_needs_trl_main(self, min_base_cfg, monkeypatch):
+        from axolotl.core.trainers.grpo import trl_compat
+
+        monkeypatch.setattr(trl_compat, "SCORE_CENTERING", False)
+        with pytest.raises(ValueError, match="only TRL main has"):
+            validate_config(
+                self._cfg(min_base_cfg, trl={"loss_type": "score_centering"})
+            )
 
     def test_lists_every_problem(self, min_base_cfg):
         with pytest.raises(ValueError) as error:

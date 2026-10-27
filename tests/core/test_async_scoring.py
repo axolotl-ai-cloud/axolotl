@@ -41,6 +41,7 @@ from axolotl.core.trainers.grpo.async_scoring import (
     TrainerScorer,
     chunk_inputs,
 )
+from axolotl.core.trainers.grpo.trl_compat import unsampled_fields
 
 MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 PROMPTS = [
@@ -387,6 +388,7 @@ def _pending(group_id, length, group_rows, offset=0):
         "input_ids": ids,
         "completion_mask": np.r_[np.zeros(2), np.ones(length - 2)].astype(np.int64),
         "old_log_probs": np.zeros(length, dtype=np.float32),
+        **unsampled_fields(length),
         "advantage": float("nan"),
         "group_id": group_id,
         "metrics": {

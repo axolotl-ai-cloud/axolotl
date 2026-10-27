@@ -7,6 +7,8 @@ import queue
 import numpy as np
 import torch
 
+from axolotl.core.trainers.grpo.trl_compat import unsampled_fields
+
 
 def reference_tree_attention(
     module,
@@ -90,6 +92,7 @@ def _sample(ids, prompt_len, group_id):
         "input_ids": ids,
         "completion_mask": np.asarray([0] * prompt_len + [1] * (len(ids) - prompt_len)),
         "old_log_probs": np.zeros(len(ids), np.float32),
+        **unsampled_fields(len(ids)),
         "advantage": 1.0,
         "group_id": group_id,
     }

@@ -182,9 +182,11 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "Loss formulation to use. Synchronous GRPO: grpo, bnpo, "
             "dr_grpo, dapo, cispo, and the others TRL's GRPOTrainer supports. Async "
-            "GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler) or "
+            "GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler), "
             "cispo (policy gradient weighted by the policy/sampler ratio, capped at "
-            "vllm_importance_sampling_cap)."
+            "vllm_importance_sampling_cap), or, experimentally and with TRL installed "
+            "from main, score_centering (TRL's score centering with masked importance "
+            "sampling)."
         },
     )
     mask_truncated_completions: bool = Field(
@@ -234,13 +236,26 @@ class TRLConfig(BaseModel):
     vllm_importance_sampling_clip_min: float | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Lower clip bound for the vLLM/training importance-sampling ratio."
+            "description": "Lower clip bound for the vLLM/training importance-sampling "
+            "ratio. Async GRPO with loss_type score_centering: tokens whose ratio is "
+            "below it are dropped (TRL's default 0.5)."
         },
     )
     vllm_importance_sampling_clip_max: float | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Upper clip bound for the vLLM/training importance-sampling ratio."
+            "description": "Upper clip bound for the vLLM/training importance-sampling "
+            "ratio. Async GRPO with loss_type score_centering: tokens whose ratio is "
+            "above it are dropped (TRL's default 5.0)."
+        },
+    )
+    num_sampler_logprobs: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO with loss_type score_centering: how many of the "
+            "vLLM sampler's most likely tokens, with their log-probs, are requested "
+            "for every generated token to center the score over (TRL's default 8). "
+            "The server's --max-logprobs bounds it."
         },
     )
 

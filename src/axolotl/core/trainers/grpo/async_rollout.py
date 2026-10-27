@@ -25,6 +25,7 @@ from axolotl.core.trainers.grpo.trl_compat import (
     add_response_schema,
     is_async_callable,
     print_prompt_completions_sample,
+    sampler_fields,
 )
 from axolotl.utils.logging import get_logger
 from axolotl.utils.reward_worker import reward_worker_main
@@ -496,6 +497,7 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
             input_ids=np.asarray(seq.input_ids, dtype=np.int64),
             completion_mask=np.asarray(seq.completion_mask, dtype=np.int64),
             old_log_probs=np.asarray(seq.old_log_probs, dtype=np.float32),
+            **sampler_fields(seq),
             advantage=float(advantage),
             model_version=group.model_version,
             group_id=group.group_id,
