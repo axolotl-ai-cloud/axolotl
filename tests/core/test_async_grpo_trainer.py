@@ -52,6 +52,9 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.lora_merge_precision import merged_lora_weight
 
 ONES = np.ones(1)
+needs_score_centering = pytest.mark.skipif(
+    not SCORE_CENTERING, reason="score centering is on TRL main only"
+)
 
 
 class TestComputeGroupAdvantages:
@@ -96,10 +99,6 @@ class TestComputeGroupAdvantages:
         _, summed = compute_group_advantages(rewards, np.ones(2))
         np.testing.assert_allclose(gdpo, [0.0, -np.sqrt(2), 0.0, np.sqrt(2)], atol=1e-6)
         assert summed[0] < 0  # the large reward dominates the plain sum
-
-    def test_rejects_batch_scaling(self):
-        with pytest.raises(ValueError, match="scale_rewards"):
-            compute_group_advantages(np.zeros((1, 2)), ONES, scale_rewards="batch")
 
 
 def _sample(
@@ -329,27 +328,13 @@ class TestConfig:
         assert args.loss_type == "dapo"
         assert not hasattr(args, "vllm_importance_sampling_correction")
 
-    def test_rejects_other_loss_types(self, tmp_path):
-        with pytest.raises(ValueError, match="loss_type"):
-            AxolotlAsyncGRPOConfig(
-                output_dir=str(tmp_path), use_cpu=True, loss_type="grpo"
-            )
-
-    def test_rejects_cap_at_most_one(self, tmp_path):
-        with pytest.raises(ValueError, match="must exceed 1"):
-            AxolotlAsyncGRPOConfig(
-                output_dir=str(tmp_path),
-                use_cpu=True,
-                vllm_importance_sampling_cap=1.0,
-            )
-
-    def test_rejects_sequence_modes(self, tmp_path):
-        with pytest.raises(ValueError, match="vllm_importance_sampling_mode"):
-            AxolotlAsyncGRPOConfig(
-                output_dir=str(tmp_path),
-                use_cpu=True,
-                vllm_importance_sampling_mode="sequence_mask",
-            )
+    @needs_score_centering
+    @pytest.mark.parametrize("loss_type", ["dapo", "cispo", "score_centering"])
+    def test_loss_type_decides_trls_objective(self, tmp_path, loss_type):
+        args = AxolotlAsyncGRPOConfig(
+            output_dir=str(tmp_path), use_cpu=True, loss_type=loss_type
+        )
+        assert args.score_centering is (loss_type == "score_centering")
 
 
 class _Tokenizer:
@@ -378,9 +363,6 @@ def _rollout_loop(reward_funcs, processing_class=None, **kwargs):
 
 # TRL main's _generate_one_turn also returns the sampling mask and top log-probs.
 _TURN_EXTRAS = (None, None) if SCORE_CENTERING else ()
-needs_score_centering = pytest.mark.skipif(
-    not SCORE_CENTERING, reason="score centering is on TRL main only"
-)
 
 
 def _group(group_id, contents):
@@ -1269,33 +1251,6 @@ def test_trains_with_score_centering_on_cpu(
     assert all(not torch.equal(trained[n], params[n].detach()) for n in trained)
 
 
-class TestScoreCenteringConfig:
-    def test_needs_trl_main(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(async_trainer, "SCORE_CENTERING", False)
-        with pytest.raises(ValueError, match="only TRL main has"):
-            AxolotlAsyncGRPOConfig(
-                output_dir=str(tmp_path), use_cpu=True, loss_type="score_centering"
-            )
-
-    @needs_score_centering
-    @pytest.mark.parametrize("loss_type", ["dapo", "cispo", "score_centering"])
-    def test_loss_type_decides_trls_objective(self, tmp_path, loss_type):
-        args = AxolotlAsyncGRPOConfig(
-            output_dir=str(tmp_path), use_cpu=True, loss_type=loss_type
-        )
-        assert args.score_centering is (loss_type == "score_centering")
-
-    def test_custom_rollout_loops_cannot_score_center(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(async_trainer, "SCORE_CENTERING", True)
-        with pytest.raises(ValueError, match="only TRL's own rollout loop"):
-            AxolotlAsyncGRPOConfig(
-                output_dir=str(tmp_path),
-                use_cpu=True,
-                loss_type="score_centering",
-                rollout_loop="axolotl.core.trainers.ebft.async_rollout.EBFTRolloutLoop",
-            )
-
-
 class TestTreeFlashAttn:
     @pytest.fixture
     def tree_flash_attn(self, monkeypatch):
@@ -1683,11 +1638,9 @@ def test_custom_rollout_loop_and_alias_wiring(tmp_path, monkeypatch):
         )
 
 
-def test_rollout_loop_must_be_an_axolotl_rollout_loop(tmp_path):
+def test_rollout_loop_must_be_an_axolotl_rollout_loop():
     with pytest.raises(ValueError, match="AxolotlRolloutLoop"):
-        AxolotlAsyncGRPOConfig(
-            output_dir=str(tmp_path), use_cpu=True, rollout_loop="queue.Queue"
-        )
+        async_trainer.resolve_rollout_loop("queue.Queue")
 
 
 class _RecordingPlugin:

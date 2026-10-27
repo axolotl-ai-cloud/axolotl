@@ -32,8 +32,6 @@ from axolotl.utils.reward_worker import reward_worker_main
 
 LOG = get_logger(__name__)
 
-AGGREGATIONS = ("sum_then_normalize", "normalize_then_sum")
-REWARD_SCALINGS = ("group", "none")
 # Key in `RolloutSample.metrics` carrying what the trainer needs to score a sample whose
 # advantage is still pending; the trainer pops it before metrics are logged.
 SCORE_PAYLOAD = "_trainer_score"
@@ -64,10 +62,6 @@ def compute_group_advantages(
     whose learning signal is constant gets exactly zero advantages, so it can be
     told apart from a group that merely has small ones.
     """
-    if aggregation not in AGGREGATIONS:
-        raise ValueError(f"multi_objective_aggregation must be one of {AGGREGATIONS}")
-    if scale_rewards not in REWARD_SCALINGS:
-        raise ValueError(f"scale_rewards must be one of {REWARD_SCALINGS}")
     weights = reward_weights[:, None]
     unscored = np.all(np.isnan(rewards_per_func), axis=0)
     rewards = np.nansum(rewards_per_func * weights, axis=0)

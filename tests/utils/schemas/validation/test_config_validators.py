@@ -590,6 +590,12 @@ class TestAsyncGRPOCompat:
                 {},
                 "`num_sampler_logprobs` is for `loss_type: score_centering` only",
             ),
+            (
+                {"loss_type": "cispo", "vllm_importance_sampling_cap": 1.0},
+                {},
+                "must exceed 1",
+            ),
+            ({"reward_num_workers": 0}, {}, "reward_num_workers"),
         ],
     )
     def test_unsupported_settings_raise(self, min_base_cfg, trl, extra, match):
@@ -653,6 +659,13 @@ class TestAsyncGRPOCompat:
             validate_config(
                 self._cfg(min_base_cfg, trl={"loss_type": "score_centering", **trl})
             )
+
+    @pytest.mark.usefixtures("score_centering")
+    def test_custom_rollout_loops_cannot_score_center(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, trl={"loss_type": "score_centering"})
+        cfg.rl, cfg.ebft = "ebft", {"mode": "structured"}
+        with pytest.raises(ValueError, match="only TRL's own rollout loop"):
+            validate_config(cfg)
 
     def test_score_centering_needs_trl_main(self, min_base_cfg, monkeypatch):
         from axolotl.core.trainers.grpo import trl_compat

@@ -2901,6 +2901,14 @@ class GRPOVllmValidationMixin:
                     "`vllm_importance_sampling_mode` must be `token_truncate` or "
                     "`token_mask`"
                 )
+            if (
+                trl.vllm_importance_sampling_cap is not None
+                and trl.vllm_importance_sampling_cap <= 1.0
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_cap` must exceed 1, or it would "
+                    "down-weight or drop every token the sampler agrees with"
+                )
         elif trl.loss_type == "score_centering":
             from axolotl.core.trainers.grpo import trl_compat
 

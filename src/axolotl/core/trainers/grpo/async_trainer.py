@@ -63,9 +63,7 @@ from axolotl.core.trainers.grpo.async_progress import (
     StopAwareDataset,
 )
 from axolotl.core.trainers.grpo.async_rollout import (
-    AGGREGATIONS,
     GROUP_ROWS,
-    REWARD_SCALINGS,
     AxolotlAsyncRolloutWorker,
     AxolotlRolloutLoop,
 )
@@ -105,7 +103,6 @@ from axolotl.core.trainers.grpo.trl_compat import (
     nanmin,
     patched_trainer_module,
     save_lora_adapter,
-    score_centering_unavailable,
 )
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
@@ -128,8 +125,6 @@ from axolotl.utils.lora_merge_precision import (
 
 LOG = get_logger(__name__)
 
-LOSS_TYPES = ("dapo", "cispo", "score_centering")
-IMPORTANCE_SAMPLING_MODES = ("token_truncate", "token_mask")
 # Kept beside the versioned adapter directories, dot-prefixed like TRL's staging ones.
 RETIRED_ADAPTER_WEIGHTS = f".retired-{SAFETENSORS_WEIGHTS_NAME}"
 
@@ -282,45 +277,7 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
             # TRL main trains with score centering by default; loss_type decides here,
             # so that the rollout worker requests top log-probs only when it is used.
             self.score_centering = self.loss_type == "score_centering"
-        elif self.loss_type == "score_centering":
-            raise ValueError(score_centering_unavailable())
         super().__post_init__()
-        if self.rollout_loop is not None:
-            resolve_rollout_loop(self.rollout_loop)
-            if self.loss_type == "score_centering":
-                raise ValueError(
-                    "loss_type 'score_centering' centers over the vLLM sampler's top "
-                    "log-probs, which only TRL's own rollout loop requests; "
-                    f"rollout_loop {self.rollout_loop!r} does not"
-                )
-        if self.multi_objective_aggregation not in AGGREGATIONS:
-            raise ValueError(
-                f"multi_objective_aggregation must be one of {AGGREGATIONS}, got "
-                f"{self.multi_objective_aggregation!r}"
-            )
-        if self.scale_rewards not in REWARD_SCALINGS:
-            raise ValueError(
-                f"Async GRPO supports scale_rewards in {REWARD_SCALINGS}, got "
-                f"{self.scale_rewards!r}: rewards are normalized per group as each "
-                "group finishes, so there is no batch to take a std over."
-            )
-        if self.loss_type not in LOSS_TYPES:
-            raise ValueError(
-                f"Async GRPO supports loss_type in {LOSS_TYPES}, got {self.loss_type!r}"
-            )
-        if self.vllm_importance_sampling_mode not in IMPORTANCE_SAMPLING_MODES:
-            raise ValueError(
-                f"Async GRPO supports vllm_importance_sampling_mode in "
-                f"{IMPORTANCE_SAMPLING_MODES}, got "
-                f"{self.vllm_importance_sampling_mode!r}"
-            )
-        if self.vllm_importance_sampling_cap <= 1.0:
-            raise ValueError(
-                "vllm_importance_sampling_cap must exceed 1, or it would down-weight "
-                "or drop every token the sampler agrees with"
-            )
-        if self.reward_num_workers < 1:
-            raise ValueError("reward_num_workers must be >= 1")
 
 
 class SampleFilterQueue:
