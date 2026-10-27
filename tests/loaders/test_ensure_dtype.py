@@ -36,6 +36,14 @@ def test_keep_leaves_lora_factors_in_fp32():
         assert dtype == expected, name
 
 
+def test_keep_survives_casting_an_fp32_base_layer():
+    model = get_peft_model(_Toy(), LoraConfig(r=4, target_modules=["q"]))
+    ensure_dtype(model, dtype=torch.bfloat16, keep=is_lora_tensor_name)
+    for name, dtype in _dtypes(model).items():
+        expected = torch.float32 if "lora_" in name else torch.bfloat16
+        assert dtype == expected, name
+
+
 def test_without_keep_everything_is_cast():
     model = _model()
     ensure_dtype(model, dtype=torch.bfloat16)
