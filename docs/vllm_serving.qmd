@@ -141,8 +141,9 @@ axolotl vllm-serve grpo_config.yaml --node-rank 0
 # Node 1: 4 headless replicas
 axolotl vllm-serve grpo_config.yaml --node-rank 1
 
-# Trainer node, once http://10.0.0.1:8000/health returns 200
-VLLM_HOST_IP=<trainer IP reachable from the vLLM nodes> axolotl train grpo_config.yaml
+# Trainer node (10.0.0.3, must be reachable from the vLLM nodes).
+# Start once http://10.0.0.1:8000/health returns 200.
+VLLM_HOST_IP=10.0.0.3 axolotl train grpo_config.yaml
 ```
 
 | Layout | Config | Link between vLLM nodes |
@@ -294,13 +295,17 @@ trl:
 **vLLM must be restarted between training runs.** Weight syncs from a previous run leave the server in a corrupted state. If you start a new training run against a stale vLLM server, the model may fail to learn.
 :::
 
-Restart before every new experiment, after a crashed or interrupted run, and whenever the base model changes. A plain `kill` often leaves vLLM's EngineCore subprocess holding GPU memory, so kill both and check that memory is freed (on every node for [multi-node](#sec-multi-node)):
+Restart before every new experiment, after a crashed or interrupted run, or when the base model changes.
+
+A plain `kill` can leave vLLM's EngineCore subprocess holding GPU memory. Kill both, then confirm the memory is freed:
 
 ```bash
 pkill -9 -f "vllm|EngineCore"
 nvidia-smi
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve grpo_config.yaml
 ```
+
+For [multi-node](#sec-multi-node), do this on every node and relaunch each with its `--node-rank`.
 
 Wait for the health endpoint to return 200 before starting training:
 
