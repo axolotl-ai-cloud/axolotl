@@ -71,6 +71,10 @@ description: Frequently asked questions
 
 > A: We use `torch` APIs to retrieve this information. You can see https://docs.pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management for more information.
 
+**Q: How do I run an external benchmark or eval during training?**
+
+> A: Use the [Benchmark API plugin](custom_integrations.qmd) (`axolotl.integrations.benchmark_api.BenchmarkAPIPlugin`). By default it POSTs on save events to an HTTP endpoint you run; set `run_on` to also (or instead) trigger on evaluation or train end. It logs the returned scalar metrics back into training, with optional early stopping and asynchronous (non-blocking) execution.
+
 ### Chat templates
 
 **Q: `jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'content' / 'role' / ____`**
