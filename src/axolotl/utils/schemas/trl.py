@@ -392,6 +392,7 @@ class TRLConfig(BaseModel):
 
     reward_num_workers: int = Field(
         default=1,
+        ge=1,
         json_schema_extra={
             "description": "Number of persistent subprocess workers for parallel reward computation. Each worker has its "
             "own main thread so signal.alarm() (used by math_verify) works correctly. Work is sharded across "
