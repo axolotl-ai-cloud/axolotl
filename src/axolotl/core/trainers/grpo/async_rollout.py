@@ -533,3 +533,18 @@ class AxolotlAsyncRolloutWorker(AsyncRolloutWorker):
         super().__init__(**kwargs)
         if loop_cls is not None:
             self._loop_cls = loop_cls
+
+    def stop(self) -> None:
+        # A child that died on its own (it raised) stays counted as a waiter on the
+        # stop event, and multiprocessing's Event.set() waits for every waiter to
+        # wake, so TRL's stop() would hang the trainer instead of re-raising.
+        process = self._process  # type: ignore[has-type]
+        if (
+            process is not None
+            and process._popen is not None
+            and not process.is_alive()
+        ):
+            process.join()
+            self._process = None
+            return
+        super().stop()
