@@ -238,12 +238,14 @@ class _DenseView:
 
 @functools.cache
 def tree_flash_attn():
-    """TRL's FA3 kernel, or FA2's where FA3 has no build for the GPU (Blackwell)."""
+    """TRL's kernel (FA3; FA4 on Blackwell from TRL 1.17), or FA2's where it cannot
+    load: FA3 has no Blackwell build, and FA4's CuTe DSL code fails to import under
+    nvidia-cutlass-dsl releases it was not built against."""
     try:
         return _trl_flash_attn()
-    except RuntimeError as err:
+    except Exception as err:  # pylint: disable=broad-exception-caught
         LOG.warning(
-            f"Tree attention uses flash-attn2: flash-attn3 failed to load: {err}"
+            f"Tree attention uses flash-attn2: TRL's kernel failed to load: {err!r}"
         )
         from kernels import get_kernel
 
