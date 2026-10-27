@@ -36,14 +36,24 @@ def _redirect_remote_code(_context: ModelHookContext) -> None:
     redirect_dynamic_modules(BAILING_PACKAGE, BAILING_MODULES)
 
 
+def _require_remote_code(context: ModelHookContext) -> None:
+    if not getattr(context.cfg, "trust_remote_code", False):
+        raise ValueError(
+            "Ling 3.0 (bailing_hybrid) requires trust_remote_code: true. Without it, "
+            "transformers>=5.20 loads its native BailingHybrid classes, whose module "
+            "layout axolotl's Ling 3.0 support does not target."
+        )
+
+
 def _weight_conversions():
     from transformers.conversion_mapping import get_checkpoint_conversion_mapping
     from transformers.core_model_loading import WeightRenaming
 
     # the fused-expert layout and router come from deepseek_v3; only the router
-    # bias is spelled differently in a Bailing checkpoint
+    # bias is spelled differently in a Bailing checkpoint. Keyed by class so
+    # transformers' native `bailing_hybrid` renames never reach this vendored layout.
     return {
-        "bailing_hybrid": get_checkpoint_conversion_mapping("deepseek_v3")
+        "BailingMoeV3ForCausalLM": get_checkpoint_conversion_mapping("deepseek_v3")
         + [WeightRenaming("mlp.gate.expert_bias", "mlp.gate.e_score_correction_bias")]
     }
 
@@ -66,6 +76,7 @@ class BailingHybridSupport(ModelSupport):
         ),
         hooks=ModelHooks(
             by_phase={
+                ModelHookPhase.CONFIGURE_RUN: (_require_remote_code,),
                 ModelHookPhase.BEFORE_CONFIG_LOAD: (_redirect_remote_code,),
                 ModelHookPhase.BEFORE_TOKENIZER_LOAD: (_redirect_remote_code,),
                 ModelHookPhase.BEFORE_MODEL_BUILD: (_redirect_remote_code,),

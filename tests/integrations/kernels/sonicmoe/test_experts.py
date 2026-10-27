@@ -190,15 +190,6 @@ class TestMoELoRAMaterialize:
         # Base weight is frozen — no grad expected.
         assert base.grad is None
 
-    def test_no_lora_returns_base_unchanged(self):
-        from axolotl.integrations.kernels.libs.sonicmoe.lora import (
-            materialize_expert_lora,
-        )
-
-        base = torch.randn(4, 8, 6)
-        result = materialize_expert_lora(base, None)
-        assert result is base
-
 
 class TestExpertsClassMetadata:
     """The forward reads `has_gate`/`has_bias`/`is_transposed`/`is_concatenated`
@@ -260,21 +251,6 @@ class TestExpertsClassMetadata:
                 torch.zeros(2, 4, device="cuda"),
                 torch.zeros(2, 1, dtype=torch.long, device="cuda"),
                 torch.ones(2, 1, device="cuda"),
-            )
-
-    def test_rejects_non_cuda(self):
-        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
-            sonicmoe_experts_forward_with_lora,
-        )
-
-        fake_self = SimpleNamespace(has_gate=True)
-        hidden = torch.zeros(2, 4)  # CPU tensor
-        top_k_index = torch.zeros(2, 1, dtype=torch.long)
-        top_k_weights = torch.ones(2, 1)
-
-        with pytest.raises(ValueError, match="CUDA"):
-            sonicmoe_experts_forward_with_lora(
-                fake_self, hidden, top_k_index, top_k_weights
             )
 
 

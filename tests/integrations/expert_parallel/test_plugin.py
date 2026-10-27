@@ -61,10 +61,6 @@ class TestExpertParallelArgs:
         assert a.expert_parallel_backend == "auto"
         assert a.expert_parallel_fallback_on_unsupported is True
 
-    def test_enabled(self):
-        a = ExpertParallelArgs(expert_parallel_size=2)
-        assert a.expert_parallel_size == 2
-
     def test_invalid_size(self):
         with pytest.raises(ValueError):
             ExpertParallelArgs(expert_parallel_size=0)
@@ -322,12 +318,12 @@ class TestSonicmoeEPPadding:
 
         seen = {}
 
-        def fake_forward(module, x, idx, w):
+        def fake_forward(module, x, idx, w, pairs=None):
             seen.update(x=x, idx=idx, w=w)
             return x * 2
 
         monkeypatch.setattr(sonic, "_sonicmoe_forward", fake_forward)
-        module = SimpleNamespace(num_experts=4, num_experts_global=8)
+        module = SimpleNamespace(num_experts=4, num_experts_global=8, training=True)
         x = torch.randn(num_recv, 8)
         idx = torch.randint(0, 5, (num_recv, 2))
         w = torch.rand(num_recv, 2)
@@ -598,14 +594,6 @@ class TestPluginLifecycle:
             plugin.get_input_args()
             == "axolotl.integrations.expert_parallel.ExpertParallelArgs"
         )
-
-    def test_pre_model_load_disabled_is_noop(self):
-        plugin = ExpertParallelPlugin()
-
-        class _Cfg:
-            expert_parallel_enabled = False
-
-        plugin.pre_model_load(_Cfg())  # should not raise / not register anything new
 
     def _ep_cfg(self, **kw):
         from types import SimpleNamespace

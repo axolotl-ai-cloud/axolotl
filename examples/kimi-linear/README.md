@@ -12,10 +12,10 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 2. Install CCE via [docs](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy)
 
-3. Check that FLA 0.4.1 is installed — the KDA layers import their kernels from it:
+3. Check that FLA 0.5.2 is installed — the KDA layers import their kernels from it:
 
     ```bash
-    pip install fla-core==0.4.1 flash-linear-attention==0.4.1
+    pip install fla-core==0.5.2 flash-linear-attention==0.5.2
     ```
 
     > Axolotl already pins both on x86_64, so a standard install covers this. The

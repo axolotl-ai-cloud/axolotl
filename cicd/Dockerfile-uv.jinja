@@ -22,15 +22,17 @@ RUN git fetch origin +$IMAGE_REF && \
 RUN uv pip install packaging==26.0 setuptools==78.1.1
 RUN uv pip uninstall causal_conv1d
 RUN uv pip install "huggingface_hub>=1.5.0" "httpx<1" "kernels-data"
-RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        uv pip install --no-build-isolation -e .[deepspeed,optimizers,ray,modal,fla,ringmaster,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+# pin the base image's torch build so an extra with an unbounded torch (e.g. blackwell) cannot swap it
+RUN TORCH_PIN="torch==$(python -c 'import torch; print(torch.__version__)')" && \
+    if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        uv pip install --no-build-isolation -e .[deepspeed,optimizers,ray,modal,fla,ringmaster,$AXOLOTL_EXTRAS] "$TORCH_PIN" $AXOLOTL_ARGS; \
     else \
-        uv pip install --no-build-isolation -e .[deepspeed,optimizers,ray,modal,fla,ringmaster] $AXOLOTL_ARGS; \
+        uv pip install --no-build-isolation -e .[deepspeed,optimizers,ray,modal,fla,ringmaster] "$TORCH_PIN" $AXOLOTL_ARGS; \
     fi
 
 # Override with nightly HF packages for nightly builds
 RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
-        uv pip install "kernels>=0.15.2,<0.16"; \
+        uv pip install "kernels>=0.17.2,<0.18"; \
         uv pip install --no-deps \
             "transformers @ git+https://github.com/huggingface/transformers.git@main" \
             "peft @ git+https://github.com/huggingface/peft.git@main" \

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, Mapping, Sequence, TypeAlias
+from typing import Any, Literal, Mapping, Sequence, TypeAlias
 
 import torch
 import torch.nn.functional as F
@@ -85,6 +85,14 @@ class DecisionLossResult:
     per_example_full_vocab_dft_hard_weight_sum: tuple[torch.Tensor, ...] | None = None
     per_example_full_vocab_dft_hard_count: tuple[torch.Tensor, ...] | None = None
     per_example_brier_loss: tuple[torch.Tensor, ...] | None = None
+    # Logging-only diagnostics (detached; never part of ``loss``).  ``None`` when
+    # the full-vocabulary term is skipped (``label_softmax: restricted``).
+    label_mass: torch.Tensor | None = None
+    label_mass_nll: torch.Tensor | None = None
+    excess_full_vocab_loss: torch.Tensor | None = None
+    per_example_label_mass: tuple[torch.Tensor, ...] | None = None
+    per_example_label_mass_nll: tuple[torch.Tensor, ...] | None = None
+    per_example_excess_full_vocab_loss: tuple[torch.Tensor, ...] | None = None
 
 
 def _optional_smoothing(value: object) -> float | None:
@@ -206,6 +214,7 @@ def decision_label_loss(
     full_vocab_dft_hard_weight_sum_examples = []
     full_vocab_dft_hard_count_examples = []
     brier_examples = []
+    label_metric_examples: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
     for batch_index, example in enumerate(examples):
         _validate_source_weight(example.source_weight)
         restricted_questions = []
@@ -214,6 +223,8 @@ def decision_label_loss(
         full_vocab_dft_hard_weight_sums = []
         full_vocab_dft_hard_counts = []
         brier_questions = []
+        log_mass_questions: list[torch.Tensor] = []
+        excess_questions: list[torch.Tensor] = []
         for question in example.questions:
             query_logits = logits[batch_index, question.position].float()
             allowed_ids = _allowed_ids(
@@ -258,6 +269,18 @@ def decision_label_loss(
                     full_target,
                     full_distribution,
                 )
+                with torch.no_grad():
+                    log_mass_questions.append(
+                        _label_log_mass(full_logprobs.detach(), allowed_ids)
+                    )
+                    excess_questions.append(
+                        _excess_full_vocab(
+                            full_vocab,
+                            question.target,
+                            full_distribution,
+                            allowed_ids.shape[0],
+                        )
+                    )
                 dft_hard = full_ce_weighting == "dft" and isinstance(
                     question.target, HardLabel
                 )
@@ -289,6 +312,11 @@ def decision_label_loss(
             torch.stack(full_vocab_dft_hard_counts).sum()
         )
         brier_examples.append(_weighted_mean(brier_questions, qw) * weight)
+        if label_softmax != "restricted":
+            label_metric_examples.append(
+                _label_example_metrics(log_mass_questions, excess_questions, qw, weight)
+            )
+    label_metrics = _label_metric_fields(label_metric_examples)
     restricted_loss = torch.stack(restricted_examples).mean()
     full_vocab_loss = torch.stack(full_vocab_examples).mean()
     effective_full_vocab_loss = torch.stack(effective_full_vocab_examples).mean()
@@ -337,6 +365,7 @@ def decision_label_loss(
             value.detach() for value in full_vocab_dft_hard_count_examples
         ),
         per_example_brier_loss=tuple(value.detach() for value in brier_examples),
+        **label_metrics,
     )
 
 
@@ -374,6 +403,9 @@ def decision_label_loss_from_hidden(
     full_question_weights: list[float] = []
     full_dft_hard: list[bool] = []
     residual_full_losses: list[tuple[int, torch.Tensor, float]] = []
+    # Logging-only, per selected query: (restricted logsumexp, target logit, H).
+    selected_label_stats: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
+    residual_label_stats: list[tuple[torch.Tensor, torch.Tensor]] = []
     for batch_index, example in enumerate(examples):
         _validate_source_weight(example.source_weight)
         restricted_questions: list[torch.Tensor] = []
@@ -424,19 +456,28 @@ def decision_label_loss_from_hidden(
                         F.linear(projection_hidden, head.weight, head.bias).float(),
                         dim=0,
                     )
-                    residual_full_losses.append(
-                        (
-                            batch_index,
-                            _full_vocab_question_loss(
-                                full_logprobs,
-                                allowed_ids,
-                                question.target,
-                                full_target,
-                                full_distribution,
-                            ),
-                            question.weight,
-                        )
+                    residual_loss = _full_vocab_question_loss(
+                        full_logprobs,
+                        allowed_ids,
+                        question.target,
+                        full_target,
+                        full_distribution,
                     )
+                    residual_full_losses.append(
+                        (batch_index, residual_loss, question.weight)
+                    )
+                    with torch.no_grad():
+                        residual_label_stats.append(
+                            (
+                                _label_log_mass(full_logprobs.detach(), allowed_ids),
+                                _excess_full_vocab(
+                                    residual_loss,
+                                    question.target,
+                                    full_distribution,
+                                    allowed_ids.shape[0],
+                                ),
+                            )
+                        )
                     continue
                 selected_hidden.append(projection_hidden)
                 full_targets.append(full_target)
@@ -448,6 +489,23 @@ def decision_label_loss_from_hidden(
                     - (full_distribution * restricted_logits).sum()
                 )
                 full_example_indices.append(batch_index)
+                with torch.no_grad():
+                    detached_logits = restricted_logits.detach()
+                    selected_label_stats.append(
+                        (
+                            detached_logits.logsumexp(0),
+                            torch.where(
+                                allowed_ids == full_target,
+                                detached_logits,
+                                torch.zeros_like(detached_logits),
+                            ).sum(),
+                            _target_entropy(
+                                question.target,
+                                full_distribution,
+                                allowed_ids.shape[0],
+                            ).to(detached_logits.device),
+                        )
+                    )
                 full_dft_hard.append(
                     full_ce_weighting == "dft"
                     and isinstance(question.target, HardLabel)
@@ -468,6 +526,7 @@ def decision_label_loss_from_hidden(
     dft_hard_count_per_example = [
         hidden.new_zeros((), dtype=torch.float32) for _ in examples
     ]
+    label_metric_examples: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
     if label_softmax != "restricted":
         if selected_hidden:
             token_losses = linear_token_loss(
@@ -477,6 +536,7 @@ def decision_label_loss_from_hidden(
                 raise ValueError(
                     "linear_token_loss must return one loss per selected query"
                 )
+            raw_token_losses = token_losses.detach()
             corrections = torch.stack(
                 [
                     token_losses[index].new_zeros(())
@@ -488,6 +548,7 @@ def decision_label_loss_from_hidden(
             token_losses = token_losses + corrections
         else:
             token_losses = hidden.new_empty((0,), dtype=torch.float32)
+            raw_token_losses = token_losses
         per_example: list[list[torch.Tensor]] = [[] for _ in examples]
         per_example_weights: list[list[float]] = [[] for _ in examples]
         for loss, batch_index, question_weight in zip(
@@ -498,6 +559,35 @@ def decision_label_loss_from_hidden(
         for batch_index, loss, question_weight in residual_full_losses:
             per_example[batch_index].append(loss)
             per_example_weights[batch_index].append(question_weight)
+        with torch.no_grad():
+            log_mass_per_example: list[list[torch.Tensor]] = [[] for _ in examples]
+            excess_per_example: list[list[torch.Tensor]] = [[] for _ in examples]
+            for raw, full, batch_index, (restricted_lse, target_logit, entropy) in zip(
+                raw_token_losses,
+                token_losses.detach(),
+                full_example_indices,
+                selected_label_stats,
+                strict=True,
+            ):
+                # Plain token CE is lse_full - z_target, so lse_full = CE + z_target
+                # and log(label mass) = lse_restricted - lse_full.
+                log_mass = restricted_lse.float() - (raw.float() + target_logit.float())
+                log_mass_per_example[batch_index].append(log_mass.clamp(max=0.0))
+                excess_per_example[batch_index].append(full.float() - entropy.float())
+            for (batch_index, _loss, _weight), (log_mass, excess) in zip(
+                residual_full_losses, residual_label_stats, strict=True
+            ):
+                log_mass_per_example[batch_index].append(log_mass)
+                excess_per_example[batch_index].append(excess)
+            label_metric_examples = [
+                _label_example_metrics(
+                    log_mass_per_example[index],
+                    excess_per_example[index],
+                    per_example_weights[index],
+                    example.source_weight,
+                )
+                for index, example in enumerate(examples)
+            ]
         weighted = [
             _weighted_mean(losses, per_example_weights[index])
             * examples[index].source_weight
@@ -593,7 +683,87 @@ def decision_label_loss_from_hidden(
             value.detach() for value in dft_hard_count_per_example
         ),
         per_example_brier_loss=tuple(value.detach() for value in brier_examples),
+        **_label_metric_fields(label_metric_examples),
     )
+
+
+def _label_log_mass(
+    full_logprobs: torch.Tensor, allowed_ids: torch.Tensor
+) -> torch.Tensor:
+    """log of the full-vocabulary probability mass on a question's allowed labels."""
+    return full_logprobs.index_select(0, allowed_ids).logsumexp(0).clamp(max=0.0)
+
+
+def _target_entropy(
+    target: DecisionLabelTarget,
+    full_distribution: torch.Tensor | None,
+    count: int,
+) -> torch.Tensor:
+    """Entropy of the target the full-vocabulary CE is taken against.
+
+    * dist with ``other_probability``: candidates plus one "other" bucket,
+      ``-sum p log p - o log o`` (the CE scores the other mass as one bucket);
+    * smoothed hard / dist targets: entropy of the smoothed allowed-label target;
+    * plain hard labels: 0;
+    * set labels: 0, since the full-vocabulary CE targets one detached member.
+    """
+    if isinstance(target, DistributionLabel) and (
+        target.other_probability > 0 or full_distribution is None
+    ):
+        _indices, probabilities = _distribution_candidates(target, count)
+        values = (*probabilities, target.other_probability)
+        return torch.tensor(
+            -sum(value * math.log(value) for value in values if value > 0),
+            dtype=torch.float32,
+        )
+    if full_distribution is not None:
+        desired = full_distribution.detach().float()
+        return -torch.special.xlogy(desired, desired).sum()
+    return torch.zeros((), dtype=torch.float32)
+
+
+def _excess_full_vocab(
+    full_vocab: torch.Tensor,
+    target: DecisionLabelTarget,
+    full_distribution: torch.Tensor | None,
+    count: int,
+) -> torch.Tensor:
+    """Full-vocabulary CE minus the target entropy (a KL; equals CE for one-hot)."""
+    entropy = _target_entropy(target, full_distribution, count)
+    return full_vocab.detach().float() - entropy.to(full_vocab.device)
+
+
+def _label_example_metrics(
+    log_masses: Sequence[torch.Tensor],
+    excesses: Sequence[torch.Tensor],
+    question_weights: Sequence[float],
+    source_weight: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Per-example label mass, its NLL, and excess loss, weighted like the losses."""
+    with torch.no_grad():
+        log_mass = torch.stack([value.float() for value in log_masses])
+        return (
+            _weighted_mean(list(log_mass.exp()), question_weights) * source_weight,
+            _weighted_mean(list(-log_mass), question_weights) * source_weight,
+            _weighted_mean([value.float() for value in excesses], question_weights)
+            * source_weight,
+        )
+
+
+def _label_metric_fields(
+    per_example: Sequence[tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
+) -> dict[str, Any]:
+    if not per_example:
+        return {}
+    mass, nll, excess = (tuple(values) for values in zip(*per_example, strict=True))
+    return {
+        "label_mass": torch.stack(mass).mean(),
+        "label_mass_nll": torch.stack(nll).mean(),
+        "excess_full_vocab_loss": torch.stack(excess).mean(),
+        "per_example_label_mass": mass,
+        "per_example_label_mass_nll": nll,
+        "per_example_excess_full_vocab_loss": excess,
+    }
 
 
 def _restricted_question_loss(

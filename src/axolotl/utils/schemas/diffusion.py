@@ -214,3 +214,19 @@ class DiffusionUnrollConfig(BaseModel):
         default=False,
         description="Backpropagate through earlier reads; requires a self-conditioning model.",
     )
+    eval_steps: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Fixed read count when the model is not training (evaluation, prediction and "
+            "student reads) instead of drawing 1..k_max per batch. Must not exceed k_max; "
+            "every other unroll setting still follows k_max, so a 1-step eval read is the "
+            "same pass as a 1-step training draw. Default: sample as in training."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _eval_steps_within_k_max(self):
+        if self.eval_steps is not None and self.eval_steps > self.k_max:
+            raise ValueError("unroll.eval_steps must be between 1 and unroll.k_max")
+        return self

@@ -38,8 +38,8 @@ class MuseGlimmerSupport(ModelSupport):
                 "to apply_lce."
             ),
             "liger": Supported(
-                "RMSNorm, GLU, RoPE and vision-tower LayerNorm kernels; FLCE is skipped "
-                "in favor of cut_cross_entropy."
+                "Liger's native patch: RMSNorm, GLU, RoPE and FLCE (folds "
+                "output_multiplier and softcap); vision-tower LayerNorm is not patched."
             ),
             "lora_kernels": Unsupported(
                 "The fused QKV/O source rewrite does not match MuseGlimmerTextAttention's "

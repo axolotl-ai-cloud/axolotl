@@ -9,9 +9,10 @@ LOG = get_logger(__name__)
 # quack < 0.6.0 (built for cutlass 4.6.0.dev0) crashes the FA4 backward on stable 4.6.0.
 FA4_MIN_QUACK_VERSION = "0.6.0"
 
-# FA4's Blackwell backward still elects around its own bulk copies; from cutlass-dsl 4.6.0
-# cute.copy elects internally too, and the nested election hangs the kernel.
+# FA4's Blackwell backward elects around its own bulk copies; cutlass-dsl 4.6.0 and 4.6.1
+# also elect inside cute.copy, and the nested election hangs the kernel. 4.6.2 reverted it.
 FA4_SM100_ELECT_CUTLASS_VERSION = "4.6.0"
+FA4_SM100_ELECT_CUTLASS_REVERTED = "4.6.2"
 FA4_SM100_FIX_INSTALL = (
     "pip install --no-deps --force-reinstall 'git+https://github.com/dongxiao92/"
     "flash-attention@fix/sm100-elect-one-and-div-alignment#subdirectory=flash_attn/cute'"
@@ -99,7 +100,11 @@ def _sm100_backward_supported():
 
     from packaging.version import Version
 
-    if Version(installed) < Version(FA4_SM100_ELECT_CUTLASS_VERSION):
+    if not (
+        Version(FA4_SM100_ELECT_CUTLASS_VERSION)
+        <= Version(installed)
+        < Version(FA4_SM100_ELECT_CUTLASS_REVERTED)
+    ):
         return True, installed
 
     return not _fa4_elects_around_bulk_copy(), installed
@@ -107,11 +112,14 @@ def _sm100_backward_supported():
 
 def _warn_sm100_elect_hang(installed):
     LOG.warning(
-        "Flash Attention 4's backward hangs on Blackwell with nvidia-cutlass-dsl>=%s "
-        "(found %s): FA4 elects around the bulk copies that cute.copy now elects internally. "
-        "Install the fix (Dao-AILab/flash-attention#2689) with: %s",
+        "Flash Attention 4's backward hangs on Blackwell with nvidia-cutlass-dsl %s-%s "
+        "(found %s): FA4 elects around the bulk copies that cute.copy also elects "
+        "internally. Upgrade to nvidia-cutlass-dsl>=%s, or install the FA4 fix "
+        "(Dao-AILab/flash-attention#2689) with: %s",
         FA4_SM100_ELECT_CUTLASS_VERSION,
+        FA4_SM100_ELECT_CUTLASS_REVERTED,
         installed,
+        FA4_SM100_ELECT_CUTLASS_REVERTED,
         FA4_SM100_FIX_INSTALL,
     )
 
@@ -185,7 +193,9 @@ def configure_fa4():
 
     Silences the harmless first-compile ``AuxData`` warning and, for an explicitly requested
     ``flash_attention_4``, surfaces the stale-quack and Blackwell nested-election warnings
-    (the auto-upgrade path checks both in ``fa4_usable`` before reaching here).
+    (the auto-upgrade path checks both in ``fa4_usable`` before reaching here). Inside
+    selective checkpointing regions FA4 then runs as a dispatcher-visible op, so
+    ``save: [attention]`` can keep its output instead of recomputing it.
     """
     import warnings
 
@@ -204,3 +214,68 @@ def configure_fa4():
         ok, cutlass_version = _sm100_backward_supported()
         if not ok:
             _warn_sm100_elect_hang(cutlass_version)
+
+    _log_first_fa4_call()
+    _route_fa4_through_ops()
+
+
+def _route_fa4_through_ops():
+    """Make FA4's forward savable by selective checkpointing (no-op outside SAC regions)."""
+    try:
+        from axolotl.monkeypatch.attention.flash_attn_4_ops import install_fa4_ops
+
+        install_fa4_ops()
+    except Exception as exc:  # pylint: disable=broad-except
+        LOG.warning(
+            "Could not route Flash Attention 4 through axolotl's custom op (%s: %s); "
+            "selective checkpointing will recompute FA4 attention.",
+            type(exc).__name__,
+            exc,
+        )
+
+
+def _log_first_fa4_call():
+    """Wrap ``flash_attn.cute``'s entry points so the first real FA4 call is logged once;
+    transformers imports them lazily at the first attention forward, after this runs."""
+    import functools
+
+    try:
+        import flash_attn.cute as fa4_cute
+    except ImportError:
+        return
+
+    for name in ("flash_attn_func", "flash_attn_varlen_func"):
+        fn = getattr(fa4_cute, name, None)
+        if fn is None or getattr(fn, "_axolotl_logs_first_call", False):
+            continue
+
+        def _wrap(fn, name):
+            logged = False
+
+            @functools.wraps(fn)
+            def wrapper(*args, **kwargs):
+                nonlocal logged
+                if not logged:
+                    logged = True
+                    LOG.info(
+                        "Flash Attention 4 in use: first %s call (flash-attn-4 %s, "
+                        "nvidia-cutlass-dsl %s).",
+                        name,
+                        _pkg_version("flash-attn-4"),
+                        _pkg_version("nvidia-cutlass-dsl"),
+                    )
+                return fn(*args, **kwargs)
+
+            wrapper._axolotl_logs_first_call = True
+            return wrapper
+
+        setattr(fa4_cute, name, _wrap(fn, name))
+
+
+def _pkg_version(name):
+    try:
+        from importlib.metadata import version
+
+        return version(name)
+    except Exception:  # pylint: disable=broad-except
+        return "unknown"

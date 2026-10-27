@@ -138,6 +138,54 @@ Constraints:
 
 On Qwen3-30B-A3B-NVFP4 (attention and experts both NVFP4), the merged checkpoint reproduces the trained loss (recovery ~1.0 of the adapter's improvement over base); without merge-aware training the format-preserving merge retains only ~0.1-0.4.
 
+### Compiling expert merges
+
+For a merge-aware adapter over per-expert ModelOpt NVFP4 weights, opt into
+compiling the expert-chunk LoRA arithmetic:
+
+```yaml
+merge_method: memory_efficient
+merge_compile: true
+merge_compile_precision: strict
+```
+
+Alternatively, run `axolotl merge-lora config.yaml --merge-compile`.
+The default is `false`. This compiles the FP32 LoRA delta and addition, preserves
+the BF16 rounding before quantization, and avoids constructing a PEFT wrapper
+for every chunk. Dequantization, NVFP4 encoding, CPU transfers, and dense linear
+merges remain eager. Transposed expert layouts and adapters without merge-aware
+metadata also retain the eager path.
+
+Compilation disables fast math and TF32 during the chunk call and preserves
+intermediate precision casts. The first chunk for each tensor shape, stride,
+dtype, device, and scaling is compared byte-for-byte with the PEFT result.
+A mismatch or compilation failure disables compilation for that writer and
+logs a warning before continuing eagerly. This check covers the first chunk of
+each specialization, not every subsequent chunk. Unsupported PyTorch compiler
+options also trigger the eager fallback.
+
+To try compiler-default numerical behavior, set
+`merge_compile_precision: relaxed` (or pass `--merge-compile-precision relaxed`).
+This permits the compiler's usual fusion and rounding changes, retains the
+process's matmul precision setting, and skips PEFT equivalence validation.
+It may improve throughput but can change packed NVFP4 values and no longer
+guarantees agreement with the merge-aware training recipe. The writer logs a
+warning when this option is active. Compare model quality before using its output.
+
+The first call includes compilation and validation overhead. Measure total merge
+time as well as subsequent chunk throughput before enabling this for routine
+exports. CPU tests cover arithmetic and final NVFP4 byte parity; qualify the CUDA
+path on the GPU and software stack used for the export.
+
+Merging defaults to two PyTorch CPU threads. Override this with
+`--merge-num-threads 4` or `merge_num_threads: 4` in YAML. The setting applies
+before compilation and is restored when merging finishes.
+
+On CUDA, the memory-efficient NVFP4 expert merge automatically copies quantized
+outputs into pinned CPU memory on a dedicated D2H stream and overlaps shard
+writes with subsequent merging. No additional flag is needed; these transfers
+and writes also work without `--merge-compile`.
+
 ### Merging without merge-aware training
 
 For adapters trained without the flag, the format-preserving merge reuses the base scale grid and re-rounds codes, which preserves only the part of the delta that crosses code boundaries. Alternatives:

@@ -47,7 +47,7 @@ try:
     from fla.ops.kda.gate import fused_kda_gate
 except ImportError as err:
     raise ImportError(
-        "Please run `pip install fla-core==0.4.1 flash-linear-attention==0.4.1`"
+        "Please run `pip install fla-core==0.5.2 flash-linear-attention==0.5.2`"
     ) from err
 
 from axolotl.model_support.kimi_linear.configuration_kimi import KimiLinearConfig

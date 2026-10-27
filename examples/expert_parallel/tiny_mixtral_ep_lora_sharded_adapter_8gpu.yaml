@@ -1,0 +1,79 @@
+# Sharded LoRA adapter checkpoints under FSDP2 + EP=8 on one 8-GPU node, on a tiny
+# Mixtral (8 experts, ~30M params, loads in seconds), as a smoke test for
+# adapter_checkpoint_format: sharded before turning it on for Beam.
+#
+#   axolotl train examples/expert_parallel/tiny_mixtral_ep_lora_sharded_adapter_8gpu.yaml --num-processes 8
+#
+# Saves land at steps 2, 4 and 6. Rank 0 logs, per save:
+#   "Wrote ... GiB of adapter shards in ...s (slowest rank, 8 files) to .../.adapter_shards"
+#   "Consolidated .../adapter_model.safetensors in the background: ... GiB in ...s"
+# Afterwards every remaining checkpoint-N has adapter_model.safetensors and no
+# .adapter_shards/, and save_total_limit leaves checkpoint-4 and checkpoint-6. The final
+# export to output_dir is sharded too and consolidated before training returns.
+# Set adapter_checkpoint_format: gather (and AXOLOTL_CHECKPOINT_TIMING=1 AXOLOTL_LOG_LEVEL=DEBUG) to compare the
+# save stall against the rank 0 gather. tests/e2e/multigpu/test_fsdp2_sharded_adapter_save.py
+# checks the consolidated file against the gathered one byte for byte on 4 GPUs.
+base_model: axolotl-ai-co/tiny-mixtral-30m
+experts_implementation: grouped_mm
+
+plugins:
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+expert_parallel_size: 8
+expert_parallel_backend: torch
+dp_shard_size: 1
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+    split: train[:1%]
+val_set_size: 0
+output_dir: ./outputs/tiny-moe-ep-sharded-adapter
+
+sequence_len: 256
+sample_packing: false
+
+adapter: lora
+lora_r: 8
+lora_alpha: 16
+# PEFT's ParamWrapper rejects dropout on target_parameters
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+lora_mlp_kernel: false
+lora_qkv_kernel: false
+lora_o_kernel: false
+
+micro_batch_size: 2
+gradient_accumulation_steps: 1
+max_steps: 6
+optimizer: adamw_torch
+lr_scheduler: constant
+learning_rate: 1.0e-3
+warmup_steps: 0
+
+bf16: true
+tf32: true
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: true
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: MixtralDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+
+adapter_checkpoint_format: sharded
+save_only_model: true
+save_strategy: steps
+save_steps: 2
+save_total_limit: 2
+
+logging_steps: 1
+seed: 42

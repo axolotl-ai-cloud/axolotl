@@ -24,9 +24,10 @@ lora_r: 32
 lora_alpha: 16
 lora_dropout: 0
 lora_target_modules:
-  - q_proj
-  - v_proj
-  - k_proj
+  - q_a_proj
+  - q_b_proj
+  - kv_a_proj_with_mqa
+  - kv_b_proj
   - o_proj
 
 # Uncomment to also target MoE expert weights:
@@ -34,7 +35,7 @@ lora_target_modules:
 #   - mlp.experts.gate_up_proj
 #   - mlp.experts.down_proj
 
-# LoRA kernels incompatible with DSA attention
+# q/k/v/o LoRA kernels don't apply to MLA attention (q_a/q_b/kv_a/kv_b projections)
 lora_mlp_kernel: false
 lora_qkv_kernel: false
 lora_o_kernel: false

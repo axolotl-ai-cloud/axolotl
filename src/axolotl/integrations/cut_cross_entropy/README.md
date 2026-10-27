@@ -19,7 +19,7 @@ python scripts/cutcrossentropy_install.py | sh
 
 - If you are installing from pip
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.0-rc0"
+pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.0"
 ```
 
 ## Usage
@@ -48,6 +48,7 @@ LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_
 - afmoe
 - apertus
 - arcee
+- beam
 - cohere
 - cohere2
 - cohere2_moe
@@ -60,6 +61,7 @@ LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_
 - exaone4
 - exaone4_5
 - exaone_moe
+- falcon_h1
 - gemma
 - gemma2
 - gemma3
@@ -77,6 +79,7 @@ LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_
 - glm46v
 - glm4v
 - glm4v_moe
+- glm5_next
 - glm_image
 - glm_moe_dsa
 - gpt_oss
@@ -104,12 +107,15 @@ LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_
 - mistral4
 - mixtral
 - mllama
+- mllama_text_model
 - muse_glimmer
+- nemotron
 - nemotron_h
 - olmo
 - olmo2
 - olmo3
 - olmoe
+- paligemma
 - phi
 - phi3
 - phi4_multimodal
@@ -130,6 +136,7 @@ LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_
 - qwen4_exp_text
 - seed_oss
 - smollm3
+- smolvlm
 - step3p5
 - step3p7
 - voxtral

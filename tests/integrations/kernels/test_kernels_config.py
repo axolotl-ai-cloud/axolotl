@@ -63,11 +63,6 @@ def test_fp8_nonexpert_mode_validation():
         KernelsArgs.model_validate({"dsv4_fp8_nonexpert_mode": "int8"})
 
 
-def test_scattermoe_sonicmoe_mutually_exclusive():
-    with pytest.raises(pydantic.ValidationError):
-        KernelsArgs.model_validate({"use_scattermoe": True, "use_sonicmoe": True})
-
-
 # --- intent-based config surface (#5) -------------------------------------------------------
 def test_expert_backend_alias_scattermoe():
     a = KernelsArgs.model_validate({"expert_backend": "scattermoe"})

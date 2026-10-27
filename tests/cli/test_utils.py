@@ -1,5 +1,6 @@
 """pytest tests for axolotl CLI utils."""
 
+import hashlib
 import json
 from unittest.mock import Mock, patch
 
@@ -12,7 +13,11 @@ from axolotl.cli.utils import fetch_from_github
 # Sample GitHub API response
 MOCK_TREE_RESPONSE = {
     "tree": [
-        {"path": "examples/config1.yml", "type": "blob", "sha": "abc123"},
+        {
+            "path": "examples/config1.yml",
+            "type": "blob",
+            "sha": hashlib.sha1(b"blob 12\0file content").hexdigest(),
+        },
         {"path": "examples/config2.yml", "type": "blob", "sha": "def456"},
         {"path": "other/file.txt", "type": "blob", "sha": "xyz789"},
     ]
@@ -51,11 +56,15 @@ def test_fetch_from_github_unchanged_files(tmp_path, mock_responses):
     existing_file = tmp_path / "config1.yml"
     existing_file.write_bytes(b"file content")
 
-    with patch("requests.get", mock_responses):
+    mock_get = Mock(side_effect=mock_responses)
+    with patch("requests.get", mock_get):
         fetch_from_github("examples/", tmp_path)
 
         # File should not be downloaded again
         assert existing_file.read_bytes() == b"file content"
+        requested_urls = [call.args[0] for call in mock_get.call_args_list]
+        assert not any(url.endswith("examples/config1.yml") for url in requested_urls)
+        assert any(url.endswith("examples/config2.yml") for url in requested_urls)
 
 
 def test_fetch_from_github_invalid_prefix(mock_responses):
@@ -70,80 +79,6 @@ def test_fetch_from_github_network_error():
     with patch("requests.get", side_effect=requests.RequestException):
         with pytest.raises(requests.RequestException):
             fetch_from_github("examples/", None)
-
-
-def assert_launcher_args_in_command(
-    mock_subprocess_call,
-    launcher: str,
-    expected_launcher_args: list[str],
-    command_module: str,
-):
-    """
-    Helper function to verify launcher arguments are properly passed in subprocess calls.
-
-    Args:
-        mock_subprocess_call: The mock subprocess.run call
-        launcher: Expected launcher ("accelerate", "torchrun", etc.)
-        expected_launcher_args: List of expected launcher arguments
-        command_module: Expected module name (e.g., "axolotl.cli.train")
-    """
-    assert mock_subprocess_call.called, "subprocess.run should have been called"
-    called_cmd = mock_subprocess_call.call_args.args[0]
-
-    # Verify launcher
-    assert called_cmd[0] == launcher, (
-        f"Expected launcher {launcher}, got {called_cmd[0]}"
-    )
-
-    # Verify launcher args are present
-    for arg in expected_launcher_args:
-        assert arg in called_cmd, (
-            f"Expected launcher arg '{arg}' not found in command: {called_cmd}"
-        )
-
-    # Verify module is present
-    assert "-m" in called_cmd, "Expected -m flag for module execution"
-    assert command_module in called_cmd, (
-        f"Expected module {command_module} not found in command: {called_cmd}"
-    )
-
-
-def assert_no_launcher_args_contamination(mock_subprocess_call, launcher: str):
-    """
-    Helper function to verify no unwanted launcher arguments are present.
-
-    Args:
-        mock_subprocess_call: The mock subprocess.run call
-        launcher: Expected launcher ("accelerate", "torchrun", etc.)
-    """
-    assert mock_subprocess_call.called, "subprocess.run should have been called"
-    called_cmd = mock_subprocess_call.call_args.args[0]
-
-    if launcher == "accelerate":
-        # For accelerate, launcher args should be between 'launch' and '-m'
-        launch_idx = called_cmd.index("launch")
-        m_idx = called_cmd.index("-m")
-        launcher_section = called_cmd[launch_idx + 1 : m_idx]
-        assert len(launcher_section) == 0, (
-            f"Unexpected launcher args found: {launcher_section}"
-        )
-    elif launcher == "torchrun":
-        # For torchrun, launcher args should be between 'torchrun' and '-m'
-        torchrun_idx = called_cmd.index("torchrun")
-        m_idx = called_cmd.index("-m")
-        launcher_section = called_cmd[torchrun_idx + 1 : m_idx]
-        assert len(launcher_section) == 0, (
-            f"Unexpected launcher args found: {launcher_section}"
-        )
-
-
-@pytest.fixture
-def common_launcher_args():
-    """Fixture providing common launcher argument combinations for testing."""
-    return {
-        "torchrun": ["--nproc_per_node=2", "--nnodes=1"],
-        "accelerate": ["--config_file=accelerate_config.yml", "--num_processes=4"],
-    }
 
 
 def test_add_default_rdzv_args_with_endpoint():

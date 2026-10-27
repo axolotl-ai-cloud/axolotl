@@ -3,12 +3,24 @@
 import torch
 
 
+def is_lora_tensor_name(name: str) -> bool:
+    """Whether a parameter or module name belongs to a LoRA adapter's own tensors."""
+    return any(
+        part.startswith("lora_") or part == "trainable_tokens_delta"
+        for part in name.split(".")
+    )
+
+
 def upcast_lora_parameters(model):
-    """Keep parameter identity while promoting only trainable LoRA tensors."""
+    """Keep parameter identity while promoting only trainable LoRA tensors.
+
+    PEFT trainable-token rows (``trainable_tokens_delta``) are adapter parameters
+    too: in bf16 an AdamW step of ~lr is far below the rows' bf16 spacing, so
+    most updates would round away. They are cast back to the base weight dtype
+    in PEFT's forward, so only the stored master copy changes precision.
+    """
     for name, param in model.named_parameters():
-        if param.requires_grad and any(
-            part.startswith("lora_") for part in name.split(".")
-        ):
+        if param.requires_grad and is_lora_tensor_name(name):
             param.data = param.data.to(torch.float32)
             if param.grad is not None:
                 param.grad = param.grad.to(torch.float32)

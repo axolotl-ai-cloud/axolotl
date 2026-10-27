@@ -15,7 +15,6 @@ from axolotl.model_support import (
     get_model_support_for_cfg,
     resolve_model_support,
 )
-from axolotl.utils.dict import DictDefault
 
 CONTROL_TOKEN_FIELDS = (
     "pad_token_id",
@@ -38,7 +37,21 @@ def model_config_overrides(cfg: Any) -> Any:
     return _value(cfg, "model_config") if overrides is None else overrides
 
 
+def token_budget_eval_packing(cfg: Any) -> bool:
+    """Whether the plugin packs evaluation rows into token-budget batches.
+
+    ``eval_sample_packing: true`` without training ``sample_packing``. When
+    ``sample_packing`` is also on, core's MultipackBatchSampler packs evaluation
+    instead, so exactly one packing mechanism applies.
+    """
+    return _value(cfg, "eval_sample_packing") is True and not _value(
+        cfg, "sample_packing", False
+    )
+
+
 def require_diffusion_spec(cfg: Any) -> DiffusionSpec:
+    from axolotl.utils.dict import DictDefault
+
     if isinstance(cfg, Mapping) and not isinstance(cfg, DictDefault):
         cfg = DictDefault(cfg)
     profile = resolve_model_support(get_model_support_for_cfg(cfg))

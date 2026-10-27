@@ -15,6 +15,7 @@ from datasets import (
 from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from axolotl.prompters import Prompter
+from axolotl.utils.data.evaluation import EvalDataset, load_eval_datasets
 from axolotl.utils.data.lock import FileLockLoader
 from axolotl.utils.data.shared import (
     create_train_validation_split,
@@ -50,7 +51,7 @@ def prepare_datasets(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None = None,
-) -> tuple[IterableDataset | Dataset, Dataset | None, int, list[Prompter | None]]:
+) -> tuple[IterableDataset | Dataset, EvalDataset, int, list[Prompter | None]]:
     """Prepare training and evaluation datasets based on configuration.
 
     Args:
@@ -70,7 +71,7 @@ def _prepare_standard_dataset(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
-) -> tuple[Dataset, Dataset | None, int, list[Prompter | None]]:
+) -> tuple[Dataset, EvalDataset, int, list[Prompter | None]]:
     """Prepare standard (non-pretraining) datasets."""
 
     def _load_datasets():
@@ -105,19 +106,29 @@ def _prepare_standard_dataset(
     )
 
     train_dataset = filter_native_diffusion_dataset(cfg, train_dataset, split="train")
-    eval_dataset = filter_native_diffusion_dataset(cfg, eval_dataset, split="eval")
+    if isinstance(eval_dataset, dict):
+        eval_dataset = {
+            name: filter_native_diffusion_dataset(cfg, dataset, split="eval")
+            for name, dataset in eval_dataset.items()
+        }
+    else:
+        eval_dataset = filter_native_diffusion_dataset(cfg, eval_dataset, split="eval")
 
     if os.environ.get("AXOLOTL_IS_PREPROCESS") == "1":
         return train_dataset, eval_dataset, -1, prompters
 
     # Validate sample packing configuration for evaluation
     if eval_dataset and cfg.sample_packing and cfg.eval_sample_packing is not False:
-        total_eval_steps = calculate_total_num_steps(cfg, eval_dataset, update=False)
-        if total_eval_steps == 0:
-            raise ValueError(
-                "eval dataset split is too small for sample_packing. "
-                "You should set `eval_sample_packing: False` in your config."
-            )
+        eval_datasets = (
+            eval_dataset if isinstance(eval_dataset, dict) else {"": eval_dataset}
+        )
+        for name, dataset in eval_datasets.items():
+            total_eval_steps = calculate_total_num_steps(cfg, dataset, update=False)
+            if total_eval_steps == 0:
+                raise ValueError(
+                    f"eval dataset {name or 'aggregate'} is too small for sample_packing. "
+                    "You should set `eval_sample_packing: False` in your config."
+                )
 
     # Calculate total number of training steps
     if cfg.max_steps:
@@ -134,7 +145,7 @@ def _prepare_streaming_dataset(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None,
-) -> tuple[IterableDataset, Dataset | None, int, list[Prompter | None]]:
+) -> tuple[IterableDataset, EvalDataset, int, list[Prompter | None]]:
     """
     Prepare dataset for streaming mode.
 
@@ -160,6 +171,11 @@ def _prepare_streaming_dataset(
             processor=processor,
             streaming=True,
         )
+
+        if cfg.test_datasets:
+            _, eval_dataset, _ = _load_and_prepare_datasets(
+                tokenizer, cfg, split="test", processor=processor
+            )
 
         # Return early for non-packed streaming datasets
         total_num_steps = cfg.max_steps if cfg.max_steps else -1
@@ -512,7 +528,7 @@ def _load_and_prepare_datasets(
     split: Literal["train", "test"] = "train",
     processor: ProcessorMixin | None = None,
     streaming: bool = False,
-) -> tuple[Dataset | None, Dataset | None, list[Prompter | None]]:
+) -> tuple[Dataset | None, EvalDataset, list[Prompter | None]]:
     """Load and prepare datasets with optional validation split and sharding.
 
     Args:
@@ -525,6 +541,26 @@ def _load_and_prepare_datasets(
     Returns:
         Tuple of (train_dataset, eval_dataset, prompters).
     """
+    if split == "test" and any(ds.get("eval_name") for ds in cfg.test_datasets or []):
+
+        def load(group_cfg):
+            group_cfg = DictDefault(dict(group_cfg))
+            group_cfg.test_datasets = [
+                DictDefault(
+                    {key: value for key, value in ds.items() if key != "eval_name"}
+                )
+                for ds in group_cfg.test_datasets
+            ]
+            return _load_and_prepare_datasets(
+                tokenizer,
+                group_cfg,
+                split="test",
+                processor=processor,
+                streaming=streaming,
+            )[1]
+
+        return None, load_eval_datasets(cfg, load), []
+
     # Load the base dataset
     dataset, prompters = _load_tokenized_prepared_datasets(
         tokenizer,

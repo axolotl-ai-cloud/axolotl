@@ -12,9 +12,15 @@ from .common import probabilities
 
 
 def normalize_jsonl(
-    row: Mapping[str, Any], *, codebook: str = "vendored26"
+    row: Mapping[str, Any], *, codebook: str = "vendored26", share: bool = False
 ) -> dict[str, Any]:
-    result = deepcopy(dict(row))
+    """A validated copy of ``row`` with normalized targets.
+
+    ``share=True`` copies only the top level and the label targets (the parts
+    normalized here) and shares everything else with ``row``; the result is equal,
+    for callers that do not mutate nested values.
+    """
+    result = _shallow(row) if share else deepcopy(dict(row))
     for field in ("source", "group"):
         if not isinstance(result.get(field), str) or not result[field]:
             raise ValueError(f"normalized record requires {field}")
@@ -114,4 +120,15 @@ def normalize_jsonl(
                 raise ValueError(f"question {key!r} allowed set must be unique")
         else:
             raise ValueError(f"unknown label kind {kind!r}")
+    return result
+
+
+def _shallow(row: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(row)
+    labels = result.get("labels")
+    if isinstance(labels, dict):
+        result["labels"] = {
+            key: dict(target) if isinstance(target, dict) else target
+            for key, target in labels.items()
+        }
     return result

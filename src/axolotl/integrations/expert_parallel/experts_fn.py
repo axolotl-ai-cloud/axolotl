@@ -139,9 +139,12 @@ def _eager_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
         if rows.numel() == 0:
             continue
         x_e = recv_x[rows]
-        gate_up = F.linear(x_e, experts.gate_up_proj[e])
-        gate, up = gate_up.chunk(2, dim=-1)
-        h = experts.act_fn(gate) * up
+        if getattr(experts, "has_gate", True):
+            gate_up = F.linear(x_e, experts.gate_up_proj[e])
+            gate, up = gate_up.chunk(2, dim=-1)
+            h = experts.act_fn(gate) * up
+        else:  # non-gated experts (e.g. Nemotron-H relu²): act(up(x))
+            h = experts.act_fn(F.linear(x_e, experts.up_proj[e]))
         y = F.linear(h, experts.down_proj[e])
         weighted = (y * recv_topk_weights[rows, ks].unsqueeze(-1)).to(out.dtype)
         out.index_add_(0, rows, weighted)
@@ -164,15 +167,21 @@ def resolve_local_implementation(name: str | None = None):
 
 
 def _maybe_install_decorator_attrs(experts):
-    """`@use_experts_implementation` injects has_gate/has_bias/is_transposed.
+    """`@use_experts_implementation` injects has_gate/has_bias/is_transposed/has_post_expert_norm.
     For models loaded outside the decorator path (or in tests), patch them in.
     """
+    from .bnb import has_expert_member
+
     if not hasattr(experts, "has_gate"):
-        experts.has_gate = True
+        experts.has_gate = has_expert_member(
+            experts, "gate_up_proj"
+        ) or not has_expert_member(experts, "up_proj")
     if not hasattr(experts, "has_bias"):
-        experts.has_bias = hasattr(experts, "gate_up_proj_bias")
+        experts.has_bias = has_expert_member(experts, "gate_up_proj_bias")
     if not hasattr(experts, "is_transposed"):
         experts.is_transposed = False
+    if not hasattr(experts, "has_post_expert_norm"):
+        experts.has_post_expert_norm = False
 
 
 def _normalize_sentinels(recv_topk_idx, recv_topk_weights, num_local_experts):

@@ -15,7 +15,7 @@ from axolotl.core.trainers.mixins.distributed_parallel import (
 )
 
 
-def _tp_trainer(state_dict_type, is_fsdp_enabled=True):
+def _tp_trainer(state_dict_type, is_fsdp_enabled=True, native_joined=False):
     calls = []
     trainer = object.__new__(DistributedParallelMixin)
     trainer.axolotl_cfg = SimpleNamespace(
@@ -33,7 +33,12 @@ def _tp_trainer(state_dict_type, is_fsdp_enabled=True):
         ),
         unwrap_model=lambda _m: unwrapped,
     )
-    trainer._save_model_native = lambda *a: calls.append(("native", a))
+
+    def native(*a):
+        calls.append(("native", a))
+        trainer._axolotl_save_joined_all_ranks = native_joined
+
+    trainer._save_model_native = native
     return trainer, calls
 
 
@@ -63,6 +68,12 @@ def test_tp_without_fsdp_gathers_on_every_rank():
         "save_pretrained",
         {"state_dict": None, "is_main_process": False},
     )
+
+
+def test_tp_skips_second_gather_when_transformers_saved_on_every_rank():
+    trainer, calls = _tp_trainer(None, is_fsdp_enabled=False, native_joined=True)
+    trainer.save_model("out")
+    assert calls == [("native", ("out", False))]
 
 
 def test_tp_save_joins_all_ranks_helper():
@@ -140,8 +151,64 @@ def test_non_ep_bf16_lora_checkpoint_uses_default_save(monkeypatch, tmp_path):
     saves.fsdp2.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "state_dict_type,needs_ownership,peft,streamed",
+    [
+        ("FULL_STATE_DICT", True, True, True),
+        ("SHARDED_STATE_DICT", True, True, False),
+        ("FULL_STATE_DICT", False, True, False),
+        ("FULL_STATE_DICT", True, False, False),
+    ],
+)
+def test_final_ep_lora_save_route(
+    monkeypatch, tmp_path, state_dict_type, needs_ownership, peft, streamed
+):
+    """FULL_STATE_DICT EP runs export through the streamed trainer save the checkpoints use;
+    the per-tensor GPU gather is only the fallback."""
+    from axolotl.integrations.expert_parallel import shard
+    from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+    from axolotl.monkeypatch.accelerate import fsdp2_checkpoint
+    from axolotl.train import save_trained_model
+    from axolotl.utils.dict import DictDefault
+
+    ep_save = MagicMock(return_value=True)
+    monkeypatch.setattr(shard, "save_ep_lora_adapter", ep_save)
+    monkeypatch.setattr(
+        ExpertParallelPlugin, "_resolve_ep_group", MagicMock(return_value=object())
+    )
+    monkeypatch.setattr(
+        fsdp2_checkpoint, "_model_needs_ownership", lambda model: needs_ownership
+    )
+    monkeypatch.setattr("accelerate.utils.modeling.is_peft_model", lambda model: peft)
+    model = torch.nn.Linear(1, 1)
+    trainer = SimpleNamespace(
+        model=model,
+        is_fsdp_enabled=True,
+        accelerator=SimpleNamespace(
+            state=SimpleNamespace(
+                fsdp_plugin=SimpleNamespace(
+                    fsdp_version=2, state_dict_type=state_dict_type
+                )
+            )
+        ),
+        save_model=MagicMock(),
+    )
+    cfg = DictDefault(
+        {"adapter": "lora", "expert_parallel_size": 2, "output_dir": str(tmp_path)}
+    )
+    save_trained_model(cfg, trainer, model)
+    if streamed:
+        trainer.save_model.assert_called_once_with(str(tmp_path))
+        ep_save.assert_not_called()
+    else:
+        trainer.save_model.assert_not_called()
+        ep_save.assert_called_once()
+
+
 def _count_trainer(*, tp_size, cp_size, average_tokens_across_devices=False):
     trainer = object.__new__(AxolotlTrainer)
+    trainer.model = SimpleNamespace(_tp_size=tp_size)
+    trainer.is_deepspeed_enabled = False
     trainer.model_accepts_loss_kwargs = True
     trainer.compute_loss_func = None
     trainer._loss_shifts_labels = True
@@ -152,7 +219,10 @@ def _count_trainer(*, tp_size, cp_size, average_tokens_across_devices=False):
     )
     trainer.accelerator = SimpleNamespace(
         parallelism_config=SimpleNamespace(
-            tp_size=tp_size, non_data_parallel_size=tp_size * cp_size
+            tp_size=tp_size,
+            cp_size=cp_size,
+            sp_size=1,
+            non_data_parallel_size=tp_size * cp_size,
         )
     )
     return trainer

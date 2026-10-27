@@ -343,6 +343,7 @@ class ModelLoader:
             self.plugin_manager.pre_lora_load(self.cfg, self.model)
             lora_config = self._load_adapters()
             self.plugin_manager.post_lora_load(self.cfg, self.model)
+            self._apply_lora_merge_aware()
             self._materialize_trainable_meta_params()
             # after materialization so every rank (not just rank 0) holds its own draw
             self._reinit_lora_from_seed(lora_config)
@@ -534,19 +535,6 @@ class ModelLoader:
             )
 
             patch_hidden_states_offload()
-            return
-        # TRL offloader is adapter-aware:
-        #   - LoRA/QLoRA: offload *replaces* recompute (pure offload is leaner/faster;
-        #     recompute would pin the offloaded tensors and balloon memory). No wrap.
-        #   - Full finetune: pure offload of every activation exceeds PCIe bandwidth
-        #     (backlogs on-GPU, OOMs at long seq), so keep recompute and offload only
-        #     the checkpoint boundaries — apply the manual wrap.
-        if ao and not self.cfg.adapter:
-            from axolotl.core.trainers.mixins.activation_checkpointing import (
-                ac_wrap_hf_model,
-            )
-
-            ac_wrap_hf_model(self.model)
 
     def _resize_token_embeddings(self):
         """Resize token embeddings if needed."""
@@ -598,7 +586,51 @@ class ModelLoader:
             and self.model.config.eos_token_id
             and self.model.config.eos_token_id != self.tokenizer.eos_token_id
         ):
-            self.model.config.eos_token_id = self.tokenizer.eos_token_id
+            if not isinstance(self.model.config.eos_token_id, list):
+                self.model.config.eos_token_id = self.tokenizer.eos_token_id
+            elif (
+                self.tokenizer.eos_token_id is not None
+                and self.tokenizer.eos_token_id not in self.model.config.eos_token_id
+            ):
+                self.model.config.eos_token_id = [
+                    *self.model.config.eos_token_id,
+                    self.tokenizer.eos_token_id,
+                ]
+
+        self._sync_generation_config_eos()
+
+    def _sync_generation_config_eos(self):
+        """Make generation stop on the tokenizer eos and the configured eot tokens."""
+        generation_config = getattr(self.model, "generation_config", None)
+        if generation_config is None or self.tokenizer.eos_token_id is None:
+            return
+
+        existing = generation_config.eos_token_id
+        if existing is None:
+            existing = []
+        elif isinstance(existing, int):
+            existing = [existing]
+        eos_ids = list(existing)
+
+        candidates = [self.tokenizer.eos_token_id]
+        # mistral-common strategies ignore eot_tokens, so they are not trained
+        if not self.cfg.tokenizer_use_mistral_common:
+            for token in self.cfg.eot_tokens or []:
+                token_ids = self.tokenizer.encode(token, add_special_tokens=False)
+                if len(token_ids) == 1:
+                    candidates.append(token_ids[0])
+        for token_id in candidates:
+            if token_id not in eos_ids:
+                eos_ids.append(token_id)
+
+        if eos_ids != existing:
+            LOG.info(
+                f"Setting generation_config.eos_token_id from "
+                f"{generation_config.eos_token_id} to {eos_ids}"
+            )
+            generation_config.eos_token_id = (
+                eos_ids[0] if len(eos_ids) == 1 else eos_ids
+            )
 
     def _should_convert_embedding_dtypes(self) -> bool:
         """Whether the post-quantization pass converts modules back to `torch_dtype`."""
@@ -693,6 +725,20 @@ class ModelLoader:
             self._reject_value_dependent_saved_adapter_init()
         with _nf4_shape_stand_ins() if staged else nullcontext():
             return self._build_adapters()
+
+    def _apply_lora_merge_aware(self):
+        # DPO/IPO/KTO adapters are built inside the trainer; the RL builder installs those.
+        if (
+            not self.cfg.lora_merge_aware
+            or self.cfg.merge_lora
+            or self.inference
+            or self.reference_model
+            or not isinstance(self.model, PeftModel)
+        ):
+            return
+        from axolotl.monkeypatch.lora_merge_aware import configure_lora_merge_aware
+
+        configure_lora_merge_aware(self.cfg, self.model)
 
     def _reinit_lora_from_seed(self, lora_config: PeftConfig | None) -> None:
         """Per-module seeded draws keep a seed's adapter init identical across parallel layouts;

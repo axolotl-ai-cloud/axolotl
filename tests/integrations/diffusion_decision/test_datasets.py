@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
@@ -7,7 +8,7 @@ from typing import Any
 import pytest
 from transformers import PretrainedConfig
 
-from axolotl.integrations.diffusion_decision import datasets, prepared_cache
+from axolotl.integrations.diffusion_decision import canvas, datasets, prepared_cache
 from axolotl.integrations.diffusion_decision.args import DecisionMixtureConfig
 from axolotl.integrations.diffusion_decision.loss import decision_example_from_canvas
 from axolotl.integrations.diffusion_decision.records import (
@@ -177,6 +178,7 @@ def test_loader_protects_official_test_calibration_and_ood(monkeypatch):
         _entry("ood", "ood"),
         test_datasets=(DEV_ENTRY, _entry("heldout", "test")),
     )
+    cfg["diffusion_decision"]["decontaminate"] = True
 
     result = datasets.load_decision_datasets(cfg)
     retained = [row["record"] for row in result.train_dataset]
@@ -187,6 +189,45 @@ def test_loader_protects_official_test_calibration_and_ood(monkeypatch):
     assert result.train_dataset.manifest["protected_eval_rows"] == 3
     assert result.train_dataset.manifest["dropped"]["state_overlap"] == 1
     assert result.train_dataset.manifest["dropped"]["family_overlap"] == 1
+
+
+def test_loader_skips_decontamination_by_default(monkeypatch):
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [
+                _record("alpha", "keep", "train-keep", "a0"),
+                _record("alpha", "state-overlap", "shared", "a1"),
+                _record("beta", "keep-b", "train-b", "b0"),
+            ],
+            "cal": [_record("alpha", "cal", "shared", "c0")],
+            "dev": [_record("gamma", "dev", "dev-state", "d0")],
+        },
+    )
+    cfg = _cfg(
+        _entry("train", "train"),
+        _entry("cal", "calibration"),
+        test_datasets=(DEV_ENTRY,),
+    )
+
+    result = datasets.load_decision_datasets(cfg)
+
+    assert {row["record"]["id"] for row in result.train_dataset} == {"a0", "a1", "b0"}
+    assert result.train_dataset.manifest["dropped"].get("state_overlap", 0) == 0
+
+
+def test_loader_still_rejects_train_dev_leakage_without_decontamination(monkeypatch):
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [_record("alpha", "leak", "dev-state", "a0")],
+            "dev": [_record("gamma", "dev", "dev-state", "d0")],
+        },
+    )
+    cfg = _cfg(_entry("train", "train"), test_datasets=(DEV_ENTRY,))
+
+    with pytest.raises(ValueError, match="state overlaps splits"):
+        datasets.load_decision_datasets(cfg)
 
 
 def test_loader_realizes_each_capped_record_once_in_stratified_batches(monkeypatch):
@@ -209,11 +250,29 @@ def test_loader_realizes_each_capped_record_once_in_stratified_batches(monkeypat
     assert {row["source"] for row in retained} == {"alpha", "beta"}
     assert manifest["dropped"]["capped"] == 2
     assert manifest["mixture_probabilities"] == {"alpha": 0.8, "beta": 0.2}
+    assert manifest["train_has_images"] is False
     assert manifest["stratified_epoch_batches"]
     assert all(
         len(batch) <= manifest["stratified_micro_batch_size"]
         for batch in manifest["stratified_epoch_batches"]
     )
+
+
+def test_loader_flags_training_images_in_the_manifest(monkeypatch):
+    image_record = {**_record("alpha", "a", "sa", "a"), "images": ["a.png"]}
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [image_record, _record("beta", "b", "sb", "b")],
+            "dev": [_record("gamma", "g", "sg", "g")],
+        },
+    )
+    cfg = _cfg(_entry("train", "train"), test_datasets=(DEV_ENTRY,))
+
+    result = datasets.load_decision_datasets(cfg)
+
+    assert result.train_dataset.manifest["train_has_images"] is True
+    assert result.train_dataset.carries_images
 
 
 def test_loader_preserves_premixed_draw_multiplicity_without_mixture_expansion(
@@ -294,6 +353,7 @@ def test_premixed_rejects_invalid_draws(monkeypatch, train, dev, match):
         test_datasets=(DEV_ENTRY,) if dev else (),
         mixture=PREMIXED,
     )
+    cfg["diffusion_decision"]["decontaminate"] = True
 
     with pytest.raises(ValueError, match=match):
         datasets.load_decision_datasets(cfg)
@@ -437,6 +497,82 @@ def test_parallel_canvas_rows_preserves_source_order_and_overflow_accounting(
     assert parallel_drops == serial_drops == 1
 
 
+def test_multi_source_build_opens_one_canvas_pool(monkeypatch):
+    """Every source, and the eval split, shares one worker pool; output matches serial."""
+    opened = []
+
+    class CountingExecutor:
+        def __init__(self, *, initializer, initargs, **_kwargs):
+            opened.append(self)
+            initializer(*initargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def map(self, fn, values, **_kwargs):
+            return [fn(value) for value in values]
+
+    sources = ["alpha", "beta", "gamma", "delta"]
+    _patch_loader(
+        monkeypatch,
+        {
+            "train": [
+                _record(
+                    source, f"{source}{index}", f"{source}-{index}", f"{source}{index}"
+                )
+                for source in sources
+                for index in range(5)
+            ],
+            "dev": [
+                _record("dev", f"dev{index}", f"dev-{index}", f"dev{index}")
+                for index in range(3)
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        datasets,
+        "_canvas_row",
+        lambda _tokenizer, row, _cfg, source_weight, **kwargs: {
+            "canvas": SimpleNamespace(prompt_ids=(1,), canvas_ids=(2,) * 128),
+            "record": row,
+            "source": row["source"],
+            "train": kwargs["train"],
+        },
+    )
+    monkeypatch.setattr(datasets, "ProcessPoolExecutor", CountingExecutor)
+    monkeypatch.setattr(datasets, "_CANVAS_CHUNK_SIZE", 2)
+
+    def build(num_proc: int):
+        cfg = _cfg(
+            _entry("train"),
+            test_datasets=(_entry("dev", "dev"),),
+            mixture={
+                "max_examples_per_source": {source: 2 for source in sources},
+                "per_batch_stratified": False,
+            },
+        )
+        cfg["dataset_num_proc"] = num_proc
+        result = datasets.load_decision_datasets(cfg, tokenizer=range(131072))
+        assert not isinstance(result.eval_dataset, dict)
+        return (
+            [(row["record"], row["train"]) for row in result.train_dataset],
+            [(row["record"], row["train"]) for row in result.eval_dataset or []],
+            result.train_dataset.manifest,
+        )
+
+    serial = build(1)
+    assert opened == []
+    parallel = build(4)
+    assert len(opened) == 1
+    assert parallel == serial
+    assert {record["source"] for record, _ in serial[0]} == set(sources)
+    assert all(train for _, train in serial[0])
+    assert [train for _, train in serial[1]] == [False] * 3
+
+
 def test_budget_filter_precedes_source_probabilities_and_sampling(
     monkeypatch, two_source_cfg
 ):
@@ -469,7 +605,7 @@ def test_budget_filter_uses_resolved_payload_capacity(monkeypatch):
         calls.append(packed)
         return SimpleNamespace(payload_capacity=128)
 
-    monkeypatch.setattr(datasets, "resolve_native_packing_budget", resolve)
+    monkeypatch.setattr(canvas, "resolve_native_packing_budget", resolve)
     row = {"canvas": SimpleNamespace(prompt_ids=(1,), canvas_ids=(2,) * 128)}
     cfg = {
         "sample_packing": False,
@@ -577,7 +713,14 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(
         datasets.load_decision_datasets(cfg)
         assert calls == before
 
-    requires_rebuild(lambda: write_source("changed"), lambda: write_source("state"))
+    original_stat = source.stat()
+
+    def restore_source() -> None:
+        # Stat-keyed sources (the default) hit again once size and mtime match.
+        write_source("state")
+        os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    requires_rebuild(lambda: write_source("changed"), restore_source)
     requires_rebuild(
         lambda: setattr(tokenizer, "chat_template", "changed"),
         lambda: setattr(tokenizer, "chat_template", "base"),
@@ -586,13 +729,16 @@ def test_local_prepared_cache_reuses_typed_rows_in_exact_order(
         lambda: cfg["diffusion_lm"].update(canvas_width=129),
         lambda: cfg["diffusion_lm"].update(canvas_width=128),
     )
-    requires_rebuild(
-        lambda: cfg.update(micro_batch_size=3), lambda: cfg.update(micro_batch_size=2)
-    )
+    # Batch settings shape only the batch plan built over the cached canvas layer.
+    before = calls
+    cfg.update(micro_batch_size=3, gradient_accumulation_steps=7, eval_batch_size=5)
+    resized = datasets.load_decision_datasets(cfg)
+    assert calls == before
+    assert resized.train_dataset.manifest["stratified_micro_batch_size"] == 3
 
 
 def test_prepared_cache_preserves_nested_typed_values_and_live_vocab_identity(
-    tokenizer_root, empty_source
+    tmp_path, tokenizer_root, empty_source
 ):
     first, second = (
         prepared_cache.identity(
@@ -616,9 +762,10 @@ def test_prepared_cache_preserves_nested_typed_values_and_live_vocab_identity(
         "source": "x",
         "slot_plan": SlotPlan((9,), "thought", (True,), (False,), (False,), (9,)),
     }
-    restored = prepared_cache._row_from_json(
-        json.loads(json.dumps(prepared_cache._row_to_json(row)))
-    )
+    prepared_cache.store(tmp_path, "nested", IDENTITY, {}, [row], [], {})
+    loaded = prepared_cache.load(tmp_path, "nested", IDENTITY)
+    assert loaded is not None
+    restored = loaded[0][0]
     assert restored["canvas"] == canvas
     assert restored["slot_plan"] == row["slot_plan"]
     assert restored["decision_example"] == row["decision_example"]
@@ -710,11 +857,11 @@ def test_prepared_cache_identity_binds_entry_roles_and_model_controls(
 def test_prepared_cache_repairs_corrupt_payload_and_warms(tmp_path):
     row = _cache_row()
     prepared_cache.store(tmp_path, "key", IDENTITY, {}, [row], [], {})
-    path = tmp_path / "diffusion_decision_cache" / "key.json"
-    payload = json.loads(path.read_text())
-    payload["content"]["manifest"] = {"bad": True}
-    path.write_text(json.dumps(payload))
-    assert prepared_cache.load(tmp_path, "key", IDENTITY) is None
+    path = tmp_path / "diffusion_decision_cache" / "key.pkl"
+    data = bytearray(path.read_bytes())
+    data[len(prepared_cache.MAGIC) + 4] ^= 0xFF
+    path.write_bytes(bytes(data))
+    assert prepared_cache.load(tmp_path, "key", IDENTITY, verify=True) is None
     prepared_cache.store(tmp_path, "key", IDENTITY, {}, [row], [], {})
     first = prepared_cache.load(tmp_path, "key", IDENTITY)
     second = prepared_cache.load(tmp_path, "key", IDENTITY)

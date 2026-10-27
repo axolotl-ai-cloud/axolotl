@@ -7,6 +7,8 @@ an eager reference — over both a bf16 base and an nf4-quantized base (the low-
 since the fused kernel dequantizes the base in-kernel.
 """
 
+import functools
+
 import pytest
 import torch
 import torch.nn.functional as F
@@ -112,8 +114,8 @@ def test_fused_geglu_lora_matches_eager(quantized):
         s,
         None,
         None,
-        geglu_forward,
-        geglu_backward,
+        functools.partial(geglu_forward, approximate=True),
+        functools.partial(geglu_backward, approximate=True),
         True,
     )
     out_f.backward(grad_out)

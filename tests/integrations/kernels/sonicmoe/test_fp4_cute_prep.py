@@ -291,3 +291,32 @@ def test_select_nvfp4_backend(monkeypatch):
     assert _select_nvfp4_backend(dense1, dense2) == "dequant"
     monkeypatch.setenv("AXOLOTL_SONICMOE_NVFP4_BACKEND", "fp4_cute")
     assert _select_nvfp4_backend(dense1, dense2) == "fp4_cute"
+
+
+@pytest.mark.parametrize(
+    ("takes_bs_format", "expected"),
+    [(True, {"bs_format_a": "nvfp4", "bs_format_b": "nvfp4"}), (False, {})],
+)
+def test_blockscaled_format_kwargs(monkeypatch, takes_bs_format, expected):
+    import sys
+    import types
+
+    from axolotl.integrations.kernels.libs.sonicmoe import fp4_cute
+
+    def gemm_with_formats(A, B, D, C, *args, bs_format_a=None, bs_format_b=None):
+        pass
+
+    def gemm_without_formats(A, B, D, C, *args, SFA=None, SFB=None):
+        pass
+
+    quack = types.ModuleType("quack")
+    quack_gemm = types.ModuleType("quack.gemm")
+    quack_gemm.gemm = gemm_with_formats if takes_bs_format else gemm_without_formats
+    quack.gemm = quack_gemm
+    monkeypatch.setitem(sys.modules, "quack", quack)
+    monkeypatch.setitem(sys.modules, "quack.gemm", quack_gemm)
+    fp4_cute._blockscaled_format_kwargs.cache_clear()
+    try:
+        assert fp4_cute._blockscaled_format_kwargs() == expected
+    finally:
+        fp4_cute._blockscaled_format_kwargs.cache_clear()

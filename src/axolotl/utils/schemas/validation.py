@@ -22,6 +22,7 @@ from axolotl.utils.schemas.enums import (
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
+from axolotl.utils.schemas.utils import is_deepspeed_zero3_config
 
 LOG = get_logger(__name__)
 
@@ -96,7 +97,7 @@ def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     The single source of truth for ``check_auto_enable_lora_kernels`` and for the
     validators that must predict its outcome.
     """
-    if get("rl") or get("nvfp4_merge_aware"):
+    if get("rl") or get("nvfp4_merge_aware") or get("lora_merge_aware"):
         return False
     adapter = get("adapter")
     if adapter not in ("lora", "qlora"):
@@ -402,6 +403,21 @@ class DatasetValidationMixin:
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_generation_tags_needs_prepare(cls, data):
+        if data.get("skip_prepare_dataset") and any(
+            ds.get("generation_tags")
+            if isinstance(ds, dict)
+            else getattr(ds, "generation_tags", None)
+            for ds in (data.get("datasets") or []) + (data.get("test_datasets") or [])
+        ):
+            raise ValueError(
+                "generation_tags labels during dataset preparation and has no effect "
+                "with skip_prepare_dataset"
+            )
+        return data
+
 
 class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
@@ -544,6 +560,37 @@ class TrainingValidationMixin:
             raise ValueError(
                 "save_steps and saves_per_epoch are mutually exclusive and cannot be used together."
             )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_checkpoint_save_retry_timeout(cls, data):
+        retry = data.get("checkpoint_save_retry")
+        if not isinstance(retry, dict):
+            return data
+        total = float(retry.get("wait_seconds", 300)) * int(retry.get("retries", 1))
+        timeout = data.get("ddp_timeout") or 1800
+        if total >= timeout:
+            LOG.warning(
+                f"checkpoint_save_retry waits up to {total:g}s on the rank whose write "
+                f"failed, while the other ranks wait at a collective that times out after "
+                f"ddp_timeout={timeout}s. Lower wait_seconds or raise ddp_timeout."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_checkpoint_mirror_dir(cls, data):
+        mirror = data.get("checkpoint_mirror")
+        mirror_dir = mirror.get("dir") if isinstance(mirror, dict) else None
+        if mirror_dir and data.get("output_dir"):
+            output_dir = Path(data["output_dir"]).expanduser().resolve()
+            target = Path(mirror_dir).expanduser().resolve()
+            if target == output_dir or target.is_relative_to(output_dir):
+                raise ValueError(
+                    "checkpoint_mirror.dir must be outside output_dir; the final copy "
+                    "would otherwise copy the mirror into itself"
+                )
         return data
 
     @model_validator(mode="before")
@@ -911,6 +958,69 @@ class LoRAValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_lora_merge_aware(cls, data):
+        mode = data.get("lora_merge_aware")
+        if not mode:
+            return data
+        problems = []
+        if data.get("adapter") != "lora":
+            problems.append(f"adapter: {data.get('adapter')} (requires adapter: lora)")
+        problems.extend(
+            f"{key}: true"
+            for key in ("load_in_4bit", "load_in_8bit", "gptq")
+            if data.get(key)
+        )
+        if data.get("peft_use_dora"):
+            problems.append("peft_use_dora: true")
+        kernels = [
+            flag
+            for flag in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
+            if data.get(flag)
+        ]
+        if kernels:
+            problems.append(
+                f"{', '.join(kernels)} (the fused kernels bypass the LoRA linear forward)"
+            )
+        if data.get("fsdp_config"):
+            # FSDP2 casts parameters to the policy's param_dtype when gathering them; the
+            # factors must stay FP32 so the forward's delta matches the served merge.
+            if data.get("lora_fp32_gradients") is False:
+                problems.append(
+                    "FSDP with lora_fp32_gradients: false (FSDP2 would gather the LoRA "
+                    "factors in BF16)"
+                )
+            elif not data.get("lora_fp32_gradients"):
+                LOG.info(
+                    "lora_merge_aware under FSDP2: enabling lora_fp32_gradients so the "
+                    "LoRA factors are gathered in FP32"
+                )
+                data["lora_fp32_gradients"] = True
+        if is_deepspeed_zero3_config(data.get("deepspeed")):
+            problems.append(
+                "DeepSpeed ZeRO-3 (the merge-aware forward reads the base and LoRA "
+                "weights of submodules whose forwards it skips, so ZeRO-3 never "
+                "gathers them)"
+            )
+        if (data.get("tensor_parallel_size") or 1) > 1:
+            problems.append("tensor_parallel_size > 1")
+        trl = data.get("trl") or {}
+        if (
+            trl.get("vllm_lora_sync")
+            if isinstance(trl, dict)
+            else getattr(trl, "vllm_lora_sync", False)
+        ):
+            problems.append(
+                "trl.vllm_lora_sync: true (vLLM then serves the adapter unmerged, "
+                "which already keeps the whole update)"
+            )
+        if problems:
+            raise ValueError(
+                f"lora_merge_aware: {mode} is not supported with " + "; ".join(problems)
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_lora_kernels_dora(cls, data):
         # DoRA is now supported by lora kernels
         return data
@@ -1047,28 +1157,6 @@ class RLValidationMixin:
 
         return data
 
-    @model_validator(mode="after")
-    def check_dpo_use_liger_kernel(self):
-        if not self.dpo_use_liger_kernel:
-            return self
-        loss_types = self.dpo_loss_type
-        # liger's chunked DPO loss raises NotImplementedError for ipo at runtime;
-        # only loss_type[0] reaches liger, so later entries are ignored, not fatal
-        if self.rl == "ipo" or (loss_types and loss_types[0] == "ipo"):
-            raise ValueError(
-                "`dpo_use_liger_kernel` does not support the `ipo` loss type "
-                "(liger-kernel's fused DPO loss cannot length-normalize the "
-                "squared margin). Disable the liger kernel or use another loss."
-            )
-        # TRL's liger DPO path constructs the fused loss from loss_type[0] only
-        if loss_types and len(loss_types) > 1:
-            LOG.warning(
-                "`dpo_use_liger_kernel` uses only the first entry of "
-                f"`dpo_loss_type` ({loss_types[0]!r}); remaining entries "
-                "are ignored on the liger loss path."
-            )
-        return self
-
     @model_validator(mode="before")
     @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
@@ -1180,9 +1268,8 @@ STAGED_NF4_CONSTRAINTS = [
             bool(self.deepspeed)
             or (self.tensor_parallel_size or 1) > 1
             or (self.context_parallel_size or 1) > 1
-            or (getattr(self, "expert_parallel_size", 1) or 1) > 1
         ),
-        "CPU-staged NF4 does not support DeepSpeed, tensor, expert or context parallelism",
+        "CPU-staged NF4 does not support DeepSpeed, tensor or context parallelism",
     ),
     (
         lambda self: (self.dp_replicate_size or 1) > 1,
@@ -1239,7 +1326,7 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
-        if data.get("optimizer") == "muon":
+        if data.get("optimizer") in ("muon", "muon_8bit"):
             if data.get("deepspeed"):
                 raise ValueError(
                     "Muon optimizer is currently incompatible with DeepSpeed"
@@ -1310,7 +1397,7 @@ class OptimizationValidationMixin:
                 "silently ignored. Remove them or pick a different optimizer."
             )
 
-        if data.get("relora_steps"):
+        if data.get("relora"):
             raise ValueError(
                 "relora resets optimizer state through Optimizer.state, which polora "
                 "does not use, so its momentum would survive every merge."
@@ -1995,29 +2082,79 @@ class ModelCompatibilityValidationMixin:
             raise ValueError("gradient_checkpointing is not supported for MPT models")
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_offload_modes(cls, data):
+        if not isinstance(data, dict):
+            return data
+        if (
+            data.get("activation_offloading") == "disk"
+            or data.get("gradient_checkpointing") == "offload_disk"
+        ):
+            raise ValueError(
+                "activation_offloading: disk is disabled: it never offloaded to disk "
+                "(it ran the same CPU offloader as activation_offloading: true). Use "
+                "activation_offloading: true or hidden_states."
+            )
+        if data.get("activation_offloading") == "legacy":
+            LOG.warning(
+                "activation_offloading: legacy is deprecated and is now an alias of "
+                "activation_offloading: true"
+            )
+            data["activation_offloading"] = True
+        return data
+
     @model_validator(mode="after")
     def check_gradient_checkpointing_w_offload(self):
         if self.gradient_checkpointing == "offload":
             LOG.warning(
-                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true` or `activation_offloading: legacy`"
+                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true`"
             )
             self.gradient_checkpointing = True
-            LOG.warning(
-                "`offload` now uses a new stream implementation; to use the previous implementation, use `activation_offloading: legacy`"
-            )
             self.activation_offloading = True
-        if self.gradient_checkpointing == "offload_disk":
-            LOG.warning(
-                "`offload_disk` is deprecated for gradient_checkpointing, use `activation_offloading: disk`"
-            )
-            self.gradient_checkpointing = True
-            self.activation_offloading = "disk"
         return self
 
     @model_validator(mode="after")
     def check_activation_offloading_wo_gc(self):
-        if self.activation_offloading and not self.gradient_checkpointing:
-            raise ValueError("activation_offloading requires gradient_checkpointing")
+        if (
+            self.activation_offloading == "hidden_states"
+            and not self.gradient_checkpointing
+        ):
+            raise ValueError(
+                "activation_offloading: hidden_states requires gradient_checkpointing"
+            )
+        if self.activation_offloading is not True:
+            return self
+        if self.gradient_checkpointing:
+            # ZeRO-3 keeps reentrant: non-reentrant recompute sees partitioned parameters.
+            if not is_deepspeed_zero3_config(self.deepspeed):
+                gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
+                gc_kwargs.setdefault("use_reentrant", False)
+                self.gradient_checkpointing_kwargs = gc_kwargs
+        elif self.process_reward_model or self.rl in (
+            RLType.ORPO,
+            RLType.SIMPO,
+            RLType.EBFT,
+        ):
+            # These trainers have no offload context, so nothing would be offloaded.
+            trainer = (
+                "process_reward_model"
+                if self.process_reward_model
+                else f"rl: {self.rl.value}"
+            )
+            raise ValueError(
+                f"activation_offloading: {self.activation_offloading} without "
+                f"gradient_checkpointing is not supported for {trainer}; set "
+                "gradient_checkpointing: true"
+            )
+        else:
+            LOG.warning(
+                f"activation_offloading: {self.activation_offloading} without "
+                "gradient_checkpointing offloads every activation with no recompute, "
+                "which is bound by host RAM and PCIe bandwidth; set "
+                "gradient_checkpointing: true to recompute the layers and offload only "
+                "what is saved outside them."
+            )
         return self
 
     @model_validator(mode="after")
@@ -2035,12 +2172,6 @@ class ModelCompatibilityValidationMixin:
             raise ValueError(
                 "selective_checkpointing requires non-reentrant checkpointing "
                 "(gradient_checkpointing_kwargs.use_reentrant: false)"
-            )
-        if self.activation_offloading and self.activation_offloading != "hidden_states":
-            raise ValueError(
-                "selective_checkpointing is only compatible with "
-                "activation_offloading: hidden_states (or false); the TRL offloader "
-                "paths bypass HF gradient checkpointing"
             )
         sac = self.selective_checkpointing
         fused_lora = any(
@@ -2144,17 +2275,6 @@ class ModelCompatibilityValidationMixin:
                 "recompute must reuse the forward's routing, which reentrant "
                 "checkpointing cannot guarantee"
             )
-        if self.gradient_checkpointing and self.activation_offloading in (
-            True,
-            "legacy",
-            "disk",
-        ):
-            raise ValueError(
-                "expert_parallel_backend: torch is incompatible with activation_offloading "
-                f"{self.activation_offloading!r}: the TRL offloader bypasses the "
-                "checkpointing policy that keeps recompute on the forward's routing. "
-                "Use activation_offloading: hidden_states or false."
-            )
         return self
 
     @model_validator(mode="after")
@@ -2182,8 +2302,9 @@ class ModelCompatibilityValidationMixin:
         if self.adapter:
             LOG.warning(
                 "activation_offloading: hidden_states uses gradient checkpointing; "
-                "with LoRA/QLoRA, activation_offloading: true can be faster because "
-                "it avoids recompute while offloading smaller adapter activations."
+                "with LoRA/QLoRA, activation_offloading: true with "
+                "gradient_checkpointing: false can be faster because it avoids "
+                "recompute while offloading smaller adapter activations."
             )
         return self
 
@@ -2451,6 +2572,40 @@ class DistributedValidationMixin:
             raise ValueError(
                 "tensor_parallel_size > 1 cannot be combined with expert_parallel_size > 1; "
                 "shard the experts with expert_parallel_size and the rest with dp_shard_size"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_sharded_adapter_checkpoints(self):
+        if self.adapter_checkpoint_format != "sharded":
+            if self.adapter_final_save_format == "sharded":
+                raise ValueError(
+                    "adapter_final_save_format: sharded requires "
+                    "adapter_checkpoint_format: sharded"
+                )
+            return self
+        problems = []
+        if not self.adapter:
+            problems.append("an adapter (lora/qlora)")
+        if not self.fsdp_config or (self.fsdp_version or 2) != 2:
+            problems.append("fsdp_version: 2")
+        elif self.fsdp_config.state_dict_type != "FULL_STATE_DICT":
+            problems.append("fsdp_config.state_dict_type: FULL_STATE_DICT")
+        if (self.tensor_parallel_size or 1) > 1:
+            problems.append("tensor_parallel_size: 1")
+        if self.rl:
+            # the RL trainers do not include ShardedAdapterSaveMixin
+            problems.append("rl unset")
+        if self.load_best_model_at_end:
+            # the best checkpoint may still be consolidating when training ends
+            problems.append("load_best_model_at_end: false")
+        if self.hub_model_id and (self.hub_strategy or "every_save") != "end":
+            # Trainer pushes each checkpoint before its adapter is consolidated
+            problems.append("hub_strategy: end when hub_model_id is set")
+        if problems:
+            raise ValueError(
+                "adapter_checkpoint_format: sharded writes PEFT adapter-only checkpoints "
+                "under FSDP2 and requires " + ", ".join(problems)
             )
         return self
 

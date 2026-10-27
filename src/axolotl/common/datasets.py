@@ -11,6 +11,7 @@ from axolotl.cli.args import PreprocessCliArgs, TrainerCliArgs
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
+from axolotl.utils.data.evaluation import EvalDataset
 from axolotl.utils.data.utils import is_vision_dataset
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
@@ -25,7 +26,7 @@ class TrainDatasetMeta:
     """Dataclass with fields for training and validation datasets and metadata."""
 
     train_dataset: Dataset
-    eval_dataset: Dataset | None = None
+    eval_dataset: EvalDataset = None
     total_num_steps: int | None = None
 
 

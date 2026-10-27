@@ -1,13 +1,9 @@
-import importlib.util
 from unittest.mock import Mock
 
-import pytest
 import torch
 import torch.nn as nn
 
 from axolotl.kernels.lora import get_lora_parameters
-
-PEFT_AVAILABLE = importlib.util.find_spec("peft") is not None
 
 
 class TestLoRAParameterFreezing:
@@ -44,6 +40,7 @@ class TestLoRAParameterFreezing:
             mock_layer.lora_dropout = {}
             mock_layer.lora_magnitude_vector = None
         else:
+            mock_layer = Mock(spec=["weight", "bias"])
             mock_layer.weight = base_layer.weight
             mock_layer.bias = base_layer.bias
 
@@ -172,9 +169,6 @@ class TestLoRAParameterFreezing:
 class TestLoRAParameterFreezingIntegration:
     """Integration tests for parameter freezing with actual LoRA layers."""
 
-    @pytest.mark.skipif(
-        not PEFT_AVAILABLE, reason="PEFT not available for integration tests"
-    )
     def test_parameter_freezing_with_real_lora_layer(self):
         """Test parameter freezing with actual PEFT LoRA layer."""
         from peft import LoraConfig, get_peft_model
@@ -208,9 +202,6 @@ class TestLoRAParameterFreezingIntegration:
         assert B is None
         assert s is None
 
-    @pytest.mark.skipif(
-        not PEFT_AVAILABLE, reason="PEFT not available for integration tests"
-    )
     def test_parameter_freezing_gradient_behavior(self):
         """Test that frozen parameters don't receive gradients."""
         from peft import LoraConfig, get_peft_model

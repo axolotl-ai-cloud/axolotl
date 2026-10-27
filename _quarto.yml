@@ -216,7 +216,6 @@ quartodoc:
         - monkeypatch.models.qwen3_moe.fused_attn
         - monkeypatch.models.qwen3_next.modeling
         - monkeypatch.models.qwen3_vl.fused_attn
-        - monkeypatch.models.voxtral.modeling
         - monkeypatch.peft.utils
         - monkeypatch.ring_attn.patch
         - monkeypatch.tiled_mlp.base
@@ -335,7 +334,6 @@ quartodoc:
         - integrations.liger.plugin
         - integrations.liger.utils
         - integrations.liger.models.base
-        - integrations.liger.models.deepseekv2
         - integrations.liger.models.jamba
         - integrations.liger.models.qwen3_5
         - integrations.liger.models.qwen3_5_moe
@@ -437,6 +435,7 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/beam.qmd
                 - docs/models/k2-horizon.qmd
                 - docs/models/nex-n2.5.qmd
                 - docs/models/minicpm5.qmd
@@ -477,6 +476,7 @@ website:
                 - docs/models/qwen3.qmd
                 - docs/models/gemma4.qmd
                 - docs/models/gemma3n.qmd
+                - docs/models/glm53-flash.qmd
                 - docs/models/glm47-flash.qmd
                 - docs/models/glm46v.qmd
                 - docs/models/glm45.qmd
@@ -510,6 +510,7 @@ website:
             - docs/skypilot.qmd
             - docs/hf-jobs.qmd
             - docs/nebius-serverless.qmd
+            - docs/coreweave.qmd
             - docs/amd_hpc.qmd
             - docs/mac.qmd
 

@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 import addict
 import torch
-import transformers
 from transformers import (
     PretrainedConfig,
     PreTrainedModel,
@@ -41,6 +40,13 @@ if TYPE_CHECKING:
     from transformers import ProcessorMixin
 
 LOG = get_logger(__name__)
+
+
+def rl_trainer_builds_adapter(cfg) -> bool:
+    """DPO, IPO and KTO hand TRL the LoRA config and TRL builds the PeftModel in the trainer."""
+    from axolotl.utils.schemas.enums import RLType
+
+    return bool(cfg.adapter) and cfg.rl in (RLType.DPO, RLType.IPO, RLType.KTO)
 
 
 class PatchManager:
@@ -122,6 +128,7 @@ class PatchManager:
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
         self._deactivate_hf_async_load()
+        self._apply_parallel_weight_conversion()
         self._apply_torchao_patches()
         self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
@@ -138,7 +145,7 @@ class PatchManager:
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
-        self._apply_gradient_checkpointing_patches()
+        self._apply_trl_offload_patches()
         self._patch_attention()
         self._apply_multipack_patches()
         self._apply_sdpa_varlen_patch()
@@ -148,7 +155,6 @@ class PatchManager:
         self._apply_mistral_cross_entropy_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
-        self._apply_voxtral_patches()
         self._apply_apertus_patches()
         self._apply_trl_vllm_patches()
 
@@ -845,28 +851,17 @@ class PatchManager:
 
             patch_fa_peft_integration()
 
-    def _apply_gradient_checkpointing_patches(self):
-        """Apply patches for gradient checkpointing."""
-        if (
-            self.cfg.gradient_checkpointing
-            and self.cfg.activation_offloading == "legacy"
-        ):
-            from axolotl.monkeypatch.gradient_checkpointing import (
-                hf_grad_checkpoint_offload_wrapper,
+    def _apply_trl_offload_patches(self):
+        """Keep saved-tensor layouts intact under TRL's activation offloader."""
+        # TRL's own trainers (DPO, KTO) run their offloader for any truthy mode, hidden_states too
+        if self.cfg.activation_offloading:
+            from axolotl.monkeypatch.trainer.trl_offload import (
+                patch_trl_logprob_entropy_saved_layout,
+                patch_trl_offload_dense_layout,
             )
 
-            transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
-        elif (
-            self.cfg.gradient_checkpointing
-            and self.cfg.activation_offloading == "offload_disk"
-        ):
-            from axolotl.monkeypatch.gradient_checkpointing import (
-                hf_grad_checkpoint_disk_offload_wrapper,
-            )
-
-            transformers.modeling_utils.checkpoint = (
-                hf_grad_checkpoint_disk_offload_wrapper
-            )
+            patch_trl_offload_dense_layout()
+            patch_trl_logprob_entropy_saved_layout()
 
     def _apply_mistral_cross_entropy_patch(self):
         """Apply Mistral cross entropy patch if configured."""
@@ -909,6 +904,17 @@ class PatchManager:
         # inherit a previous run's stale auto/triton_flash policy on an sdpa run.
         set_large_head_policy(policy)
         set_large_head_packed(bool(self.cfg.sample_packing))
+        from axolotl.monkeypatch.attention.large_head import (
+            patch_flex_large_head,
+            unpatch_flex_large_head,
+        )
+
+        # FlexAttention: only BlockMasks carrying segment metadata (packed encoder/canvas global
+        # layers) are routed; everything else stays on flex.
+        if policy != "sdpa" and self.cfg.attn_implementation == "flex_attention":
+            patch_flex_large_head()
+        else:
+            unpatch_flex_large_head()
         if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
             unpatch_sdpa_large_head()
             return
@@ -1136,14 +1142,15 @@ class PatchManager:
             cfg_num_shards=self.cfg.tiled_mlp_num_shards,
         )
 
-    def _apply_voxtral_patches(self):
-        """Apply patches for Voxtral model."""
-        if self.cfg.model_config_type == "voxtral":
-            from axolotl.monkeypatch.models.voxtral.modeling import (
-                patch_voxtral_conditional_generation_forward,
-            )
+    def _apply_parallel_weight_conversion(self):
+        """Parallel stack/cat in transformers' expert-fusing converters; off with AXOLOTL_PARALLEL_CONVERT=0."""
+        if os.environ.get("AXOLOTL_PARALLEL_CONVERT", "1") == "0":
+            return
+        from axolotl.monkeypatch.parallel_weight_conversion import (
+            patch_parallel_weight_conversion,
+        )
 
-            patch_voxtral_conditional_generation_forward()
+        patch_parallel_weight_conversion()
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
@@ -1239,8 +1246,16 @@ class PatchManager:
             or self.cfg.lora_qkv_kernel
             or self.cfg.lora_o_kernel
         ):
+            from peft import PeftModel
+
             from axolotl.monkeypatch.lora_kernels import apply_lora_kernel_patches
 
+            if not isinstance(model, PeftModel) and rl_trainer_builds_adapter(self.cfg):
+                # TRL wraps the adapter inside the trainer; the builder patches it then
+                LOG.info(
+                    "Deferring the fused LoRA kernel patch to the RL trainer build"
+                )
+                return
             apply_lora_kernel_patches(model=model, cfg=self.cfg)
 
     def _apply_patch_deepspeed_zero3(self):

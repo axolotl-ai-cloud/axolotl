@@ -21,6 +21,7 @@ from axolotl.core.trainers import (
     AxolotlRewardTrainer,
     AxolotlTrainer,
 )
+from axolotl.core.trainers.mixins.named_eval import named_eval_trainer_class
 from axolotl.integrations.base import PluginManager
 from axolotl.model_support import get_model_support_for_cfg, resolve_model_support
 from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
@@ -45,6 +46,7 @@ from axolotl.utils.collators import (
 )
 from axolotl.utils.collators.mm_chat import MultiModalChatDataCollator
 from axolotl.utils.import_helper import get_cls_from_module_str
+from axolotl.utils.label_dropout import check_label_keep_prob_ids
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -280,6 +282,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["label_balance_window_optim_steps"] = (
             self.cfg.label_balance_window_optim_steps or 1
         )
+        if self.cfg.label_keep_prob:
+            check_label_keep_prob_ids(self.cfg.label_keep_prob, self.tokenizer)
+            training_arguments_kwargs["label_keep_prob"] = dict(
+                self.cfg.label_keep_prob
+            )
+            training_arguments_kwargs["label_keep_prob_normalize"] = (
+                self.cfg.label_keep_prob_normalize or "dropped"
+            )
         training_arguments_kwargs["sample_packing_drop_attention_mask"] = (
             self.cfg.attn_decontaminates_packing
         )
@@ -451,6 +461,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and getattr(self.model.config, "num_labels", None) != 1
         ):
             self.model.config.num_labels = 1
+        trainer_cls = named_eval_trainer_class(trainer_cls, self.eval_dataset)
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,

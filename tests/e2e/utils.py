@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 import torch
-from packaging import version
 from safetensors.torch import load_file
 from tbparse import SummaryReader
 
@@ -79,78 +78,6 @@ requires_flash_attn = pytest.mark.skipif(
 )
 
 
-def require_torch_2_4_1(test_case):
-    """
-    Decorator marking a test that requires torch >= 2.5.1
-    """
-
-    def is_min_2_4_1():
-        torch_version = version.parse(torch.__version__)
-        return torch_version >= version.parse("2.4.1")
-
-    return unittest.skipUnless(is_min_2_4_1(), "test requires torch>=2.4.1")(test_case)
-
-
-def require_torch_2_5_1(test_case):
-    """
-    Decorator marking a test that requires torch >= 2.5.1
-    """
-
-    def is_min_2_5_1():
-        torch_version = version.parse(torch.__version__)
-        return torch_version >= version.parse("2.5.1")
-
-    return unittest.skipUnless(is_min_2_5_1(), "test requires torch>=2.5.1")(test_case)
-
-
-def require_torch_2_6_0(test_case):
-    """
-    Decorator marking a test that requires torch >= 2.6.0
-    """
-
-    def is_min_2_6_0():
-        torch_version = version.parse(torch.__version__)
-        return torch_version >= version.parse("2.6.0")
-
-    return unittest.skipUnless(is_min_2_6_0(), "test requires torch>=2.6.0")(test_case)
-
-
-def require_torch_2_7_0(test_case):
-    """
-    Decorator marking a test that requires torch >= 2.7.0
-    """
-
-    def is_min_2_7_0():
-        torch_version = version.parse(torch.__version__)
-        return torch_version >= version.parse("2.7.0")
-
-    return unittest.skipUnless(is_min_2_7_0(), "test requires torch>=2.7.0")(test_case)
-
-
-def require_torch_2_8_0(test_case):
-    """
-    Decorator marking a test that requires torch >= 2.7.0
-    """
-
-    def is_min_2_8_0():
-        torch_version = version.parse(torch.__version__)
-        return torch_version >= version.parse("2.8.0")
-
-    return unittest.skipUnless(is_min_2_8_0(), "test requires torch>=2.8.0")(test_case)
-
-
-def require_torch_lt_2_6_0(test_case):
-    """
-    Decorator marking a test that requires torch < 2.6.0
-    """
-
-    def is_max_2_6_0():
-        torch_version = version.parse(torch.__version__)
-        return torch_version < version.parse("2.6.0")
-
-    return unittest.skipUnless(is_max_2_6_0(), "test requires torch<2.6.0")(test_case)
-
-
 def require_vllm(test_case):
     """
     Decorator marking a test that requires a vllm to be installed
@@ -183,7 +110,9 @@ def requires_sm_ge_100(test_case):
         and torch.version.cuda
         and torch.cuda.get_device_capability() >= (10, 0)
     )
-    return unittest.skipUnless(is_sm_ge_100, "test requires sm>=100")(test_case)
+    return pytest.mark.gpu_blackwell(
+        unittest.skipUnless(is_sm_ge_100, "test requires sm>=100")(test_case)
+    )
 
 
 def requires_cuda_ge_8_9(test_case):
@@ -193,15 +122,6 @@ def requires_cuda_ge_8_9(test_case):
         and torch.cuda.get_device_capability() >= (8, 9)
     )
     return unittest.skipUnless(is_cuda_ge_8_9, "test requires cuda>=8.9")(test_case)
-
-
-def is_hopper():
-    compute_capability = torch.cuda.get_device_capability()
-    return compute_capability == (9, 0)
-
-
-def require_hopper(test_case):
-    return unittest.skipUnless(is_hopper(), "test requires h100/hopper GPU")(test_case)
 
 
 def supports_fp8(test_case):
