@@ -11,16 +11,16 @@ from typing import Optional
 import numpy as np
 import requests
 import torch
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
 from transformers import ProcessorMixin
-from transformers.image_utils import load_image
 from transformers.models.internvl import InternVLProcessor
 from transformers.models.smolvlm import SmolVLMProcessor
 from transformers.models.voxtral import VoxtralProcessor
 
 from axolotl.utils.dict import remove_none_values
+from axolotl.utils.images import load_and_resize_image
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -35,23 +35,6 @@ _VALID_TRAIN_ON_EOS = ("turn", "all", "none", "last")
 
 
 IMAGE_REF_KEYS = ("image", "url", "path", "base64")
-
-
-def resize_image(
-    image: Image.Image,
-    image_size: int | tuple[int, int],
-    resize_algorithm: Resampling | None = None,
-) -> Image.Image:
-    resize_algorithm = resize_algorithm or Resampling.BILINEAR
-    if isinstance(image_size, tuple):
-        return image.resize(image_size, resize_algorithm)
-    # Int image_size: preserve aspect ratio then pad to square (black) to avoid distortion.
-    return ImageOps.pad(
-        image,
-        (image_size, image_size),
-        method=resize_algorithm,
-        color=(0, 0, 0),
-    )
 
 
 @dataclass(frozen=True)
@@ -94,8 +77,11 @@ class ProcessingStrategy:
         self.field_messages = self._normalize_field_messages(field_messages)
 
         self.image_size = image_size
+        # `or` would clobber Resampling.NEAREST (value 0)
         self.image_resize_algorithm = (
-            image_resize_algorithm or Image.Resampling.BILINEAR
+            Image.Resampling.BILINEAR
+            if image_resize_algorithm is None
+            else image_resize_algorithm
         )
 
         # Defaults mirror the text-only ChatTemplateStrategy. An explicit
@@ -301,17 +287,11 @@ class ProcessingStrategy:
                         "See https://docs.axolotl.ai/docs/multimodal.html#dataset-format"
                     )
 
-                image_value = processed_example[image_key][0]
-
-                image_value = load_image(image_value)
-
-                if self.image_size is not None:
-                    assert hasattr(image_value, "resize"), (
-                        "Image does not have a resize method"
-                    )
-                    image_value = resize_image(
-                        image_value, self.image_size, self.image_resize_algorithm
-                    )
+                image_value = load_and_resize_image(
+                    processed_example[image_key][0],
+                    self.image_size,
+                    self.image_resize_algorithm,
+                )
 
                 msg_ind_to_add = None
                 ind_to_add = None
