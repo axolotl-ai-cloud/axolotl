@@ -1716,7 +1716,25 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.data-parallel-size",),
         "vllm__data_parallel_size",
         "int",
-        "Data parallel size for VLLM",
+        "Data parallel size for VLLM (total replicas across all nodes)",
+    ),
+    (
+        ("--vllm.pipeline-parallel-size",),
+        "vllm__pipeline_parallel_size",
+        "int",
+        "Pipeline parallel size for VLLM",
+    ),
+    (
+        ("--vllm.nnodes",),
+        "vllm__nnodes",
+        "int",
+        "Number of nodes `vllm-serve` spans. Launch it on each node with `--node-rank`.",
+    ),
+    (
+        ("--vllm.master-addr",),
+        "vllm__master_addr",
+        "str",
+        "Address of node 0 (which serves the API) when `nnodes > 1`",
     ),
     (
         ("--vllm.gpu-memory-utilization",),
