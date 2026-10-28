@@ -36,9 +36,6 @@ lora_target_modules: 'model.language_model.layers.[\d]+.(self_attn.(q_proj|kv_a_
 lora_target_parameters:
   - mlp.experts.gate_up_proj
   - mlp.experts.down_proj
-lora_mlp_kernel: false
-lora_qkv_kernel: false
-lora_o_kernel: false
 
 wandb_project:
 wandb_entity:
