@@ -25,7 +25,7 @@ SUPPORTED_ROUTED_PROJS = frozenset({"gate_proj", "up_proj", "down_proj"})
 
 # model_types a specialized adapter owns (its own extra patches); the generic gate defers to them
 _SPECIALIZED_MOE_MODEL_TYPES = frozenset(
-    {"glm_moe_dsa", "qwen3_moe", "qwen3_next", "nemotron_h"}
+    {"glm_moe_dsa", "qwen3_moe", "qwen3_next", "nemotron_h", "mistral_large4"}
 )
 
 
