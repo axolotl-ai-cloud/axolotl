@@ -2970,6 +2970,17 @@ class GRPOVllmValidationMixin:
             problems.append("entropy regularization is not supported")
         if trl.rollout_func:
             problems.append("`rollout_func` is not supported")
+        unsent = [
+            f"`{option}`"
+            for option in ("generation_kwargs", "vllm_guided_decoding_regex")
+            if getattr(trl, option)
+            and not (structured_ebft and option == "generation_kwargs")
+        ]
+        if unsent:
+            problems.append(
+                f"{', '.join(unsent)} not supported: TRL's rollout worker sends only "
+                "its own sampling parameters to vLLM"
+            )
         if (self.load_in_4bit or self.load_in_8bit) and not trl.vllm_lora_sync:
             problems.append(
                 "a quantized base model needs adapter-only weight sync: set "

@@ -474,7 +474,7 @@ These are set under the `trl:` key and control the GRPO training loop.
 | `generation_kwargs` | `dict` | -- | Extra vLLM sampling parameters, e.g. `stop_token_ids` |
 | `skip_zero_advantage_batches` | `bool` | `true` | Async: leave samples with zero advantage out of the loss |
 | `scale_rewards` | `bool` | -- | Normalize rewards within each prompt group |
-| `loss_type` | `string` | `"grpo"` | Loss type for policy optimization (async: `dapo` or `cispo`) |
+| `loss_type` | `string` | `"dapo"` | Loss type for policy optimization (async: `dapo` or `cispo`) |
 | `epsilon` | `float` | `0.2` | Clipping parameter for importance sampling |
 
 ### Stop Tokens
