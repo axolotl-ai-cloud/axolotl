@@ -57,17 +57,21 @@ def recurrent_layer_types(config) -> set[str]:
 
 def packs_async_grpo_rollouts(cfg) -> bool:
     """Async GRPO (and structured EBFT on it) packs every rank's rollouts into one row."""
-    if not (cfg.trl and cfg.trl.async_prefetch):
+    trl = getattr(cfg, "trl", None)
+    if not (trl and trl.async_prefetch):
         return False
-    if cfg.rl in ("grpo", "gdpo"):
+    rl = getattr(cfg, "rl", None)
+    if rl in ("grpo", "gdpo"):
         return True
-    return cfg.rl == "ebft" and (cfg.ebft or {}).get("mode") != "strided"
+    return rl == "ebft" and (getattr(cfg, "ebft", None) or {}).get("mode") != "strided"
 
 
 def trains_on_packed_rows(cfg) -> bool:
     """Whether batches concatenate samples, each starting where position_ids restart at 0."""
     return bool(
-        cfg.sample_packing or cfg.batch_flattening or packs_async_grpo_rollouts(cfg)
+        getattr(cfg, "sample_packing", False)
+        or getattr(cfg, "batch_flattening", False)
+        or packs_async_grpo_rollouts(cfg)
     )
 
 

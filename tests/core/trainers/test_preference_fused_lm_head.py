@@ -171,18 +171,32 @@ def test_moe_aux_loss_flows_through_fused_head(tokenizer, tmp_path):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA (Triton)")
 def test_fused_head_peak_memory_below_full_logits(tokenizer, tmp_path):
+    """A fused DPO step, reference model included, peaks below the policy alone
+    scoring the same batch through full logits. Both pay the vocabulary-sized
+    weight gradients, so the difference is the logits."""
     trainer = _trainer(tokenizer, tmp_path, ["sigmoid"])
-    trainer.model.cuda()
+    model = trainer.model.cuda()
     trainer.ref_model.cuda()
     batch = {k: v.cuda() for k, v in _batch(trainer).items()}
-    full_logits_bytes = batch["input_ids"].numel() * len(tokenizer) * 4
 
-    torch.cuda.synchronize()
-    torch.cuda.reset_peak_memory_stats()
-    start = torch.cuda.memory_allocated()
-    trainer.compute_loss(trainer.model, batch).backward()
-    torch.cuda.synchronize()
-    assert torch.cuda.max_memory_allocated() - start < full_logits_bytes
+    def full_logits_loss():
+        logits = model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        ).logits
+        targets = batch["input_ids"][:, 1:, None]
+        return -logits[:, :-1].log_softmax(-1).gather(-1, targets).mean()
+
+    def peak(loss_fn):
+        model.zero_grad(set_to_none=True)
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        start = torch.cuda.memory_allocated()
+        loss_fn().backward()
+        torch.cuda.synchronize()
+        return torch.cuda.max_memory_allocated() - start
+
+    fused = peak(lambda: trainer.compute_loss(model, batch))
+    assert fused < peak(full_logits_loss)
 
 
 def test_kto_uses_fused_head(tokenizer, tmp_path):
