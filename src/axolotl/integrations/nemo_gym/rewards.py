@@ -25,6 +25,17 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def parse_reward(value: Any, source: str) -> float | None:
+    """A NeMo Gym reward, or None (unscored) when it is missing or not a number."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        LOG.warning(f"{source} returned a non-numeric reward: {value!r}")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Multi-turn passthrough reward
 # ---------------------------------------------------------------------------
@@ -241,8 +252,11 @@ class NemoGymVerifyReward:
                         f"{(await response.text())[:200]}"
                     )
                     return None
-                reward = (await response.json()).get("reward")
-        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+                body = await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
             LOG.warning(f"Verify request to {url} failed: {error}")
             return None
-        return None if reward is None else float(reward)
+        if not isinstance(body, dict):
+            LOG.warning(f"Verify request to {url} returned a {type(body).__name__}")
+            return None
+        return parse_reward(body.get("reward"), f"Verify request to {url}")

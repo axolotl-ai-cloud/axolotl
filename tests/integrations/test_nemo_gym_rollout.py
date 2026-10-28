@@ -286,6 +286,31 @@ class TestNemoGymRolloutLoop:
         assert self._generate_one(loop, broken) == loop._UNSCORABLE
         assert loop._counters["nemo_gym/run_failure_total"] == 1
 
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            web.Response(text="{not json", content_type="application/json"),
+            web.json_response(["not", "an", "object"]),
+        ],
+        ids=["malformed", "not_an_object"],
+    )
+    def test_unreadable_run_is_unscorable(self, reply):
+        async def agent(request):
+            return reply
+
+        loop = nemo_gym_loop([row("a")])
+        assert self._generate_one(loop, agent) == loop._UNSCORABLE
+        assert loop._counters["nemo_gym/run_failure_total"] == 1
+
+    def test_non_numeric_reward_is_unscored(self):
+        async def agent(request):
+            return web.json_response(
+                {"response": {"output": agent_output()}, "reward": "n/a"}
+            )
+
+        loop = nemo_gym_loop([row("a")])
+        assert self._generate_one(loop, agent)[-1] is None
+
     def test_missing_token_information_stops_the_worker(self):
         async def no_tokens(request):
             output = [
@@ -335,6 +360,31 @@ class TestNemoGymVerifyReward:
         assert calls[0]["task"] == "t" and "skipped" not in calls[0]
         assert calls[0]["response"]["model"] == "policy"
         assert calls[0]["responses_create_params"]["input"] == PROMPT
+
+    def test_unreadable_replies_are_unscored(self):
+        replies = {
+            "malformed": lambda: web.Response(
+                text="{not json", content_type="application/json"
+            ),
+            "list": lambda: web.json_response([1.0]),
+            "text": lambda: web.json_response({"reward": "n/a"}),
+        }
+
+        async def verify(request):
+            body = await request.json()
+            return replies[body["response"]["output"][0]["content"][0]["text"]]()
+
+        async def go():
+            async with serve(verify=verify) as url:
+                reward = NemoGymVerifyReward({"weather": f"{url}/verify"})
+                return await reward(
+                    [[{"role": "assistant", "content": text}] for text in replies],
+                    prompts=[PROMPT] * len(replies),
+                    resources_server_ref=[{"name": "weather"}] * len(replies),
+                    verify_extra=[{}] * len(replies),
+                )
+
+        assert asyncio.run(go()) == [None, None, None]
 
     def test_is_a_picklable_async_reward(self):
         import pickle

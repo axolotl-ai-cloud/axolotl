@@ -596,6 +596,16 @@ class TestAsyncGRPOCompat:
                 "must exceed 1",
             ),
             ({"reward_num_workers": 0}, {}, "reward_num_workers"),
+            (
+                {"generation_kwargs": {"stop_token_ids": [7]}},
+                {},
+                "`generation_kwargs` not supported",
+            ),
+            (
+                {"vllm_guided_decoding_regex": "[0-9]+"},
+                {},
+                "`vllm_guided_decoding_regex` not supported",
+            ),
         ],
     )
     def test_unsupported_settings_raise(self, min_base_cfg, trl, extra, match):

@@ -118,6 +118,7 @@ lora_target_linear: true
 trl:
   use_vllm: true
   async_prefetch: true
+  loss_type: cispo            # see Loss below; the default dapo stalls LoRA runs
   vllm_server_host: 0.0.0.0
   vllm_server_port: 8000
   vllm_server_timeout: 300
@@ -587,9 +588,9 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `top_k` | int | `null` | Top-k sampling |
 | `min_p` | float | `null` | Minimum probability threshold |
 | `repetition_penalty` | float | `null` | Penalty for repeated tokens |
-| `generation_kwargs` | dict | `null` | Additional vLLM SamplingParams (e.g., `stop_token_ids`) |
+| `generation_kwargs` | dict | `null` | Additional vLLM SamplingParams (e.g., `stop_token_ids`); not with `async_prefetch` |
 | `chat_template_kwargs` | dict | `null` | Chat template kwargs (e.g., `{enable_thinking: false}`) |
-| `vllm_guided_decoding_regex` | str | `null` | Regex constraint for structured/guided decoding (mapped to TRL's `vllm_structured_outputs_regex` on TRL >= 1.7) |
+| `vllm_guided_decoding_regex` | str | `null` | Regex constraint for structured/guided decoding (mapped to TRL's `vllm_structured_outputs_regex` on TRL >= 1.7); not with `async_prefetch` |
 
 ### Async pipeline
 

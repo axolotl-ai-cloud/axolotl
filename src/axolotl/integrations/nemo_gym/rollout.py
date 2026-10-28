@@ -28,6 +28,7 @@ import aiohttp
 
 from axolotl.core.trainers.async_grpo.rollout import AxolotlRolloutLoop
 from axolotl.core.trainers.async_grpo.trl_compat import TurnRecord, chain_to_sequences
+from axolotl.integrations.nemo_gym.rewards import parse_reward
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -179,10 +180,14 @@ class NemoGymRolloutLoop(AxolotlRolloutLoop):
                         f"{(await response.text())[:200]}"
                     )
                     return None
-                return await response.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as error:
+                result = await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
             LOG.warning(f"NeMo Gym {url} failed: {type(error).__name__}: {error}")
             return None
+        if not isinstance(result, dict):
+            LOG.warning(f"NeMo Gym {url} returned a {type(result).__name__}")
+            return None
+        return result
 
     async def _generate_one(self, prompt, tool_dict, tools, group_id=0):
         t_dispatch = time.monotonic()
@@ -196,7 +201,8 @@ class NemoGymRolloutLoop(AxolotlRolloutLoop):
         if result is None:
             self._counters["nemo_gym/run_failure_total"] += 1
             return self._UNSCORABLE
-        output = (result.get("response") or {}).get("output") or []
+        response = result.get("response")
+        output = (response.get("output") if isinstance(response, dict) else None) or []
         turns = turns_from_agent_output(output)
         if not turns:
             self._counters["nemo_gym/empty_rollout_total"] += 1
@@ -214,12 +220,11 @@ class NemoGymRolloutLoop(AxolotlRolloutLoop):
             duration_s=time.monotonic() - t_dispatch,
         )
         tool_calls = sum(item.get("type") == "function_call" for item in output)
-        reward = result.get("reward")
         return (
             messages_from_agent_output(output),
             completion_ids,
             sequences,
             tool_calls,
             0,
-            None if reward is None else float(reward),
+            parse_reward(result.get("reward"), "NeMo Gym agent"),
         )
