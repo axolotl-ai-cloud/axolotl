@@ -51,7 +51,7 @@ If your dataset stores the reasoning under a different key, map it with `field_t
 
 ## Tips
 
-- Only `sdpa` and `eager` attention are supported. The sparse attention indexer selects up to 2048 keys per query, so up to `sequence_len: 2048` attention is dense; beyond that it follows the indexer's selection, as in inference.
+- Only `sdpa` and `eager` attention are supported. The sparse attention indexer selects up to 2048 keys per query, so up to `sequence_len: 2048` attention is dense; beyond that it follows the indexer's selection, as in inference. Keep `sequence_len` at or below 2048 when using `sample_packing` for now.
 - The indexer runs without gradients and is not a LoRA target.
 - The routed experts stay in NVFP4. The FP8 projections (attention `q_proj`/`o_proj`, shared experts, the dense first layer) are dequantized to bf16 at load.
 - On cloud, if using a volume mount, pointing the HF cache (via `HF_HOME`) at a local disk keeps weight load fast.
