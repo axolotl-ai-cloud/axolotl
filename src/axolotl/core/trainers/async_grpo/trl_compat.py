@@ -71,8 +71,8 @@ TRL_MAIN_COMMIT = "636cb0fc"
 # TRL code axolotl copies or re-implements rather than subclasses; the drift test
 # pins these besides every TRL method an axolotl subclass overrides.
 UPSTREAM = {
-    "AsyncGRPOTrainer.compute_loss": "copied into AxolotlAsyncGRPOTrainer, with "
-    "the loss behind loss_type",
+    "AsyncGRPOTrainer.compute_loss": "copied into AsyncGRPOLossMixin, with the "
+    "loss behind loss_type",
     "TreeRow.pack": "packs ChainRow and ScoredRow rows; compute_loss reads its keys",
     "AsyncGRPOConfig": "its defaults are mirrored in axolotl's validation "
     "(max_staleness, weight_sync_steps), and its dispatch_batches/split_batches "
@@ -84,7 +84,7 @@ UPSTREAM = {
     "_EpochStopCallback.on_step_end": "reads the consumed-groups set that "
     "RolloutProgress keeps",
     "_TrainBeginCallback.on_train_begin": "its cold weight sync must run in "
-    "AxolotlAsyncGRPOTrainer._sync_weight",
+    "WeightSyncMixin._sync_weight",
     "_iter_vllm_named_params": "walked by the out-of-place merged weight sync",
     "save_lora_adapter": "retiring an adapter relinks the adapter_model.safetensors "
     "it writes",
