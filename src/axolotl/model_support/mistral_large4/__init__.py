@@ -1,0 +1,28 @@
+"""Mistral Large 4 model support (MLA + DSA sparse attention + MoE)."""
+
+from axolotl.model_support.base import ModelSupport, Unsupported
+from axolotl.model_support.profile import ModelProfile
+from axolotl.model_support.registry import register_model_support
+from axolotl.model_support.templates import IMAGE_TEXT_TO_TEXT
+
+
+@register_model_support
+class MistralLarge4Support(ModelSupport):
+    """Descriptor for mistral_large4 (Mistral Large 4)."""
+
+    model_types = ("mistral_large4", "mistral_large4_text")
+    profile = ModelProfile(
+        family=IMAGE_TEXT_TO_TEXT,
+        capabilities={
+            "lora_kernels": Unsupported(
+                "MLA has no q/k/v projection triple for the fused QKV/O LoRA kernels."
+            ),
+            "sdpa_varlen": Unsupported(
+                "The DSA indexer builds its per-query top-k mask from the attention mask, "
+                "which the varlen path drops."
+            ),
+            "context_parallel": Unsupported(
+                "The DSA indexer only sees the local shard's keys under context parallelism."
+            ),
+        },
+    )
