@@ -239,7 +239,7 @@ def test_trajectory_tracks_dist_muon():
         for a, b in zip(dense_model.parameters(), quant_model.parameters(), strict=True)
     )
     assert relative < 0.05
-    assert quant_loss == pytest.approx(dense_loss, rel=1e-2)
+    assert quant_loss.item() == pytest.approx(dense_loss.item(), rel=1e-2)
     assert quant_loss < F.mse_loss(_mlp()(inputs), targets)
 
 
