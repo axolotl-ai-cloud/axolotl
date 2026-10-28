@@ -23,7 +23,7 @@ datasets:
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0
-output_dir: ./outputs/mistral-large-4-nvfp4-qlora
+output_dir: ./outputs/mistral-large-4-nvfp4-lora
 
 sequence_len: 2048
 sample_packing: true

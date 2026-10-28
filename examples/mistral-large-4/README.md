@@ -20,7 +20,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
     ```bash
     # text-only, 8xB200
-    axolotl train examples/mistral-large-4/nvfp4-qlora-text.yml
+    axolotl train examples/mistral-large-4/nvfp4-lora-text.yml
     ```
 
 ## Reasoning Effort
