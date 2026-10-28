@@ -397,10 +397,17 @@ class Nvfp4LinearDequantize:
                 qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts
             ).dequantize(torch.bfloat16)
         elif is_fp8:
-            scale = _one(".weight_scale").to(torch.float32).reshape(-1)
-            # per-tensor (scalar) or per-row scales both broadcast over the last dim
-            scale = scale if scale.numel() == 1 else scale.view(-1, 1)
-            weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
+            scale = _one(".weight_scale").to(torch.float32)
+            if scale.ndim == 4:  # modelopt FP8_PB_WO block scale: [R/b, 1, C/b, 1]
+                from axolotl.kernels.quantize import dequantize_fp8
+
+                weight = dequantize_fp8(w, scale[:, 0, :, 0], torch.float32)
+                weight = weight.to(torch.bfloat16)
+            else:
+                scale = scale.reshape(-1)
+                # per-tensor (scalar) or per-row scales both broadcast over the last dim
+                scale = scale if scale.numel() == 1 else scale.view(-1, 1)
+                weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
         else:
             # The loader casts sources to the skeleton dtype before we see them, so a packed
             # weight is only detectable by shape; a scaleless fp8 one only when that cast is
