@@ -1,5 +1,4 @@
-# Mistral Large 4 LoRA on the NVFP4 (modelopt) checkpoint: routed experts stay packed NVFP4 via ScatterMoE,
-# the FP8 projections dequantize to bf16 at load. Text-only, FSDP2 on 8xB200.
+# NVFP4 experts stay packed (ScatterMoE); the FP8 projections dequantize to bf16 at load.
 base_model: mistralai/Mistral-Large-4-1T-A52B-NVFP4
 
 plugins:
