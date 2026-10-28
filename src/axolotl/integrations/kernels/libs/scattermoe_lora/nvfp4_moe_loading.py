@@ -55,6 +55,20 @@ def _resolve_repo_file(repo_id: str, filename: str) -> str:
 
 
 _DEFAULT_INDEX = "model.safetensors.index.json"
+_CONSOLIDATED_INDEX = "consolidated.safetensors.index.json"
+
+
+def _repo_has_file(repo_id: str, filename: str) -> bool:
+    if os.path.isdir(repo_id):
+        return os.path.exists(os.path.join(repo_id, filename))
+    from huggingface_hub import file_exists, try_to_load_from_cache
+
+    if isinstance(try_to_load_from_cache(repo_id, filename), str):
+        return True
+    try:
+        return file_exists(repo_id, filename)
+    except Exception:  # pylint: disable=broad-except
+        return False
 
 
 def _index_filename(repo_id: str) -> str:
@@ -62,13 +76,19 @@ def _index_filename(repo_id: str) -> str:
     one (e.g. Mistral's ``consolidated.safetensors.index.json``), else the default."""
     import json
 
+    name = None
     try:
         with open(_resolve_repo_file(repo_id, "config.json")) as f:
             name = json.load(f).get("transformers_weights")
     except Exception:  # pylint: disable=broad-except
-        return _DEFAULT_INDEX
+        pass
     if isinstance(name, str) and name.endswith(".safetensors.index.json"):
         return name
+    # Mistral-native repos without a config.json (config via base_model_config) ship only these
+    if not _repo_has_file(repo_id, _DEFAULT_INDEX) and _repo_has_file(
+        repo_id, _CONSOLIDATED_INDEX
+    ):
+        return _CONSOLIDATED_INDEX
     return _DEFAULT_INDEX
 
 
