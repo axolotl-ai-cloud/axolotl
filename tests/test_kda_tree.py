@@ -212,8 +212,9 @@ def test_tree_rows_match_each_sequence_alone(monkeypatch, build, forks):
         for k in ("tree_kv_index", "tree_cu_seqlens_q", "tree_cu_seqlens_k")
     }
     out = layer(embed(packed["input_ids"])[None], **tree)[0, packed["positions"]]
-    torch.testing.assert_close(out, alone, rtol=1e-4, atol=1e-5)
+    # fp32 sums in another order on x86 BLAS; state leaking across rows is far larger.
+    torch.testing.assert_close(out, alone, rtol=1e-4, atol=1e-4)
     out.square().sum().backward()
     for grad, expected in zip(grads(), alone_grads, strict=True):
-        torch.testing.assert_close(grad, expected, rtol=1e-4, atol=1e-5)
+        torch.testing.assert_close(grad, expected, rtol=1e-4, atol=1e-4)
     assert policy.forks(tree_plan(tree)) == forks
