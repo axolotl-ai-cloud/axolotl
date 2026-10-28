@@ -20,7 +20,7 @@ def _length_reward(completions, **kwargs):
 def _trainer(tmp_path, sac=None, **args):
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
 
     from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
     from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
@@ -30,8 +30,20 @@ def _trainer(tmp_path, sac=None, **args):
 
     torch.manual_seed(0)
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID, dtype=torch.float32, attn_implementation="sdpa"
+    # A tiny random model: the trainers outlive their test, and every case builds two.
+    model = LlamaForCausalLM(
+        LlamaConfig(
+            vocab_size=len(tokenizer),
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            bos_token_id=tokenizer.bos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            attn_implementation="sdpa",
+        )
     )
     if sac is not None:
         # As the model loader applies it, before the adapter.

@@ -1,6 +1,7 @@
 """Tests for async GRPO on TRL's AsyncGRPOTrainer and axolotl's extensions to it."""
 
 import asyncio
+import gc
 import multiprocessing as mp
 import os
 import queue
@@ -57,6 +58,14 @@ ONES = np.ones(1)
 needs_score_centering = pytest.mark.skipif(
     not SCORE_CENTERING, reason="score centering is on TRL main only"
 )
+
+
+@pytest.fixture(autouse=True)
+def _collect_trainers():
+    """Trainers stay alive through reference cycles, models included, until the
+    collector runs; collecting after each test halves the module's peak memory."""
+    yield
+    gc.collect()
 
 
 class TestComputeGroupAdvantages:
