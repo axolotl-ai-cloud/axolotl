@@ -299,7 +299,7 @@ def make_nvfp4_fp8_quantizer():
     class NVFP4MoEFP8HfQuantizer(FineGrainedFP8HfQuantizer):
         """FineGrained-FP8 quantizer that also loads NVFP4 routed experts correctly."""
 
-        def update_weight_conversions(self, weight_conversions):
+        def update_weight_conversions(self, weight_conversions, *args, **kwargs):
             rebuilt = []
             for conv in weight_conversions:
                 if not (
@@ -311,6 +311,8 @@ def make_nvfp4_fp8_quantizer():
                 ops = [type(op)(op.dim) for op in conv.operations]
                 # weight: anchor `.weight$` so the converter fuses ONLY the packed weight
                 # and stops swallowing `.weight_scale*` (the 0-D `_scale_2` concat raises).
+                # The `$` also keeps transformers>=5.21's base `update_weight_conversions`
+                # from rewriting these into Fp8Dequantize + `weight_scale_inv` converters.
                 w_conv = WeightConverter(
                     source_patterns=[
                         p + "$" if p.endswith(".weight") else p
@@ -337,7 +339,7 @@ def make_nvfp4_fp8_quantizer():
                     new.scope_prefix = conv.scope_prefix
                     new.base_model_prefix = conv.base_model_prefix
                 rebuilt.extend((w_conv, s_conv))
-            return super().update_weight_conversions(rebuilt)
+            return super().update_weight_conversions(rebuilt, *args, **kwargs)
 
         def _process_model_before_weight_loading(self, model, **kwargs):
             super()._process_model_before_weight_loading(model, **kwargs)
