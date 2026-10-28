@@ -539,6 +539,7 @@ def register_nvfp4_expert_converters(
     Idempotent: our converters are filtered out of the preserved set on re-entry.
     """
     from transformers.conversion_mapping import get_checkpoint_conversion_mapping
+    from transformers.core_model_loading import WeightConverter
 
     from axolotl.utils.weight_conversions import register_weight_conversions
 
@@ -549,6 +550,9 @@ def register_nvfp4_expert_converters(
         return
 
     def _targets_experts(conv) -> bool:
+        # renamings (e.g. `.experts.` -> `.mlp.experts.`) must survive; only fusions fight ours
+        if not isinstance(conv, WeightConverter):
+            return False
         tp = getattr(conv, "target_patterns", None) or []
         if isinstance(tp, str):
             tp = [tp]
