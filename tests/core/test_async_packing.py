@@ -1,5 +1,7 @@
 """Async GRPO packing for models with recurrent layers (tree-recurrence in axolotl)."""
 
+import inspect
+import sys
 import types
 
 import numpy as np
@@ -33,12 +35,38 @@ def test_pack_sequences_without_sharing():
     assert chains["positions"].tolist() == list(range(8))
 
 
+def _torch_reference(dispatcher, name, package):
+    """``dispatcher`` (transformers' kernel dispatch of ``name``) bound to its PyTorch
+    reference, as transformers binds it where ``package`` is not installed."""
+    from transformers.integrations import use_kernel_func_from_hub_with_fallback
+
+    if isinstance(dispatcher, torch.nn.Module):  # kernels >= 0.17 makes it a module
+        dispatcher = inspect.getclosurevars(type(dispatcher).forward).nonlocals["func"]
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setitem(sys.modules, package, None)
+        return use_kernel_func_from_hub_with_fallback(name, package)(
+            inspect.unwrap(dispatcher)
+        )
+
+
 @pytest.fixture
 def tree_hooks(monkeypatch):
-    """tree-recurrence's hooks as packing_support installs them, off after the test."""
+    """tree-recurrence's hooks as packing_support installs them, off after the test,
+    over transformers' PyTorch reference of Qwen3.5's gated delta rule."""
+    from transformers.models.qwen3_5 import modeling_qwen3_5
     from trl.experimental.async_grpo import packing
 
     monkeypatch.setattr(packing, "tree_attention", reference_tree_attention)
+    # Where FLA is installed, transformers binds its Triton kernel, which needs a GPU.
+    monkeypatch.setattr(
+        modeling_qwen3_5,
+        "torch_chunk_gated_delta_rule",
+        _torch_reference(
+            modeling_qwen3_5.torch_chunk_gated_delta_rule,
+            "chunk_gated_delta_rule",
+            "fla",
+        ),
+    )
     uninstall()
     yield
     uninstall()
