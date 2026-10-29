@@ -173,7 +173,7 @@ git -C "$BUNDLE/axolotl" checkout "$AXOLOTL_REF"
 git -C "$BUNDLE/axolotl" rev-parse HEAD
 ```
 
-The clone supplies `examples/` and is the source for the Axolotl wheel. It keeps `.git` on purpose: the package version is derived with `setuptools_scm`, and the checkout lets you re-verify the commit on the target. If bundle size matters, fetch just the one commit:
+The clone supplies `examples/` and is the source for the Axolotl wheel. It keeps `.git` on purpose: `setuptools_scm` uses it to find the package data files to ship, and the checkout lets you re-verify the commit on the target. If bundle size matters, fetch just the one commit:
 
 ```{.bash}
 git init "$BUNDLE/axolotl"
@@ -388,7 +388,7 @@ UNVERIFIED: the `DS_BUILD_OPS=0` build was run on x86_64 for this guide; prebuil
 
 ### Build the Axolotl wheel {#sec-wheelhouse-axolotl}
 
-The target installs Axolotl from a built wheel rather than with `-e .`. An editable install would also need `setuptools>=64`, `wheel` and `setuptools_scm>=8` in the wheelhouse and `--no-build-isolation`.
+The target installs Axolotl from a built wheel rather than with `-e .`. An editable install would also need `setuptools>=70.1` and `setuptools_scm>=8` in the wheelhouse and `--no-build-isolation`.
 
 ```{.bash}
 cd "$BUNDLE/axolotl"
