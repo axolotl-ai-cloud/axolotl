@@ -31,6 +31,7 @@
 ## 🎉 Latest Updates
 
 - 2026/10:
+  - MistralAI's [Mistral Large 4](https://docs.axolotl.ai/docs/models/mistral-large-4.html) is now supported in Axolotl, with merge-aware NVFP4 LoRA and expert-parallel training.
   - Reflection's [Beam](https://docs.axolotl.ai/docs/models/beam.html) is now supported in Axolotl, with QLoRA and expert-parallel LoRA configs including NVFP4.
   - [Distributed training improvements](https://github.com/axolotl-ai-cloud/axolotl/pull/4091) keep EP groups node-local when the topology permits, add DeepSpeed Ulysses support through `context_parallel_size`, and fix expert-LoRA resume and FSDP2 activation checkpointing with LoRA.
 - 2026/09:
