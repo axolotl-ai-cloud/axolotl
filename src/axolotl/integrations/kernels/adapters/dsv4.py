@@ -35,6 +35,30 @@ def scattermoe_unsupported_expert_dtype(cfg) -> str | None:
     )
 
 
+def check_scattermoe_expert_dtype(cfg) -> None:
+    """Refuse DeepSeek's packed-FP4 experts under scattermoe and warn on block-FP8 ones, which
+    load on the stock FP8 path and need a grouped expert mode to convert them."""
+    expert_dtype = scattermoe_unsupported_expert_dtype(cfg)
+    if expert_dtype is None:
+        return
+    if expert_dtype == "fp4":
+        raise ValueError(
+            f"use_scattermoe with use_dsv4_kernels can't run the routed experts of "
+            f"{cfg.base_model}: they are DeepSeek's packed FP4 (expert_dtype='fp4', ue8m0 block "
+            "scales), not NVFP4 (quantization_config.moe_quant_algo: NVFP4, e.g. "
+            "nvidia/DeepSeek-V4-Flash-NVFP4). Use the NVFP4 checkpoint or drop use_scattermoe."
+        )
+    if cfg.get("moe_grouped_mode") or cfg.get("dsv4_fp4_grouped_mode"):
+        return
+    LOG.warning(
+        "use_scattermoe with use_dsv4_kernels: %s has blockwise expert_dtype=%r routed experts. "
+        "They load with their *_scale_inv block scales, which the scattermoe experts forward does "
+        "not apply. Use an NVFP4-expert checkpoint or drop use_scattermoe.",
+        cfg.base_model,
+        expert_dtype,
+    )
+
+
 def _maybe_truncate_layers(model) -> None:
     """Debug-only (``DSV4_TRUNCATE_LAYERS=N``): truncate the decoder stack to the first N layers
     before PEFT so a small slice of the model fits a couple of GPUs for fast local bring-up /
@@ -85,16 +109,7 @@ class DSV4Adapter(ModelAdapter):
         # quantizer has no NVFP4 expert path. Install an NVFP4-aware subclass so experts load as
         # NVFP4Tensor for the scattermoe fused path. Only relevant with the scattermoe expert path.
         if cfg.use_scattermoe:
-            expert_dtype = scattermoe_unsupported_expert_dtype(cfg)
-            if expert_dtype is not None:
-                raise ValueError(
-                    f"use_scattermoe with use_dsv4_kernels needs NVFP4 routed experts "
-                    f"(quantization_config.moe_quant_algo: NVFP4, e.g. "
-                    f"nvidia/DeepSeek-V4-Flash-NVFP4) or unquantized experts, but "
-                    f"{cfg.base_model} has blockwise expert_dtype={expert_dtype!r} experts, "
-                    "which the scattermoe expert kernels do not support. Drop use_scattermoe "
-                    "for this checkpoint."
-                )
+            check_scattermoe_expert_dtype(cfg)
             from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fp8_quantizer import (
                 configure_nonexpert_mode,
                 install_nvfp4_fp8_quantizer,
