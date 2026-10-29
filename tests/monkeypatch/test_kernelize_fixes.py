@@ -206,3 +206,39 @@ def test_patch_does_not_alter_weights(kernelize_patch):
 
     assert before.keys() == after.keys()
     assert all(torch.equal(before[k], after[k]) for k in before)
+
+
+def test_kernelize_gets_a_device_it_can_index():
+    """transformers passes kernels' own ``Device``, which kernels >= 0.18 reads an
+    ``index`` off; a ``torch.device`` or a string goes through unchanged."""
+    import torch
+    from kernels import Device
+
+    from axolotl.monkeypatch.kernelize_fixes import _kernelize_with_device_type
+
+    seen = []
+    kernelize = _kernelize_with_device_type(
+        lambda model, *, device, mode: seen.append(device)
+    )
+    for device in (Device(type="cuda"), torch.device("cuda", 1), "cpu", None):
+        kernelize(None, device=device, mode=None)
+    assert seen == ["cuda", torch.device("cuda", 1), "cpu", None]
+
+
+def test_patch_wraps_and_restores_transformers_kernelize():
+    import kernels
+    from transformers.integrations import hub_kernels
+
+    from axolotl.monkeypatch.kernelize_fixes import (
+        patch_kernelize_fixes,
+        unpatch_kernelize_fixes,
+    )
+
+    if getattr(hub_kernels, "_kernels_kernelize", None) is None:
+        pytest.skip("transformers does not accept this kernels release")
+    patch_kernelize_fixes()
+    try:
+        assert hub_kernels._kernels_kernelize.__wrapped__ is kernels.kernelize
+    finally:
+        unpatch_kernelize_fixes()
+    assert hub_kernels._kernels_kernelize is kernels.kernelize
