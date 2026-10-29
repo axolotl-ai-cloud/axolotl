@@ -62,6 +62,8 @@ def isolated_registration(monkeypatch):
         PreTrainedModel.get_correct_experts_implementation,
     )
     monkeypatch.setattr(experts_mod, "_SCATTERMOE_PATCHED", False)
+    # moe_grouped_mode decides whether block-FP8 expert LoRA reaches the refusal
+    monkeypatch.setattr(experts_mod.RUNTIME, "grouped_mode", None)
     for mod, name in (
         (experts_lora_fastpath, "patch_paramwrapper_fastpath"),
         (torchao_fp4_add, "patch_torchao_fp4_add"),
@@ -258,6 +260,53 @@ def test_block_fp8_experts_train_on_stock_forward(calls):
     _set_weights(experts, "block_fp8")
     _route(experts, requires_grad=True)
     assert calls == ["grouped_mm"]
+
+
+@pytest.mark.parametrize("expert_parallel", [False, True], ids=["single", "ep"])
+@pytest.mark.parametrize("arch", ARCHS, ids=ARCH_IDS)
+def test_fp8_block_grouped_mode_runs_block_fp8_expert_lora(
+    monkeypatch, arch, expert_parallel
+):
+    from axolotl.integrations.kernels.libs.scattermoe_lora import fp8_grouped
+
+    monkeypatch.setattr(
+        experts_mod, "flatten_sort_count", lambda idx, num_experts: (None,) * 3
+    )
+    monkeypatch.setattr(experts_mod.RUNTIME, "grouped_mode", "fp8_block")
+    bases = []
+
+    def grouped_fp8_moe_train(hidden, idx, w, gate_up, gate_up_scale, *args, **kwargs):
+        bases.append(gate_up.dtype)
+        return torch.zeros_like(hidden)
+
+    monkeypatch.setattr(fp8_grouped, "grouped_fp8_moe_train", grouped_fp8_moe_train)
+    experts = _load(arch, "fp8")
+    _set_weights(experts, "block_fp8")
+    if expert_parallel:
+        experts.num_experts_global = 2 * experts.num_experts
+    lora = (torch.zeros(1), torch.zeros(1), 1.0)
+    experts._scattermoe_lora = {"gate_up_proj": lora, "down_proj": lora}
+    _route(experts)
+    # the grouped block-FP8 GEMM applies *_scale_inv, so it runs ahead of the refusal
+    assert bases == [torch.float8_e4m3fn]
+
+
+@pytest.mark.parametrize("expert_parallel", [False, True], ids=["single", "ep"])
+def test_fp8_block_grouped_mode_still_refuses_packed_fp4_expert_lora(
+    monkeypatch, expert_parallel
+):
+    monkeypatch.setattr(
+        experts_mod, "flatten_sort_count", lambda idx, num_experts: (None,) * 3
+    )
+    monkeypatch.setattr(experts_mod.RUNTIME, "grouped_mode", "fp8_block")
+    experts = _load(_dsv4, "fp4")
+    _set_weights(experts, "packed_fp4")
+    if expert_parallel:
+        experts.num_experts_global = 2 * experts.num_experts
+    lora = (torch.zeros(1), torch.zeros(1), 1.0)
+    experts._scattermoe_lora = {"gate_up_proj": lora, "down_proj": lora}
+    with pytest.raises(NotImplementedError, match="block-quantized"):
+        _route(experts)
 
 
 def test_registration_is_idempotent_and_kept():
