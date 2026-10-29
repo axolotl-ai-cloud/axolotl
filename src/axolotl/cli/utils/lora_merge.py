@@ -892,6 +892,34 @@ def _transformers_weights_index(model_path: Path) -> Optional[str]:
     return None
 
 
+def _cross_shard_scales(model_path: Path) -> Dict[str, torch.Tensor]:
+    """fp32 ``weight_scale`` tensors stored in a different shard than their weight (Mistral's
+    consolidated checkpoints split them). Per-expert scales are left out: the expert-merge writer
+    already gathers expert groups across shards."""
+    index_name = (
+        _transformers_weights_index(model_path) or "model.safetensors.index.json"
+    )
+    if not (model_path / index_name).exists():
+        return {}
+    weight_map = json.loads((model_path / index_name).read_text())["weight_map"]
+    by_shard: Dict[str, list[str]] = {}
+    for key, shard in weight_map.items():
+        weight_shard = weight_map.get(key.removesuffix("_scale"))
+        if (
+            key.endswith(".weight_scale")
+            and ".experts." not in key
+            and weight_shard not in (None, shard)
+        ):
+            by_shard.setdefault(shard, []).append(key)
+    out: Dict[str, torch.Tensor] = {}
+    for shard, keys in by_shard.items():
+        with safetensors.safe_open(model_path / shard, framework="pt") as f:
+            for key in keys:
+                if f.get_slice(key).get_dtype() == "F32":
+                    out[key] = f.get_tensor(key)
+    return out
+
+
 def get_model_shards(model_path: Path) -> list[Path]:
     """Find all model shards in the given path."""
     index_name = _transformers_weights_index(model_path)
@@ -1503,6 +1531,7 @@ def _dequantize_quantized_shard(
     dequant_all: bool = True,
     param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
     bnb_extra: Optional[Dict[str, torch.Tensor]] = None,
+    foreign_scales: Optional[Dict[str, torch.Tensor]] = None,
 ) -> tuple[Dict[str, torch.Tensor], bool, bool, Dict]:
     """Dequantize quantized weights to bf16 so the LoRA delta folds into the true value.
 
@@ -1550,6 +1579,14 @@ def _dequantize_quantized_shard(
         if w.ndim not in (2, 3):
             continue
         fmt, scales = _detect_quant_format(key, w, shard_tensors, e8m0)
+        if fmt is None and foreign_scales:
+            # sharded checkpoints may store the scale in another shard; only modelopt_fp8 reuses
+            # its scales on requant, so only it can leave that shard's copy untouched
+            fmt, scales = _detect_quant_format(
+                key, w, {**foreign_scales, **shard_tensors}, e8m0
+            )
+            if fmt != "modelopt_fp8":
+                fmt, scales = None, {}
         if fmt is None:
             # a low-bit weight with a scale sibling but an unrecognized format -> keep the config
             if w.dtype in (torch.float8_e4m3fn, torch.uint8) and (
@@ -3005,6 +3042,7 @@ def merge_lora_sharded_efficient(
     model_shards = get_model_shards(base_model_path)
     if not model_shards:
         raise FileNotFoundError(f"No model shards found in {base_model_path}")
+    foreign_scales = _cross_shard_scales(base_model_path)
 
     token_row_merges = _plan_trainable_token_merges(
         lora_state,
@@ -3184,8 +3222,13 @@ def merge_lora_sharded_efficient(
                     dequant_all=dequant,
                     param_wrapper_map=param_wrapper_map,
                     bnb_extra=bnb_split_components,
+                    foreign_scales=foreign_scales,
                 )
             )
+            if dequant:
+                # their weights are bf16 now, wherever the weight's shard is
+                for key in foreign_scales:
+                    shard_tensors.pop(key, None)
             block_fp8_dequantized = block_fp8_dequantized or _shard_deq
             left_quantized = left_quantized or _shard_left
 
