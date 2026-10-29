@@ -74,6 +74,25 @@ def test_weighted_scatter_matches_index_add(w_dtype, router_grad):
         assert w.grad is None
 
 
+def test_weighted_scatter_router_grad_under_checkpoint():
+    from torch.utils.checkpoint import checkpoint
+
+    rep, padded_row, Mt, N, H = _layout(seed=2)
+    dn = torch.randn(Mt, H, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    w = torch.rand(rep.numel(), device="cuda", requires_grad=True)
+    go = torch.randn(N, H, device="cuda", dtype=torch.bfloat16)
+
+    def fwd(dn, w):
+        return weighted_scatter(dn * 1, w * 1, rep, padded_row, N)
+
+    fwd(dn, w).backward(go)
+    ref = (dn.grad.clone(), w.grad.clone())
+    dn.grad = w.grad = None
+    checkpoint(fwd, dn, w, use_reentrant=False).backward(go)
+    torch.testing.assert_close(dn.grad, ref[0])
+    torch.testing.assert_close(w.grad, ref[1])
+
+
 def test_empty_routing():
     empty = torch.empty(0, dtype=torch.long, device="cuda")
     hidden = torch.randn(5, 32, device="cuda", dtype=torch.bfloat16)

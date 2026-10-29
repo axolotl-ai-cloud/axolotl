@@ -95,13 +95,15 @@ class _WeightedScatter(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, go):
-        w, rep, padded_row = ctx.saved_tensors[:3]
+        # one unpack: non-reentrant activation checkpointing rejects a second one
+        saved = ctx.saved_tensors
+        w, rep, padded_row = saved[:3]
         go = go.contiguous()
         gdn = go.new_zeros(ctx.Mt, go.size(1))
         _launch(go, gdn, rep, padded_row, w, atomic=False)
         gw = None
         if ctx.needs_input_grad[1]:
-            dn = ctx.saved_tensors[3]
+            dn = saved[3]
             gw = (dn[padded_row].float() * go[rep].float()).sum(-1).to(w.dtype)
         return gdn, gw, None, None, None
 
