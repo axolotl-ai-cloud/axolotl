@@ -110,7 +110,25 @@ def _chunk_lora(lora_A, lora_B, E, e0, e1):
     return lora_A[e0 * r : e1 * r], B
 
 
+def _fused_snap_supported(w) -> bool:
+    import os
+
+    if not (is_nvfp4_param(w) and w.qdata.is_cuda):
+        return False
+    if os.environ.get("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL") == "0":
+        return False
+    if getattr(w, "is_swizzled_scales", False):
+        return False
+    from .triton_nvfp4 import triton_available
+
+    return triton_available() and w.qdata.is_contiguous() and w.scale.is_contiguous()
+
+
 def _snapped_chunk(w, lora_A, lora_B, scaling, pts, e0, e1):
+    if _fused_snap_supported(w):
+        from .triton_nvfp4 import merge_aware_snap_triton
+
+        return merge_aware_snap_triton(w, lora_A, lora_B, scaling, pts, e0, e1)
     A, B = _chunk_lora(lora_A, lora_B, w.shape[0], e0, e1)
     if pts is not None and pts.numel() > 1:
         pts = pts.reshape(-1)[e0:e1]
