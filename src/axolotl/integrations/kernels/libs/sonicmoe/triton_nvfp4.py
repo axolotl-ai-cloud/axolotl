@@ -261,7 +261,9 @@ def _kernels():
         x = tl.load(x_ptr + row * K + offs_v, mask=mask_v, other=0.0).to(tl.float32)
 
         amax = tl.max(tl.abs(x), axis=1)
-        bs = tl.math.div_rn(amax, 6.0)
+        # torch divides by a python scalar as a multiply by its fp32 reciprocal; match it,
+        # or block scales sitting on an e4m3 tie round the other way
+        bs = amax * (1.0 / 6.0)
         pts = 1.0
         if HAS_PTS:
             pts = tl.load(pts_ptr + row // rows_per_expert).to(tl.float32)
