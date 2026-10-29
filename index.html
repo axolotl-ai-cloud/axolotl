@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="./docs/models/mistral-large-4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Large 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="./docs/models/beam.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Beam</span></a>
   </div>
@@ -1014,6 +1020,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li>2026/10:
 <ul>
+<li>MistralAI’s <a href="https://docs.axolotl.ai/docs/models/mistral-large-4.html">Mistral Large 4</a> is now supported in Axolotl, with merge-aware NVFP4 LoRA and expert-parallel training.</li>
 <li>Reflection’s <a href="https://docs.axolotl.ai/docs/models/beam.html">Beam</a> is now supported in Axolotl, with QLoRA and expert-parallel LoRA configs including NVFP4.</li>
 <li><a href="https://github.com/axolotl-ai-cloud/axolotl/pull/4091">Distributed training improvements</a> keep EP groups node-local when the topology permits, add DeepSpeed Ulysses support through <code>context_parallel_size</code>, and fix expert-LoRA resume and FSDP2 activation checkpointing with LoRA.</li>
 </ul></li>

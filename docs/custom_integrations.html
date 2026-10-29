@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/models/mistral-large-4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Large 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/models/beam.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Beam</span></a>
   </div>
@@ -1337,7 +1343,7 @@ apply to the selected kernels, recurrent implementation, and shard layout.</p>
 <ul>
 <li>If you are installing from pip</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> cut-cross-entropy <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.0"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> cut-cross-entropy <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.1"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="usage-1" class="level3">
 <h3 class="anchored" data-anchor-id="usage-1">Usage</h3>
@@ -1348,7 +1354,10 @@ apply to the selected kernels, recurrent implementation, and shard layout.</p>
 <h3 class="anchored" data-anchor-id="options">Options</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cut_cross_entropy</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">                      # default when the plugin is loaded</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cut_cross_entropy_accum_c_fp32</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">         # fp32 classifier (lm_head) gradient accumulation</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">cut_cross_entropy_c_grad_chunk_size</span><span class="kw">:</span><span class="at"> auto</span><span class="co">    # or a positive multiple of 128, e.g. 32768</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">cut_cross_entropy_c_grad_chunk_size</span><span class="kw">:</span><span class="at"> auto</span><span class="co">    # or a positive multiple of 128, e.g. 32768</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">cut_cross_entropy_accum_e_fp32</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">         # fp32 hidden-state gradient accumulation</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cut_cross_entropy_gradient_filtering</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">  # exact backward (default true)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>cut_cross_entropy_accum_e_fp32</code> and <code>cut_cross_entropy_gradient_filtering: false</code> make the gradient flowing back into the model match an fp32 reference. With the defaults (bf16 accumulation, filtering on) it is understated on large vocabularies: 15% lower grad norm on Mistral Large 4 (204,800 tokens, softcapped logits).</p>
 <p><code>cut_cross_entropy_accum_c_fp32</code> improves numerical stability for large vocabularies at the cost of a full fp32 copy of the <code>lm_head</code> gradient during the backward pass.</p>
 <p><code>cut_cross_entropy_c_grad_chunk_size</code> bounds that fp32 buffer to the given number of vocabulary rows, launching the backward kernel once per chunk. <code>auto</code> resolves once at model load from <code>micro_batch_size</code>, <code>sequence_len</code> (divided by <code>context_parallel_size</code>) and the model’s vocab and hidden size, picking a size that keeps the GPU busy while capping the scratch buffer at 1 GiB; the chosen value is logged. The gradient is identical to the unchunked path; only peak memory and throughput change. Requires <code>cut_cross_entropy_accum_c_fp32: true</code> and Triton &gt;= 3.2.</p>
 <p>LoRA and DoRA adapters on <code>lm_head</code> (for example <code>lora_target_modules: [..., lm_head]</code>) are folded into the loss, so they train under CCE like any other target module.</p>
@@ -1416,6 +1425,7 @@ apply to the selected kernels, recurrent implementation, and shard layout.</p>
 <li>mistral</li>
 <li>mistral3</li>
 <li>mistral4</li>
+<li>mistral_large4</li>
 <li>mixtral</li>
 <li>mllama</li>
 <li>mllama_text_model</li>

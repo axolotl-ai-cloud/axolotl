@@ -215,6 +215,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/models/mistral-large-4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Large 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/models/beam.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Beam</span></a>
   </div>
@@ -1098,10 +1104,15 @@ runtime model key names used by the LoRA adapter.</p>
 <span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>    shard_sink<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>    merge_compile<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    merge_compile_precision<span class="op">=</span><span class="st">'strict'</span>,</span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    lora_merge_aware<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    base_model_config<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    lora_merge_aware<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Memory-efficient LoRA merging that processes shards individually
 without loading the full model into memory.</p>
+<section id="local-dir-config.json-path-or-hub-repo-supplying-the-config-when" class="level4 doc-section doc-section-local-dir-configjson-path-or-hub-repo-supplying-the-config-when">
+<h4 class="doc-section doc-section-local-dir-configjson-path-or-hub-repo-supplying-the-config-when anchored" data-anchor-id="local-dir-config.json-path-or-hub-repo-supplying-the-config-when">local dir, <code>config.json</code> path or hub repo supplying the config when</h4>
+<p>the base ships none (e.g.&nbsp;Mistral-native checkpoints).</p>
+</section>
 <section id="if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips" class="level4 doc-section doc-section-if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips">
 <h4 class="doc-section doc-section-if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips anchored" data-anchor-id="if-true-dequantize-every-quantized-weight-and-write-a-bf16-checkpoint-strips">if True, dequantize every quantized weight and write a bf16 checkpoint (strips</h4>
 <p>quantization_config). Default False = FORMAT-PRESERVING: LoRA-targeted quantized weights are
