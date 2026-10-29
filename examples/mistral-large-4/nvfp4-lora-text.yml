@@ -1,4 +1,6 @@
-# NVFP4 experts stay packed (ScatterMoE); the FP8 projections dequantize to bf16 at load.
+# 1 x 8 B200: EP=8 over DeepEP (16 of the 128 experts per GPU); dense weights FSDP-shard over the same ranks.
+# SonicMoE keeps the NVFP4 experts packed and trains merge-aware LoRA, so the adapter survives the
+# NVFP4 merge (ordinary expert LoRA rounds away). The FP8 projections dequantize to bf16 at load.
 base_model: mistralai/Mistral-Large-4-1T-A52B-NVFP4
 
 plugins:
@@ -10,9 +12,13 @@ cut_cross_entropy_accum_e_fp32: true
 cut_cross_entropy_gradient_filtering: false
 
 use_kernels: true
-use_scattermoe: true
-dsv4_fp4_grouped_mode: nvfp4
+use_sonicmoe: true
+nvfp4_merge_aware: true
 strict: false
+
+expert_parallel_size: 8
+dp_shard_size: 1
+expert_parallel_backend: deep_ep
 
 # eager / sdpa only: the DSA indexer turns its top-k into an attention mask
 attn_implementation: sdpa

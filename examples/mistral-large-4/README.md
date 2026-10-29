@@ -46,6 +46,8 @@ An assistant message's `reasoning_content` is rendered as a `[THINK]...[/THINK]`
 ## Tips
 
 - Only `sdpa` and `eager` attention are supported.
+- The example trains merge-aware NVFP4 LoRA (`nvfp4_merge_aware`) so `axolotl merge-lora` keeps the adapter in the NVFP4 checkpoint. See [NVFP4 LoRA](https://docs.axolotl.ai/docs/nvfp4_lora.html).
+- `expert_parallel_backend: deep_ep` needs [DeepEP](https://github.com/deepseek-ai/DeepEP) v1.2.1, built per the [expert-parallel README](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/expert_parallel/README.md#installation). Without it, set `expert_parallel_backend: torch` (1.3-2.2x slower in our tests).
 - On cloud, if using a volume mount, pointing the HF cache (via `HF_HOME`) at a local disk keeps weight load fast.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The text dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
