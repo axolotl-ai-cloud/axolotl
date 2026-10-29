@@ -16,11 +16,21 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     uv pip install git+https://github.com/huggingface/transformers.git
     ```
 
-4. Run the example config:
+4. (Optional) For vision only:
+
+    ```bash
+    uv pip install 'mistral-common[opencv]>=1.13.0'
+    ```
+
+5. Run the example config:
 
     ```bash
     # text-only, 8xB200
     axolotl train examples/mistral-large-4/nvfp4-lora-text.yml
+
+    # text + vision, 8xB200
+    # wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
+    axolotl train examples/mistral-large-4/nvfp4-lora-vision.yml
     ```
 
 PS: We're still working on this and will add more configs in coming days.
