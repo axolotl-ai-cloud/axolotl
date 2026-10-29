@@ -18,11 +18,8 @@ pytestmark = [
     ),
 ]
 
-finegrained_fp8 = pytest.importorskip("transformers.integrations.finegrained_fp8")
-if not hasattr(finegrained_fp8, "ALL_FP8_EXPERTS_FUNCTIONS"):
-    pytest.skip("transformers without FP8ExpertsInterface", allow_module_level=True)
-
 from transformers import PretrainedConfig  # noqa: E402
+from transformers.integrations import finegrained_fp8  # noqa: E402
 from transformers.integrations.moe import use_experts_implementation  # noqa: E402
 
 from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (  # noqa: E402
@@ -124,10 +121,6 @@ def test_scattermoe_fp8_experts_forward_matches_dequant_reference(fmt):
         assert torch.equal(out, experts(hidden, top_k_index, top_k_weights))
 
 
-@pytest.mark.skipif(
-    not hasattr(finegrained_fp8, "FP8GroupedMatmulFunction"),
-    reason="transformers' FP8 grouped experts forward has no input backward before 5.22",
-)
 def test_scattermoe_block_fp8_experts_backward_matches_stock():
     torch.manual_seed(0)
     experts, _ = _experts("block_fp8")

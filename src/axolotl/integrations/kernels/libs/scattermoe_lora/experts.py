@@ -753,6 +753,16 @@ def scattermoe_experts_forward(
                 prefer_fp8_dx=RUNTIME.fp4_dx_prefer_fp8,
             )
 
+    _block_dtype = _block_quantized_expert_dtype(self)
+    if _block_dtype is not None:
+        raise NotImplementedError(
+            f"use_scattermoe has no kernel for {type(self).__name__} with block-quantized "
+            f"{_block_dtype} expert weights: they carry *_scale_inv block scales the scattermoe "
+            "kernels don't apply. Without expert LoRA they run on transformers' FP8 experts "
+            "forward; drop the expert LoRA (lora_target_parameters), use an NVFP4-expert or "
+            "unquantized checkpoint, or drop use_scattermoe."
+        )
+
     # NVFP4 experts + LoRA without dsv4_fp4_grouped_mode set would fall through to
     # _prepare_weights_and_lora -> selective_nvfp4_weights_fwd -> scatter2scatter_lora_mx, which
     # SIGSEGVs on Blackwell. Turn that silent crash into an actionable error (the grouped path is the
@@ -1200,23 +1210,18 @@ def _is_fp8_experts_interface(interface) -> bool:
 
 
 def _fp8_experts_dispatch(interface):
-    """The ``"scattermoe"`` entry of an FP8 experts ``interface``: scattermoe for NVFP4Tensor and
-    unquantized experts, the interface's stock FP8 forward for block-quantized ones."""
+    """The ``"scattermoe"`` entry of an FP8 experts ``interface``: the interface's stock FP8
+    forward for block-quantized experts without expert LoRA, else scattermoe, which runs
+    NVFP4Tensor and unquantized experts and refuses block-quantized ones it has no path for."""
 
     def scattermoe_fp8_experts_forward(self, hidden_states, top_k_index, top_k_weights):
-        dtype = _block_quantized_expert_dtype(self)
-        if dtype is None:
-            return scattermoe_experts_forward(
+        if _block_quantized_expert_dtype(self) is not None and not (
+            getattr(self, "_scattermoe_lora", None) or _has_peft_wrapper(self)
+        ):
+            return interface[_STOCK_FP8_EXPERTS](
                 self, hidden_states, top_k_index, top_k_weights
             )
-        if getattr(self, "_scattermoe_lora", None) or _has_peft_wrapper(self):
-            raise NotImplementedError(
-                f"use_scattermoe can't train expert LoRA on {type(self).__name__} with "
-                f"block-quantized {dtype} expert weights: the scattermoe kernels don't apply "
-                "their *_scale_inv block scales. Drop the expert LoRA (lora_target_parameters), "
-                "use an NVFP4-expert or unquantized checkpoint, or drop use_scattermoe."
-            )
-        return interface[_STOCK_FP8_EXPERTS](
+        return scattermoe_experts_forward(
             self, hidden_states, top_k_index, top_k_weights
         )
 
@@ -1328,14 +1333,9 @@ def register_scattermoe_experts():
         pass
 
     # FP8Experts (fp8-quantized checkpoints) dispatch through their own registry.
-    try:
-        from transformers.integrations.finegrained_fp8 import (
-            ALL_FP8_EXPERTS_FUNCTIONS,
-        )
+    from transformers.integrations.finegrained_fp8 import ALL_FP8_EXPERTS_FUNCTIONS
 
-        register_scattermoe_interface(ALL_FP8_EXPERTS_FUNCTIONS)
-    except ImportError:
-        pass
+    register_scattermoe_interface(ALL_FP8_EXPERTS_FUNCTIONS)
 
     # Route PEFT target_parameters expert LoRA to the fused kernel (bypassing the parametrization
     # merge) for experts-interface MoEs.

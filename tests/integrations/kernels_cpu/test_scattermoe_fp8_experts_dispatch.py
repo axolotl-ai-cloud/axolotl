@@ -4,7 +4,7 @@
 
 """``experts_implementation: scattermoe`` on a fp8-quantized checkpoint: transformers'
 ``FP8Experts`` dispatch through their own registry, which gets a ``"scattermoe"`` entry that
-picks the forward by expert format.
+picks the forward by expert format. Unquantized experts keep the generic registry.
 
 The FP8 and scattermoe kernels need CUDA, so both forwards are replaced by recorders and only
 the choice is asserted."""
@@ -14,9 +14,13 @@ import torch
 from torch import nn
 
 pytest.importorskip("triton")
-pytest.importorskip("transformers.models.deepseek_v4")
 
-from transformers import AutoModelForCausalLM, DeepseekV4Config  # noqa: E402
+from transformers import (  # noqa: E402
+    AutoModelForCausalLM,
+    DeepseekV4Config,
+    MistralLarge4TextConfig,
+    MistralLarge4TextModel,
+)
 from transformers.integrations import finegrained_fp8  # noqa: E402
 from transformers.integrations.moe import (  # noqa: E402
     ExpertsInterface,
@@ -41,7 +45,7 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (  # noqa:
 )
 
 FP8_REGISTRY = finegrained_fp8.ALL_FP8_EXPERTS_FUNCTIONS
-EXPERTS = "model.layers.0.mlp.experts"
+FP8 = {"quant_method": "fp8", "weight_block_size": [128, 128]}
 E, H, I = 4, 128, 128  # noqa: E741
 
 
@@ -84,7 +88,7 @@ def calls(monkeypatch):
     return seen
 
 
-def _fp8_model(expert_dtype):
+def _dsv4(expert_dtype, quantization_config):
     cfg = DeepseekV4Config(
         vocab_size=64,
         hidden_size=H,
@@ -103,19 +107,56 @@ def _fp8_model(expert_dtype):
         index_topk=4,
         num_nextn_predict_layers=0,
         expert_dtype=expert_dtype,
-        quantization_config={"quant_method": "fp8", "weight_block_size": [128, 128]},
+        quantization_config=quantization_config,
     )
     with torch.device("meta"):
-        model = AutoModelForCausalLM.from_config(cfg)
-    quantizer = FineGrainedFP8HfQuantizer(
-        FineGrainedFP8Config.from_dict(dict(cfg.quantization_config)),
-        pre_quantized=True,
+        return AutoModelForCausalLM.from_config(cfg), "model.layers.0.mlp.experts"
+
+
+def _mistral_large4(expert_dtype, quantization_config):
+    cfg = MistralLarge4TextConfig(
+        vocab_size=64,
+        hidden_size=H,
+        intermediate_size=I,
+        moe_intermediate_size=I,
+        num_hidden_layers=1,
+        first_k_dense_replace=0,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        n_routed_experts=E,
+        num_experts_per_tok=2,
+        kv_lora_rank=32,
+        qk_rope_head_dim=16,
+        qk_nope_head_dim=16,
+        v_head_dim=32,
+        head_dim=32,
+        index_n_heads=2,
+        index_head_dim=32,
+        index_topk=4,
+        quantization_config=quantization_config,
     )
-    quantizer.preprocess_model(model, dtype=torch.bfloat16, checkpoint_files=[])
-    experts = model.get_submodule(EXPERTS)
-    assert isinstance(experts, finegrained_fp8.FP8Experts)
+    with torch.device("meta"):
+        return MistralLarge4TextModel(cfg), "layers.0.mlp.experts"
+
+
+ARCHS = [_dsv4, _mistral_large4]
+ARCH_IDS = ["deepseek_v4", "mistral_large4"]
+
+
+def _load(arch, expert_dtype="fp8", quantization_config=FP8):
+    register_scattermoe_experts()
+    model, path = arch(expert_dtype, quantization_config)
+    if quantization_config is not None:
+        quantizer = FineGrainedFP8HfQuantizer(
+            FineGrainedFP8Config.from_dict(dict(quantization_config)),
+            pre_quantized=True,
+        )
+        quantizer.preprocess_model(model, dtype=torch.bfloat16, checkpoint_files=[])
+    model.set_experts_implementation("scattermoe")
+    register_scattermoe_model_interfaces(model)
+    experts = model.get_submodule(path)
     experts.to_empty(device="cpu")
-    return model, experts
+    return experts
 
 
 def _set_weights(experts, fmt):
@@ -146,15 +187,7 @@ def _route(experts):
     return experts(hidden, top_k_index, top_k_weights)
 
 
-def _load(expert_dtype, fmt):
-    register_scattermoe_experts()
-    model, experts = _fp8_model(expert_dtype)
-    model.set_experts_implementation("scattermoe")
-    register_scattermoe_model_interfaces(model)
-    _set_weights(experts, fmt)
-    return experts
-
-
+@pytest.mark.parametrize("arch", ARCHS, ids=ARCH_IDS)
 @pytest.mark.parametrize(
     "expert_dtype, fmt, expected",
     [
@@ -164,22 +197,44 @@ def _load(expert_dtype, fmt):
         ("fp8", "bf16", "scattermoe"),
     ],
 )
-def test_dispatch_by_expert_format(calls, expert_dtype, fmt, expected):
-    experts = _load(expert_dtype, fmt)
+def test_fp8_experts_dispatch_by_format(calls, arch, expert_dtype, fmt, expected):
+    experts = _load(arch, expert_dtype)
+    assert isinstance(experts, finegrained_fp8.FP8Experts)
     assert experts.config._experts_implementation == "scattermoe"
+    _set_weights(experts, fmt)
     _route(experts)
     assert calls == [expected]
 
 
-@pytest.mark.parametrize(
-    "expert_dtype, fmt", [("fp8", "block_fp8"), ("fp4", "packed_fp4")]
-)
-def test_block_quantized_experts_refuse_expert_lora(calls, expert_dtype, fmt):
-    experts = _load(expert_dtype, fmt)
+@pytest.mark.parametrize("arch", ARCHS, ids=ARCH_IDS)
+def test_unquantized_experts_keep_the_generic_registry(calls, arch):
+    experts = _load(arch, quantization_config=None)
+    assert not isinstance(experts, finegrained_fp8.FP8Experts)
+    _set_weights(experts, "bf16")
+    _route(experts)
+    assert calls == ["scattermoe"]
+
+
+@pytest.mark.parametrize("fmt", ["block_fp8", "packed_fp4"])
+def test_block_quantized_experts_with_expert_lora_go_to_scattermoe(calls, fmt):
+    experts = _load(_dsv4, "fp8" if fmt == "block_fp8" else "fp4")
+    _set_weights(experts, fmt)
     experts._scattermoe_lora = {"gate_up_proj": object()}
-    with pytest.raises(NotImplementedError, match="expert LoRA"):
+    _route(experts)
+    assert calls == ["scattermoe"]
+
+
+@pytest.mark.parametrize("fmt", ["block_fp8", "packed_fp4"])
+def test_scattermoe_refuses_block_quantized_experts(monkeypatch, fmt):
+    # its torch.compile'd bincount needs a compiler; the refusal comes before the sort is used
+    monkeypatch.setattr(
+        experts_mod, "flatten_sort_count", lambda idx, num_experts: (None,) * 3
+    )
+    experts = _load(_dsv4, "fp8" if fmt == "block_fp8" else "fp4")
+    _set_weights(experts, fmt)
+    experts._scattermoe_lora = {"gate_up_proj": None, "down_proj": None}
+    with pytest.raises(NotImplementedError, match="block-quantized"):
         _route(experts)
-    assert calls == []
 
 
 def test_registration_is_idempotent_and_kept():
@@ -209,7 +264,7 @@ def test_registers_into_the_interface_the_experts_bind(calls):
         type("TwinFP8Experts", (finegrained_fp8.FP8Experts,), {}),
         experts_interface=twin,
     )
-    model, _ = _fp8_model("fp8")
+    model, _ = _dsv4("fp8", FP8)
     experts = experts_cls(model.config, block_size=[128, 128])
     experts.config._experts_implementation = "scattermoe"
     _set_weights(experts, "block_fp8")
