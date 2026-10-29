@@ -514,6 +514,7 @@ class TestPeftSyncFusedSiblings(unittest.TestCase):
         )
         trainer = object.__new__(AsyncGRPOTrainer)
         trainer.vllm_generation = vllm_generation
+        trainer.args = types.SimpleNamespace(vllm_merge_check_interval=0)
         return trainer, client, LoraLinear
 
     def test_q_v_lora_also_sends_k(self):
@@ -586,6 +587,71 @@ class TestPeftSyncFusedSiblings(unittest.TestCase):
         attn.q_proj.base_layer.weight = Params4bit(attn.q_proj.base_layer.weight.data)
         with self.assertRaisesRegex(NotImplementedError, "4-bit"):
             trainer._sync_peft_weights_no_merge()
+
+
+class TestPeftSyncMergeCheck(unittest.TestCase):
+    """The no-merge sync measures the rounding of the tensors it sends."""
+
+    @staticmethod
+    def _make(step=3):
+        from collections import defaultdict
+
+        import torch
+
+        trainer, client, _ = TestPeftSyncFusedSiblings._make()
+        attn = trainer.vllm_generation.model.base_model.model.model.layers[0][
+            "self_attn"
+        ]
+        torch.manual_seed(0)
+        for proj in (attn.q_proj, attn.v_proj):
+            proj.base_layer.weight.data = torch.randn(4, 4).to(torch.bfloat16)
+            proj.lora_B["default"].weight.data.normal_(0, 1e-5)
+        trainer.args = types.SimpleNamespace(vllm_merge_check_interval=10)
+        trainer.accelerator = types.SimpleNamespace(is_main_process=True)
+        trainer.state = types.SimpleNamespace(global_step=step)
+        trainer._metrics = {"train": defaultdict(list)}
+        return trainer, client, attn
+
+    def test_sync_sends_single_rounded_merge_and_logs_retention(self):
+        import torch
+
+        from axolotl.utils.lora_merge_precision import merged_lora_weight
+
+        trainer, client, attn = self._make()
+        with self.assertLogs("axolotl.utils.lora_merge_precision", "INFO"):
+            trainer._sync_peft_weights_no_merge()
+
+        sent = dict(client.batch_update_named_params.call_args[0][0])
+        q = attn.q_proj
+        expected = merged_lora_weight(
+            q.base_layer.weight,
+            q.lora_A["default"].weight,
+            q.lora_B["default"].weight,
+            q.scaling["default"],
+            torch.bfloat16,
+        )
+        self.assertTrue(
+            torch.equal(sent["model.layers.0.self_attn.q_proj.weight"], expected)
+        )
+        retained = trainer._metrics["train"]["lora_merge/retained"]
+        self.assertEqual(len(retained), 1)
+        self.assertLess(retained[0], 0.5)
+        self.assertEqual(trainer._lora_merge_check_step, 3)
+
+    def test_check_waits_for_the_interval(self):
+        trainer, _, _ = self._make()
+        trainer._lora_merge_check_step = 1
+        trainer._sync_peft_weights_no_merge()
+        self.assertNotIn("lora_merge/retained", trainer._metrics["train"])
+
+    def test_merge_aware_modules_are_not_measured(self):
+        import torch
+
+        trainer, _, attn = self._make()
+        for proj in (attn.q_proj, attn.v_proj):
+            proj._axolotl_lora_merge_aware_dtype = torch.bfloat16
+        trainer._sync_peft_weights_no_merge()
+        self.assertNotIn("lora_merge/retained", trainer._metrics["train"])
 
 
 class TestEnsureVllmCommunicator(unittest.TestCase):

@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import tempfile
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -25,6 +26,7 @@ from axolotl.cli.utils.param_wrapper_merge import (
     build_param_wrapper_map,
 )
 from axolotl.utils.logging import get_logger
+from axolotl.utils.lora_merge_precision import MergeRetention, log_merge_retention
 
 LOG = get_logger(__name__)
 
@@ -1687,6 +1689,69 @@ _EXPERT_FUSED_GROUPS = (
 )
 
 
+def _stack_expert_tensors(tensors, device):
+    if torch.device(device).type == "cuda" and all(
+        t.device.type == "cpu" and t.dtype == tensors[0].dtype for t in tensors
+    ):
+        # Stack directly into pinned storage to avoid a second host staging copy.
+        staging = torch.empty(
+            (len(tensors), *tensors[0].shape), dtype=tensors[0].dtype, pin_memory=True
+        )
+        torch.stack(tensors, out=staging)
+        return staging.to(device, non_blocking=True)
+    return torch.stack(tensors).to(device)
+
+
+class _ExpertOutputTransfer:
+    """Bound D2H overlap and make outputs CPU-ready when leaving the context."""
+
+    def __init__(self):
+        self.stream = None
+        self.pending = deque()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.stream is not None:
+            self.stream.synchronize()
+        self.pending.clear()
+
+    def copy(self, packed, scale):
+        if packed.device.type != "cuda":
+            return packed.cpu(), scale.cpu()
+        if self.stream is None:
+            self.stream = torch.cuda.Stream(device=packed.device)
+        while self.pending and self.pending[0][0].query():
+            self.pending.popleft()
+        if len(self.pending) >= 2:
+            self.pending[0][0].synchronize()
+            self.pending.popleft()
+        outputs = []
+        try:
+            for tensor in (packed, scale):
+                outputs.append(torch.empty_like(tensor, device="cpu", pin_memory=True))
+        except RuntimeError as exc:
+            outputs.clear()
+            LOG.warning(
+                "Pinned output allocation failed; using pageable copies: %s", exc
+            )
+        else:
+            outputs = tuple(outputs)
+        if not outputs:
+            return packed.cpu(), scale.cpu()
+        self.stream.wait_stream(torch.cuda.current_stream(packed.device))
+        with torch.cuda.stream(self.stream):
+            for output, tensor in zip(outputs, (packed, scale), strict=True):
+                output.copy_(tensor, non_blocking=True)
+                tensor.record_stream(self.stream)
+            complete = torch.cuda.Event()
+            complete.record(self.stream)
+        # Keep both sides alive until DMA finishes, including on error paths.
+        self.pending.append((complete, packed, scale, outputs))
+        return outputs
+
+
 class _Nvfp4ExpertMergeWriter:
     """Folds a FUSED expert LoRA (PEFT ParamWrapper over ``experts.gate_up_proj``/``down_proj``)
     into a base that stores experts PER-EXPERT unfused as modelopt NVFP4
@@ -1747,6 +1812,7 @@ class _Nvfp4ExpertMergeWriter:
         # prefix -> proj -> expert_idx -> {leaf: tensor}
         self.pending: Dict[str, Dict[str, Dict[int, Dict[str, torch.Tensor]]]] = {}
         self._prefix_lora: Dict[str, bool] = {}
+        self._output_transfer = _ExpertOutputTransfer()
         self.merged_groups = 0
         self._delta_mag_sum = 0.0
         self._base_mag_sum = 0.0
@@ -1781,6 +1847,10 @@ class _Nvfp4ExpertMergeWriter:
         """Claim this shard's per-expert NVFP4 tensors for LoRA-targeted expert modules and emit
         the merged tensors of every layer group that is now complete. Returns
         ``(remaining_shard_tensors, emitted_tensors, merged_lora_count)``."""
+        with self._output_transfer:
+            return self._consume(shard_tensors)
+
+    def _consume(self, shard_tensors):
         remaining = dict(shard_tensors)
         for key in list(remaining):
             m = _EXPERT_TRIPLE_RE.match(key)
@@ -1857,6 +1927,7 @@ class _Nvfp4ExpertMergeWriter:
         pts_all: list = []
         pts_fused = None
         fold: list = []
+        requant_scales = {}
         if fresh:
             # mirror fuse_nvfp4_experts: one per-expert pts (max across projs), each
             # proj's ratio folded into its block scales -> dequant here == the fused
@@ -1864,7 +1935,7 @@ class _Nvfp4ExpertMergeWriter:
             pts_all = [
                 torch.stack(
                     [
-                        projs[mp][e]["weight_scale_2"].to(dev).float().reshape(())
+                        projs[mp][e]["weight_scale_2"].float().reshape(())
                         for e in range(E)
                     ]
                 ).view(-1, 1, 1)
@@ -1875,6 +1946,22 @@ class _Nvfp4ExpertMergeWriter:
                 pts_fused = torch.maximum(pts_fused, pts_i)
             # decided over all experts so a chunk folds exactly when the whole group would
             fold = [not torch.allclose(pts_i, pts_fused) for pts_i in pts_all]
+            if not self.dequant:
+                for mp in members:
+                    # Preserve each checkpoint scale's rounding and independent storage.
+                    scales = [
+                        pts_fused[e]
+                        .reshape(projs[mp][e]["weight_scale_2"].shape)
+                        .to(projs[mp][e]["weight_scale_2"].dtype)
+                        .clone()
+                        for e in range(E)
+                    ]
+                    requant_scales[mp] = (
+                        scales,
+                        torch.stack([s.float().reshape(()) for s in scales]).to(dev),
+                    )
+            pts_all = [pts.to(dev) for pts in pts_all]
+            pts_fused = pts_fused.to(dev)
         target = _param_wrapper_target(
             fused_key, self.param_wrapper_map, self.weight_renamings
         )
@@ -1944,7 +2031,9 @@ class _Nvfp4ExpertMergeWriter:
                 part = merged_t[:, start : start + rows, :]
                 start += rows
                 emitted.update(
-                    self._requant_chunk(projs, prefix, mp, part, e0, e1, pts_fused)
+                    self._requant_chunk(
+                        projs, prefix, mp, part, e0, e1, requant_scales.get(mp)
+                    )
                 )
             del merged_t
 
@@ -1974,9 +2063,11 @@ class _Nvfp4ExpertMergeWriter:
                     )
                 )
                 continue
-            qd = torch.stack([projs[mp][e]["weight"].to(dev) for e in range(e0, e1)])
-            sc = torch.stack(
-                [projs[mp][e]["weight_scale"].to(dev) for e in range(e0, e1)]
+            qd = _stack_expert_tensors(
+                [projs[mp][e]["weight"] for e in range(e0, e1)], dev
+            )
+            sc = _stack_expert_tensors(
+                [projs[mp][e]["weight_scale"] for e in range(e0, e1)], dev
             )
             pts = pts_fused[e0:e1]
             if fold[i]:
@@ -1985,34 +2076,28 @@ class _Nvfp4ExpertMergeWriter:
             per_proj.append(nv.dequantize(torch.bfloat16))
         return per_proj[0] if len(per_proj) == 1 else torch.cat(per_proj, dim=1)
 
-    def _requant_chunk(self, projs, prefix, mp, part, e0, e1, pts_fused):
+    def _requant_chunk(self, projs, prefix, mp, part, e0, e1, requant_scales):
         from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
             quantize_nvfp4_merge,
         )
 
         dev = self._dev
-        sc2_in = [projs[mp][e]["weight_scale_2"] for e in range(e0, e1)]
-        if pts_fused is not None:
-            pts_cpu = pts_fused[e0:e1].reshape(-1).cpu()
-            # clone: gate/up share pts_fused, safetensors refuses aliased tensors
-            sc2_out = [
-                pts_cpu[i].reshape(sc2.shape).to(sc2.dtype).clone()
-                for i, sc2 in enumerate(sc2_in)
-            ]
-            pts = torch.stack([s.float().reshape(()) for s in sc2_out]).to(dev)
+        if requant_scales is not None:
+            scales, pts = requant_scales
+            sc2_out = scales[e0:e1]
+            pts = pts[e0:e1]
             packed, scale = quantize_nvfp4_merge(part.float(), pts, scale_mode="fresh")
         else:
-            sc2_out = sc2_in
-            pts = torch.stack([s.float().reshape(()) for s in sc2_in]).to(dev)
-            base_sc = torch.stack(
-                [projs[mp][e]["weight_scale"].to(dev) for e in range(e0, e1)]
+            sc2_out = [projs[mp][e]["weight_scale_2"] for e in range(e0, e1)]
+            pts = torch.stack([s.float().reshape(()) for s in sc2_out]).to(dev)
+            base_sc = _stack_expert_tensors(
+                [projs[mp][e]["weight_scale"] for e in range(e0, e1)], dev
             )
             packed, scale = quantize_nvfp4_merge(
                 part.float(), pts, scale_mode="reuse", base_block_scale=base_sc
             )
         # one transfer per chunk; per-expert rows are disjoint views, which safetensors accepts
-        packed = packed.cpu()
-        scale = scale.cpu()
+        packed, scale = self._copy_outputs_to_cpu(packed, scale)
         emitted = {}
         for i, e in enumerate(range(e0, e1)):
             wkey = f"{prefix}.{e}.{mp}.weight"
@@ -2020,6 +2105,9 @@ class _Nvfp4ExpertMergeWriter:
             emitted[wkey + "_scale"] = scale[i]
             emitted[wkey + "_scale_2"] = sc2_out[i]
         return emitted
+
+    def _copy_outputs_to_cpu(self, packed, scale):
+        return self._output_transfer.copy(packed, scale)
 
     def assert_drained(self) -> None:
         if self.pending:
@@ -2204,6 +2292,16 @@ def _should_nf4_roundtrip(
     return False
 
 
+def _record_merge_retention(retention, base, delta, merged) -> None:
+    if retention is None or merged.dtype not in (torch.bfloat16, torch.float16):
+        return
+    retention.update(
+        delta.to(torch.float32),
+        merged.float() - base.to(merged.dtype).float(),
+    )
+    retention.modules += 1
+
+
 def _merge_tensor_with_lora(
     tensor: torch.Tensor,
     key: str,
@@ -2224,6 +2322,7 @@ def _merge_tensor_with_lora(
     layer_type_map: Optional[Dict[str, str]] = None,
     param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
     canonical_fp32: bool = False,
+    retention: Optional[MergeRetention] = None,
 ) -> tuple[torch.Tensor, bool]:
     """
     Helper function to merge a single tensor with its corresponding LoRA weights.
@@ -2241,6 +2340,8 @@ def _merge_tensor_with_lora(
         nf4_double_quant: Whether to use double quantization
         use_dora: Whether to apply DoRA (Weight-Decomposed LoRA) merging
         weight_renamings: Optional key renamings from transformers conversion mapping
+        retention: Accumulates how much of each delta survives the cast back to a
+            half-precision base dtype
 
     Returns:
         Tuple of (merged tensor, whether LoRA was applied)
@@ -2306,11 +2407,12 @@ def _merge_tensor_with_lora(
         # Look up layer type from meta-device model introspection
         _layer_type = _lookup_layer_type(layer_type_map, key)
 
+        base = tensor.to(device)
         delta = _build_peft_layer_and_get_delta(
             lora_a.to(device),
             lora_b.to(device),
             lora_config_dict,
-            tensor.to(device),
+            base,
             magnitude=magnitude.to(device) if magnitude is not None else None,
             layer_type=_layer_type,
             lora_alpha_override=_resolve_lora_alpha_for_key(
@@ -2318,13 +2420,11 @@ def _merge_tensor_with_lora(
             ),
             canonical_fp32=canonical_fp32,
         )
-        merged_tensor = (
-            (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
-            .to(original_dtype)
-            .detach()
-            .cpu()
+        merged_tensor = (base.to(torch.float32) + delta.to(torch.float32)).to(
+            original_dtype
         )
-        return merged_tensor, True
+        _record_merge_retention(retention, base, delta, merged_tensor)
+        return merged_tensor.detach().cpu(), True
     else:
         # Try ParamWrapper LoRA (lora_target_parameters) — the LoRA targets a
         # parent module and this weight is a sub-parameter of that module.
@@ -2352,11 +2452,12 @@ def _merge_tensor_with_lora(
                         device=device,
                     )
                 original_dtype = tensor.dtype
+                base = tensor.to(device)
                 delta = _build_peft_layer_and_get_delta(
                     pw_a.to(device),
                     pw_b.to(device),
                     lora_config_dict,
-                    tensor.to(device),
+                    base,
                     is_param_wrapper=True,
                     is_transposed=target.is_transposed if target else None,
                     lora_alpha_override=target.alpha
@@ -2366,13 +2467,11 @@ def _merge_tensor_with_lora(
                     ),
                     canonical_fp32=canonical_fp32,
                 )
-                merged = (
-                    (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
-                    .to(original_dtype)
-                    .detach()
-                    .cpu()
+                merged = (base.to(torch.float32) + delta.to(torch.float32)).to(
+                    original_dtype
                 )
-                return merged, True
+                _record_merge_retention(retention, base, delta, merged)
+                return merged.detach().cpu(), True
 
         if do_nf4:
             tensor = _simulate_nf4_roundtrip(
@@ -2857,6 +2956,7 @@ def merge_lora_sharded_efficient(
     merge_compile: bool = False,
     merge_compile_precision: str = "strict",
     base_model_config: Optional[str] = None,
+    lora_merge_aware: Optional[str] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -2894,6 +2994,9 @@ def merge_lora_sharded_efficient(
             "expert" in the key name and ndim >= 3.
         trust_remote_code: Whether to trust remote code when loading model
             config for layer-type introspection. Defaults to False for safety.
+        lora_merge_aware: The ``lora_merge_aware`` mode the adapter was trained with;
+            its merged half-precision weights are then exactly what training optimized,
+            so their rounding is reported without a warning.
     """
     base_model_path = Path(base_model_path)
     lora_adapter_path = Path(lora_adapter_path)
@@ -3182,6 +3285,7 @@ def merge_lora_sharded_efficient(
     total_size_bytes = 0
     total_parameters = 0
 
+    retention = MergeRetention()
     write_queue = _ShardWriteQueue()
     try:
         for shard_path, shard_tensors, metadata in tqdm(
@@ -3354,6 +3458,8 @@ def merge_lora_sharded_efficient(
                     layer_type_map=layer_type_map,
                     param_wrapper_map=param_wrapper_map,
                     canonical_fp32=bool(lora_config_dict.get("nvfp4_merge_aware")),
+                    # re-quantized weights are no longer served in the merge dtype
+                    retention=None if key in requant_plan else retention,
                 )
                 merged_tensors[key] = merged_tensor
                 if was_merged:
@@ -3479,3 +3585,16 @@ def merge_lora_sharded_efficient(
             "and the LoRA adapter. Consider using merge_method: legacy."
         )
     LOG.info(f"Applied LoRA to {merged_count}/{total_tensors} tensors")
+    log_merge_retention(
+        retention,
+        "merge-lora"
+        + (
+            f" of a lora_merge_aware: {lora_merge_aware} adapter, whose training "
+            "optimized these merged weights"
+            if lora_merge_aware
+            else ""
+        ),
+        "Serve the base model with the adapter unmerged, or retrain with "
+        "lora_merge_aware: bf16 so training optimizes the merged weights.",
+        warn=not lora_merge_aware,
+    )

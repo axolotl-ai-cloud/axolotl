@@ -72,24 +72,12 @@ class TestSelectiveCheckpointing:
         with pytest.raises(ValueError, match="non-reentrant"):
             validate_config(cfg)
 
-    def test_rejects_trl_activation_offloading(self, min_base_cfg):
+    @pytest.mark.parametrize("mode", [True, "hidden_states"])
+    def test_composes_with_activation_offloading(self, min_base_cfg, mode):
         cfg = (
             DictDefault(
                 gradient_checkpointing=True,
-                activation_offloading=True,
-                selective_checkpointing=True,
-            )
-            | min_base_cfg
-        )
-
-        with pytest.raises(ValueError, match="hidden_states"):
-            validate_config(cfg)
-
-    def test_composes_with_hidden_states_offload(self, min_base_cfg):
-        cfg = (
-            DictDefault(
-                gradient_checkpointing=True,
-                activation_offloading="hidden_states",
+                activation_offloading=mode,
                 selective_checkpointing=True,
             )
             | min_base_cfg
@@ -97,7 +85,7 @@ class TestSelectiveCheckpointing:
 
         cfg = validate_config(cfg)
         assert cfg.selective_checkpointing["save"] == ["attention"]
-        assert cfg.activation_offloading == "hidden_states"
+        assert cfg.activation_offloading == mode
 
     def test_rejects_matmul_save_with_adapter(self, min_base_cfg):
         cfg = (

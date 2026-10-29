@@ -165,7 +165,7 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Fused LoRA-MLP/QKV/O kernels | `lora_mlp_kernel` / `lora_qkv_kernel` / `lora_o_kernel` | SFT + FSDP2 only; ⚪ not RLHF, not `trust_remote_code` |
 | Tiled MLP | `tiled_mlp: true` | shards MLP to cut memory |
 | Ulysses / Ring / USP (ringmaster) | via `context_parallel_size` | long-context CP; `auto` prefers Ulysses |
-| Activation offloading | `activation_offloading:` | requires gradient checkpointing; ⚪ CUDA only (no CPU-only training) |
+| Activation offloading | `activation_offloading:` | `hidden_states` requires gradient checkpointing; `true` without it offloads with no recompute; `legacy` is a deprecated alias of `true`; `disk` is disabled; ⚪ CUDA only (no CPU-only training) |
 
 ## Model architectures
 
@@ -280,6 +280,7 @@ The dense corner. This is why, for example, DeepSeek-V4 (which ships in NVFP4) c
 | `use_dsv4_kernels` | attention-level LoRA | experts-only (fused indexer is gradientless) |
 | FSDP2 | 4/8-bit + DPO/KTO/ORPO/IPO | use DeepSpeed |
 | LoRA kernels | `trust_remote_code` / RLHF | SFT + FSDP2 only |
+| `lora_merge_aware` | DoRA, LoRA kernels, 4/8-bit bases, DeepSpeed ZeRO-3, TP, `vllm_lora_sync` | rejected at config validation (FSDP2 is supported and turns on `lora_fp32_gradients`); see [merged sync rounding](vllm_serving.qmd#sec-merge-rounding) |
 | `batch_flattening` | `sample_packing` | choose one |
 | FP8 + DDP | `torch.compile` | ⚪ known-broken; drop compile or use FSDP2 |
 

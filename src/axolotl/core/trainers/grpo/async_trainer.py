@@ -55,6 +55,7 @@ from axolotl.core.trainers.grpo.flatten import (
     completion_gather_index,
     to_device_async,
 )
+from axolotl.core.trainers.grpo.merge_check import LoraMergeCheckMixin
 
 try:
     from trl.data_utils import (
@@ -95,7 +96,10 @@ try:
 except ImportError:
     _fused_selective_log_softmax = None
 
+from axolotl.monkeypatch.lora_merge_aware import merge_aware_vllm_sync
+from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.utils.logging import get_logger
+from axolotl.utils.lora_merge_precision import MergeRetention, lora_delta
 
 # ---------------------------------------------------------------------------
 # Config
@@ -829,7 +833,7 @@ class GRPODataProducer(BaseDataProducer):
 # ---------------------------------------------------------------------------
 
 
-class AsyncGRPOTrainer(GRPOTrainer):
+class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
     """GRPOTrainer with async prefetch, streaming scoring, and IS correction.
 
     Drop-in replacement: pass ``AsyncGRPOConfig`` as ``args`` and use this trainer
@@ -885,6 +889,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
         # GRPOTrainer hardcodes an identity collator.
         if data_collator is not None:
             self.data_collator = data_collator
+
+        # The stock merged sync merges and unmerges the adapter in place.
+        if getattr(self, "vllm_generation", None) is not None:
+            exact_unmerge_vllm_sync(self.vllm_generation)
+            merge_aware_vllm_sync(self.vllm_generation)
 
         # FP8 models: zero out the pad token embedding so that padding
         # positions have zero hidden states throughout the network.
@@ -1060,6 +1069,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
         # Build lookup: module_path -> (A, B, scaling) for all active LoRA layers
         lora_info = {}
+        merge_aware = set()
         for mod_name, module in model.base_model.model.named_modules():
             if not hasattr(module, "lora_A") or not hasattr(module, "active_adapters"):
                 continue
@@ -1076,6 +1086,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 module.lora_B[active].weight.data,
                 module.scaling[active],
             )
+            if getattr(module, "_axolotl_lora_merge_aware_dtype", None) is not None:
+                merge_aware.add(mod_name)
+        retention = MergeRetention() if self._lora_merge_check_due() else None
 
         # Build lookup for FP8 scale_inv parameters (needed for dequantization)
         scale_inv_lookup = {}
@@ -1132,16 +1145,37 @@ class AsyncGRPOTrainer(GRPOTrainer):
             scale_inv = scale_inv_lookup.get(name)
             is_fp8 = data.dtype == torch.float8_e4m3fn
             A, B, s = lora_info[mod_path]
-            delta = s * (B.to(compute_dtype) @ A.to(compute_dtype))
+            # FP32 delta and a single final rounding, as PEFT's in-place merge and
+            # the lora_merge_aware forward compute it.
+            delta = lora_delta(A, B, s)
             if is_fp8 and scale_inv is not None:
                 # The server keeps FP8 weights, so the merged weight goes back
                 # through fresh block scales rather than a plain cast.
-                merged = dequantize_fp8(data, scale_inv, compute_dtype) + delta
-                weight, new_scale_inv = quantize_fp8(merged, scale_inv)
+                base = dequantize_fp8(data, scale_inv, torch.float32)
+                weight, new_scale_inv = quantize_fp8(base + delta, scale_inv)
                 params_to_sync.append((vllm_name, weight))
                 params_to_sync.append((vllm_name + "_scale_inv", new_scale_inv))
+                served_change = (
+                    dequantize_fp8(weight, new_scale_inv, torch.float32) - base
+                    if retention is not None
+                    else None
+                )
             else:
-                params_to_sync.append((vllm_name, data.to(compute_dtype) + delta))
+                base = data.float()
+                merged = (base + delta).to(compute_dtype)
+                params_to_sync.append((vllm_name, merged))
+                served_change = (
+                    merged.float() - base.to(compute_dtype).float()
+                    if retention is not None
+                    else None
+                )
+            if served_change is not None and mod_path not in merge_aware:
+                retention.update(delta, served_change)
+                retention.modules += 1
+            del delta, base, served_change
+
+        if retention is not None:
+            self._record_lora_merge_check(retention)
 
         if params_to_sync:
             sync_mb = sum(t.numel() * t.element_size() for _, t in params_to_sync) / 1e6

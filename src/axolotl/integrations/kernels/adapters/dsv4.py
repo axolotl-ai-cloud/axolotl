@@ -11,13 +11,50 @@ from __future__ import annotations
 
 import torch
 
-from axolotl.integrations.kernels.adapters import ModelAdapter
+from axolotl.integrations.kernels.adapters import ModelAdapter, load_base_model_config
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 # mHC modules kept in fp32 and sharded separately by the FSDP2 quantized path.
 DSV4_FP32_SHARD_CLASSES = ("DeepseekV4HyperConnection", "DeepseekV4HyperHead")
+
+
+def scattermoe_unsupported_expert_dtype(cfg) -> str | None:
+    """The routed-expert dtype of an fp8-quantized checkpoint whose experts are not NVFP4, else
+    None. scattermoe runs NVFP4Tensor or unquantized experts only; blockwise FP8/FP4 experts would
+    reach its kernels as raw quantized weights with their ``*_scale_inv`` ignored."""
+    model_config = load_base_model_config(cfg)
+    qcfg = getattr(model_config, "quantization_config", None)
+    if not isinstance(qcfg, dict) or qcfg.get("quant_method") != "fp8":
+        return None
+    if str(qcfg.get("moe_quant_algo", "")).upper() == "NVFP4":
+        return None
+    return str(
+        qcfg.get("expert_dtype") or getattr(model_config, "expert_dtype", None) or "fp8"
+    )
+
+
+def check_scattermoe_expert_dtype(cfg) -> None:
+    """Refuse DeepSeek's packed-FP4 experts under scattermoe and warn on block-FP8 ones, which
+    load on the stock FP8 path but have no scattermoe kernel."""
+    expert_dtype = scattermoe_unsupported_expert_dtype(cfg)
+    if expert_dtype is None:
+        return
+    if expert_dtype == "fp4":
+        raise ValueError(
+            f"use_scattermoe with use_dsv4_kernels can't run the routed experts of "
+            f"{cfg.base_model}: they are DeepSeek's packed FP4 (expert_dtype='fp4', ue8m0 block "
+            "scales), not NVFP4 (quantization_config.moe_quant_algo: NVFP4, e.g. "
+            "nvidia/DeepSeek-V4-Flash-NVFP4). Use the NVFP4 checkpoint or drop use_scattermoe."
+        )
+    LOG.warning(
+        "use_scattermoe with use_dsv4_kernels: %s has blockwise expert_dtype=%r routed experts. "
+        "They load with their *_scale_inv block scales, which the scattermoe experts forward does "
+        "not apply. Use an NVFP4-expert checkpoint or drop use_scattermoe.",
+        cfg.base_model,
+        expert_dtype,
+    )
 
 
 def _maybe_truncate_layers(model) -> None:
@@ -70,6 +107,7 @@ class DSV4Adapter(ModelAdapter):
         # quantizer has no NVFP4 expert path. Install an NVFP4-aware subclass so experts load as
         # NVFP4Tensor for the scattermoe fused path. Only relevant with the scattermoe expert path.
         if cfg.use_scattermoe:
+            check_scattermoe_expert_dtype(cfg)
             from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fp8_quantizer import (
                 configure_nonexpert_mode,
                 install_nvfp4_fp8_quantizer,

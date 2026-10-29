@@ -757,6 +757,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Train supported NVFP4 LoRA targets against their merged quantized weights. Defaults to enabled for supported backends; false opts out with a warning.",
     ),
     (
+        ("--lora-merge-aware",),
+        None,
+        None,
+        "Train LoRA linears against their merged weights rounded to this dtype, bf16(W + scaling * B @ A), with a straight-through cast so A and B still get gradients. Use when the adapter is served merged (vLLM merged weight sync, or a bf16 merge-lora checkpoint): at RL learning rates most of an ordinary LoRA update rounds away in the merge.",
+    ),
+    (
         ("--lora-r",),
         None,
         None,
@@ -923,6 +929,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
         None,
         None,
+    ),
+    (
+        ("--merge-num-threads",),
+        None,
+        None,
+        "PyTorch CPU intra-op threads during LoRA merging (default: 2). Set before compilation; the previous thread count is restored after merging.",
     ),
     (
         ("--merge-compile/--no-merge-compile",),
@@ -1695,6 +1707,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. Enables LoRA on the native vLLM server and registers each synced adapter under a versioned name via /v1/load_lora_adapter. Syncs only LoRA adapter weights vs full merged model.",
     ),
     (
+        ("--trl.vllm-merge-check-interval",),
+        "trl__vllm_merge_check_interval",
+        "int",
+        "With LoRA and merged vLLM weight sync (vllm_lora_sync off), measure how much of the adapter update survives rounding the merged weights to vLLM's dtype at the first sync and then every N optimizer steps. Logged as lora_merge/retained, with a warning when most of the update is lost. Defaults to 50; 0 disables.",
+    ),
+    (
         ("--vllm.device",),
         "vllm__device",
         "str",
@@ -1710,7 +1728,25 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--vllm.data-parallel-size",),
         "vllm__data_parallel_size",
         "int",
-        "Data parallel size for VLLM",
+        "Data parallel size for VLLM (total replicas across all nodes)",
+    ),
+    (
+        ("--vllm.pipeline-parallel-size",),
+        "vllm__pipeline_parallel_size",
+        "int",
+        "Pipeline parallel size for VLLM",
+    ),
+    (
+        ("--vllm.nnodes",),
+        "vllm__nnodes",
+        "int",
+        "Number of nodes `vllm-serve` spans. Launch it on each node with `--node-rank`.",
+    ),
+    (
+        ("--vllm.master-addr",),
+        "vllm__master_addr",
+        "str",
+        "Address of node 0 (which serves the API) when `nnodes > 1`",
     ),
     (
         ("--vllm.gpu-memory-utilization",),
@@ -2388,7 +2424,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--gradient-checkpointing",),
         None,
         None,
-        "Whether to use gradient checkpointing. Available options are: true, false, 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing",
+        "Whether to use gradient checkpointing. Available options are: true, false, 'offload' (deprecated, use activation_offloading: true). https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing",
     ),
     (
         ("--gradient-checkpointing-kwargs",),
@@ -2438,7 +2474,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--activation-offloading",),
         None,
         None,
-        "Whether to offload activations. Options: true/false, 'legacy', 'disk' (TRL offloader), or 'hidden_states' (checkpoint input offload; non-reentrant by default, ALST-style when gradient_checkpointing_kwargs.use_reentrant is true).",
+        "Whether to offload activations. Options: true/false (TRL offloader; gradient_checkpointing decides whether layers recompute), or 'hidden_states' (checkpoint input offload; non-reentrant by default, ALST-style when gradient_checkpointing_kwargs.use_reentrant is true). 'legacy' is a deprecated alias of true; 'disk' is disabled.",
     ),
     (
         ("--layer-offloading/--no-layer-offloading",),
