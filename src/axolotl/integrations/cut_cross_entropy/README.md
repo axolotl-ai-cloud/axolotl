@@ -35,7 +35,11 @@ plugins:
 cut_cross_entropy: true                      # default when the plugin is loaded
 cut_cross_entropy_accum_c_fp32: true         # fp32 classifier (lm_head) gradient accumulation
 cut_cross_entropy_c_grad_chunk_size: auto    # or a positive multiple of 128, e.g. 32768
+cut_cross_entropy_accum_e_fp32: true         # fp32 hidden-state gradient accumulation
+cut_cross_entropy_gradient_filtering: false  # exact backward (default true)
 ```
+
+`cut_cross_entropy_accum_e_fp32` and `cut_cross_entropy_gradient_filtering: false` make the gradient flowing back into the model match an fp32 reference. With the defaults (bf16 accumulation, filtering on) it is understated on large vocabularies: 15% lower grad norm on Mistral Large 4 (204,800 tokens, softcapped logits).
 
 `cut_cross_entropy_accum_c_fp32` improves numerical stability for large vocabularies at the cost of a full fp32 copy of the `lm_head` gradient during the backward pass.
 

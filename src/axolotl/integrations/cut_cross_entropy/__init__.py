@@ -118,6 +118,10 @@ class CutCrossEntropyPlugin(BasePlugin):
                 "remote_model_id": cfg.base_model if cfg.trust_remote_code else None,
                 "accum_c_fp32": bool(cfg.cut_cross_entropy_accum_c_fp32),
             }
+            if cfg.cut_cross_entropy_accum_e_fp32:
+                patch_kwargs["accum_e_fp32"] = True
+            if cfg.cut_cross_entropy_gradient_filtering is False:
+                patch_kwargs["filter_eps"] = None
             if cfg.cut_cross_entropy_c_grad_chunk_size:
                 if "c_grad_chunk_size" not in inspect.signature(cce_patch).parameters:
                     raise ImportError(
