@@ -1,5 +1,6 @@
 import json
 import math
+import re
 from collections import OrderedDict
 from threading import Event
 from types import SimpleNamespace
@@ -1658,13 +1659,21 @@ class TestEfficientMerge:
         assert lora_a.shape == (8, 32)
 
     def test_scope_renaming_anchors_to_prefix(self):
-        """Scoped patterns are re-anchored; unanchored ones are dropped."""
+        """Scoped patterns are re-anchored; unanchored ones match after the kept scope prefix."""
         assert _scope_renaming(r"^language_model.model", "language_model", "model") == (
             r"^model\.language_model.model",
             "model.language_model",
         )
         assert _scope_renaming(r"^a", "b", None) == (r"^a", "b")
-        assert _scope_renaming(r"a", "b", "model") is None
+        src, tgt = _scope_renaming(
+            r"\.attention\.", ".self_attn.", "language_model", "model"
+        )
+        assert re.sub(src, tgt, "model.language_model.layers.0.attention.wq") == (
+            "model.language_model.layers.0.self_attn.wq"
+        )
+        assert re.sub(src, tgt, "model.vision_tower.layers.0.attention.wq") == (
+            "model.vision_tower.layers.0.attention.wq"
+        )
 
     def test_unmatched_tensors_pass_through(self):
         """Tensors with no matching LoRA are returned unchanged."""

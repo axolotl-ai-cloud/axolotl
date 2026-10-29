@@ -2386,7 +2386,10 @@ def _get_conversion_info(
         )
         if len(src_list) == 1 and len(tgt_list) == 1:
             scoped = _scope_renaming(
-                src_list[0], tgt_list[0], getattr(conv, "scope_prefix", None)
+                src_list[0],
+                tgt_list[0],
+                getattr(conv, "scope_prefix", None),
+                getattr(conv, "base_model_prefix", None),
             )
             if scoped is not None:
                 renamings[scoped[0]] = scoped[1]
@@ -2397,18 +2400,27 @@ def _get_conversion_info(
 
 
 def _scope_renaming(
-    source_pattern: str, target_pattern: str, scope_prefix: Optional[str]
+    source_pattern: str,
+    target_pattern: str,
+    scope_prefix: Optional[str],
+    base_model_prefix: Optional[str] = None,
 ) -> Optional[tuple[str, str]]:
     """Rewrite a sub-module renaming so it matches full checkpoint keys."""
     if not scope_prefix:
         return source_pattern, target_pattern
-    # Re-anchoring an unanchored pattern would let it match outside the scope.
-    if not source_pattern.startswith("^"):
-        return None
-    return (
-        f"^{re.escape(scope_prefix + '.')}{source_pattern[1:]}",
-        f"{scope_prefix}.{target_pattern}",
+    if source_pattern.startswith("^"):
+        return (
+            f"^{re.escape(scope_prefix + '.')}{source_pattern[1:]}",
+            f"{scope_prefix}.{target_pattern}",
+        )
+    # Unanchored: first match after the scope prefix, which is kept (transformers' _scoped_match).
+    prefix = re.escape(scope_prefix + ".")
+    if base_model_prefix:
+        prefix = f"(?:{re.escape(base_model_prefix + '.')})?{prefix}"
+    shifted = re.sub(
+        r"\\(\d+)", lambda m: f"\\g<{int(m.group(1)) + 1}>", target_pattern
     )
+    return f"^({prefix}.*?){source_pattern}", f"\\g<1>{shifted}"
 
 
 def _get_model_conversion_mapping(
