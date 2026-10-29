@@ -590,11 +590,13 @@ def _split_conv1d_scan_hook(hook: Hook) -> Callable[..., Any]:
         # transformers' reference returns None: the mixer then runs the unfused path
         if plan is None or not hook.kernel_backed():
             return hook.original(*args, **kwargs)
-        _announce(hook, True, "the fused mixer over every path")
         bound = _bind(_SPLIT_CONV1D_SCAN, args, kwargs)
         _no_cache(bound["initial_states"], bound["return_final_states"])
         params = {name: bound[name] for name in _SPLIT_CONV1D_SCAN_PARAMS}
-        return split_conv1d_scan_on_tree(hook.original, bound["zxbcdt"], plan, **params)
+        out = split_conv1d_scan_on_tree(hook.original, bound["zxbcdt"], plan, **params)
+        if out is not None:
+            _announce(hook, True, "the fused mixer over every path")
+        return out
 
     return mamba2_split_conv1d_scan_combined
 

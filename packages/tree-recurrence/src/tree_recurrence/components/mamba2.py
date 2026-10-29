@@ -65,9 +65,14 @@ def split_conv1d_scan_on_tree(
 
     ``kwargs`` are the kernel's other arguments; it must reset at ``seq_idx``. A kernel
     that declines (returns ``None``, as a guard for quantized weights may) declines
-    here too, and the mixer runs its unfused path.
+    here too, as does a row width mamba-ssm cannot take with ``seq_idx``, and the
+    mixer runs its unfused path.
     """
     check_row(zxbcdt, plan)
+    if zxbcdt.shape[-1] % 8:
+        # mamba-ssm copies a row of any other width channel-first for its conv,
+        # which then refuses seq_idx
+        return None
     total, device = zxbcdt.shape[1], zxbcdt.device
     rows = zxbcdt[:, : plan.num_tokens]
     keep = None
