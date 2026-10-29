@@ -99,14 +99,19 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
     each step, so a module cache (not a per-tensor attr) avoids re-repacking 256 experts/forward.
     Falls back to a per-tensor attribute, then a one-shot compute.
 
-    On the first build (single-GPU only), saves original scales + per-tensor scale in cache under
-    key+"_bwd" for the fused backward dequant, then frees nv.qdata to drop the duplicate 4-bit copy.
-    Under FSDP the gathered param is fresh each step so weight_recipe() re-gathers it anyway; skips
-    the free when distributed is active."""
+    On the first build of a rank-resident weight (single GPU or DDP), saves original scales +
+    per-tensor scale in cache under key+"_bwd" for the fused backward dequant, then frees nv.qdata
+    to drop the duplicate 4-bit copy. Under FSDP/DeepSpeed the gathered param is fresh each step so
+    weight_recipe() re-gathers it anyway; skips the free there."""
     import torch.distributed as dist
 
-    _is_distributed = (
-        dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
+    from ..runtime import RUNTIME
+
+    _gathered = (
+        RUNTIME.experts_gathered
+        and dist.is_available()
+        and dist.is_initialized()
+        and dist.get_world_size() > 1
     )
     bwd_key = key + "_bwd"
     if cache is not None and key in cache:
@@ -127,18 +132,18 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
             torch.bfloat16,
             ext.gptq_marlin_repack,
         )
-        # Stash the full-layer marlin weight on the gathered tensor ONLY single-GPU. Under FSDP2 the
+        # Stash the full-layer marlin weight on the tensor ONLY when rank-resident. Under FSDP2 the
         # gathered param is a fresh tensor every forward AND every backward recompute, so this attr
         # never produces a cache hit — it only pins ~9 GiB/proj alive on each layer's gathered tensor,
         # and during the backward sweep FSDP keeps several layers' gathered tensors live at once →
         # the marlin weights accumulate across depth and OOM (bypassing the module-cache guard below).
-        if not _is_distributed:
+        if not _gathered:
             try:
                 nv._marlin_w4a16 = cached
             except (AttributeError, RuntimeError):
                 pass
-    if cache is not None and not _is_distributed:
-        # Single-GPU: persist the marlin weight and drop the duplicate 4-bit qdata.
+    if cache is not None and not _gathered:
+        # Rank-resident: persist the marlin weight and drop the duplicate 4-bit qdata.
         cache[key] = cached
         if qdata_fresh and bwd_key not in cache:
             E, dev = nv.qdata.size(0), nv.qdata.device
