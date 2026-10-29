@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "wheel", "setuptools_scm>=8"]
+requires = ["setuptools>=70.1", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -56,7 +56,7 @@ dependencies = [
     "adlfs==2026.2.0",
     "ocifs==1.3.2",
 
-    "zstandard==0.22.0",
+    "zstandard==0.25.0",
     "fastcore",
 
     # lm eval harness
@@ -323,5 +323,4 @@ conflicts = [
 [tool.uv.extra-build-dependencies]
 mamba-ssm = [{ requirement = "torch", match-runtime = true }]
 causal-conv1d = [{ requirement = "torch", match-runtime = true }]
-deepspeed = [{ requirement = "torch", match-runtime = true }]
 auto-gptq = [{ requirement = "torch", match-runtime = true }]

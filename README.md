@@ -131,7 +131,7 @@ uv venv --python 3.12
 source .venv/bin/activate
 
 uv pip install torch==2.14.0 torchvision
-uv pip install --no-build-isolation axolotl[deepspeed]
+uv pip install axolotl[deepspeed]
 
 # Download example axolotl configs, deepspeed configs
 axolotl fetch examples

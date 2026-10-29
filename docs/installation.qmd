@@ -40,8 +40,12 @@ Choose your CUDA version (e.g. `cu128`, `cu130`), create a venv, and install:
 export UV_TORCH_BACKEND=cu130  # or cu128
 uv venv
 source .venv/bin/activate
-uv pip install --no-build-isolation axolotl[deepspeed]
+uv pip install axolotl[deepspeed]
 ```
+
+::: {.callout-note}
+Axolotl and its default extras install with build isolation. Packages that compile against your installed PyTorch still need it disabled for that package: the `mamba-ssm` and `auto-gptq` extras, and DeepSpeed when prebuilding ops with `DS_BUILD_OPS=1` or `DS_BUILD_<OP>=1`. Install PyTorch first, then pass `--no-build-isolation-package <name>` (for example `--no-build-isolation-package mamba-ssm --no-build-isolation-package causal-conv1d`).
+:::
 
 ### Offline or Air-Gapped Install {#sec-offline-install}
 
@@ -57,7 +61,7 @@ cd axolotl
 export UV_TORCH_BACKEND=cu130  # or cu128
 uv venv
 source .venv/bin/activate
-uv pip install --no-build-isolation -e '.[deepspeed]'
+uv pip install -e '.[deepspeed]'
 ```
 
 ### Docker {#sec-docker}
@@ -118,7 +122,7 @@ To launch Axolotl on your own cloud accounts (AWS, GCP, Azure, etc.) or Kubernet
 ### macOS {#sec-macos}
 
 ```{.bash}
-uv pip install --no-build-isolation -e '.'
+uv pip install -e '.'
 ```
 
 See @sec-troubleshooting for Mac-specific issues.
@@ -144,7 +148,7 @@ uv venv
 source .venv/bin/activate
 
 # Reinstall axolotl
-uv pip install --no-build-isolation axolotl[deepspeed]
+uv pip install axolotl[deepspeed]
 ```
 
 ## Using pip (Alternative) {#sec-pip}
@@ -158,14 +162,12 @@ Follow the instructions at: [https://pytorch.org/get-started/locally/](https://p
 :::
 
 ```{.bash}
-pip3 install -U packaging setuptools wheel ninja
-pip3 install --no-build-isolation axolotl[deepspeed]
+pip3 install axolotl[deepspeed]
 ```
 
 For editable/development installs:
 ```{.bash}
-pip3 install -U packaging setuptools wheel ninja
-pip3 install --no-build-isolation -e '.[deepspeed]'
+pip3 install -e '.[deepspeed]'
 ```
 
 ## Troubleshooting {#sec-troubleshooting}

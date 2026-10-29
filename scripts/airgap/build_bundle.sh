@@ -45,7 +45,7 @@ PY_TAG=cp${PY_MINOR/./}              # cp314
 
 # Pins the target can not build; see "Split out the packages without wheels".
 PUREPY_SDISTS="langdetect rouge-score sqlitedict word2number axolotl-contribs-lgpl axolotl-contribs-mit"
-NOWHEEL_RE='^(zstandard|langdetect|rouge-score|sqlitedict|word2number|axolotl-contribs-lgpl|axolotl-contribs-mit|deepspeed)=='
+NOWHEEL_RE='^(langdetect|rouge-score|sqlitedict|word2number|axolotl-contribs-lgpl|axolotl-contribs-mit|deepspeed)=='
 
 log()  { printf '\n==> %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -128,21 +128,16 @@ step_wheels() {
   # shellcheck disable=SC2086
   uvx --python "$PY_MINOR" pip wheel --no-deps -w "$BUNDLE/wheelhouse" $pins
 
-  if [ "$HOST_ARCH" = "$TARGET_ARCH" ]; then
-    log "build zstandard (no build isolation)"
-    local zpin; zpin=$(grep -i '^zstandard==' "$BUNDLE/requirements.target.txt")
-    uv venv --clear --seed --python "$PY_MINOR" "$BUNDLE/../.zstd-build"
-    "$BUNDLE/../.zstd-build/bin/python" -m pip install -q setuptools wheel cffi
-    "$BUNDLE/../.zstd-build/bin/python" -m pip wheel --no-deps --no-build-isolation -w "$BUNDLE/wheelhouse" "$zpin"
-    if grep -qi '^deepspeed==' "$BUNDLE/requirements.target.txt"; then
+  if grep -qi '^deepspeed==' "$BUNDLE/requirements.target.txt"; then
+    if [ "$HOST_ARCH" = "$TARGET_ARCH" ]; then
       log "build deepspeed (DS_BUILD_OPS=0; ops JIT-compile on the target)"
       local dpin; dpin=$(grep -i '^deepspeed==' "$BUNDLE/requirements.target.txt")
       uv venv --clear --seed --python "$PY_MINOR" "$BUNDLE/../.ds-build"
       uv pip install --python "$BUNDLE/../.ds-build/bin/python" --torch-backend "$TORCH_BACKEND" setuptools wheel ninja "$(grep -i '^torch==' "$BUNDLE/requirements.target.txt" | sed 's/+.*//')"
       DS_BUILD_OPS=0 "$BUNDLE/../.ds-build/bin/python" -m pip wheel --no-deps --no-build-isolation -w "$BUNDLE/wheelhouse" "$dpin"
+    else
+      log "WARNING: host is $HOST_ARCH, target is $TARGET_ARCH. Build deepspeed on a $TARGET_ARCH machine and copy the wheel into $BUNDLE/wheelhouse"
     fi
-  else
-    log "WARNING: host is $HOST_ARCH, target is $TARGET_ARCH. Build zstandard (and deepspeed, if in EXTRAS) on a $TARGET_ARCH machine and copy the wheels into $BUNDLE/wheelhouse"
   fi
 
   log "build axolotl wheel"

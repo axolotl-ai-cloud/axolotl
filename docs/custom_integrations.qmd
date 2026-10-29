@@ -385,10 +385,10 @@ and custom plugins; building a context does not automatically install its files.
 For example, a context containing `axolotl/` and `my-plugin/` could use:
 
 ```dockerfile
-FROM axolotlai/axolotl:main-py3.11-cu128-2.9.1
+FROM axolotlai/axolotl:main-py3.14-cu130-2.14.1
 COPY axolotl/ /opt/axolotl-fork/
 COPY my-plugin/ /opt/my-plugin/
-RUN python -m pip install --no-build-isolation /opt/axolotl-fork /opt/my-plugin
+RUN uv pip install /opt/axolotl-fork /opt/my-plugin
 ```
 
 This includes local edits selected by the Dockerfile's `COPY` instructions and

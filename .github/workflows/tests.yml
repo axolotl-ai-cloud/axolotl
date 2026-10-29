@@ -135,7 +135,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --no-build-isolation -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
+          uv pip install -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
@@ -236,7 +236,7 @@ jobs:
       - name: Install axolotl from the sdist-built wheel
         run: |
           wheel=$(ls dist/axolotl-*.whl)
-          uv pip install --no-build-isolation "${wheel}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
+          uv pip install "${wheel}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install pytest pytest-retry pytest-sugar pytest-xdist tbparse
 

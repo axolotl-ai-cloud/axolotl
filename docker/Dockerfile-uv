@@ -25,9 +25,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         BASE_EXTRAS="deepspeed,optimizers,ray,fla,ringmaster"; \
     fi && \
     if [ "$AXOLOTL_EXTRAS" != "" ]; then \
-        uv pip install --no-build-isolation -e .[$BASE_EXTRAS,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+        uv pip install -e .[$BASE_EXTRAS,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
-        uv pip install --no-build-isolation -e .[$BASE_EXTRAS] $AXOLOTL_ARGS; \
+        uv pip install -e .[$BASE_EXTRAS] $AXOLOTL_ARGS; \
     fi && \
     python scripts/cutcrossentropy_install.py --uv | sh && \
     uv pip install pytest
