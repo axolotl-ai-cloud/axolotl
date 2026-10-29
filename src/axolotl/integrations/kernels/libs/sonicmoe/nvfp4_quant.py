@@ -207,7 +207,13 @@ def _quantize_nvfp4_reuse_grid(
         (sc_out.float() * pts).repeat_interleave(SF_VEC_SIZE, dim=-1).clamp_min(1e-30)
     )
     lut = torch.tensor(FP4_CODE_VALUES, dtype=torch.float32, device=x.device)
-    idx = ((xf / denom).unsqueeze(-1) - lut).abs().argmin(-1).to(torch.uint8)
+    q = (xf / denom).reshape(-1, xf.shape[-1])
+    idx = torch.empty(q.shape, dtype=torch.uint8, device=q.device)
+    # the code search holds len(lut) floats per element; bound it to ~1 GiB per pass
+    rows = max(1, (1 << 24) // q.shape[-1])
+    for r in range(0, q.shape[0], rows):
+        idx[r : r + rows] = (q[r : r + rows].unsqueeze(-1) - lut).abs().argmin(-1)
+    idx = idx.reshape(xf.shape)
     packed = idx[..., 0::2] | (idx[..., 1::2] << 4)
     return packed, sc_out
 
