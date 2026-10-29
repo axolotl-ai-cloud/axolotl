@@ -5,6 +5,10 @@ plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
   - axolotl.integrations.kernels.KernelsPlugin
 
+# exact hidden-state gradients; the defaults understate them ~15% here (204k vocab, softcapped logits)
+cut_cross_entropy_accum_e_fp32: true
+cut_cross_entropy_gradient_filtering: false
+
 use_kernels: true
 use_scattermoe: true
 dsv4_fp4_grouped_mode: nvfp4
