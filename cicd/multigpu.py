@@ -126,7 +126,7 @@ def refresh_source(run_folder: str) -> None:
         return
     checkout_source(run_folder, os.environ.get("GITHUB_REF", "refs/heads/main"), sha)
     subprocess.run(  # nosec
-        ["uv", "pip", "install", "--no-build-isolation", "--no-deps", "-e", "."],
+        ["uv", "pip", "install", "--no-deps", "-e", "."],
         cwd=run_folder,
         check=True,
     )
