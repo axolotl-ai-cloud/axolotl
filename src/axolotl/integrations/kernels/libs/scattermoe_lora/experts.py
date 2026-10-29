@@ -742,7 +742,7 @@ def scattermoe_experts_forward(
         ):
             from .mxfp8_grouped import grouped_mxfp8_moe_train
 
-            _recipe = lambda: (  # noqa: E731
+            _mx_recipe = lambda: (  # noqa: E731
                 (_get_base_param(self.gate_up_proj), self.gate_up_proj_mx_scale),
                 (_get_base_param(self.down_proj), self.down_proj_mx_scale),
             )
@@ -758,7 +758,7 @@ def scattermoe_experts_forward(
                 down_lora,
                 getattr(self, "limit", None),
                 act_type=_detect_act_type(self),
-                weight_recipe=_recipe,
+                weight_recipe=_mx_recipe,
             )
 
     # Native block-fp8 grouped path (moe_grouped_mode='fp8_block'): keep the checkpoint's 128x128
@@ -781,7 +781,7 @@ def scattermoe_experts_forward(
         ):
             from .fp8_grouped import grouped_fp8_moe_train
 
-            _recipe = lambda: (  # noqa: E731
+            _fp8_recipe = lambda: (  # noqa: E731
                 (_get_base_param(self.gate_up_proj), self.gate_up_proj_scale_inv),
                 (_get_base_param(self.down_proj), self.down_proj_scale_inv),
             )
@@ -797,7 +797,7 @@ def scattermoe_experts_forward(
                 down_lora,
                 getattr(self, "limit", None),
                 act_type=_detect_act_type(self),
-                weight_recipe=_recipe,
+                weight_recipe=_fp8_recipe,
                 # persistent per-module cache for the moe_marlin_dx transposed packs
                 dx_cache=self.__dict__.setdefault("_fp8_dx_cache", {}),
             )
@@ -1158,7 +1158,7 @@ def scattermoe_experts_forward_ep(
             if _gs is not None and _ds is not None:
                 from .mxfp8_grouped import grouped_mxfp8_moe_train
 
-                _recipe_g = lambda: (  # noqa: E731
+                _mx_recipe_g = lambda: (  # noqa: E731
                     (_get_base_param(self.gate_up_proj), self.gate_up_proj_mx_scale),
                     (_get_base_param(self.down_proj), self.down_proj_mx_scale),
                 )
@@ -1174,7 +1174,7 @@ def scattermoe_experts_forward_ep(
                     _down_lora_g,
                     getattr(self, "limit", None),
                     act_type=_detect_act_type(self),
-                    weight_recipe=_recipe_g,
+                    weight_recipe=_mx_recipe_g,
                 )
         # Native block-fp8 experts (e4m3 param + *_scale_inv fp32 128x128 block scale).
         if _fp4_grouped_mode_g == "fp8_block" and _is_fp8_3d_g:
@@ -1183,7 +1183,7 @@ def scattermoe_experts_forward_ep(
             if _gs is not None and _ds is not None:
                 from .fp8_grouped import grouped_fp8_moe_train
 
-                _recipe_g = lambda: (  # noqa: E731
+                _fp8_recipe_g = lambda: (  # noqa: E731
                     (_get_base_param(self.gate_up_proj), self.gate_up_proj_scale_inv),
                     (_get_base_param(self.down_proj), self.down_proj_scale_inv),
                 )
@@ -1199,7 +1199,7 @@ def scattermoe_experts_forward_ep(
                     _down_lora_g,
                     getattr(self, "limit", None),
                     act_type=_detect_act_type(self),
-                    weight_recipe=_recipe_g,
+                    weight_recipe=_fp8_recipe_g,
                 )
         if is_nvfp4_param(_gu_base_g):
             from .grouped_train import grouped_fp4_available
