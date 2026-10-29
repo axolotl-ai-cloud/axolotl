@@ -88,6 +88,7 @@ def quantize_attn_bases(model, kind: str, suffixes) -> int:
     import torch.nn as nn
     from peft.tuners.lora.layer import LoraLayer
 
+    from axolotl.integrations.kernels.libs.mistral_large4.lora_attn import is_mla_proj
     from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import (
         is_mxfp4_param,
         is_nvfp4_param,
@@ -99,9 +100,7 @@ def quantize_attn_bases(model, kind: str, suffixes) -> int:
 
     n = 0
     for name, mod in model.named_modules():
-        if not isinstance(mod, LoraLayer) or not any(
-            name.endswith(s) for s in suffixes
-        ):
+        if not isinstance(mod, LoraLayer) or not is_mla_proj(name, suffixes):
             continue
         base = mod.base_layer
         w = base.weight

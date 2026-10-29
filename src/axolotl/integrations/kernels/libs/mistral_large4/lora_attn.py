@@ -9,7 +9,7 @@ dispatches the frozen base GEMM on the base weight's quantization:
     per-Linear ``X@W + s·X_drop@A@B`` with quant handled by ``dequantize``). Reused as-is.
   * **fp8-blockwise (native)** — ``_NativeFp8Lora`` (``fp8_linear`` / DeepGEMM 128×128 on
     sm90/sm100, Triton fallback on sm120): real fp8 throughput on the large projections, no
-    dequant. This is the real Mistral-Large-4 checkpoint's format.
+    dequant. This is the block-FP8 Mistral-Large-4 checkpoint's format.
   * **nvfp4 / mxfp4 / mxfp8** — dispatched to ``lora_lowbit`` (dequantize the frozen 4-/8-bit
     weight transiently → fused LoRA; weight stays low-bit in memory). Marlin-W4A16-accelerated
     base GEMM is a later optimization.
@@ -27,7 +27,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-# The MLA projections. q_proj is a single matrix (q_lora_rank=null); short layers own
+# The MLA projections. q_proj is a single matrix (q_lora_rank=null); KV-source layers own
 # kv_a_proj_with_mqa/kv_a_layernorm, all layers have kv_b_proj + o_proj.
 MLA_PROJ_SUFFIXES = (
     "self_attn.q_proj",
@@ -35,6 +35,14 @@ MLA_PROJ_SUFFIXES = (
     "self_attn.kv_b_proj",
     "self_attn.o_proj",
 )
+
+
+def is_mla_proj(name: str, suffixes=MLA_PROJ_SUFFIXES) -> bool:
+    """Whether ``name`` is a text-decoder MLA projection (never the Pixtral vision tower)."""
+    return "language_model.layers." in name and any(
+        name.endswith(suf) for suf in suffixes
+    )
+
 
 # Large-output projections where native fp8 (vs dequant) is worth it. q_proj (H -> heads*qk_head)
 # and kv_b_proj (kv_lora -> heads*(nope+v)) are the big ones; o_proj (heads*v -> H) is large on
@@ -162,11 +170,10 @@ def patch_mistral_large4_attn_lora(
 
     n = 0
     for name, mod in model.named_modules():
-        if not isinstance(mod, LoraLayer):
+        if not isinstance(mod, LoraLayer) or not is_mla_proj(name):
             continue
-        if not any(name.endswith(suf) for suf in MLA_PROJ_SUFFIXES):
-            continue
-        if hasattr(mod, "_ml4_orig_forward"):
+        # already patched, or carries the NVFP4 merge-aware forward
+        if hasattr(mod, "_ml4_orig_forward") or hasattr(mod, "_ma_orig_forward"):
             continue
         mod._ml4_orig_forward = mod.forward
         mod.forward = types.MethodType(_make_forward(name, native_fp8), mod)

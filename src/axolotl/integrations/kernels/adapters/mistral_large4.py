@@ -1,24 +1,24 @@
 """Mistral Large 4 (``mistral_large4``) kernel adapter.
 
-Mistral-Large-4 is a DeepSeek-V3-style MLA + MoE model (Pixtral vision + MLA/MoE text). Its MLA is
-*clean* — a single ``q_proj`` (``q_lora_rank=null``) and no gradientless fused indexer — so the
-attention projections are safe to LoRA-adapt.
+Runs on transformers' built-in modeling (``MistralLarge4ForConditionalGeneration``, loaded as
+image-text-to-text; sdpa / eager only), never remote code. Its MLA is *clean* — a single
+``q_proj`` (``q_lora_rank=null``) and no gradientless fused indexer — so the attention
+projections are safe to LoRA-adapt.
 
 NVFP4 checkpoint: modelopt ``MIXED_PRECISION`` in Mistral-native naming: NVFP4 routed experts as
 ``w1/w3/w2`` and 128x128 block-FP8 attention / indexer ``wq_b`` / shared experts / dense layer 0.
 transformers renames native keys before any converter runs, and the expert converters live in
 the text model's (scoped) mapping, so the converters register there under the renamed names.
 
-The adapter also:
-  * matches by ``use_mistral_large4_kernels`` or the checkpoint's ``model_type``
-    (``mistral_large4`` / ``mistral_large4_text``), honoring ``trust_remote_code``;
-  * registers the MLA RMSNorm class for the FSDP2 quantized-mixed-dtype fp32 shard group;
-  * after PEFT, swaps the MLA attention LoRA layers for the fused quant-dispatching kernel.
+Block-FP8 (FineGrainedFP8) checkpoint: transformers loads ``FP8Linear`` / ``FP8Experts`` and their
+backward already dequantizes for dX. ``moe_grouped_mode`` picks the scattermoe expert path
+(``fp8_block`` keeps the experts native; ``nvfp4`` / ``mxfp8`` requant them at the plugin level).
+Genuine block-FP8 experts are never reinterpreted as NVFP4.
 
-The routed MoE experts are fused-3D (``gate_up_proj``/``down_proj``) and dispatch through the
-scattermoe ExpertsInterface automatically (the modeling carries ``@use_experts_implementation``);
-the plugin's ``use_scattermoe`` wiring owns them. Genuine fp8-block experts are *not*
-reinterpreted as NVFP4 (that would corrupt them — they are real block-fp8, not NVFP4-in-disguise).
+For a LoRA run on a block-FP8 or bf16 checkpoint the adapter also swaps the MLA attention LoRA
+layers for the fused quant-dispatching kernel (``libs/mistral_large4``) and keeps the RMSNorms in
+their own fp32 FSDP2 shard group. Both stay off on the NVFP4 checkpoint unless
+``mistral_large4_attn_lora_kernel: true``.
 """
 
 from __future__ import annotations
@@ -37,10 +37,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-# MLA layernorm kept in fp32 and sharded separately by the FSDP2 quantized path.
-MISTRAL_LARGE4_FP32_SHARD_CLASSES = ("MistralLarge4TextRMSNorm", "MistralLarge4RMSNorm")
-
-_TEXT_TYPES = {"mistral_large4", "mistral_large4_text"}
+MISTRAL_LARGE4_FP32_SHARD_CLASSES = ("MistralLarge4RMSNorm",)
 
 
 def is_mistral_large4_nvfp4_modelopt(cfg) -> bool:
@@ -50,14 +47,6 @@ def is_mistral_large4_nvfp4_modelopt(cfg) -> bool:
         model_config is not None
         and str(getattr(model_config, "model_type", "")) == "mistral_large4"
     )
-
-
-def _model_type(cfg) -> str:
-    return str(getattr(load_base_model_config(cfg), "model_type", ""))
-
-
-def _is_mistral_large4(cfg) -> bool:
-    return _model_type(cfg) in _TEXT_TYPES
 
 
 def _has_fp8_linear(model) -> bool:
@@ -86,11 +75,9 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
         ) and is_mistral_large4_nvfp4_modelopt(cfg)
 
     def matches(self, cfg) -> bool:
-        if self._loads_nvfp4(cfg):
-            return True
-        if bool(cfg.get("use_mistral_large4_kernels")):
-            return True
-        return _is_mistral_large4(cfg)
+        # mistral_large4_text has no loadable model class, so only the top-level type can load
+        model_config = load_base_model_config(cfg)
+        return str(getattr(model_config, "model_type", "")) == "mistral_large4"
 
     def _conversion_model_type(self, cfg) -> str:
         return "mistral_large4_text"
@@ -114,14 +101,20 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
         return layout
 
     def pre_model_load(self, cfg) -> None:
-        # Keep the MLA RMSNorms in their own fp32 shard group under the FSDP2 quantized path.
-        from axolotl.monkeypatch.accelerate.fsdp2_quantized import (
-            register_fp32_shard_classes,
-        )
-
-        register_fp32_shard_classes(MISTRAL_LARGE4_FP32_SHARD_CLASSES)
+        model_config = load_base_model_config(cfg)
+        if cfg.get("trust_remote_code") and getattr(model_config, "auto_map", None):
+            raise ValueError(
+                f"{cfg.base_model} ships remote modeling code (auto_map), but the Mistral Large 4 "
+                "kernels target transformers' built-in modeling. Drop trust_remote_code."
+            )
         if self._loads_nvfp4(cfg):
             super().pre_model_load(cfg)
+        if not is_mistral_large4_nvfp4_modelopt(cfg):
+            from axolotl.monkeypatch.accelerate.fsdp2_quantized import (
+                register_fp32_shard_classes,
+            )
+
+            register_fp32_shard_classes(MISTRAL_LARGE4_FP32_SHARD_CLASSES)
 
     def pre_lora_load(self, cfg, model) -> None:
         # NOTE: grouped-expert requant (mxfp8 / nvfp4) is model-agnostic and runs at the plugin level
@@ -141,13 +134,17 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
         super().post_model_load(cfg, model)
         self._patch_attn_lora(cfg, model)
 
-    @staticmethod
-    def _patch_attn_lora(cfg, model) -> None:
-        """Fused quant-dispatching LoRA for the MLA attention projections. Default on for a LoRA
-        run; disable with ``mistral_large4_attn_lora_kernel: false``."""
+    def _attn_lora_kernel_enabled(self, cfg) -> bool:
         if cfg.get("adapter") != "lora":
-            return
-        if cfg.get("mistral_large4_attn_lora_kernel") is False:
+            return False
+        flag = cfg.get("mistral_large4_attn_lora_kernel")
+        if flag is not None:
+            return bool(flag)
+        return not is_mistral_large4_nvfp4_modelopt(cfg)
+
+    def _patch_attn_lora(self, cfg, model) -> None:
+        """Fused quant-dispatching LoRA for the MLA attention projections."""
+        if not self._attn_lora_kernel_enabled(cfg):
             return
         from axolotl.integrations.kernels.libs.mistral_large4 import (
             patch_mistral_large4_attn_lora,
