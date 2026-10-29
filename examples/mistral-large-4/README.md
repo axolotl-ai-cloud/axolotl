@@ -24,6 +24,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     ```
 
 PS: We're still working on this and will add more configs in coming days.
+Due to limited compute, we can only do minor testing, so please let us know if you find any issues!
 
 ## Reasoning Effort
 
