@@ -8,7 +8,7 @@ python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expec
 set -o pipefail
 bash ./cicd/prepare_hf_cache.sh
 
-env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=4, trust_remote_code=True)"
 
 pytest -v --durations=10 -n1 --maxfail=10 -m gpu \
   /workspace/axolotl/tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \

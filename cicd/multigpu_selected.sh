@@ -8,7 +8,7 @@ python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expec
 IFS=',' read -ra SELECTED <<< "$E2E_SELECTED_TESTS"
 
 bash ./cicd/prepare_hf_cache.sh
-env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=4, trust_remote_code=True)"
 
 SOLO=() PATCHED=() REST=()
 for f in "${SELECTED[@]}"; do
