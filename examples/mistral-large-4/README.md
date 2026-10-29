@@ -33,6 +33,12 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     axolotl train examples/mistral-large-4/nvfp4-lora-vision.yml
     ```
 
+6. Merge the adapter into the checkpoint. The merged model keeps the NVFP4/FP8 formats and is written to `<output_dir>/merged`:
+
+    ```bash
+    axolotl merge-lora examples/mistral-large-4/nvfp4-lora-text.yml --lora-model-dir="./outputs/mistral-large-4-nvfp4-lora"
+    ```
+
 PS: We're still working on this and will add more configs in coming days.
 Due to limited compute, we can only do minor testing, so please let us know if you find any issues!
 
@@ -59,6 +65,7 @@ An assistant message's `reasoning_content` is rendered as a `[THINK]...[/THINK]`
 ## Tips
 
 - Only `sdpa` and `eager` attention are supported.
+- The HF repo does not ship a `config.json` yet, so the configs set `base_model_config` to `examples/mistral-large-4/config` (run from the axolotl root or after `axolotl fetch examples`) and load the tokenizer from the repo. Drop `base_model_config`, `tokenizer_config` and `processor_config` once the repo adds one.
 - The example trains merge-aware NVFP4 LoRA (`nvfp4_merge_aware`) so `axolotl merge-lora` keeps the adapter in the NVFP4 checkpoint. See [NVFP4 LoRA](https://docs.axolotl.ai/docs/nvfp4_lora.html).
 - `expert_parallel_backend: deep_ep` needs [DeepEP](https://github.com/deepseek-ai/DeepEP) v1.2.1, built per the [expert-parallel README](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/expert_parallel/README.md#installation). Without it, set `expert_parallel_backend: torch` (1.3-2.2x slower in our tests).
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
