@@ -37,7 +37,7 @@ def scattermoe_unsupported_expert_dtype(cfg) -> str | None:
 
 def check_scattermoe_expert_dtype(cfg) -> None:
     """Refuse DeepSeek's packed-FP4 experts under scattermoe and warn on block-FP8 ones, which
-    load on the stock FP8 path and need a grouped expert mode to convert them."""
+    load on the stock FP8 path but have no scattermoe kernel."""
     expert_dtype = scattermoe_unsupported_expert_dtype(cfg)
     if expert_dtype is None:
         return
@@ -48,8 +48,6 @@ def check_scattermoe_expert_dtype(cfg) -> None:
             "scales), not NVFP4 (quantization_config.moe_quant_algo: NVFP4, e.g. "
             "nvidia/DeepSeek-V4-Flash-NVFP4). Use the NVFP4 checkpoint or drop use_scattermoe."
         )
-    if cfg.get("moe_grouped_mode") or cfg.get("dsv4_fp4_grouped_mode"):
-        return
     LOG.warning(
         "use_scattermoe with use_dsv4_kernels: %s has blockwise expert_dtype=%r routed experts. "
         "They load with their *_scale_inv block scales, which the scattermoe experts forward does "

@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0
 
 """The DeepSeek-V4 adapter refuses use_scattermoe for DeepSeek's packed-FP4 experts and warns on
-block-FP8 experts unless a grouped expert mode is set, before the quantizer is installed."""
+block-FP8 experts, before the quantizer is installed."""
 
 from types import SimpleNamespace
 
@@ -61,14 +61,12 @@ def test_deepseek_fp4_experts_are_refused(monkeypatch):
         DSV4Adapter().pre_model_load(cfg)
 
 
-def test_block_fp8_experts_warn(monkeypatch):
+@pytest.mark.parametrize(
+    "grouped_mode",
+    [{}, {"moe_grouped_mode": "nvfp4"}, {"dsv4_fp4_grouped_mode": "nvfp4"}],
+    ids=["no_grouped_mode", "moe_grouped_mode", "dsv4_fp4_grouped_mode"],
+)
+def test_block_fp8_experts_warn(monkeypatch, grouped_mode):
     warnings = _record_warnings(monkeypatch)
-    check_scattermoe_expert_dtype(_cfg(monkeypatch, FP8_EXPERTS))
+    check_scattermoe_expert_dtype(_cfg(monkeypatch, FP8_EXPERTS, **grouped_mode))
     assert len(warnings) == 1 and "expert_dtype='fp8'" in warnings[0]
-
-
-@pytest.mark.parametrize("mode_key", ["moe_grouped_mode", "dsv4_fp4_grouped_mode"])
-def test_block_fp8_experts_with_grouped_mode_are_left_to_it(monkeypatch, mode_key):
-    warnings = _record_warnings(monkeypatch)
-    check_scattermoe_expert_dtype(_cfg(monkeypatch, FP8_EXPERTS, **{mode_key: "nvfp4"}))
-    assert warnings == []
