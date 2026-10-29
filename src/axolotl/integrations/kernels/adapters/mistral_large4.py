@@ -49,14 +49,6 @@ def is_mistral_large4_nvfp4_modelopt(cfg) -> bool:
     )
 
 
-def _has_fp8_linear(model) -> bool:
-    try:
-        from transformers.integrations.finegrained_fp8 import FP8Linear
-    except Exception:
-        return False
-    return any(isinstance(m, FP8Linear) for m in model.modules())
-
-
 def _renamed_suffix(suffix: str, renamings: list) -> str:
     key = f"layers.0.{suffix}.weight"
     for renaming in renamings:
@@ -115,20 +107,6 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
             )
 
             register_fp32_shard_classes(MISTRAL_LARGE4_FP32_SHARD_CLASSES)
-
-    def pre_lora_load(self, cfg, model) -> None:
-        # NOTE: grouped-expert requant (mxfp8 / nvfp4) is model-agnostic and runs at the plugin level
-        # (requant_grouped_experts) BEFORE this hook, so the fp8-linear patch below sees only the
-        # non-expert linears. moe_grouped_mode='fp8_block' keeps the block-fp8 experts native.
-        #
-        # A FineGrainedFP8 base can't backprop through transformers' fp8 GEMM (no autograd). If any
-        # fp8 (non-expert) linear remains, install the dequant-autograd forward so LoRA works.
-        if _has_fp8_linear(model):
-            from axolotl.integrations.kernels.libs.mistral_large4.fp8_training import (
-                patch_fp8_linear_training,
-            )
-
-            patch_fp8_linear_training()
 
     def post_model_load(self, cfg, model) -> None:
         super().post_model_load(cfg, model)
