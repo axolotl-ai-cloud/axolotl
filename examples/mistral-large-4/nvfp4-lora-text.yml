@@ -2,6 +2,9 @@
 # SonicMoE keeps the NVFP4 experts packed and trains merge-aware LoRA, so the adapter survives the
 # NVFP4 merge (ordinary expert LoRA rounds away). The FP8 projections dequantize to bf16 at load.
 base_model: mistralai/Mistral-Large-4-1T-A52B-NVFP4
+# the repo ships no config.json yet; run from the axolotl root (or `axolotl fetch examples`)
+base_model_config: examples/mistral-large-4/config
+tokenizer_config: mistralai/Mistral-Large-4-1T-A52B-NVFP4
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
