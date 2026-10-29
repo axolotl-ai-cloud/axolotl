@@ -286,14 +286,17 @@ def _renamed_key_candidates(
         return []
 
     candidates = []
-    composed = clean_key
-    for src_pattern, tgt_pattern in weight_renamings.items():
-        renamed = re.sub(src_pattern, tgt_pattern, clean_key)
-        if renamed != clean_key:
-            candidates.append(renamed)
-        composed = re.sub(src_pattern, tgt_pattern, composed)
-    if composed != clean_key and composed not in candidates:
-        candidates.append(composed)
+    # module paths lack the trailing "." that dot-terminated patterns (`\.wq\.`) need
+    for key in (clean_key, clean_key + "."):
+        composed = key
+        for src_pattern, tgt_pattern in weight_renamings.items():
+            renamed = re.sub(src_pattern, tgt_pattern, key).removesuffix(".")
+            if renamed != clean_key and renamed not in candidates:
+                candidates.append(renamed)
+            composed = re.sub(src_pattern, tgt_pattern, composed)
+        composed = composed.removesuffix(".")
+        if composed != clean_key and composed not in candidates:
+            candidates.append(composed)
     return candidates
 
 
