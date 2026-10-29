@@ -15,7 +15,7 @@ from tree_testing import assert_tree_matches_alone, branching_sequences, pack
 
 pytest.importorskip("transformers")
 
-MAMBA2 = {"mamba_n_heads": 4, "mamba_d_head": 16, "mamba_n_groups": 2}
+MAMBA2 = {"mamba_n_heads": 8, "mamba_d_head": 8, "mamba_n_groups": 2}
 MAMBA2.update(mamba_d_state=8, mamba_d_conv=4, mamba_expand=2, mamba_chunk_size=8)
 ATTENTION = {"num_attention_heads": 2, "num_key_value_heads": 1}
 # model type -> (causal LM, config kwargs)
@@ -32,8 +32,8 @@ FAMILIES = {
             "head_dim": 16,
             "intermediate_size": 64,
             "ssm_state_size": 8,
-            "mamba_num_heads": 4,
-            "mamba_head_dim": 16,
+            "mamba_num_heads": 8,
+            "mamba_head_dim": 8,
             "n_groups": 2,
             "conv_kernel": 4,
             "chunk_size": 8,
@@ -67,8 +67,8 @@ FAMILIES = {
         "Mamba2ForCausalLM",
         {
             "num_hidden_layers": 2,
-            "num_heads": 4,
-            "head_dim": 16,
+            "num_heads": 8,
+            "head_dim": 8,
             "expand": 2,
             "n_groups": 2,
             "state_size": 8,
@@ -79,8 +79,9 @@ FAMILIES = {
 }
 
 
-def build(model_type, gradient_checkpointing=False):
+def build(model_type, gradient_checkpointing=False, **overrides):
     causal_lm, config_kwargs = FAMILIES[model_type]
+    config_kwargs = {**config_kwargs, **overrides}
     modeling = importlib.import_module(
         f"transformers.models.{model_type}.modeling_{model_type}"
     )
@@ -170,6 +171,29 @@ def test_declining_fused_kernel_falls_back_to_the_unfused_path(monkeypatch, mode
     assert install(model).mode == "tree"
     assert_tree_matches_alone(model, branching_sequences(), rtol=1e-4)
     assert declined
+
+
+def test_fused_kernel_is_skipped_on_rows_mamba_ssm_cannot_reset(monkeypatch):
+    """mamba-ssm copies a row whose width is not a multiple of 8 channel-first, where
+    its conv refuses seq_idx: the unfused path takes the tree instead."""
+    modeling, model = build("nemotron_h", mamba_num_heads=4, mamba_head_dim=16)
+    fused_widths = []
+
+    def fused(zxbcdt, *args, seq_idx=None, **kwargs):
+        if seq_idx is not None:
+            fused_widths.append(zxbcdt.shape[-1])
+        return reference.mamba_split_conv1d_scan_combined(
+            zxbcdt, *args, seq_idx=seq_idx, **kwargs
+        )
+
+    monkeypatch.setattr(modeling, "mamba2_split_conv1d_scan_combined", fused)
+    monkeypatch.setattr(
+        modeling, "mamba2_chunk_scan", reference.mamba_chunk_scan_combined
+    )
+    monkeypatch.setattr(modeling, "causal_conv1d_fn", reference.causal_conv1d)
+    assert install(model).mode == "tree"
+    assert_tree_matches_alone(model, branching_sequences(), rtol=1e-4)
+    assert not fused_widths
 
 
 def test_chains_and_collation_padding():
