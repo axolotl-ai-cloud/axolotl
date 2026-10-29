@@ -3529,14 +3529,12 @@ class TestQuantizedBaseMerge:
         assert torch.allclose(out.float(), exp, atol=1e-3)
 
     def test_partial_dequant_reports_left_quantized(self):
-        """A shard with a dequantizable tensor AND an unsupported quantized tensor (per-tensor fp8,
-        scalar scale) must report left_quantized=True so the caller keeps quantization_config."""
+        """A shard with a dequantizable tensor AND an unsupported quantized tensor (uint8 with a
+        scalar fp32 scale) must report left_quantized=True so the caller keeps quantization_config."""
         from axolotl.cli.utils.lora_merge import _dequantize_quantized_shard
 
         blk = torch.randn(16, 16).to(torch.float8_e4m3fn)  # block-fp8 (handled)
-        pt = torch.randn(8, 8).to(
-            torch.float8_e4m3fn
-        )  # per-tensor fp8 (unsupported here)
+        pt = torch.randint(0, 255, (8, 8), dtype=torch.uint8)  # unsupported here
         shard = {
             "a.weight": blk,
             "a.weight_scale_inv": torch.ones(1, 1),
@@ -3546,7 +3544,7 @@ class TestQuantizedBaseMerge:
         out, did, left, _ = _dequantize_quantized_shard(shard, "cpu")
         assert did and left
         assert out["a.weight"].dtype == torch.bfloat16  # dequantized
-        assert out["b.weight"].dtype == torch.float8_e4m3fn  # left as-is
+        assert out["b.weight"].dtype == torch.uint8  # left as-is
         assert "b.weight_scale" in out  # its scale not dropped
 
 

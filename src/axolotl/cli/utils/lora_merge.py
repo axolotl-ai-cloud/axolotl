@@ -1282,7 +1282,7 @@ def _detect_bnb_4bit_base(base_model_path: Path) -> bool:
 
 def _detect_quant_format(key, w, shard_tensors, e8m0):
     """Return (fmt, {suffix: scale_tensor}) for a quantized weight ``key``, else (None, {}).
-    fmt in {block_fp8, mxfp8, nvfp4, mxfp4}."""
+    fmt in {block_fp8, modelopt_fp8, mxfp8, nvfp4, mxfp4}."""
     si = shard_tensors.get(key + "_scale_inv")
     sc = shard_tensors.get(key + "_scale")
     sc2 = shard_tensors.get(key + "_scale_2")
@@ -1293,6 +1293,9 @@ def _detect_quant_format(key, w, shard_tensors, e8m0):
         return "block_fp8", {"_scale_inv": si}
     if w.dtype == torch.float8_e4m3fn and is_e8m0:
         return "mxfp8", {"_scale": sc}
+    # modelopt static FP8: fp32 `weight_scale` multiplier, per-tensor or block (FP8_PB_WO, 4D)
+    if w.dtype == torch.float8_e4m3fn and sc is not None and sc.dtype == torch.float32:
+        return "modelopt_fp8", {"_scale": sc}
     if w.dtype == torch.uint8 and sc is not None and sc.dtype == torch.float8_e4m3fn:
         scales = {"_scale": sc}
         if sc2 is not None:
@@ -1303,9 +1306,19 @@ def _detect_quant_format(key, w, shard_tensors, e8m0):
     return None, {}
 
 
+def _modelopt_fp8_scale_grid(scale: torch.Tensor) -> torch.Tensor:
+    """modelopt FP8 ``weight_scale`` as a 2D block grid: 4D [R/b, 1, C/b, 1] block, [N, 1] per-row
+    or scalar per-tensor."""
+    if scale.ndim == 4:
+        return scale[:, 0, :, 0]
+    return scale.reshape(-1, 1) if scale.numel() > 1 else scale.reshape(1, 1)
+
+
 def _dequant_by_format(fmt, w, scales, dev):
     if fmt == "block_fp8":
         return _dequant_block_fp8(w, scales["_scale_inv"], dev)
+    if fmt == "modelopt_fp8":
+        return _dequant_block_fp8(w, _modelopt_fp8_scale_grid(scales["_scale"]), dev)
     if fmt == "mxfp8":
         return _dequant_mxfp8(w, scales["_scale"], dev)
     if fmt == "nvfp4":
@@ -1342,6 +1355,21 @@ def _requant_by_format(fmt, w_bf16, scales, dev, nvfp4_scale_mode="reuse"):
         return {
             "": q.reshape(*lead, N, K).cpu(),
             "_scale_inv": scale_inv.reshape(*lead, sr, sc).to(si.dtype).cpu(),
+        }
+    if fmt == "modelopt_fp8":
+        sc = scales["_scale"]
+        grid = _modelopt_fp8_scale_grid(sc)
+        N, K = w.shape
+        sr, sk = grid.shape
+        wb = w.reshape(sr, N // sr, sk, K // sk)
+        scale = wb.abs().amax(dim=(1, 3), keepdim=True).clamp_min(1e-12) / 448.0
+        if bool((torch.frexp(grid.float())[0].abs() == 0.5).all()):
+            # keep the checkpoint's power-of-two scales (exact in any scale dtype)
+            scale = torch.exp2(torch.ceil(torch.log2(scale)))
+        q = (wb / scale).clamp_(-448, 448).to(torch.float8_e4m3fn)
+        return {
+            "": q.reshape(N, K).cpu(),
+            "_scale": scale.reshape(sc.shape).to(sc.dtype).cpu(),
         }
     if fmt == "mxfp8":
         q, ebyte = _quant_mx(w, 32)
