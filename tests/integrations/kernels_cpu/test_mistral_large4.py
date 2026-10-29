@@ -267,3 +267,127 @@ def test_attn_lora_generic_path_keeps_input_shape(lead):
     assert got[0].shape == (*lead, proj.out_features)
     for g, w in zip(got, want, strict=True):
         torch.testing.assert_close(g, w, rtol=1e-5, atol=1e-6)
+
+
+# 128-aligned dims so q_proj / o_proj take the blockwise-fp8 path. Every expert per token and
+# every key per query: bf16 rounding can't flip a discrete MoE / DSA top-k choice.
+FP8_TEXT = dict(
+    TEXT,
+    num_experts_per_tok=TEXT["n_routed_experts"],
+    index_topk=2048,
+    hidden_size=256,
+    intermediate_size=256,
+    moe_intermediate_size=128,
+    num_attention_heads=2,
+    num_key_value_heads=2,
+    kv_lora_rank=128,
+    qk_rope_head_dim=64,
+    qk_nope_head_dim=64,
+    v_head_dim=128,
+    index_head_dim=128,
+)
+FP8_BLOCK = [128, 128]
+
+
+def _dequant_linear(
+    input,
+    weight,
+    weight_scale_inv,
+    block_size=None,
+    bias=None,
+    activation_scale=None,
+    allow_deepgemm=True,
+):
+    from axolotl.kernels.quantize import dequantize_fp8
+
+    out = input @ dequantize_fp8(weight, weight_scale_inv, input.dtype).t()
+    return out if bias is None else out + bias
+
+
+@pytest.fixture
+def fp8_linear(monkeypatch):
+    from unittest import mock
+
+    from transformers.integrations import finegrained_fp8
+
+    fake = mock.create_autospec(finegrained_fp8.fp8_linear, side_effect=_dequant_linear)
+    monkeypatch.setattr(finegrained_fp8, "fp8_linear", fake)
+    return fake
+
+
+def _fp8_linear_from(linear: nn.Linear):
+    from transformers.integrations.finegrained_fp8 import FP8Linear
+
+    out_f, in_f = linear.weight.shape
+    w = linear.weight.detach().float()
+    blocks = w.reshape(out_f // 128, 128, in_f // 128, 128)
+    scale = blocks.abs().amax(dim=(1, 3)).clamp(min=1e-8) / 448.0
+    qdata = (blocks / scale[:, None, :, None]).reshape(out_f, in_f)
+    fp8 = FP8Linear(in_f, out_f, block_size=tuple(FP8_BLOCK), has_bias=False)
+    fp8.weight = nn.Parameter(qdata.to(torch.float8_e4m3fn), requires_grad=False)
+    fp8.weight_scale_inv = nn.Parameter(scale, requires_grad=False)
+    return fp8
+
+
+def _tiny_fp8_peft_model(lora_dropout):
+    from peft import LoraConfig, get_peft_model
+
+    torch.manual_seed(0)
+    config = MistralLarge4Config(text_config=FP8_TEXT, vision_config=VISION)
+    config._attn_implementation = "eager"
+    # bf16 like a real run: the LoRA_O fallback dequantizes the fp8 base to bf16
+    model = AutoModelForImageTextToText.from_config(config).to(torch.bfloat16)
+    for layer in model.model.language_model.layers:
+        layer.self_attn.q_proj = _fp8_linear_from(layer.self_attn.q_proj)
+        layer.self_attn.o_proj = _fp8_linear_from(layer.self_attn.o_proj)
+    peft_model = get_peft_model(
+        model,
+        LoraConfig(
+            r=4,
+            lora_alpha=8,
+            lora_dropout=lora_dropout,
+            target_modules=r".*language_model.*\.(q_proj|kv_b_proj|o_proj)",
+        ),
+    )
+    for name, param in peft_model.named_parameters():
+        if "lora_B" in name:
+            nn.init.normal_(param, std=0.02)
+    return peft_model
+
+
+@pytest.mark.parametrize("lora_dropout", [0.0, 0.1])
+def test_native_fp8_attn_lora_matches_peft(fp8_linear, lora_dropout):
+    from axolotl.integrations.kernels.libs.dsv4 import lora_fp8
+
+    model = _tiny_fp8_peft_model(lora_dropout).train()
+    input_ids = torch.randint(1, FP8_TEXT["vocab_size"], (2, 12))
+    torch.manual_seed(1)
+    ref_logits, ref_grads = _loss_and_grads(model, input_ids)
+
+    assert patch_mistral_large4_attn_lora(model, native_fp8=True) == 12
+    native_calls = []
+    orig_apply = lora_fp8._NativeFp8Lora.apply
+
+    def counting_apply(*args):
+        native_calls.append(args[0].shape)
+        return orig_apply(*args)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(lora_fp8._NativeFp8Lora, "apply", counting_apply)
+        torch.manual_seed(1)
+        logits, grads = _loss_and_grads(model, input_ids)
+
+    # q_proj + o_proj on each layer run the native fp8 GEMM unless dropout needs LoRA_O
+    assert len(native_calls) == (
+        0 if lora_dropout else 2 * FP8_TEXT["num_hidden_layers"]
+    )
+    # bf16 rounding only; a wrong dropout mask or a dropped base input is an O(1) error
+    assert _rel_err(logits, ref_logits) < 3e-2
+    assert grads.keys() == ref_grads.keys()
+    for name, ref in ref_grads.items():
+        assert _rel_err(grads[name], ref) < 8e-2, name
+
+
+def _rel_err(got, want):
+    got, want = got.float(), want.float()
+    return ((got - want).norm() / want.norm().clamp_min(1e-12)).item()

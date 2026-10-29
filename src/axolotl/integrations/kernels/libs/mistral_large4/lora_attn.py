@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import types
 
+from torch import nn
+
 from axolotl.kernels.lora import LoRA_O, _apply_dropout, get_lora_parameters
 from axolotl.utils.logging import get_logger
 
@@ -115,28 +117,33 @@ def _make_forward(name: str, native_fp8: bool):
                 _NativeFp8Lora,
             )
 
-            W, b, _qs, A, B, s, _lb, drop, _mag = get_lora_parameters(self)
+            W, b, _qs, A, B, s, lb, drop, mag = get_lora_parameters(self)
             fp8 = _fp8_from_weight(W, self.base_layer)
             # The blockwise-fp8 GEMM needs the contraction dim aligned to the block. Real
             # Mistral-Large-4 dims are all 128-multiples; guard so odd dims fall back cleanly.
             block_k = fp8[2][-1] if fp8 is not None else 128
             aligned = fp8 is not None and (W.shape[-1] % block_k == 0)
-            if fp8 is not None and A is not None and aligned:
+            # _NativeFp8Lora feeds one input to the base and LoRA GEMMs and has no DoRA / LoRA
+            # bias, so active dropout or either variant goes through LoRA_O instead.
+            dropout_active = self.training and not (
+                drop is None or isinstance(drop, nn.Identity)
+            )
+            plain_lora = mag is None and lb is None and not dropout_active
+            if fp8 is not None and A is not None and aligned and plain_lora:
                 qdata, scale_inv, block_size = fp8
-                xin = drop(x) if drop is not None else x
                 # PEFT keeps LoRA A/B in fp32; the fused fp8 GEMM contracts against the bf16
                 # activation, so match the compute dtype (grads still flow to the fp32 masters).
                 return _NativeFp8Lora.apply(
-                    xin,
+                    x,
                     qdata,
                     scale_inv,
                     block_size,
-                    A.to(xin.dtype),
-                    B.to(xin.dtype),
+                    A.to(x.dtype),
+                    B.to(x.dtype),
                     s,
-                    b.to(xin.dtype) if b is not None else None,
+                    b.to(x.dtype) if b is not None else None,
                 )
-            # unaligned dims / disabled adapter -> fused dequant path (still fp8-aware via LoRA_O)
+            # unaligned dims / disabled adapter / dropout / DoRA -> fused dequant path via LoRA_O
             return _generic_forward(self, x, *args, **kwargs)
 
         if kind in ("nvfp4", "mxfp4", "mxfp8"):
