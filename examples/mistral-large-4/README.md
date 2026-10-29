@@ -65,6 +65,7 @@ An assistant message's `reasoning_content` is rendered as a `[THINK]...[/THINK]`
 ## Tips
 
 - Only `sdpa` and `eager` attention are supported.
+- Only the routed experts (merge-aware NVFP4) and the bf16 `kv_a_proj_with_mqa` / `kv_b_proj` are merge-exact LoRA targets. `q_proj`, `o_proj`, `shared_experts` and the layer-0 dense MLP are FP8 in the checkpoint: LoRA there trains in bf16, but the merge re-rounds them to FP8 and drops most of the update (about 55% in our tests), so the configs leave them out.
 - The HF repo does not ship a `config.json` yet, so the configs set `base_model_config` to `examples/mistral-large-4/config` (run from the axolotl root or after `axolotl fetch examples`) and load the tokenizer from the repo. Drop `base_model_config`, `tokenizer_config` and `processor_config` once the repo adds one.
 - The example trains merge-aware NVFP4 LoRA (`nvfp4_merge_aware`) so `axolotl merge-lora` keeps the adapter in the NVFP4 checkpoint. See [NVFP4 LoRA](https://docs.axolotl.ai/docs/nvfp4_lora.html).
 - `expert_parallel_backend: deep_ep` needs [DeepEP](https://github.com/deepseek-ai/DeepEP) v1.2.1, built per the [expert-parallel README](https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/expert_parallel/README.md#installation). Without it, set `expert_parallel_backend: torch` (1.3-2.2x slower in our tests).
