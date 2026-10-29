@@ -93,8 +93,12 @@ def _generic_forward(self, x, *args, **kwargs):
     W, b, qs, A, B, s, lb, drop, mag = get_lora_parameters(self)
     if A is None:  # disabled / merged adapter -> original PEFT forward
         return self._ml4_orig_forward(x, *args, **kwargs)
+    # LoRA_O takes [batch, seq, in] only; expand_kv feeds kv_b_proj a [B, 1, S, kv_lora_rank] latent
+    shape = x.shape
+    x = x.reshape(-1, *shape[-2:]) if x.dim() > 2 else x.unsqueeze(0)
     X_drop = _apply_dropout(drop, x, self.training)
-    return LoRA_O.apply(x, X_drop, W, b, qs, A, B, s, lb, mag)
+    out = LoRA_O.apply(x, X_drop, W, b, qs, A, B, s, lb, mag)
+    return out.view(*shape[:-1], out.shape[-1])
 
 
 def _make_forward(name: str, native_fp8: bool):
