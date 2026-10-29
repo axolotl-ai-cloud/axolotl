@@ -61,8 +61,10 @@ def test_weighted_scatter_matches_index_add(w_dtype, router_grad):
     out_ref = dn_ref.new_zeros(N, H).index_add(
         0, rep, dn_ref[padded_row] * w_ref[:, None].to(dn_ref.dtype)
     )
-    # fused multiplies in fp32 before the bf16 round; ref rounds w to bf16 first
-    torch.testing.assert_close(out, out_ref, rtol=2e-2, atol=2e-2)
+    # fused multiplies in fp32 before the bf16 round; ref rounds w to bf16 first. Both sum a token's
+    # top_k rows with bf16 atomics in arbitrary order, so a cancelling sum can be ~2 ulps of the
+    # addends (|x| up to ~8) off.
+    torch.testing.assert_close(out, out_ref, rtol=2e-2, atol=6e-2)
 
     go = torch.randn_like(out)
     out.backward(go)
