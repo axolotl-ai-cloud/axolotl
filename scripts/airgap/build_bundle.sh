@@ -35,7 +35,7 @@ TORCH_BACKEND=${TORCH_BACKEND:-cu130}
 KERNELS=${KERNELS:-fa2}
 if [ "${TARGET_ARCH:-$(uname -m)}" = aarch64 ]; then EXTRAS=${EXTRAS-ringmaster,ray}; else EXTRAS=${EXTRAS-fla,ringmaster,ray,deepspeed}; fi
 WITH_CCE=${WITH_CCE:-1}
-CCE_REQ=${CCE_REQ:-cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.0}
+CCE_REQ=${CCE_REQ:-cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.1}
 PREPROCESS=${PREPROCESS:-1}
 SPLIT_SIZE=${SPLIT_SIZE:-}
 STAGING_VENV=${STAGING_VENV:-$(dirname "$BUNDLE")/.venv-airgap-staging}
