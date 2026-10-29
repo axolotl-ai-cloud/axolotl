@@ -37,6 +37,18 @@ class CutCrossEntropyArgs(BaseModel):
             "description": "Accumulate the classifier (lm_head) gradient in fp32 for better numerical stability at the cost of a full fp32 copy of the gradient."
         },
     )
+    cut_cross_entropy_accum_e_fp32: Optional[bool] = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Accumulate the hidden-state gradient (what flows back into the model and its LoRA weights) in fp32. bf16 accumulation across a large vocabulary understates it."
+        },
+    )
+    cut_cross_entropy_gradient_filtering: Optional[bool] = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Skip vocabulary blocks whose softmax values fall below bf16 precision in the backward pass (CCE filter_eps='auto'). Disable for exact gradients."
+        },
+    )
     cut_cross_entropy_c_grad_chunk_size: Optional[int | Literal["auto"]] = Field(
         default=None,
         json_schema_extra={

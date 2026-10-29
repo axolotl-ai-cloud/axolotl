@@ -4,6 +4,7 @@ import math
 import os
 import re
 import shutil
+import tempfile
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -18,6 +19,7 @@ from peft import LoraConfig
 from peft.utils.other import get_pattern_key
 from tqdm import tqdm
 
+from axolotl.cli.utils.compiled_lora_merge import _ieee_matmul
 from axolotl.cli.utils.param_wrapper_merge import (
     BASE_LAYER_NESTING,
     ParamWrapperTarget,
@@ -288,14 +290,17 @@ def _renamed_key_candidates(
         return []
 
     candidates = []
-    composed = clean_key
-    for src_pattern, tgt_pattern in weight_renamings.items():
-        renamed = re.sub(src_pattern, tgt_pattern, clean_key)
-        if renamed != clean_key:
-            candidates.append(renamed)
-        composed = re.sub(src_pattern, tgt_pattern, composed)
-    if composed != clean_key and composed not in candidates:
-        candidates.append(composed)
+    # module paths lack the trailing "." that dot-terminated patterns (`\.wq\.`) need
+    for key in (clean_key, clean_key + "."):
+        composed = key
+        for src_pattern, tgt_pattern in weight_renamings.items():
+            renamed = re.sub(src_pattern, tgt_pattern, key).removesuffix(".")
+            if renamed != clean_key and renamed not in candidates:
+                candidates.append(renamed)
+            composed = re.sub(src_pattern, tgt_pattern, composed)
+        composed = composed.removesuffix(".")
+        if composed != clean_key and composed not in candidates:
+            candidates.append(composed)
     return candidates
 
 
@@ -875,8 +880,57 @@ def _build_peft_layer_and_get_delta(
         return layer.get_delta_weight(adapter_name)
 
 
+def _transformers_weights_index(model_path: Path) -> Optional[str]:
+    """The safetensors index config ``transformers_weights`` names (e.g. Mistral's consolidated
+    checkpoints), when it exists in ``model_path``."""
+    config = model_path / "config.json"
+    if not config.exists():
+        return None
+    name = json.loads(config.read_text()).get("transformers_weights")
+    if (
+        isinstance(name, str)
+        and name.endswith(".safetensors.index.json")
+        and (model_path / name).exists()
+    ):
+        return name
+    return None
+
+
+def _cross_shard_scales(model_path: Path) -> Dict[str, torch.Tensor]:
+    """fp32 ``weight_scale`` tensors stored in a different shard than their weight (Mistral's
+    consolidated checkpoints split them). Per-expert scales are left out: the expert-merge writer
+    already gathers expert groups across shards."""
+    index_name = (
+        _transformers_weights_index(model_path) or "model.safetensors.index.json"
+    )
+    if not (model_path / index_name).exists():
+        return {}
+    weight_map = json.loads((model_path / index_name).read_text())["weight_map"]
+    by_shard: Dict[str, list[str]] = {}
+    for key, shard in weight_map.items():
+        weight_shard = weight_map.get(key.removesuffix("_scale"))
+        if (
+            key.endswith(".weight_scale")
+            and ".experts." not in key
+            and weight_shard not in (None, shard)
+        ):
+            by_shard.setdefault(shard, []).append(key)
+    out: Dict[str, torch.Tensor] = {}
+    for shard, keys in by_shard.items():
+        with safetensors.safe_open(model_path / shard, framework="pt") as f:
+            for key in keys:
+                if f.get_slice(key).get_dtype() == "F32":
+                    out[key] = f.get_tensor(key)
+    return out
+
+
 def get_model_shards(model_path: Path) -> list[Path]:
     """Find all model shards in the given path."""
+    index_name = _transformers_weights_index(model_path)
+    if index_name is not None:
+        weight_map = json.loads((model_path / index_name).read_text())["weight_map"]
+        return sorted(model_path / shard for shard in set(weight_map.values()))
+
     shards: list[Path] = []
 
     patterns = ["model*.safetensors", "pytorch_model*.bin"]
@@ -1260,7 +1314,7 @@ def _detect_bnb_4bit_base(base_model_path: Path) -> bool:
 
 def _detect_quant_format(key, w, shard_tensors, e8m0):
     """Return (fmt, {suffix: scale_tensor}) for a quantized weight ``key``, else (None, {}).
-    fmt in {block_fp8, mxfp8, nvfp4, mxfp4}."""
+    fmt in {block_fp8, modelopt_fp8, mxfp8, nvfp4, mxfp4}."""
     si = shard_tensors.get(key + "_scale_inv")
     sc = shard_tensors.get(key + "_scale")
     sc2 = shard_tensors.get(key + "_scale_2")
@@ -1271,6 +1325,9 @@ def _detect_quant_format(key, w, shard_tensors, e8m0):
         return "block_fp8", {"_scale_inv": si}
     if w.dtype == torch.float8_e4m3fn and is_e8m0:
         return "mxfp8", {"_scale": sc}
+    # modelopt static FP8: fp32 `weight_scale` multiplier, per-tensor or block (FP8_PB_WO, 4D)
+    if w.dtype == torch.float8_e4m3fn and sc is not None and sc.dtype == torch.float32:
+        return "modelopt_fp8", {"_scale": sc}
     if w.dtype == torch.uint8 and sc is not None and sc.dtype == torch.float8_e4m3fn:
         scales = {"_scale": sc}
         if sc2 is not None:
@@ -1281,9 +1338,19 @@ def _detect_quant_format(key, w, shard_tensors, e8m0):
     return None, {}
 
 
+def _modelopt_fp8_scale_grid(scale: torch.Tensor) -> torch.Tensor:
+    """modelopt FP8 ``weight_scale`` as a 2D block grid: 4D [R/b, 1, C/b, 1] block, [N, 1] per-row
+    or scalar per-tensor."""
+    if scale.ndim == 4:
+        return scale[:, 0, :, 0]
+    return scale.reshape(-1, 1) if scale.numel() > 1 else scale.reshape(1, 1)
+
+
 def _dequant_by_format(fmt, w, scales, dev):
     if fmt == "block_fp8":
         return _dequant_block_fp8(w, scales["_scale_inv"], dev)
+    if fmt == "modelopt_fp8":
+        return _dequant_block_fp8(w, _modelopt_fp8_scale_grid(scales["_scale"]), dev)
     if fmt == "mxfp8":
         return _dequant_mxfp8(w, scales["_scale"], dev)
     if fmt == "nvfp4":
@@ -1321,6 +1388,14 @@ def _requant_by_format(fmt, w_bf16, scales, dev, nvfp4_scale_mode="reuse"):
             "": q.reshape(*lead, N, K).cpu(),
             "_scale_inv": scale_inv.reshape(*lead, sr, sc).to(si.dtype).cpu(),
         }
+    if fmt == "modelopt_fp8":
+        # reuse the checkpoint scales: they stay valid wherever they are stored (possibly
+        # another shard), and modelopt block scales are exact powers of two
+        grid = _modelopt_fp8_scale_grid(scales["_scale"]).to(dev).float()
+        N, K = w.shape
+        sr, sk = grid.shape
+        wb = w.reshape(sr, N // sr, sk, K // sk) / grid[:, None, :, None]
+        return {"": wb.clamp_(-448, 448).to(torch.float8_e4m3fn).reshape(N, K).cpu()}
     if fmt == "mxfp8":
         q, ebyte = _quant_mx(w, 32)
         s = scales["_scale"]
@@ -1460,6 +1535,7 @@ def _dequantize_quantized_shard(
     dequant_all: bool = True,
     param_wrapper_map: Optional[Dict[str, ParamWrapperTarget]] = None,
     bnb_extra: Optional[Dict[str, torch.Tensor]] = None,
+    foreign_scales: Optional[Dict[str, torch.Tensor]] = None,
 ) -> tuple[Dict[str, torch.Tensor], bool, bool, Dict]:
     """Dequantize quantized weights to bf16 so the LoRA delta folds into the true value.
 
@@ -1507,6 +1583,14 @@ def _dequantize_quantized_shard(
         if w.ndim not in (2, 3):
             continue
         fmt, scales = _detect_quant_format(key, w, shard_tensors, e8m0)
+        if fmt is None and foreign_scales:
+            # sharded checkpoints may store the scale in another shard; only modelopt_fp8 reuses
+            # its scales on requant, so only it can leave that shard's copy untouched
+            fmt, scales = _detect_quant_format(
+                key, w, {**foreign_scales, **shard_tensors}, e8m0
+            )
+            if fmt != "modelopt_fp8":
+                fmt, scales = None, {}
         if fmt is None:
             # a low-bit weight with a scale sibling but an unrecognized format -> keep the config
             if w.dtype in (torch.float8_e4m3fn, torch.uint8) and (
@@ -1528,7 +1612,8 @@ def _dequantize_quantized_shard(
             continue
         out[key] = deq.to(torch.bfloat16).cpu()
         did = True
-        drop.update(key + suf for suf in scales)
+        if dequant_all or fmt != "modelopt_fp8":
+            drop.update(key + suf for suf in scales)
         if not dequant_all:
             plan[key] = (fmt, scales)  # re-quantize after the LoRA fold
     for sk in drop:
@@ -2464,7 +2549,10 @@ def _get_conversion_info(
         )
         if len(src_list) == 1 and len(tgt_list) == 1:
             scoped = _scope_renaming(
-                src_list[0], tgt_list[0], getattr(conv, "scope_prefix", None)
+                src_list[0],
+                tgt_list[0],
+                getattr(conv, "scope_prefix", None),
+                getattr(conv, "base_model_prefix", None),
             )
             if scoped is not None:
                 renamings[scoped[0]] = scoped[1]
@@ -2475,18 +2563,27 @@ def _get_conversion_info(
 
 
 def _scope_renaming(
-    source_pattern: str, target_pattern: str, scope_prefix: Optional[str]
+    source_pattern: str,
+    target_pattern: str,
+    scope_prefix: Optional[str],
+    base_model_prefix: Optional[str] = None,
 ) -> Optional[tuple[str, str]]:
     """Rewrite a sub-module renaming so it matches full checkpoint keys."""
     if not scope_prefix:
         return source_pattern, target_pattern
-    # Re-anchoring an unanchored pattern would let it match outside the scope.
-    if not source_pattern.startswith("^"):
-        return None
-    return (
-        f"^{re.escape(scope_prefix + '.')}{source_pattern[1:]}",
-        f"{scope_prefix}.{target_pattern}",
+    if source_pattern.startswith("^"):
+        return (
+            f"^{re.escape(scope_prefix + '.')}{source_pattern[1:]}",
+            f"{scope_prefix}.{target_pattern}",
+        )
+    # Unanchored: first match after the scope prefix, which is kept (transformers' _scoped_match).
+    prefix = re.escape(scope_prefix + ".")
+    if base_model_prefix:
+        prefix = f"(?:{re.escape(base_model_prefix + '.')})?{prefix}"
+    shifted = re.sub(
+        r"\\(\d+)", lambda m: f"\\g<{int(m.group(1)) + 1}>", target_pattern
     )
+    return f"^({prefix}.*?){source_pattern}", f"\\g<1>{shifted}"
 
 
 def _get_model_conversion_mapping(
@@ -2815,6 +2912,27 @@ def _fuse_and_unfuse_with_merge(
     return result, merged_count, processed_keys
 
 
+def _overlay_base_config(base_dir: Path, config_source: str, overlay: Path) -> Path:
+    """``overlay`` holding symlinks to every file of ``base_dir`` plus ``config_source``'s
+    config.json, so every config.json reader sees the supplied config."""
+    from huggingface_hub import hf_hub_download
+
+    source = Path(config_source)
+    if source.is_dir():
+        config = source / "config.json"
+    elif source.is_file():
+        config = source
+    else:
+        config = Path(hf_hub_download(config_source, "config.json"))
+    for entry in base_dir.iterdir():
+        (overlay / entry.name).symlink_to(entry.resolve())
+    shutil.copy2(config, overlay / "config.json")
+    LOG.info(f"Merging with config.json from base_model_config ({config_source})")
+    return overlay
+
+
+# IEEE fp32: a tf32 config would otherwise round the deltas differently from training
+@_ieee_matmul()
 def merge_lora_sharded_efficient(
     base_model_path: Union[str, Path],
     lora_adapter_path: Union[str, Path],
@@ -2837,11 +2955,15 @@ def merge_lora_sharded_efficient(
     shard_sink: Optional[Callable[[dict[str, torch.Tensor], Path, dict], None]] = None,
     merge_compile: bool = False,
     merge_compile_precision: str = "strict",
+    base_model_config: Optional[str] = None,
     lora_merge_aware: Optional[str] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
     without loading the full model into memory.
+
+    base_model_config: local dir, ``config.json`` path or hub repo supplying the config when
+        the base ships none (e.g. Mistral-native checkpoints).
 
     dequant: if True, dequantize every quantized weight and write a bf16 checkpoint (strips
         quantization_config). Default False = FORMAT-PRESERVING: LoRA-targeted quantized weights are
@@ -2902,6 +3024,12 @@ def merge_lora_sharded_efficient(
     if "/" in str(base_model_path) and not base_model_path.exists():
         base_model_path = Path(
             snapshot_download(str(base_model_path), revision=revision)
+        )
+    config_overlay = None
+    if base_model_config and not (base_model_path / "config.json").exists():
+        config_overlay = tempfile.TemporaryDirectory(prefix="merge-base-")
+        base_model_path = _overlay_base_config(
+            base_model_path, base_model_config, Path(config_overlay.name)
         )
 
     bnb_4bit_base = _detect_bnb_4bit_base(base_model_path)
@@ -3050,6 +3178,7 @@ def merge_lora_sharded_efficient(
     model_shards = get_model_shards(base_model_path)
     if not model_shards:
         raise FileNotFoundError(f"No model shards found in {base_model_path}")
+    foreign_scales = _cross_shard_scales(base_model_path)
 
     token_row_merges = _plan_trainable_token_merges(
         lora_state,
@@ -3230,8 +3359,13 @@ def merge_lora_sharded_efficient(
                     dequant_all=dequant,
                     param_wrapper_map=param_wrapper_map,
                     bnb_extra=bnb_split_components,
+                    foreign_scales=foreign_scales,
                 )
             )
+            if dequant:
+                # their weights are bf16 now, wherever the weight's shard is
+                for key in foreign_scales:
+                    shard_tensors.pop(key, None)
             block_fp8_dequantized = block_fp8_dequantized or _shard_deq
             left_quantized = left_quantized or _shard_left
 
@@ -3413,7 +3547,8 @@ def merge_lora_sharded_efficient(
     if len(model_shards) > 1 and weight_map:
         import json as _json
 
-        index_name = (
+        # keep the name config.json's transformers_weights points at
+        index_name = _transformers_weights_index(base_model_path) or (
             "model.safetensors.index.json"
             if safe_tensors
             else "pytorch_model.bin.index.json"

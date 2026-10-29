@@ -482,6 +482,17 @@ def normalize_config(cfg):
             or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3",
         }
 
+    # Reentrant recompute drops the KV-source layer's gradient from the layers sharing its KV.
+    if cfg.model_config_type == "mistral_large4" and cfg.gradient_checkpointing:
+        if cfg.gradient_checkpointing_kwargs is None:
+            cfg.gradient_checkpointing_kwargs = {}
+        if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
+            LOG.warning(
+                "Mistral Large 4 requires use_reentrant=False for gradient checkpointing. "
+                "Setting use_reentrant=False."
+            )
+            cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
+
     # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms /
     # cross-layer shared KV cause "marked ready twice" errors with reentrant
     # checkpointing) and ddp_find_unused_parameters=True (per_layer_projection

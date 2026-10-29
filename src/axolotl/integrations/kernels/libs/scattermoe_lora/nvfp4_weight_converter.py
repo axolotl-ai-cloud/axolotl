@@ -290,7 +290,11 @@ class Nvfp4ExpertsDeserialize:
 
     The op attaches the fused NVFP4Tensor to the module in-place and returns ``{}``
     so the loader does not try to materialize the original meta-parameter names.
+    ``names`` maps gate/up/down to the checkpoint's proj names (see :func:`routed_proj_names`).
     """
+
+    def __init__(self, names: dict[str, str] | None = None):
+        self.names = names or routed_proj_names(None)
 
     def convert(
         self,
@@ -350,7 +354,8 @@ class Nvfp4ExpertsDeserialize:
                 return t.to(torch.float8_e4m3fn)
             return t
 
-        def _proj_parts(proj_name: str) -> dict:
+        def _proj_parts(proj: str) -> dict:
+            proj_name = self.names[proj]
             return {
                 "qd": [_recast_weight(t) for t in _find(f"{proj_name}.weight")],
                 "sc": [_recast_scale(t) for t in _find(f"{proj_name}.weight_scale")],
@@ -462,10 +467,17 @@ class Nvfp4LinearDequantize:
                 qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts
             ).dequantize(torch.bfloat16)
         elif is_fp8:
-            scale = _one(".weight_scale").to(torch.float32).reshape(-1)
-            # per-tensor (scalar) or per-row scales both broadcast over the last dim
-            scale = scale if scale.numel() == 1 else scale.view(-1, 1)
-            weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
+            scale = _one(".weight_scale").to(torch.float32)
+            if scale.ndim == 4:  # modelopt FP8_PB_WO block scale: [R/b, 1, C/b, 1]
+                from axolotl.kernels.quantize import dequantize_fp8
+
+                weight = dequantize_fp8(w, scale[:, 0, :, 0], torch.float32)
+                weight = weight.to(torch.bfloat16)
+            else:
+                scale = scale.reshape(-1)
+                # per-tensor (scalar) or per-row scales both broadcast over the last dim
+                scale = scale if scale.numel() == 1 else scale.view(-1, 1)
+                weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
         else:
             # A packed (uint8) or scaleless fp8 weight would otherwise load as garbage; the
             # shape check also covers callers that pass skeleton-dtype (bf16) tensors.
@@ -536,6 +548,13 @@ def nonrouted_dequant_converters(nonrouted_suffixes: list[str]) -> list:
     ]
 
 
+def routed_proj_names(routed_projs: list[str] | None) -> dict[str, str]:
+    """Checkpoint proj name of each fused role: ``*_proj``, or Mistral-native ``w1/w3/w2``."""
+    if routed_projs and set(routed_projs) <= {"w1", "w2", "w3"}:
+        return {"gate_proj": "w1", "up_proj": "w3", "down_proj": "w2"}
+    return {p: p for p in ("gate_proj", "up_proj", "down_proj")}
+
+
 def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> list:
     """The two WeightConverter instances for NVFP4 routed experts.
 
@@ -543,8 +562,10 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
     ``routed_projs`` has no gate, the up converter targets ``experts.up_proj`` instead."""
     from transformers.core_model_loading import WeightConverter
 
-    op = Nvfp4ExpertsDeserialize()
-    nongated = routed_projs is not None and "gate_proj" not in set(routed_projs)
+    names = routed_proj_names(routed_projs)
+    gate, up, down = names["gate_proj"], names["up_proj"], names["down_proj"]
+    op = Nvfp4ExpertsDeserialize(names)
+    nongated = routed_projs is not None and gate not in set(routed_projs)
 
     # Source patterns MUST be ordered longest-suffix-first. transformers compiles them into a
     # single ``(?P<g0>...)|(?P<g1>...)`` alternation and resolves a key with ``re.search`` +
@@ -555,9 +576,9 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
     if nongated:
         up_converter = WeightConverter(
             source_patterns=[
-                "experts.*.up_proj.weight_scale_2",
-                "experts.*.up_proj.weight_scale",
-                "experts.*.up_proj.weight",
+                f"experts.*.{up}.weight_scale_2",
+                f"experts.*.{up}.weight_scale",
+                f"experts.*.{up}.weight",
             ],
             target_patterns="experts.up_proj",
             operations=[op],
@@ -567,12 +588,12 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
             source_patterns=[
                 # gate and up each ship their own weight_scale_2 scalar; claim BOTH so neither lands
                 # as an UNEXPECTED key (the op reconciles them: equal in practice, folded if not).
-                "experts.*.gate_proj.weight_scale_2",
-                "experts.*.up_proj.weight_scale_2",
-                "experts.*.gate_proj.weight_scale",
-                "experts.*.up_proj.weight_scale",
-                "experts.*.gate_proj.weight",
-                "experts.*.up_proj.weight",
+                f"experts.*.{gate}.weight_scale_2",
+                f"experts.*.{up}.weight_scale_2",
+                f"experts.*.{gate}.weight_scale",
+                f"experts.*.{up}.weight_scale",
+                f"experts.*.{gate}.weight",
+                f"experts.*.{up}.weight",
             ],
             target_patterns="experts.gate_up_proj",
             operations=[op],
@@ -580,9 +601,9 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
 
     down_converter = WeightConverter(
         source_patterns=[
-            "experts.*.down_proj.weight_scale_2",
-            "experts.*.down_proj.weight_scale",
-            "experts.*.down_proj.weight",
+            f"experts.*.{down}.weight_scale_2",
+            f"experts.*.{down}.weight_scale",
+            f"experts.*.{down}.weight",
         ],
         target_patterns="experts.down_proj",
         operations=[op],
@@ -608,6 +629,7 @@ def register_nvfp4_expert_converters(
     Idempotent: our converters are filtered out of the preserved set on re-entry.
     """
     from transformers.conversion_mapping import get_checkpoint_conversion_mapping
+    from transformers.core_model_loading import WeightConverter
 
     from axolotl.utils.weight_conversions import register_weight_conversions
 
@@ -618,6 +640,9 @@ def register_nvfp4_expert_converters(
         return
 
     def _targets_experts(conv) -> bool:
+        # renamings (e.g. `.experts.` -> `.mlp.experts.`) must survive; only fusions fight ours
+        if not isinstance(conv, WeightConverter):
+            return False
         tp = getattr(conv, "target_patterns", None) or []
         if isinstance(tp, str):
             tp = [tp]

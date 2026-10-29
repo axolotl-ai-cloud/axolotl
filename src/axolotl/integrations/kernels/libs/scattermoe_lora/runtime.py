@@ -40,6 +40,9 @@ class ScatterMoERuntime:
     # caching it holds a full-model mxfp4 copy per rank (OOM). Disabled under FSDP: recompute per
     # forward (freed after each layer), bounding resident mxfp4 to one layer.
     mxfp4_cache_persist: bool = True
+    # expert params are re-gathered every forward (FSDP / DeepSpeed) rather than rank-resident, so
+    # the marlin prep must not pin or free them. Only consulted when world_size > 1.
+    experts_gathered: bool = True
 
     def reset(self) -> None:
         for f in fields(self):
@@ -67,3 +70,4 @@ def configure_scattermoe_runtime(cfg) -> None:
     # Cache only in the non-FSDP case; under FSDP a persistent mxfp4 cache holds a full-model copy
     # per rank (OOM).
     RUNTIME.mxfp4_cache_persist = not bool(cfg.get("fsdp_config"))
+    RUNTIME.experts_gathered = bool(cfg.get("fsdp_config") or cfg.get("deepspeed"))

@@ -19,6 +19,9 @@ Memory-bound kernels replacing multi-kernel pure-torch chains:
   roundtrip in one pass, bitwise ``nvfp4_quant.fake_quant_nvfp4`` (torchao
   numerics, DIFFERENT rounding than the two kernels above: RNE E2M1 ties and
   two-level reciprocal-multiply scaling).
+- :func:`merge_aware_snap_triton`: the whole merge-aware snap
+  ``Q(dequant(W) + s * B @ A)`` from packed NVFP4 experts in one pass, bitwise
+  dequant -> fp32 delta add -> fake-quant, without the dense base or fp32 W_eff.
 
 All fall back to the callers' torch paths when triton is unavailable.
 """
@@ -37,6 +40,7 @@ class _KernelSet(NamedTuple):
     quant_sfa: Any
     rowscale: Any
     fake_quant: Any
+    snap: Any
 
 
 @functools.lru_cache(maxsize=1)
@@ -261,7 +265,9 @@ def _kernels():
         x = tl.load(x_ptr + row * K + offs_v, mask=mask_v, other=0.0).to(tl.float32)
 
         amax = tl.max(tl.abs(x), axis=1)
-        bs = tl.math.div_rn(amax, 6.0)
+        # torch divides by a python scalar as a multiply by its fp32 reciprocal; match it,
+        # or block scales sitting on an e4m3 tie round the other way
+        bs = amax * (1.0 / 6.0)
         pts = 1.0
         if HAS_PTS:
             pts = tl.load(pts_ptr + row // rows_per_expert).to(tl.float32)
@@ -301,6 +307,117 @@ def _kernels():
         tl.store(out_ptr + row * K + offs_v, out, mask=mask_v)
 
     @triton.jit
+    def _snap_kernel(
+        q_ptr,  # u8 [E, N, K/2]
+        s_ptr,  # u8 [E, N, K/16] (e4m3 bits)
+        dq_pts_ptr,  # fp32, base per-tensor scale
+        fq_pts_ptr,  # fp32, merge-grid per-tensor scale
+        a_ptr,  # [E*R, K] rank-major LoRA A
+        b_ptr,  # [N, R*E] rank-major LoRA B
+        out_ptr,  # [e1 - e0, N, K]
+        scaling,
+        e0,
+        num_experts,
+        dq_pts_stride,
+        fq_pts_stride,
+        N,
+        K: tl.constexpr,
+        R: tl.constexpr,
+        R_PAD: tl.constexpr,
+        E4M3_EPS: tl.constexpr,
+        HAS_DQ_PTS: tl.constexpr,
+        HAS_FQ_PTS: tl.constexpr,
+        BM: tl.constexpr,
+        BK: tl.constexpr,
+    ):
+        # Same op order as _dequant_kernel -> (w + delta * scaling) -> _fake_quant_kernel;
+        # launched without fp fusion so the add is not contracted into an FMA.
+        local_e = tl.program_id(2)
+        e = e0 + local_e
+        rows = tl.program_id(0) * BM + tl.arange(0, BM)
+        mask_r = rows < N
+        cols = tl.program_id(1) * BK + tl.arange(0, BK)
+        mask_c = cols < K
+        src_row = e.to(tl.int64) * N + rows
+        dst_row = local_e.to(tl.int64) * N + rows
+
+        offs_b = tl.program_id(1) * (BK // 2) + tl.arange(0, BK // 2)
+        mask_rb = mask_r[:, None] & (offs_b < K // 2)[None, :]
+        b = tl.load(
+            q_ptr + src_row[:, None] * (K // 2) + offs_b[None, :], mask=mask_rb, other=0
+        ).to(tl.int32)
+        lo = b & 0x0F
+        hi = (b >> 4) & 0x0F
+        v_lo = _e2m1_value(lo & 7) * tl.where(lo >= 8, -1.0, 1.0)
+        v_hi = _e2m1_value(hi & 7) * tl.where(hi >= 8, -1.0, 1.0)
+        sc_u8 = tl.load(
+            s_ptr + src_row[:, None] * (K // 16) + (offs_b // 8)[None, :],
+            mask=mask_rb,
+            other=0,
+        )
+        sc = sc_u8.to(tl.uint8).to(tl.float8e4nv, bitcast=True).to(tl.float32)
+        if HAS_DQ_PTS:
+            sc = sc * tl.load(dq_pts_ptr + e * dq_pts_stride).to(tl.float32)
+        w_lo = (v_lo * sc).to(out_ptr.dtype.element_ty).to(tl.float32)
+        w_hi = (v_hi * sc).to(out_ptr.dtype.element_ty).to(tl.float32)
+        w = tl.reshape(tl.join(w_lo, w_hi), (BM, BK))
+
+        rr = tl.arange(0, R_PAD)
+        mask_rr = rr < R
+        bt = tl.load(
+            b_ptr + rows[:, None] * (R * num_experts) + rr[None, :] * num_experts + e,
+            mask=mask_r[:, None] & mask_rr[None, :],
+            other=0.0,
+        )
+        at = tl.load(
+            a_ptr + (e * R + rr)[:, None].to(tl.int64) * K + cols[None, :],
+            mask=mask_rr[:, None] & mask_c[None, :],
+            other=0.0,
+        )
+        # IEEE fp32: tensor-core accumulation rounds differently from the merge writer's matmul
+        delta = tl.dot(bt.to(tl.float32), at.to(tl.float32), input_precision="ieee")
+        w = (w + delta * scaling).to(out_ptr.dtype.element_ty).to(tl.float32)
+
+        x = tl.reshape(w, (BM * (BK // 16), 16))
+        amax = tl.max(tl.abs(x), axis=1)
+        # torch divides by a python scalar as a multiply by its fp32 reciprocal; match it,
+        # or block scales sitting on an e4m3 tie round the other way
+        bs = amax * (1.0 / 6.0)
+        pts = 1.0
+        if HAS_FQ_PTS:
+            pts = tl.load(fq_pts_ptr + e * fq_pts_stride).to(tl.float32)
+            bs = tl.math.div_rn(bs, pts)
+        s = tl.minimum(tl.maximum(bs, E4M3_EPS), 448.0)
+        sdec = _e4m3_rne(s)
+        if HAS_FQ_PTS:
+            r = tl.math.div_rn(tl.math.div_rn(1.0, pts), sdec)
+        else:
+            r = tl.math.div_rn(1.0, sdec)
+        q = tl.minimum(tl.maximum(x * r[:, None], -6.0), 6.0)
+        a = tl.abs(q)
+        idx = (
+            (a > 0.25).to(tl.int32)
+            + (a >= 0.75).to(tl.int32)
+            + (a > 1.25).to(tl.int32)
+            + (a >= 1.75).to(tl.int32)
+            + (a > 2.5).to(tl.int32)
+            + (a >= 3.5).to(tl.int32)
+            + (a > 5.0).to(tl.int32)
+        )
+        val = _e2m1_value(idx)
+        val = tl.where(q < 0, -val, val)
+        if HAS_FQ_PTS:
+            hp = pts * sdec
+        else:
+            hp = sdec
+        out = tl.reshape(val * hp[:, None], (BM, BK)).to(out_ptr.dtype.element_ty)
+        tl.store(
+            out_ptr + dst_row[:, None] * K + cols[None, :],
+            out,
+            mask=mask_r[:, None] & mask_c[None, :],
+        )
+
+    @triton.jit
     def _rowscale_kernel(
         x_ptr,
         pts_ptr,  # fp32 [rows]
@@ -324,6 +441,7 @@ def _kernels():
         quant_sfa=_quant_sfa_kernel,
         rowscale=_rowscale_kernel,
         fake_quant=_fake_quant_kernel,
+        snap=_snap_kernel,
     )
 
 
@@ -488,3 +606,70 @@ def fake_quant_nvfp4_triton(
         BLOCK_SF=BLOCK_SF,
     )
     return out.view(x.shape)
+
+
+def _pts_arg(pts: torch.Tensor | None, like: torch.Tensor):
+    if pts is None:
+        return like.new_zeros(1, dtype=torch.float32), 0
+    flat = pts.reshape(-1).float().contiguous()
+    return flat, int(flat.numel() > 1)
+
+
+def merge_aware_snap_triton(
+    w,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    per_tensor_scale: torch.Tensor | None,
+    e0: int,
+    e1: int,
+) -> torch.Tensor:
+    """Snapped ``Q(dequant(w[e0:e1]) + scaling * B_e @ A_e)`` from a packed NVFP4
+    ``[E, N, K]`` stack in one kernel.
+
+    Same numerics as ``nvfp4_lora._merge_aware_wfq`` over ``dequant_nvfp4_triton``
+    and the LoRA merge writer. ``lora_A`` / ``lora_B`` are the full rank-major
+    factors; ``per_tensor_scale`` is the merge-grid scale.
+    """
+    snap_kernel = _get_kernels().snap
+    E, N, K = w.shape
+    r = lora_A.shape[0] // E
+    q = w.qdata.view(torch.uint8)
+    s = w.scale.view(torch.uint8)
+    a = lora_A.contiguous()
+    b = lora_B.contiguous()
+    dq_pts, dq_stride = _pts_arg(w.per_tensor_scale, q)
+    fq_pts, fq_stride = _pts_arg(per_tensor_scale, q)
+    out = torch.empty(e1 - e0, N, K, dtype=w.orig_dtype, device=q.device)
+    BM, BK = 64, 64
+    grid = (_cdiv(N, BM), _cdiv(K, BK), e1 - e0)
+    snap_kernel[grid](
+        q,
+        s,
+        dq_pts,
+        fq_pts,
+        a,
+        b,
+        out,
+        float(scaling),
+        e0,
+        E,
+        dq_stride,
+        fq_stride,
+        N,
+        K=K,
+        R=r,
+        R_PAD=max(16, 1 << (r - 1).bit_length()),
+        E4M3_EPS=float(torch.finfo(torch.float8_e4m3fn).tiny),
+        HAS_DQ_PTS=w.per_tensor_scale is not None,
+        HAS_FQ_PTS=per_tensor_scale is not None,
+        BM=BM,
+        BK=BK,
+        num_warps=4,
+        enable_fp_fusion=False,
+    )
+    return out
+
+
+def _cdiv(a: int, b: int) -> int:
+    return (a + b - 1) // b

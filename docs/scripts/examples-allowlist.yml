@@ -1,5 +1,7 @@
 examples:
   # October 2026
+  - name: mistral-large-4
+    title: Mistral Large 4
   - name: beam
     title: Beam
 

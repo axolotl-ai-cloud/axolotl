@@ -26,6 +26,7 @@ _BUILTIN_MODULES = (
     "axolotl.model_support.k2_horizon",
     "axolotl.model_support.kimi_linear",
     "axolotl.model_support.mamba",
+    "axolotl.model_support.mistral_large4",
     "axolotl.model_support.muse_glimmer",
     "axolotl.model_support.nemotron_diffusion",
     "axolotl.model_support.nemotron_diffusion_vlm",
