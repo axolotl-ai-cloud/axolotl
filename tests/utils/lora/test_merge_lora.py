@@ -445,6 +445,45 @@ class TestEfficientMerge:
             base_weights["model.embed_tokens.weight"],
         )
 
+    def test_merge_takes_config_from_base_model_config(self, tmp_path):
+        """A base without config.json (Mistral-native repos) merges with base_model_config's."""
+        hidden, r = 16, 4
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        (model_dir / "config.json").unlink()
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "config.json").write_text('{"marker": 1}')
+        adapter_dir, _ = self._make_adapter(tmp_path, r=r, alpha=r)
+        lora_state = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.randn(
+                r, hidden
+            ),
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.randn(
+                hidden, r
+            ),
+        }
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            base_model_config=str(config_dir),
+        )
+
+        assert json.loads((output_dir / "config.json").read_text()) == {"marker": 1}
+        assert not (model_dir / "config.json").exists()
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        expected = base_weights[q_key] + (
+            lora_state[f"base_model.model.{q_key[:-7]}.lora_B.weight"]
+            @ lora_state[f"base_model.model.{q_key[:-7]}.lora_A.weight"]
+        )
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+        assert torch.allclose(merged[q_key], expected, atol=1e-5)
+
     def _make_multi_shard_merge(self, tmp_path, n_shards=3, hidden=16, r=4):
         model_dir = tmp_path / "base_model"
         model_dir.mkdir()

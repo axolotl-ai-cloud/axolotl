@@ -4,6 +4,7 @@ import math
 import os
 import re
 import shutil
+import tempfile
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -2811,6 +2812,25 @@ def _fuse_and_unfuse_with_merge(
     return result, merged_count, processed_keys
 
 
+def _overlay_base_config(base_dir: Path, config_source: str, overlay: Path) -> Path:
+    """``overlay`` holding symlinks to every file of ``base_dir`` plus ``config_source``'s
+    config.json, so every config.json reader sees the supplied config."""
+    from huggingface_hub import hf_hub_download
+
+    source = Path(config_source)
+    if source.is_dir():
+        config = source / "config.json"
+    elif source.is_file():
+        config = source
+    else:
+        config = Path(hf_hub_download(config_source, "config.json"))
+    for entry in base_dir.iterdir():
+        (overlay / entry.name).symlink_to(entry.resolve())
+    shutil.copy2(config, overlay / "config.json")
+    LOG.info(f"Merging with config.json from base_model_config ({config_source})")
+    return overlay
+
+
 def merge_lora_sharded_efficient(
     base_model_path: Union[str, Path],
     lora_adapter_path: Union[str, Path],
@@ -2833,10 +2853,14 @@ def merge_lora_sharded_efficient(
     shard_sink: Optional[Callable[[dict[str, torch.Tensor], Path, dict], None]] = None,
     merge_compile: bool = False,
     merge_compile_precision: str = "strict",
+    base_model_config: Optional[str] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
     without loading the full model into memory.
+
+    base_model_config: local dir, ``config.json`` path or hub repo supplying the config when
+        the base ships none (e.g. Mistral-native checkpoints).
 
     dequant: if True, dequantize every quantized weight and write a bf16 checkpoint (strips
         quantization_config). Default False = FORMAT-PRESERVING: LoRA-targeted quantized weights are
@@ -2894,6 +2918,12 @@ def merge_lora_sharded_efficient(
     if "/" in str(base_model_path) and not base_model_path.exists():
         base_model_path = Path(
             snapshot_download(str(base_model_path), revision=revision)
+        )
+    config_overlay = None
+    if base_model_config and not (base_model_path / "config.json").exists():
+        config_overlay = tempfile.TemporaryDirectory(prefix="merge-base-")
+        base_model_path = _overlay_base_config(
+            base_model_path, base_model_config, Path(config_overlay.name)
         )
 
     bnb_4bit_base = _detect_bnb_4bit_base(base_model_path)

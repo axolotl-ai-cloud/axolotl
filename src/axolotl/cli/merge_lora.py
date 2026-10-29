@@ -190,6 +190,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         revision=cfg.revision_of_model,
         merge_compile=bool(cfg.get("merge_compile", False)),
         merge_compile_precision=cfg.get("merge_compile_precision") or "strict",
+        base_model_config=cfg.base_model_config,
     )
     PluginManager.get_instance().post_lora_merge(
         cfg,
