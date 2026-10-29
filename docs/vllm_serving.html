@@ -81,7 +81,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-f02b750fa8da0cf57c2c28d81e4fa7b8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -965,32 +965,27 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#minimal-server-config" id="toc-minimal-server-config" class="nav-link" data-scroll-target="#minimal-server-config"><span class="header-section-number">2.2</span> Minimal Server Config</a></li>
   <li><a href="#multi-gpu-vllm" id="toc-multi-gpu-vllm" class="nav-link" data-scroll-target="#multi-gpu-vllm"><span class="header-section-number">2.3</span> Multi-GPU vLLM</a></li>
   </ul></li>
-  <li><a href="#sec-colocate-mode" id="toc-sec-colocate-mode" class="nav-link" data-scroll-target="#sec-colocate-mode"><span class="header-section-number">3</span> Colocate Mode</a></li>
-  <li><a href="#sec-lora-sync" id="toc-sec-lora-sync" class="nav-link" data-scroll-target="#sec-lora-sync"><span class="header-section-number">4</span> LoRA Sync</a>
+  <li><a href="#sec-multi-node" id="toc-sec-multi-node" class="nav-link" data-scroll-target="#sec-multi-node"><span class="header-section-number">3</span> Multi-Node Serving</a></li>
+  <li><a href="#sec-colocate-mode" id="toc-sec-colocate-mode" class="nav-link" data-scroll-target="#sec-colocate-mode"><span class="header-section-number">4</span> Colocate Mode</a></li>
+  <li><a href="#sec-lora-sync" id="toc-sec-lora-sync" class="nav-link" data-scroll-target="#sec-lora-sync"><span class="header-section-number">5</span> LoRA Sync</a>
   <ul class="collapse">
-  <li><a href="#how-it-works" id="toc-how-it-works" class="nav-link" data-scroll-target="#how-it-works"><span class="header-section-number">4.1</span> How It Works</a></li>
-  <li><a href="#benefits" id="toc-benefits" class="nav-link" data-scroll-target="#benefits"><span class="header-section-number">4.2</span> Benefits</a></li>
-  <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration"><span class="header-section-number">4.3</span> Configuration</a></li>
+  <li><a href="#how-it-works" id="toc-how-it-works" class="nav-link" data-scroll-target="#how-it-works"><span class="header-section-number">5.1</span> How It Works</a></li>
+  <li><a href="#benefits" id="toc-benefits" class="nav-link" data-scroll-target="#benefits"><span class="header-section-number">5.2</span> Benefits</a></li>
+  <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration"><span class="header-section-number">5.3</span> Configuration</a></li>
   </ul></li>
-  <li><a href="#sec-weight-sync" id="toc-sec-weight-sync" class="nav-link" data-scroll-target="#sec-weight-sync"><span class="header-section-number">5</span> Weight Synchronization</a>
+  <li><a href="#sec-weight-sync" id="toc-sec-weight-sync" class="nav-link" data-scroll-target="#sec-weight-sync"><span class="header-section-number">6</span> Weight Synchronization</a>
   <ul class="collapse">
-  <li><a href="#sync-interval" id="toc-sync-interval" class="nav-link" data-scroll-target="#sync-interval"><span class="header-section-number">5.1</span> Sync Interval</a></li>
-  <li><a href="#sync-methods" id="toc-sync-methods" class="nav-link" data-scroll-target="#sync-methods"><span class="header-section-number">5.2</span> Sync Methods</a></li>
-  <li><a href="#sec-merge-rounding" id="toc-sec-merge-rounding" class="nav-link" data-scroll-target="#sec-merge-rounding"><span class="header-section-number">5.3</span> Merged Sync Rounding</a></li>
-  <li><a href="#importance-sampling-correction" id="toc-importance-sampling-correction" class="nav-link" data-scroll-target="#importance-sampling-correction"><span class="header-section-number">5.4</span> Importance Sampling Correction</a></li>
+  <li><a href="#sync-interval" id="toc-sync-interval" class="nav-link" data-scroll-target="#sync-interval"><span class="header-section-number">6.1</span> Sync Interval</a></li>
+  <li><a href="#sync-methods" id="toc-sync-methods" class="nav-link" data-scroll-target="#sync-methods"><span class="header-section-number">6.2</span> Sync Methods</a></li>
+  <li><a href="#sec-merge-rounding" id="toc-sec-merge-rounding" class="nav-link" data-scroll-target="#sec-merge-rounding"><span class="header-section-number">6.3</span> Merged Sync Rounding</a></li>
+  <li><a href="#importance-sampling-correction" id="toc-importance-sampling-correction" class="nav-link" data-scroll-target="#importance-sampling-correction"><span class="header-section-number">6.4</span> Importance Sampling Correction</a></li>
   </ul></li>
-  <li><a href="#sec-restart" id="toc-sec-restart" class="nav-link" data-scroll-target="#sec-restart"><span class="header-section-number">6</span> Restart Requirements</a>
+  <li><a href="#sec-restart" id="toc-sec-restart" class="nav-link" data-scroll-target="#sec-restart"><span class="header-section-number">7</span> Restart Requirements</a></li>
+  <li><a href="#sec-config-reference" id="toc-sec-config-reference" class="nav-link" data-scroll-target="#sec-config-reference"><span class="header-section-number">8</span> Configuration Reference</a>
   <ul class="collapse">
-  <li><a href="#when-to-restart" id="toc-when-to-restart" class="nav-link" data-scroll-target="#when-to-restart"><span class="header-section-number">6.1</span> When to Restart</a></li>
-  <li><a href="#how-to-restart" id="toc-how-to-restart" class="nav-link" data-scroll-target="#how-to-restart"><span class="header-section-number">6.2</span> How to Restart</a></li>
-  <li><a href="#health-check" id="toc-health-check" class="nav-link" data-scroll-target="#health-check"><span class="header-section-number">6.3</span> Health Check</a></li>
+  <li><a href="#vllm-server-options-vllm-section" id="toc-vllm-server-options-vllm-section" class="nav-link" data-scroll-target="#vllm-server-options-vllm-section"><span class="header-section-number">8.1</span> vLLM Server Options (<code>vllm:</code> section)</a></li>
+  <li><a href="#trainer-vllm-options-trl-section" id="toc-trainer-vllm-options-trl-section" class="nav-link" data-scroll-target="#trainer-vllm-options-trl-section"><span class="header-section-number">8.2</span> Trainer vLLM Options (<code>trl:</code> section)</a></li>
   </ul></li>
-  <li><a href="#sec-config-reference" id="toc-sec-config-reference" class="nav-link" data-scroll-target="#sec-config-reference"><span class="header-section-number">7</span> Configuration Reference</a>
-  <ul class="collapse">
-  <li><a href="#vllm-server-options-vllm-section" id="toc-vllm-server-options-vllm-section" class="nav-link" data-scroll-target="#vllm-server-options-vllm-section"><span class="header-section-number">7.1</span> vLLM Server Options (<code>vllm:</code> section)</a></li>
-  <li><a href="#trainer-vllm-options-trl-section" id="toc-trainer-vllm-options-trl-section" class="nav-link" data-scroll-target="#trainer-vllm-options-trl-section"><span class="header-section-number">7.2</span> Trainer vLLM Options (<code>trl:</code> section)</a></li>
-  </ul></li>
-  <li><a href="#sec-complete-example" id="toc-sec-complete-example" class="nav-link" data-scroll-target="#sec-complete-example"><span class="header-section-number">8</span> Complete Example</a></li>
   <li><a href="#sec-troubleshooting" id="toc-sec-troubleshooting" class="nav-link" data-scroll-target="#sec-troubleshooting"><span class="header-section-number">9</span> Troubleshooting</a></li>
   </ul>
 </nav>
@@ -1025,7 +1020,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="sec-overview" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="sec-overview"><span class="header-section-number">1</span> Overview</h2>
 <p>GRPO (Group Relative Policy Optimization) trains a language model by generating completions, scoring them with reward functions, and updating the policy to favor higher-reward outputs. The generation step is the bottleneck: producing thousands of tokens per training step with the policy model is slow using standard HuggingFace generation.</p>
-<p>Axolotl uses <a href="https://github.com/vllm-project/vllm">vLLM</a> as a high-throughput generation backend. In server mode, vLLM runs as a separate process on dedicated GPUs and serves completions via vLLM’s native OpenAI-compatible HTTP API. In <a href="#sec-colocate-mode">colocate mode</a>, the trainer process hosts a vLLM engine on its own GPU, so a single GPU is enough. Axolotl requires <code>vllm&gt;=0.30.0</code>. vLLM 0.31.0 caps <code>transformers&lt;5.18</code>, so with Axolotl’s transformers 5.20 pin the <code>vllm</code> extra resolves to vLLM 0.30.0. Either way, the trainer sends prompts to vLLM, receives completions, scores them, and performs gradient updates.</p>
+<p>Axolotl uses <a href="https://github.com/vllm-project/vllm">vLLM</a> as a high-throughput generation backend, in one of two modes:</p>
+<ul>
+<li><strong><a href="#sec-server-mode">Server mode</a></strong>: vLLM runs as a separate process on dedicated GPUs (or <a href="#sec-multi-node">dedicated nodes</a>) and serves completions over its OpenAI-compatible HTTP API.</li>
+<li><strong><a href="#sec-colocate-mode">Colocate mode</a></strong>: the trainer hosts a vLLM engine on its own GPU, so a single GPU is enough.</li>
+</ul>
+<p>Axolotl requires <code>vllm&gt;=0.30.0</code>.</p>
 <pre><code>┌──────────────────────┐       HTTP        ┌──────────────────────┐
 │   Trainer (GPU 1)    │ ───────────────── │   vLLM Server (GPU 0)│
 │                      │  prompts/compls   │                      │
@@ -1097,6 +1097,7 @@ Tip
 <span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_host</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0.0.0</span></span>
 <span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
 <span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For a full GRPO config with rewards, dataset, LoRA sync, and async generation, see the <a href="../docs/grpo.html#quick-start">GRPO Quick Start</a>.</p>
 </section>
 <section id="multi-gpu-vllm" class="level3" data-number="2.3">
 <h3 data-number="2.3" class="anchored" data-anchor-id="multi-gpu-vllm"><span class="header-section-number">2.3</span> Multi-GPU vLLM</h3>
@@ -1120,28 +1121,86 @@ Note
 <p>Due to how TRL maps vLLM device indices, the vLLM instance should use the <strong>last</strong> N GPUs (highest device indices), while training uses the first N.</p>
 </div>
 </div>
+<p><code>data_parallel_size</code> runs that many replicas of the model behind the same endpoint, for more generation throughput when the model already fits on <code>tensor_parallel_size</code> GPUs.</p>
 </section>
 </section>
-<section id="sec-colocate-mode" class="level2" data-number="3">
-<h2 data-number="3" class="anchored" data-anchor-id="sec-colocate-mode"><span class="header-section-number">3</span> Colocate Mode</h2>
+<section id="sec-multi-node" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="sec-multi-node"><span class="header-section-number">3</span> Multi-Node Serving</h2>
+<p>When one node cannot generate fast enough, or cannot hold the model, <code>axolotl vllm-serve</code> can span several nodes as a single vLLM server. Node 0 runs the API server and dispatches to headless engines on the other nodes. The trainer only talks to node 0, and weight sync reaches every engine through it.</p>
+<p>For example, a 16-GPU setup (2 nodes x 8 GPUs) running 8 replicas at TP=2 (4 replicas per node). Use the same config on every node and launch each with its <code>--node-rank</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">vllm</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">tensor_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">data_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span><span class="co">     # total replicas across all nodes; GPUs = TP x PP x DP = 16</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">nnodes</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">master_addr</span><span class="kw">:</span><span class="at"> </span><span class="fl">10.0.0.1</span><span class="co">     # node 0</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_host</span><span class="kw">:</span><span class="at"> </span><span class="fl">10.0.0.1</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Node 0 (10.0.0.1): API server + 4 replicas</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> vllm-serve grpo_config.yaml <span class="at">--node-rank</span> 0</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Node 1: 4 headless replicas</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> vllm-serve grpo_config.yaml <span class="at">--node-rank</span> 1</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Trainer node (10.0.0.3, must be reachable from the vLLM nodes).</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Start once http://10.0.0.1:8000/health returns 200.</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="va">VLLM_HOST_IP</span><span class="op">=</span>10.0.0.3 <span class="ex">axolotl</span> train grpo_config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 19%">
+<col style="width: 19%">
+<col style="width: 60%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Layout</th>
+<th>Config</th>
+<th>Link between vLLM nodes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Whole replicas on each node (recommended)</td>
+<td><code>data_parallel_size</code> is a multiple of <code>nnodes</code></td>
+<td>Ethernet is fine for dense models (replicas are independent). MoE models synchronize expert layers across all replicas every forward pass, so use InfiniBand or RoCE</td>
+</tr>
+<tr class="even">
+<td>One replica spanning nodes (model does not fit on one node)</td>
+<td><code>data_parallel_size: 1</code>, <code>tensor_parallel_size</code> = GPUs per node, <code>pipeline_parallel_size</code> = <code>nnodes</code></td>
+<td>InfiniBand or RoCE</td>
+</tr>
+</tbody>
+</table>
+<p>Requirements:</p>
+<ul>
+<li>Every node needs the same model, packages, and config.</li>
+<li><strong>NCCL weight sync</strong> (full fine-tuning, or LoRA without <code>vllm_lora_sync</code>): trainer rank 0 joins an NCCL group with every vLLM GPU, so each vLLM node must reach the trainer at <code>VLLM_HOST_IP</code> on port 51216 (TRL’s <code>vllm_group_port</code>). Each sync broadcasts the full model across the network, so prefer LoRA sync on Ethernet.</li>
+<li><strong>LoRA sync</strong>: every vLLM node loads the adapter from its own filesystem. The trainer writes it under <code>TMPDIR</code>, so point <code>TMPDIR</code> on the trainer at storage that all vLLM nodes mount at the same path.</li>
+<li>If NCCL picks the wrong network interface, set <code>NCCL_SOCKET_IFNAME</code> (or <code>NCCL_IB_HCA</code>) on all nodes.</li>
+</ul>
+<p>These settings map to vLLM’s <a href="https://docs.vllm.ai/en/v0.30.0/serving/data_parallel_deployment/#internal-load-balancing">data parallel deployment</a> and <a href="https://docs.vllm.ai/en/v0.30.0/serving/parallelism_scaling/#multi-node-deployment">multi-node deployment</a>. vLLM’s hybrid and external load-balancing modes are not supported: they expose one API server per node, but weight sync has to reach every engine through a single server.</p>
+</section>
+<section id="sec-colocate-mode" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="sec-colocate-mode"><span class="header-section-number">4</span> Colocate Mode</h2>
 <p>Colocate mode runs a vLLM engine inside the trainer process, on the same GPU. No <code>axolotl vllm-serve</code> process is needed, so this is the way to run GRPO on a single GPU.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-1.5B-Instruct</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> grpo</span></span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_mode</span><span class="kw">:</span><span class="at"> colocate</span></span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_enable_sleep_mode</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">num_generations</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_completion_length</span><span class="kw">:</span><span class="at"> </span><span class="dv">512</span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reward_funcs</span><span class="kw">:</span></span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> rewards.accuracy_reward</span></span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="fu">vllm</span><span class="kw">:</span></span>
-<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">gpu_memory_utilization</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.3</span><span class="co">   # fraction reserved for vLLM; the rest is for training</span></span>
-<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_model_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span><span class="co">           # prompt + completion budget for the engine</span></span>
-<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enforce_eager</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">           # disable CUDA graphs if vLLM's custom all-reduce errors</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-1.5B-Instruct</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> grpo</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_mode</span><span class="kw">:</span><span class="at"> colocate</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_enable_sleep_mode</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">num_generations</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_completion_length</span><span class="kw">:</span><span class="at"> </span><span class="dv">512</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reward_funcs</span><span class="kw">:</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> rewards.accuracy_reward</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="fu">vllm</span><span class="kw">:</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">gpu_memory_utilization</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.3</span><span class="co">   # fraction reserved for vLLM; the rest is for training</span></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_model_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span><span class="co">           # prompt + completion budget for the engine</span></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">enforce_eager</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">           # disable CUDA graphs if vLLM's custom all-reduce errors</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>The <code>vllm:</code> block configures the colocated engine: <code>gpu_memory_utilization</code> (default 0.3 here, not 0.9, since training shares the GPU), <code>tensor_parallel_size</code> (must divide the number of training processes), <code>max_model_len</code>, <code>enforce_eager</code>, <code>enable_prefix_caching</code>, and <code>dtype</code>. Always set <code>max_model_len</code>; otherwise vLLM reserves KV cache for the model’s full context.</p>
 <p>With <code>vllm_enable_sleep_mode: true</code>, vLLM offloads its VRAM allocation when not actively generating, freeing memory for training. When the trainer needs new completions, vLLM wakes up and reclaims VRAM.</p>
 <div class="callout callout-style-default callout-warning callout-titled">
@@ -1171,11 +1230,11 @@ Warning
 <li>You are running larger models (7B+)</li>
 </ul>
 </section>
-<section id="sec-lora-sync" class="level2" data-number="4">
-<h2 data-number="4" class="anchored" data-anchor-id="sec-lora-sync"><span class="header-section-number">4</span> LoRA Sync</h2>
+<section id="sec-lora-sync" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="sec-lora-sync"><span class="header-section-number">5</span> LoRA Sync</h2>
 <p>LoRA sync is the recommended weight synchronization method when training with LoRA adapters. Instead of merging adapter weights into the base model and broadcasting the full merged weights over NCCL, it saves only the LoRA adapter files to the filesystem and tells vLLM to load them natively through its runtime LoRA loading endpoint.</p>
-<section id="how-it-works" class="level3" data-number="4.1">
-<h3 data-number="4.1" class="anchored" data-anchor-id="how-it-works"><span class="header-section-number">4.1</span> How It Works</h3>
+<section id="how-it-works" class="level3" data-number="5.1">
+<h3 data-number="5.1" class="anchored" data-anchor-id="how-it-works"><span class="header-section-number">5.1</span> How It Works</h3>
 <ol type="1">
 <li>The trainer calls <code>model.save_pretrained()</code> to write the LoRA adapter weights to a temporary directory</li>
 <li>The trainer drains in-flight requests (<code>/pause?mode=wait</code>), registers the adapter with <code>/v1/load_lora_adapter</code> as <code>&lt;base model&gt;-v&lt;N&gt;</code>, resumes generation, and addresses subsequent requests to that name; the adapter from two syncs back is unloaded</li>
@@ -1183,8 +1242,8 @@ Warning
 <li>Generation uses the updated adapter on the next request</li>
 </ol>
 </section>
-<section id="benefits" class="level3" data-number="4.2">
-<h3 data-number="4.2" class="anchored" data-anchor-id="benefits"><span class="header-section-number">4.2</span> Benefits</h3>
+<section id="benefits" class="level3" data-number="5.2">
+<h3 data-number="5.2" class="anchored" data-anchor-id="benefits"><span class="header-section-number">5.2</span> Benefits</h3>
 <ul>
 <li><strong>Smaller sync payload</strong>: Transfers ~40 MB of LoRA weights instead of ~1.4 GB+ of merged model weights (for a typical 0.5-3B model)</li>
 <li><strong>No NCCL communicator</strong>: Eliminates the need for a cross-GPU NCCL communication channel, removing GPU contention between vLLM generation and weight sync</li>
@@ -1192,16 +1251,16 @@ Warning
 <li><strong>Simpler multi-GPU</strong>: No need to set up NCCL groups between trainer and vLLM processes</li>
 </ul>
 </section>
-<section id="configuration" class="level3" data-number="4.3">
-<h3 data-number="4.3" class="anchored" data-anchor-id="configuration"><span class="header-section-number">4.3</span> Configuration</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">64</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">    # Enables LoRA sync mode</span></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">   # Sync every 5 training steps</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="configuration" class="level3" data-number="5.3">
+<h3 data-number="5.3" class="anchored" data-anchor-id="configuration"><span class="header-section-number">5.3</span> Configuration</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">64</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">    # Enables LoRA sync mode</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">   # Sync every 5 training steps</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><code>axolotl vllm-serve</code> enables runtime LoRA loading automatically. A failed adapter load raises an error and stops training.</p>
 <div class="callout callout-style-default callout-important callout-titled">
 <div class="callout-header d-flex align-content-center">
@@ -1218,14 +1277,14 @@ Important
 </div>
 </section>
 </section>
-<section id="sec-weight-sync" class="level2" data-number="5">
-<h2 data-number="5" class="anchored" data-anchor-id="sec-weight-sync"><span class="header-section-number">5</span> Weight Synchronization</h2>
+<section id="sec-weight-sync" class="level2" data-number="6">
+<h2 data-number="6" class="anchored" data-anchor-id="sec-weight-sync"><span class="header-section-number">6</span> Weight Synchronization</h2>
 <p>During GRPO training, the policy model on the trainer is continuously updated via gradient steps. The vLLM server, however, still holds the old weights. Periodically, the trainer must push updated weights to vLLM so that future generations reflect the improved policy.</p>
-<section id="sync-interval" class="level3" data-number="5.1">
-<h3 data-number="5.1" class="anchored" data-anchor-id="sync-interval"><span class="header-section-number">5.1</span> Sync Interval</h3>
+<section id="sync-interval" class="level3" data-number="6.1">
+<h3 data-number="6.1" class="anchored" data-anchor-id="sync-interval"><span class="header-section-number">6.1</span> Sync Interval</h3>
 <p>The <code>vllm_sync_interval</code> parameter controls how often weights are synced:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">   # Sync every 5 optimizer steps</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">   # Sync every 5 optimizer steps</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong>Tradeoffs:</strong></p>
 <ul>
 <li><strong>Lower interval</strong> (e.g., 1-3): Fresher generations, better on-policy data, but more sync overhead per step</li>
@@ -1233,8 +1292,8 @@ Important
 <li><strong>Recommended</strong>: 3-5 for most setups. Axolotl includes importance sampling correction (<code>vllm_importance_sampling_correction: true</code>) to handle mild distribution mismatch from stale vLLM weights.</li>
 </ul>
 </section>
-<section id="sync-methods" class="level3" data-number="5.2">
-<h3 data-number="5.2" class="anchored" data-anchor-id="sync-methods"><span class="header-section-number">5.2</span> Sync Methods</h3>
+<section id="sync-methods" class="level3" data-number="6.2">
+<h3 data-number="6.2" class="anchored" data-anchor-id="sync-methods"><span class="header-section-number">6.2</span> Sync Methods</h3>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 16%">
@@ -1284,8 +1343,8 @@ Tip
 </div>
 </div>
 </section>
-<section id="sec-merge-rounding" class="level3" data-number="5.3">
-<h3 data-number="5.3" class="anchored" data-anchor-id="sec-merge-rounding"><span class="header-section-number">5.3</span> Merged Sync Rounding</h3>
+<section id="sec-merge-rounding" class="level3" data-number="6.3">
+<h3 data-number="6.3" class="anchored" data-anchor-id="sec-merge-rounding"><span class="header-section-number">6.3</span> Merged Sync Rounding</h3>
 <p>Merged sync serves <code>bf16(W + scaling * B @ A)</code>, or its FP8 requantization for FP8 bases, while the trainer optimizes the unrounded <code>W + scaling * B @ A</code>. At RL learning rates most entries of the LoRA delta are smaller than half a BF16 step of the base weight (about 0.2% of <code>|w|</code>). The cast rounds those entries back to the base value, so vLLM samples from a policy that has only part of the trained update. On Qwen3-1.7B-Base with Dr.GRPO and rank-16 LoRA on all linear layers, the merged weights at step 100 kept about 24% of the update at <code>learning_rate: 1e-5</code> and about 2.5% at <code>1e-6</code>. Full fine-tuning is not affected, because the trainer and vLLM hold the same BF16 weights.</p>
 <p>The trainer measures this at the first merged sync and then every <code>trl.vllm_merge_check_interval</code> optimizer steps (default 50; <code>0</code> disables). It logs two metrics:</p>
 <ul>
@@ -1341,21 +1400,21 @@ Tip
 <p>LoRA linears whose base weight is FP8 or otherwise quantized keep the ordinary forward, with a warning.</p>
 <p><code>axolotl merge-lora</code> (memory-efficient method) reports the same retained share when it merges into a BF16 or FP16 base, and warns below one half unless the config sets <code>lora_merge_aware</code>.</p>
 </section>
-<section id="importance-sampling-correction" class="level3" data-number="5.4">
-<h3 data-number="5.4" class="anchored" data-anchor-id="importance-sampling-correction"><span class="header-section-number">5.4</span> Importance Sampling Correction</h3>
+<section id="importance-sampling-correction" class="level3" data-number="6.4">
+<h3 data-number="6.4" class="anchored" data-anchor-id="importance-sampling-correction"><span class="header-section-number">6.4</span> Importance Sampling Correction</h3>
 <p>When vLLM weights are stale (between syncs), the generated data is slightly off-policy. Axolotl can correct for this:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_importance_sampling_correction</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">importance_sampling_level</span><span class="kw">:</span><span class="at"> token</span><span class="co">          # 'token' or 'sequence'</span></span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">off_policy_mask_threshold</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span><span class="co">            # KL threshold for masking stale sequences</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_importance_sampling_correction</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">importance_sampling_level</span><span class="kw">:</span><span class="at"> token</span><span class="co">          # 'token' or 'sequence'</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">off_policy_mask_threshold</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span><span class="co">            # KL threshold for masking stale sequences</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ul>
 <li><strong>Token-level IS</strong> is recommended when using Liger kernel (sequence-level has numerical issues with chunked computation)</li>
 <li><strong>Off-policy sequence masking (OPSM)</strong> drops sequences that have diverged too far from the current policy, providing a safety net against stale data</li>
 </ul>
 </section>
 </section>
-<section id="sec-restart" class="level2" data-number="6">
-<h2 data-number="6" class="anchored" data-anchor-id="sec-restart"><span class="header-section-number">6</span> Restart Requirements</h2>
+<section id="sec-restart" class="level2" data-number="7">
+<h2 data-number="7" class="anchored" data-anchor-id="sec-restart"><span class="header-section-number">7</span> Restart Requirements</h2>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -1369,57 +1428,21 @@ Warning
 <p><strong>vLLM must be restarted between training runs.</strong> Weight syncs from a previous run leave the server in a corrupted state. If you start a new training run against a stale vLLM server, the model may fail to learn.</p>
 </div>
 </div>
-<section id="when-to-restart" class="level3" data-number="6.1">
-<h3 data-number="6.1" class="anchored" data-anchor-id="when-to-restart"><span class="header-section-number">6.1</span> When to Restart</h3>
-<ul>
-<li>Before every new training experiment</li>
-<li>After a training run crashes or is interrupted</li>
-<li>If you change the base model in your config</li>
-</ul>
+<p>Restart before every new experiment, after a crashed or interrupted run, or when the base model changes.</p>
+<p>A plain <code>kill</code> can leave vLLM’s EngineCore subprocess holding GPU memory. Kill both, then confirm the memory is freed:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pkill</span> <span class="at">-9</span> <span class="at">-f</span> <span class="st">"vllm|EngineCore"</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="ex">nvidia-smi</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> vllm-serve grpo_config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For <a href="#sec-multi-node">multi-node</a>, do this on every node and relaunch each with its <code>--node-rank</code>.</p>
+<p>Wait for the health endpoint to return 200 before starting training:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> http://localhost:8000/health</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="how-to-restart" class="level3" data-number="6.2">
-<h3 data-number="6.2" class="anchored" data-anchor-id="how-to-restart"><span class="header-section-number">6.2</span> How to Restart</h3>
-<p>Killing vLLM reliably requires terminating both the main process and its background EngineCore subprocess:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Kill all vLLM-related processes</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pkill</span> <span class="at">-9</span> <span class="at">-f</span> <span class="st">"vllm|EngineCore"</span></span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Verify GPU memory is freed</span></span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="ex">nvidia-smi</span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Restart the server</span></span>
-<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> vllm-serve grpo_config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="callout callout-style-default callout-tip callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Tip
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>A single <code>kill</code> often does not fully stop vLLM. Always use <code>kill -9</code> and verify with <code>nvidia-smi</code> that GPU memory has been released before restarting.</p>
-</div>
-</div>
-</section>
-<section id="health-check" class="level3" data-number="6.3">
-<h3 data-number="6.3" class="anchored" data-anchor-id="health-check"><span class="header-section-number">6.3</span> Health Check</h3>
-<p>The vLLM server exposes a health endpoint. Wait for it to return 200 before starting training:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> http://localhost:8000/health</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</section>
-</section>
-<section id="sec-config-reference" class="level2" data-number="7">
-<h2 data-number="7" class="anchored" data-anchor-id="sec-config-reference"><span class="header-section-number">7</span> Configuration Reference</h2>
-<section id="vllm-server-options-vllm-section" class="level3" data-number="7.1">
-<h3 data-number="7.1" class="anchored" data-anchor-id="vllm-server-options-vllm-section"><span class="header-section-number">7.1</span> vLLM Server Options (<code>vllm:</code> section)</h3>
+<section id="sec-config-reference" class="level2" data-number="8">
+<h2 data-number="8" class="anchored" data-anchor-id="sec-config-reference"><span class="header-section-number">8</span> Configuration Reference</h2>
+<section id="vllm-server-options-vllm-section" class="level3" data-number="8.1">
+<h3 data-number="8.1" class="anchored" data-anchor-id="vllm-server-options-vllm-section"><span class="header-section-number">8.1</span> vLLM Server Options (<code>vllm:</code> section)</h3>
 <p>These control the vLLM server process started by <code>axolotl vllm-serve</code>, and the colocated engine in <a href="#sec-colocate-mode">colocate mode</a>.</p>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 22%">
-<col style="width: 16%">
-<col style="width: 25%">
-<col style="width: 36%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Option</th>
@@ -1457,57 +1480,75 @@ Tip
 <td><code>data_parallel_size</code></td>
 <td>int</td>
 <td><code>None</code></td>
-<td>Number of data parallel replicas</td>
+<td>Number of data parallel replicas (total across all nodes)</td>
 </tr>
 <tr class="even">
+<td><code>pipeline_parallel_size</code></td>
+<td>int</td>
+<td><code>None</code></td>
+<td>Number of pipeline stages; for a replica spanning nodes</td>
+</tr>
+<tr class="odd">
+<td><code>nnodes</code></td>
+<td>int</td>
+<td><code>None</code></td>
+<td>Number of nodes for <a href="#sec-multi-node">multi-node serving</a>; launch each with <code>--node-rank</code></td>
+</tr>
+<tr class="even">
+<td><code>master_addr</code></td>
+<td>str</td>
+<td><code>None</code></td>
+<td>Address of node 0 when <code>nnodes &gt; 1</code></td>
+</tr>
+<tr class="odd">
 <td><code>gpu_memory_utilization</code></td>
 <td>float</td>
 <td><code>None</code></td>
 <td>Fraction of GPU memory for vLLM (0.0-1.0). Defaults to 0.9 for <code>vllm-serve</code> and 0.3 in colocate mode</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>dtype</code></td>
 <td>str</td>
 <td><code>auto</code></td>
 <td>Data type (<code>auto</code>, <code>float16</code>, <code>bfloat16</code>)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>max_model_len</code></td>
 <td>int</td>
 <td><code>None</code></td>
 <td>Maximum model context length. Set explicitly if the default is too large for your GPU</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>enable_prefix_caching</code></td>
 <td>bool</td>
 <td><code>None</code></td>
 <td>Enable prefix caching for repeated prompt prefixes</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>enable_reasoning</code></td>
 <td>bool</td>
 <td><code>None</code></td>
 <td>Enable reasoning mode for models with thinking tokens</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>reasoning_parser</code></td>
 <td>str</td>
 <td><code>None</code></td>
 <td>Parser for reasoning output</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>enforce_eager</code></td>
 <td>bool</td>
 <td><code>None</code></td>
 <td>Disable CUDA graph capture (required for some architectures like Qwen3.5 hybrid attention)</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>serve_module</code></td>
 <td>str</td>
 <td><code>None</code></td>
 <td>Optional custom module exposing <code>main(script_args)</code>. Default is the native vLLM server; legacy <code>trl.scripts.vllm_serve</code> and <code>axolotl.scripts.vllm_serve_lora</code> are ignored</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>worker_extension_cls</code></td>
 <td>str</td>
 <td><code>None</code></td>
@@ -1516,8 +1557,8 @@ Tip
 </tbody>
 </table>
 </section>
-<section id="trainer-vllm-options-trl-section" class="level3" data-number="7.2">
-<h3 data-number="7.2" class="anchored" data-anchor-id="trainer-vllm-options-trl-section"><span class="header-section-number">7.2</span> Trainer vLLM Options (<code>trl:</code> section)</h3>
+<section id="trainer-vllm-options-trl-section" class="level3" data-number="8.2">
+<h3 data-number="8.2" class="anchored" data-anchor-id="trainer-vllm-options-trl-section"><span class="header-section-number">8.2</span> Trainer vLLM Options (<code>trl:</code> section)</h3>
 <p>These control how the trainer interacts with vLLM.</p>
 <table class="caption-top table">
 <thead>
@@ -1594,18 +1635,6 @@ Tip
 <p>For async pipeline and off-policy correction options, see the <a href="../docs/grpo.html#configuration-reference">GRPO Configuration Reference</a>.</p>
 </section>
 </section>
-<section id="sec-complete-example" class="level2" data-number="8">
-<h2 data-number="8" class="anchored" data-anchor-id="sec-complete-example"><span class="header-section-number">8</span> Complete Example</h2>
-<p>For a full working GRPO config including vLLM, LoRA sync, async generation, rewards, and dataset setup, see the <a href="../docs/grpo.html#quick-start">GRPO Quick Start</a>. That config includes all the vLLM settings covered in this guide.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 1: Start vLLM</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> vllm-serve grpo_config.yaml</span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Wait for health check to pass</span></span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> http://localhost:8000/health</span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 2: Start training</span></span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>1 <span class="ex">axolotl</span> train grpo_config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</section>
 <section id="sec-troubleshooting" class="level2" data-number="9">
 <h2 data-number="9" class="anchored" data-anchor-id="sec-troubleshooting"><span class="header-section-number">9</span> Troubleshooting</h2>
 <table class="caption-top table">
@@ -1648,11 +1677,16 @@ Tip
 <td>Start the server with <code>axolotl vllm-serve</code> (or the raw command above) so <code>--logprobs-mode processed_logprobs --max-logprobs -1</code> are set</td>
 </tr>
 <tr class="even">
+<td>Multi-node training hangs at startup</td>
+<td>A vLLM node cannot reach the trainer for the NCCL weight-sync group</td>
+<td>Set <code>VLLM_HOST_IP</code> on the trainer to an address the vLLM nodes can reach, allow port 51216, and set <code>NCCL_SOCKET_IFNAME</code> if needed</td>
+</tr>
+<tr class="odd">
 <td>Weight sync takes 5+ seconds</td>
 <td>NCCL contention with vLLM generation</td>
 <td>Switch to <code>vllm_lora_sync: true</code> to eliminate NCCL</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>async_prefetch</code> deadlocks with FSDP</td>
 <td>Background threads run unsynchronized FSDP collectives</td>
 <td>Set <code>async_prefetch: false</code> when using FSDP or DeepSpeed multi-GPU</td>

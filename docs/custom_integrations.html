@@ -80,7 +80,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-f02b750fa8da0cf57c2c28d81e4fa7b8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -2859,13 +2859,15 @@ sparse model before inference for even greater performance benefits.:</p>
 </section>
 <section id="supported-models-2" class="level3">
 <h3 class="anchored" data-anchor-id="supported-models-2">Supported Models</h3>
-<p>Any model type in liger-kernel’s native dispatch table (<code>liger_kernel.transformers.monkey_patch.MODEL_TYPE_TO_APPLY_LIGER_FN</code>) is supported out of the box — llama, mistral, mixtral, qwen2/qwen3 families, gemma through gemma4, deepseek_v4, glm4, phi3, olmo2, paligemma, and many more (50+ types as of liger 0.8.1).</p>
+<p>Any model type in liger-kernel’s native dispatch table (<code>liger_kernel.transformers.monkey_patch.MODEL_TYPE_TO_APPLY_LIGER_FN</code>) is supported out of the box — llama, mistral, mixtral, qwen2/qwen3 families, gemma through gemma4, deepseek_v2/deepseek_v4, glm4, phi3, olmo2, paligemma, and many more (50+ types as of liger 0.8.1).</p>
 <p>On top of the native table, axolotl hand-patches these types (not covered upstream, or extended with kernels the native path lacks):</p>
 <ul>
-<li>deepseek_v2</li>
+<li>cohere_compass</li>
 <li>gemma4_unified / gemma4_unified_text</li>
+<li>glm4_moe_lite</li>
 <li>granitemoe</li>
 <li>jamba</li>
+<li>mistral3 / ministral3</li>
 <li>qwen3_5 / qwen3_5_moe (adds the fused gated-RMSNorm kernel for linear-attention layers)</li>
 </ul>
 </section>

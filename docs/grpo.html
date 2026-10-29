@@ -81,7 +81,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-5226b1ca1a5d857553e253658efe2f5a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-f02b750fa8da0cf57c2c28d81e4fa7b8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -1519,10 +1519,6 @@ Note
 <section id="multi-gpu-considerations" class="level3">
 <h3 class="anchored" data-anchor-id="multi-gpu-considerations">Multi-GPU considerations</h3>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 37%">
-<col style="width: 62%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Concern</th>
@@ -1539,14 +1535,18 @@ Note
 <td>Use <code>vllm_lora_sync: true</code> to avoid NCCL contention between training and vLLM</td>
 </tr>
 <tr class="odd">
+<td>Generation bottleneck</td>
+<td>Add vLLM nodes; see <a href="../docs/vllm_serving.html#sec-multi-node">Multi-Node Serving</a></td>
+</tr>
+<tr class="even">
 <td>FSDP + async</td>
 <td>Use <code>async_prefetch: false</code> or rely on rank-0-only background generation</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>DeepSpeed + gradient checkpoint</td>
 <td>Must use <code>use_reentrant: true</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td>OOM during scoring</td>
 <td>Reduce <code>micro_batch_size</code> or <code>num_generations</code>. The logits tensor scales with <code>batch_size * vocab_size</code></td>
 </tr>
