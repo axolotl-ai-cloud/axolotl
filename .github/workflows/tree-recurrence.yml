@@ -78,7 +78,7 @@ jobs:
         run: |
           uv venv --python ${{ matrix.python }}
           uv pip install torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -e ".[${{ matrix.extras }}]" pytest
+          uv pip install -e ".[${{ matrix.extras }}]" pytest==9.1.1
 
       - name: Check axolotl stays out
         run: |
