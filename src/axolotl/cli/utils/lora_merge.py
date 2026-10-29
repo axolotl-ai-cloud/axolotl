@@ -873,8 +873,29 @@ def _build_peft_layer_and_get_delta(
         return layer.get_delta_weight(adapter_name)
 
 
+def _transformers_weights_index(model_path: Path) -> Optional[str]:
+    """The safetensors index config ``transformers_weights`` names (e.g. Mistral's consolidated
+    checkpoints), when it exists in ``model_path``."""
+    config = model_path / "config.json"
+    if not config.exists():
+        return None
+    name = json.loads(config.read_text()).get("transformers_weights")
+    if (
+        isinstance(name, str)
+        and name.endswith(".safetensors.index.json")
+        and (model_path / name).exists()
+    ):
+        return name
+    return None
+
+
 def get_model_shards(model_path: Path) -> list[Path]:
     """Find all model shards in the given path."""
+    index_name = _transformers_weights_index(model_path)
+    if index_name is not None:
+        weight_map = json.loads((model_path / index_name).read_text())["weight_map"]
+        return sorted(model_path / shard for shard in set(weight_map.values()))
+
     shards: list[Path] = []
 
     patterns = ["model*.safetensors", "pytorch_model*.bin"]
@@ -3307,7 +3328,8 @@ def merge_lora_sharded_efficient(
     if len(model_shards) > 1 and weight_map:
         import json as _json
 
-        index_name = (
+        # keep the name config.json's transformers_weights points at
+        index_name = _transformers_weights_index(base_model_path) or (
             "model.safetensors.index.json"
             if safe_tensors
             else "pytorch_model.bin.index.json"
