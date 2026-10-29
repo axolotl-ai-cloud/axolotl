@@ -38,7 +38,7 @@ Please run below to setup env
 export UV_TORCH_BACKEND=cu128  # or cu130
 uv venv --no-project --relocatable
 source .venv/bin/activate
-uv pip install --no-build-isolation -e '.[deepspeed]' --group dev --group test
+uv pip install -e '.[deepspeed]' --group dev --group test
 pre-commit install
 
 # test

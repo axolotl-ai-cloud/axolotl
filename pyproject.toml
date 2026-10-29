@@ -323,5 +323,4 @@ conflicts = [
 [tool.uv.extra-build-dependencies]
 mamba-ssm = [{ requirement = "torch", match-runtime = true }]
 causal-conv1d = [{ requirement = "torch", match-runtime = true }]
-deepspeed = [{ requirement = "torch", match-runtime = true }]
 auto-gptq = [{ requirement = "torch", match-runtime = true }]
