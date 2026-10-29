@@ -59,7 +59,7 @@ jobs:
           uv pip install --no-build-isolation -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov-cli pytest pytest-retry pytest-sugar pytest-testmon pytest-xdist tbparse
+            codecov-cli pytest==9.1.1 pytest-retry pytest-sugar pytest-testmon pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
