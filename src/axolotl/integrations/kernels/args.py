@@ -306,14 +306,12 @@ class KernelsArgs(BaseModel):
                 raise bad
         return data
 
-    # Mistral-Large-4 (DeepSeek-V3-style MLA + MoE, clean q_proj / no fused indexer). Opt-in even
-    # for a trust_remote_code checkpoint; the adapter also auto-matches by model_type. Enables the
-    # scattermoe expert path wiring + the fused MLA attention-LoRA kernel.
-    use_mistral_large4_kernels: bool | None = None
+    # Mistral-Large-4 (model_type mistral_large4; the adapter matches it by model_type).
     # Fused, quantization-dispatching LoRA for the MLA attention projections (q_proj/
     # kv_a_proj_with_mqa/kv_b_proj/o_proj): bf16 / nf4 / fp8-dequant via the shared LoRA_O kernel,
     # native blockwise-fp8 on the large projections, low-bit (nvfp4/mx) via Marlin/MX. Unlike DSV4,
-    # MLA attention LoRA is safe here (no gradientless indexer). Default on when the adapter matches.
+    # MLA attention LoRA is safe here (no gradientless indexer). None = on for a LoRA run on a
+    # block-FP8 / bf16 checkpoint, off on the modelopt NVFP4 checkpoint.
     mistral_large4_attn_lora_kernel: bool | None = None
     # Use the native blockwise-fp8 GEMM (vs dequant) on the large MLA projections when the base is
     # fp8. Default on; the e2e win is on q_proj/kv_b_proj/o_proj (DeepGEMM sm90/sm100, Triton sm120).
