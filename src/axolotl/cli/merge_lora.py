@@ -245,6 +245,7 @@ def do_cli(
         "ple_cpu_offload": False,
         "attn_implementation": None,
         "context_parallel_size": None,
+        "expert_parallel_size": 1,
         "deepspeed": None,
         "fsdp": None,
         "fsdp_config": None,
