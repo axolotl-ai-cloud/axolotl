@@ -1,6 +1,8 @@
 """Tests for the Mamba / Mamba2 / Falcon-Mamba sample-packing patches."""
 
+import json
 import sys
+import textwrap
 from types import ModuleType
 
 import pytest
@@ -16,6 +18,7 @@ from axolotl.monkeypatch.models.mamba.modeling import (
 )
 from axolotl.monkeypatch.models.mamba_utils import (
     kernel_accepts,
+    kernelized_copy,
     require_seq_idx_kernels,
 )
 
@@ -287,7 +290,7 @@ class TestUnfusedPackedScan:
         u = torch.ones(1, 1, 3)
 
         with mamba_packing._unfused_packed_scan(
-            mod, PackedSegments(seq_idx), self.FAMILY
+            mod, nn.Module(), PackedSegments(seq_idx), self.FAMILY
         ):
             assert mod.mamba_inner_fn(u) is None
             # the torch fallback conv has no seq_idx, so it goes per document too
@@ -321,7 +324,79 @@ class TestUnfusedPackedScan:
         conv = mod.causal_conv1d_fn
         segments = PackedSegments(torch.tensor([[0, 1]], dtype=torch.int32))
 
-        with mamba_packing._unfused_packed_scan(mod, segments, self.FAMILY):
+        with mamba_packing._unfused_packed_scan(
+            mod, nn.Module(), segments, self.FAMILY
+        ):
+            assert mod.causal_conv1d_fn is conv
+
+
+class TestKernelizedCopy:
+    """kernels >= 0.18 kernelizes a per-instance copy and leaves the global on its fallback."""
+
+    @pytest.fixture
+    def kernelized(self, tmp_path):
+        kernels = pytest.importorskip("kernels")
+        conv = TestKernelIntrospection()._wrapped(None)
+        if not isinstance(conv, nn.Module):
+            pytest.skip("transformers does not route this kernels release")
+        (tmp_path / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "id": "axolotl-test-conv",
+                    "name": "axolotl-test-conv",
+                    "version": 1,
+                    "license": "Apache-2.0",
+                    "upstream": None,
+                    "source": None,
+                    "python-depends": [],
+                    "backend": {"type": "cpu"},
+                }
+            )
+        )
+        (tmp_path / "__init__.py").write_text("from . import layers\n")
+        (tmp_path / "layers.py").write_text(
+            textwrap.dedent(
+                """
+                import torch
+
+
+                class CausalConv1d(torch.nn.Module):
+                    def forward(
+                        self, hidden_states, weight, bias=None, activation=None, **kwargs
+                    ):
+                        kwargs.pop("seq_idx", None)
+                        return hidden_states
+                """
+            )
+        )
+
+        @kernels.use_kernelized_func(conv)
+        class Mixer(nn.Module):
+            def forward(self, hidden_states):
+                return conv(hidden_states, None)
+
+        mixer = Mixer().eval()
+        repo = kernels.LocalLayerRepository(
+            repo_path=tmp_path, layer_name="CausalConv1d"
+        )
+        with kernels.use_kernel_mapping({"causal_conv1d_fn": {"cpu": repo}}):
+            kernels.kernelize(mixer, device="cpu", mode=kernels.Mode.INFERENCE)
+        return mixer, conv
+
+    def test_kernelized_copy_takes_seq_idx(self, kernelized):
+        mixer, conv = kernelized
+
+        assert kernel_accepts(kernelized_copy(mixer, conv), "seq_idx") is True
+        assert kernelized_copy(nn.Module(), conv) is conv
+
+    def test_unfused_scan_leaves_a_kernelized_conv_alone(self, kernelized):
+        mixer, conv = kernelized
+        mod = TestUnfusedPackedScan._module(conv)
+        segments = PackedSegments(torch.tensor([[0, 1]], dtype=torch.int32))
+
+        with mamba_packing._unfused_packed_scan(
+            mod, mixer, segments, TestUnfusedPackedScan.FAMILY
+        ):
             assert mod.causal_conv1d_fn is conv
 
 

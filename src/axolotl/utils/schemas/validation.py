@@ -164,6 +164,18 @@ def _flash_attn_kernel_failure(attn_implementation: str) -> str | None:
     repo_id = FLASH_ATTN_KERNEL_FALLBACK.get(attn_implementation)
     if repo_id is None:
         return None
+    from transformers.utils import import_utils
+
+    # transformers ignores a kernels release outside its supported range, even
+    # though kernels.get_kernel below would load the build fine
+    if not import_utils.is_kernels_available():
+        from importlib.metadata import version as package_version
+
+        return (
+            f"kernels {package_version('kernels')} is outside the range transformers "
+            f"supports ({getattr(import_utils, 'KERNELS_MIN_VERSION', '?')} <= version "
+            f"< {getattr(import_utils, 'KERNELS_MAX_VERSION', '?')})"
+        )
     version: int | None = None
     try:
         # resolving the pinned version lists hub refs, so it fails offline too

@@ -23,6 +23,7 @@ import torch
 from axolotl.monkeypatch.models.mamba_utils import (
     get_seq_idx,
     kernel_accepts,
+    kernelized_copy,
     require_seq_idx_kernels,
 )
 from axolotl.utils.logging import get_logger
@@ -173,7 +174,7 @@ def packed_causal_conv(conv_fn, segments: PackedSegments, x, *args, **kwargs):
 
 
 @contextlib.contextmanager
-def _unfused_packed_scan(mod, segments: PackedSegments, family: dict):
+def _unfused_packed_scan(mod, mixer, segments: PackedSegments, family: dict):
     """Disable the fused row kernel and split the conv and scan per document.
 
     The mixer looks these up as module globals at call time, so swapping the
@@ -200,7 +201,7 @@ def _unfused_packed_scan(mod, segments: PackedSegments, family: dict):
     # continues on the unfused branch
     setattr(mod, fused, lambda *args, **kwargs: None)
     setattr(mod, scan, packed_scan)
-    if kernel_accepts(originals[conv], "seq_idx") is not True:
+    if kernel_accepts(kernelized_copy(mixer, originals[conv]), "seq_idx") is not True:
         setattr(mod, conv, packed_conv)
     try:
         yield
@@ -308,7 +309,10 @@ def _assert_packed_ready(mixer, mod, family: dict, model_type: str) -> None:
     if getattr(mod, "_axolotl_seq_idx_verified", False):
         return
     for name in family["seq_idx_kernels"]:
-        if kernel_accepts(getattr(mod, name), "seq_idx") is False:
+        if (
+            kernel_accepts(kernelized_copy(mixer, getattr(mod, name)), "seq_idx")
+            is False
+        ):
             raise RuntimeError(
                 f"{model_type} sample packing: `{name}` is the transformers torch "
                 "fallback, which drops seq_idx and mixes state across packed samples. "
@@ -358,7 +362,7 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
                 attention_mask=attention_mask,
                 **kwargs,
             )
-        with _unfused_packed_scan(mod, segments, family):
+        with _unfused_packed_scan(mod, self, segments, family):
             return original_forward(
                 self,
                 hidden_states,
