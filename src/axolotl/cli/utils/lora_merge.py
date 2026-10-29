@@ -1357,20 +1357,13 @@ def _requant_by_format(fmt, w_bf16, scales, dev, nvfp4_scale_mode="reuse"):
             "_scale_inv": scale_inv.reshape(*lead, sr, sc).to(si.dtype).cpu(),
         }
     if fmt == "modelopt_fp8":
-        sc = scales["_scale"]
-        grid = _modelopt_fp8_scale_grid(sc)
+        # reuse the checkpoint scales: they stay valid wherever they are stored (possibly
+        # another shard), and modelopt block scales are exact powers of two
+        grid = _modelopt_fp8_scale_grid(scales["_scale"]).to(dev).float()
         N, K = w.shape
         sr, sk = grid.shape
-        wb = w.reshape(sr, N // sr, sk, K // sk)
-        scale = wb.abs().amax(dim=(1, 3), keepdim=True).clamp_min(1e-12) / 448.0
-        if bool((torch.frexp(grid.float())[0].abs() == 0.5).all()):
-            # keep the checkpoint's power-of-two scales (exact in any scale dtype)
-            scale = torch.exp2(torch.ceil(torch.log2(scale)))
-        q = (wb / scale).clamp_(-448, 448).to(torch.float8_e4m3fn)
-        return {
-            "": q.reshape(N, K).cpu(),
-            "_scale": scale.reshape(sc.shape).to(sc.dtype).cpu(),
-        }
+        wb = w.reshape(sr, N // sr, sk, K // sk) / grid[:, None, :, None]
+        return {"": wb.clamp_(-448, 448).to(torch.float8_e4m3fn).reshape(N, K).cpu()}
     if fmt == "mxfp8":
         q, ebyte = _quant_mx(w, 32)
         s = scales["_scale"]
@@ -1578,7 +1571,8 @@ def _dequantize_quantized_shard(
             continue
         out[key] = deq.to(torch.bfloat16).cpu()
         did = True
-        drop.update(key + suf for suf in scales)
+        if dequant_all or fmt != "modelopt_fp8":
+            drop.update(key + suf for suf in scales)
         if not dequant_all:
             plan[key] = (fmt, scales)  # re-quantize after the LoRA fold
     for sk in drop:
