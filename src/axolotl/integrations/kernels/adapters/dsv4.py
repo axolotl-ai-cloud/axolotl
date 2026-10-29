@@ -11,13 +11,28 @@ from __future__ import annotations
 
 import torch
 
-from axolotl.integrations.kernels.adapters import ModelAdapter
+from axolotl.integrations.kernels.adapters import ModelAdapter, load_base_model_config
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 # mHC modules kept in fp32 and sharded separately by the FSDP2 quantized path.
 DSV4_FP32_SHARD_CLASSES = ("DeepseekV4HyperConnection", "DeepseekV4HyperHead")
+
+
+def scattermoe_unsupported_expert_dtype(cfg) -> str | None:
+    """The routed-expert dtype of an fp8-quantized checkpoint whose experts are not NVFP4, else
+    None. scattermoe runs NVFP4Tensor or unquantized experts only; blockwise FP8/FP4 experts would
+    reach its kernels as raw quantized weights with their ``*_scale_inv`` ignored."""
+    model_config = load_base_model_config(cfg)
+    qcfg = getattr(model_config, "quantization_config", None)
+    if not isinstance(qcfg, dict) or qcfg.get("quant_method") != "fp8":
+        return None
+    if str(qcfg.get("moe_quant_algo", "")).upper() == "NVFP4":
+        return None
+    return str(
+        qcfg.get("expert_dtype") or getattr(model_config, "expert_dtype", None) or "fp8"
+    )
 
 
 def _maybe_truncate_layers(model) -> None:
@@ -70,6 +85,16 @@ class DSV4Adapter(ModelAdapter):
         # quantizer has no NVFP4 expert path. Install an NVFP4-aware subclass so experts load as
         # NVFP4Tensor for the scattermoe fused path. Only relevant with the scattermoe expert path.
         if cfg.use_scattermoe:
+            expert_dtype = scattermoe_unsupported_expert_dtype(cfg)
+            if expert_dtype is not None:
+                raise ValueError(
+                    f"use_scattermoe with use_dsv4_kernels needs NVFP4 routed experts "
+                    f"(quantization_config.moe_quant_algo: NVFP4, e.g. "
+                    f"nvidia/DeepSeek-V4-Flash-NVFP4) or unquantized experts, but "
+                    f"{cfg.base_model} has blockwise expert_dtype={expert_dtype!r} experts, "
+                    "which the scattermoe expert kernels do not support. Drop use_scattermoe "
+                    "for this checkpoint."
+                )
             from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fp8_quantizer import (
                 configure_nonexpert_mode,
                 install_nvfp4_fp8_quantizer,
