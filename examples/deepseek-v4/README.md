@@ -25,6 +25,7 @@ Let us know how it goes. Happy finetuning! 🚀
 - On cloud, if using volume mount, pointing the HF cache (via `HF_HOME`) at a local disk keeps weight load fast.
 - Train the experts only. Do not add attention or module LoRA on a `use_dsv4_kernels` run: it is unsupported and breaks the experts-only FSDP2 invariant (data-independent backward collectives across ranks).
 - Keep `attn_implementation: eager` so the dsv4 kernels plugin owns the attention path.
+- `use_scattermoe` needs NVFP4 routed experts (`moe_quant_algo: NVFP4`, as in the NVFP4 checkpoint above). It refuses DeepSeek's own FP4 experts (e.g. `deepseek-ai/DeepSeek-V4-Flash`) and warns on blockwise FP8 experts, because the scattermoe expert kernels can't run either as loaded.
 - `sample_packing` attends within the sliding window across packed documents, exactly as plain eager attention would. Drop packing if your data needs strict cross-document isolation.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 
