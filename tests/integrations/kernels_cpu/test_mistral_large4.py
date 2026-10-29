@@ -191,3 +191,79 @@ def test_quant_kind_bf16_and_fp8():
     fp8.weight_scale_inv = torch.ones(1, 1)
     fp8.block_size = [128, 128]
     assert _quant_kind(fp8) == "fp8"
+
+
+MLA_TARGETS = ["q_proj", "kv_a_proj_with_mqa", "kv_b_proj", "o_proj"]
+
+
+def _tiny_peft_model(targets, lora_dropout=0.0):
+    from peft import LoraConfig, get_peft_model
+
+    torch.manual_seed(0)
+    model = AutoModelForImageTextToText.from_config(tiny_config()).float()
+    peft_model = get_peft_model(
+        model,
+        LoraConfig(
+            r=4, lora_alpha=8, lora_dropout=lora_dropout, target_modules=targets
+        ),
+    )
+    for name, param in peft_model.named_parameters():
+        if "lora_B" in name:
+            nn.init.normal_(param, std=0.02)
+    return peft_model
+
+
+def _loss_and_grads(model, input_ids):
+    model.zero_grad(set_to_none=True)
+    logits = model(input_ids=input_ids).logits
+    logits.pow(2).mean().backward()
+    grads = {
+        n: p.grad.clone()
+        for n, p in model.named_parameters()
+        if p.requires_grad and p.grad is not None
+    }
+    return logits.detach(), grads
+
+
+@pytest.mark.parametrize(
+    "targets,n_patched",
+    [
+        (MLA_TARGETS, 15),  # kv_a_proj_with_mqa is absent on the KV-shared layer
+        (["kv_b_proj"], 4),
+        (["q_proj", "kv_a_proj_with_mqa", "o_proj"], 11),
+    ],
+)
+def test_attn_lora_kernel_matches_peft(targets, n_patched):
+    model = _tiny_peft_model(targets)
+    input_ids = torch.randint(1, TEXT["vocab_size"], (2, 12))
+    ref_logits, ref_grads = _loss_and_grads(model, input_ids)
+
+    assert patch_mistral_large4_attn_lora(model) == n_patched
+    logits, grads = _loss_and_grads(model, input_ids)
+
+    torch.testing.assert_close(logits, ref_logits, rtol=1e-5, atol=1e-6)
+    assert grads.keys() == ref_grads.keys()
+    for name, ref in ref_grads.items():
+        torch.testing.assert_close(grads[name], ref, rtol=1e-4, atol=1e-7, msg=name)
+
+
+@pytest.mark.parametrize("lead", [(6,), (2, 6), (2, 1, 6)])
+def test_attn_lora_generic_path_keeps_input_shape(lead):
+    model = _tiny_peft_model(["kv_b_proj"])
+    patch_mistral_large4_attn_lora(model)
+    proj = model.base_model.model.model.language_model.layers[0].self_attn.kv_b_proj
+
+    x = torch.randn(*lead, TEXT["kv_lora_rank"], requires_grad=True)
+    out = proj(x)
+    out.pow(2).sum().backward()
+    got = (out.detach(), x.grad.clone(), proj.lora_A["default"].weight.grad.clone())
+
+    x.grad = None
+    proj.zero_grad(set_to_none=True)
+    ref = proj._ml4_orig_forward(x)
+    ref.pow(2).sum().backward()
+    want = (ref.detach(), x.grad, proj.lora_A["default"].weight.grad)
+
+    assert got[0].shape == (*lead, proj.out_features)
+    for g, w in zip(got, want, strict=True):
+        torch.testing.assert_close(g, w, rtol=1e-5, atol=1e-6)
