@@ -3,6 +3,9 @@
 
 """What ``install`` reports for models with and without recurrent layers."""
 
+import json
+from types import ModuleType
+
 import pytest
 import torch
 from tree_recurrence import (
@@ -13,7 +16,7 @@ from tree_recurrence import (
     tree_family,
     unregister_family,
 )
-from tree_recurrence._hooks import dispatches_to_kernel
+from tree_recurrence._hooks import dispatches_to_kernel, install_hook, remove_hook
 
 transformers = pytest.importorskip("transformers")
 
@@ -108,6 +111,71 @@ def test_kernel_dispatch_detection():
     assert not dispatches_to_kernel(dispatcher)
     dispatcher.forward = lambda *args, **kwargs: None
     assert dispatches_to_kernel(dispatcher)
+
+
+def test_kernel_dispatch_detection_follows_kernelize(tmp_path):
+    kernels = pytest.importorskip("kernels")
+    from transformers.integrations.hub_kernels import (
+        use_kernel_func_from_hub_with_fallback,
+    )
+
+    def reference_add(x, y, **kwargs):
+        return x + y
+
+    dispatcher = use_kernel_func_from_hub_with_fallback("tree_add", "no_such_package")(
+        reference_add
+    )
+    if not isinstance(dispatcher, torch.nn.Module):
+        pytest.skip("transformers does not route this kernels release")
+    (tmp_path / "metadata.json").write_text(
+        json.dumps(
+            {
+                "id": "tree-recurrence-test-add",
+                "name": "tree-recurrence-test-add",
+                "version": 1,
+                "license": "Apache-2.0",
+                "upstream": None,
+                "source": None,
+                "python-depends": [],
+                "backend": {"type": "cpu"},
+            }
+        )
+    )
+    (tmp_path / "__init__.py").write_text("from . import layers\n")
+    (tmp_path / "layers.py").write_text(
+        "import torch\n\n\n"
+        "class Add(torch.nn.Module):\n"
+        "    def forward(self, x, y, **kwargs):\n"
+        "        return torch.full_like(x, 42.0)\n"
+    )
+
+    modeling = ModuleType("tree_recurrence_test_modeling")
+    modeling.add = dispatcher
+    backed = []
+
+    def build(hook):
+        def add(*args, **kwargs):
+            backed.append(hook.kernel_backed())
+            return hook.original(*args, **kwargs)
+
+        return add
+
+    # kernels >= 0.18 kernelizes the mixer's own copy and routes its calls there
+    @kernels.use_kernelized_func(dispatcher)
+    class Mixer(torch.nn.Module):
+        def forward(self, x):
+            return modeling.add(x, x)
+
+    mixer = Mixer().eval()
+    repo = kernels.LocalLayerRepository(repo_path=tmp_path, layer_name="Add")
+    with kernels.use_kernel_mapping({"tree_add": {"cpu": repo}}):
+        kernels.kernelize(mixer, device="cpu", mode=kernels.Mode.INFERENCE)
+    hook = install_hook(modeling, "add", build)
+    try:
+        assert mixer(torch.ones(2)).tolist() == [42.0, 42.0]
+    finally:
+        remove_hook(hook)
+    assert backed == [True]
 
 
 def test_tree_rows_build_no_cache():
