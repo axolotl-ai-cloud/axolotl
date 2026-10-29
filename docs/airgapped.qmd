@@ -42,7 +42,7 @@ The staging host needs:
 
 - Internet access, `git` and `curl`.
 - Free disk of roughly 15-20 GB for the bundle (an estimate; check with `du -sh "$BUNDLE"`), plus the same again for the tarball.
-- A C compiler and Python build tools, to build the few packages that have no Python 3.14 wheel. If the staging architecture differs from the target's, you also need a builder of the target architecture for `zstandard` (an arm64 machine or container for an aarch64 target).
+- Python build tools, to build the few packages that have no Python 3.14 wheel.
 
 ::: {.callout-note}
 Some dependencies are x86_64 only in this dependency set: DeepSpeed, xformers, torchao and flash-linear-attention (the `fla` extra). The demo config needs none of them. The bundle also carries the extras the Docker image ships, listed in [Resolve the pins](#sec-wheelhouse-resolve).
@@ -58,7 +58,7 @@ BUNDLE=$HOME/axolotl-airgap AXOLOTL_REF=$AXOLOTL_REF TARGET_ARCH=x86_64 KERNELS=
 scripts/airgap/build_bundle.sh hf_cache manifest archive   # rerun a subset
 ```
 
-`EXTRAS` defaults to `fla,ringmaster,ray,deepspeed` (`ringmaster,ray` for an aarch64 target) and `WITH_CCE=1` builds the cut-cross-entropy wheel; set `PREPROCESS=0` to skip tokenizing on staging and `SPLIT_SIZE=4000M` to split the archive. When the staging and target architectures differ, the script downloads the wheels but leaves the `zstandard` and DeepSpeed builds to you, as described in [Build zstandard](#sec-wheelhouse-zstd).
+`EXTRAS` defaults to `fla,ringmaster,ray,deepspeed` (`ringmaster,ray` for an aarch64 target) and `WITH_CCE=1` builds the cut-cross-entropy wheel; set `PREPROCESS=0` to skip tokenizing on staging and `SPLIT_SIZE=4000M` to split the archive. When the staging and target architectures differ, the script downloads the wheels but leaves the DeepSpeed build to you, as described in [Build DeepSpeed](#sec-wheelhouse-deepspeed).
 
 The same work, condensed to one command per step. Each one is explained in full in the sections that follow, which is where to go when a step fails or your target differs from the worked example:
 
@@ -72,7 +72,7 @@ curl -fL -o "$BUNDLE/python-mirror/$PBS_RELEASE/cpython-$PY_VERSION+$PBS_RELEASE
 # wheelhouse
 uv pip compile pyproject.toml --extra fla --extra ringmaster --extra ray --extra deepspeed --python-version 3.14 --python-platform $TARGET_ARCH-manylinux_2_28 --torch-backend cu130 -o requirements.target.txt
 uvx pip download --no-deps --only-binary=:all: --platform ... -r requirements.binary.txt -d wheelhouse
-uvx --python 3.14 pip wheel --no-deps -w wheelhouse <pure-python sdists>     # plus zstandard and deepspeed on a target-arch builder
+uvx --python 3.14 pip wheel --no-deps -w wheelhouse <pure-python sdists>     # plus deepspeed on a target-arch builder
 uv build --wheel --python 3.14 --out-dir wheelhouse                           # axolotl itself
 uvx --python 3.14 pip wheel --no-deps -w wheelhouse "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.0"
 # HF cache (HF_HOME=$BUNDLE/hf)
@@ -307,10 +307,10 @@ The `[cu13]` extra selects `nvidia-cutlass-dsl-libs-cu13`. Plain `nvidia-cutlass
 
 ### Split out the packages without wheels {#sec-wheelhouse-split}
 
-On Python 3.14, seven pinned packages have no usable wheel for the target. Six of them are pure-Python sdists: `langdetect`, `rouge-score`, `sqlitedict`, `word2number`, `axolotl-contribs-lgpl` and `axolotl-contribs-mit`. The seventh, `zstandard==0.22.0`, is a C extension with wheels only up to cp312. With the DeepSpeed extra, `deepspeed` (sdist only) is an eighth.
+On Python 3.14, six pinned packages have no usable wheel for the target, all pure-Python sdists: `langdetect`, `rouge-score`, `sqlitedict`, `word2number`, `axolotl-contribs-lgpl` and `axolotl-contribs-mit`. With the DeepSpeed extra, `deepspeed` (sdist only) is a seventh.
 
 ```{.bash}
-NOWHEEL='^(zstandard|langdetect|rouge-score|sqlitedict|word2number|axolotl-contribs-lgpl|axolotl-contribs-mit|deepspeed)=='
+NOWHEEL='^(langdetect|rouge-score|sqlitedict|word2number|axolotl-contribs-lgpl|axolotl-contribs-mit|deepspeed)=='
 grep -v -E -i "$NOWHEEL" "$BUNDLE/requirements.target.txt" > "$BUNDLE/requirements.binary.txt"
 grep    -E -i "$NOWHEEL" "$BUNDLE/requirements.target.txt"   # built in the steps below
 ```
@@ -350,23 +350,6 @@ uvx --python 3.14 pip wheel --no-deps -w "$BUNDLE/wheelhouse" \
   langdetect==1.0.9 word2number==1.1 sqlitedict==2.1.0 rouge-score==0.1.2 \
   axolotl-contribs-lgpl==0.0.7 axolotl-contribs-mit==0.0.6
 ```
-
-### Build zstandard {#sec-wheelhouse-zstd}
-
-`zstandard==0.22.0` produces an architecture-specific wheel, so build it on a host or container of the target architecture with Python 3.14 and a C compiler. If staging is the same architecture as the target, build it on staging:
-
-```{.bash}
-uv venv --seed --python 3.14 /tmp/zstd-build
-/tmp/zstd-build/bin/python -m pip install setuptools wheel cffi
-/tmp/zstd-build/bin/python -m pip wheel --no-deps --no-build-isolation \
-  -w "$BUNDLE/wheelhouse" zstandard==0.22.0
-```
-
-The build takes several minutes (about 7.5 on an x86_64 test host) and produces `zstandard-0.22.0-cp314-cp314-linux_<arch>.whl`. If you built it elsewhere, copy the wheel into `$BUNDLE/wheelhouse`.
-
-::: {.callout-important}
-Build without isolation. With isolation, the build pulls an old pinned `cffi` that fails on Python 3.14 with `undefined symbol: _PyErr_WriteUnraisableMsg`. The build venv must already contain `setuptools`, `wheel` and a current `cffi`.
-:::
 
 ### Build DeepSpeed (optional, x86_64 only) {#sec-wheelhouse-deepspeed}
 
@@ -425,7 +408,7 @@ du -sh "$BUNDLE/wheelhouse"
 If you resolved with `--extra deepspeed` but skipped the DeepSpeed build, the loop reports `MISSING: deepspeed`. The loop checks only `requirements.target.txt`, so confirm `axolotl-*.whl` and `cut_cross_entropy-*.whl` by eye.
 
 ::: {.callout-warning}
-Do not use `uv pip compile --generate-hashes` with `--require-hashes`. The wheels built locally (`zstandard`, the pure-Python sdists and Axolotl) will not match the PyPI hashes. Integrity is covered by the bundle's `SHA256SUMS`.
+Do not use `uv pip compile --generate-hashes` with `--require-hashes`. The wheels built locally (the pure-Python sdists, DeepSpeed and Axolotl) will not match the PyPI hashes. Integrity is covered by the bundle's `SHA256SUMS`.
 :::
 
 ## Fetch model, dataset, and Hub kernels into a portable HF cache {#sec-hf-assets}
@@ -895,16 +878,12 @@ Keep `--offline --no-index` on every install command.
 
 **`No solution found`, or a missing-wheel error with `--no-build`**
 
-A wheel is missing, either because the platform tags excluded it or because the package is sdist-only. On Python 3.14 the known ones are `zstandard`, `langdetect`, `rouge-score`, `sqlitedict`, `word2number`, `axolotl-contribs-lgpl`, `axolotl-contribs-mit` and, with the extra, `deepspeed`. Find the gap, then build the wheel on staging ([Build a wheelhouse](#sec-wheelhouse)):
+A wheel is missing, either because the platform tags excluded it or because the package is sdist-only. On Python 3.14 the known ones are `langdetect`, `rouge-score`, `sqlitedict`, `word2number`, `axolotl-contribs-lgpl`, `axolotl-contribs-mit` and, with the extra, `deepspeed`. Find the gap, then build the wheel on staging ([Build a wheelhouse](#sec-wheelhouse)):
 
 ```{.bash}
 uv pip install --dry-run --offline --no-index --no-build \
   --find-links "$BUNDLE/wheelhouse" -r "$BUNDLE/requirements.target.txt"
 ```
-
-**`zstandard` fails with `undefined symbol: _PyErr_WriteUnraisableMsg`**
-
-It was built with build isolation. Rebuild without isolation as in [Build zstandard](#sec-wheelhouse-zstd).
 
 **`uv python install` tries to download, or cannot find the interpreter**
 
