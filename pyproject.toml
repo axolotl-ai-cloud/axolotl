@@ -162,7 +162,7 @@ dev = [
 test = [
     "codecov",
     "codecov-cli",
-    "pytest==9.1.1",
+    "pytest",
     "pytest-cov",
     "pytest-retry",
     "pytest-sugar",
