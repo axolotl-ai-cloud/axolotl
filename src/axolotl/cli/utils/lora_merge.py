@@ -18,6 +18,7 @@ from peft import LoraConfig
 from peft.utils.other import get_pattern_key
 from tqdm import tqdm
 
+from axolotl.cli.utils.compiled_lora_merge import _ieee_matmul
 from axolotl.cli.utils.param_wrapper_merge import (
     BASE_LAYER_NESTING,
     ParamWrapperTarget,
@@ -2831,6 +2832,8 @@ def _overlay_base_config(base_dir: Path, config_source: str, overlay: Path) -> P
     return overlay
 
 
+# IEEE fp32: a tf32 config would otherwise round the deltas differently from training
+@_ieee_matmul()
 def merge_lora_sharded_efficient(
     base_model_path: Union[str, Path],
     lora_adapter_path: Union[str, Path],
