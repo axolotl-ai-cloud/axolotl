@@ -3,7 +3,7 @@
 import json
 import sys
 import textwrap
-from types import ModuleType
+from types import MethodType, ModuleType, SimpleNamespace
 
 import pytest
 import torch
@@ -398,6 +398,59 @@ class TestKernelizedCopy:
             mod, mixer, segments, TestUnfusedPackedScan.FAMILY
         ):
             assert mod.causal_conv1d_fn is conv
+
+
+class _Dispatch(nn.Module):
+    """A hub-wrapped kernel whose own forward is the torch fallback."""
+
+    def forward(self, hidden_states, weight):
+        return hidden_states
+
+
+def _takes_seq_idx(kernel):
+    def forward(self, hidden_states, weight, seq_idx=None):
+        return hidden_states
+
+    kernel.forward = MethodType(forward, kernel)
+    return kernel
+
+
+class TestAssertPackedReady:
+    """Every mixer is checked against the kernel it runs."""
+
+    FAMILY = {"seq_idx_kernels": ("causal_conv1d_fn",)}
+
+    @staticmethod
+    def _mixer(conv):
+        mixer = nn.Module()
+        mixer.in_proj = SimpleNamespace(
+            weight=SimpleNamespace(device=torch.device("cuda"))
+        )
+        mixer.__dict__["_kernel_funcs"] = {"causal_conv1d_fn": conv}
+        return mixer
+
+    def _assert(self, mixer, mod):
+        mamba_packing._assert_packed_ready(mixer, mod, self.FAMILY, "mamba2")
+
+    def test_a_mixer_on_the_fallback_raises_after_another_passed(self):
+        mod = ModuleType("fake_mamba2_modeling")
+        mod.causal_conv1d_fn = _Dispatch()
+
+        self._assert(self._mixer(_takes_seq_idx(_Dispatch())), mod)
+        with pytest.raises(RuntimeError, match="torch fallback"):
+            self._assert(self._mixer(_Dispatch()), mod)
+
+    def test_a_kernel_rebound_to_the_fallback_is_checked_again(self):
+        mod = ModuleType("fake_mamba2_modeling")
+        mod.causal_conv1d_fn = _Dispatch()
+        conv = _takes_seq_idx(_Dispatch())
+        mixer = self._mixer(conv)
+
+        self._assert(mixer, mod)
+        self._assert(mixer, mod)
+        del conv.forward
+        with pytest.raises(RuntimeError, match="torch fallback"):
+            self._assert(mixer, mod)
 
 
 class _RecordingMixer(nn.Module):
