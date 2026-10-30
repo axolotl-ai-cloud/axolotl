@@ -1,0 +1,51 @@
+base_model: meta-llama/Llama-3.2-1B-Instruct
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+
+# LoRA adapter
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+
+# TPU-safe attention (no flash-attn on TPU)
+attn_implementation: sdpa
+
+# Precision: all current TPU generations support bfloat16
+bf16: true
+
+# Static shapes (required on TPU; auto-set, but explicit here for clarity)
+pad_to_sequence_len: true
+sequence_len: 2048
+
+# These are also auto-set by the TPU validator, kept explicit for readability
+dataloader_drop_last: true
+dataloader_pin_memory: false
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+
+dataset_prepared_path: ./data/tpu-lora-prepared
+output_dir: ./outputs/tpu-lora-out
+
+# Training hyperparameters
+num_epochs: 1
+micro_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 2e-4
+lr_scheduler: cosine
+warmup_steps: 50
+
+gradient_checkpointing: true
+
+# Logging
+logging_steps: 10
+eval_steps: 100
+eval_sample_packing: false
+save_safetensors: true

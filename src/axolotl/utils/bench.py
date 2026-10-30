@@ -6,7 +6,7 @@ import logging
 import torch
 from transformers.utils.import_utils import is_torch_npu_available
 
-from axolotl.utils.distributed import get_device_type
+from axolotl.utils.distributed import get_device_type, is_xla
 
 try:
     from pynvml import (
@@ -93,7 +93,21 @@ def gpu_memory_usage_smi(device=0):
         return 0.0
 
 
+def _xla_memory_usage() -> tuple[float, float, float]:
+    """Return (used_GiB, 0.0, 0.0) from the XLA runtime memory info."""
+    try:
+        import torch_xla.core.xla_model as xm  # noqa: PLC0415
+
+        info = xm.get_memory_info(xm.xla_device())
+        used = info.get("bytes_used", 0) / 1024.0**3
+        return used, 0.0, 0.0
+    except Exception:  # noqa: BLE001
+        return 0.0, 0.0, 0.0
+
+
 def get_gpu_memory_usage(device: int | torch.device = 0):
+    if is_xla():
+        return _xla_memory_usage()
     cur_device_type = str(get_device_type())
     if torch.backends.mps.is_available():
         usage, cache, misc = mps_memory_usage_all()
