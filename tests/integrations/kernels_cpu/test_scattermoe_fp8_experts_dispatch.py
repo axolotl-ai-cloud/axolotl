@@ -53,7 +53,9 @@ E, H, I = 4, 128, 128  # noqa: E741
 def isolated_registration(monkeypatch):
     """Keep the registrations and global patches of ``register_scattermoe_experts`` local."""
     for cls in (ExpertsInterface, type(FP8_REGISTRY)):
-        monkeypatch.setattr(cls, "_global_mapping", dict(cls._global_mapping))
+        # an earlier test in the process may already have registered scattermoe
+        mapping = {k: v for k, v in cls._global_mapping.items() if k != "scattermoe"}
+        monkeypatch.setattr(cls, "_global_mapping", mapping)
     monkeypatch.setattr(
         PreTrainedModel,
         "get_correct_experts_implementation",
