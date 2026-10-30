@@ -79,6 +79,9 @@ class _PaddedGather(torch.autograd.Function):
         return gh, None, None, None
 
 
+_ROUTER_GRAD_ROWS = 8192
+
+
 class _WeightedScatter(torch.autograd.Function):
     """out = zeros(N, H); out[rep[t]] += dn[padded_row[t]] * w[t] — multiply in-register."""
 
@@ -104,7 +107,12 @@ class _WeightedScatter(torch.autograd.Function):
         gw = None
         if ctx.needs_input_grad[1]:
             dn = saved[3]
-            gw = (dn[padded_row].float() * go[rep].float()).sum(-1).to(w.dtype)
+            # row chunks bound the two fp32 [rows, H] temporaries (rows = tokens * top_k)
+            gw = torch.empty(rep.numel(), device=go.device, dtype=torch.float32)
+            for s in range(0, rep.numel(), _ROUTER_GRAD_ROWS):
+                e = s + _ROUTER_GRAD_ROWS
+                gw[s:e] = (dn[padded_row[s:e]].float() * go[rep[s:e]].float()).sum(-1)
+            gw = gw.to(w.dtype)
         return gdn, gw, None, None, None
 
 

@@ -89,7 +89,9 @@ def test_weighted_scatter_matches_index_add(w_dtype, router_grad):
     _assert_bf16_sum_close(dn.grad, ref_gdn, ref_gdn.abs(), terms=1)
     if router_grad:
         ref_gw = (dn.detach()[padded_row].float() * go[rep].float()).sum(-1)
-        torch.testing.assert_close(w.grad, ref_gw.to(w_dtype))
+        # same fp32 row sums; the bf16 router weight rounds once
+        rtol = 1e-5 if w_dtype == torch.float32 else 2**-7
+        torch.testing.assert_close(w.grad.float(), ref_gw, rtol=rtol, atol=1e-6)
     else:
         assert w.grad is None
 
