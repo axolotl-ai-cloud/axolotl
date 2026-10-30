@@ -37,6 +37,7 @@ from axolotl.core.trainers.mixins import (
     SchedulerMixin,
 )
 from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, OptimizerMixin
+from axolotl.utils.distributed import get_device_type
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -310,6 +311,36 @@ def build_strided_dense_mask_and_positions(
 # ---------------------------------------------------------------------------
 
 
+def _feature_device_type(original_device: torch.device) -> str:
+    """Device type the strided feature network is placed on.
+
+    The feature network runs alongside the actor, so it keeps the actor's own
+    accelerator type (cuda / npu / xpu / ...). A cpu or meta placeholder does not
+    say where the run lives, so the device type of the current run is used there.
+    """
+    if original_device.type in ("cpu", "meta"):
+        return str(get_device_type())
+    return original_device.type
+
+
+def _device_count_for(device_type: str) -> int:
+    """Number of devices of ``device_type`` this run can use, at least 1.
+
+    ``get_device_count()`` only knows the cuda and npu counters, so it reports a
+    single device on any other accelerator. That decides which branch builds the
+    feature network, so ask the runtime of the actor's own backend instead and
+    keep 1 as the floor when the backend does not expose a counter.
+    """
+    backend = getattr(torch, device_type, None)
+    counter = getattr(backend, "device_count", None)
+    if counter is None:
+        return 1
+    try:
+        return max(1, int(counter()))
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return 1
+
+
 class AxolotlStridedEBFTTrainer(
     CheckpointWriteRetryMixin,
     RngLoaderMixin,
@@ -400,12 +431,9 @@ class AxolotlStridedEBFTTrainer(
         # or deepcopy (full-parameter models / multi-GPU).
         first_param = next(unwrapped.parameters())
         original_device = first_param.device
-        actor_gpu = (
-            original_device.index
-            if (original_device.type == "cuda" and original_device.index is not None)
-            else 0
-        )
-        visible_gpus = torch.cuda.device_count()
+        actor_gpu = original_device.index if original_device.index is not None else 0
+        feature_device_type = _feature_device_type(original_device)
+        visible_gpus = _device_count_for(feature_device_type)
 
         # Check if we can share weights (PEFT model on single GPU)
         from peft import PeftModel
@@ -420,7 +448,7 @@ class AxolotlStridedEBFTTrainer(
             # Share weights: use actor's base model with adapters disabled for
             # feature extraction. Saves ~2.5 GB (no deepcopy of base weights).
             self.feature_network = None  # no separate network
-            self._feature_device = torch.device(f"cuda:{actor_gpu}")
+            self._feature_device = torch.device(feature_device_type, actor_gpu)
             self._feature_use_flex = self.use_flex_attention
             LOG.info(
                 "Feature network shares actor weights (PEFT disable_adapter). "
@@ -431,7 +459,7 @@ class AxolotlStridedEBFTTrainer(
             self.feature_network = copy.deepcopy(unwrapped)
             self.feature_network.to(dtype=torch.bfloat16)
             self._feature_device = torch.device(
-                f"cuda:{(actor_gpu + 1) % visible_gpus}"
+                feature_device_type, (actor_gpu + 1) % visible_gpus
             )
             LOG.info(f"Creating frozen feature network on {self._feature_device}...")
             self.feature_network.to(device=self._feature_device)
@@ -460,7 +488,7 @@ class AxolotlStridedEBFTTrainer(
                 torch_dtype=torch.bfloat16,
                 attn_implementation="eager",
             )
-            self._feature_device = torch.device(f"cuda:{actor_gpu}")
+            self._feature_device = torch.device(feature_device_type, actor_gpu)
             self.feature_network.to(device=self._feature_device)
             self._feature_use_flex = False
             for param in self.feature_network.parameters():
@@ -471,9 +499,9 @@ class AxolotlStridedEBFTTrainer(
             # Single-GPU, non-PEFT: deepcopy on same device
             self.feature_network = copy.deepcopy(unwrapped)
             self.feature_network.to(dtype=torch.bfloat16)
-            self._feature_device = torch.device(f"cuda:{actor_gpu}")
+            self._feature_device = torch.device(feature_device_type, actor_gpu)
             self.feature_network.to(device=self._feature_device)
-            if _FLEX_ATTENTION_AVAILABLE:
+            if _FLEX_ATTENTION_AVAILABLE and self._feature_device.type == "cuda":
                 if hasattr(self.feature_network.config, "_attn_implementation"):
                     self.feature_network.config._attn_implementation = "flex_attention"
                 self._feature_use_flex = True
