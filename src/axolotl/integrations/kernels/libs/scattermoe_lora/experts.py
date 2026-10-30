@@ -729,7 +729,14 @@ def scattermoe_experts_forward(
     # Native mxfp8 grouped path (moe_grouped_mode='mxfp8'): experts are OCP-MX fp8 (e4m3 param +
     # e8m0 *_mx_scale buffer, from the load-time requant). Base GEMM reads fp8 in-register and
     # applies the 32-wide e8m0 scale (W8A16); hardware-MX-native, portable Triton incl. sm120.
-    if _fp4_grouped_mode == "mxfp8" and gup_lora is not None and down_lora is not None:
+    # the grouped mxfp8 / fp8_block trainers take a gated [E, 2I, H] gate_up_proj
+    _gated_gate_up = w1_attr == "gate_up_proj"
+    if (
+        _fp4_grouped_mode == "mxfp8"
+        and _gated_gate_up
+        and gup_lora is not None
+        and down_lora is not None
+    ):
         gu_base = _get_base_param(self.gate_up_proj)
         gu_scale = getattr(self, "gate_up_proj_mx_scale", None)
         dn_scale = getattr(self, "down_proj_mx_scale", None)
@@ -766,6 +773,7 @@ def scattermoe_experts_forward(
     # (sm90 H200 / sm100 B200,B300) or a bf16-dequant fallback. Requires block-fp8 experts + LoRA.
     if (
         _fp4_grouped_mode == "fp8_block"
+        and _gated_gate_up
         and gup_lora is not None
         and down_lora is not None
     ):
