@@ -753,6 +753,8 @@ def scattermoe_experts_forward(
                 prefer_fp8_dx=RUNTIME.fp4_dx_prefer_fp8,
             )
 
+    _refuse_block_quantized_experts(self)
+
     # NVFP4 experts + LoRA without dsv4_fp4_grouped_mode set would fall through to
     # _prepare_weights_and_lora -> selective_nvfp4_weights_fwd -> scatter2scatter_lora_mx, which
     # SIGSEGVs on Blackwell. Turn that silent crash into an actionable error (the grouped path is the
@@ -1071,6 +1073,8 @@ def scattermoe_experts_forward_ep(
                     RUNTIME.fp4_dx_prefer_fp8,
                 )
 
+    _refuse_block_quantized_experts(self)
+
     # same guard as the non-EP forward: on Blackwell the legacy fused-MX kernel is the wrong
     # path for NVFP4 + LoRA (SIGSEGV on some layouts, 10x slower on others); the supported
     # routes are the merge-aware grouped GEMM or dsv4_fp4_grouped_mode
@@ -1175,6 +1179,113 @@ def scattermoe_experts_forward_ep(
 
 _SCATTERMOE_PATCHED = False
 
+# transformers' default experts implementation; applies the FP8 experts' `*_scale_inv`
+_STOCK_FP8_EXPERTS = "grouped_mm"
+
+
+def _block_quantized_expert_dtype(module) -> torch.dtype | None:
+    """The dtype of transformers' block-FP8 or packed-FP4 expert weights, which carry
+    ``*_scale_inv`` block scales the scattermoe kernels don't apply, else None (NVFP4Tensor,
+    MXFP4 and unquantized experts)."""
+    w1 = _w1_name(module)
+    weight = _get_base_param(getattr(module, w1, None))
+    if (
+        isinstance(weight, torch.Tensor)
+        and weight.dtype in (torch.float8_e4m3fn, torch.int8)
+        and getattr(module, f"{w1}_scale_inv", None) is not None
+    ):
+        return weight.dtype
+    return None
+
+
+def _refuse_block_quantized_experts(module) -> None:
+    dtype = _block_quantized_expert_dtype(module)
+    if dtype is not None:
+        raise NotImplementedError(
+            f"use_scattermoe has no kernel for {type(module).__name__} with block-quantized "
+            f"{dtype} expert weights: they carry *_scale_inv block scales the scattermoe "
+            "kernels don't apply. Without expert LoRA they run on transformers' FP8 experts "
+            "forward; drop the expert LoRA (lora_target_parameters), use an NVFP4-expert or "
+            "unquantized checkpoint, or drop use_scattermoe."
+        )
+
+
+def _is_fp8_experts_interface(interface) -> bool:
+    # by name: a duplicate transformers import has its own FP8ExpertsInterface class
+    return any(c.__name__ == "FP8ExpertsInterface" for c in type(interface).__mro__)
+
+
+def _fp8_experts_dispatch(interface):
+    """The ``"scattermoe"`` entry of an FP8 experts ``interface``: the interface's stock FP8
+    forward for block-quantized experts without expert LoRA, else scattermoe, which runs
+    NVFP4Tensor and unquantized experts and refuses block-quantized ones it has no path for."""
+
+    def scattermoe_fp8_experts_forward(self, hidden_states, top_k_index, top_k_weights):
+        dtype = _block_quantized_expert_dtype(self)
+        if dtype is not None and not (
+            getattr(self, "_scattermoe_lora", None) or _has_peft_wrapper(self)
+        ):
+            # transformers' FP8 experts backward can't dequantize packed FP4
+            if (
+                dtype == torch.int8
+                and torch.is_grad_enabled()
+                and hidden_states.requires_grad
+            ):
+                raise NotImplementedError(
+                    f"{type(self).__name__} holds packed-FP4 expert weights, which have no "
+                    "backward in transformers' FP8 experts forward or in scattermoe, so "
+                    "gradients can't flow through these experts. Use an NVFP4-expert or "
+                    "unquantized checkpoint."
+                )
+            return interface[_STOCK_FP8_EXPERTS](
+                self, hidden_states, top_k_index, top_k_weights
+            )
+        return scattermoe_experts_forward(
+            self, hidden_states, top_k_index, top_k_weights
+        )
+
+    scattermoe_fp8_experts_forward._scattermoe_fp8_dispatch = True  # type: ignore[attr-defined]
+    return scattermoe_fp8_experts_forward
+
+
+def register_scattermoe_interface(interface) -> None:
+    """Register ``"scattermoe"`` in ``interface``: the expert-format dispatcher in an FP8 experts
+    interface, else the scattermoe forward. Never replaces an existing entry with the bare
+    scattermoe forward. Idempotent."""
+    if interface is None:
+        return
+    if _is_fp8_experts_interface(interface):
+        current = interface.get("scattermoe")
+        if not getattr(current, "_scattermoe_fp8_dispatch", False):
+            interface.register("scattermoe", _fp8_experts_dispatch(interface))
+    elif "scattermoe" not in interface:
+        interface.register("scattermoe", scattermoe_experts_forward)
+
+
+def bound_experts_interface(module):
+    """The ExpertsInterface ``type(module).forward`` dispatches through, else None.
+
+    Loading can create two transformers registries, and ``@use_experts_implementation`` closes
+    over one that may not be the one imported here."""
+    forward = type(module).forward
+    code = getattr(forward, "__code__", None)
+    if code is None:
+        return None
+    cells = dict(zip(code.co_freevars, forward.__closure__ or (), strict=False))
+    cell = cells.get("experts_interface")
+    return cell.cell_contents if cell is not None else None
+
+
+def register_scattermoe_model_interfaces(model) -> None:
+    """Register ``"scattermoe"`` in the interface every experts module of ``model`` dispatches
+    through, e.g. the FP8 one ``FP8Experts`` binds when the checkpoint is quantized."""
+    seen = set()
+    for module in model.modules():
+        if type(module) in seen:
+            continue
+        seen.add(type(module))
+        register_scattermoe_interface(bound_experts_interface(module))
+
 
 def _ensure_single_lora_ops():
     """Guarantee a single module instance of the autotuned ``kernels.lora_ops``.
@@ -1210,7 +1321,8 @@ def _ensure_single_lora_ops():
 
 
 def register_scattermoe_experts():
-    """Register ``"scattermoe"`` in the ExpertsInterface and the validator allowlist.
+    """Register ``"scattermoe"`` in the ExpertsInterface, transformers' FP8 experts interface
+    and the validator allowlist.
 
     Idempotent.
     """
@@ -1231,15 +1343,18 @@ def register_scattermoe_experts():
 
         from transformers.integrations import use_experts_implementation
 
-        canon = (
+        register_scattermoe_interface(
             inspect.signature(use_experts_implementation)
             .parameters["experts_interface"]
             .default
         )
-        if canon is not None and "scattermoe" not in canon:
-            canon.register("scattermoe", scattermoe_experts_forward)
     except (ImportError, KeyError, AttributeError):
         pass
+
+    # FP8Experts (fp8-quantized checkpoints) dispatch through their own registry.
+    from transformers.integrations.finegrained_fp8 import ALL_FP8_EXPERTS_FUNCTIONS
+
+    register_scattermoe_interface(ALL_FP8_EXPERTS_FUNCTIONS)
 
     # Route PEFT target_parameters expert LoRA to the fused kernel (bypassing the parametrization
     # merge) for experts-interface MoEs.

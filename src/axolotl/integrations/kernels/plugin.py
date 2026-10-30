@@ -395,6 +395,12 @@ class KernelsPlugin(BasePlugin):
             adapter.pre_lora_load(cfg, model)
 
     def post_model_load(self, cfg, model):
+        if cfg.use_scattermoe:
+            from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+                register_scattermoe_model_interfaces,
+            )
+
+            register_scattermoe_model_interfaces(model)
         if cfg.use_sonicmoe and cfg.sonicmoe_ep_padding_seed:
             _seed_ep_padding(cfg, model)
         sonic_loaded = bool(cfg.use_sonicmoe) and _preload_sonicmoe_kernel()

@@ -64,16 +64,15 @@ def geglu_forward(
     """GEGLU forward pass.
 
     Args:
-        gate: Input gate tensor of shape [batch, seq_len, hidden_dim].
-        up: Up-projection tensor of shape [batch, seq_len, hidden_dim].
+        gate: Input gate tensor of shape [..., hidden_dim].
+        up: Up-projection tensor of shape [..., hidden_dim].
         approximate: Use the tanh approximation of GELU (`gelu_pytorch_tanh`).
 
     Returns:
-        torch.Tensor: Output tensor of shape [batch, seq_len, hidden_dim].
+        torch.Tensor: Output tensor of shape [..., hidden_dim].
     """
-    batch, seq_len, hidden_dim = gate.shape
     n_elements = gate.numel()
-    out = torch.empty((batch, seq_len, hidden_dim), dtype=gate.dtype, device="cuda")
+    out = torch.empty(gate.shape, dtype=gate.dtype, device="cuda")
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)  # noqa: E731
     _geglu_fwd_kernel[grid](
@@ -187,9 +186,9 @@ def geglu_backward(
     """GEGLU backward pass using in-place operations.
 
     Args:
-        grad_output: Gradient of loss with respect to output, shape `[batch, seq_len, hidden_dim]`.
-        gate: Gate tensor from forward pass, shape `[batch, seq_len, hidden_dim]`.
-        up: Up-projection tensor from forward pass, shape `[batch, seq_len, hidden_dim]`.
+        grad_output: Gradient of loss with respect to output, shape `[..., hidden_dim]`.
+        gate: Gate tensor from forward pass, shape `[..., hidden_dim]`.
+        up: Up-projection tensor from forward pass, shape `[..., hidden_dim]`.
         approximate: Use the tanh approximation of GELU (`gelu_pytorch_tanh`).
 
     Returns:
