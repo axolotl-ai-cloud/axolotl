@@ -360,13 +360,17 @@ class _GroupedExperts(torch.autograd.Function):
         # would return the emptied NVFP4 tensor).
         ctx.bwd_marlin = None
         ctx.marlin_dx = None
-        ctx.marlin_base = base if base[0] == "marlin" else None
+        ctx.marlin_base = None
         if base[0] == "marlin":
             from .marlin_w4a16.backend import marlin_bwd_data, marlin_dx_data
 
             ctx.bwd_marlin = marlin_bwd_data(base)
             # Transposed-Marlin dX packs (W4A16 grouped GEMM, no dequant) — preferred when built.
             ctx.marlin_dx = marlin_dx_data(base)
+            # only the dX GEMM reads the forward packs; otherwise holding them until backward
+            # keeps every layer's (possibly gathered, uncached) packs alive at once
+            if ctx.marlin_dx is not None:
+                ctx.marlin_base = base
         return dn
 
     @staticmethod

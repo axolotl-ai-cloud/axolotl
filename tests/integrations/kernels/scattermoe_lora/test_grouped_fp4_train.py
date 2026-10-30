@@ -889,6 +889,59 @@ def test_marlin_dx_grad_quality_and_fallback(cfg, monkeypatch):
     assert dh_off > 0.99, f"{cfg['name']}: fallback d_hidden cosine {dh_off:.4f}"
 
 
+def _grouped_experts_node(out):
+    """The _GroupedExperts autograd node (its ctx) behind ``out``."""
+    stack, seen = [out.grad_fn], set()
+    while stack:
+        fn = stack.pop()
+        if fn is None or id(fn) in seen:
+            continue
+        seen.add(id(fn))
+        if hasattr(fn, "marlin_base"):
+            return fn
+        stack.extend(f for f, _ in fn.next_functions)
+    return None
+
+
+@pytest.mark.parametrize("marlin_dx", [False, True], ids=["dx_off", "dx_on"])
+def test_marlin_forward_packs_reach_backward_only_for_dx(monkeypatch, marlin_dx):
+    """Without the transposed dX packs the forward Marlin packs must not ride ctx to backward
+    (under FSDP they're gathered and uncached, so every layer's would stay alive)."""
+    monkeypatch.setattr(RUNTIME, "grouped_backend", "marlin")
+    if not _marlin_available():
+        pytest.skip("marlin backend unavailable")
+    monkeypatch.setattr(RUNTIME, "marlin_dx", marlin_dx)
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        grouped_fp4_moe_train,
+    )
+
+    cfg = SHAPES[0]
+    E, H, I = cfg["E"], cfg["H"], cfg["I"]  # noqa: E741
+    hidden, idx, wts, _, _, _, _, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
+    torch.manual_seed(0)
+    Wgu = torch.randn(E, 2 * I, H, device=DEV, dtype=torch.bfloat16) * 0.04
+    Wdn = torch.randn(E, H, I, device=DEV, dtype=torch.bfloat16) * 0.04
+    gu_k, dn_k = _fresh_nv(Wgu, Wdn)
+    out = grouped_fp4_moe_train(
+        hidden.clone().requires_grad_(True),
+        idx,
+        wts,
+        gu_k,
+        dn_k,
+        (Agu.detach().clone().requires_grad_(True), Bgu, cfg["scaling"]),
+        (Adn, Bdn, cfg["scaling"]),
+        cfg["limit"],
+        "nvfp4",
+        act_type=cfg["act_type"],
+        mxfp4_cache={},
+    )
+    node = _grouped_experts_node(out)
+    assert node is not None
+    assert (node.marlin_dx is not None) == marlin_dx
+    assert (node.marlin_base is not None) == marlin_dx
+    out.float().pow(2).mean().backward()
+
+
 def test_batched_repack4_bit_exact_vs_loop():
     """One-launch 4-bit batched repack == the per-expert gptq_marlin_repack loop, bit-for-bit."""
     if not _marlin_available():
