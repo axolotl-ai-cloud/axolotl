@@ -288,9 +288,8 @@ def choose_grouped_mode(
     if fmt.kind == PACKED_FP4:
         raise ValueError(
             f"use_scattermoe has no grouped kernel for DeepSeek packed-FP4 experts ({fmt.reason}). "
-            "Use the NVFP4 checkpoint (quantization_config.moe_quant_algo: NVFP4), set "
-            "moe_grouped_mode: none to run them on transformers' FP8 experts forward without "
-            "expert LoRA, or drop use_scattermoe."
+            "Use the NVFP4 checkpoint (quantization_config.moe_quant_algo: NVFP4) or drop "
+            "use_scattermoe."
         )
     if fmt.kind == MIXED:
         raise ValueError(
