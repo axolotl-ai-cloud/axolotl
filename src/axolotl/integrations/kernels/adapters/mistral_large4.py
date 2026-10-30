@@ -11,8 +11,8 @@ transformers renames native keys before any converter runs, and the expert conve
 the text model's (scoped) mapping, so the converters register there under the renamed names.
 
 Block-FP8 (FineGrainedFP8) checkpoint: transformers loads ``FP8Linear`` / ``FP8Experts`` and their
-backward already dequantizes for dX. ``moe_grouped_mode`` picks the scattermoe expert path
-(``fp8_block`` keeps the experts native; ``nvfp4`` / ``mxfp8`` requant them at the plugin level).
+backward already dequantizes for dX. Under ``use_scattermoe`` the generic ``moe_grouped_mode: auto``
+puts the block-FP8 experts on the fp8_block grouped path (NVFP4 experts on nvfp4), no requant.
 Genuine block-FP8 experts are never reinterpreted as NVFP4.
 
 For a LoRA run on a block-FP8 or bf16 checkpoint the adapter also swaps the MLA attention LoRA
