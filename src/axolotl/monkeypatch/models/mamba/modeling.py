@@ -306,19 +306,23 @@ def _assert_packed_ready(mixer, mod, family: dict, model_type: str) -> None:
             f"{model_type} sample packing needs the CUDA kernels; the torch fallbacks "
             "have no document boundaries."
         )
-    if getattr(mod, "_axolotl_seq_idx_verified", False):
+    names = family["seq_idx_kernels"]
+    kernels = [kernelized_copy(mixer, getattr(mod, name)) for name in names]
+    # each mixer runs its own kernelized copy, which kernelize can rebind later
+    verified = tuple(
+        (id(kernel), id(getattr(kernel, "__dict__", {}).get("forward")))
+        for kernel in kernels
+    )
+    if vars(mixer).get("_axolotl_seq_idx_verified") == verified:
         return
-    for name in family["seq_idx_kernels"]:
-        if (
-            kernel_accepts(kernelized_copy(mixer, getattr(mod, name)), "seq_idx")
-            is False
-        ):
+    for name, kernel in zip(names, kernels, strict=True):
+        if kernel_accepts(kernel, "seq_idx") is False:
             raise RuntimeError(
                 f"{model_type} sample packing: `{name}` is the transformers torch "
                 "fallback, which drops seq_idx and mixes state across packed samples. "
                 "Install mamba-ssm and causal-conv1d or set `use_kernels: true`."
             )
-    mod._axolotl_seq_idx_verified = True
+    mixer._axolotl_seq_idx_verified = verified
 
 
 def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
