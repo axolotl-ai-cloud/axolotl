@@ -27,6 +27,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
+
 # ---------------------------------------------------------------------------
 # Skip gate: Blackwell only (sm100 / sm120)
 # ---------------------------------------------------------------------------
@@ -728,3 +730,248 @@ def test_swiglu_clamped_kernel_vs_torch(limit, I, seed):
     got_dgu = swiglu_bwd(gu, dh, limit=limit, act_type="silu")
     _check_rel_err("swiglu_bwd_dg", got_dgu[:, :I].float(), ref_dgu[:, :I].float())
     _check_rel_err("swiglu_bwd_du", got_dgu[:, I:].float(), ref_dgu[:, I:].float())
+
+
+# ===========================================================================
+# Transposed-Marlin backward dX (W4A16 grouped GEMM on requantized W^T)
+# ===========================================================================
+
+
+def _marlin_available():
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        _train_backend,
+    )
+
+    return _train_backend("nvfp4") == "marlin"
+
+
+def test_marlin_dx_quantizer_roundtrip():
+    """quantize_nvfp4_blockwise -> nvfp4_dequant_bf16 reproduces the source within fp4 error."""
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
+        quantize_nvfp4_blockwise,
+    )
+
+    torch.manual_seed(0)
+    W = torch.randn(4, 128, 256, device=DEV, dtype=torch.bfloat16) * 0.1
+    pt = (W.float().abs().amax(dim=(1, 2)) / (6.0 * 448.0)).clamp_min(1e-12)
+    qd, sc = quantize_nvfp4_blockwise(W, pt)
+    Wd = nvfp4_dequant_bf16(qd, sc, pt)
+    rel = (Wd.float() - W.float()).norm() / W.float().norm()
+    assert rel < 0.12, f"roundtrip rel {rel:.4f}"
+    # negative values and zero blocks encode without NaN/garbage
+    W2 = torch.zeros_like(W)
+    qd2, sc2 = quantize_nvfp4_blockwise(W2, pt)
+    assert nvfp4_dequant_bf16(qd2, sc2, pt).abs().max() == 0
+
+
+def test_marlin_dx_gemm_matches_exact_reference():
+    """Transposed-pack marlin GEMM computes g @ W within the axis-requant tolerance."""
+    if not _marlin_available():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
+        marlin_route,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
+        marlin_make_workspace_new,
+        marlin_moe_gemm,
+        prepare_transposed_dx_weight,
+        quantize_nvfp4_blockwise,
+    )
+
+    torch.manual_seed(1)
+    E, N, K, rows = 8, 256, 128, 64  # N = reduction (fwd out), K = dX out (fwd in)
+    W = torch.randn(E, N, K, device=DEV, dtype=torch.bfloat16) * 0.05
+    pt = (W.float().abs().amax(dim=(1, 2)) / (6.0 * 448.0)).clamp_min(1e-12)
+    qd, sc = quantize_nvfp4_blockwise(W, pt)
+    Wd = nvfp4_dequant_bf16(qd, sc, pt)  # exact forward weight
+
+    ext = load_ext()
+    dxT = prepare_transposed_dx_weight(qd, sc, pt, K, N, ext.gptq_marlin_repack)
+    ws = marlin_make_workspace_new(torch.device(DEV, torch.cuda.current_device()), 4)
+
+    Mt = E * rows
+    g = torch.randn(Mt, N, device=DEV, dtype=torch.bfloat16) * 0.1
+    m_indices = torch.arange(E, device=DEV, dtype=torch.int32).repeat_interleave(
+        rows // 64
+    )
+    si, ei, ntpp, tw = marlin_route(m_indices, Mt, g.device)
+    out = marlin_moe_gemm(
+        ext, g, dxT[0], dxT[1], dxT[2], ws, si, ei, ntpp, tw, 64, 1, False, Mt, K, N
+    )
+    ref = torch.cat([g[e * rows : (e + 1) * rows] @ Wd[e] for e in range(E)])
+    rel = (out.float() - ref.float()).norm() / ref.float().norm()
+    cos = _cos(out, ref)
+    assert cos > 0.99, f"dxT GEMM cos {cos:.4f}"
+    assert rel < 0.15, f"dxT GEMM rel {rel:.4f}"
+
+
+@pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
+def test_marlin_dx_grad_quality_and_fallback(cfg, monkeypatch):
+    """dxT ON: packs built + d_hidden cosine >= 0.99 vs the bf16 oracle.
+    dxT OFF (env kill-switch): no packs, dequant fallback still correct."""
+    if not _marlin_available():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        grouped_fp4_moe_train,
+    )
+
+    def run(dx_mode):
+        monkeypatch.setattr(RUNTIME, "marlin_dx", dx_mode == "1")
+        E, H, I = cfg["E"], cfg["H"], cfg["I"]
+        hidden, idx, wts, _, _, _, _, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
+        torch.manual_seed(0)
+        Wgu = torch.randn(E, 2 * I, H, device=DEV, dtype=torch.bfloat16) * 0.04
+        Wdn = torch.randn(E, H, I, device=DEV, dtype=torch.bfloat16) * 0.04
+        gu_k, dn_k = _fresh_nv(Wgu, Wdn)
+        pt = torch.ones(E, device=DEV)
+        Wgu_b = nvfp4_dequant_bf16(gu_k.qdata, gu_k.scale, pt)
+        Wdn_b = nvfp4_dequant_bf16(dn_k.qdata, dn_k.scale, pt)
+        Ag = Agu.detach().clone().requires_grad_(True)
+        Bg = Bgu.detach().clone().requires_grad_(True)
+        Ad = Adn.detach().clone().requires_grad_(True)
+        Bd = Bdn.detach().clone().requires_grad_(True)
+        hk = hidden.clone().requires_grad_(True)
+        cache = {}
+        out = grouped_fp4_moe_train(
+            hk,
+            idx,
+            wts,
+            gu_k,
+            dn_k,
+            (Ag, Bg, cfg["scaling"]),
+            (Ad, Bd, cfg["scaling"]),
+            cfg["limit"],
+            "nvfp4",
+            act_type=cfg["act_type"],
+            mxfp4_cache=cache,
+        )
+        out.float().pow(2).mean().backward()
+        Agr = Ag.detach().clone().requires_grad_(True)
+        Bgr = Bg.detach().clone().requires_grad_(True)
+        Adr = Ad.detach().clone().requires_grad_(True)
+        Bdr = Bd.detach().clone().requires_grad_(True)
+        hr = hidden.detach().clone().requires_grad_(True)
+        ref = _bf16_oracle(
+            hr,
+            idx,
+            wts,
+            Wgu_b,
+            Wdn_b,
+            Agr,
+            Bgr,
+            Adr,
+            Bdr,
+            cfg["act_type"],
+            cfg["limit"],
+            cfg["scaling"],
+        )
+        ref.pow(2).mean().backward()
+        built = "marlin_gate_up_dxT" in cache and "marlin_down_dxT" in cache
+        return built, _cos(hk.grad, hr.grad), _cos(Ag.grad, Agr.grad)
+
+    built_on, dh_on, dag_on = run("1")
+    assert built_on, "dxT packs not built with moe_marlin_dx on"
+    assert dh_on > 0.99, f"{cfg['name']}: dxT d_hidden cosine {dh_on:.4f}"
+    assert dag_on > 0.995, f"{cfg['name']}: dxT d_Agu cosine {dag_on:.4f}"
+
+    built_off, dh_off, _ = run("0")
+    assert not built_off, "dxT packs built with moe_marlin_dx off"
+    assert dh_off > 0.99, f"{cfg['name']}: fallback d_hidden cosine {dh_off:.4f}"
+
+
+def _grouped_experts_node(out):
+    """The _GroupedExperts autograd node (its ctx) behind ``out``."""
+    stack, seen = [out.grad_fn], set()
+    while stack:
+        fn = stack.pop()
+        if fn is None or id(fn) in seen:
+            continue
+        seen.add(id(fn))
+        if hasattr(fn, "marlin_base"):
+            return fn
+        stack.extend(f for f, _ in fn.next_functions)
+    return None
+
+
+@pytest.mark.parametrize("marlin_dx", [False, True], ids=["dx_off", "dx_on"])
+def test_marlin_forward_packs_reach_backward_only_for_dx(monkeypatch, marlin_dx):
+    """Without the transposed dX packs the forward Marlin packs must not ride ctx to backward
+    (under FSDP they're gathered and uncached, so every layer's would stay alive)."""
+    monkeypatch.setattr(RUNTIME, "grouped_backend", "marlin")
+    if not _marlin_available():
+        pytest.skip("marlin backend unavailable")
+    monkeypatch.setattr(RUNTIME, "marlin_dx", marlin_dx)
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        grouped_fp4_moe_train,
+    )
+
+    cfg = SHAPES[0]
+    E, H, I = cfg["E"], cfg["H"], cfg["I"]  # noqa: E741
+    hidden, idx, wts, _, _, _, _, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
+    torch.manual_seed(0)
+    Wgu = torch.randn(E, 2 * I, H, device=DEV, dtype=torch.bfloat16) * 0.04
+    Wdn = torch.randn(E, H, I, device=DEV, dtype=torch.bfloat16) * 0.04
+    gu_k, dn_k = _fresh_nv(Wgu, Wdn)
+    out = grouped_fp4_moe_train(
+        hidden.clone().requires_grad_(True),
+        idx,
+        wts,
+        gu_k,
+        dn_k,
+        (Agu.detach().clone().requires_grad_(True), Bgu, cfg["scaling"]),
+        (Adn, Bdn, cfg["scaling"]),
+        cfg["limit"],
+        "nvfp4",
+        act_type=cfg["act_type"],
+        mxfp4_cache={},
+    )
+    node = _grouped_experts_node(out)
+    assert node is not None
+    assert (node.marlin_dx is not None) == marlin_dx
+    assert (node.marlin_base is not None) == marlin_dx
+    out.float().pow(2).mean().backward()
+
+
+def test_batched_repack4_bit_exact_vs_loop():
+    """One-launch 4-bit batched repack == the per-expert gptq_marlin_repack loop, bit-for-bit."""
+    if not _marlin_available():
+        pytest.skip("marlin backend unavailable")
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.batched_repack import (
+        batched_repack4,
+    )
+
+    torch.manual_seed(5)
+    ext = load_ext()
+    perm = torch.empty(0, dtype=torch.int, device=DEV)
+    for E, size_n, size_k in ((3, 128, 256), (2, 192, 64)):
+        qdata = torch.randint(
+            0, 256, (E, size_n, size_k // 2), dtype=torch.uint8, device=DEV
+        )
+        ref = torch.stack(
+            [
+                ext.gptq_marlin_repack(
+                    qdata[i].view(torch.int32).T.contiguous(),
+                    perm,
+                    size_k,
+                    size_n,
+                    4,
+                    False,
+                )
+                for i in range(E)
+            ],
+            0,
+        )
+        got = batched_repack4(qdata, size_n, size_k)
+        assert got.shape == ref.shape, (got.shape, ref.shape)
+        assert torch.equal(got, ref), f"repack4 mismatch at {(E, size_n, size_k)}"

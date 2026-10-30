@@ -242,7 +242,8 @@ These dense-path results do not establish native EP support.
   `NVFP4WeightOnlyConfig` checkpoints. Load that saved checkpoint as `base_model`,
   set `adapter: lora`, and enable `lora_qkv_kernel`, `lora_o_kernel`, and
   `lora_mlp_kernel` for the optimized native weight-only adapter path.
-- `dsv4_fp4_grouped_mode: nvfp4` controls routed-expert activation quantization
+- `moe_grouped_mode: nvfp4` (the `auto` default for NVFP4 experts under `use_scattermoe`)
+  controls routed-expert activation quantization
   inside the existing MoE backend; it is separate from native dense activation
   quantization and retains that backend's training gradient convention.
 - Gemma's `nonexpert_quantization: nvfp4` uses frozen Marlin W4A16 non-expert

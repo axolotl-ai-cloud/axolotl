@@ -62,6 +62,8 @@ def isolated_registration(monkeypatch):
         PreTrainedModel.get_correct_experts_implementation,
     )
     monkeypatch.setattr(experts_mod, "_SCATTERMOE_PATCHED", False)
+    # moe_grouped_mode decides whether block-FP8 expert LoRA reaches the refusal
+    monkeypatch.setattr(experts_mod.RUNTIME, "grouped_mode", None)
     for mod, name in (
         (experts_lora_fastpath, "patch_paramwrapper_fastpath"),
         (torchao_fp4_add, "patch_torchao_fp4_add"),
@@ -260,6 +262,53 @@ def test_block_fp8_experts_train_on_stock_forward(calls):
     assert calls == ["grouped_mm"]
 
 
+@pytest.mark.parametrize("expert_parallel", [False, True], ids=["single", "ep"])
+@pytest.mark.parametrize("arch", ARCHS, ids=ARCH_IDS)
+def test_fp8_block_grouped_mode_runs_block_fp8_expert_lora(
+    monkeypatch, arch, expert_parallel
+):
+    from axolotl.integrations.kernels.libs.scattermoe_lora import fp8_grouped
+
+    monkeypatch.setattr(
+        experts_mod, "flatten_sort_count", lambda idx, num_experts: (None,) * 3
+    )
+    monkeypatch.setattr(experts_mod.RUNTIME, "grouped_mode", "fp8_block")
+    bases = []
+
+    def grouped_fp8_moe_train(hidden, idx, w, gate_up, gate_up_scale, *args, **kwargs):
+        bases.append(gate_up.dtype)
+        return torch.zeros_like(hidden)
+
+    monkeypatch.setattr(fp8_grouped, "grouped_fp8_moe_train", grouped_fp8_moe_train)
+    experts = _load(arch, "fp8")
+    _set_weights(experts, "block_fp8")
+    if expert_parallel:
+        experts.num_experts_global = 2 * experts.num_experts
+    lora = (torch.zeros(1), torch.zeros(1), 1.0)
+    experts._scattermoe_lora = {"gate_up_proj": lora, "down_proj": lora}
+    _route(experts)
+    # the grouped block-FP8 GEMM applies *_scale_inv, so it runs ahead of the refusal
+    assert bases == [torch.float8_e4m3fn]
+
+
+@pytest.mark.parametrize("expert_parallel", [False, True], ids=["single", "ep"])
+def test_fp8_block_grouped_mode_still_refuses_packed_fp4_expert_lora(
+    monkeypatch, expert_parallel
+):
+    monkeypatch.setattr(
+        experts_mod, "flatten_sort_count", lambda idx, num_experts: (None,) * 3
+    )
+    monkeypatch.setattr(experts_mod.RUNTIME, "grouped_mode", "fp8_block")
+    experts = _load(_dsv4, "fp4")
+    _set_weights(experts, "packed_fp4")
+    if expert_parallel:
+        experts.num_experts_global = 2 * experts.num_experts
+    lora = (torch.zeros(1), torch.zeros(1), 1.0)
+    experts._scattermoe_lora = {"gate_up_proj": lora, "down_proj": lora}
+    with pytest.raises(NotImplementedError, match="block-quantized"):
+        _route(experts)
+
+
 def test_registration_is_idempotent_and_kept():
     register_scattermoe_experts()
     dispatch = FP8_REGISTRY["scattermoe"]
@@ -297,3 +346,58 @@ def test_registers_into_the_interface_the_experts_bind(calls):
     assert "scattermoe" not in FP8_REGISTRY
     _route(experts)
     assert calls == ["grouped_mm"]
+
+
+class _ReachedRefusal(Exception):
+    pass
+
+
+@pytest.mark.parametrize("mode", ["mxfp8", "fp8_block"])
+def test_grouped_modes_skip_non_gated_experts(monkeypatch, mode):
+    """The grouped mxfp8 / fp8_block trainers need a gated gate_up_proj; non-gated experts
+    (nemotron_h up_proj) fall through to the next path instead of raising AttributeError."""
+    from transformers import NemotronHConfig
+    from transformers.models.nemotron_h.modeling_nemotron_h import NemotronHExperts
+
+    monkeypatch.setattr(
+        experts_mod, "flatten_sort_count", lambda idx, num_experts: (None,) * 3
+    )
+    monkeypatch.setattr(experts_mod.RUNTIME, "grouped_mode", mode)
+    cfg = NemotronHConfig(
+        hidden_size=H,
+        moe_intermediate_size=I,
+        n_routed_experts=E,
+        num_experts_per_tok=2,
+        num_hidden_layers=1,
+        hybrid_override_pattern="E",
+        vocab_size=64,
+    )
+    experts = NemotronHExperts(cfg)
+    if mode == "fp8_block":
+        for name in ("up_proj", "down_proj"):
+            weight = torch.randn(getattr(experts, name).shape).to(torch.float8_e4m3fn)
+            setattr(experts, name, nn.Parameter(weight, requires_grad=False))
+            scale = nn.Parameter(torch.ones(E, 1, 1), requires_grad=False)
+            setattr(experts, f"{name}_scale_inv", scale)
+    lora = (torch.zeros(1), torch.zeros(1), 1.0)
+    experts._scattermoe_lora = {"up_proj": lora, "down_proj": lora}
+    hidden = torch.randn(3, H, dtype=torch.bfloat16)
+    top_k_index = torch.tensor([[0, 1], [2, 3], [1, 2]])
+    top_k_weights = torch.full((3, 2), 0.5)
+
+    if mode == "fp8_block":
+        # block-FP8 non-gated experts have no grouped kernel: the refusal names them
+        with pytest.raises(NotImplementedError, match="block-quantized"):
+            experts_mod.scattermoe_experts_forward(
+                experts, hidden, top_k_index, top_k_weights
+            )
+        return
+
+    def reached(module):
+        raise _ReachedRefusal
+
+    monkeypatch.setattr(experts_mod, "_refuse_block_quantized_experts", reached)
+    with pytest.raises(_ReachedRefusal):
+        experts_mod.scattermoe_experts_forward(
+            experts, hidden, top_k_index, top_k_weights
+        )

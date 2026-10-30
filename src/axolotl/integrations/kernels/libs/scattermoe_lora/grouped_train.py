@@ -337,8 +337,16 @@ class _GroupedExperts(torch.autograd.Function):
         E = Agu.size(0)
         gu = _base_forward(base, 0, x, m_indices, mode)
         # LoRA-B GEMM folds the base output in via residual=gu -> gu = base + lora, no separate add.
-        gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
-        h = _swiglu(gu, limit, act_type).to(x.dtype)
+        from .swiglu_epilogue import grouped_lora_swiglu_fwd, swiglu_epilogue_enabled
+
+        # the epilogue splits a gate/up pair; relu2 (non-gated) takes the unfused path
+        if act_type != "relu2" and swiglu_epilogue_enabled():
+            gu, h, xAg = grouped_lora_swiglu_fwd(
+                x, Agu, Bgu, scaling, offs, E, gu, act_type, limit
+            )
+        else:
+            gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
+            h = _swiglu(gu, limit, act_type).to(x.dtype)
         dn = _base_forward(base, 1, h, m_indices, mode)
         dn, hAd = grouped_lora_fwd(h, Adn, Bdn, scaling, offs, E, residual=dn)
         ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
@@ -351,10 +359,18 @@ class _GroupedExperts(torch.autograd.Function):
         # pt) in the cache (single-GPU only); stash them so backward skips weight_recipe() (which
         # would return the emptied NVFP4 tensor).
         ctx.bwd_marlin = None
+        ctx.marlin_dx = None
+        ctx.marlin_base = None
         if base[0] == "marlin":
-            from .marlin_w4a16.backend import marlin_bwd_data
+            from .marlin_w4a16.backend import marlin_bwd_data, marlin_dx_data
 
             ctx.bwd_marlin = marlin_bwd_data(base)
+            # Transposed-Marlin dX packs (W4A16 grouped GEMM, no dequant) — preferred when built.
+            ctx.marlin_dx = marlin_dx_data(base)
+            # only the dX GEMM reads the forward packs; otherwise holding them until backward
+            # keeps every layer's (possibly gathered, uncached) packs alive at once
+            if ctx.marlin_dx is not None:
+                ctx.marlin_base = base
         return dn
 
     @staticmethod
@@ -368,7 +384,12 @@ class _GroupedExperts(torch.autograd.Function):
 
         d_dn = d_dn.contiguous().to(x.dtype)
 
-        if ctx.bwd_marlin is not None:
+        if ctx.marlin_dx is not None:
+            # Transposed-Marlin dX: one W4A16 grouped GEMM per contraction, no dequant.
+            from .marlin_w4a16.backend import marlin_base_dx
+
+            dh = marlin_base_dx(ctx.marlin_base, ctx.marlin_dx, 1, d_dn, m_indices)
+        elif ctx.bwd_marlin is not None:
             # Marlin memory-free path: nv.qdata was freed after repack; backward reads from the
             # marlin qweight cache via fused Triton dequant (marlin int32 + original scales).
             # bwd_marlin = ((gu_qw, (gu_scale, gu_pt, E, N, K)), (dn_qw, (dn_scale, ...)))
@@ -400,7 +421,11 @@ class _GroupedExperts(torch.autograd.Function):
         dgu = _swiglu_bwd(dh, gu, lim, act_type).to(x.dtype)
         del dh
 
-        if ctx.bwd_marlin is not None:
+        if ctx.marlin_dx is not None:
+            from .marlin_w4a16.backend import marlin_base_dx
+
+            dx = marlin_base_dx(ctx.marlin_base, ctx.marlin_dx, 0, dgu, m_indices)
+        elif ctx.bwd_marlin is not None:
             gu_scale, gu_pt_e, _, _, _ = ctx.bwd_marlin[0][1]
             gu_marlin_raw = (gu_qw, gu_scale, gu_pt_e)
             dx = _base_dx(
@@ -588,7 +613,9 @@ def grouped_fp4_moe_train(
     lim = (
         float(limit) if limit is not None else 1e30
     )  # no clamp when the model has no swiglu_limit
-    A = hidden.new_zeros(Mt, H).index_copy(0, padded_row, hidden[rep])
+    from .scatter_fuse import padded_gather, weighted_scatter
+
+    A = padded_gather(hidden, rep, padded_row, Mt)
     dn = _GroupedExperts.apply(
         A,
         base,
@@ -605,7 +632,4 @@ def grouped_fp4_moe_train(
         act_type,
         prefer_fp8_dx,
     )
-    out = hidden.new_zeros(N, H)
-    return out.index_add(
-        0, rep, (dn[padded_row] * wflat[:, None].to(dn.dtype)).to(out.dtype)
-    )
+    return weighted_scatter(dn, wflat, rep, padded_row, N)

@@ -8,20 +8,42 @@ from axolotl.integrations.kernels.args import KernelsArgs
 
 def test_grouped_mode_nvfp4_accepted():
     a = KernelsArgs.model_validate(
+        {"use_scattermoe": True, "moe_grouped_mode": "nvfp4"}
+    )
+    assert a.moe_grouped_mode == "nvfp4"
+
+
+def test_grouped_mode_fp8_block_accepted():
+    a = KernelsArgs.model_validate(
+        {"use_scattermoe": True, "moe_grouped_mode": "fp8_block"}
+    )
+    assert a.moe_grouped_mode == "fp8_block"
+
+
+def test_grouped_mode_mxfp8_accepted():
+    a = KernelsArgs.model_validate(
+        {"use_scattermoe": True, "moe_grouped_mode": "mxfp8"}
+    )
+    assert a.moe_grouped_mode == "mxfp8"
+
+
+def test_grouped_mode_legacy_alias_canonicalized():
+    # dsv4_fp4_grouped_mode is a deprecated alias -> canonicalized onto moe_grouped_mode.
+    a = KernelsArgs.model_validate(
         {"use_scattermoe": True, "dsv4_fp4_grouped_mode": "nvfp4"}
     )
-    assert a.dsv4_fp4_grouped_mode == "nvfp4"
+    assert a.moe_grouped_mode == "nvfp4"
 
 
 def test_grouped_mode_fp8_rejected():
     # 'fp8' is documented historically but unimplemented for training -> reject, don't no-op.
     with pytest.raises(pydantic.ValidationError, match="not implemented"):
-        KernelsArgs.model_validate({"dsv4_fp4_grouped_mode": "fp8"})
+        KernelsArgs.model_validate({"moe_grouped_mode": "fp8"})
 
 
 def test_grouped_mode_unknown_rejected():
     with pytest.raises(pydantic.ValidationError):
-        KernelsArgs.model_validate({"dsv4_fp4_grouped_mode": "int4"})
+        KernelsArgs.model_validate({"moe_grouped_mode": "int4"})
 
 
 def test_lora_mlp_kernel_translated_for_dsv4():
@@ -339,3 +361,49 @@ def test_nvfp4_merge_aware_accepts_multilora_plugin():
         {"adapter": "multilora", "use_sonicmoe": True, "nvfp4_merge_aware": True}
     )
     assert args.nvfp4_merge_aware
+
+
+def test_moe_marlin_dx_and_fp8_dx_knobs():
+    assert KernelsArgs.model_validate({"moe_fp8_dx": True}).moe_fp8_dx is True
+    assert KernelsArgs.model_validate({"moe_fp8_dx": False}).moe_fp8_dx is False
+    assert KernelsArgs.model_validate({}).moe_fp8_dx is None
+    assert KernelsArgs.model_validate({"moe_marlin_dx": True}).moe_marlin_dx is True
+    assert KernelsArgs.model_validate({"moe_marlin_dx": False}).moe_marlin_dx is False
+    assert KernelsArgs.model_validate({}).moe_marlin_dx is None
+    with pytest.raises(pydantic.ValidationError, match="moe_marlin_dx"):
+        KernelsArgs.model_validate({"moe_marlin_dx": "stream"})
+
+
+def test_marlin_dx_runtime_wiring(monkeypatch):
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
+        _marlin_dx_enabled,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import (
+        RUNTIME,
+        configure_scattermoe_runtime,
+    )
+
+    class _C(dict):
+        get = dict.get
+
+    monkeypatch.delenv("AXOLOTL_MARLIN_DX", raising=False)
+    monkeypatch.delenv("AXOLOTL_FP8_DX", raising=False)
+    configure_scattermoe_runtime(_C({"moe_marlin_dx": True, "moe_fp8_dx": False}))
+    assert RUNTIME.marlin_dx is True and RUNTIME.fp4_dx_prefer_fp8 is False
+    # opt-in: unset -> off
+    configure_scattermoe_runtime(_C({}))
+    assert RUNTIME.marlin_dx is False and RUNTIME.fp4_dx_prefer_fp8 is True
+    # env fallback when the config key is unset
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "1")
+    configure_scattermoe_runtime(_C({}))
+    assert RUNTIME.marlin_dx is True
+    # config wins over env
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "0")
+    configure_scattermoe_runtime(_C({"moe_marlin_dx": True}))
+    assert RUNTIME.marlin_dx is True
+    # the pack builders follow the resolved runtime, not the env var, in both directions
+    assert _marlin_dx_enabled() is True
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "1")
+    configure_scattermoe_runtime(_C({"moe_marlin_dx": False}))
+    assert RUNTIME.marlin_dx is False and _marlin_dx_enabled() is False
+    RUNTIME.reset()
