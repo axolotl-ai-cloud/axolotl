@@ -339,7 +339,8 @@ class _GroupedExperts(torch.autograd.Function):
         # LoRA-B GEMM folds the base output in via residual=gu -> gu = base + lora, no separate add.
         from .swiglu_epilogue import grouped_lora_swiglu_fwd, swiglu_epilogue_enabled
 
-        if swiglu_epilogue_enabled():
+        # the epilogue splits a gate/up pair; relu2 (non-gated) takes the unfused path
+        if act_type != "relu2" and swiglu_epilogue_enabled():
             gu, h, xAg = grouped_lora_swiglu_fwd(
                 x, Agu, Bgu, scaling, offs, E, gu, act_type, limit
             )

@@ -344,3 +344,11 @@ def test_nvfp4_lora_parity(impl, monkeypatch):
     for i, (a, b) in enumerate(zip(gl_nv, gl_bf, strict=True)):
         assert _rel(a, b) < 6e-2, f"lora grad {i}"
         assert torch.isfinite(a).all()
+
+    if impl == "scattermoe":
+        # moe_swiglu_epilogue splits a gate/up pair; the relu2 experts must keep the unfused path
+        monkeypatch.setattr(sm_ex.RUNTIME, "swiglu_epilogue", True)
+        out_ep, dx_ep, gl_ep = run(up_nv, dn_nv, "nvfp4")
+        # same unfused path; only the bf16 atomic combine order differs between runs
+        for a, b in zip((out_ep, dx_ep, *gl_ep), (out_nv, dx_nv, *gl_nv), strict=True):
+            assert _rel(a, b) < 1e-2
