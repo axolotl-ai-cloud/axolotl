@@ -28,7 +28,11 @@ def channels_first_conv(
 
     def conv(x, cu_seqlens):
         kwargs = {} if activation is None else {"activation": activation}
-        out = causal_conv1d_fn(x.transpose(1, 2), weight, bias, **kwargs)
+        x = x.transpose(1, 2)
+        if x.shape[1] % 8:
+            # causal-conv1d takes a channel-last x only with a multiple of 8 channels
+            x = x.contiguous()
+        out = causal_conv1d_fn(x, weight, bias, **kwargs)
         return out.transpose(1, 2)
 
     return conv
