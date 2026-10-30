@@ -27,6 +27,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
+
 # ---------------------------------------------------------------------------
 # Skip gate: Blackwell only (sm100 / sm120)
 # ---------------------------------------------------------------------------
@@ -824,7 +826,7 @@ def test_marlin_dx_grad_quality_and_fallback(cfg, monkeypatch):
     )
 
     def run(dx_mode):
-        monkeypatch.setenv("AXOLOTL_MARLIN_DX", dx_mode)
+        monkeypatch.setattr(RUNTIME, "marlin_dx", dx_mode == "1")
         E, H, I = cfg["E"], cfg["H"], cfg["I"]
         hidden, idx, wts, _, _, _, _, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
         torch.manual_seed(0)
@@ -878,12 +880,12 @@ def test_marlin_dx_grad_quality_and_fallback(cfg, monkeypatch):
         return built, _cos(hk.grad, hr.grad), _cos(Ag.grad, Agr.grad)
 
     built_on, dh_on, dag_on = run("1")
-    assert built_on, "dxT packs not built with AXOLOTL_MARLIN_DX=1"
+    assert built_on, "dxT packs not built with moe_marlin_dx on"
     assert dh_on > 0.99, f"{cfg['name']}: dxT d_hidden cosine {dh_on:.4f}"
     assert dag_on > 0.995, f"{cfg['name']}: dxT d_Agu cosine {dag_on:.4f}"
 
     built_off, dh_off, _ = run("0")
-    assert not built_off, "dxT packs built despite AXOLOTL_MARLIN_DX=0"
+    assert not built_off, "dxT packs built with moe_marlin_dx off"
     assert dh_off > 0.99, f"{cfg['name']}: fallback d_hidden cosine {dh_off:.4f}"
 
 

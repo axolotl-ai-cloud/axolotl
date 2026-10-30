@@ -8,6 +8,8 @@ scales (exponent bias 2^120 fused into the scales, per vLLM fp8 marlin).
 import pytest
 import torch
 
+from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
+
 DEV = "cuda"
 
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
@@ -78,7 +80,7 @@ def test_fp8_marlin_dx_matches_exact_reference(monkeypatch):
         prepare_blockfp8_dx_weight,
     )
 
-    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "1")
+    monkeypatch.setattr(RUNTIME, "marlin_dx", True)
     torch.manual_seed(0)
     E, N, K, rows = 4, 256, 128, 64
     wq, ws = _make_blockfp8(E, N, K)
@@ -116,7 +118,7 @@ def test_fp8_grouped_train_grads_with_dx_packs(monkeypatch):
     wts = torch.softmax(torch.randn(N, topk, device=DEV), -1)
 
     def run(dx_mode):
-        monkeypatch.setenv("AXOLOTL_MARLIN_DX", dx_mode)
+        monkeypatch.setattr(RUNTIME, "marlin_dx", dx_mode == "1")
         torch.manual_seed(2)
         Ag = (
             torch.randn(r * E, H, device=DEV, dtype=torch.bfloat16) * 0.02
@@ -151,7 +153,7 @@ def test_fp8_grouped_train_grads_with_dx_packs(monkeypatch):
         return built, hk.grad.clone(), Ag.grad.clone()
 
     built_on, dh_on, dag_on = run("1")
-    assert built_on, "fp8 dX packs not built with AXOLOTL_MARLIN_DX=1"
+    assert built_on, "fp8 dX packs not built with moe_marlin_dx on"
     built_off, dh_off, dag_off = run("0")
     assert not built_off
 
@@ -213,7 +215,7 @@ def test_dx_pack_build_failure_is_cached(monkeypatch):
         pytest.skip("marlin backend unavailable")
     import axolotl.integrations.kernels.libs.scattermoe_lora.fp8_grouped as fg
 
-    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "1")
+    monkeypatch.setattr(RUNTIME, "marlin_dx", True)
     calls = {"n": 0}
 
     def boom(*a, **k):
@@ -238,9 +240,8 @@ def test_fp8_marlin_forward_matches_triton(monkeypatch):
     if not _marlin_ok():
         pytest.skip("marlin backend unavailable")
     from axolotl.integrations.kernels.libs.scattermoe_lora import fp8_grouped as fg
-    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
 
-    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "0")
+    monkeypatch.setattr(RUNTIME, "marlin_dx", False)
     torch.manual_seed(4)
     # H/I >= 256 so both marlin reduction dims span >=2 scale groups (single-group -> skipped)
     E, H, I, N, topk, r = 4, 256, 256, 32, 2, 8  # noqa: E741
@@ -332,7 +333,6 @@ def test_fp8_marlin_forward_chunked_matches_unchunked(monkeypatch):
     if not _marlin_ok():
         pytest.skip("marlin backend unavailable")
     from axolotl.integrations.kernels.libs.scattermoe_lora import fp8_grouped as fg
-    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
 
     monkeypatch.setattr(RUNTIME, "grouped_backend", "marlin")
     monkeypatch.setattr(fg, "_BACKEND_LOGGED", True)

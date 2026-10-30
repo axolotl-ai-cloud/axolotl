@@ -26,18 +26,13 @@ from .prep import (
 def _marlin_dx_enabled() -> bool:
     """Transposed-Marlin backward dX: dX runs as a marlin grouped GEMM on GPU-resident transposed
     expert packs (fastest, ~doubles expert residency). Config knob ``moe_marlin_dx``
-    (RUNTIME.marlin_dx); env ``AXOLOTL_MARLIN_DX`` (0 | 1) overrides at runtime.
+    (RUNTIME.marlin_dx; configure_scattermoe_runtime falls back to env ``AXOLOTL_MARLIN_DX``).
 
     A CPU-offload/streaming mode was tried and removed: the active pack must be on-GPU to run, so
     offload's floor is still ~1 layer's pack set, and at multi-GiB per-layer packs the per-step
     H2D never hides under backward compute on PCIe (3x slower than plain dequant dX)."""
-    import os
-
     from ..runtime import RUNTIME
 
-    env = os.environ.get("AXOLOTL_MARLIN_DX")
-    if env is not None:
-        return env != "0"
     return bool(RUNTIME.marlin_dx)
 
 

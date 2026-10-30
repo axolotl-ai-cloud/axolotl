@@ -375,6 +375,9 @@ def test_moe_marlin_dx_and_fp8_dx_knobs():
 
 
 def test_marlin_dx_runtime_wiring(monkeypatch):
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
+        _marlin_dx_enabled,
+    )
     from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import (
         RUNTIME,
         configure_scattermoe_runtime,
@@ -398,4 +401,9 @@ def test_marlin_dx_runtime_wiring(monkeypatch):
     monkeypatch.setenv("AXOLOTL_MARLIN_DX", "0")
     configure_scattermoe_runtime(_C({"moe_marlin_dx": True}))
     assert RUNTIME.marlin_dx is True
+    # the pack builders follow the resolved runtime, not the env var, in both directions
+    assert _marlin_dx_enabled() is True
+    monkeypatch.setenv("AXOLOTL_MARLIN_DX", "1")
+    configure_scattermoe_runtime(_C({"moe_marlin_dx": False}))
+    assert RUNTIME.marlin_dx is False and _marlin_dx_enabled() is False
     RUNTIME.reset()
