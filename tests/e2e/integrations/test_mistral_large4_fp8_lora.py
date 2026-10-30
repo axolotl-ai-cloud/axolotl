@@ -1,6 +1,6 @@
 """Short LoRA training smoke for a tiny native Mistral Large 4 on a block-FP8 base: loaded through
-the kernels plugin (scattermoe ``fp8_block`` experts + expert LoRA), with and without the fused
-MLA attention-LoRA kernels."""
+the kernels plugin (scattermoe experts on the fp8_block grouped path that ``moe_grouped_mode: auto``
+picks, + expert LoRA), with and without the fused MLA attention-LoRA kernels."""
 
 import pytest
 import torch
@@ -89,7 +89,6 @@ def test_mistral_large4_fp8_lora_trains(bf16_dir, temp_dir, attn_kernel):
             },
             "plugins": ["axolotl.integrations.kernels.KernelsPlugin"],
             "use_scattermoe": True,
-            "moe_grouped_mode": "fp8_block",
             "mistral_large4_attn_lora_kernel": attn_kernel,
             "adapter": "lora",
             "lora_r": 8,
@@ -120,6 +119,9 @@ def test_mistral_large4_fp8_lora_trains(bf16_dir, temp_dir, attn_kernel):
     normalize_config(cfg)
     tokenizer = load_tokenizer(cfg)
     model, _ = ModelLoader(cfg, tokenizer).load()
+    assert (
+        cfg.moe_grouped_mode == "fp8_block"
+    )  # auto, from the on-load FP8 quantization
 
     modules = dict(model.named_modules())
     assert any(isinstance(m, FP8Linear) for m in modules.values())
