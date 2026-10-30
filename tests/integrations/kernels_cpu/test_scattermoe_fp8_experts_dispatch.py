@@ -182,8 +182,8 @@ def _set_weights(experts, fmt):
         setattr(experts, name, nn.Parameter(weight, requires_grad=False))
 
 
-def _route(experts):
-    hidden = torch.randn(3, H, dtype=torch.bfloat16)
+def _route(experts, requires_grad=False):
+    hidden = torch.randn(3, H, dtype=torch.bfloat16, requires_grad=requires_grad)
     top_k_index = torch.tensor([[0, 1], [2, 3], [1, 2]])
     top_k_weights = torch.full((3, 2), 0.5)
     return experts(hidden, top_k_index, top_k_weights)
@@ -226,17 +226,38 @@ def test_block_quantized_experts_with_expert_lora_go_to_scattermoe(calls, fmt):
     assert calls == ["scattermoe"]
 
 
+@pytest.mark.parametrize("expert_parallel", [False, True], ids=["local", "ep"])
 @pytest.mark.parametrize("fmt", ["block_fp8", "packed_fp4"])
-def test_scattermoe_refuses_block_quantized_experts(monkeypatch, fmt):
+def test_scattermoe_refuses_block_quantized_experts(monkeypatch, fmt, expert_parallel):
     # its torch.compile'd bincount needs a compiler; the refusal comes before the sort is used
     monkeypatch.setattr(
         experts_mod, "flatten_sort_count", lambda idx, num_experts: (None,) * 3
     )
     experts = _load(_dsv4, "fp8" if fmt == "block_fp8" else "fp4")
     _set_weights(experts, fmt)
+    if expert_parallel:
+        experts.num_experts_global = 2 * experts.num_experts
     experts._scattermoe_lora = {"gate_up_proj": None, "down_proj": None}
     with pytest.raises(NotImplementedError, match="block-quantized"):
         _route(experts)
+
+
+def test_packed_fp4_experts_refuse_training_without_lora(calls):
+    experts = _load(_dsv4, "fp4")
+    _set_weights(experts, "packed_fp4")
+    with pytest.raises(NotImplementedError, match="packed-FP4"):
+        _route(experts, requires_grad=True)
+    with torch.no_grad():
+        _route(experts, requires_grad=True)
+    _route(experts)
+    assert calls == ["grouped_mm", "grouped_mm"]
+
+
+def test_block_fp8_experts_train_on_stock_forward(calls):
+    experts = _load(_dsv4, "fp8")
+    _set_weights(experts, "block_fp8")
+    _route(experts, requires_grad=True)
+    assert calls == ["grouped_mm"]
 
 
 def test_registration_is_idempotent_and_kept():

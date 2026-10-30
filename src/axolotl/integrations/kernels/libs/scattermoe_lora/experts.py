@@ -753,15 +753,7 @@ def scattermoe_experts_forward(
                 prefer_fp8_dx=RUNTIME.fp4_dx_prefer_fp8,
             )
 
-    _block_dtype = _block_quantized_expert_dtype(self)
-    if _block_dtype is not None:
-        raise NotImplementedError(
-            f"use_scattermoe has no kernel for {type(self).__name__} with block-quantized "
-            f"{_block_dtype} expert weights: they carry *_scale_inv block scales the scattermoe "
-            "kernels don't apply. Without expert LoRA they run on transformers' FP8 experts "
-            "forward; drop the expert LoRA (lora_target_parameters), use an NVFP4-expert or "
-            "unquantized checkpoint, or drop use_scattermoe."
-        )
+    _refuse_block_quantized_experts(self)
 
     # NVFP4 experts + LoRA without dsv4_fp4_grouped_mode set would fall through to
     # _prepare_weights_and_lora -> selective_nvfp4_weights_fwd -> scatter2scatter_lora_mx, which
@@ -1081,6 +1073,8 @@ def scattermoe_experts_forward_ep(
                     RUNTIME.fp4_dx_prefer_fp8,
                 )
 
+    _refuse_block_quantized_experts(self)
+
     # same guard as the non-EP forward: on Blackwell the legacy fused-MX kernel is the wrong
     # path for NVFP4 + LoRA (SIGSEGV on some layouts, 10x slower on others); the supported
     # routes are the merge-aware grouped GEMM or dsv4_fp4_grouped_mode
@@ -1204,6 +1198,18 @@ def _block_quantized_expert_dtype(module) -> torch.dtype | None:
     return None
 
 
+def _refuse_block_quantized_experts(module) -> None:
+    dtype = _block_quantized_expert_dtype(module)
+    if dtype is not None:
+        raise NotImplementedError(
+            f"use_scattermoe has no kernel for {type(module).__name__} with block-quantized "
+            f"{dtype} expert weights: they carry *_scale_inv block scales the scattermoe "
+            "kernels don't apply. Without expert LoRA they run on transformers' FP8 experts "
+            "forward; drop the expert LoRA (lora_target_parameters), use an NVFP4-expert or "
+            "unquantized checkpoint, or drop use_scattermoe."
+        )
+
+
 def _is_fp8_experts_interface(interface) -> bool:
     # by name: a duplicate transformers import has its own FP8ExpertsInterface class
     return any(c.__name__ == "FP8ExpertsInterface" for c in type(interface).__mro__)
@@ -1215,9 +1221,22 @@ def _fp8_experts_dispatch(interface):
     NVFP4Tensor and unquantized experts and refuses block-quantized ones it has no path for."""
 
     def scattermoe_fp8_experts_forward(self, hidden_states, top_k_index, top_k_weights):
-        if _block_quantized_expert_dtype(self) is not None and not (
+        dtype = _block_quantized_expert_dtype(self)
+        if dtype is not None and not (
             getattr(self, "_scattermoe_lora", None) or _has_peft_wrapper(self)
         ):
+            # transformers' FP8 experts backward can't dequantize packed FP4
+            if (
+                dtype == torch.int8
+                and torch.is_grad_enabled()
+                and hidden_states.requires_grad
+            ):
+                raise NotImplementedError(
+                    f"{type(self).__name__} holds packed-FP4 expert weights, which have no "
+                    "backward in transformers' FP8 experts forward or in scattermoe, so "
+                    "gradients can't flow through these experts. Use an NVFP4-expert or "
+                    "unquantized checkpoint."
+                )
             return interface[_STOCK_FP8_EXPERTS](
                 self, hidden_states, top_k_index, top_k_weights
             )

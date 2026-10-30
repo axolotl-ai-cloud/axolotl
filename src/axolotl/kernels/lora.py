@@ -371,6 +371,8 @@ def matmul_lora(
         X = X.reshape(-1, X.shape[-1])
         if X_drop is not None:
             X_drop = X_drop.reshape(-1, X_drop.shape[-1])
+        if out is not None:
+            out = out.view(-1, out.shape[-1])
 
     out = torch.matmul(X, W, out=out)
     if W_quant is not None:

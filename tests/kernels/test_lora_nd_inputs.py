@@ -84,9 +84,13 @@ def test_matmul_lora(lead):
         )
         ref = _reference(x, p)
         ref_drop = x @ p["W"].t() + p["b"] + p["s"] * (x_drop @ p["A"].t()) @ p["B"].t()
+        buf = torch.empty(*lead, 24)
+        out_buf = matmul_lora(x, p["W"], p["b"], None, p["A"], p["B"], p["s"], out=buf)
     assert out.shape == (*lead, 24)
     torch.testing.assert_close(out, ref)
     torch.testing.assert_close(out_drop, ref_drop)
+    assert out_buf.shape == buf.shape and out_buf.data_ptr() == buf.data_ptr()
+    torch.testing.assert_close(buf, ref)
 
 
 @pytest.mark.parametrize("lead", SHAPES, ids=SHAPE_IDS)
