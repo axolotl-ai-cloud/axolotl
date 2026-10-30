@@ -80,7 +80,8 @@ def _compute_expert_block(
 _LEGACY = {"BLOCK_N": 128, "BLOCK_K": 32, "num_stages": 4, "num_warps": 4}
 
 # Match fields (all optional): sm = exact (major, minor) or major-only (major,); smem_min bytes;
-# k_mod (K % k_mod == 0); k_min/k_max, n_min/n_max; dtype ("bf16"/"fp16"/...).
+# k_mod (K % k_mod == 0); k_min/k_max, n_min/n_max; dtypes (tuple of torch dtype names, e.g.
+# ("bfloat16", "float16")).
 # Ships EMPTY on purpose: swept sm120 (RTX PRO 6000) 2026-07 — BLOCK_K=64 wins were only 3-4%
 # at wide-N thin-expert shapes and REGRESSED small-square (K=N=3072), below the bar for a
 # default flip. Add entries when opt-in-autotune telemetry shows a reproducible >=10% win for a
