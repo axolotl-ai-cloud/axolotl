@@ -10,6 +10,7 @@ import importlib
 import pytest
 import torch
 from tree_recurrence import install, reference, uninstall
+from tree_recurrence.components import channels_first_conv
 from tree_recurrence.integrations import transformers as integration
 from tree_testing import assert_tree_matches_alone, branching_sequences, pack
 
@@ -194,6 +195,25 @@ def test_fused_kernel_is_skipped_on_rows_mamba_ssm_cannot_reset(monkeypatch):
     assert install(model).mode == "tree"
     assert_tree_matches_alone(model, branching_sequences(), rtol=1e-4)
     assert not fused_widths
+
+
+@pytest.mark.parametrize("channels", [96, 74])
+def test_unfused_conv_hands_causal_conv1d_a_layout_it_takes(channels):
+    """causal-conv1d takes a channel-last x only with a multiple of 8 channels; the
+    tree conv passes no seq_idx, so other widths go channel-first."""
+    channel_last = []
+
+    def causal_conv1d_fn(x, weight, bias=None, activation=None):
+        channel_last.append(x.stride(1) == 1)
+        return reference.causal_conv1d(x, weight, bias, activation=activation)
+
+    torch.manual_seed(0)
+    weight, x = torch.randn(channels, 4), torch.randn(1, 10, channels)
+    out = channels_first_conv(causal_conv1d_fn, weight, activation="silu")(x, None)
+
+    expected = reference.causal_conv1d(x.transpose(1, 2), weight, activation="silu")
+    torch.testing.assert_close(out, expected.transpose(1, 2))
+    assert channel_last == [channels % 8 == 0]
 
 
 def test_chains_and_collation_padding():
