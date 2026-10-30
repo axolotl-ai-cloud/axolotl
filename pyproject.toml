@@ -20,7 +20,8 @@ dependencies = [
     "transformers==5.22.0",
     "accelerate==1.15.0",
     "datasets==5.0.1",
-    "trl==1.14.1",
+    "trl==1.16.0",
+    "tree-recurrence>=0.1.1,<0.2",
     "hf_xet>=1.5.2",
     "kernels>=0.17.2,<0.18.0",
     "trackio==0.40.0",
@@ -266,6 +267,7 @@ docstring-code-format = false
 "wandb" = ["wandb"]
 "trackio" = ["trackio"]
 "mistral-common" = ["mistral_common"]
+"tree-recurrence" = ["tree_recurrence"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not slow'"
@@ -319,6 +321,11 @@ conflicts = [
         { extra = "llmcompressor" },
     ],
 ]
+
+# Editable installs of axolotl take the monorepo's copy; published wheels depend on
+# the release on PyPI.
+[tool.uv.sources]
+tree-recurrence = { path = "packages/tree-recurrence", editable = true }
 
 [tool.uv.extra-build-dependencies]
 mamba-ssm = [{ requirement = "torch", match-runtime = true }]

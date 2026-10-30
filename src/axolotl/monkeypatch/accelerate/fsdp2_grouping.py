@@ -56,6 +56,36 @@ def _owner_with_forward(
     return module
 
 
+def output_head_modules(model: nn.Module) -> set[nn.Module]:
+    """The LM head with its submodules (PEFT ``modules_to_save`` copies), the input
+    embedding when tied to it, and their ancestors.
+
+    Fused heads (TRL's for DPO, KTO and GRPO, Cut Cross Entropy, Liger's fused linear
+    cross entropy) read the head weight without calling the module, so a unit of its
+    own is never gathered for them and its gradient never reduced across ranks. Left
+    out of the wrapping, they belong to the root unit, which the model's forward
+    gathers.
+    """
+    try:
+        head = model.get_output_embeddings()
+    except (AttributeError, NotImplementedError):
+        return set()
+    if head is None:
+        return set()
+    protected = set(head.modules())
+    try:
+        embed = model.get_input_embeddings()
+    except (AttributeError, NotImplementedError):
+        embed = None
+    head_params = {id(p) for p in head.parameters()}
+    if embed is not None and any(id(p) in head_params for p in embed.parameters()):
+        protected.update(embed.modules())
+    for module in reversed(list(model.modules())):
+        if any(child in protected for child in module.children()):
+            protected.add(module)
+    return protected
+
+
 def _is_lora_base_layer(module: nn.Module, parent: nn.Module | None) -> bool:
     return parent is not None and getattr(parent, "base_layer", None) is module
 

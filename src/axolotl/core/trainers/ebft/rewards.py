@@ -262,3 +262,55 @@ def whiten_embeddings_batched(
         phi_gt_w = F.normalize(phi_gt_w, p=2, dim=-1)
 
     return phi_w, phi_gt_w
+
+
+def pool_sequence(hidden: torch.Tensor, method: str, pool_start: int) -> torch.Tensor:
+    """``apply_embed_method`` for one unpadded sequence's (L, D) hidden states."""
+    length = hidden.shape[0]
+    if method == "last_token":
+        return hidden[-1]
+    if method == "mean_pooling":
+        return hidden.mean(dim=0)
+    if method == "completion_mean":
+        completion = hidden[pool_start:]
+        return completion.sum(dim=0) / max(completion.shape[0], 1)
+    if method == "concat":
+        return torch.cat(
+            [
+                hidden[min(length // 4, length - 1)],
+                hidden[min(length // 2, length - 1)],
+                hidden[min(3 * length // 4, length - 1)],
+            ],
+            dim=-1,
+        )
+    raise ValueError(f"Unknown embed_method: {method}")
+
+
+@torch.no_grad()
+def group_feature_rewards(
+    gen_embedding: torch.Tensor,
+    gt_embedding: torch.Tensor,
+    use_whitening: bool,
+    alignment_coef: float,
+    diversity_coef: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """EBFT rewards of one prompt's (n, D) generations against its (1, D) reference.
+
+    Returns the rewards, alignment and diversity terms (each (n,)), and the group's
+    CFM loss ``||mean(phi(y_hat)) - phi(y)||^2`` (paper eq. 2). The alignment and
+    diversity terms are scaled by 2 per paper eq. 7.
+    """
+    if use_whitening:
+        gen_embedding, gt_embedding = whiten_embeddings_batched(
+            gen_embedding, gt_embedding
+        )
+    else:
+        gen_embedding = F.normalize(gen_embedding, p=2, dim=-1)
+        gt_embedding = F.normalize(gt_embedding, p=2, dim=-1)
+    alignment = (
+        get_alignment_rewards(gen_embedding, gt_embedding.expand_as(gen_embedding)) * 2
+    )
+    diversity = get_diversity_rewards(gen_embedding, gen_embedding.shape[0]) * 2
+    rewards = alignment_coef * alignment - diversity_coef * diversity
+    cfm_loss = ((gen_embedding.mean(dim=0) - gt_embedding[0]) ** 2).sum()
+    return rewards, alignment, diversity, cfm_loss

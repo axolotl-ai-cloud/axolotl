@@ -45,8 +45,9 @@ _SCALAR_LENGTHS = ("max_seqlen_q", "max_seqlen_k")
 _MAX_PENDING = 4096
 _PENDING: OrderedDict[int, Optional[tuple]] = OrderedDict()
 _TOKENS = itertools.count(1)
-_ORIGINALS: dict[str, Any] = {}
-_NEEDS_INPUT_GRAD: dict[str, tuple] = {}
+# keyed by (kind, routed module name): flash_attn.cute and a hub FA4 kernel can both be routed
+_ORIGINALS: dict[tuple[str, str], Any] = {}
+_NEEDS_INPUT_GRAD: dict[tuple[str, str], tuple] = {}
 
 
 class _RecordingCtx:
@@ -97,19 +98,19 @@ def _forward_params(func: Any) -> list[inspect.Parameter] | None:
     return params
 
 
-def _decode(static: str) -> dict[str, Any]:
+def _decode(static: str) -> tuple[str, dict[str, Any]]:
     payload = json.loads(static)
     params = payload["params"]
     for name in payload["tuples"]:
         params[name] = tuple(params[name])
-    return params
+    return payload["source"], params
 
 
 def _run_forward(kind: str, tensors: dict[str, Any], static: str):
-    params = _decode(static)
+    source, params = _decode(static)
     params.update({k: v for k, v in tensors.items() if v is not None})
-    ctx = _RecordingCtx(_NEEDS_INPUT_GRAD[kind])
-    result = _ORIGINALS[kind].forward(ctx, **params)
+    ctx = _RecordingCtx(_NEEDS_INPUT_GRAD[kind, source])
+    result = _ORIGINALS[kind, source].forward(ctx, **params)
     if not (isinstance(result, (tuple, list)) and len(result) == 2):
         raise RuntimeError(
             f"flash_attn.cute {_CLASS_NAMES[kind]}.forward returned "
@@ -154,14 +155,15 @@ def _forward_impl(kind: str, tensors: dict[str, Any], static: str):
 
 def _backward_impl(kind, dout, dlse, tensors, out, lse, token, static):
     entry = _PENDING.pop(int(token.item()), None)
-    func = _ORIGINALS[kind]
+    source = _decode(static)[0]
+    func = _ORIGINALS[kind, source]
     if entry is None:
         # the forward's ctx cannot be rebuilt: re-run FA4's forward for one
         ctx, out, lse = _run_forward(kind, tensors, static)
     else:
         layout, attrs = entry
         available = {**tensors, "out": out, "lse": lse}
-        ctx = _RecordingCtx(_NEEDS_INPUT_GRAD[kind])
+        ctx = _RecordingCtx(_NEEDS_INPUT_GRAD[kind, source])
         ctx._attrs.update(attrs)
         ctx.save_for_backward(*(None if n is None else available[n] for n in layout))
     if dlse is None:
@@ -367,9 +369,12 @@ def _window(params: dict[str, Any]) -> tuple[int, int] | None:
 class _Route:
     """Replaces an FA4 autograd Function where FA4's entry points look it up."""
 
-    def __init__(self, kind: str, func: Any, params: list[inspect.Parameter]):
+    def __init__(
+        self, kind: str, func: Any, params: list[inspect.Parameter], source: str
+    ):
         self.kind = kind
         self.func = func
+        self.source = source
         self.signature = inspect.Signature(params)
         self._axolotl_fa4_route = True
 
@@ -412,7 +417,10 @@ class _Route:
         window = _window(statics)
         if window is None:
             return None
-        static = json.dumps({"params": statics, "tuples": tuples}, sort_keys=True)
+        static = json.dumps(
+            {"params": statics, "tuples": tuples, "source": self.source},
+            sort_keys=True,
+        )
         return (*(tensors[name] for name in slots), *window, static)
 
     def apply(self, *args, **kwargs):
@@ -437,9 +445,10 @@ def _in_sac_region() -> bool:
 def install_fa4_ops(module: Any = None) -> bool:
     """Route FA4's autograd Functions through the axolotl ops inside SAC regions.
 
-    ``module`` is ``flash_attn.cute`` (imported when None). The Functions are swapped in the
-    namespace FA4's public ``flash_attn_func``/``flash_attn_varlen_func`` resolve them from.
-    Idempotent; returns whether any Function is routed.
+    ``module`` is ``flash_attn.cute`` (imported when None) or a hub FA4 kernel module
+    (``kernels-community/flash-attn4``). The Functions are swapped in the namespace FA4's
+    public ``flash_attn_func``/``flash_attn_varlen_func`` resolve them from. Idempotent;
+    returns whether any Function is routed.
     """
     if not _REGISTERED:
         return False
@@ -448,6 +457,7 @@ def install_fa4_ops(module: Any = None) -> bool:
             import flash_attn.cute as module  # type: ignore[no-redef]
         except ImportError:
             return False
+    source = getattr(module, "__name__", type(module).__name__)
     routed = False
     for kind, class_name in _CLASS_NAMES.items():
         public = getattr(module, _PUBLIC_NAMES[kind], None)
@@ -474,9 +484,9 @@ def install_fa4_ops(module: Any = None) -> bool:
                 class_name,
             )
             continue
-        _ORIGINALS[kind] = current
-        _NEEDS_INPUT_GRAD[kind] = tuple(n in ("q", "k", "v") for n in names)
-        namespace[class_name] = _Route(kind, current, params)
+        _ORIGINALS[kind, source] = current
+        _NEEDS_INPUT_GRAD[kind, source] = tuple(n in ("q", "k", "v") for n in names)
+        namespace[class_name] = _Route(kind, current, params, source)
         routed = True
     if routed:
         LOG.debug(

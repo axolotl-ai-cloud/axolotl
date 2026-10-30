@@ -81,7 +81,7 @@ def _step(arch, sac, packed, monkeypatch):
     fa4.configure_fa4()
     calls = {"fwd": 0}
     kind = fa4_ops.VARLEN if packed else fa4_ops.DENSE
-    func = fa4_ops._ORIGINALS[kind]
+    func = fa4_ops._ORIGINALS[kind, "flash_attn.cute"]
     forward = func.forward
 
     def counting(ctx, *args, **kwargs):

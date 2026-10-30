@@ -484,7 +484,7 @@ class TestVllmColocateCompat:
             (
                 {"adapter": "lora"},
                 {"async_prefetch": True},
-                "not supported by the async GRPO",
+                "vllm_mode: colocate` is not supported; use `server`",
             ),
         ],
     )
@@ -497,6 +497,306 @@ class TestVllmColocateCompat:
         )
         with pytest.raises(ValueError, match=match):
             validate_config(cfg)
+
+
+class TestAsyncGRPOCompat:
+    """async_prefetch with rl: grpo runs on TRL's AsyncGRPOTrainer."""
+
+    @staticmethod
+    def _cfg(min_base_cfg, trl=None, **extra):
+        return min_base_cfg | DictDefault(
+            rl="grpo",
+            max_steps=10,
+            trl={"use_vllm": True, "async_prefetch": True, **(trl or {})},
+            **extra,
+        )
+
+    def test_supported_config_passes(self, min_base_cfg):
+        validated = validate_config(
+            self._cfg(
+                min_base_cfg,
+                trl={
+                    "max_staleness": 2,
+                    "reward_num_workers": 4,
+                    "epsilon": 0.2,
+                    "epsilon_high": 0.28,
+                    "scale_rewards": "none",
+                },
+            )
+        )
+        assert validated.trl.max_staleness == 2
+
+    def test_cispo_takes_the_importance_sampling_options(self, min_base_cfg):
+        validated = validate_config(
+            self._cfg(
+                min_base_cfg,
+                trl={
+                    "loss_type": "cispo",
+                    "vllm_importance_sampling_correction": True,
+                    "vllm_importance_sampling_mode": "token_mask",
+                    "vllm_importance_sampling_cap": 5.0,
+                },
+            )
+        )
+        assert validated.trl.loss_type == "cispo"
+
+    @pytest.mark.parametrize(
+        "trl,extra,match",
+        [
+            ({"beta": 0.04}, {}, "no reference model"),
+            ({"loss_type": "grpo"}, {}, "`loss_type` must be `dapo`"),
+            (
+                {"vllm_importance_sampling_cap": 5.0},
+                {},
+                "ignores `vllm_importance_sampling_cap`; .* set `loss_type: cispo`",
+            ),
+            (
+                {"loss_type": "dapo", "vllm_importance_sampling_correction": True},
+                {},
+                "ignores `vllm_importance_sampling_correction`",
+            ),
+            (
+                {"loss_type": "cispo", "epsilon_high": 0.28},
+                {},
+                "ignores `epsilon_high`; .*`vllm_importance_sampling_cap`",
+            ),
+            (
+                {"loss_type": "cispo", "vllm_importance_sampling_correction": False},
+                {},
+                "correction: false",
+            ),
+            ({"num_iterations": 2}, {}, "num_iterations"),
+            ({"scale_rewards": "batch"}, {}, "scale_rewards: batch"),
+            ({"prefetch_depth": 2}, {}, "max_staleness"),
+            ({"streaming_partial_batch": True}, {}, "data producer trainer"),
+            ({"replay_buffer_size": 64}, {}, "replay_buffer_size"),
+            (
+                {
+                    "loss_type": "cispo",
+                    "vllm_importance_sampling_mode": "sequence_mask",
+                },
+                {},
+                "token_truncate",
+            ),
+            ({"use_vllm": False}, {}, "use_vllm: true"),
+            ({}, {"load_in_4bit": True, "adapter": "qlora"}, "vllm_lora_sync"),
+            (
+                {"vllm_importance_sampling_clip_min": 0.5},
+                {},
+                "bound `loss_type: score_centering` only",
+            ),
+            (
+                {"loss_type": "cispo", "num_sampler_logprobs": 8},
+                {},
+                "`num_sampler_logprobs` is for `loss_type: score_centering` only",
+            ),
+            (
+                {"loss_type": "cispo", "vllm_importance_sampling_cap": 1.0},
+                {},
+                "must exceed 1",
+            ),
+            ({"reward_num_workers": 0}, {}, "reward_num_workers"),
+            (
+                {"generation_kwargs": {"stop_token_ids": [7]}},
+                {},
+                "`generation_kwargs` not supported",
+            ),
+            (
+                {"vllm_guided_decoding_regex": "[0-9]+"},
+                {},
+                "`vllm_guided_decoding_regex` not supported",
+            ),
+        ],
+    )
+    def test_unsupported_settings_raise(self, min_base_cfg, trl, extra, match):
+        with pytest.raises(ValueError, match=match):
+            validate_config(self._cfg(min_base_cfg, trl=trl, **extra))
+
+    def test_generation_groups_need_not_fill_a_step(self, min_base_cfg):
+        """Async GRPO packs trained samples by token budget, apart from the groups
+        the rollout worker generates, so the synchronous batch shape does not apply."""
+        validated = validate_config(
+            self._cfg(
+                min_base_cfg,
+                trl={"num_generations": 8, "token_budget": 4096},
+                micro_batch_size=1,
+                gradient_accumulation_steps=1,
+            )
+        )
+        assert validated.trl.num_generations == 8
+
+    def test_groups_still_need_two_generations(self, min_base_cfg):
+        with pytest.raises(ValueError, match="num_generations >= 2"):
+            validate_config(self._cfg(min_base_cfg, trl={"num_generations": 1}))
+
+    @pytest.fixture
+    def score_centering(self, monkeypatch):
+        from axolotl.core.trainers.async_grpo import trl_compat
+
+        monkeypatch.setattr(trl_compat, "SCORE_CENTERING", True)
+
+    @pytest.mark.usefixtures("score_centering")
+    def test_score_centering_takes_its_bounds(self, min_base_cfg):
+        validated = validate_config(
+            self._cfg(
+                min_base_cfg,
+                trl={
+                    "loss_type": "score_centering",
+                    "vllm_importance_sampling_clip_min": 0.25,
+                    "vllm_importance_sampling_clip_max": 4.0,
+                    "num_sampler_logprobs": 16,
+                },
+            )
+        )
+        assert validated.trl.loss_type == "score_centering"
+        assert validated.trl.num_sampler_logprobs == 16
+
+    @pytest.mark.usefixtures("score_centering")
+    @pytest.mark.parametrize(
+        "trl,match",
+        [
+            ({"epsilon_high": 0.28}, "ignores `epsilon_high`"),
+            (
+                {"vllm_importance_sampling_cap": 3.0},
+                "ignores `vllm_importance_sampling_cap`",
+            ),
+        ],
+    )
+    def test_score_centering_rejects_other_losses_bounds(
+        self, min_base_cfg, trl, match
+    ):
+        with pytest.raises(ValueError, match=match):
+            validate_config(
+                self._cfg(min_base_cfg, trl={"loss_type": "score_centering", **trl})
+            )
+
+    @pytest.mark.usefixtures("score_centering")
+    def test_custom_rollout_loops_cannot_score_center(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, trl={"loss_type": "score_centering"})
+        cfg.rl, cfg.ebft = "ebft", {"mode": "structured"}
+        with pytest.raises(ValueError, match="only TRL's own rollout loop"):
+            validate_config(cfg)
+
+    def test_score_centering_needs_trl_main(self, min_base_cfg, monkeypatch):
+        from axolotl.core.trainers.async_grpo import trl_compat
+
+        monkeypatch.setattr(trl_compat, "SCORE_CENTERING", False)
+        with pytest.raises(ValueError, match="only TRL main has"):
+            validate_config(
+                self._cfg(min_base_cfg, trl={"loss_type": "score_centering"})
+            )
+
+    def test_lists_every_problem(self, min_base_cfg):
+        with pytest.raises(ValueError) as error:
+            validate_config(
+                self._cfg(
+                    min_base_cfg, trl={"beta": 0.04, "off_policy_mask_threshold": 0.5}
+                )
+            )
+        assert "no reference model" in str(error.value)
+        assert "off_policy_mask_threshold` applies to synchronous GRPO" in str(
+            error.value
+        )
+
+    def test_decaying_schedule_without_max_steps_warns(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, lr_scheduler="cosine")
+        cfg.max_steps = None
+        with patch("axolotl.utils.schemas.validation.LOG.warning") as warning:
+            validate_config(cfg)
+        assert any("lr_scheduler: cosine" in c.args[0] for c in warning.call_args_list)
+
+    @pytest.mark.parametrize(
+        "trl,adapter,warns",
+        [
+            ({}, "lora", True),
+            (
+                {"loss_type": "dapo", "max_staleness": 3, "vllm_lora_sync": True},
+                "qlora",
+                True,
+            ),
+            ({"max_staleness": 2, "vllm_sync_interval": 2}, "lora", True),
+            ({"max_staleness": 2}, "lora", False),
+            ({"loss_type": "cispo"}, "lora", False),
+            ({}, None, False),
+        ],
+    )
+    def test_lora_with_stale_rollouts_recommends_cispo(
+        self, min_base_cfg, trl, adapter, warns
+    ):
+        extra = {}
+        if adapter:
+            extra = {
+                "adapter": adapter,
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_target_linear": True,
+            }
+            if adapter == "qlora":
+                extra["load_in_4bit"] = True
+        cfg = self._cfg(min_base_cfg, trl=trl, **extra)
+        with patch("axolotl.utils.schemas.validation.LOG.warning") as warning:
+            validate_config(cfg)
+        recommended = [
+            c for c in warning.call_args_list if "loss_type: cispo" in c.args[0]
+        ]
+        assert bool(recommended) == warns
+
+
+class TestDataProducerRemoval:
+    """The data producer trainer is gone; its options fail with their replacement."""
+
+    def test_use_data_producer_maps_to_async_grpo(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo", max_steps=10, trl={"use_vllm": True, "use_data_producer": True}
+        )
+        with patch("axolotl.utils.schemas.validation.LOG.warning") as warning:
+            validated = validate_config(cfg)
+        assert validated.trl.async_prefetch and validated.trl.max_staleness == 0
+        assert not validated.trl.use_data_producer
+        assert any(
+            "use_data_producer` is deprecated" in c.args[0]
+            for c in warning.call_args_list
+        )
+
+    def test_use_data_producer_keeps_an_explicit_async_setup(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            max_steps=10,
+            trl={
+                "use_vllm": True,
+                "use_data_producer": True,
+                "async_prefetch": True,
+                "max_staleness": 2,
+            },
+        )
+        assert validate_config(cfg).trl.max_staleness == 2
+
+    def test_removed_options_name_their_replacement(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            batch_flattening=True,
+            trl={
+                "use_vllm": True,
+                "prefetch_depth": 2,
+                "replay_buffer_size": 0,
+                "reroll_start_fraction": 0.5,
+            },
+        )
+        with pytest.raises(ValueError) as error:
+            validate_config(cfg)
+        message = str(error.value)
+        assert "data producer trainer has been removed" in message
+        assert "`trl.prefetch_depth`: `trl.max_staleness`" in message
+        assert "`trl.replay_buffer_size`" in message
+        assert "`trl.reroll_start_fraction`" in message
+        assert "`batch_flattening`: `trl.token_budget`" in message
+        assert "docs/grpo.qmd#sec-data-producer-migration" in message
+
+    def test_batch_flattening_still_applies_outside_grpo(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            batch_flattening=True, micro_batch_size=2, flash_attention=True
+        )
+        assert validate_config(cfg).batch_flattening
 
 
 class TestTrainableTokenWarning:

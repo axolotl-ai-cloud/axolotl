@@ -2,20 +2,18 @@
 
 Train LLMs with reinforcement learning using [NVIDIA NeMo Gym](https://github.com/NVIDIA-NeMo/Gym) environments as reward sources. NeMo Gym provides 50+ verified RL environments spanning math, coding, tool-use, reasoning, and safety — each with deterministic reward signals.
 
-## Validated Training Paths
+## Training Paths
 
-| Path | Speed | Multi-turn | Architecture |
-|------|-------|------------|--------------|
-| **Async GRPO + Data Producer** | Fastest (3x) | Yes | `NemoGymDataProducer` replaces vLLM generation |
-| Standard GRPO + Data Producer | Baseline | Yes | Same producer, no async prefetch |
-| Standard GRPO + /verify | Simplest | No | Reward function calls /verify directly |
-| FSDP2 + /verify (2 GPU) | Distributed | No | `fsdp_version: 2` |
+| Path | Multi-turn | Architecture |
+|------|------------|--------------|
+| **Async GRPO + agent /run** | Yes | Rollout process sends each rollout to an agent's `/run` |
+| Async GRPO + /verify | No | TRL's rollout process generates, reward function calls /verify |
+| Standard GRPO + /verify | No | Reward function calls /verify directly |
+| FSDP2 + /verify (2 GPU) | No | `fsdp_version: 2` |
 
-Multi-turn uses `nemo_gym_multi_turn: true` which auto-enables the async trainer's
-data producer protocol. The plugin's `NemoGymDataProducer` calls NeMo Gym agent `/run`
-endpoints and returns `RolloutDataset` with proper IS correction, env_mask, and rewards.
-
-All paths tested end-to-end with Qwen3-0.6B + LoRA, logged to wandb project `nemo-gym-rl`.
+Async GRPO (`trl.async_prefetch: true`) runs on TRL's `AsyncGRPOTrainer`: a CUDA-free
+rollout process keeps generating and scoring while the trainer consumes scored samples,
+so generation and training overlap. Multi-turn (`nemo_gym_multi_turn: true`) requires it.
 
 ## Quick Start
 
@@ -48,10 +46,10 @@ uv pip install --python resources_servers/reasoning_gym/.venv/bin/python \
     reasoning-gym matplotlib pillow cycler contourpy kiwisolver
 ```
 
-### 2. Multi-Turn with Async GRPO (Recommended — Fastest Path)
+### 2. Multi-Turn with Async GRPO
 
-This is the fully validated, highest-performance path. NeMo Gym's agent server handles
-multi-turn tool execution while axolotl's async GRPO prefetches data in background threads.
+NeMo Gym's agent server handles multi-turn tool execution while async GRPO keeps
+rollouts in flight and trains on them as they finish.
 
 **Step 1: Create the NeMo Gym agent config**
 
@@ -73,7 +71,7 @@ policy_model:
       base_url: http://localhost:8000/v1
       api_key: dummy_key
       model: Qwen/Qwen3-0.6B   # Must match nemo_gym_model_name (default: base_model)
-      return_token_id_information: true
+      return_token_id_information: true   # Required: training needs token IDs + logprobs
       uses_reasoning_parser: false
 
 # Agent server (orchestrates multi-turn via /run)
@@ -96,9 +94,12 @@ example_single_tool_call_simple_agent:
 **Step 2: Start three services**
 
 ```bash
-# Terminal 1: vLLM OpenAI server on GPU 0
-CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
-    --model Qwen/Qwen3-0.6B --max-model-len 2048 --gpu-memory-utilization 0.85
+# Terminal 1: vLLM on GPU 0, with the weight sync routes, runtime LoRA loading and tool calling
+VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True CUDA_VISIBLE_DEVICES=0 \
+    vllm serve Qwen/Qwen3-0.6B --max-model-len 2048 --gpu-memory-utilization 0.85 \
+    --enable-lora --max-lora-rank 16 --max-loras 7 \
+    --weight-transfer-config '{"backend":"nccl"}' --logprobs-mode processed_logprobs \
+    --enable-auto-tool-choice --tool-call-parser hermes
 
 # Terminal 2: NeMo Gym (resource server + model proxy + agent)
 cd ~/Gym && .venv/bin/ng_run \
@@ -128,14 +129,10 @@ trl:
   vllm_server_port: 8000
   vllm_lora_sync: true
   vllm_sync_interval: 5
-  # Async GRPO — 3x faster than standard
-  use_data_producer: true
-  async_prefetch: true
+  async_prefetch: true   # Async GRPO, required for multi-turn
   num_generations: 4
   max_completion_length: 512
   temperature: 0.8
-  reward_funcs:
-    - axolotl.integrations.nemo_gym.rewards.reward_env
 
 plugins:
   - axolotl.integrations.nemo_gym.NemoGymPlugin
@@ -176,7 +173,7 @@ wandb_project: nemo-gym-rl
 ### 3. Single-Turn Training (Simplest — No Agent Server Needed)
 
 For environments that only need single-turn verify (math, coding challenges), you don't need
-an agent server. The plugin's reward function calls `/verify` directly.
+an agent server. The plugin adds a reward function that calls `/verify` directly.
 
 ```yaml
 base_model: Qwen/Qwen2.5-0.5B-Instruct
@@ -190,8 +187,6 @@ trl:
   num_generations: 8
   max_completion_length: 128
   temperature: 0.9
-  reward_funcs:
-    - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify
 
 plugins:
   - axolotl.integrations.nemo_gym.NemoGymPlugin
@@ -232,7 +227,7 @@ cd ~/Gym && ng_run "+config_paths=[resources_servers/reasoning_gym/configs/resou
 ### Single-Turn
 ```text
 axolotl train → GRPO Trainer generates completions
-  → NeMo Gym plugin reward_fn calls POST /verify on resource server
+  → NeMo Gym plugin reward function calls POST /verify on resource server
   → reward flows back to GRPO for advantage computation
 ```
 
@@ -259,41 +254,44 @@ The agent server orchestrates the entire multi-turn loop:
 3. Executes tools against resource servers
 4. Feeds tool results back to the model
 5. Repeats until done, then calls /verify for reward
-6. Returns token IDs + logprobs + reward to our rollout_func
+6. Returns token IDs + logprobs + reward to the async GRPO rollout process
 
-### Data Producer Architecture (Multi-Turn)
+### Async GRPO Architecture (Multi-Turn)
 
-When `nemo_gym_multi_turn: true`, the plugin automatically forces `use_data_producer: true`
-which selects the `AxolotlAsyncGRPOTrainer`. The plugin then swaps the trainer's data
-producer with `NemoGymDataProducer`, which:
+Multi-turn runs on TRL's `AsyncGRPOTrainer`. Its CUDA-free rollout process runs the
+plugin's `NemoGymRolloutLoop`, which:
 
-1. Gets a prompt batch from the dataset iterator
-2. Expands by `num_generations` (one agent call per rollout)
-3. Calls NeMo Gym agents via async HTTP (`aiohttp.gather`)
-4. Parses responses into padded tensors (`RolloutDataset`)
-5. Returns with `_pending_policy_logps=True` for deferred scoring
+1. Takes the next dataset row and sends `num_generations` rollouts of it to the agent
+   named by its `agent_ref` (the first agent otherwise), with `max_completion_length`
+   as each model call's `max_output_tokens`
+2. Turns the prompt and generated token IDs and logprobs of every model call into
+   training rows with TRL's multi-turn reconciler: generated tokens are trained, tool
+   results and other context are masked, and a rewritten history starts a new row
+3. Scores the agent's reward as the `nemo_gym` reward column, alongside any
+   `trl.reward_funcs`, and normalizes advantages within the group
+4. Queues the samples tagged with the policy version they were sampled under
 
-The main thread then runs `_compute_deferred_scores()` which:
-- Computes **policy logprobs** on the training model (GPU forward pass)
-- Computes **IS correction** using agent's sampling logprobs vs training model logprobs
-- Computes advantages with group-level normalization
-- All downstream features work: replay buffer, re-roll, streaming, zero-adv skip
-
-With `async_prefetch: true`, the data producer runs in a background thread — giving ~3x
-speedup as generation and training overlap. With `async_prefetch: false`, it runs
-synchronously on the main thread (still uses the data producer protocol).
+The trainer drops samples more than `max_staleness` weight syncs old, packs the rest
+by token budget and applies async GRPO's loss: TRL's clipped objective by default, or
+with `loss_type: cispo`, each token weighted by its policy/sampler ratio, capped at
+`vllm_importance_sampling_cap`. A failed `/run` is left out of its group's baseline.
 
 ### Weight Sync (LoRA Mode)
 
-With `vllm_lora_sync: true`, the plugin (or async trainer) replaces NCCL-based weight
-sync with filesystem + HTTP:
+Async GRPO picks the weight sync from what the vLLM server reports: with
+`--enable-lora` it publishes only the adapter, otherwise it merges the adapter and
+broadcasts full weights over NCCL.
 
-1. `accelerator.get_state_dict()` gathers LoRA weights from all ranks
-2. Rank 0 saves adapter to `/tmp/lora_sync_*/vN/`
-3. Rank 0 POSTs to vLLM's native `/v1/load_lora_adapter`, registering the adapter as `<base model>-v<N>` and addressing subsequent trainer requests to that name; a non-200 response raises
-4. In multi-turn mode the same adapter is also re-registered under `nemo_gym_model_name` (default: `base_model`), because agent servers address vLLM by the fixed `model` in their config. Keep that `model` equal to `nemo_gym_model_name`, and to the name vLLM serves the base model under
-5. vLLM loads adapter natively via Punica kernels
-6. Only ~40MB transferred (vs multiple GBs for full model weights)
+1. Each sync saves the adapter and loads it into vLLM as `trl-policy-v<N>`
+2. In multi-turn mode the adapter is also loaded under `nemo_gym_model_name` (default:
+   `base_model`), because agent servers address vLLM by the fixed `model` in their
+   config. Keep that `model` equal to `nemo_gym_model_name`, and to the name vLLM serves
+   the base model under
+3. That alias keeps its name across versions, and vLLM keys its prefix cache on the
+   name, so a sync waits for in-flight requests to finish (which clears the cache)
+   before moving the alias
+4. vLLM needs `--max-loras` of at least `max_staleness + 3` (default 7); `axolotl
+   vllm-serve` sizes it itself
 
 ### Multi-Environment Support
 
@@ -324,8 +322,10 @@ nemo_gym_datasets:
 | `nemo_gym_datasets` | list[dict] | required | Dataset configs with `path` and optional `server_name` |
 | `nemo_gym_head_port` | int | `11000` | Head server port |
 | `nemo_gym_server_timeout` | int | `360` | Server startup timeout (seconds) |
-| `nemo_gym_verify_timeout` | int | `30` | Per-request timeout (seconds) |
-| `nemo_gym_multi_turn` | bool | `false` | Enable multi-turn via agent /run |
+| `nemo_gym_verify_timeout` | int | `30` | Per `/verify` request timeout (seconds) |
+| `nemo_gym_run_timeout` | int | `300` | Seconds an agent `/run` may go without sending data |
+| `nemo_gym_model_name` | str | `base_model` | Model name the agents' model proxy sends to vLLM |
+| `nemo_gym_multi_turn` | bool | `false` | Enable multi-turn via agent /run (needs `trl.async_prefetch: true`) |
 
 ### Dataset JSONL Format
 
@@ -346,27 +346,19 @@ For multi-turn agent routing, include `agent_ref`:
 
 Note: Tool definitions MUST include `"strict": true` and `"additionalProperties": false` for NeMo Gym agent compatibility.
 
-### Reward Functions
+### Rewards
 
-The plugin provides two built-in reward functions — no user code needed:
+The plugin adds the NeMo Gym reward itself, as the last reward column (`nemo_gym`):
 
-```yaml
-trl:
-  reward_funcs:
-    # Multi-turn (nemo_gym_multi_turn: true):
-    # Passthrough — agent /run already computed the reward
-    - axolotl.integrations.nemo_gym.rewards.reward_env
+- Single-turn: a reward function that calls the resource servers' `/verify` for a
+  group's completions concurrently
+- Multi-turn: the reward the agent's `/run` returns
 
-    # Single-turn (nemo_gym_multi_turn: false):
-    # Calls /verify endpoints on NeMo Gym resource servers
-    - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify
-```
-
-Both are also importable from Python:
-
-```python
-from axolotl.integrations.nemo_gym import reward_env, reward_nemo_gym_verify
-```
+Rewards listed in `trl.reward_funcs` are scored alongside it, so `trl.reward_weights`
+needs one more entry. Configs that still list
+`axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify` or `reward_env` have them
+dropped with a warning. `reward_nemo_gym_verify` remains importable for use without the
+plugin.
 
 ## Known Issues / Troubleshooting
 
@@ -377,14 +369,15 @@ from axolotl.integrations.nemo_gym import reward_env, reward_nemo_gym_verify
 - **Tool `strict` field required**: Agent server validates tool definitions require `strict: true`
 
 ### vLLM / Weight Sync
-- **Start vLLM with LoRA + tool calling + runtime loading**:
+- **Start vLLM with weight sync routes, LoRA, tool calling and runtime loading** (async GRPO
+  needs `VLLM_SERVER_DEV_MODE=1` for `/pause`, `/resume` and `/server_info`):
   ```bash
-  VLLM_ALLOW_RUNTIME_LORA_UPDATING=1 \
-  CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
-    --model Qwen/Qwen3-4B-Instruct-2507 \
+  VLLM_SERVER_DEV_MODE=1 VLLM_ALLOW_RUNTIME_LORA_UPDATING=True \
+  CUDA_VISIBLE_DEVICES=0 vllm serve Qwen/Qwen3-4B-Instruct-2507 \
     --max-model-len 4096 \
     --gpu-memory-utilization 0.7 \
-    --enable-lora --max-lora-rank 64 \
+    --enable-lora --max-lora-rank 64 --max-loras 7 \
+    --weight-transfer-config '{"backend":"nccl"}' --logprobs-mode processed_logprobs \
     --enable-auto-tool-choice --tool-call-parser hermes
   ```
 - **`VLLM_ALLOW_RUNTIME_LORA_UPDATING=True`** (set automatically by `axolotl vllm-serve` when LoRA is enabled): Required for `vllm_lora_sync: true`. Without it, vLLM won't expose the `/v1/load_lora_adapter` endpoint; the plugin warns at startup and the first sync raises.
@@ -396,6 +389,7 @@ from axolotl.integrations.nemo_gym import reward_env, reward_nemo_gym_verify
 
 ### Multi-Turn
 - **Agent server required**: Multi-turn delegates to NeMo Gym's agent server `/run` endpoint. Without an agent, the plugin falls back to single-turn `/verify`
+- **`return_token_id_information: true`**: The agents' `vllm_model` server must return token IDs and logprobs; the rollout process stops with an error otherwise
 - **Model server proxy**: NeMo Gym needs a `responses_api_models` server that proxies to your vLLM. See the agent config example above
 
 ### FSDP2
@@ -409,7 +403,7 @@ from axolotl.integrations.nemo_gym import reward_env, reward_nemo_gym_verify
 | Server management | Automatic | Manual (notebook) | Built-in |
 | Multi-environment | Per-row routing | Manual code | YAML config |
 | Multi-turn / tool use | Agent /run delegation | No | Agent /run (Ray) |
-| Async GRPO (3x speedup) | Yes | No | Yes |
+| Async GRPO | Yes | No | Yes |
 | LoRA sync | Filesystem + HTTP | N/A | NCCL |
 | Multi-GPU (FSDP2) | Yes | No | Yes (Ray) |
 | Config-driven | Yes | No (code) | Yes |

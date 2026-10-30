@@ -19,6 +19,7 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RLType,
+    rl_uses_fused_lm_head,
 )
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE, resolve_fp8_recipe
 from axolotl.utils.schemas.peft import VALUE_INDEPENDENT_LORA_INIT
@@ -223,6 +224,21 @@ def _get_kernel_from_cache(repo_id: str, version: int | None):
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
 
 FSDP1_MIGRATION_DOCS = "docs/multi-gpu.qmd#sec-migrate-fsdp1-fsdp2"
+
+DATA_PRODUCER_MIGRATION_DOCS = "docs/grpo.qmd#sec-data-producer-migration"
+
+# `trl` options of the removed data producer trainer; the value says what replaces each
+DATA_PRODUCER_REMOVED_OPTIONS = {
+    "prefetch_depth": "`trl.max_staleness`, how many weight syncs a rollout may lag",
+    "streaming_partial_batch": "none needed, async GRPO scores each group as it "
+    "finishes",
+    "streaming_min_groups": "none needed, async GRPO scores each group as it finishes",
+    "replay_buffer_size": "none, each rollout is trained on once and "
+    "`trl.skip_zero_advantage_batches` drops samples without signal",
+    "replay_recompute_logps": "none, see replay_buffer_size",
+    "reroll_start_fraction": "none",
+    "reroll_max_groups": "none",
+}
 
 # fsdp_config keys accelerate rejects under FSDP2; the value names the FSDP2 replacement
 FSDP1_ONLY_REJECTED_KEYS = {
@@ -1159,6 +1175,24 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_fused_lm_head_rl(cls, data):
+        rl = data.get("rl")
+        if not rl_uses_fused_lm_head(data):
+            return data
+        targets = data.get("lora_target_modules") or []
+        if isinstance(targets, str):
+            targets = [targets]
+        if data.get("adapter") and any("lm_head" in t for t in targets):
+            raise ValueError(
+                f"rl: {rl} scores tokens with TRL's fused LM head, which reads "
+                "`lm_head.weight` directly, so a LoRA adapter on `lm_head` would never "
+                "train. Remove `lm_head` from `lora_target_modules` and add it to "
+                "`lora_modules_to_save` to train the head."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
         """Surface GRPO batch-shape mismatches at config-parse time.
 
@@ -1190,6 +1224,10 @@ class RLValidationMixin:
                 "With num_generations=1, every group has zero advantage and "
                 "the policy never updates."
             )
+        if trl_cfg.get("async_prefetch") or trl_cfg.get("use_data_producer"):
+            # Async GRPO generates each prompt's group in its rollout worker and packs
+            # trained samples by token budget, so a step need not hold whole groups.
+            return data
 
         # Without `capabilities` populated yet (mode='before'), fall back to
         # user-set distributed fields.
@@ -2723,6 +2761,42 @@ class EBFTValidationMixin:
 class GRPOVllmValidationMixin:
     """Validation mixin for vllm when using GRPO."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_data_producer_options(cls, data):
+        """Reject the removed data producer trainer's options, map its alias."""
+        trl = data.get("trl") or {}
+        problems = [
+            f"`trl.{name}`: {replacement}"
+            for name, replacement in DATA_PRODUCER_REMOVED_OPTIONS.items()
+            if trl.get(name) is not None
+        ]
+        if data.get("rl") in ("grpo", "gdpo") and data.get("batch_flattening") is True:
+            problems.append(
+                "`batch_flattening`: `trl.token_budget`, async GRPO packs rollouts by "
+                "token budget"
+            )
+        if problems:
+            raise ValueError(
+                "The data producer trainer has been removed, and with it:\n- "
+                + "\n- ".join(problems)
+                + f"\nSee {DATA_PRODUCER_MIGRATION_DOCS} for the migration guide."
+            )
+        if trl.get("use_data_producer"):
+            LOG.warning(
+                "`trl.use_data_producer` is deprecated: the data producer trainer has "
+                "been removed. It now selects async GRPO (`trl.async_prefetch: true`) "
+                "with `trl.max_staleness: 0`, which discards the rollouts in flight at "
+                "every weight sync; `trl.async_prefetch: true` with the default "
+                f"`max_staleness` is faster. See {DATA_PRODUCER_MIGRATION_DOCS}."
+            )
+            if not trl.get("async_prefetch"):
+                trl["async_prefetch"] = True
+                if trl.get("max_staleness") is None:
+                    trl["max_staleness"] = 0
+            trl["use_data_producer"] = False
+        return data
+
     @model_validator(mode="after")
     def check_vllm_mode_set(self):
         if self.trl and self.trl.use_vllm and not self.trl.vllm_mode:
@@ -2748,17 +2822,205 @@ class GRPOVllmValidationMixin:
                 "over HTTP to the vLLM server). In colocate mode, remove `vllm_lora_sync`; "
                 "weights are merged and loaded into the colocated engine directly."
             )
-        if (trl.async_prefetch or trl.use_data_producer) and self.adapter:
-            raise ValueError(
-                "`vllm_mode: colocate` with an adapter is not supported by the async GRPO "
-                "trainer (`async_prefetch` / `use_data_producer`): its LoRA weight sync only "
-                "targets a vLLM server. Remove those options or use `vllm_mode: server`."
-            )
         if not (self.vllm and self.vllm.max_model_len):
             LOG.warning(
                 "Set `vllm.max_model_len` (longest prompt + max_completion_length) for "
                 "`vllm_mode: colocate`; otherwise vLLM reserves KV cache for the model's "
                 "full context and may fail to start on the shared GPU."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_async_grpo_compat(self):
+        """`async_prefetch` with rl: grpo/gdpo, or structured EBFT, runs on TRL's
+        AsyncGRPOTrainer."""
+        trl = self.trl
+        ebft = getattr(self, "ebft", None)
+        structured_ebft = self.rl == "ebft" and getattr(ebft, "mode", None) != "strided"
+        if not (self.rl in ("grpo", "gdpo") or structured_ebft) or not (
+            trl and trl.async_prefetch
+        ):
+            return self
+
+        problems = []
+        if not trl.use_vllm:
+            problems.append(
+                "set `trl.use_vllm: true`; generation runs on a vLLM server"
+            )
+        if trl.vllm_mode == "colocate":
+            problems.append("`trl.vllm_mode: colocate` is not supported; use `server`")
+        if self.deepspeed:
+            problems.append("DeepSpeed is not supported; use FSDP2 or DDP")
+        if (self.context_parallel_size or 1) > 1:
+            problems.append("`context_parallel_size > 1` is not supported")
+        if trl.beta or self.rl_beta:
+            problems.append("there is no reference model, so `beta` must be 0")
+        if trl.sync_ref_model:
+            problems.append("there is no reference model to sync")
+        is_options = [
+            f"`{option}`"
+            for option in (
+                "vllm_importance_sampling_correction",
+                "vllm_importance_sampling_mode",
+                "vllm_importance_sampling_cap",
+            )
+            if getattr(trl, option) is not None
+        ]
+        if trl.loss_type in (None, "dapo"):
+            if is_options:
+                problems.append(
+                    "`loss_type: dapo` (the default, TRL's objective) clips the "
+                    "policy/sampler ratio at `epsilon` / `epsilon_high` and ignores "
+                    f"{', '.join(is_options)}; to weight tokens by the capped ratio "
+                    "instead, set `loss_type: cispo`"
+                )
+        elif trl.loss_type == "cispo":
+            eps_options = [
+                f"`{option}`"
+                for option in ("epsilon", "epsilon_high")
+                if getattr(trl, option) is not None
+            ]
+            if eps_options:
+                problems.append(
+                    "`loss_type: cispo` clips nothing and ignores "
+                    f"{', '.join(eps_options)}; async GRPO's cispo caps the "
+                    "policy/sampler weight with `vllm_importance_sampling_cap` "
+                    "(synchronous GRPO's caps with `epsilon_high`)"
+                )
+            if trl.vllm_importance_sampling_correction is False:
+                problems.append(
+                    "`loss_type: cispo` is the sampler-ratio-weighted loss, so it "
+                    "cannot run with `vllm_importance_sampling_correction: false`; "
+                    "use `loss_type: dapo` for TRL's clipped objective"
+                )
+            if trl.vllm_importance_sampling_mode in (
+                "sequence_truncate",
+                "sequence_mask",
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_mode` must be `token_truncate` or "
+                    "`token_mask`"
+                )
+            if (
+                trl.vllm_importance_sampling_cap is not None
+                and trl.vllm_importance_sampling_cap <= 1.0
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_cap` must exceed 1, or it would "
+                    "down-weight or drop every token the sampler agrees with"
+                )
+        elif trl.loss_type == "score_centering":
+            from axolotl.core.trainers.async_grpo import trl_compat
+
+            if not trl_compat.SCORE_CENTERING:
+                problems.append(trl_compat.score_centering_unavailable())
+            eps_options = [
+                f"`{option}`"
+                for option in ("epsilon", "epsilon_high")
+                if getattr(trl, option) is not None
+            ]
+            if eps_options or is_options:
+                problems.append(
+                    "`loss_type: score_centering` ignores "
+                    f"{', '.join(eps_options + is_options)}; it drops the tokens whose "
+                    "policy/sampler ratio falls outside "
+                    "`vllm_importance_sampling_clip_min` / "
+                    "`vllm_importance_sampling_clip_max`"
+                )
+            if structured_ebft or getattr(self, "nemo_gym_multi_turn", None):
+                problems.append(
+                    "`loss_type: score_centering` centers over the vLLM sampler's top "
+                    "log-probs, which only TRL's own rollout loop requests; EBFT and "
+                    "NeMo Gym multi-turn rollouts run their own"
+                )
+        else:
+            problems.append(
+                "`loss_type` must be `dapo` (TRL's clipped objective, the default), "
+                "`cispo` (policy gradient weighted by the capped policy/sampler "
+                "ratio), or `score_centering` (TRL's score centering, TRL main only)"
+            )
+        if trl.importance_sampling_level not in (None, "token"):
+            problems.append("only `importance_sampling_level: token` is supported")
+        if trl.num_iterations not in (None, 1):
+            problems.append(
+                "each rollout is trained on once; `num_iterations` must be 1"
+            )
+        if trl.scale_rewards == "batch":
+            problems.append(
+                "`scale_rewards: batch` is not supported: groups are scored as they "
+                "finish, so use `group` or `none`"
+            )
+        if trl.loss_type != "score_centering":
+            if (
+                trl.vllm_importance_sampling_clip_min is not None
+                or trl.vllm_importance_sampling_clip_max is not None
+            ):
+                problems.append(
+                    "`vllm_importance_sampling_clip_min/max` bound "
+                    "`loss_type: score_centering` only; with `loss_type: cispo`, use "
+                    "`vllm_importance_sampling_cap`"
+                )
+            if trl.num_sampler_logprobs is not None:
+                problems.append(
+                    "`num_sampler_logprobs` is for `loss_type: score_centering` only"
+                )
+        if trl.use_liger_loss:
+            problems.append("`use_liger_loss` is not supported")
+        if trl.entropy_coef or trl.use_adaptive_entropy:
+            problems.append("entropy regularization is not supported")
+        if trl.rollout_func:
+            problems.append("`rollout_func` is not supported")
+        unsent = [
+            f"`{option}`"
+            for option in ("generation_kwargs", "vllm_guided_decoding_regex")
+            if getattr(trl, option)
+            and not (structured_ebft and option == "generation_kwargs")
+        ]
+        if unsent:
+            problems.append(
+                f"{', '.join(unsent)} not supported: TRL's rollout worker sends only "
+                "its own sampling parameters to vLLM"
+            )
+        if (self.load_in_4bit or self.load_in_8bit) and not trl.vllm_lora_sync:
+            problems.append(
+                "a quantized base model needs adapter-only weight sync: set "
+                "`trl.vllm_lora_sync: true`"
+            )
+        for option in ("off_policy_mask_threshold", "use_bias_correction_kl"):
+            if getattr(trl, option) is not None:
+                problems.append(
+                    f"`trl.{option}` applies to synchronous GRPO only; remove it"
+                )
+        if problems:
+            raise ValueError(
+                f"`trl.async_prefetch` with rl: {getattr(self.rl, 'value', self.rl)} "
+                "runs on TRL's AsyncGRPOTrainer:\n- " + "\n- ".join(problems)
+            )
+
+        if not self.max_steps and self.lr_scheduler not in (None, "constant"):
+            LOG.warning(
+                "Async GRPO without `max_steps` stops after num_epochs passes over the "
+                "prompts and sets max_steps to a loose upper bound, so "
+                f"`lr_scheduler: {self.lr_scheduler}` will barely decay. Set `max_steps`, "
+                "or use `lr_scheduler: constant`."
+            )
+
+        # TRL's AsyncGRPOConfig defaults: max_staleness 4, weight_sync_steps 1
+        staleness = 4 if trl.max_staleness is None else trl.max_staleness
+        sync_interval = trl.vllm_sync_interval or 1
+        if (
+            self.adapter in ("lora", "qlora")
+            and trl.loss_type in (None, "dapo")
+            and staleness * sync_interval > 2
+        ):
+            LOG.warning(
+                f"Async GRPO with a LoRA adapter trains on rollouts up to "
+                f"{staleness * sync_interval} optimizer steps old (`max_staleness: "
+                f"{staleness}`, `vllm_sync_interval: {sync_interval}`). "
+                "`loss_type: dapo` (the default) drops the gradient of tokens whose "
+                "probability moved past `epsilon` since sampling, and in 200-step "
+                "LoRA runs it stopped ending completions; `trl.loss_type: cispo` is "
+                "recommended. See docs/grpo.qmd#async-loss."
             )
         return self
 

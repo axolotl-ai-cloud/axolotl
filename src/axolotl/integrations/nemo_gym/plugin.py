@@ -11,9 +11,9 @@ Integrates NVIDIA NeMo Gym environments as reward sources for GRPO training.
 Handles server lifecycle, dataset loading, and reward function wiring.
 
 Supports two modes:
-  - Single-turn (default): reward_fn calls /verify after each generation
-  - Multi-turn (nemo_gym_multi_turn: true): rollout_func orchestrates
-    multi-step interactions with tool execution via resource servers
+  - Single-turn (default): a reward function calls /verify after each generation
+  - Multi-turn (nemo_gym_multi_turn: true, async GRPO): agent servers run whole
+    rollouts, with tool execution, behind their /run endpoint
 """
 
 from __future__ import annotations
@@ -108,6 +108,12 @@ def select_weight_sync_transport(
     return "nccl" if caps.nccl else "none"
 
 
+def _on_async_grpo(cfg) -> bool:
+    from axolotl.core.trainers.grpo import GRPOStrategy
+
+    return GRPOStrategy.is_async(cfg)
+
+
 class NemoGymPlugin(BasePlugin):
     """Plugin for NVIDIA NeMo Gym integration with Axolotl.
 
@@ -115,8 +121,8 @@ class NemoGymPlugin(BasePlugin):
     1. Clones and sets up the NeMo Gym repo (if needed)
     2. Starts NeMo Gym resource servers
     3. Loads datasets from NeMo Gym JSONL files
-    4. For single-turn: creates a reward function calling /verify
-    5. For multi-turn: creates a rollout_func with tool execution and env_mask
+    4. For single-turn: adds a reward function calling /verify
+    5. For multi-turn: runs async GRPO's rollouts through agent /run endpoints
     """
 
     def __init__(self):
@@ -125,9 +131,8 @@ class NemoGymPlugin(BasePlugin):
         self._global_config = None
         self._verify_endpoints = None
         self._server_base_urls = None
-        self._reward_fn = None
-        self._dataset_lookup = None
         self._agent_servers = {}
+        self._multi_turn = False
         self._vllm_caps: VLLMWeightSyncCapabilities | None = None
 
     def get_input_args(self):
@@ -145,6 +150,9 @@ class NemoGymPlugin(BasePlugin):
         sync weights.
         """
         if not cfg.nemo_gym_enabled:
+            return
+        # Async GRPO picks its weight sync from the server's `/server_info` itself.
+        if _on_async_grpo(cfg):
             return
 
         trl_cfg = getattr(cfg, "trl", None)
@@ -246,27 +254,17 @@ class NemoGymPlugin(BasePlugin):
 
         # Discover agent servers (/run) for multi-turn
         self._agent_servers = get_agent_servers(self._global_config)
+        self._multi_turn = bool(cfg.get("nemo_gym_multi_turn"))
+        if self._multi_turn and not self._agent_servers:
+            LOG.warning(
+                "No NeMo Gym agent servers discovered. Multi-turn requires agent servers "
+                "started via ng_run with an agent config. Falling back to single-turn."
+            )
+            self._multi_turn = False
 
-        # Pre-build dataset lookup for multi-turn (needs to happen at register time,
-        # not load_datasets, because load_datasets may not be called if axolotl config
-        # has its own datasets field)
-        if cfg.get("nemo_gym_multi_turn") and cfg.get("nemo_gym_datasets"):
-            from .dataset import load_nemo_gym_datasets
-
-            gym_dir = cfg.get("nemo_gym_dir") or os.path.expanduser("~/Gym")
-            dataset = load_nemo_gym_datasets(gym_dir, cfg["nemo_gym_datasets"])
-            self._dataset_lookup = {}
-            for i in range(len(dataset)):
-                row = dataset[i]
-                # Use last message content as key (matches data_producer lookup)
-                prompt_text = row["prompt"][-1]["content"]
-                self._dataset_lookup[prompt_text] = row
-            LOG.info(f"Built dataset lookup with {len(self._dataset_lookup)} entries")
-
-        multi_turn = cfg.get("nemo_gym_multi_turn", False)
         LOG.info(
             f"NeMo Gym ready with servers: {list(self._verify_endpoints.keys())} "
-            f"(multi_turn={'enabled' if multi_turn else 'disabled'})"
+            f"(multi_turn={'enabled' if self._multi_turn else 'disabled'})"
         )
 
     def load_datasets(self, cfg, preprocess=False) -> Union["TrainDatasetMeta", None]:
@@ -280,26 +278,48 @@ class NemoGymPlugin(BasePlugin):
         dataset_configs = cfg.nemo_gym_datasets
         dataset = load_nemo_gym_datasets(self._gym_dir, dataset_configs)
 
-        # Build prompt → row lookup for multi-turn rollout_func
-        # (rollout_func only receives prompt text, needs to look up row data)
-        self._dataset_lookup = {}
-        for i in range(len(dataset)):
-            row = dataset[i]
-            # Use last message content as key (matches data_producer lookup)
-            prompt_text = row["prompt"][-1]["content"]
-            self._dataset_lookup[prompt_text] = row
-
         return TrainDatasetMeta(
             train_dataset=dataset,
             eval_dataset=None,
             total_num_steps=0,  # computed later by the builder
         )
 
+    @staticmethod
+    def _model_name(cfg) -> str:
+        return cfg.nemo_gym_model_name or cfg.base_model or "axolotl-model"
+
+    def get_reward_funcs(self, cfg):
+        """Single-turn rollouts are scored by the resource servers' /verify."""
+        if not cfg.nemo_gym_enabled or self._multi_turn:
+            return None
+        from .rewards import NemoGymVerifyReward
+
+        return [
+            NemoGymVerifyReward(
+                self._verify_endpoints or {},
+                model_name=self._model_name(cfg),
+                timeout=cfg.nemo_gym_verify_timeout or 30,
+            )
+        ]
+
     def get_training_args(self, cfg):
-        """Pass through vLLM settings and force async trainer for multi-turn."""
+        """Run multi-turn rollouts through the agents, or pass through vLLM settings."""
+        if not cfg.nemo_gym_enabled:
+            return None
         args = {}
-        # Pass vLLM settings from vllm config block to TRL training args
-        if cfg.vllm:
+        if _on_async_grpo(cfg):
+            if self._multi_turn:
+                args["rollout_loop"] = (
+                    "axolotl.integrations.nemo_gym.rollout.NemoGymRolloutLoop"
+                )
+                args["rollout_loop_kwargs"] = {
+                    "agent_servers": dict(self._agent_servers),
+                    "run_timeout": float(cfg.nemo_gym_run_timeout or 300),
+                }
+                if cfg.adapter in ("lora", "qlora"):
+                    # The agents' model proxy names the policy by a fixed model name.
+                    args["vllm_lora_alias"] = self._model_name(cfg)
+        elif cfg.vllm:
             vllm_cfg = cfg.vllm
             max_len = getattr(vllm_cfg, "max_model_len", None)
             gpu_util = getattr(vllm_cfg, "gpu_memory_utilization", None)
@@ -310,16 +330,6 @@ class NemoGymPlugin(BasePlugin):
                 args["vllm_gpu_memory_utilization"] = gpu_util
             if tp_size:
                 args["vllm_tensor_parallel_size"] = tp_size
-
-        # Force async trainer for multi-turn: NemoGymDataProducer needs the
-        # data producer protocol. Setting use_data_producer=True selects
-        # AxolotlAsyncGRPOTrainer which supports _create_data_producer().
-        # With async_prefetch=False this runs synchronously — no threading.
-        if cfg.nemo_gym_multi_turn and self._agent_servers:
-            args["use_data_producer"] = True
-            LOG.info(
-                "NeMo Gym multi-turn: forcing use_data_producer=True for data producer protocol"
-            )
 
         # Dataloader workers fork subprocesses that can't handle the async
         # HTTP connections to NeMo Gym agents. Force num_workers=0.
@@ -335,13 +345,9 @@ class NemoGymPlugin(BasePlugin):
         return args if args else None
 
     def post_trainer_create(self, cfg, trainer):
-        """Wire NeMo Gym into the trainer (reward_fn or rollout_func)."""
+        """Check and install weight sync for trainers that generate with vLLM."""
         if not cfg.nemo_gym_enabled:
             return
-
-        model_name = cfg.nemo_gym_model_name or cfg.base_model or "axolotl-model"
-        verify_timeout = cfg.nemo_gym_verify_timeout or 30
-        multi_turn = cfg.nemo_gym_multi_turn or False
 
         # Pick a weight-sync transport based on what the configured vLLM
         # server actually exposes (see ``pre_model_load`` probe) and what
@@ -363,7 +369,7 @@ class NemoGymPlugin(BasePlugin):
             )
 
             if transport == "lora_filesystem":
-                self._setup_lora_sync(trainer, alias=model_name if multi_turn else None)
+                self._setup_lora_sync(trainer)
                 self._check_lora_endpoint(vllm_gen)
                 LOG.info("NeMo Gym weight sync: LoRA filesystem")
             elif transport == "nccl":
@@ -410,108 +416,6 @@ class NemoGymPlugin(BasePlugin):
                     "rollout policy (functionally a no-op trainer)."
                 )
 
-        if multi_turn:
-            self._wire_multi_turn(cfg, trainer, model_name, verify_timeout)
-        else:
-            self._wire_single_turn(trainer, model_name, verify_timeout)
-
-    def _wire_single_turn(self, trainer, model_name, verify_timeout):
-        """Inject single-turn reward function into the trainer."""
-        from .rewards import create_nemo_gym_reward_fn
-
-        self._reward_fn = create_nemo_gym_reward_fn(
-            global_config=self._global_config,
-            verify_endpoints=self._verify_endpoints,
-            model_name=model_name,
-            verify_timeout=verify_timeout,
-        )
-
-        if hasattr(trainer, "reward_funcs"):
-            trainer.reward_funcs.append(self._reward_fn)
-            trainer.reward_func_names.append("nemo_gym")
-            trainer.reward_processing_classes.append(None)
-            LOG.info(
-                f"Added NeMo Gym reward function (single-turn). "
-                f"Total reward functions: {len(trainer.reward_funcs)}"
-            )
-        else:
-            LOG.warning(
-                "Trainer does not have reward_funcs attribute. "
-                "NeMo Gym reward function not injected. "
-                "Ensure you are using a GRPO trainer."
-            )
-
-    def _wire_multi_turn(self, cfg, trainer, model_name, verify_timeout):
-        """Replace the data producer with NemoGymDataProducer.
-
-        The plugin forces use_data_producer=True (in get_training_args) which
-        selects AxolotlAsyncGRPOTrainer. Here we swap its data_producer with
-        our NemoGymDataProducer that calls agent /run instead of vLLM generate.
-        """
-        if not self._agent_servers:
-            LOG.warning(
-                "No NeMo Gym agent servers discovered. Multi-turn requires agent servers "
-                "started via ng_run with an agent config. Falling back to single-turn."
-            )
-            self._wire_single_turn(trainer, model_name, verify_timeout)
-            return
-
-        if not hasattr(trainer, "data_producer") or trainer.data_producer is None:
-            LOG.warning(
-                "Trainer has no data_producer. NeMo Gym multi-turn requires "
-                "use_data_producer=true (should be auto-set by plugin)."
-            )
-            return
-
-        from axolotl.core.trainers.grpo.async_trainer import AsyncDataProducer
-
-        from .data_producer import NemoGymDataProducer
-
-        # Get the current producer's config and params
-        current = trainer.data_producer
-        # Unwrap AsyncDataProducer to get the inner producer's config
-        if isinstance(current, AsyncDataProducer):
-            inner = current._inner
-        else:
-            inner = current
-
-        nemo_producer = NemoGymDataProducer(
-            config=inner.config,
-            prompt_dataset=inner._dataset,
-            num_generations=inner._num_generations,
-            generation_batch_size=inner._generation_batch_size,
-            train_batch_size=inner._train_batch_size,
-            steps_per_generation=inner._steps_per_generation,
-            shuffle_dataset=inner._shuffle_dataset,
-            seed=inner._seed,
-            agent_servers=self._agent_servers,
-            dataset_lookup=self._dataset_lookup or {},
-            request_timeout=float(cfg.nemo_gym_run_timeout or 300),
-        )
-        nemo_producer.set_trainer(trainer)
-
-        # Re-wrap in AsyncDataProducer if async prefetch is enabled
-        if getattr(trainer.args, "async_prefetch", False):
-            nemo_producer = AsyncDataProducer(
-                nemo_producer,
-                background_produce_kwargs={"skip_policy_logps": True},
-            )
-
-        trainer.data_producer = nemo_producer
-        LOG.info(
-            f"NeMo Gym data producer installed "
-            f"(agent servers: {list(self._agent_servers.keys())}, "
-            f"async={'yes' if getattr(trainer.args, 'async_prefetch', False) else 'no'})"
-        )
-
-        # Passthrough reward function — agent /run already computed rewards
-        from .rewards import reward_env
-
-        if hasattr(trainer, "reward_funcs"):
-            trainer.reward_funcs.append(reward_env)
-            trainer.reward_func_names.append("nemo_gym")
-            trainer.reward_processing_classes.append(None)
-
     @staticmethod
     def _check_lora_endpoint(vllm_gen):
         """Verify the vLLM server supports runtime LoRA loading."""
@@ -542,36 +446,13 @@ class NemoGymPlugin(BasePlugin):
         except Exception:
             pass  # Server might not be up yet, sync will warn later
 
-    def _setup_lora_sync(self, trainer, alias=None):
+    def _setup_lora_sync(self, trainer):
         """Replace sync_weights with LoRA adapter sync via filesystem + HTTP.
 
-        If the async trainer is detected (has ``_sync_lora_adapter``), delegates
-        to it — that method already handles multi-GPU (FSDP/DeepSpeed state_dict
-        gather, broadcast sync dir, barrier).
-
-        Otherwise installs a standalone closure for the non-async GRPO path that
-        saves the adapter and POSTs to ``/v1/load_lora_adapter``.
+        Saves the adapter and POSTs it to ``/v1/load_lora_adapter``.
         """
         vllm_gen = trainer.vllm_generation
 
-        # Async trainer path: delegate to its _sync_lora_adapter (multi-GPU safe)
-        if hasattr(trainer, "_sync_lora_adapter"):
-            # Agent servers address vLLM by a fixed model name, so that name has to
-            # follow the adapter.
-            trainer._vllm_lora_alias = alias
-
-            def lora_sync_weights():
-                trainer._sync_lora_adapter()
-
-            vllm_gen.sync_weights = lora_sync_weights
-            type(vllm_gen).sync_weights = lambda self: lora_sync_weights()
-            LOG.info(
-                "Installed LoRA adapter sync "
-                "(delegates to async trainer._sync_lora_adapter)"
-            )
-            return
-
-        # Non-async standard GRPO path: standalone closure
         import os
         import tempfile
 
@@ -603,7 +484,6 @@ class NemoGymPlugin(BasePlugin):
                     sync_state["sync_dir"],
                     version,
                     trainer.args.vllm_server_timeout,
-                    alias=alias,
                 )
                 LOG.info(
                     f"Synced LoRA adapter v{version} to vLLM as {lora_name} "

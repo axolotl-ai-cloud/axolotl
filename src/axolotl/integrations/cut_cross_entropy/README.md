@@ -47,6 +47,8 @@ cut_cross_entropy_gradient_filtering: false  # exact backward (default true)
 
 LoRA and DoRA adapters on `lm_head` (for example `lora_target_modules: [..., lm_head]`) are folded into the loss, so they train under CCE like any other target module.
 
+`rl: dpo`, `ipo`, `kto`, `grpo`, `gdpo` and structured `ebft` skip CCE, with a warning: TRL scores their tokens with its own fused LM head, which never builds the full logits and bypasses the forward CCE patches. CCE is still applied for SFT, ORPO, SimPO and strided EBFT.
+
 ## Supported Models
 
 - afmoe

@@ -11,6 +11,7 @@ from transformers import CLIPImageProcessor, LlavaProcessor
 from axolotl.core.builders import HFRLTrainerBuilder
 from axolotl.utils.data import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.schemas.enums import RLType
 
 from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION, alpaca_messages_dpo_rows
 
@@ -187,6 +188,42 @@ def rand_reward_func(prompts, completions) -> list[float]:
             # remove imported module from path
             if str(rewards_dir) in sys.path:
                 sys.path.remove(str(rewards_dir))
+
+    def test_async_grpo_training_arguments(
+        self, grpo_cfg, model, tokenizer, tmp_path, monkeypatch
+    ):
+        from axolotl.core.trainers.grpo import (
+            AxolotlAsyncGRPOConfig,
+            AxolotlAsyncGRPOTrainer,
+        )
+
+        rewards_dir = tmp_path / "rewards_test"
+        self._write_rewards_file(rewards_dir)
+        monkeypatch.syspath_prepend(str(rewards_dir))
+        cfg = grpo_cfg
+        cfg.rl = RLType.GDPO
+        cfg.trl.update(
+            beta=0.0,
+            use_vllm=True,
+            async_prefetch=True,
+            vllm_sync_interval=2,
+            max_staleness=3,
+            reward_num_workers=2,
+            scoring_token_budget=64,
+        )
+        builder = HFRLTrainerBuilder(cfg, model, tokenizer)
+        training_arguments, _ = builder._build_training_arguments(100)
+        trainer_cls, _ = builder._get_trainer_cls({})
+
+        assert isinstance(training_arguments, AxolotlAsyncGRPOConfig)
+        assert trainer_cls is AxolotlAsyncGRPOTrainer
+        assert training_arguments.weight_sync_steps == 2
+        assert training_arguments.max_staleness == 3
+        assert training_arguments.reward_num_workers == 2
+        assert training_arguments.scoring_token_budget == 64
+        assert training_arguments.num_generations == 4
+        assert training_arguments.multi_objective_aggregation == "normalize_then_sum"
+        assert not hasattr(training_arguments, "beta")
 
     def test_dpo_vision_dataset_uses_processor(
         self, dpo_cfg, model, tokenizer, processor

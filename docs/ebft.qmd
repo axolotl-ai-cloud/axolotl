@@ -59,9 +59,11 @@ GPU 1: Trainer (feature extraction, reward computation, GRPO training)
 
 ### Structured Mode (Async)
 
-Same architecture as sync, but overlaps generation of the next batch with training on the current batch. Faster throughput at the cost of slightly stale weights during generation.
+`trl.async_prefetch: true` runs structured EBFT on [async GRPO](grpo.qmd) (TRL's `AsyncGRPOTrainer`): a CUDA-free rollout process keeps generating against the vLLM server while the trainer trains on finished rollouts up to `trl.max_staleness` weight syncs old. The feature-matching reward needs the feature network's hidden states, so it is computed on the trainer: each optimizer step holds whole prompt groups, every rank runs a no-grad forward of its completions and their references with adapters disabled, and the embeddings are all-gathered to score each group. This works under FSDP2. The scored sequences (whole conversations with `remaining_turns`, references) can be much longer than the trained tokens that `token_budget` bounds, so each rank splits them into forwards of at most `trl.scoring_token_budget` tokens (default `token_budget`); every rank runs the same number of forwards.
 
-**When to use**: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by `vllm_sync_interval`).
+Only the first assistant turn is trained; with `remaining_turns`, the later assistant turns are generated as reward context. Differences from the sync trainer: rewards use the sampled token IDs; the adaptive max_tokens budget is set per prompt; the loss is async GRPO's (`loss_type: dapo`, TRL's clipped objective, by default, or `cispo`; see [Loss](grpo.qmd#async-loss)); replay, re-roll, streaming and `num_iterations > 1` are not available.
+
+**When to use**: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by `vllm_sync_interval` and `max_staleness`).
 
 ### Strided Mode
 
@@ -104,10 +106,8 @@ trl:
   vllm_server_port: 8000
   vllm_lora_sync: true
   vllm_sync_interval: 3
-  use_data_producer: true
-  async_prefetch: false
+  async_prefetch: true
   scale_rewards: true
-  loss_type: grpo
 
 vllm:
   gpu_memory_utilization: 0.5
@@ -436,7 +436,7 @@ These parameters are set under the `ebft:` key in the YAML config.
 | `alignment_coef` | `float` | `1.0` | Weight for alignment reward (cosine similarity with ground truth) |
 | `diversity_coef` | `float` | `1.0` | Weight for diversity penalty (pairwise dot product between samples) |
 | `ce_coef` | `float` | `0.0` | Cross-entropy loss coefficient on ground-truth tokens |
-| `adaptive_max_tokens` | `bool` | `true` | Dynamically set vLLM `max_tokens` based on ground-truth length (structured mode) |
+| `adaptive_max_tokens` | `bool` | `true` | Dynamically set vLLM `max_tokens` based on ground-truth length (async structured mode) |
 | `gt_length_multiplier` | `float` | `1.5` | Multiplier for ground-truth token count when computing adaptive max tokens (min 0.1) |
 
 ### Strided Mode Parameters
@@ -467,12 +467,14 @@ These are set under the `trl:` key and control the GRPO training loop.
 | `use_vllm` | `bool` | -- | Enable vLLM generation backend |
 | `vllm_lora_sync` | `bool` | `false` | Sync LoRA adapters via filesystem (recommended) |
 | `vllm_sync_interval` | `int` | `1` | Steps between weight syncs to vLLM |
-| `use_data_producer` | `bool` | -- | Required for sync mode with LoRA sync |
-| `async_prefetch` | `bool` | `false` | Enable async generation (overlaps with training) |
-| `streaming_partial_batch` | `bool` | `false` | Score groups incrementally (async mode) |
-| `skip_zero_advantage_batches` | `bool` | `false` | Skip micro-batches where all advantages are zero |
+| `use_data_producer` | `bool` | -- | Deprecated: `async_prefetch: true` with `max_staleness: 0`, which discards in-flight rollouts at every sync; prefer `async_prefetch` with the default `max_staleness` |
+| `async_prefetch` | `bool` | `false` | Run on async GRPO (overlaps generation with training) |
+| `max_staleness` | `int` | `4` | Async: drop rollouts more than this many weight syncs old |
+| `scoring_token_budget` | `int` | `token_budget` | Async: max tokens per feature-network forward; longer scored sets are split |
+| `generation_kwargs` | `dict` | -- | Extra vLLM sampling parameters, e.g. `stop_token_ids` |
+| `skip_zero_advantage_batches` | `bool` | `true` | Async: leave samples with zero advantage out of the loss |
 | `scale_rewards` | `bool` | -- | Normalize rewards within each prompt group |
-| `loss_type` | `string` | `"grpo"` | Loss type for policy optimization |
+| `loss_type` | `string` | `"dapo"` | Loss type for policy optimization (async: `dapo` or `cispo`) |
 | `epsilon` | `float` | `0.2` | Clipping parameter for importance sampling |
 
 ### Stop Tokens
@@ -548,9 +550,6 @@ Complete example configurations are available in `examples/ebft/`:
 | Config | Model | Mode | Description |
 |--------|-------|------|-------------|
 | `llama-1b-ebft-strided-structured.yaml` | Llama 3.2 1B | Strided | Single-GPU strided training on code data |
-| `qwen3-4b-ebft-structured.yaml` | Qwen3 4B | Structured (sync) | Two-GPU structured training |
-| `qwen3-4b-ebft-structured-async.yaml` | Qwen3 4B | Structured (async) | Two-GPU async training with prefetch |
-| `qwen3-8b-ebft-structured.yaml` | Qwen3 8B | Structured (sync) | Two-GPU structured training for larger model |
 | `qwen35-4b-ebft-structured.yaml` | Qwen3.5 4B | Structured (sync) | Two-GPU with Qwen3.5 |
 | `qwen35-4b-ebft-structured-async.yaml` | Qwen3.5 4B | Structured (async) | Two-GPU async with Qwen3.5 |
 | `qwen35-9b-ebft-structured.yaml` | Qwen3.5 9B | Structured (sync) | Two-GPU structured for 9B model |

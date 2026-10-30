@@ -9,6 +9,7 @@ from .checkpoints import (
     with_checkpoint_write_retry,
 )
 from .layer_offloading import LayerOffloadingMixin
+from .lora_merge_check import LoraMergeCheckMixin
 from .distributed_parallel import DistributedParallelMixin
 from .optimizer import OptimizerMixin
 from .packing import PackingMixin

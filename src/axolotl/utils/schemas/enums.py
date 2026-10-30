@@ -41,6 +41,25 @@ class RLType(str, Enum):
     EBFT = "ebft"
 
 
+# TRL scores these trainers' tokens with its fused LM head (`add_fused_lm_head`),
+# which runs the backbone and reads `lm_head.weight` without the CausalLM forward.
+# EBFT does too, on the GRPO trainers, except in strided mode.
+FUSED_LM_HEAD_RL_TYPES = frozenset(
+    {RLType.DPO, RLType.IPO, RLType.KTO, RLType.GRPO, RLType.GDPO, RLType.EBFT}
+)
+
+
+def rl_uses_fused_lm_head(cfg) -> bool:
+    """Whether the config's RL trainer scores tokens with TRL's fused LM head."""
+    try:
+        rl = RLType(cfg.get("rl"))
+    except ValueError:
+        return False
+    if rl is RLType.EBFT and (cfg.get("ebft") or {}).get("mode") == "strided":
+        return False
+    return rl in FUSED_LM_HEAD_RL_TYPES
+
+
 class ChatTemplate(str, Enum):
     """Chat templates configuration subset"""
 

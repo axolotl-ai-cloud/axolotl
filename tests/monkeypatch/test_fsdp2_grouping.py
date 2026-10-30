@@ -4,6 +4,7 @@ import torch
 from torch import nn
 
 from axolotl.monkeypatch.accelerate.fsdp2_grouping import (
+    output_head_modules,
     plan_trainable_dtype_carveout,
 )
 
@@ -149,3 +150,51 @@ def test_lora_base_layer_is_never_carved():
     # the only way to keep fp32 would be carving the bf16 base layers, which the
     # fused LoRA kernels read directly; refuse rather than create hookless units
     assert plan_trainable_dtype_carveout(layer) == []
+
+
+def _causal_lm(tied):
+    from transformers import Qwen3Config, Qwen3ForCausalLM
+
+    return Qwen3ForCausalLM(
+        Qwen3Config(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            head_dim=8,
+            tie_word_embeddings=tied,
+        )
+    )
+
+
+def test_output_head_stays_with_the_root():
+    model = _causal_lm(tied=False)
+    kept = output_head_modules(model)
+    assert model.lm_head in kept and model in kept
+    assert model.model.embed_tokens not in kept
+    assert model.model not in kept
+    assert model.model.layers[0] not in kept
+
+
+def test_tied_embedding_stays_with_the_head():
+    model = _causal_lm(tied=True)
+    kept = output_head_modules(model)
+    assert {model.lm_head, model.model.embed_tokens, model.model} <= kept
+    assert model.model.layers[0] not in kept
+
+
+def test_modules_to_save_copies_stay_with_the_head():
+    from peft import LoraConfig, get_peft_model
+
+    model = get_peft_model(
+        _causal_lm(tied=False),
+        LoraConfig(r=2, target_modules=["q_proj"], modules_to_save=["lm_head"]),
+    )
+    head = model.get_output_embeddings()
+    assert set(head.modules()) <= output_head_modules(model)
+
+
+def test_models_without_a_head_keep_nothing():
+    assert output_head_modules(nn.Linear(4, 4)) == set()
