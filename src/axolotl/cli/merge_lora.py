@@ -40,8 +40,6 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
 
 
 def _do_merge_lora(*, cfg: DictDefault) -> None:
-    from axolotl.integrations.base import PluginManager
-
     adapter = getattr(cfg, "adapter", None)
     if not PluginManager.get_instance().adapter_supports_merge(adapter):
         raise NotImplementedError(
