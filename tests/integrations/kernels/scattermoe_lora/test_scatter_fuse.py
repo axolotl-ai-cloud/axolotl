@@ -11,7 +11,10 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.scatter_fuse import (
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
 
-def _layout(N=97, top_k=4, H=384, tile=64, seed=0):
+TOP_K = 4
+
+
+def _layout(N=97, top_k=TOP_K, H=384, tile=64, seed=0):
     g = torch.Generator(device="cuda").manual_seed(seed)
     E = 8
     idx = torch.randint(0, E, (N, top_k), device="cuda", generator=g)
@@ -31,6 +34,15 @@ def _layout(N=97, top_k=4, H=384, tile=64, seed=0):
     return rep, padded_row, Mt, N, H
 
 
+def _assert_bf16_sum_close(got, ref, abs_sum, terms):
+    """``got`` sums up to ``terms`` bf16 roundings in arbitrary order (atomics); each is within
+    2**-8 of the running magnitude, which never exceeds ``abs_sum`` (the fp32 sum of |addends|),
+    so compare against the fp32 ``ref`` per element on that scale."""
+    err = (got.float() - ref).abs()
+    tol = terms * 2**-8 * abs_sum + 1e-6
+    assert (err <= tol).all(), f"{int((err > tol).sum())} elements past the bf16 bound"
+
+
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
 def test_padded_gather_matches_index_copy(dtype):
     rep, padded_row, Mt, N, H = _layout()
@@ -43,8 +55,15 @@ def test_padded_gather_matches_index_copy(dtype):
 
     gA = torch.randn_like(A)
     A.backward(gA)
-    A_ref.backward(gA)
-    torch.testing.assert_close(hidden.grad, hidden_ref.grad, rtol=2e-2, atol=2e-2)
+    if dtype == torch.float32:
+        A_ref.backward(gA)
+        torch.testing.assert_close(hidden.grad, hidden_ref.grad)
+        return
+    # each token's grad sums its TOP_K gathered rows with bf16 atomics
+    rows = gA.float()[padded_row]
+    ref = torch.zeros(N, H, device="cuda").index_add_(0, rep, rows)
+    abs_sum = torch.zeros(N, H, device="cuda").index_add_(0, rep, rows.abs())
+    _assert_bf16_sum_close(hidden.grad, ref, abs_sum, terms=TOP_K)
 
 
 @pytest.mark.parametrize("w_dtype", [torch.float32, torch.bfloat16])
@@ -54,24 +73,23 @@ def test_weighted_scatter_matches_index_add(w_dtype, router_grad):
     dn = torch.randn(Mt, H, device="cuda", dtype=torch.bfloat16, requires_grad=True)
     w = torch.rand(rep.numel(), device="cuda", dtype=w_dtype)
     w.requires_grad_(router_grad)
-    dn_ref = dn.detach().clone().requires_grad_(True)
-    w_ref = w.detach().clone().requires_grad_(router_grad)
 
     out = weighted_scatter(dn, w, rep, padded_row, N)
-    out_ref = dn_ref.new_zeros(N, H).index_add(
-        0, rep, dn_ref[padded_row] * w_ref[:, None].to(dn_ref.dtype)
-    )
-    # fused multiplies in fp32 before the bf16 round; ref rounds w to bf16 first. Both sum a token's
-    # top_k rows with bf16 atomics in arbitrary order, so a cancelling sum can be ~2 ulps of the
-    # addends (|x| up to ~8) off.
-    torch.testing.assert_close(out, out_ref, rtol=2e-2, atol=6e-2)
+    # fp32 product rounded to bf16, then TOP_K bf16 atomic adds per token
+    rows = dn.detach().float()[padded_row] * w.detach().float()[:, None]
+    ref = torch.zeros(N, H, device="cuda").index_add_(0, rep, rows)
+    abs_sum = torch.zeros(N, H, device="cuda").index_add_(0, rep, rows.abs())
+    _assert_bf16_sum_close(out, ref, abs_sum, terms=TOP_K + 1)
 
     go = torch.randn_like(out)
     out.backward(go)
-    out_ref.backward(go)
-    torch.testing.assert_close(dn.grad, dn_ref.grad, rtol=2e-2, atol=2e-2)
+    # dn's grad is one fp32 product per padded row, rounded once to bf16
+    gdn = go.float()[rep] * w.detach().float()[:, None]
+    ref_gdn = torch.zeros(Mt, H, device="cuda").index_copy_(0, padded_row, gdn)
+    _assert_bf16_sum_close(dn.grad, ref_gdn, ref_gdn.abs(), terms=1)
     if router_grad:
-        torch.testing.assert_close(w.grad, w_ref.grad, rtol=2e-2, atol=2e-1)
+        ref_gw = (dn.detach()[padded_row].float() * go[rep].float()).sum(-1)
+        torch.testing.assert_close(w.grad, ref_gw.to(w_dtype))
     else:
         assert w.grad is None
 
