@@ -36,10 +36,12 @@ def scattermoe_unsupported_expert_dtype(cfg) -> str | None:
 
 
 def check_scattermoe_expert_dtype(cfg) -> None:
-    """Refuse DeepSeek's packed-FP4 experts under scattermoe and warn on block-FP8 ones, which
-    load on the stock FP8 path but have no scattermoe kernel."""
+    """Refuse DeepSeek's packed-FP4 experts under scattermoe and warn on block-FP8 ones unless
+    moe_grouped_mode resolved to fp8_block (otherwise they run on the stock FP8 path)."""
     expert_dtype = scattermoe_unsupported_expert_dtype(cfg)
     if expert_dtype is None:
+        return
+    if expert_dtype == "fp8" and cfg.get("moe_grouped_mode") == "fp8_block":
         return
     if expert_dtype == "fp4":
         raise ValueError(
@@ -49,9 +51,10 @@ def check_scattermoe_expert_dtype(cfg) -> None:
             "nvidia/DeepSeek-V4-Flash-NVFP4). Use the NVFP4 checkpoint or drop use_scattermoe."
         )
     LOG.warning(
-        "use_scattermoe with use_dsv4_kernels: %s has blockwise expert_dtype=%r routed experts, "
-        "which have no scattermoe kernel. They run on transformers' FP8 experts forward, and "
-        "expert LoRA on them raises. Use an NVFP4-expert checkpoint or drop use_scattermoe.",
+        "use_scattermoe with use_dsv4_kernels: %s has blockwise expert_dtype=%r routed experts "
+        "and moe_grouped_mode is not fp8_block. They run on transformers' FP8 experts forward, "
+        "and expert LoRA on them raises. Use moe_grouped_mode: fp8_block (block FP8), an "
+        "NVFP4-expert checkpoint, or drop use_scattermoe.",
         cfg.base_model,
         expert_dtype,
     )

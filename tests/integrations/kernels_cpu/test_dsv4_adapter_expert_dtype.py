@@ -70,3 +70,11 @@ def test_block_fp8_experts_warn(monkeypatch, grouped_mode):
     warnings = _record_warnings(monkeypatch)
     check_scattermoe_expert_dtype(_cfg(monkeypatch, FP8_EXPERTS, **grouped_mode))
     assert len(warnings) == 1 and "expert_dtype='fp8'" in warnings[0]
+
+
+def test_block_fp8_experts_on_fp8_block_grouped_mode_do_not_warn(monkeypatch):
+    warnings = _record_warnings(monkeypatch)
+    check_scattermoe_expert_dtype(
+        _cfg(monkeypatch, FP8_EXPERTS, moe_grouped_mode="fp8_block")
+    )
+    assert warnings == []

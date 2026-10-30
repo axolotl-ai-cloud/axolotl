@@ -53,9 +53,27 @@ selected by `moe_grouped_mode`:
 plugins: [axolotl.integrations.kernels.KernelsPlugin]
 use_kernels: true
 use_scattermoe: true
-moe_grouped_mode: fp8_block    # nvfp4 | fp8_block | mxfp8   (omit -> bf16 experts)
+# moe_grouped_mode: auto       # default: auto | nvfp4 | fp8_block | mxfp8 | none
 lora_target_parameters: [experts.gate_up_proj, experts.down_proj]
 ```
+
+By default (`moe_grouped_mode: auto`) the mode follows the routed experts' format, read from the
+checkpoint's safetensors headers (falling back to its `quantization_config`) before any weight
+loads, and one startup log line reports the resolved mode, the reason, the GPU, the backend and
+whether it requantizes:
+
+| Experts load as | `auto` picks | Explicit modes |
+|---|---|---|
+| NVFP4 | `nvfp4` | `fp8_block` / `mxfp8`: error |
+| 128×128 block-FP8 (incl. `model_quantization_config: FineGrainedFP8Config`) | `fp8_block` | `nvfp4` / `mxfp8` requantize: need `moe_grouped_requant: true` |
+| bf16 | none | `mxfp8` requantizes: needs `moe_grouped_requant: true`; `nvfp4` / `fp8_block`: error |
+| DeepSeek packed FP4 | error | error (`none` runs them on transformers' FP8 forward, without expert LoRA) |
+| different formats in different layers | error | error (`none` runs each layer on its own path) |
+| other (bnb `quantize_moe_experts`, mxfp4, per-tensor FP8) | none | error |
+
+`moe_grouped_mode: none` turns the grouped path off. When `auto` resolves to a mode that has no
+backend on this GPU it falls back to the plain scattermoe kernels with a warning; an explicit mode
+without a backend fails at startup.
 
 - **`nvfp4`** — 4-bit NVFP4 experts (a block-fp8 checkpoint is requantized fp8→nvfp4 at load; a
   native NVFP4-modelopt checkpoint loads as-is). Backend: Marlin / CUTLASS / DeepGEMM, overridable

@@ -5,7 +5,7 @@
 #        V4-Flash is eager-only (head_dim 512). The dsv4 kernels plugin swaps the eager
 #        attention/rope/mHC/compressor/indexer for fused Triton kernels. Keep
 #        attn_implementation: eager so the plugin owns the attention path.
-#   2. moe_grouped_mode: nvfp4
+#   2. moe_grouped_mode (auto -> nvfp4 for this checkpoint)
 #        Routes the NVFP4 experts through the fused 4-bit-read grouped GEMM (base GEMM backend
 #        auto-dispatches by GPU arch). Backward is chunked bf16-dequant + grouped_mm (bf16 grad
 #        required for accuracy). Under FSDP the per-step nvfp4->mxfp4 requant is recomputed and
@@ -25,7 +25,6 @@ use_kernels: true
 use_scattermoe: true # NVFP4 experts (LoRA-on-experts)
 use_dsv4_kernels: true # sliding/CSA attn + rope + mHC + gated-pool + indexer
 lora_mlp_kernel: true # fused clamped-SwiGLU LoRA on the dense shared MLP
-moe_grouped_mode: nvfp4 # fused 4-bit grouped MoE GEMM; backward is bf16-dequant
 strict: false
 
 datasets:

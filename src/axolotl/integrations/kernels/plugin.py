@@ -298,11 +298,11 @@ class KernelsPlugin(BasePlugin):
         ep_active = (getattr(cfg, "expert_parallel_size", 1) or 1) > 1
 
         if cfg.use_scattermoe:
+            from axolotl.integrations.kernels.grouped_mode import (
+                configure_moe_grouped_mode,
+            )
             from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
                 register_scattermoe_experts,
-            )
-            from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import (
-                configure_scattermoe_runtime,
             )
 
             register_scattermoe_experts()
@@ -314,19 +314,10 @@ class KernelsPlugin(BasePlugin):
             # upstream guard; scope-relax it (skips only PEFT/quantized, delegates the rest).
             relax_quantized_training_guard()
 
-            # Apply ALL ScatterMoE runtime settings from this run's config through one entry point
-            # (it resets first, so a long-lived multi-run process can't inherit stale state).
-            configure_scattermoe_runtime(cfg)
-            if cfg.get("moe_grouped_mode") or cfg.get("dsv4_fp4_grouped_mode"):
-                LOG.info(
-                    "Enabled grouped fp4 MoE path: moe_grouped_mode=%s",
-                    cfg.get("moe_grouped_mode") or cfg.get("dsv4_fp4_grouped_mode"),
-                )
-                if cfg.get("moe_grouped_backend"):
-                    LOG.info(
-                        "Grouped MoE base-GEMM backend override: %s",
-                        cfg.get("moe_grouped_backend"),
-                    )
+            # Resolve moe_grouped_mode against the experts' format and this GPU, then apply ALL
+            # ScatterMoE runtime settings through one entry point (it resets first, so a
+            # long-lived multi-run process can't inherit stale state).
+            configure_moe_grouped_mode(cfg)
         elif cfg.use_sonicmoe:
             _check_sonicmoe_gpu_compat()
 
@@ -391,8 +382,8 @@ class KernelsPlugin(BasePlugin):
         )
 
     def pre_lora_load(self, cfg, model):
-        # Model-agnostic grouped-expert requant (mxfp8 / nvfp4) BEFORE per-adapter hooks — so it
-        # applies to every model, and any adapter's non-expert fp8 patch sees only non-expert linears.
+        # Model-agnostic grouped-expert requant (mxfp8 / nvfp4) BEFORE per-adapter hooks, so it
+        # applies to every model.
         from axolotl.integrations.kernels.adapters import requant_grouped_experts
 
         requant_grouped_experts(cfg, model)

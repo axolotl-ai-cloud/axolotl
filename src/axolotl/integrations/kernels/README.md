@@ -224,15 +224,17 @@ The routed experts are the bulk of an MoE model's weights, so keeping them quant
 
 ```yaml
 use_scattermoe: true
-moe_grouped_mode: fp8_block   # nvfp4 | fp8_block | mxfp8   (omit -> bf16 experts)
+moe_grouped_mode: auto   # default: auto | nvfp4 | fp8_block | mxfp8 | none
 ```
+
+`auto` follows the experts' format as they load: NVFP4 -> `nvfp4`, 128×128 block-FP8 -> `fp8_block`, bf16 -> no grouped mode; DeepSeek packed FP4 and per-layer mixed formats are refused. An explicit mode that requantizes (block-FP8 -> `nvfp4`/`mxfp8`, bf16 -> `mxfp8`) needs `moe_grouped_requant: true`, and one the experts can't run in is an error. See the *MoE Expert Quantization* doc for the full table.
 
 | `moe_grouped_mode` | Experts run as | Base GEMM | Notes |
 |---|---|---|---|
-| *(unset)* | **bf16** | fused Triton `scatter2scatter_lora` | default; experts dequantized to bf16 (heavy VRAM for large MoE) |
-| `nvfp4` | **4-bit NVFP4** | Marlin (sm80–120) / CUTLASS / DeepGEMM (sm90/100) | a block-fp8 checkpoint is **requantized** fp8→nvfp4 at load; a native NVFP4-modelopt checkpoint loads as-is |
+| `none` (`auto` on bf16 experts) | **bf16** | fused Triton `scatter2scatter_lora` | experts dequantized to bf16 (heavy VRAM for large MoE) |
+| `nvfp4` | **4-bit NVFP4** | Marlin (sm80–120) / CUTLASS / DeepGEMM (sm90/100) | a native NVFP4 checkpoint loads as-is; a block-fp8 one is **requantized** fp8→nvfp4 at load (`moe_grouped_requant: true`) |
 | `fp8_block` | **native 128×128 block-fp8** | `blockfp8_triton` (any CUDA incl. sm120) / DeepGEMM fp8×fp8 (sm90/100) / Marlin W8A16 fwd via `moe_grouped_backend: marlin` (~1.3× layer memory-neutral via transient per-forward packs; ~1.5× with the `AXOLOTL_MARLIN_CACHE_MIN_FREE_GB` resident-cache opt-in) | keeps the checkpoint's fp8 weights — no requant, higher fidelity |
-| `mxfp8` | **OCP-MX fp8** (e4m3 + e8m0 per-32-block scale) | sm100: hardware-MX `_scaled_grouped_mm` (W8A8); sm120/sm90: `mxfp8_triton` W8A16 | requantized bf16/fp8→mxfp8 at load; same 1 byte/elem as `fp8_block` but hardware-MX-native + finer 32-wide scale |
+| `mxfp8` | **OCP-MX fp8** (e4m3 + e8m0 per-32-block scale) | sm100: hardware-MX `_scaled_grouped_mm` (W8A8); sm120/sm90: `mxfp8_triton` W8A16 | requantized bf16/fp8→mxfp8 at load (`moe_grouped_requant: true`); same 1 byte/elem as `fp8_block` but hardware-MX-native + finer 32-wide scale |
 
 Backend override for the nvfp4 grouped GEMM (unavailable choice warns + falls back to `auto`):
 
@@ -258,7 +260,7 @@ See the *MoE Expert Quantization* doc for details.
 
 **Model-agnostic requant + rank0-only load.** The `nvfp4` / `mxfp8` requant runs at the plugin level (`requant_grouped_experts`) for *every* scattermoe model, not one adapter — so any MoE with fused-3D experts gets it. Under FSDP2 `cpu_ram_efficient_loading`, `moe_rank0_requant` (default: auto = on when cpu-ram-efficient, forced off under Expert Parallelism) requantizes only on rank 0 and lets FSDP2 broadcast the rest, avoiding a full-expert copy per rank.
 
-**Model-specific loading.** Because a genuine block-fp8 checkpoint (e.g. `mistralai/Mistral-Large-4.0-small`) ships its experts as 128×128 block-fp8, the mode decides what happens at load: `fp8_block` keeps them native (recommended — ~17× lower error than requant), `nvfp4` requantizes to 4-bit, `mxfp8` requantizes to OCP-MX fp8 (block-fp8 or bf16 → e4m3 + e8m0). The matched model adapter performs the requant for `nvfp4` / `mxfp8`.
+**Block-fp8 checkpoints.** A genuine block-fp8 checkpoint ships its experts as 128×128 block-fp8, so the mode decides what happens at load: `fp8_block` (what `auto` picks) keeps them native — ~17× lower error than requant — while `nvfp4` requantizes to 4-bit and `mxfp8` to OCP-MX fp8 (e4m3 + e8m0), both only with `moe_grouped_requant: true`. The requant runs at the plugin level for every model.
 
 **`mxfp8` vs `fp8_block`.** Both are 8-bit (1 byte/elem), so `mxfp8` does *not* save VRAM over `fp8_block` — its win is that the e4m3 + e8m0/32 layout is the native Blackwell MX tensor-core format (hardware block-scaling) with a finer scale (per-32 vs 128×128). Prefer `fp8_block` for memory savings alone; prefer `mxfp8` for a native mxfp8 checkpoint or a Blackwell MX-GEMM.
 
