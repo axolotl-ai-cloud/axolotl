@@ -337,6 +337,20 @@ class KernelsArgs(BaseModel):
                 f"got {mode!r}"
             )
         data["moe_grouped_mode"] = m
+        fsdp = data.get("fsdp_config") or {}
+        if (
+            m == "mxfp8"
+            and data.get("moe_rank0_requant") is False
+            and fsdp.get("cpu_ram_efficient_loading")
+            and int(data.get("expert_parallel_size") or 1) <= 1
+        ):
+            # non-rank-0 experts load on meta; their e8m0 scales are non-persistent buffers FSDP
+            # doesn't broadcast, so only the rank0-only requant (which broadcasts them) fills them
+            raise ValueError(
+                "moe_grouped_mode: mxfp8 with fsdp_config.cpu_ram_efficient_loading needs the "
+                "rank0-only requant to broadcast the e8m0 expert scales; drop "
+                "moe_rank0_requant: false."
+            )
         return data
 
     @model_validator(mode="before")

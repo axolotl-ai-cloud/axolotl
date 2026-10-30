@@ -383,3 +383,25 @@ def test_args_normalize_grouped_mode(value, expected):
 
 def test_args_accept_grouped_requant():
     assert KernelsArgs.model_validate({"moe_grouped_requant": True}).moe_grouped_requant
+
+
+@pytest.mark.parametrize(
+    "extra,ok",
+    [
+        ({"moe_rank0_requant": False}, False),
+        ({"moe_rank0_requant": False, "expert_parallel_size": 2}, True),
+        ({}, True),
+        ({"moe_rank0_requant": True}, True),
+    ],
+)
+def test_mxfp8_cpu_ram_efficient_needs_rank0_requant(extra, ok):
+    data = {
+        "moe_grouped_mode": "mxfp8",
+        "fsdp_config": {"cpu_ram_efficient_loading": True},
+        **extra,
+    }
+    if ok:
+        KernelsArgs.model_validate(data)
+    else:
+        with pytest.raises(ValueError, match="moe_rank0_requant: false"):
+            KernelsArgs.model_validate(data)
