@@ -23,6 +23,7 @@ import torch
 from axolotl.monkeypatch.models.mamba_utils import (
     get_seq_idx,
     kernel_accepts,
+    kernelized_copy,
     require_seq_idx_kernels,
 )
 from axolotl.utils.logging import get_logger
@@ -173,7 +174,7 @@ def packed_causal_conv(conv_fn, segments: PackedSegments, x, *args, **kwargs):
 
 
 @contextlib.contextmanager
-def _unfused_packed_scan(mod, segments: PackedSegments, family: dict):
+def _unfused_packed_scan(mod, mixer, segments: PackedSegments, family: dict):
     """Disable the fused row kernel and split the conv and scan per document.
 
     The mixer looks these up as module globals at call time, so swapping the
@@ -200,7 +201,7 @@ def _unfused_packed_scan(mod, segments: PackedSegments, family: dict):
     # continues on the unfused branch
     setattr(mod, fused, lambda *args, **kwargs: None)
     setattr(mod, scan, packed_scan)
-    if kernel_accepts(originals[conv], "seq_idx") is not True:
+    if kernel_accepts(kernelized_copy(mixer, originals[conv]), "seq_idx") is not True:
         setattr(mod, conv, packed_conv)
     try:
         yield
@@ -305,16 +306,23 @@ def _assert_packed_ready(mixer, mod, family: dict, model_type: str) -> None:
             f"{model_type} sample packing needs the CUDA kernels; the torch fallbacks "
             "have no document boundaries."
         )
-    if getattr(mod, "_axolotl_seq_idx_verified", False):
+    names = family["seq_idx_kernels"]
+    kernels = [kernelized_copy(mixer, getattr(mod, name)) for name in names]
+    # each mixer runs its own kernelized copy, which kernelize can rebind later
+    verified = tuple(
+        (id(kernel), id(getattr(kernel, "__dict__", {}).get("forward")))
+        for kernel in kernels
+    )
+    if vars(mixer).get("_axolotl_seq_idx_verified") == verified:
         return
-    for name in family["seq_idx_kernels"]:
-        if kernel_accepts(getattr(mod, name), "seq_idx") is False:
+    for name, kernel in zip(names, kernels, strict=True):
+        if kernel_accepts(kernel, "seq_idx") is False:
             raise RuntimeError(
                 f"{model_type} sample packing: `{name}` is the transformers torch "
                 "fallback, which drops seq_idx and mixes state across packed samples. "
                 "Install mamba-ssm and causal-conv1d or set `use_kernels: true`."
             )
-    mod._axolotl_seq_idx_verified = True
+    mixer._axolotl_seq_idx_verified = verified
 
 
 def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
@@ -358,7 +366,7 @@ def _patch_mixer(mod, mixer_cls, family: dict, model_type: str) -> None:
                 attention_mask=attention_mask,
                 **kwargs,
             )
-        with _unfused_packed_scan(mod, segments, family):
+        with _unfused_packed_scan(mod, self, segments, family):
             return original_forward(
                 self,
                 hidden_states,

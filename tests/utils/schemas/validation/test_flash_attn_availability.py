@@ -13,7 +13,10 @@ class TestFlashAttnAvailabilityValidator:
 
     @pytest.fixture(autouse=True)
     def _gpu_present(self, monkeypatch):
+        from transformers.utils import import_utils
+
         monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+        monkeypatch.setattr(import_utils, "is_kernels_available", lambda: True)
 
     @staticmethod
     def _force_availability(monkeypatch, value: bool):
@@ -75,6 +78,21 @@ class TestFlashAttnAvailabilityValidator:
         cfg = min_base_cfg | DictDefault(attn_implementation="sdpa")
         validated = validate_config(cfg)
         assert validated.attn_implementation == "sdpa"
+
+    def test_kernels_outside_transformers_range_raises(self, min_base_cfg, monkeypatch):
+        """A hub build that kernels loads must not mask transformers rejecting kernels."""
+        import kernels
+        import transformers.utils
+        from transformers.utils import import_utils
+
+        monkeypatch.setattr(
+            transformers.utils, "is_flash_attn_2_available", lambda **_: False
+        )
+        monkeypatch.setattr(import_utils, "is_kernels_available", lambda: False)
+        monkeypatch.setattr(kernels, "get_kernel", lambda *_, **__: object())
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_2")
+        with pytest.raises(ValueError, match="outside the range transformers supports"):
+            validate_config(cfg)
 
     @pytest.mark.parametrize("attn_version", [2, 3])
     @pytest.mark.parametrize("has_build", [True, False])
