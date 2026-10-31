@@ -1,0 +1,59 @@
+# NCM stage 1: multiscale residual VQ tokenizer on TinyStories (paper Table 5).
+# Uses the GPT-2 BPE instead of the paper's custom 8k BPE.
+tokenizer_config: openai-community/gpt2
+
+plugins:
+  - axolotl.integrations.ncm.NCMPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
+ncm:
+  stage: tokenizer
+
+# NCM tokenizer architecture (NCMTokenizerConfig)
+model_config:
+  vocab_size: 50304
+  levels: [1, 8, 16, 24, 32, 40, 52, 64, 76, 92, 108, 128]
+  codebook_size: 4096
+  dim: 384
+  num_heads: 6
+  decoder_layers: 1
+  dropout: 0.3
+  ema_decay: 0.95
+  fine_drop_prob: 0.5
+
+special_tokens:
+  pad_token: "<|endoftext|>"
+
+datasets:
+  - path: roneneldan/TinyStories
+    type: completion
+    split: train
+val_set_size: 0.001
+output_dir: ./outputs/ncm-tinystories-tokenizer
+
+# Blocks are exactly levels[-1] tokens.
+sequence_len: 128
+sample_packing: false
+pad_to_sequence_len: true
+
+# 4096 sequences per step on one GPU; divide gradient_accumulation_steps by the GPU count.
+# EMA codebooks update once per micro-batch, so the split changes codebook dynamics.
+micro_batch_size: 512
+gradient_accumulation_steps: 8
+max_steps: 30000
+
+optimizer: adamw_torch_fused
+learning_rate: 5.0e-4
+lr_scheduler: cosine
+cosine_min_lr_ratio: 0.1
+warmup_steps: 1000
+adam_beta2: 0.95
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+bf16: true
+tf32: true
+
+logging_steps: 50
+eval_steps: 1000
+save_steps: 5000
