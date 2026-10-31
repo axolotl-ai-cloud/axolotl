@@ -117,6 +117,22 @@ Only groups with a non-zero weight decay are affected — axolotl already exclud
 embeddings, the LM head, norms, and biases from decay, matching the paper's rule of
 applying the correction to normalized layers only.
 
+### adam_mini
+
+Adam with one second-moment value per parameter block (attention head, output neuron,
+or token embedding) instead of per parameter, cutting optimizer memory by ~50% vs AdamW.
+Full fine-tuning only. The block layout (`dim`, `n_heads`, `n_kv_heads`) is read from
+the model config.
+
+GitHub: [https://github.com/zyushun/Adam-mini](https://github.com/zyushun/Adam-mini)
+Paper: [https://arxiv.org/abs/2406.16793](https://arxiv.org/abs/2406.16793)
+
+Install: `pip install axolotl[optimizers]`
+
+```yaml
+optimizer: adam_mini
+```
+
 ### came_pytorch
 
 GitHub: [https://github.com/yangluo7/CAME/tree/master](https://github.com/yangluo7/CAME/tree/master)

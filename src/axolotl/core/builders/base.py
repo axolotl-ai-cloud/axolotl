@@ -455,6 +455,11 @@ class TrainerBuilderBase(abc.ABC):
 
                 optimizer_cls = AdamC
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "adam_mini":
+                from axolotl.utils.optimizers.adam_mini import AdamMiniOptimizerFactory
+
+                optimizer_cls = AdamMiniOptimizerFactory
+                optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "came_pytorch":
                 from came_pytorch import CAME
 

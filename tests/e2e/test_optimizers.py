@@ -519,6 +519,45 @@ class TestCustomOptimizers(unittest.TestCase):
         check_model_output_exists(temp_dir, cfg)
 
     @with_temp_dir
+    def test_fft_adam_mini(self, temp_dir):
+        pytest.importorskip("adam_mini")
+
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "model_type": "AutoModelForCausalLM",
+                "sequence_len": 1024,
+                "val_set_size": 0.01,
+                "special_tokens": {
+                    "pad_token": "<|endoftext|>",
+                },
+                "datasets": [
+                    {
+                        "path": "mhenrichsen/alpaca_2k_test",
+                        "type": "alpaca",
+                    },
+                ],
+                "num_epochs": 1,
+                "micro_batch_size": 2,
+                "gradient_accumulation_steps": 2,
+                "output_dir": temp_dir,
+                "learning_rate": 0.00001,
+                "optimizer": "adam_mini",
+                "lr_scheduler": "cosine",
+                "max_steps": 5,
+                "save_first_step": False,
+            }
+        )
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+
+        _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+        check_model_output_exists(temp_dir, cfg)
+        assert trainer.optimizer.optimizer.__class__.__name__ == "Adam_mini"
+
+    @with_temp_dir
     def test_came_pytorch(self, temp_dir):
         pytest.importorskip("came_pytorch")
         cfg = DictDefault(

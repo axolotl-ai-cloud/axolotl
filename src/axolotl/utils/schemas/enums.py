@@ -92,6 +92,7 @@ class CustomSupportedOptimizers(str, Enum):
     ao_adamw_fp8 = "ao_adamw_fp8"
     adopt_adamw = "adopt_adamw"
     adamc = "adamc"
+    adam_mini = "adam_mini"
     came_pytorch = "came_pytorch"
     muon = "muon"
     muon_8bit = "muon_8bit"
