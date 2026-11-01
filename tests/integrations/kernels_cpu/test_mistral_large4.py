@@ -402,6 +402,24 @@ def test_native_fp8_attn_lora_matches_peft(fp8_linear, lora_dropout):
         assert _rel_err(grads[name], ref) < 8e-2, name
 
 
+@pytest.mark.parametrize("deepgemm_disabled", [False, True])
+def test_native_fp8_attn_lora_honors_deepgemm_guard(fp8_linear, deepgemm_disabled):
+    from transformers.integrations.finegrained_fp8 import FP8Linear
+
+    model = _tiny_fp8_peft_model(0.0)
+    for module in model.modules():
+        if isinstance(module, FP8Linear):
+            module._deepgemm_disabled = deepgemm_disabled
+    patch_mistral_large4_attn_lora(model, native_fp8=True)
+
+    with torch.no_grad():
+        model(input_ids=torch.randint(1, FP8_TEXT["vocab_size"], (2, 12)))
+
+    assert len(fp8_linear.call_args_list) == 2 * FP8_TEXT["num_hidden_layers"]
+    for call in fp8_linear.call_args_list:
+        assert call.kwargs["allow_deepgemm"] is (not deepgemm_disabled)
+
+
 def _rel_err(got, want):
     got, want = got.float(), want.float()
     return ((got - want).norm() / want.norm().clamp_min(1e-12)).item()

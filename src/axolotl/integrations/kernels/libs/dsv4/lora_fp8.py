@@ -42,13 +42,22 @@ def _fp8_linear():
 
 class _NativeFp8Lora(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, qdata, scale_inv, block_size, A, B, scaling, bias):
+    def forward(
+        ctx, x, qdata, scale_inv, block_size, A, B, scaling, bias, allow_deepgemm=True
+    ):
         fp8_linear = _fp8_linear()
         shape = x.shape
         x2 = x.reshape(-1, shape[-1])
         # frozen base: native blockwise fp8 GEMM (activation quantized 1x128 inside); the
         # output takes the activation dtype
-        out = fp8_linear(x2, qdata, scale_inv, block_size=list(block_size), bias=bias)
+        out = fp8_linear(
+            x2,
+            qdata,
+            scale_inv,
+            block_size=list(block_size),
+            bias=bias,
+            allow_deepgemm=allow_deepgemm,
+        )
         # fused LoRA update via addmm_ (avoids a [M,out] temp)
         xA = x2 @ A.t()
         out = out.addmm_(xA, B.t(), alpha=float(scaling))
@@ -70,7 +79,7 @@ class _NativeFp8Lora(torch.autograd.Function):
         dX = (g @ w_deq).addmm_(dxA, A, alpha=s)
         dA = (dxA.t() * s) @ x2  # [r, in]
         dB = (g.t() * s) @ xA  # [out, r]
-        return dX.view(*ctx.shape), None, None, None, dA, dB, None, None
+        return dX.view(*ctx.shape), None, None, None, dA, dB, None, None, None
 
 
 def _fp8_from_weight(w, base_layer):

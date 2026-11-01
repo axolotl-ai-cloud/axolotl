@@ -142,6 +142,7 @@ def _make_forward(name: str, native_fp8: bool):
                     B.to(x.dtype),
                     s,
                     b.to(x.dtype) if b is not None else None,
+                    not getattr(self.base_layer, "_deepgemm_disabled", False),
                 )
             # unaligned dims / disabled adapter / dropout / DoRA -> fused dequant path via LoRA_O
             return _generic_forward(self, x, *args, **kwargs)
