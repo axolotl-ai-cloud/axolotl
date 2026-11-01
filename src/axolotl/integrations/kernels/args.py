@@ -311,7 +311,8 @@ class KernelsArgs(BaseModel):
     # kv_a_proj_with_mqa/kv_b_proj/o_proj): bf16 / nf4 / fp8-dequant via the shared LoRA_O kernel,
     # native blockwise-fp8 on the large projections, low-bit (nvfp4/mx) via Marlin/MX. Unlike DSV4,
     # MLA attention LoRA is safe here (no gradientless indexer). None = on for a LoRA run on a
-    # block-FP8 / bf16 checkpoint, off on the modelopt NVFP4 checkpoint.
+    # block-FP8 / bf16 checkpoint, off on the modelopt NVFP4 checkpoint and under a
+    # selective_checkpointing that saves matmul outputs.
     mistral_large4_attn_lora_kernel: bool | None = None
     # Use the native blockwise-fp8 GEMM (vs dequant) on the large MLA projections when the base is
     # fp8. Default on; the e2e win is on q_proj/kv_b_proj/o_proj (DeepGEMM sm90/sm100, Triton sm120).

@@ -123,6 +123,51 @@ def test_attn_lora_kernel_default(tmp_path, quantization_config, flag, expected)
     assert MistralLarge4Adapter()._attn_lora_kernel_enabled(cfg) is expected
 
 
+SAC_MATMUL_SAVING = [
+    {"save": ["attention", "aten::mm"]},
+    {"save": ["attention"], "save_matmul_min_k": 4096},
+    {"save": ["attention"], "save_modules": ["o_proj"]},
+    {"save": ["attention"], "save_modules": ["self_attn.kv_b_proj"]},
+    {"save": ["attention"], "save_modules": ["layers"]},
+]
+SAC_NO_CONFLICT = [
+    {"save": ["attention"]},
+    {"save": ["attention"], "save_modules": ["down_proj"]},
+]
+
+
+@pytest.mark.parametrize("sac", SAC_MATMUL_SAVING)
+def test_attn_lora_kernel_defers_to_selective_checkpointing(tmp_path, monkeypatch, sac):
+    from axolotl.monkeypatch.accelerate import fsdp2_quantized
+
+    monkeypatch.setattr(fsdp2_quantized, "_FP32_SHARD_CLASS_NAMES", set())
+    base = {
+        "base_model": _saved(tmp_path, tiny_config()),
+        "adapter": "lora",
+        "selective_checkpointing": sac,
+    }
+    adapter = MistralLarge4Adapter()
+    assert adapter._attn_lora_kernel_enabled(DictDefault(base)) is False
+
+    forced = DictDefault({**base, "mistral_large4_attn_lora_kernel": True})
+    with pytest.raises(ValueError, match="selective_checkpointing"):
+        adapter.pre_model_load(forced)
+    off = DictDefault({**base, "mistral_large4_attn_lora_kernel": False})
+    adapter.pre_model_load(off)
+
+
+@pytest.mark.parametrize("sac", SAC_NO_CONFLICT)
+def test_attn_lora_kernel_keeps_attention_only_selective_checkpointing(tmp_path, sac):
+    cfg = DictDefault(
+        {
+            "base_model": _saved(tmp_path, tiny_config()),
+            "adapter": "lora",
+            "selective_checkpointing": sac,
+        }
+    )
+    assert MistralLarge4Adapter()._attn_lora_kernel_enabled(cfg) is True
+
+
 def test_attn_lora_kernel_needs_lora(tmp_path):
     cfg = DictDefault(
         {"base_model": _saved(tmp_path, tiny_config()), "adapter": "qlora"}

@@ -108,6 +108,18 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
                 "mistral_large4_attn_quantization does not support peft_use_dora: the low-bit "
                 "attention LoRA has no DoRA path. Drop one of them."
             )
+        conflict = self._selective_checkpointing_conflict(cfg)
+        if (
+            conflict
+            and cfg.get("adapter") == "lora"
+            and cfg.get("mistral_large4_attn_lora_kernel")
+        ):
+            raise ValueError(
+                f"mistral_large4_attn_lora_kernel: true cannot be combined with {conflict}: "
+                "the fused attention LoRA adds the adapter delta into the saved base matmul "
+                "output in place. Set mistral_large4_attn_lora_kernel: false or save only "
+                "attention."
+            )
         if self._loads_nvfp4(cfg):
             super().pre_model_load(cfg)
         if not is_mistral_large4_nvfp4_modelopt(cfg):
@@ -127,7 +139,43 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
         flag = cfg.get("mistral_large4_attn_lora_kernel")
         if flag is not None:
             return bool(flag)
-        return not is_mistral_large4_nvfp4_modelopt(cfg)
+        return (
+            not is_mistral_large4_nvfp4_modelopt(cfg)
+            and self._selective_checkpointing_conflict(cfg) is None
+        )
+
+    @staticmethod
+    def _selective_checkpointing_conflict(cfg) -> str | None:
+        """What in ``selective_checkpointing`` clashes with the fused attention LoRA, which adds
+        the adapter delta into the base matmul output in place (the cached tensor SAC would
+        save), or None."""
+        sac = cfg.get("selective_checkpointing")
+        if not isinstance(sac, dict):
+            return None
+        from axolotl.integrations.kernels.libs.mistral_large4.lora_attn import (
+            MLA_PROJ_SUFFIXES,
+        )
+        from axolotl.utils.schemas.validation import (
+            _sac_entry_covers,
+            _sac_entry_is_layer_container,
+        )
+
+        matmul_ops = ("aten::mm", "aten::addmm", "aten::matmul", "aten::bmm")
+        for spec in sac.get("save") or []:
+            if spec != "attention" and any(spec in op for op in matmul_ops):
+                return (
+                    f"selective_checkpointing.save entry {spec!r} saves matmul outputs"
+                )
+        if sac.get("save_matmul_min_k"):
+            return "selective_checkpointing.save_matmul_min_k saves matmul outputs"
+        covered = {suffix.rsplit(".", 1)[-1] for suffix in MLA_PROJ_SUFFIXES}
+        covered.add("self_attn")
+        for entry in sac.get("save_modules") or []:
+            if _sac_entry_is_layer_container(entry) or any(
+                _sac_entry_covers(entry, module) for module in covered
+            ):
+                return f"selective_checkpointing.save_modules entry {entry!r} saves attention matmul outputs"
+        return None
 
     @staticmethod
     def _attn_quantization(cfg) -> str | None:
