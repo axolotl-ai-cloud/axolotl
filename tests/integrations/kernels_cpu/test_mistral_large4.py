@@ -402,6 +402,83 @@ def test_native_fp8_attn_lora_matches_peft(fp8_linear, lora_dropout):
         assert _rel_err(grads[name], ref) < 8e-2, name
 
 
+LOWBIT_IN, LOWBIT_OUT = 64, 32
+
+
+def _lowbit_lora_layer(kind, lora_dropout=0.0, lora_bias=False):
+    """A PEFT LoRA linear whose frozen base is quantized to ``kind``, plus its dequantized weight."""
+    from peft import LoraConfig, get_peft_model
+
+    from axolotl.integrations.kernels.libs.mistral_large4.lora_lowbit import (
+        _quantize_weight,
+    )
+
+    torch.manual_seed(0)
+    peft_model = get_peft_model(
+        nn.ModuleDict({"proj": nn.Linear(LOWBIT_IN, LOWBIT_OUT, bias=False)}),
+        LoraConfig(
+            r=4,
+            lora_alpha=8,
+            lora_dropout=lora_dropout,
+            lora_bias=lora_bias,
+            target_modules=["proj"],
+        ),
+    )
+    layer = peft_model.base_model.model["proj"]
+    try:
+        weight = _quantize_weight(layer.base_layer.weight.detach().bfloat16(), kind)
+    except Exception as exc:  # torchao without CPU support for this format
+        pytest.skip(f"{kind} quantization unavailable: {exc}")
+    layer.base_layer.weight = nn.Parameter(weight, requires_grad=False)
+    for name, param in layer.named_parameters():
+        if "lora_B" in name:
+            nn.init.normal_(param, std=0.05)
+    return layer, weight.dequantize().float()
+
+
+def _lowbit_reference(layer, W, x, seed):
+    """``x @ W^T + s * drop(x) @ A^T @ B^T (+ s * b)`` in plain autograd, same dropout draw."""
+    A = layer.lora_A["default"].weight.detach().clone().requires_grad_()
+    B = layer.lora_B["default"].weight.detach().clone().requires_grad_()
+    bias = layer.lora_B["default"].bias
+    bias = bias.detach().clone().requires_grad_() if bias is not None else None
+    x = x.detach().clone().requires_grad_()
+    s = layer.scaling["default"]
+    torch.manual_seed(seed)
+    x_lora = layer.lora_dropout["default"](x)
+    out = x @ W.t() + s * (x_lora @ A.t() @ B.t())
+    if bias is not None:
+        out = out + s * bias
+    out.pow(2).sum().backward()
+    return out.detach(), x.grad, A.grad, B.grad, None if bias is None else bias.grad
+
+
+@pytest.mark.parametrize("lora_dropout", [0.0, 0.5])
+@pytest.mark.parametrize("kind", ["nvfp4", "mxfp8"])
+def test_lowbit_lora_matches_autograd_reference(kind, lora_dropout):
+    from axolotl.integrations.kernels.libs.mistral_large4.lora_lowbit import (
+        lowbit_lora_forward,
+    )
+
+    layer, W = _lowbit_lora_layer(kind, lora_dropout=lora_dropout)
+    layer.train()
+    x = torch.randn(2, 5, LOWBIT_IN, requires_grad=True)
+    want = _lowbit_reference(layer, W, x, seed=1)
+
+    torch.manual_seed(1)
+    out = lowbit_lora_forward(layer, x, kind)
+    out.pow(2).sum().backward()
+
+    got = (
+        out.detach(),
+        x.grad,
+        layer.lora_A["default"].weight.grad,
+        layer.lora_B["default"].weight.grad,
+    )
+    for g, w in zip(got, want[:4], strict=True):
+        torch.testing.assert_close(g, w, rtol=1e-4, atol=1e-5)
+
+
 @pytest.mark.parametrize("deepgemm_disabled", [False, True])
 def test_native_fp8_attn_lora_honors_deepgemm_guard(fp8_linear, deepgemm_disabled):
     from transformers.integrations.finegrained_fp8 import FP8Linear

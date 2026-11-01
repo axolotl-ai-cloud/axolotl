@@ -43,6 +43,7 @@ class _LowbitLora(torch.autograd.Function):
         ctx.save_for_backward(x_lora, weight, A, B, xA)
         ctx.s = float(s)
         ctx.shape = shape
+        ctx.has_dropout = x_drop is not None
         return out.view(*shape[:-1], -1)
 
     @staticmethod
@@ -53,14 +54,17 @@ class _LowbitLora(torch.autograd.Function):
             weight, g.dtype
         )  # frozen base -> recompute (keeps weight low-bit)
         dX = g @ W
-        dA = dB = None
+        dX_drop = dA = dB = None
         if A is not None:
             s = ctx.s
             dxA = g @ B.to(g.dtype)
-            dX = dX.addmm_(dxA, A.to(g.dtype), alpha=s)
+            if ctx.has_dropout:
+                dX_drop = (dxA @ A.to(g.dtype)).mul_(s).view(*ctx.shape)
+            else:
+                dX = dX.addmm_(dxA, A.to(g.dtype), alpha=s)
             dA = (dxA.t() * s) @ x_lora
             dB = (g.t() * s) @ xA
-        return dX.view(*ctx.shape), None, None, dA, dB, None, None
+        return dX.view(*ctx.shape), dX_drop, None, dA, dB, None, None
 
 
 def _quantize_weight(w_bf16: torch.Tensor, kind: str):
