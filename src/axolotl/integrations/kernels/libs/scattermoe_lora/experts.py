@@ -436,6 +436,12 @@ def _parallel_linear_maybe_lora(
     )
 
 
+def _mx_scales(module):
+    """``(gate_up, down)`` e8m0 scales of mxfp8-requantized experts, else None."""
+    gu = getattr(module, "gate_up_proj_mx_scale", None)
+    return None if gu is None else (gu, getattr(module, "down_proj_mx_scale", None))
+
+
 def _prepare_weights_and_lora(
     gu_param,
     dn_param,
@@ -446,6 +452,7 @@ def _prepare_weights_and_lora(
     down_lora,
     dtype,
     module=None,
+    mx_scales=None,
 ):
     """Resolve the gate_up / down weights (+ routing + LoRA) for the grouped GEMM.
 
@@ -454,7 +461,8 @@ def _prepare_weights_and_lora(
     routing / LoRA to that compact set (dequant happens inside the kernel K-loop; NVFP4
     reuses the MXWeights container with linear E4M3 block scales). Otherwise return bf16
     ``[E, in, out]`` weights (dequantizing FP4 explicitly when LoRA is absent, since the
-    fused kernel is LoRA-only and the FP4 tensors have no transpose).
+    fused kernel is LoRA-only and the FP4 tensors have no transpose). ``mx_scales`` are the
+    ``(gate_up, down)`` e8m0 scales of mxfp8 experts, dequantized here the same way.
 
     Returns ``(gate_up_weight, down_weight, sorted_expert_idxs, expert_offsets,
     gup_lora, down_lora)``.
@@ -498,6 +506,15 @@ def _prepare_weights_and_lora(
         # transpose, so dequantize to bf16 here.
         gate_up_weight = gu_param.dequantize(dtype).transpose(2, 1)
         down_weight = dn_param.dequantize(dtype).transpose(2, 1)
+    elif mx_scales is not None and mx_scales[0] is not None:
+        # mxfp8 experts off the grouped mxfp8 path (no LoRA on both projections): the e4m3 values
+        # only mean anything with their e8m0 scales
+        from .mxfp8_grouped import _dequant_mx_3d
+
+        gate_up_weight = (
+            _dequant_mx_3d(gu_param, mx_scales[0]).to(dtype).transpose(2, 1)
+        )
+        down_weight = _dequant_mx_3d(dn_param, mx_scales[1]).to(dtype).transpose(2, 1)
     else:
         gate_up_weight = gu_param.transpose(2, 1)
         down_weight = dn_param.transpose(2, 1)
@@ -961,6 +978,7 @@ def scattermoe_experts_forward(
             down_lora,
             hidden_states.dtype,
             module=self,
+            mx_scales=_mx_scales(self),
         )
 
     gates_h = _parallel_linear_maybe_lora(
@@ -1293,6 +1311,7 @@ def scattermoe_experts_forward_ep(
             gup_lora,
             down_lora,
             hidden_states.dtype,
+            mx_scales=_mx_scales(self),
         )
     )
 
