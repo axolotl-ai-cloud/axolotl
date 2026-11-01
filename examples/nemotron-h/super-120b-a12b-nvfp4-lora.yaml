@@ -14,8 +14,7 @@ liger_rms_norm: true
 liger_rms_norm_gated: true
 
 use_kernels: true
-use_scattermoe: true
-dsv4_fp4_grouped_mode: nvfp4
+use_scattermoe: true  # moe_grouped_mode auto -> nvfp4 (routed experts stay packed NVFP4)
 
 # Attention kernels support mixer blocks; relu2 experts use the MoE backend.
 lora_mlp_kernel: false

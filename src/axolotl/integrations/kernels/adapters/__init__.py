@@ -81,6 +81,57 @@ def modelopt_nvfp4_model_config(cfg):
     return modelopt_quant_model_config(cfg, algos=("NVFP4",))
 
 
+def resolve_expert_rank0_requant(cfg) -> bool:
+    """Rank0-only grouped-expert requant policy (model-agnostic, shared by mxfp8 + nvfp4). Explicit
+    ``moe_rank0_requant`` if set, else auto = FSDP2 ``cpu_ram_efficient_loading`` (non-rank-0 experts
+    arrive on meta -> rank0 requants, FSDP fills the rest — no full expert copy per rank).
+
+    NEVER under Expert Parallelism: ``shard_expert_weights`` (post_model_build, before requant)
+    scatters a DIFFERENT ``[E_local]`` expert slice to each rank, so those params are already real
+    per-rank — broadcasting rank-0's slice would overwrite every other rank's experts. Each EP rank
+    requants its own local slice (no broadcast)."""
+    if int(cfg.get("expert_parallel_size") or 1) > 1:
+        return False
+    explicit = cfg.get("moe_rank0_requant")
+    if explicit is not None:
+        return bool(explicit)
+    fsdp = cfg.get("fsdp_config") or {}
+    return bool(fsdp.get("cpu_ram_efficient_loading"))
+
+
+def _grouped_mode(cfg) -> str | None:
+    return cfg.get("moe_grouped_mode") or cfg.get("dsv4_fp4_grouped_mode")
+
+
+def requant_grouped_experts(cfg, model) -> int:
+    """Model-agnostic grouped-expert requant, run at the plugin's ``pre_lora_load`` (before PEFT wrap)
+    for EVERY scattermoe model — not just one adapter — so gemma4 / dsv4 / glm / qwen-moe / mistral
+    all get it. Dispatches by ``moe_grouped_mode``:
+
+      * ``mxfp8``     -> bf16/block-fp8 experts to OCP-MX fp8 (e4m3 + e8m0).
+      * ``nvfp4``     -> block-fp8 experts to fused NVFP4 (native NVFP4 ckpts are a no-op).
+
+    Both are idempotent (skip already-converted modules) and no-op for models without matching
+    fused-3D experts. ``fp8_block`` keeps the native block-fp8 experts (no requant)."""
+    if not cfg.get("use_scattermoe"):
+        return 0
+    mode = _grouped_mode(cfg)
+    rank0 = resolve_expert_rank0_requant(cfg)
+    if mode == "mxfp8":
+        from axolotl.integrations.kernels.libs.scattermoe_lora.mxfp8_requant import (
+            requantize_experts_to_mxfp8,
+        )
+
+        return requantize_experts_to_mxfp8(model, rank0_only=rank0)
+    if mode == "nvfp4":
+        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_requant import (
+            requantize_fp8_experts_to_nvfp4,
+        )
+
+        return requantize_fp8_experts_to_nvfp4(model, rank0_only=rank0)
+    return 0
+
+
 def _all_adapters() -> list[ModelAdapter]:
     from axolotl.integrations.kernels.adapters.dsv4 import DSV4Adapter
     from axolotl.integrations.kernels.adapters.gemma4 import Gemma4Adapter

@@ -83,6 +83,25 @@ class KernelsArgs(BaseModel):
     # per-kernel rule (by output width and reduction size; autotune_profiles still decide when they
     # match), so a new shape costs at most a compile. Default true (sweep).
     quack_autotune: bool | None = None
+    # grouped-expert backward base-dX precision: True = fp8-read (fast, ~2% grad err; sm120-only
+    # default) | False = bf16-dequant (more accurate). None = arch default.
+    moe_fp8_dx: bool | None = None
+
+    # transposed-Marlin backward dX (marlin backend): run dX as a W4A16 grouped GEMM on a
+    # requantized W^T pack built once at load. ~3-6x faster dX (~2x the expert layer at
+    # DeepSeek-scale experts) at ~9% fixed weight-requant error. OPT-IN (None defaults to False):
+    # packs are GPU-resident, ~doubling expert weight residency — a VRAM cost that GROWS with
+    # model size.
+    moe_marlin_dx: bool | None = None
+
+    # opt-in full-grid Triton autotune for the scattermoe kernels: benchmarks each new shape on
+    # first hit (single-process runs only — benchmarking under collectives desyncs ranks) and
+    # reports winners to telemetry. Default off = deterministic pruned configs (zero overhead).
+    moe_kernel_autotune: bool | None = None
+
+    # fuse the gated activation (SwiGLU / GeGLU) into the gate_up LoRA-B GEMM epilogue,
+    # eliminating the separate activation pass's [Mt, 2I] read. OPT-IN; memory-neutral.
+    moe_swiglu_epilogue: bool | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
@@ -134,11 +153,29 @@ class KernelsArgs(BaseModel):
     # Fallback: cast ALL residual fp32 params (incl. keep_in_fp32 mHC/norms) to the compute
     # dtype for the fused kernels, instead of preserving keep_in_fp32 in fp32.
     dsv4_bf16_all: bool | None = None
-    # Grouped fp4 MoE experts path (variable-M contiguous-grouped, base-fp4 GEMM + LoRA): off by
-    # default (existing fused/chunked paths unchanged). "nvfp4" = fp4 act x fp4 weight (fastest,
-    # lossy acts); "fp8" = fp8 act x mxfp4 weight (accurate). Auto-dispatches the base GEMM:
-    # DeepGEMM (sm90/sm100) -> CUTLASS grouped (sm120) -> chunked-dequant fallback.
+    # Grouped MoE-expert path (variable-M contiguous-grouped base GEMM + LoRA) under use_scattermoe:
+    #   "auto" (default) — run the routed experts in the format they load in, read from the
+    #                 checkpoint's safetensors headers / quantization_config before load: NVFP4 ->
+    #                 "nvfp4", 128x128 block-FP8 -> "fp8_block", anything else -> no grouped mode.
+    #   "nvfp4"     — 4-bit NVFP4 experts. Base GEMM: Marlin / CUTLASS (sm120) / DeepGEMM (sm100).
+    #   "fp8_block" — native 128x128 block-fp8 experts, no requant. Base GEMM: DeepGEMM fp8xfp8
+    #                 (sm90/sm100) / blockfp8_triton (any CUDA) / Marlin W8A16 (opt-in).
+    #   "mxfp8"     — OCP-MX fp8 experts (e4m3 + e8m0 per-32-block scale), requantized at load.
+    #   "none"      — no grouped mode.
+    # An explicit mode is checked against the detected format: a lossy requant (block-FP8 ->
+    # nvfp4 / mxfp8, bf16 -> mxfp8) needs moe_grouped_requant: true; a mode the experts can't run
+    # in is an error. Model-agnostic (DSV4, GLM, Gemma4, Mistral-Large-4, ...).
+    moe_grouped_mode: str | None = None
+    # Accept the fidelity cost of an explicit moe_grouped_mode that requantizes the experts.
+    moe_grouped_requant: bool | None = None
+    # Deprecated alias for moe_grouped_mode (pre-dates the rename; canonicalized in
+    # check_moe_grouped_mode). The 'fp4' name is a misnomer now that 'fp8_block' is a valid mode.
     dsv4_fp4_grouped_mode: str | None = None
+    # Grouped-expert requant (mxfp8 / nvfp4): rank0-only for FSDP2 cpu_ram_efficient_loading. None
+    # (auto) = engage iff fsdp_config.cpu_ram_efficient_loading (non-rank-0 experts on meta -> emit
+    # meta placeholders, FSDP2 broadcasts rank-0's). Forced off under Expert Parallelism (each rank
+    # owns a different expert slice). True/False force it.
+    moe_rank0_requant: bool | None = None
     # Gemma-4 frankenstein: fp8-quantize non-expert linears in-place after loading (per-channel
     # e4m3, dequant-in-forward).  Experts remain NVFP4Tensor.  ~2 GB resident savings.
     gemma4_fp8_nonexpert: bool | None = None
@@ -271,21 +308,49 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def check_dsv4_fp4_grouped_mode(cls, data):
-        mode = data.get("dsv4_fp4_grouped_mode")
+    def check_moe_grouped_mode(cls, data):
+        # Canonicalize the deprecated dsv4_fp4_grouped_mode -> moe_grouped_mode ('fp4' is a misnomer
+        # now that 'fp8_block' is a valid mode).
+        legacy = data.get("dsv4_fp4_grouped_mode")
+        if legacy is not None and data.get("moe_grouped_mode") is None:
+            data["moe_grouped_mode"] = legacy
+            LOG.warning(
+                "dsv4_fp4_grouped_mode is deprecated; use moe_grouped_mode (auto | nvfp4 | "
+                "fp8_block | mxfp8 | none)."
+            )
+        mode = data.get("moe_grouped_mode")
         if mode is None:
             return data
+        if mode is False:
+            data["moe_grouped_mode"] = mode = "none"
         m = str(mode).lower()
         if m == "fp8":
-            # Documented historically but never implemented in the training path
-            # (grouped_fp4_available/_train_backend only support 'nvfp4'). Reject loudly rather
-            # than silently no-op.
+            # 'fp8' (per-token fp8-act x mxfp4-weight) was documented historically but never
+            # implemented; use 'fp8_block' for native block-fp8 (weight kept fp8, no requant).
             raise ValueError(
-                "dsv4_fp4_grouped_mode='fp8' is not implemented for training (only 'nvfp4' is "
-                "supported). Use 'nvfp4' or omit dsv4_fp4_grouped_mode."
+                "moe_grouped_mode='fp8' is not implemented. Use 'nvfp4' (requant fp8->nvfp4), "
+                "'fp8_block' (native 128x128 block-fp8, no requant), or 'mxfp8' (OCP-MX fp8)."
             )
-        if m != "nvfp4":
-            raise ValueError(f"dsv4_fp4_grouped_mode must be 'nvfp4', got {mode!r}")
+        if m not in ("auto", "none", "nvfp4", "fp8_block", "mxfp8"):
+            raise ValueError(
+                "moe_grouped_mode must be 'auto', 'none', 'nvfp4', 'fp8_block', or 'mxfp8', "
+                f"got {mode!r}"
+            )
+        data["moe_grouped_mode"] = m
+        fsdp = data.get("fsdp_config") or {}
+        if (
+            m == "mxfp8"
+            and data.get("moe_rank0_requant") is False
+            and fsdp.get("cpu_ram_efficient_loading")
+            and int(data.get("expert_parallel_size") or 1) <= 1
+        ):
+            # non-rank-0 experts load on meta; their e8m0 scales are non-persistent buffers FSDP
+            # doesn't broadcast, so only the rank0-only requant (which broadcasts them) fills them
+            raise ValueError(
+                "moe_grouped_mode: mxfp8 with fsdp_config.cpu_ram_efficient_loading needs the "
+                "rank0-only requant to broadcast the e8m0 expert scales; drop "
+                "moe_rank0_requant: false."
+            )
         return data
 
     @model_validator(mode="before")
@@ -401,11 +466,14 @@ class KernelsArgs(BaseModel):
             raise ValueError(
                 f"moe_grouped_backend must be one of {sorted(valid)}, got {backend!r}"
             )
-        # The override only takes effect once the grouped NVFP4 MoE path is enabled.
-        if not data.get("dsv4_fp4_grouped_mode"):
+        # The override only takes effect on the scattermoe grouped expert path.
+        if not data.get("use_scattermoe") or data.get("moe_grouped_mode") in (
+            False,
+            "none",
+        ):
             LOG.warning(
-                "moe_grouped_backend=%r has no effect unless the grouped NVFP4 MoE path is enabled "
-                "(set dsv4_fp4_grouped_mode: nvfp4).",
+                "moe_grouped_backend=%r has no effect without the scattermoe grouped expert path "
+                "(use_scattermoe with moe_grouped_mode other than none).",
                 backend,
             )
         return data
