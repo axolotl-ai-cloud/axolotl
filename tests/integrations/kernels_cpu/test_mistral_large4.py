@@ -234,6 +234,29 @@ def test_quant_kind_bf16_and_fp8():
     assert _quant_kind(fp8) == "fp8"
 
 
+def test_attn_lora_leaves_int8_base_to_peft():
+    from peft import LoraConfig, get_peft_model
+
+    lin = nn.Linear(64, 32, bias=False)
+    # bnb 8-bit (adapter: lora + load_in_8bit): int8 storage the fused kernels cannot dequantize
+    lin.weight = nn.Parameter(
+        torch.randint(-127, 127, (32, 64), dtype=torch.int8), requires_grad=False
+    )
+    layer = nn.Module()
+    layer.self_attn = nn.Module()
+    layer.self_attn.q_proj = lin
+    root = nn.Module()
+    root.language_model = nn.Module()
+    root.language_model.layers = nn.ModuleList([layer])
+    model = get_peft_model(root, LoraConfig(r=4, target_modules=["q_proj"]))
+    proj = model.base_model.model.language_model.layers[0].self_attn.q_proj
+
+    assert patch_mistral_large4_attn_lora(model) == 1
+    peft_out = torch.zeros(1)
+    proj._ml4_orig_forward = lambda x, *args, **kwargs: peft_out
+    assert proj(torch.randn(2, 3, 64, dtype=torch.bfloat16)) is peft_out
+
+
 MLA_TARGETS = ["q_proj", "kv_a_proj_with_mqa", "kv_b_proj", "o_proj"]
 
 

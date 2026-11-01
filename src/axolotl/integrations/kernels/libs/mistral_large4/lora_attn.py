@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import types
 
+import torch
 from torch import nn
 
 from axolotl.kernels.lora import LoRA_O, _apply_dropout, get_lora_parameters
@@ -87,6 +88,8 @@ def _quant_kind(base_layer) -> str:
         return "fp8"
     if getattr(w, "quant_state", None) is not None:
         return "nf4"  # bnb 4-bit
+    if not torch.is_floating_point(w):
+        return "other"  # bnb 8-bit / packed ints: only PEFT's own forward can run these
     return "bf16"
 
 
@@ -110,6 +113,9 @@ def _make_forward(name: str, native_fp8: bool):
 
     def forward(self, x, *args, **kwargs):
         kind = _quant_kind(self.base_layer)
+
+        if kind == "other":
+            return self._ml4_orig_forward(x, *args, **kwargs)
 
         if kind == "fp8" and is_native_fp8_target:
             from axolotl.integrations.kernels.libs.dsv4.lora_fp8 import (
