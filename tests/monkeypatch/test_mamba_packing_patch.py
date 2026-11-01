@@ -452,6 +452,20 @@ class TestAssertPackedReady:
         with pytest.raises(RuntimeError, match="torch fallback"):
             self._assert(mixer, mod)
 
+    def test_a_rebind_into_the_freed_forward_address_is_checked_again(self):
+        mod = ModuleType("fake_mamba2_modeling")
+        mod.causal_conv1d_fn = _Dispatch()
+        conv = _takes_seq_idx(_Dispatch())
+        mixer = self._mixer(conv)
+
+        self._assert(mixer, mod)
+        # the first rebind frees the verified forward and the second can land on its id
+        for _ in range(20):
+            conv.forward = MethodType(_Dispatch.forward, conv)
+            conv.forward = MethodType(_Dispatch.forward, conv)
+            with pytest.raises(RuntimeError, match="torch fallback"):
+                self._assert(mixer, mod)
+
 
 class _RecordingMixer(nn.Module):
     def __init__(self):

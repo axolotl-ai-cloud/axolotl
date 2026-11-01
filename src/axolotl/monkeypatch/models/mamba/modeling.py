@@ -309,9 +309,9 @@ def _assert_packed_ready(mixer, mod, family: dict, model_type: str) -> None:
     names = family["seq_idx_kernels"]
     kernels = [kernelized_copy(mixer, getattr(mod, name)) for name in names]
     # each mixer runs its own kernelized copy, which kernelize can rebind later
+    # (objects, not ids: a freed forward's id is reused by its replacement)
     verified = tuple(
-        (id(kernel), id(getattr(kernel, "__dict__", {}).get("forward")))
-        for kernel in kernels
+        (kernel, getattr(kernel, "__dict__", {}).get("forward")) for kernel in kernels
     )
     if vars(mixer).get("_axolotl_seq_idx_verified") == verified:
         return
