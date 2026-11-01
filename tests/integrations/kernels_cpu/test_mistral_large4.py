@@ -269,6 +269,20 @@ def test_attn_lora_generic_path_keeps_input_shape(lead):
         torch.testing.assert_close(g, w, rtol=1e-5, atol=1e-6)
 
 
+def test_attn_patch_keeps_lora_merge_aware_forward():
+    from axolotl.monkeypatch.lora_merge_aware import install_lora_merge_aware_linears
+
+    model = _tiny_peft_model(MLA_TARGETS)
+    installed, skipped = install_lora_merge_aware_linears(model, "bf16")
+    assert installed >= 15 and not skipped
+    input_ids = torch.randint(1, TEXT["vocab_size"], (2, 12))
+    ref_logits = model(input_ids=input_ids).logits.detach()
+
+    assert patch_mistral_large4_attn_lora(model) == 0
+    assert not any(hasattr(m, "_ml4_orig_forward") for m in model.modules())
+    torch.testing.assert_close(model(input_ids=input_ids).logits.detach(), ref_logits)
+
+
 # 128-aligned dims so q_proj / o_proj take the blockwise-fp8 path. Every expert per token and
 # every key per query: bf16 rounding can't flip a discrete MoE / DSA top-k choice.
 FP8_TEXT = dict(

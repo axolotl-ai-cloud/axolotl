@@ -183,8 +183,8 @@ def patch_mistral_large4_attn_lora(
     for name, mod in model.named_modules():
         if not isinstance(mod, LoraLayer) or not is_mla_proj(name):
             continue
-        # already patched, or carries the NVFP4 merge-aware forward
-        if hasattr(mod, "_ml4_orig_forward") or hasattr(mod, "_ma_orig_forward"):
+        # already patched, or another integration (merge-aware LoRA) owns the forward
+        if "forward" in mod.__dict__:
             continue
         mod._ml4_orig_forward = mod.forward
         mod.forward = types.MethodType(_make_forward(name, native_fp8), mod)
