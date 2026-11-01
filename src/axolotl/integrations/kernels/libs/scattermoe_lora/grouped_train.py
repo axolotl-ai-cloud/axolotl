@@ -310,6 +310,19 @@ def _has_nonunit_pt(*nvs) -> bool:
     return False
 
 
+def _empty_route_forward(ctx, x, Agu, Bgu, Adn, Bdn):
+    """An EP rank whose tokens all route to other ranks has no rows: skip the kernels and let
+    backward hand zero grads to the LoRA factors (keeps them in the graph for the grad sync)."""
+    ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn)
+    return x.new_zeros(0, Bdn.size(1))
+
+
+def _empty_route_backward(ctx, n_trailing: int):
+    x, Agu, Bgu, Adn, Bdn = ctx.saved_tensors
+    lora = tuple(torch.zeros_like(t) for t in (Agu, Bgu, Adn, Bdn))
+    return (torch.zeros_like(x), None, None, *lora, *([None] * n_trailing))
+
+
 class _GroupedExperts(torch.autograd.Function):
     """x[Mt,H] -> gate_up(cutlass fp4 base + LoRA) -> activation -> down(...) -> [Mt,H].
     Frozen NVFP4 experts; trainable LoRA A/B (stacked [E,r,K]/[E,N,r]).
@@ -334,6 +347,9 @@ class _GroupedExperts(torch.autograd.Function):
         act_type,
         prefer_fp8_dx=True,
     ):
+        ctx.empty_route = x.size(0) == 0
+        if ctx.empty_route:
+            return _empty_route_forward(ctx, x, Agu, Bgu, Adn, Bdn)
         E = Agu.size(0)
         gu = _base_forward(base, 0, x, m_indices, mode)
         # LoRA-B GEMM folds the base output in via residual=gu -> gu = base + lora, no separate add.
@@ -375,6 +391,8 @@ class _GroupedExperts(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, d_dn):
+        if ctx.empty_route:
+            return _empty_route_backward(ctx, 7)
         x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices = ctx.saved_tensors
         s, lim, act_type = ctx.scaling, ctx.limit, ctx.act_type
         pf8 = _fp8_read_dx_ok() and ctx.prefer_fp8_dx

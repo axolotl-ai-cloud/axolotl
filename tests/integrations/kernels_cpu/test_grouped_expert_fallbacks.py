@@ -1,5 +1,5 @@
 """Grouped-expert edge cases that run without the grouped GEMMs: mxfp8 experts off the grouped
-path (no LoRA on both projections)."""
+path (no LoRA on both projections), and an expert-parallel rank with no local tokens."""
 
 import pytest
 import torch
@@ -9,6 +9,15 @@ pytest.importorskip("triton")  # the scattermoe_lora package imports its Triton 
 
 from axolotl.integrations.kernels.libs.scattermoe_lora import (  # noqa: E402
     experts as experts_mod,
+)
+from axolotl.integrations.kernels.libs.scattermoe_lora.fp8_grouped import (  # noqa: E402
+    _Fp8BlockGroupedExperts,
+)
+from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (  # noqa: E402
+    _GroupedExperts,
+)
+from axolotl.integrations.kernels.libs.scattermoe_lora.mxfp8_grouped import (  # noqa: E402
+    _Mxfp8GroupedExperts,
 )
 from axolotl.integrations.kernels.libs.scattermoe_lora.mxfp8_requant import (  # noqa: E402
     requantize_experts_to_mxfp8,
@@ -49,3 +58,35 @@ def test_mxfp8_experts_without_both_loras_dequantize_with_scales(lora):
         # mxfp8 rounding only; the raw e4m3 values are off by the 2^k block scales
         rel = (got.float() - want).norm() / want.norm()
         assert rel < 0.1, rel
+
+
+def _stacked_lora():
+    def p(*shape):
+        return torch.randn(*shape, requires_grad=True)
+
+    return p(E, R, H), p(E, 2 * I, R), p(E, R, I), p(E, H, R)
+
+
+@pytest.mark.parametrize(
+    "fn,trailing",
+    [
+        (_Fp8BlockGroupedExperts, ("silu", None)),
+        (_Mxfp8GroupedExperts, ("silu",)),
+        (_GroupedExperts, ("nvfp4", "silu", True)),
+    ],
+    ids=["fp8_block", "mxfp8", "nvfp4"],
+)
+def test_empty_expert_route_backward(fn, trailing):
+    # an EP rank whose tokens all route elsewhere: no rows, no tiles
+    x = torch.zeros(0, H, requires_grad=True)
+    Agu, Bgu, Adn, Bdn = _stacked_lora()
+    m_indices = torch.zeros(0, dtype=torch.int32)
+    offs = torch.zeros(E, dtype=torch.int32)
+    out = fn.apply(
+        x, None, None, Agu, Bgu, Adn, Bdn, m_indices, offs, 1.0, 1e30, *trailing
+    )
+    assert out.shape == (0, H)
+    out.sum().backward()
+    assert x.grad.shape == (0, H)
+    for t in (Agu, Bgu, Adn, Bdn):
+        assert t.grad is not None and not t.grad.any()

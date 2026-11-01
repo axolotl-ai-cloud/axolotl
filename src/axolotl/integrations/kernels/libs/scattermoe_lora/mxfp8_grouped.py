@@ -19,7 +19,15 @@ import torch
 from axolotl.utils.logging import get_logger
 
 from .grouped_lora import grouped_lora_bwd, grouped_lora_fwd
-from .grouped_train import TILE, _gmm, _lora_stack, _swiglu, _swiglu_bwd
+from .grouped_train import (
+    TILE,
+    _empty_route_backward,
+    _empty_route_forward,
+    _gmm,
+    _lora_stack,
+    _swiglu,
+    _swiglu_bwd,
+)
 
 LOG = get_logger(__name__)
 _BACKEND_LOGGED = False
@@ -200,6 +208,9 @@ class _Mxfp8GroupedExperts(torch.autograd.Function):
         limit,
         act_type,
     ):
+        ctx.empty_route = x.size(0) == 0
+        if ctx.empty_route:
+            return _empty_route_forward(ctx, x, Agu, Bgu, Adn, Bdn)
         E = Agu.size(0)
         gu = _mx_base_forward(base, 0, x, m_indices, offs)
         gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
@@ -217,6 +228,8 @@ class _Mxfp8GroupedExperts(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, d_dn):
+        if ctx.empty_route:
+            return _empty_route_backward(ctx, 5)
         x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices = ctx.saved_tensors
         s, lim, act_type = ctx.scaling, ctx.limit, ctx.act_type
         d_dn = d_dn.contiguous().to(x.dtype)
