@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.19">
+<meta name="generator" content="quarto-1.10.20">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -77,7 +77,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-0ae969d3293726db143f6e9eb89af930.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../../site_libs/bootstrap/bootstrap-f02b750fa8da0cf57c2c28d81e4fa7b8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -1014,10 +1014,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 10%">
+<col style="width: 12%">
+<col style="width: 12%">
+<col style="width: 63%">
 <col style="width: 11%">
-<col style="width: 67%">
-<col style="width: 10%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1031,19 +1031,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td>grad_output</td>
 <td>torch.Tensor</td>
-<td>Gradient of loss with respect to output, shape <code>[batch, seq_len, hidden_dim]</code>.</td>
+<td>Gradient of loss with respect to output, shape <code>[..., hidden_dim]</code>.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>gate</td>
 <td>torch.Tensor</td>
-<td>Gate tensor from forward pass, shape <code>[batch, seq_len, hidden_dim]</code>.</td>
+<td>Gate tensor from forward pass, shape <code>[..., hidden_dim]</code>.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>up</td>
 <td>torch.Tensor</td>
-<td>Up-projection tensor from forward pass, shape <code>[batch, seq_len, hidden_dim]</code>.</td>
+<td>Up-projection tensor from forward pass, shape <code>[..., hidden_dim]</code>.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
@@ -1094,7 +1094,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <colgroup>
 <col style="width: 13%">
 <col style="width: 14%">
-<col style="width: 61%">
+<col style="width: 60%">
 <col style="width: 12%">
 </colgroup>
 <thead>
@@ -1109,13 +1109,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td>gate</td>
 <td>torch.Tensor</td>
-<td>Input gate tensor of shape [batch, seq_len, hidden_dim].</td>
+<td>Input gate tensor of shape […, hidden_dim].</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>up</td>
 <td>torch.Tensor</td>
-<td>Up-projection tensor of shape [batch, seq_len, hidden_dim].</td>
+<td>Up-projection tensor of shape […, hidden_dim].</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
@@ -1131,9 +1131,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 8%">
-<col style="width: 15%">
-<col style="width: 75%">
+<col style="width: 10%">
+<col style="width: 17%">
+<col style="width: 72%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1146,7 +1146,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td></td>
 <td>torch.Tensor</td>
-<td>torch.Tensor: Output tensor of shape [batch, seq_len, hidden_dim].</td>
+<td>torch.Tensor: Output tensor of shape […, hidden_dim].</td>
 </tr>
 </tbody>
 </table>

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.19">
+<meta name="generator" content="quarto-1.10.20">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -78,7 +78,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-0ae969d3293726db143f6e9eb89af930.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../site_libs/bootstrap/bootstrap-f02b750fa8da0cf57c2c28d81e4fa7b8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -1244,7 +1244,8 @@ preserves the snapped effective-weight objective on marked projections.</li>
 <code>NVFP4WeightOnlyConfig</code> checkpoints. Load that saved checkpoint as <code>base_model</code>,
 set <code>adapter: lora</code>, and enable <code>lora_qkv_kernel</code>, <code>lora_o_kernel</code>, and
 <code>lora_mlp_kernel</code> for the optimized native weight-only adapter path.</li>
-<li><code>dsv4_fp4_grouped_mode: nvfp4</code> controls routed-expert activation quantization
+<li><code>moe_grouped_mode: nvfp4</code> (the <code>auto</code> default for NVFP4 experts under <code>use_scattermoe</code>)
+controls routed-expert activation quantization
 inside the existing MoE backend; it is separate from native dense activation
 quantization and retains that backend’s training gradient convention.</li>
 <li>Gemma’s <code>nonexpert_quantization: nvfp4</code> uses frozen Marlin W4A16 non-expert

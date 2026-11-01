@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.19">
+<meta name="generator" content="quarto-1.10.20">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -78,7 +78,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-b626d73c4c936ccc3cb08be7d45d1df6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-0ae969d3293726db143f6e9eb89af930.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="../site_libs/bootstrap/bootstrap-f02b750fa8da0cf57c2c28d81e4fa7b8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
@@ -968,6 +968,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#expert-lora-targeting" id="toc-expert-lora-targeting" class="nav-link" data-scroll-target="#expert-lora-targeting">Expert LoRA targeting</a></li>
   </ul></li>
+  <li><a href="#scattermoe-grouped-mode-quantization-nvfp4-fp8_block-mxfp8" id="toc-scattermoe-grouped-mode-quantization-nvfp4-fp8_block-mxfp8" class="nav-link" data-scroll-target="#scattermoe-grouped-mode-quantization-nvfp4-fp8_block-mxfp8">ScatterMoE grouped-mode quantization (nvfp4 / fp8_block / mxfp8)</a>
+  <ul class="collapse">
+  <li><a href="#backward-dx-tuning-marlin-backend" id="toc-backward-dx-tuning-marlin-backend" class="nav-link" data-scroll-target="#backward-dx-tuning-marlin-backend">Backward dX tuning (Marlin backend)</a></li>
+  </ul></li>
   <li><a href="#requirements" id="toc-requirements" class="nav-link" data-scroll-target="#requirements">Requirements</a></li>
   <li><a href="#limitations" id="toc-limitations" class="nav-link" data-scroll-target="#limitations">Limitations</a></li>
   <li><a href="#cpu-staged-fsdp2-qlora-loading" id="toc-cpu-staged-fsdp2-qlora-loading" class="nav-link" data-scroll-target="#cpu-staged-fsdp2-qlora-loading">CPU-staged FSDP2 QLoRA loading</a>
@@ -1056,6 +1060,138 @@ Note
 </div>
 </section>
 </section>
+<section id="scattermoe-grouped-mode-quantization-nvfp4-fp8_block-mxfp8" class="level2">
+<h2 class="anchored" data-anchor-id="scattermoe-grouped-mode-quantization-nvfp4-fp8_block-mxfp8">ScatterMoE grouped-mode quantization (nvfp4 / fp8_block / mxfp8)</h2>
+<p><code>quantize_moe_experts</code> (above) uses bitsandbytes NF4/int8. When you run the <strong>Kernels plugin</strong> with
+<code>use_scattermoe: true</code>, the experts additionally have a fused grouped-GEMM path whose precision is
+selected by <code>moe_grouped_mode</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">axolotl.integrations.kernels.KernelsPlugin</span><span class="kw">]</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">use_kernels</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">use_scattermoe</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"># moe_grouped_mode: auto       # default: auto | nvfp4 | fp8_block | mxfp8 | none</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_parameters</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">experts.gate_up_proj</span><span class="kw">,</span><span class="at"> experts.down_proj</span><span class="kw">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>By default (<code>moe_grouped_mode: auto</code>) the mode follows the routed experts’ format, read from the
+checkpoint’s safetensors headers (falling back to its <code>quantization_config</code>) before any weight
+loads, and one startup log line reports the resolved mode, the reason, the GPU, the backend and
+whether it requantizes:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Experts load as</th>
+<th><code>auto</code> picks</th>
+<th>Explicit modes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>NVFP4</td>
+<td><code>nvfp4</code></td>
+<td><code>fp8_block</code> / <code>mxfp8</code>: error</td>
+</tr>
+<tr class="even">
+<td>128×128 block-FP8 (incl.&nbsp;<code>model_quantization_config: FineGrainedFP8Config</code>)</td>
+<td><code>fp8_block</code></td>
+<td><code>nvfp4</code> / <code>mxfp8</code> requantize: need <code>moe_grouped_requant: true</code></td>
+</tr>
+<tr class="odd">
+<td>bf16</td>
+<td>none</td>
+<td><code>mxfp8</code> requantizes: needs <code>moe_grouped_requant: true</code>; <code>nvfp4</code> / <code>fp8_block</code>: error</td>
+</tr>
+<tr class="even">
+<td>DeepSeek packed FP4</td>
+<td>error</td>
+<td>error</td>
+</tr>
+<tr class="odd">
+<td>different formats in different layers</td>
+<td>error</td>
+<td>error (<code>none</code> runs each layer on its own path)</td>
+</tr>
+<tr class="even">
+<td>other (bnb <code>quantize_moe_experts</code>, mxfp4, per-tensor FP8)</td>
+<td>none</td>
+<td>error</td>
+</tr>
+</tbody>
+</table>
+<p><code>moe_grouped_mode: none</code> turns the grouped path off. When <code>auto</code> resolves to a mode that has no
+backend on this GPU it falls back to the plain scattermoe kernels with a warning; an explicit mode
+without a backend fails at startup.</p>
+<ul>
+<li><strong><code>nvfp4</code></strong> — 4-bit NVFP4 experts (a block-fp8 checkpoint is requantized fp8→nvfp4 at load; a
+native NVFP4-modelopt checkpoint loads as-is). Backend: Marlin / CUTLASS / DeepGEMM, overridable
+via <code>moe_grouped_backend: auto|marlin|cutlass|deepgemm</code>.</li>
+<li><strong><code>fp8_block</code></strong> — keeps the checkpoint’s native 128×128 block-fp8 experts (no requant, higher
+fidelity). Runs everywhere (Triton <code>blockfp8_triton</code>) and uses DeepGEMM fp8×fp8 on sm90/sm100.
+<code>moe_grouped_backend: marlin</code> opts the forward into Marlin W8A16 packs. By default the pack is
+rebuilt transiently per projection per forward and freed immediately — <strong>memory-neutral at any
+model depth</strong> (works under FSDP, where the gathered weight is a fresh per-step copy anyway) for
+~1.3× the layer at DeepSeek-scale experts. With headroom to spare, set
+<code>AXOLOTL_MARLIN_CACHE_MIN_FREE_GB=&lt;N&gt;</code> to keep packs resident: ~1.5× the layer (~2.3× combined
+with <code>moe_marlin_dx: true</code>) but a resident repacked expert copy per layer.</li>
+<li><strong><code>mxfp8</code></strong> — OCP-MX fp8 experts (e4m3 data + e8m0 scale every 32 elements; bf16/block-fp8 is
+requantized to mxfp8 at load). Same 1 byte/elem as <code>fp8_block</code> — <em>no VRAM win over it</em> — but the
+layout is the native Blackwell MX tensor-core format with a finer 32-wide scale. The forward base
+GEMM is arch-split: <strong>sm100</strong> (datacenter Blackwell) uses the hardware-MX <code>torch._scaled_grouped_mm</code>
+(W8A8, e8m0 scaling in hardware); <strong>sm120 / sm90</strong> use the portable W8A16 Triton kernel
+(<code>mxfp8_triton</code>, fp8 weight × bf16 act) — on sm120 the per-tile hardware path is ~7× slower
+(launch overhead), so Triton is the default there. The backward is always the Triton W8A16 kernel.
+Choose <code>fp8_block</code> for memory savings alone; choose <code>mxfp8</code> for a native mxfp8 checkpoint or the
+Blackwell hardware MX-GEMM.</li>
+</ul>
+<section id="backward-dx-tuning-marlin-backend" class="level3">
+<h3 class="anchored" data-anchor-id="backward-dx-tuning-marlin-backend">Backward dX tuning (Marlin backend)</h3>
+<p>Two knobs control how the frozen-expert backward <code>dX = grad @ W</code> runs when the Marlin backend is
+active (sm120 and pre-Blackwell GPUs):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">moe_marlin_dx</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">   # false (default) | true (GPU-resident transposed packs)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">moe_fp8_dx</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">       # dequant-dX precision: true = fp8-read (fast), false = bf16-dequant (accurate)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><p><strong><code>moe_marlin_dx</code></strong> runs dX as a Marlin grouped GEMM on a transposed <code>W^T</code> pack built once at
+load. It covers both grouped expert formats:</p>
+<ul>
+<li><code>moe_grouped_mode: nvfp4</code> — W4A16 pack <strong>requantized</strong> along the flipped axis (~9% fixed error
+on the dX weight; LoRA gradients barely affected, <code>d_hidden</code> cosine ≥ 0.996). ~3–6× faster dX,
+~2× the full expert layer at DeepSeek-scale experts.</li>
+<li><code>moe_grouped_mode: fp8_block</code> — W8A16 pack via the <strong>exact</strong> quantization-aware transpose
+(128×128 block scales are transpose-symmetric: byte permute + scale-grid transpose, zero
+requant error). ~1.5–1.7× faster dX than the Triton fp8-read path at sparse-MoE scale.</li>
+</ul>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>moe_marlin_dx: true</code> <strong>increases resident VRAM</strong> and is therefore <strong>off by default</strong>: a second
+resident expert pack (~the size of the forward pack) roughly doubles expert weight residency —
+a cost that grows with model size (e.g.&nbsp;+12 GiB on Gemma-4-26B-A4B) even though per-step
+transients shrink. Enable it when the speedup is worth that headroom; leave it off when VRAM is
+the constraint.</p>
+</div>
+</div></li>
+<li><p><strong><code>moe_swiglu_epilogue</code></strong> (opt-in, default <code>false</code>) fuses the gated activation into the
+gate_up LoRA-B GEMM epilogue, eliminating the separate activation pass’s <code>[Mt, 2I]</code> read.
+Memory-neutral; measured ~speed-neutral at DeepSeek-scale expert widths (the activation pass is
+~1% of the layer there) — most useful at small expert widths where the elementwise pass is a
+larger share.</p></li>
+<li><p><strong><code>moe_fp8_dx</code></strong> selects the dequant-based dX precision (used when <code>moe_marlin_dx: false</code> and as
+the fallback path): <code>true</code> = fp8-read (sm120 default, ~2% grad error, ~half the transient),
+<code>false</code> = bf16-dequant (most accurate).</p></li>
+</ul>
+<p>See <a href="../docs/custom_integrations.html#kernels-integration">Kernels Integration</a> for the full expert-kernel
+config surface (including <code>nonexpert_quantization</code> for the attention/MLP linears).</p>
+</section>
+</section>
 <section id="requirements" class="level2">
 <h2 class="anchored" data-anchor-id="requirements">Requirements</h2>
 <ul>
@@ -1079,17 +1215,17 @@ Note
 <section id="cpu-staged-fsdp2-qlora-loading" class="level2">
 <h2 class="anchored" data-anchor-id="cpu-staged-fsdp2-qlora-loading">CPU-staged FSDP2 QLoRA loading</h2>
 <p>For models whose quantized weights do not fit on one GPU, enable:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> qlora</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">quantize_moe_experts</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">nf4_backend</span><span class="kw">:</span><span class="at"> bitsandbytes</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> SHARDED_STATE_DICT</span></span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> YourDecoderLayer</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> qlora</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">quantize_moe_experts</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">nf4_backend</span><span class="kw">:</span><span class="at"> bitsandbytes</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">cpu_ram_efficient_loading</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">state_dict_type</span><span class="kw">:</span><span class="at"> SHARDED_STATE_DICT</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> YourDecoderLayer</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reshard_after_forward</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><code>qlora_sharded_model_loading</code> defaults to true for FSDP2 with <code>adapter: qlora</code>,
 <code>load_in_4bit: true</code> and <code>cpu_ram_efficient_loading: true</code> when omitted or null.
 An explicit false is preserved and requires disabling <code>cpu_ram_efficient_loading</code>.
@@ -1182,7 +1318,7 @@ Convert such an adapter with PEFT’s <code>path_initial_model_for_weight_conver
 </section>
 <section id="long-staging-runs-and-progress" class="level3">
 <h3 class="anchored" data-anchor-id="long-staging-runs-and-progress">Long staging runs and progress</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ddp_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">21600</span><span class="co">  # Seconds; six hours for rank-zero loading and metadata exchange.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ddp_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">21600</span><span class="co">  # Seconds; six hours for rank-zero loading and metadata exchange.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>NF4 staging creates a dedicated Gloo control group on every rank before loading.
 Its timeout uses <code>AXOLOTL_NCCL_TIMEOUT</code> when set, otherwise <code>ddp_timeout</code>, otherwise
 1800 seconds. This applies even if the default process group was initialized earlier.
