@@ -150,6 +150,18 @@ def test_config_flags_accepted():
     assert a.mistral_large4_attn_quantization == "nvfp4"
 
 
+@pytest.mark.parametrize("value", ["fp4", "int8", "nvfp8"])
+def test_attn_quantization_rejects_unknown_format(value):
+    with pytest.raises(ValueError, match="mistral_large4_attn_quantization"):
+        KernelsArgs.model_validate({"mistral_large4_attn_quantization": value})
+
+
+@pytest.mark.parametrize("value", [None, "none", "nvfp4", "MXFP4", "mxfp8"])
+def test_attn_quantization_accepts_known_formats(value):
+    args = KernelsArgs.model_validate({"mistral_large4_attn_quantization": value})
+    assert args.mistral_large4_attn_quantization == value
+
+
 def test_mla_proj_suffixes():
     # the four MLA projections the kernel adapts (clean q_proj, no k/v_proj)
     assert set(MLA_PROJ_SUFFIXES) == {

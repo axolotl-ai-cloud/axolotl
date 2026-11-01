@@ -322,6 +322,20 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def check_mistral_large4_attn_quantization(cls, data):
+        quant = data.get("mistral_large4_attn_quantization")
+        if not quant or str(quant).lower() == "none":
+            return data
+        valid = {"nvfp4", "mxfp4", "mxfp8"}
+        if str(quant).lower() not in valid:
+            raise ValueError(
+                "mistral_large4_attn_quantization must be 'none' or one of "
+                f"{sorted(valid)}, got {quant!r}"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_moe_grouped_mode(cls, data):
         # Canonicalize the deprecated dsv4_fp4_grouped_mode -> moe_grouped_mode ('fp4' is a misnomer
         # now that 'fp8_block' is a valid mode).
