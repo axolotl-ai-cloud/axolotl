@@ -5,7 +5,10 @@ import torch
 
 DEV = "cuda"
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA"),
+]
 
 
 def _make_blockfp8(E, N, K, block=128):
@@ -22,6 +25,7 @@ def test_fused_matches_unfused_fp8_path(act_type, limit, monkeypatch):
     from axolotl.integrations.kernels.libs.scattermoe_lora.fp8_grouped import (
         grouped_fp8_moe_train,
     )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
 
     torch.manual_seed(0)
     E, H, I, N, topk, r = 4, 256, 256, 64, 2, 24  # noqa: E741  (r non-pow2 on purpose)
@@ -32,7 +36,7 @@ def test_fused_matches_unfused_fp8_path(act_type, limit, monkeypatch):
     wts = torch.softmax(torch.randn(N, topk, device=DEV), -1)
 
     def run(fused):
-        monkeypatch.setenv("AXOLOTL_SWIGLU_EPILOGUE", "1" if fused else "0")
+        monkeypatch.setattr(RUNTIME, "swiglu_epilogue", fused)
         torch.manual_seed(1)
         Ag = (
             torch.randn(r * E, H, device=DEV, dtype=torch.bfloat16) * 0.02
@@ -77,6 +81,9 @@ def test_config_wiring(monkeypatch):
         RUNTIME,
         configure_scattermoe_runtime,
     )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.swiglu_epilogue import (
+        swiglu_epilogue_enabled,
+    )
 
     assert KernelsArgs.model_validate({"moe_swiglu_epilogue": True}).moe_swiglu_epilogue
     assert KernelsArgs.model_validate({}).moe_swiglu_epilogue is None
@@ -92,4 +99,7 @@ def test_config_wiring(monkeypatch):
     monkeypatch.setenv("AXOLOTL_SWIGLU_EPILOGUE", "1")
     configure_scattermoe_runtime(_C({}))
     assert RUNTIME.swiglu_epilogue is True
+    configure_scattermoe_runtime(_C({"moe_swiglu_epilogue": False}))
+    assert RUNTIME.swiglu_epilogue is False
+    assert not swiglu_epilogue_enabled()
     RUNTIME.reset()
