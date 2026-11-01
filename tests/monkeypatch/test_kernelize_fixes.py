@@ -96,6 +96,21 @@ def test_kernelize_gets_a_device_it_can_index():
     assert seen == ["cuda", torch.device("cuda", 1), "cpu", None]
 
 
+def test_kernelize_accepts_a_model_on_meta():
+    """kernels rejects ``"meta"`` as a device string, but a model loaded with
+    ``device_map="meta"`` (FSDP's CPU-RAM-efficient loading off rank 0) has kernelize
+    called with ``Device(type="meta")``, which it takes."""
+    import kernels
+    import torch
+    from kernels import Device, Mode
+
+    from axolotl.monkeypatch.kernelize_fixes import _kernelize_with_device_type
+
+    kernelize = _kernelize_with_device_type(kernels.kernelize)
+    layer = torch.nn.Linear(2, 2, device="meta")
+    assert kernelize(layer, mode=Mode.INFERENCE, device=Device(type="meta")) is layer
+
+
 def test_patch_wraps_and_restores_transformers_kernelize(kernelize_patch):
     import kernels
     from transformers.integrations import hub_kernels

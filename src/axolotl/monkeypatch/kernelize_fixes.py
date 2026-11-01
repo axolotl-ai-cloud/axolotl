@@ -6,6 +6,8 @@ which kernels >= 0.18 reads an ``index`` off; it gets the device type instead.
 
 import functools
 
+import torch
+
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -17,7 +19,8 @@ def _kernelize_with_device_type(kernelize):
     @functools.wraps(kernelize)
     def wrapper(model, *args, device=None, **kwargs):
         if not (device is None or isinstance(device, str) or hasattr(device, "index")):
-            device = device.type
+            # kernels takes "meta" as a torch.device but rejects it as a string
+            device = torch.device("meta") if device.type == "meta" else device.type
         return kernelize(model, *args, device=device, **kwargs)
 
     return wrapper
