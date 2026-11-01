@@ -26,7 +26,7 @@ def _dequantize(weight: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
 
 class _LowbitLora(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, x_drop, weight, A, B, s, bias):
+    def forward(ctx, x, x_drop, weight, A, B, s, bias, lora_bias):
         dtype = x.dtype
         shape = x.shape
         x2 = x.reshape(-1, shape[-1])
@@ -36,6 +36,8 @@ class _LowbitLora(torch.autograd.Function):
         if A is not None:
             xA = x_lora @ A.t().to(dtype)
             out = out.addmm_(xA, B.t().to(dtype), alpha=float(s))
+            if lora_bias is not None:
+                out = out + float(s) * lora_bias.to(dtype)
         else:
             xA = None
         if bias is not None:
@@ -44,6 +46,7 @@ class _LowbitLora(torch.autograd.Function):
         ctx.s = float(s)
         ctx.shape = shape
         ctx.has_dropout = x_drop is not None
+        ctx.has_lora_bias = lora_bias is not None
         return out.view(*shape[:-1], -1)
 
     @staticmethod
@@ -54,7 +57,7 @@ class _LowbitLora(torch.autograd.Function):
             weight, g.dtype
         )  # frozen base -> recompute (keeps weight low-bit)
         dX = g @ W
-        dX_drop = dA = dB = None
+        dX_drop = dA = dB = d_lora_bias = None
         if A is not None:
             s = ctx.s
             dxA = g @ B.to(g.dtype)
@@ -64,7 +67,9 @@ class _LowbitLora(torch.autograd.Function):
                 dX = dX.addmm_(dxA, A.to(g.dtype), alpha=s)
             dA = (dxA.t() * s) @ x_lora
             dB = (g.t() * s) @ xA
-        return dX.view(*ctx.shape), dX_drop, None, dA, dB, None, None
+            if ctx.has_lora_bias:
+                d_lora_bias = g.sum(dim=0) * s
+        return dX.view(*ctx.shape), dX_drop, None, dA, dB, None, None, d_lora_bias
 
 
 def _quantize_weight(w_bf16: torch.Tensor, kind: str):
@@ -134,10 +139,10 @@ def lowbit_lora_forward(lora_layer, x, kind: str):
 
     ``kind`` in {"nvfp4", "mxfp4", "mxfp8"} (already classified by the caller).
     """
-    W, b, _qs, A, B, s, _lb, drop, mag = get_lora_parameters(lora_layer)
+    W, b, _qs, A, B, s, lb, drop, mag = get_lora_parameters(lora_layer)
     if mag is not None:  # DoRA: let the generic path handle it
         return None
     if not hasattr(W, "dequantize"):
         return None
     x_drop = _apply_dropout(drop, x, lora_layer.training)  # None when no dropout
-    return _LowbitLora.apply(x, x_drop, W, A, B, s if A is not None else 0.0, b)
+    return _LowbitLora.apply(x, x_drop, W, A, B, s if A is not None else 0.0, b, lb)

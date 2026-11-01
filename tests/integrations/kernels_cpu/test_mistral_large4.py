@@ -415,7 +415,7 @@ def _lowbit_lora_layer(kind, lora_dropout=0.0, lora_bias=False):
 
     torch.manual_seed(0)
     peft_model = get_peft_model(
-        nn.ModuleDict({"proj": nn.Linear(LOWBIT_IN, LOWBIT_OUT, bias=False)}),
+        nn.ModuleDict({"proj": nn.Linear(LOWBIT_IN, LOWBIT_OUT)}),
         LoraConfig(
             r=4,
             lora_alpha=8,
@@ -437,7 +437,7 @@ def _lowbit_lora_layer(kind, lora_dropout=0.0, lora_bias=False):
 
 
 def _lowbit_reference(layer, W, x, seed):
-    """``x @ W^T + s * drop(x) @ A^T @ B^T (+ s * b)`` in plain autograd, same dropout draw."""
+    """``x @ W^T + b0 + s * drop(x) @ A^T @ B^T (+ s * b)`` in plain autograd, same dropout draw."""
     A = layer.lora_A["default"].weight.detach().clone().requires_grad_()
     B = layer.lora_B["default"].weight.detach().clone().requires_grad_()
     bias = layer.lora_B["default"].bias
@@ -446,21 +446,22 @@ def _lowbit_reference(layer, W, x, seed):
     s = layer.scaling["default"]
     torch.manual_seed(seed)
     x_lora = layer.lora_dropout["default"](x)
-    out = x @ W.t() + s * (x_lora @ A.t() @ B.t())
+    out = x @ W.t() + layer.base_layer.bias + s * (x_lora @ A.t() @ B.t())
     if bias is not None:
         out = out + s * bias
     out.pow(2).sum().backward()
     return out.detach(), x.grad, A.grad, B.grad, None if bias is None else bias.grad
 
 
+@pytest.mark.parametrize("lora_bias", [False, True])
 @pytest.mark.parametrize("lora_dropout", [0.0, 0.5])
 @pytest.mark.parametrize("kind", ["nvfp4", "mxfp8"])
-def test_lowbit_lora_matches_autograd_reference(kind, lora_dropout):
+def test_lowbit_lora_matches_autograd_reference(kind, lora_dropout, lora_bias):
     from axolotl.integrations.kernels.libs.mistral_large4.lora_lowbit import (
         lowbit_lora_forward,
     )
 
-    layer, W = _lowbit_lora_layer(kind, lora_dropout=lora_dropout)
+    layer, W = _lowbit_lora_layer(kind, lora_dropout, lora_bias)
     layer.train()
     x = torch.randn(2, 5, LOWBIT_IN, requires_grad=True)
     want = _lowbit_reference(layer, W, x, seed=1)
@@ -474,9 +475,12 @@ def test_lowbit_lora_matches_autograd_reference(kind, lora_dropout):
         x.grad,
         layer.lora_A["default"].weight.grad,
         layer.lora_B["default"].weight.grad,
+        layer.lora_B["default"].bias.grad if lora_bias else None,
     )
-    for g, w in zip(got, want[:4], strict=True):
-        torch.testing.assert_close(g, w, rtol=1e-4, atol=1e-5)
+    assert (got[4] is None) == (want[4] is None)
+    for g, w in zip(got, want, strict=True):
+        if w is not None:
+            torch.testing.assert_close(g, w, rtol=1e-4, atol=1e-5)
 
 
 @pytest.mark.parametrize("deepgemm_disabled", [False, True])
