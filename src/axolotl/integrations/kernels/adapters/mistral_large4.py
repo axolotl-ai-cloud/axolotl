@@ -99,6 +99,15 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
                 f"{cfg.base_model} ships remote modeling code (auto_map), but the Mistral Large 4 "
                 "kernels target transformers' built-in modeling. Drop trust_remote_code."
             )
+        if (
+            cfg.get("peft_use_dora")
+            and self._attn_quantization(cfg)
+            and self._attn_lora_kernel_enabled(cfg)
+        ):
+            raise ValueError(
+                "mistral_large4_attn_quantization does not support peft_use_dora: the low-bit "
+                "attention LoRA has no DoRA path. Drop one of them."
+            )
         if self._loads_nvfp4(cfg):
             super().pre_model_load(cfg)
         if not is_mistral_large4_nvfp4_modelopt(cfg):
@@ -120,6 +129,11 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
             return bool(flag)
         return not is_mistral_large4_nvfp4_modelopt(cfg)
 
+    @staticmethod
+    def _attn_quantization(cfg) -> str | None:
+        quant = cfg.get("mistral_large4_attn_quantization")
+        return str(quant).lower() if quant and str(quant).lower() != "none" else None
+
     def _patch_attn_lora(self, cfg, model) -> None:
         """Fused quant-dispatching LoRA for the MLA attention projections."""
         if not self._attn_lora_kernel_enabled(cfg):
@@ -133,13 +147,13 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
 
         # Optional: quantize the frozen attention bases to a low-bit format (kernel then runs the
         # 4-/8-bit fused path). Must run post-PEFT-wrap (here), before the kernel patch.
-        attn_quant = cfg.get("mistral_large4_attn_quantization")
-        if attn_quant and str(attn_quant).lower() != "none":
+        attn_quant = self._attn_quantization(cfg)
+        if attn_quant:
             from axolotl.integrations.kernels.libs.mistral_large4.lora_lowbit import (
                 quantize_attn_bases,
             )
 
-            quantize_attn_bases(model, str(attn_quant).lower(), MLA_PROJ_SUFFIXES)
+            quantize_attn_bases(model, attn_quant, MLA_PROJ_SUFFIXES)
 
         native_fp8 = cfg.get("mistral_large4_attn_native_fp8") is not False
         patch_mistral_large4_attn_lora(model, enabled=True, native_fp8=native_fp8)

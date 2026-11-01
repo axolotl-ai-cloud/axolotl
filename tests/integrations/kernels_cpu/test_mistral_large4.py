@@ -139,6 +139,35 @@ def test_remote_code_checkpoint_rejected(monkeypatch):
         MistralLarge4Adapter().pre_model_load(cfg)
 
 
+@pytest.mark.parametrize(
+    "overrides,rejected",
+    [
+        ({}, True),
+        ({"mistral_large4_attn_lora_kernel": False}, False),
+        ({"mistral_large4_attn_quantization": "none"}, False),
+        ({"peft_use_dora": False}, False),
+    ],
+)
+def test_attn_quantization_rejects_dora(tmp_path, monkeypatch, overrides, rejected):
+    from axolotl.monkeypatch.accelerate import fsdp2_quantized
+
+    monkeypatch.setattr(fsdp2_quantized, "_FP32_SHARD_CLASS_NAMES", set())
+    cfg = DictDefault(
+        {
+            "base_model": _saved(tmp_path, tiny_config()),
+            "adapter": "lora",
+            "peft_use_dora": True,
+            "mistral_large4_attn_quantization": "nvfp4",
+            **overrides,
+        }
+    )
+    if rejected:
+        with pytest.raises(ValueError, match="peft_use_dora"):
+            MistralLarge4Adapter().pre_model_load(cfg)
+    else:
+        MistralLarge4Adapter().pre_model_load(cfg)
+
+
 def test_config_flags_accepted():
     a = KernelsArgs(
         mistral_large4_attn_lora_kernel=True,
