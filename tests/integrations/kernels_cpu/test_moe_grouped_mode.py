@@ -37,6 +37,11 @@ def _per_expert(prefix, fmt):
             prefix + "weight": torch.zeros(16, 16, dtype=torch.float8_e4m3fn),
             prefix + "weight_scale_inv": torch.ones(1, 1),
         }
+    if fmt == "block_fp8_64":  # 256x256 weight, 4x4 scale grid: 64x64 blocks
+        return {
+            prefix + "weight": torch.zeros(256, 256, dtype=torch.float8_e4m3fn),
+            prefix + "weight_scale_inv": torch.ones(4, 4),
+        }
     if fmt == "fp8_per_tensor":
         return {
             prefix + "weight": torch.zeros(16, 16, dtype=torch.float8_e4m3fn),
@@ -113,6 +118,7 @@ def _checkpoint(tmp_path, layers, fused=False, num_layers=None, **config):
         (["bf16"], True, gm.BF16),
         (["packed_fp4", "packed_fp4"], False, gm.PACKED_FP4),
         (["fp8_per_tensor"], False, gm.OTHER),
+        (["block_fp8_64"], False, gm.OTHER),
         (["mxfp4"], True, gm.OTHER),
         ([None, None], False, gm.NO_EXPERTS),
     ],
@@ -149,6 +155,7 @@ def test_mtp_layers_are_ignored():
         ({}, gm.BLOCK_FP8),
         ({"weight_block_size": [128, 128]}, gm.BLOCK_FP8),
         ({"modules_to_not_convert": ["mlp.experts"]}, gm.BF16),
+        ({"weight_block_size": [64, 64]}, gm.OTHER),
     ],
 )
 def test_on_the_fly_fp8_quantization(tmp_path, kwargs, kind):
@@ -170,6 +177,7 @@ def test_bnb_expert_quantization_is_other(tmp_path):
         (None, gm.BF16),
         ({"quant_method": "fp8", "weight_block_size": [128, 128]}, gm.BLOCK_FP8),
         ({"quant_method": "fp8"}, gm.OTHER),
+        ({"quant_method": "fp8", "weight_block_size": [64, 64]}, gm.OTHER),
         (
             {
                 "quant_method": "fp8",
@@ -405,3 +413,14 @@ def test_mxfp8_cpu_ram_efficient_needs_rank0_requant(extra, ok):
     else:
         with pytest.raises(ValueError, match="moe_rank0_requant: false"):
             KernelsArgs.model_validate(data)
+
+
+@pytest.mark.parametrize("requested", [None, "fp8_block"])
+def test_non_128_fp8_blocks_never_take_fp8_block(tmp_path, requested):
+    # the grouped fp8 kernels index 128x128 scale blocks
+    fmt = gm.detect_expert_format(_checkpoint(tmp_path, ["block_fp8_64"]))
+    if requested is None:
+        assert gm.choose_grouped_mode(None, fmt).mode is None
+    else:
+        with pytest.raises(ValueError, match="can't run these experts"):
+            gm.choose_grouped_mode(requested, fmt)

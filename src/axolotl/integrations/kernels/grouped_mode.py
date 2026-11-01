@@ -63,6 +63,8 @@ _SCALE_LEAVES = (
     "qscale_weight",
     "weight_scale",
 )
+# the grouped fp8_block kernels index 128x128 weight-scale blocks
+FP8_BLOCK = (128, 128)
 
 
 @dataclass(frozen=True)
@@ -86,8 +88,14 @@ def _classify(dtype: str, shape: tuple, siblings: dict) -> str:
     if dt.startswith("F8"):
         for leaf in _SCALE_LEAVES:
             if leaf in siblings:
-                # block scales tile the weight; per-tensor ones are scalar or one per expert
-                return BLOCK_FP8 if len(siblings[leaf][1]) == len(shape) else OTHER
+                # block scales tile the weight (per-tensor ones are scalar or one per expert), and
+                # only a 128x128 tiling is one the grouped kernels read
+                scale = tuple(siblings[leaf][1])
+                tiles = tuple(
+                    -(-d // b) for d, b in zip(shape[-2:], FP8_BLOCK, strict=True)
+                )
+                block = len(scale) == len(shape) and scale[-2:] == tiles
+                return BLOCK_FP8 if block and scale[:-2] == tuple(shape[:-2]) else OTHER
         return OTHER
     if dt in ("I8", "U8") and "scale" in siblings:
         return PACKED_FP4
@@ -184,6 +192,12 @@ def _from_quantization_config(model_config, why: str) -> ExpertFormat:
             return ExpertFormat(BF16, f"experts in modules_to_not_convert ({why})")
         if not qcfg.get("weight_block_size"):
             return ExpertFormat(OTHER, f"per-tensor fp8 quantization_config ({why})")
+        if tuple(qcfg["weight_block_size"]) != FP8_BLOCK:
+            return ExpertFormat(
+                OTHER,
+                f"fp8 weight_block_size {qcfg['weight_block_size']}, not the 128x128 the "
+                f"grouped fp8 kernels need ({why})",
+            )
         return ExpertFormat(
             BLOCK_FP8,
             f"quantization_config fp8 weight_block_size {qcfg['weight_block_size']} ({why})",
@@ -216,6 +230,12 @@ def _on_the_fly_fp8(cfg) -> ExpertFormat:
         return ExpertFormat(BF16, f"{src} leaves the experts unquantized")
     if not qcfg.weight_block_size:
         return ExpertFormat(OTHER, f"{src} quantizes per tensor")
+    if tuple(qcfg.weight_block_size) != FP8_BLOCK:
+        return ExpertFormat(
+            OTHER,
+            f"{src} weight_block_size {list(qcfg.weight_block_size)} is not the 128x128 the "
+            "grouped fp8 kernels need",
+        )
     return ExpertFormat(
         BLOCK_FP8,
         f"{src} quantizes the experts to {list(qcfg.weight_block_size)} block FP8 on load",
