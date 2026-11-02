@@ -557,10 +557,8 @@ def test_native_fp8_attn_lora_matches_peft(fp8_linear, lora_dropout):
         torch.manual_seed(1)
         logits, grads = _loss_and_grads(model, input_ids)
 
-    # q_proj + o_proj on each layer run the native fp8 GEMM unless dropout needs LoRA_O
-    assert len(native_calls) == (
-        0 if lora_dropout else 2 * FP8_TEXT["num_hidden_layers"]
-    )
+    # q_proj + o_proj on each layer run the native fp8 GEMM, dropout included
+    assert len(native_calls) == 2 * FP8_TEXT["num_hidden_layers"]
     # bf16 rounding only; a wrong dropout mask or a dropped base input is an O(1) error
     assert _rel_err(logits, ref_logits) < 3e-2
     assert grads.keys() == ref_grads.keys()

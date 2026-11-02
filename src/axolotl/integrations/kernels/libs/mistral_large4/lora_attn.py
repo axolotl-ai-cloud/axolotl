@@ -23,7 +23,6 @@ from __future__ import annotations
 import types
 
 import torch
-from torch import nn
 
 from axolotl.kernels.lora import LoRA_O, _apply_dropout, get_lora_parameters
 from axolotl.utils.logging import get_logger
@@ -129,13 +128,8 @@ def _make_forward(name: str, native_fp8: bool):
             # Mistral-Large-4 dims are all 128-multiples; guard so odd dims fall back cleanly.
             block_k = fp8[2][-1] if fp8 is not None else 128
             aligned = fp8 is not None and (W.shape[-1] % block_k == 0)
-            # _NativeFp8Lora feeds one input to the base and LoRA GEMMs and has no DoRA / LoRA
-            # bias, so active dropout or either variant goes through LoRA_O instead.
-            dropout_active = self.training and not (
-                drop is None or isinstance(drop, nn.Identity)
-            )
-            plain_lora = mag is None and lb is None and not dropout_active
-            if fp8 is not None and A is not None and aligned and plain_lora:
+            # _NativeFp8Lora has no DoRA path, so DoRA goes through LoRA_O instead
+            if fp8 is not None and A is not None and aligned and mag is None:
                 qdata, scale_inv, block_size = fp8
                 # PEFT keeps LoRA A/B in fp32; the fused fp8 GEMM contracts against the bf16
                 # activation, so match the compute dtype (grads still flow to the fp32 masters).
@@ -149,8 +143,10 @@ def _make_forward(name: str, native_fp8: bool):
                     s,
                     b.to(x.dtype) if b is not None else None,
                     not getattr(self.base_layer, "_deepgemm_disabled", False),
+                    _apply_dropout(drop, x, self.training),
+                    lb.to(x.dtype) if lb is not None else None,
                 )
-            # unaligned dims / disabled adapter / dropout / DoRA -> fused dequant path via LoRA_O
+            # unaligned dims / disabled adapter / DoRA -> fused dequant path via LoRA_O
             return _generic_forward(self, x, *args, **kwargs)
 
         if kind in ("nvfp4", "mxfp4", "mxfp8"):
