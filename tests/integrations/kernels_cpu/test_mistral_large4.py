@@ -569,7 +569,8 @@ def _lowbit_lora_layer(kind, lora_dropout=0.0, lora_bias=False):
     layer = peft_model.base_model.model["proj"]
     try:
         weight = _quantize_weight(layer.base_layer.weight.detach().bfloat16(), kind)
-    except Exception as exc:  # torchao without CPU support for this format
+    # torchao without CPU support for this format
+    except (ImportError, NotImplementedError) as exc:
         pytest.skip(f"{kind} quantization unavailable: {exc}")
     layer.base_layer.weight = nn.Parameter(weight, requires_grad=False)
     for name, param in layer.named_parameters():
