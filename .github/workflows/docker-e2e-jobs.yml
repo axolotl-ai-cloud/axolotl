@@ -265,9 +265,8 @@ jobs:
     continue-on-error: true
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
-    # Only run the remainder of the matrix if the first e2e check passed;
-    # this is to save on wasted compute costs for known failures that get caught in the first run
-    needs: [gate-skip-e2e, docker-e2e-tests-1st]
+    # Runs beside the 1st gate, not after it, so parity also covers commits that fail it
+    needs: [gate-skip-e2e]
 
     strategy:
       fail-fast: false
@@ -275,7 +274,7 @@ jobs:
         include:
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.12"
+            python_version: "3.14"
             pytorch: 2.14.1
             num_gpus: 1
             axolotl_extras:
