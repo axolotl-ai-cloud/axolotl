@@ -27,6 +27,13 @@ tm() {
 # testmon only traces the pytest process; these files run the code under test in child processes
 SUBPROCESS_TESTS="/workspace/axolotl/tests/e2e/test_evaluate.py /workspace/axolotl/tests/e2e/test_preprocess.py /workspace/axolotl/tests/e2e/test_qwen.py /workspace/axolotl/tests/e2e/integrations/test_kd.py /workspace/axolotl/tests/e2e/test_quantization.py"
 
+tm gpu-unit -v --durations=10 -n8 -m "gpu and not slow and not nf4_distributed and not gpu_blackwell" \
+  --ignore=tests/e2e/ \
+  --ignore=tests/integrations/ \
+  --ignore=tests/patched/ \
+  --ignore=tests/cli \
+  /workspace/axolotl/tests/
+
 tm patched --full-trace -vvv --durations=10 /workspace/axolotl/tests/e2e/patched
 
 tm solo -v --durations=10 -n1 \
@@ -40,7 +47,12 @@ tm integrations -v --durations=10 \
   --ignore=tests/e2e/integrations/test_kd.py \
   /workspace/axolotl/tests/e2e/integrations/
 
-tm e2e -v --durations=10 \
+tm gpu-integrations -v --durations=10 -n8 --dist loadfile -m "gpu and not gpu_blackwell" \
+  --ignore=tests/e2e/kernels/ \
+  --ignore=tests/integrations/kernels/ \
+  /workspace/axolotl/tests/integrations/
+
+tm e2e -v --durations=10 -m "not slow and not gpu_blackwell" \
   --ignore=tests/e2e/kernels/ \
   --ignore=tests/e2e/solo/ \
   --ignore=tests/e2e/patched/ \
@@ -54,7 +66,7 @@ tm e2e -v --durations=10 \
   /workspace/axolotl/tests/e2e/
 
 # shellcheck disable=SC2086
-pytest -v --durations=10 --maxfail=10 $SUBPROCESS_TESTS
+pytest -v --durations=10 --maxfail=10 -m "not slow and not gpu_blackwell" $SUBPROCESS_TESTS
 
 if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
   mkdir -p "$TESTMON_BASELINE_DIR"
