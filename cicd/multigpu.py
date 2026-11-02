@@ -4,23 +4,12 @@ modal application to run axolotl gpu tests in Modal
 
 import os
 import pathlib
-import tempfile
 
-import jinja2
 import modal
-from jinja2 import select_autoescape
-from modal import App, Image
+from modal import App
 
+from .ci_image import ci_image
 from .deep_ep import DEEP_EP_WHEELS, deep_ep_volume, install_deep_ep
-
-cicd_path = pathlib.Path(__file__).parent.resolve()
-
-template_loader = jinja2.FileSystemLoader(searchpath=cicd_path)
-template_env = jinja2.Environment(
-    loader=template_loader, autoescape=select_autoescape()
-)
-dockerfile = os.environ.get("E2E_DOCKERFILE", "Dockerfile-uv.jinja")
-df_template = template_env.get_template(dockerfile)
 
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
@@ -43,21 +32,7 @@ df_args = {
     "E2E_SELECTED_TESTS": os.environ.get("E2E_SELECTED_TESTS", ""),
 }
 
-dockerfile_contents = df_template.render(**df_args)
-
-temp_dir = tempfile.mkdtemp()
-with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
-    f.write(dockerfile_contents)
-
-cicd_image = (
-    Image.from_dockerfile(
-        pathlib.Path(temp_dir) / "Dockerfile",
-        gpu="A10G",
-    )
-    # cwd leads sys.path; from the image's checkout it shadows the cicd/ Modal mounts at /root
-    .workdir("/root")
-    .env(df_args)
-)
+cicd_image = ci_image(df_args)
 
 app = App("Axolotl CI/CD", secrets=[])
 
