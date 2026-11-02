@@ -229,6 +229,8 @@ The label handler uses `pull_request_target` with trusted inline code only and m
 
 Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
 
+The single-GPU suite is gated by `docker-e2e-tests-testmon`, which runs it on Python 3.14 / PyTorch 2.14.1 under pytest-testmon, selecting only the tests affected since the baseline `main` last saved. The full single-GPU legs (Python 3.12 / PyTorch 2.13.0 and Python 3.14 / PyTorch 2.14.1), the CUDA kernel tests and the Blackwell tests start once it passes. When no testmon block had a baseline to select against (after a dependency change, for example), the gate has already run the whole Python 3.14 suite, so that full leg is skipped for the run.
+
 ##### Slow GPU Tests
 
 Apply `run-gpu-slow` to a ready PR to run the additional slow GPU suites. The
@@ -247,8 +249,8 @@ required by branch protection.
 
 Alongside the full suites, every PR run selects the e2e test files its diff can affect
 and runs just those in two extra arms, `docker-e2e-tests-selected` (single GPU) and
-`multigpu-selected`. They gate nothing today and run with `continue-on-error`, as does
-the testmon arm, so a failure there never fails the run; they exist to be compared
+`multigpu-selected`. They gate nothing today and run with `continue-on-error`, so a
+failure there never fails the run; they exist to be compared
 against the full suites in both directions. The `select-e2e` job writes the selection and the reason for every file
 to its job summary and uploads it as the `e2e-selection` artifact.
 
