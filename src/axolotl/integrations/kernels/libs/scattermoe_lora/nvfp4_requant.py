@@ -38,7 +38,7 @@ def _to_projlist(w3d: torch.Tensor):
     for e in range(w3d.shape[0]):
         we = w3d[e]
         # two-level per-tensor scale: amax / (F4_E2M1_MAX * F8E4M3_MAX) = amax / (6 * 448)
-        p = (we.abs().max() / (6.0 * 448.0)).reshape(1).float().clamp(min=1e-12)
+        p = (we.abs().max() / (6.0 * 448.0)).reshape(()).float().clamp(min=1e-12)
         nv = NVFP4Tensor.to_nvfp4(
             we[None], per_tensor_scale=p, is_swizzled_scales=False
         )
