@@ -75,8 +75,11 @@ def default(cfg, dataset_idx=0, **kwargs):
             ]
 
         def to_message(m):
+            role = m[message_property_mappings["role"]]
             message = {
-                "role": role_map[m[message_property_mappings["role"]]],
+                # map known roles, pass unknown roles through so a role the template
+                # renders fine does not raise a raw KeyError
+                "role": role_map.get(role, role),
                 "content": m[message_property_mappings["content"]],
             }
             # further mapped properties (e.g. reasoning_content for templates that render
@@ -219,6 +222,13 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
         for source in sources:
             role_map[source] = target
 
+    def to_role(message):
+        role = message[message_property_mappings["role"]]
+        # map known roles, pass unknown roles through so a role the template
+        # renders fine does not raise a raw KeyError
+        return role_map.get(role, role)
+
+
     def transform_fn(sample, tokenizer=None):
         chat_template_string = get_chat_template(
             user_choice=chat_template_choice,
@@ -232,18 +242,18 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
         # Extract messages (all but last) and responses (last message)
         chosen_messages = [
             {
-                "role": role_map[m[message_property_mappings["role"]]],
+                "role": to_role(m),
                 "content": m[message_property_mappings["content"]],
             }
             for m in chosen_raw[:-1]
         ]
         chosen_response = {
-            "role": role_map[chosen_raw[-1][message_property_mappings["role"]]],
+            "role": to_role(chosen_raw[-1]),
             "content": chosen_raw[-1][message_property_mappings["content"]],
         }
 
         rejected_response = {
-            "role": role_map[rejected_raw[-1][message_property_mappings["role"]]],
+            "role": to_role(rejected_raw[-1]),
             "content": rejected_raw[-1][message_property_mappings["content"]],
         }
 

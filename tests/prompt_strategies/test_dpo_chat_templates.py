@@ -455,5 +455,63 @@ class TestDPOChatTemplateVision:
         assert "images" not in map_kwargs["remove_columns"]
 
 
+class TestDPOChatTemplateUnmappedRole:
+    """Unmapped roles must reach the chat template instead of raising KeyError."""
+
+    def test_default_unmapped_role_passes_through(self, llama3_tokenizer):
+        dataset = Dataset.from_list(
+            [
+                {
+                    "messages": [
+                        {"role": "user", "content": "hello"},
+                        {"role": "observation", "content": "42"},
+                    ],
+                    "chosen": "the answer is 42",
+                    "rejected": "unknown",
+                }
+            ]
+        )
+        transform_fn, _ = default(
+            DictDefault(
+                {
+                    "chat_template": "chatml",
+                    "datasets": [{"type": "chat_template"}],
+                }
+            )
+        )
+        result = transform_fn(dataset[0], tokenizer=llama3_tokenizer)
+        assert "<|im_start|>observation" in result["prompt"]
+        assert "the answer is 42" in result["chosen"]
+
+    def test_argilla_chat_unmapped_role_passes_through(self, llama3_tokenizer):
+        dataset = Dataset.from_list(
+            [
+                {
+                    "chosen": [
+                        {"role": "user", "content": "hello"},
+                        {"role": "observation", "content": "42"},
+                        {"role": "assistant", "content": "the answer is 42"},
+                    ],
+                    "rejected": [
+                        {"role": "user", "content": "hello"},
+                        {"role": "observation", "content": "42"},
+                        {"role": "assistant", "content": "unknown"},
+                    ],
+                }
+            ]
+        )
+        transform_fn, _ = argilla_chat(
+            DictDefault(
+                {
+                    "chat_template": "chatml",
+                    "datasets": [{"type": "chat_template.argilla_chat"}],
+                }
+            )
+        )
+        result = transform_fn(dataset[0], tokenizer=llama3_tokenizer)
+        assert "<|im_start|>observation" in result["prompt"]
+        assert "the answer is 42" in result["chosen"]
+        assert "unknown" in result["rejected"]
+
 if __name__ == "__main__":
     unittest.main()
