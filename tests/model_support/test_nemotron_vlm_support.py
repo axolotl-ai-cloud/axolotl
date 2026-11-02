@@ -443,6 +443,7 @@ def test_4bit_skip_list_matches_the_real_module_names(module_name, converted):
 
 
 def test_4bit_loader_passes_the_vlm_skip_list_to_bitsandbytes():
+    from axolotl.integrations.base import PluginManager
     from axolotl.loaders.model import ModelLoader
 
     loader = SimpleNamespace(
@@ -455,6 +456,7 @@ def test_4bit_loader_passes_the_vlm_skip_list_to_bitsandbytes():
         model_config=SimpleNamespace(),
         model_kwargs={},
         is_fsdp_enabled=False,
+        plugin_manager=PluginManager.get_instance(),
     )
     ModelLoader._set_quantization_config(loader)
     assert loader.model_kwargs["quantization_config"].llm_int8_skip_modules == [

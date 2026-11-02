@@ -71,3 +71,27 @@ class TestAdapterPluginRegistry:
 
         assert validated.adapter == "fake-adapter"
         assert validated.relora is True
+
+    @pytest.mark.parametrize(
+        "adapter,lora_like,supports_merge",
+        [
+            ("lora", True, True),
+            ("qlora", True, True),
+            ("mora", True, True),
+            ("mixlora", True, False),
+            ("llama-adapter", False, True),
+            (None, False, True),
+        ],
+    )
+    def test_adapter_capability_queries(
+        self, monkeypatch, adapter, lora_like, supports_merge
+    ):
+        from axolotl.integrations.mixlora import MixLoraPlugin
+        from axolotl.integrations.mora import MoraPlugin
+
+        manager = PluginManager.get_instance()
+        monkeypatch.setitem(manager.plugins, "mora", MoraPlugin())
+        monkeypatch.setitem(manager.plugins, "mixlora", MixLoraPlugin())
+
+        assert manager.is_lora_like(adapter) is lora_like
+        assert manager.adapter_supports_merge(adapter) is supports_merge

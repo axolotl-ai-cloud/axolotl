@@ -94,6 +94,7 @@ class AdapterCapabilities:
     name: str
     lora_like: bool = False
     relora: bool = False
+    supports_merge: bool = True
 
 
 class BasePlugin:
@@ -218,6 +219,37 @@ class BasePlugin:
         Args:
             cfg: The configuration for the plugin.
             model: The loaded model.
+        """
+
+    def pre_train(
+        self,
+        cfg: DictDefault,
+        trainer: Trainer,
+        resume_from_checkpoint: str | None = None,
+    ):
+        """Performs actions right before training starts.
+
+        Args:
+            cfg: The configuration for the plugin.
+            trainer: The trainer about to run.
+            resume_from_checkpoint: Checkpoint being resumed from, if any.
+        """
+
+    def post_model_save(
+        self,
+        cfg: DictDefault,
+        model: PreTrainedModel | PeftModel,
+        output_dir: str,
+    ):
+        """Performs actions after the final model is saved.
+
+        Only called on the single-process save path, where `model` is fully
+        materialized rather than sharded across ranks.
+
+        Args:
+            cfg: The configuration for the plugin.
+            model: The model that was just saved.
+            output_dir: The directory the model was saved to.
         """
 
     def get_trainer_cls(self, cfg: DictDefault) -> type[Trainer] | None:
@@ -653,6 +685,40 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.post_model_load(cfg, model)
+
+    def is_lora_like(self, adapter: str | None) -> bool:
+        """Returns whether an adapter follows LoRA-style loading semantics."""
+        if adapter in ("lora", "qlora"):
+            return True
+        capability = self.get_adapter_capability(adapter) if adapter else None
+        return bool(capability and capability.lora_like)
+
+    def adapter_supports_merge(self, adapter: str | None) -> bool:
+        """Returns whether a plugin adapter can be merged into the base model."""
+        capability = self.get_adapter_capability(adapter) if adapter else None
+        return capability.supports_merge if capability else True
+
+    def pre_train(
+        self,
+        cfg: DictDefault,
+        trainer: Trainer,
+        resume_from_checkpoint: str | None = None,
+    ):
+        """Calls the `pre_train` method of each registered plugin."""
+        for plugin in self.plugins.values():
+            plugin.pre_train(
+                cfg, trainer, resume_from_checkpoint=resume_from_checkpoint
+            )
+
+    def post_model_save(
+        self,
+        cfg: DictDefault,
+        model: PreTrainedModel | PeftModel,
+        output_dir: str,
+    ):
+        """Calls the `post_model_save` method of each registered plugin."""
+        for plugin in self.plugins.values():
+            plugin.post_model_save(cfg, model, output_dir)
 
     def get_trainer_cls(self, cfg: DictDefault) -> type[Trainer] | None:
         """Calls the `get_trainer_cls` method of all registered plugins and returns the
