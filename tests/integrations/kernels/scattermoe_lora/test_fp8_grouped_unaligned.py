@@ -9,13 +9,15 @@ import torch.nn.functional as F
 from axolotl.integrations.kernels.libs.scattermoe_lora import fp8_grouped
 from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
 
+from tests.cuda_gates import cuda_capability_below
+
 DEV = "cuda"
 BLOCK = 128
 
 pytestmark = [
     pytest.mark.gpu,
     pytest.mark.skipif(
-        not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9),
+        not torch.cuda.is_available() or cuda_capability_below(8, 9),
         reason="requires CUDA with FP8 support (sm89+)",
     ),
 ]
