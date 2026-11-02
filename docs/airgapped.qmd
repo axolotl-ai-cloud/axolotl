@@ -74,7 +74,7 @@ uv pip compile pyproject.toml --extra fla --extra ringmaster --extra ray --extra
 uvx pip download --no-deps --only-binary=:all: --platform ... -r requirements.binary.txt -d wheelhouse
 uvx --python 3.14 pip wheel --no-deps -w wheelhouse <pure-python sdists>     # plus zstandard and deepspeed on a target-arch builder
 uv build --wheel --python 3.14 --out-dir wheelhouse                           # axolotl itself
-uvx --python 3.14 pip wheel --no-deps -w wheelhouse "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.0"
+uvx --python 3.14 pip wheel --no-deps -w wheelhouse "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.1"
 # HF cache (HF_HOME=$BUNDLE/hf)
 hf download NousResearch/Llama-3.2-1B --exclude 'original/*'
 hf download teknium/GPT4-LLM-Cleaned --repo-type dataset
@@ -403,7 +403,7 @@ The Docker image installs the `cut_cross_entropy` plugin's backend from a git ta
 
 ```{.bash}
 uvx --python 3.14 pip wheel --no-deps -w "$BUNDLE/wheelhouse" \
-  "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.0"
+  "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.1"
 ```
 
 This produces `cut_cross_entropy-25.5.2-py3-none-any.whl`. Its dependencies (`torch`, `triton`, `transformers`) are already pinned in the wheelhouse, so the target installs it with `--no-deps`. Check the tag in `scripts/cutcrossentropy_install.py` at your `AXOLOTL_REF`, because it moves with torch support.

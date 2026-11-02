@@ -1,5 +1,6 @@
 import json
 import math
+import re
 from collections import OrderedDict
 from threading import Event
 from types import SimpleNamespace
@@ -477,6 +478,45 @@ class TestEfficientMerge:
             merged["model.embed_tokens.weight"],
             base_weights["model.embed_tokens.weight"],
         )
+
+    def test_merge_takes_config_from_base_model_config(self, tmp_path):
+        """A base without config.json (Mistral-native repos) merges with base_model_config's."""
+        hidden, r = 16, 4
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        (model_dir / "config.json").unlink()
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "config.json").write_text('{"marker": 1}')
+        adapter_dir, _ = self._make_adapter(tmp_path, r=r, alpha=r)
+        lora_state = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.randn(
+                r, hidden
+            ),
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.randn(
+                hidden, r
+            ),
+        }
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            base_model_config=str(config_dir),
+        )
+
+        assert json.loads((output_dir / "config.json").read_text()) == {"marker": 1}
+        assert not (model_dir / "config.json").exists()
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        expected = base_weights[q_key] + (
+            lora_state[f"base_model.model.{q_key[:-7]}.lora_B.weight"]
+            @ lora_state[f"base_model.model.{q_key[:-7]}.lora_A.weight"]
+        )
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+        assert torch.allclose(merged[q_key], expected, atol=1e-5)
 
     def _make_multi_shard_merge(self, tmp_path, n_shards=3, hidden=16, r=4):
         model_dir = tmp_path / "base_model"
@@ -1692,13 +1732,21 @@ class TestEfficientMerge:
         assert lora_a.shape == (8, 32)
 
     def test_scope_renaming_anchors_to_prefix(self):
-        """Scoped patterns are re-anchored; unanchored ones are dropped."""
+        """Scoped patterns are re-anchored; unanchored ones match after the kept scope prefix."""
         assert _scope_renaming(r"^language_model.model", "language_model", "model") == (
             r"^model\.language_model.model",
             "model.language_model",
         )
         assert _scope_renaming(r"^a", "b", None) == (r"^a", "b")
-        assert _scope_renaming(r"a", "b", "model") is None
+        src, tgt = _scope_renaming(
+            r"\.attention\.", ".self_attn.", "language_model", "model"
+        )
+        assert re.sub(src, tgt, "model.language_model.layers.0.attention.wq") == (
+            "model.language_model.layers.0.self_attn.wq"
+        )
+        assert re.sub(src, tgt, "model.vision_tower.layers.0.attention.wq") == (
+            "model.vision_tower.layers.0.attention.wq"
+        )
 
     def test_unmatched_tensors_pass_through(self):
         """Tensors with no matching LoRA are returned unchanged."""
@@ -3617,14 +3665,12 @@ class TestQuantizedBaseMerge:
         assert torch.allclose(out.float(), exp, atol=1e-3)
 
     def test_partial_dequant_reports_left_quantized(self):
-        """A shard with a dequantizable tensor AND an unsupported quantized tensor (per-tensor fp8,
-        scalar scale) must report left_quantized=True so the caller keeps quantization_config."""
+        """A shard with a dequantizable tensor AND an unsupported quantized tensor (uint8 with a
+        scalar fp32 scale) must report left_quantized=True so the caller keeps quantization_config."""
         from axolotl.cli.utils.lora_merge import _dequantize_quantized_shard
 
         blk = torch.randn(16, 16).to(torch.float8_e4m3fn)  # block-fp8 (handled)
-        pt = torch.randn(8, 8).to(
-            torch.float8_e4m3fn
-        )  # per-tensor fp8 (unsupported here)
+        pt = torch.randint(0, 255, (8, 8), dtype=torch.uint8)  # unsupported here
         shard = {
             "a.weight": blk,
             "a.weight_scale_inv": torch.ones(1, 1),
@@ -3634,7 +3680,7 @@ class TestQuantizedBaseMerge:
         out, did, left, _ = _dequantize_quantized_shard(shard, "cpu")
         assert did and left
         assert out["a.weight"].dtype == torch.bfloat16  # dequantized
-        assert out["b.weight"].dtype == torch.float8_e4m3fn  # left as-is
+        assert out["b.weight"].dtype == torch.uint8  # left as-is
         assert "b.weight_scale" in out  # its scale not dropped
 
 

@@ -25,6 +25,7 @@ the model is gemma4 + NVFP4 modelopt.
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 import torch
@@ -164,16 +165,8 @@ def patch_conversion_loader_rank0_only() -> None:
         )
 
     def _patched_materialize_copy(tensor, device=None, dtype=None):
-        # dtype-aware: load the RAW NVFP4 components (uint8 qdata / fp8 e4m3|e5m2 scales) at their
-        # native dtype instead of the bf16 skeleton dtype. modelopt is an unrecognized quantizer so
-        # transformers' own native-dtype branch (hf_quantizer.pre_quantized) never fires and it casts
-        # everything to bf16 — doubling the bytes of the largest (uint8) expert tensors and adding a
-        # cast the converter's _recast_weight/_recast_scale would just undo. Applied before the
-        # rank0/meta split so both produce the same native dtype. (F32/F16/BF16 sources unaffected.)
-        if dtype is not None and hasattr(tensor, "get_dtype"):
-            _st = tensor.get_dtype()
-            if _st == "U8" or _st.startswith("F8"):
-                dtype = None
+        # Our converters' sources already arrive with dtype=None (patch_conversion_loader_native_dtype),
+        # so the meta tensors below get the same native dtype rank 0 loads.
         nonrank0 = _is_nonrank0_process()
         if not _stats["logged"]:
             _dbg(f"first call: nonrank0={nonrank0} slice_type={type(tensor).__name__}")
@@ -207,6 +200,79 @@ def patch_conversion_loader_rank0_only() -> None:
     )
 
 
+_NATIVE_DTYPE_STATE = threading.local()
+
+
+def _native_dtype_patterns(converters) -> frozenset:
+    """Source patterns that ``converters`` route to our NVFP4 ops (last owner wins, as in the loader)."""
+    cached = getattr(_NATIVE_DTYPE_STATE, "patterns", None)
+    if cached is not None and cached[0] is converters:
+        return cached[1]
+    owner = {pat: conv for conv in converters for pat in conv.source_patterns}
+    patterns = frozenset(
+        pat for pat, conv in owner.items() if _is_nvfp4_converter(conv)
+    )
+    _NATIVE_DTYPE_STATE.patterns = (converters, patterns)
+    return patterns
+
+
+def _is_quantized_source(tensor) -> bool:
+    if isinstance(tensor, torch.Tensor):
+        return tensor.dtype == torch.uint8 or tensor.dtype in _FP8_DTYPES
+    st = tensor.get_dtype() if hasattr(tensor, "get_dtype") else ""
+    return st == "U8" or st.startswith("F8")
+
+
+def patch_conversion_loader_native_dtype() -> None:
+    """Hand our NVFP4 converters their checkpoint tensors at native dtype.
+
+    ``quant_method: modelopt`` has no transformers quantizer, so the conversion loader casts every
+    source to the skeleton dtype (bf16) before the converter runs. uint8 qdata and e4m3 scales
+    survive that, but the fp32 ``weight_scale_2`` does not (up to ~0.4% error), and the merge reads
+    the exact value from the file. Every scale routed to our converters, and every uint8/fp8 weight,
+    now skips the cast; a float ``.weight`` (an unquantized layer under a converter suffix) is cast
+    as before.
+
+    The materialize call carries no key, so ``rename_source_key`` (called just before it in the
+    loader's per-key loop) records whether the key went to one of our converters. Idempotent."""
+    import transformers.core_model_loading as cml
+
+    if getattr(cml.spawn_materialize, "_axolotl_native_dtype_patched", False):
+        return
+
+    orig_rename = cml.rename_source_key
+    orig_spawn = cml.spawn_materialize
+
+    def _rename_source_key(
+        source_key, weight_renamings, weight_converters, *args, **kwargs
+    ):
+        renamed_key, source_pattern = orig_rename(
+            source_key, weight_renamings, weight_converters, *args, **kwargs
+        )
+        ours = source_pattern is not None and source_pattern in _native_dtype_patterns(
+            weight_converters
+        )
+        _NATIVE_DTYPE_STATE.pattern = source_pattern if ours else None
+        return renamed_key, source_pattern
+
+    def _spawn_materialize(
+        thread_pool, tensor, device=None, dtype=None, *args, **kwargs
+    ):
+        pattern = getattr(_NATIVE_DTYPE_STATE, "pattern", None)
+        _NATIVE_DTYPE_STATE.pattern = None
+        if (
+            dtype is not None
+            and pattern is not None
+            and (not pattern.endswith(".weight") or _is_quantized_source(tensor))
+        ):
+            dtype = None
+        return orig_spawn(thread_pool, tensor, device, dtype, *args, **kwargs)
+
+    _spawn_materialize._axolotl_native_dtype_patched = True  # type: ignore[attr-defined]
+    cml.rename_source_key = _rename_source_key
+    cml.spawn_materialize = _spawn_materialize
+
+
 class Nvfp4ExpertsDeserialize:
     """ConversionOps that fuses per-expert NVFP4 tensors into a single NVFP4Tensor.
 
@@ -224,7 +290,11 @@ class Nvfp4ExpertsDeserialize:
 
     The op attaches the fused NVFP4Tensor to the module in-place and returns ``{}``
     so the loader does not try to materialize the original meta-parameter names.
+    ``names`` maps gate/up/down to the checkpoint's proj names (see :func:`routed_proj_names`).
     """
+
+    def __init__(self, names: dict[str, str] | None = None):
+        self.names = names or routed_proj_names(None)
 
     def convert(
         self,
@@ -271,9 +341,9 @@ class Nvfp4ExpertsDeserialize:
                 f"input_dict keys: {list(input_dict.keys())}"
             )
 
-        # spawn_materialize casts all checkpoint tensors to the skeleton dtype (bf16) before
-        # the converter sees them. uint8 qdata (0-255) and float8_e4m3fn scales both roundtrip
-        # exactly through bf16, so recast back to the raw dtypes NVFP4Tensor needs.
+        # Sources arrive at native dtype (patch_conversion_loader_native_dtype); a caller that
+        # passes skeleton-dtype (bf16) tensors still works, since uint8 qdata (0-255) and
+        # float8_e4m3fn scales both roundtrip exactly through bf16.
         def _recast_weight(t: torch.Tensor) -> torch.Tensor:
             if t.dtype != torch.uint8:
                 return t.to(torch.int32).to(torch.uint8)
@@ -284,7 +354,8 @@ class Nvfp4ExpertsDeserialize:
                 return t.to(torch.float8_e4m3fn)
             return t
 
-        def _proj_parts(proj_name: str) -> dict:
+        def _proj_parts(proj: str) -> dict:
+            proj_name = self.names[proj]
             return {
                 "qd": [_recast_weight(t) for t in _find(f"{proj_name}.weight")],
                 "sc": [_recast_scale(t) for t in _find(f"{proj_name}.weight_scale")],
@@ -383,8 +454,7 @@ class Nvfp4LinearDequantize:
             weight = torch.empty(shape, dtype=torch.bfloat16, device="meta")
         elif is_nvfp4:
             NVFP4Tensor = _nvfp4_cls()
-            # spawn_materialize casts checkpoint tensors to the skeleton dtype (bf16); recast the
-            # raw uint8 qdata / e4m3 scale back (both roundtrip exactly through bf16).
+            # bf16 inputs (skeleton dtype) roundtrip exactly for uint8 qdata / e4m3 scale
             qdata = w if w.dtype == torch.uint8 else w.to(torch.int32).to(torch.uint8)
             sc = _one(".weight_scale")
             scale = (
@@ -397,14 +467,20 @@ class Nvfp4LinearDequantize:
                 qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts
             ).dequantize(torch.bfloat16)
         elif is_fp8:
-            scale = _one(".weight_scale").to(torch.float32).reshape(-1)
-            # per-tensor (scalar) or per-row scales both broadcast over the last dim
-            scale = scale if scale.numel() == 1 else scale.view(-1, 1)
-            weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
+            scale = _one(".weight_scale").to(torch.float32)
+            if scale.ndim == 4:  # modelopt FP8_PB_WO block scale: [R/b, 1, C/b, 1]
+                from axolotl.kernels.quantize import dequantize_fp8
+
+                weight = dequantize_fp8(w, scale[:, 0, :, 0], torch.float32)
+                weight = weight.to(torch.bfloat16)
+            else:
+                scale = scale.reshape(-1)
+                # per-tensor (scalar) or per-row scales both broadcast over the last dim
+                scale = scale if scale.numel() == 1 else scale.view(-1, 1)
+                weight = (w.to(torch.float32) * scale).to(torch.bfloat16)
         else:
-            # The loader casts sources to the skeleton dtype before we see them, so a packed
-            # weight is only detectable by shape; a scaleless fp8 one only when that cast is
-            # bypassed (rank0-only loading). Both would otherwise load as garbage.
+            # A packed (uint8) or scaleless fp8 weight would otherwise load as garbage; the
+            # shape check also covers callers that pass skeleton-dtype (bf16) tensors.
             expected = getattr(module, param_name, None)
             if (
                 expected is not None
@@ -432,6 +508,11 @@ class Nvfp4LinearDequantize:
         from transformers.core_model_loading import _IdentityOp
 
         return _IdentityOp()
+
+
+def _is_nvfp4_converter(conv) -> bool:
+    ours = (Nvfp4ExpertsDeserialize, Nvfp4LinearDequantize)
+    return any(isinstance(op, ours) for op in (getattr(conv, "operations", None) or []))
 
 
 def _nvfp4_linear_dequant_converter(target_weight: str):
@@ -467,6 +548,13 @@ def nonrouted_dequant_converters(nonrouted_suffixes: list[str]) -> list:
     ]
 
 
+def routed_proj_names(routed_projs: list[str] | None) -> dict[str, str]:
+    """Checkpoint proj name of each fused role: ``*_proj``, or Mistral-native ``w1/w3/w2``."""
+    if routed_projs and set(routed_projs) <= {"w1", "w2", "w3"}:
+        return {"gate_proj": "w1", "up_proj": "w3", "down_proj": "w2"}
+    return {p: p for p in ("gate_proj", "up_proj", "down_proj")}
+
+
 def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> list:
     """The two WeightConverter instances for NVFP4 routed experts.
 
@@ -474,8 +562,10 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
     ``routed_projs`` has no gate, the up converter targets ``experts.up_proj`` instead."""
     from transformers.core_model_loading import WeightConverter
 
-    op = Nvfp4ExpertsDeserialize()
-    nongated = routed_projs is not None and "gate_proj" not in set(routed_projs)
+    names = routed_proj_names(routed_projs)
+    gate, up, down = names["gate_proj"], names["up_proj"], names["down_proj"]
+    op = Nvfp4ExpertsDeserialize(names)
+    nongated = routed_projs is not None and gate not in set(routed_projs)
 
     # Source patterns MUST be ordered longest-suffix-first. transformers compiles them into a
     # single ``(?P<g0>...)|(?P<g1>...)`` alternation and resolves a key with ``re.search`` +
@@ -486,9 +576,9 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
     if nongated:
         up_converter = WeightConverter(
             source_patterns=[
-                "experts.*.up_proj.weight_scale_2",
-                "experts.*.up_proj.weight_scale",
-                "experts.*.up_proj.weight",
+                f"experts.*.{up}.weight_scale_2",
+                f"experts.*.{up}.weight_scale",
+                f"experts.*.{up}.weight",
             ],
             target_patterns="experts.up_proj",
             operations=[op],
@@ -498,12 +588,12 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
             source_patterns=[
                 # gate and up each ship their own weight_scale_2 scalar; claim BOTH so neither lands
                 # as an UNEXPECTED key (the op reconciles them: equal in practice, folded if not).
-                "experts.*.gate_proj.weight_scale_2",
-                "experts.*.up_proj.weight_scale_2",
-                "experts.*.gate_proj.weight_scale",
-                "experts.*.up_proj.weight_scale",
-                "experts.*.gate_proj.weight",
-                "experts.*.up_proj.weight",
+                f"experts.*.{gate}.weight_scale_2",
+                f"experts.*.{up}.weight_scale_2",
+                f"experts.*.{gate}.weight_scale",
+                f"experts.*.{up}.weight_scale",
+                f"experts.*.{gate}.weight",
+                f"experts.*.{up}.weight",
             ],
             target_patterns="experts.gate_up_proj",
             operations=[op],
@@ -511,9 +601,9 @@ def nvfp4_experts_weight_converters(routed_projs: list[str] | None = None) -> li
 
     down_converter = WeightConverter(
         source_patterns=[
-            "experts.*.down_proj.weight_scale_2",
-            "experts.*.down_proj.weight_scale",
-            "experts.*.down_proj.weight",
+            f"experts.*.{down}.weight_scale_2",
+            f"experts.*.{down}.weight_scale",
+            f"experts.*.{down}.weight",
         ],
         target_patterns="experts.down_proj",
         operations=[op],
@@ -539,6 +629,7 @@ def register_nvfp4_expert_converters(
     Idempotent: our converters are filtered out of the preserved set on re-entry.
     """
     from transformers.conversion_mapping import get_checkpoint_conversion_mapping
+    from transformers.core_model_loading import WeightConverter
 
     from axolotl.utils.weight_conversions import register_weight_conversions
 
@@ -549,23 +640,23 @@ def register_nvfp4_expert_converters(
         return
 
     def _targets_experts(conv) -> bool:
+        # renamings (e.g. `.experts.` -> `.mlp.experts.`) must survive; only fusions fight ours
+        if not isinstance(conv, WeightConverter):
+            return False
         tp = getattr(conv, "target_patterns", None) or []
         if isinstance(tp, str):
             tp = [tp]
         return any("experts." in t for t in tp)
 
-    def _is_ours(conv) -> bool:
-        ours = (Nvfp4ExpertsDeserialize, Nvfp4LinearDequantize)
-        return any(
-            isinstance(op, ours) for op in (getattr(conv, "operations", None) or [])
-        )
-
     # The direct-expert-load fast path (include_routed=False) needs the stock bf16 expert-fusion
     # converters gone, so keep only non-expert entries and replace rather than merge.
     existing = get_checkpoint_conversion_mapping(model_type) or []
-    keep = [c for c in existing if not _targets_experts(c) and not _is_ours(c)]
+    keep = [
+        c for c in existing if not _targets_experts(c) and not _is_nvfp4_converter(c)
+    ]
     converters = keep + converters
     register_weight_conversions(model_type, converters, replace_existing=True)
+    patch_conversion_loader_native_dtype()
 
     LOG.info(
         "Registered %s NVFP4 WeightConverters (%d) in transformers conversion_mapping",

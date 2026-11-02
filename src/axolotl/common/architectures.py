@@ -18,6 +18,7 @@ MOE_ARCH_BLOCK = {
     "deepseek_v2": "DeepseekV2MoE",
     "deepseek_v3": "DeepseekV3MoE",
     "mistral4": "Mistral4MoE",
+    "mistral_large4_text": "MistralLarge4TextMoE",
     "gpt_oss": "GptOssDecoderLayer",
     "lfm2_moe": "Lfm2MoeSparseMoeBlock",
     "afmoe": "AfmoeMoE",

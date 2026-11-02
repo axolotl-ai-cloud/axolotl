@@ -1,4 +1,4 @@
-"""Unified grouped NVFP4 MoE forward for DeepSeek-V4 experts (config-gated, dsv4_fp4_grouped_mode).
+"""Unified grouped NVFP4 MoE forward for DeepSeek-V4 experts (config-gated, moe_grouped_mode).
 
 Contiguous-grouped: tokens sorted by expert, padded per-expert to TILE; ONE grouped gate_up GEMM
 -> clamped-SwiGLU -> ONE grouped down GEMM, with GPU-vectorized routing/pack/scatter (no per-expert
@@ -8,7 +8,7 @@ Python loop). The base GEMM auto-dispatches to the best fp4 path:
 Marlin W4A16 (bf16 activations, bit-correct) is preferred on sm120: ~1.79x faster than CUTLASS and
 no activation-quant error. See marlin_w4a16/.
 
-OFF unless cfg.dsv4_fp4_grouped_mode is set; existing fused-Triton/eager paths untouched.
+OFF unless cfg.moe_grouped_mode is set; existing fused-Triton/eager paths untouched.
 Bench (RTX PRO 6000, H=4096 I=2048 top6, FORWARD): vs chunked-dequant E=32 1.6-1.9x, E=256
 3.5-3.7x (single-launch grouped vs chunked's per-chunk loop).
 

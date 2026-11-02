@@ -96,6 +96,26 @@ def dequantize_expert_slice(w: torch.Tensor, e: int) -> torch.Tensor:
     return sliced.dequantize().squeeze(0)
 
 
+def dequantize_expert_range(w: torch.Tensor, e0: int, e1: int) -> torch.Tensor:
+    """Dense ``w[e0:e1]`` of an ``[E, dim1, dim2]`` stack, dequantizing only that range."""
+    if not is_nvfp4_param(w):
+        return w[e0:e1]
+    assert not getattr(w, "is_swizzled_scales", False), (
+        "swizzled NVFP4 scales unsupported (our loaders emit row-major)"
+    )
+    pts = w.per_tensor_scale
+    if pts is not None and pts.numel() > 1:
+        pts = pts[e0:e1]
+    sliced = type(w)(
+        w.qdata[e0:e1],
+        w.scale[e0:e1],
+        w.block_size,
+        w.orig_dtype,
+        per_tensor_scale=pts,
+    )
+    return dequantize_expert_weight(sliced)
+
+
 def resolve_gated_activation(config) -> str:
     """Canonical activation name from an HF text config.
 

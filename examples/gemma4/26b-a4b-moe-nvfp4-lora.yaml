@@ -1,4 +1,14 @@
-# Gemma-4-26B-A4B MoE LoRA on an NVFP4 (modelopt) checkpoint via ScatterMoE. Single GPU (sm120).
+# Gemma-4-26B-A4B MoE LoRA on an NVFP4 (modelopt) checkpoint — the throughput-optimized recipe.
+# sm120 (RTX PRO 6000), 4k seq, experts-only + attn LoRA r=16. ~2350 tok/s / ~24 GiB on one GPU.
+#
+# The two levers that matter most here:
+#   1. attn_implementation: flash_attention_2 + gemma4_hybrid_attn_impl: true
+#        FA2 (via the `kernels` lib — no flash-attn source build) on the sliding-window layers +
+#        SDPA on the global layers. ~2x over plain sdpa, which otherwise computes full attention
+#        over the packed 4k sequence and dominates runtime.
+#   2. moe_grouped_mode (auto -> nvfp4 for this checkpoint)
+#        Routes the NVFP4 experts through the fused 4-bit-read grouped GEMM (Marlin on sm120,
+#        DeepGEMM on sm90/sm100) instead of the slower per-expert path.
 base_model: nvidia/Gemma-4-26B-A4B-NVFP4
 
 plugins:
@@ -8,7 +18,6 @@ plugins:
 use_kernels: true
 use_scattermoe: true
 experts_implementation: scattermoe
-dsv4_fp4_grouped_mode: nvfp4
 liger_layer_norm: true
 liger_rope: true
 liger_rms_norm: true

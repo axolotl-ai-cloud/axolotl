@@ -171,6 +171,7 @@ class _Fp8Entry(NamedTuple):
 _FP8_CACHE: dict = {}
 
 
+# TODO(nano): verify on B200 that FSDP2 unshard re-allocation cannot hand a same-shape layer an earlier layer's data_ptr (stale fp8 copy).
 def _cache_key(base_weight) -> tuple:
     qdata = base_weight.qdata
     return (qdata.data_ptr(), tuple(qdata.shape), qdata.device.index)

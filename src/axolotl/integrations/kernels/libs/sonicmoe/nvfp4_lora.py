@@ -31,6 +31,8 @@ from typing import Optional
 import torch
 
 from .nvfp4 import (
+    _grouped_gemm,
+    dequantize_expert_range,
     dequantize_expert_slice,
     dequantize_expert_weight,
     gated_activation,
@@ -40,6 +42,8 @@ from .nvfp4 import (
 )
 
 _MERGE_AWARE_ENABLED = False
+# fp32 elements of W_eff snapped per pass; bounds the transient to ~1 GiB per buffer
+_MERGE_AWARE_CHUNK_NUMEL = 1 << 28
 
 
 def set_merge_aware_enabled(enabled: bool) -> None:
@@ -85,6 +89,89 @@ def _merge_aware_wfq(
     from .nvfp4_quant import fake_quant_nvfp4_dispatch
 
     return fake_quant_nvfp4_dispatch(w_eff, pts_flat, inplace=True)
+
+
+def _merge_aware_chunks(w: torch.Tensor, expert_offsets: torch.Tensor):
+    """``(e0, e1, row_start, row_end)`` expert ranges holding at least one token."""
+    E, dim1, dim2 = w.shape
+    step = max(1, _MERGE_AWARE_CHUNK_NUMEL // (dim1 * dim2))
+    offs = expert_offsets.tolist()
+    for e0 in range(0, E, step):
+        e1 = min(E, e0 + step)
+        if offs[e1] > offs[e0]:
+            yield e0, e1, offs[e0], offs[e1]
+
+
+def _chunk_lora(lora_A, lora_B, E, e0, e1):
+    """Rank-major ``(lora_A, lora_B)`` of experts ``e0:e1``."""
+    r = lora_A.shape[0] // E
+    dim1 = lora_B.shape[0]
+    B = lora_B.reshape(dim1, r, E)[:, :, e0:e1].reshape(dim1, r * (e1 - e0))
+    return lora_A[e0 * r : e1 * r], B
+
+
+def _fused_snap_supported(w) -> bool:
+    import os
+
+    if not (is_nvfp4_param(w) and w.qdata.is_cuda):
+        return False
+    if os.environ.get("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL") == "0":
+        return False
+    if getattr(w, "is_swizzled_scales", False):
+        return False
+    from .triton_nvfp4 import triton_available
+
+    return triton_available() and w.qdata.is_contiguous() and w.scale.is_contiguous()
+
+
+def _snapped_chunk(w, lora_A, lora_B, scaling, pts, e0, e1):
+    if _fused_snap_supported(w):
+        from .triton_nvfp4 import merge_aware_snap_triton
+
+        return merge_aware_snap_triton(w, lora_A, lora_B, scaling, pts, e0, e1)
+    A, B = _chunk_lora(lora_A, lora_B, w.shape[0], e0, e1)
+    if pts is not None and pts.numel() > 1:
+        pts = pts.reshape(-1)[e0:e1]
+    return _merge_aware_wfq(dequantize_expert_range(w, e0, e1), A, B, scaling, pts)
+
+
+def _merge_aware_grouped_forward(x, w, expert_offsets, lora_A, lora_B, scaling, pts):
+    """``x_e @ Q(W_eff_e)^T`` with W_eff snapped a few experts at a time."""
+    out = x.new_empty((x.shape[0], w.shape[1]))
+    for e0, e1, start, end in _merge_aware_chunks(w, expert_offsets):
+        w_fq = _snapped_chunk(w, lora_A, lora_B, scaling, pts, e0, e1)
+        out[start:end] = _grouped_gemm(
+            x[start:end], w_fq, expert_offsets[e0 + 1 : e1 + 1] - start, backend="torch"
+        )
+    return out
+
+
+def _merge_aware_grouped_backward(
+    grad, x, expert_offsets, w, lora_A, lora_B, scaling, pts
+):
+    """STE grads of ``_merge_aware_grouped_forward``, re-snapping each chunk
+    instead of keeping every expert's snapped weight alive from the forward."""
+    E, dim1, _ = w.shape
+    r = lora_A.shape[0] // E
+    dx = torch.zeros_like(x)
+    dA = torch.zeros_like(lora_A)
+    dB = torch.zeros_like(lora_B)
+    dB_3d = dB.view(dim1, r, E)
+    for e0, e1, start, end in _merge_aware_chunks(w, expert_offsets):
+        A, B = _chunk_lora(lora_A, lora_B, E, e0, e1)
+        w_fq = _snapped_chunk(w, lora_A, lora_B, scaling, pts, e0, e1)
+        dx[start:end], dA[e0 * r : e1 * r], dB_c = _lora_backward_per_group(
+            grad[start:end],
+            x[start:end],
+            expert_offsets[e0 : e1 + 1] - start,
+            A,
+            B,
+            w_fq,
+            scaling,
+            dx_via_weight_only=True,
+        )
+        dB_3d[:, :, e0:e1] = dB_c.view(dim1, r, e1 - e0)
+    return dx, dA, dB
 
 
 def _use_grouped_mm(x: torch.Tensor) -> bool:
@@ -293,25 +380,19 @@ class GroupedUpProjLoRA(torch.autograd.Function):
         ma_pts: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         E, dim1, dim2 = w1.shape
+        ctx.merge_aware = merge_aware
+        if merge_aware:
+            h = _merge_aware_grouped_forward(
+                x_grouped, w1, expert_offsets, lora_A1, lora_B1, scaling, ma_pts
+            )
+            ctx.save_for_backward(x_grouped, w1, expert_offsets, lora_A1, lora_B1)
+            ctx.scaling, ctx.ma_pts = scaling, ma_pts
+            return h
         B_c = (
             _b3d_contiguous(lora_B1, E, dim1)
             if _use_grouped_mm(x_grouped) and lora_A1.dtype == x_grouped.dtype
             else None
         )
-        ctx.merge_aware = merge_aware
-        if merge_aware:
-            w_dense = dequantize_expert_weight(w1)
-            w_fq = _merge_aware_wfq(w_dense, lora_A1, lora_B1, scaling, ma_pts)
-            h = grouped_up_gemm(
-                x_grouped, w_fq, expert_offsets, backend="torch", concat=concat
-            )
-            # the snapped weight is the actual GEMM operand, so dx flows through
-            # it (delta included); saving it replaces the dense base, same footprint
-            ctx.save_for_backward(
-                x_grouped, w_fq, expert_offsets, lora_A1, lora_B1, B_c
-            )
-            ctx.scaling = scaling
-            return h
         delta = _lora_delta_per_group(
             x_grouped, expert_offsets, lora_A1, lora_B1, scaling, E, dim1, dim2, B_c=B_c
         )
@@ -331,6 +412,19 @@ class GroupedUpProjLoRA(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_h: torch.Tensor):
+        if ctx.merge_aware:
+            x_grouped, w1, expert_offsets, lora_A1, lora_B1 = ctx.saved_tensors
+            dx, dA, dB = _merge_aware_grouped_backward(
+                grad_h.contiguous(),
+                x_grouped,
+                expert_offsets,
+                w1,
+                lora_A1,
+                lora_B1,
+                ctx.scaling,
+                ctx.ma_pts,
+            )
+            return dx, None, None, dA, dB, None, None, None, None, None
         x_grouped, w1, expert_offsets, lora_A1, lora_B1, B_c = ctx.saved_tensors
         dx, dA, dB = _lora_backward_per_group(
             grad_h.contiguous(),
@@ -341,7 +435,6 @@ class GroupedUpProjLoRA(torch.autograd.Function):
             w1,
             ctx.scaling,
             B_c=B_c,
-            dx_via_weight_only=ctx.merge_aware,
         )
         return dx, None, None, dA, dB, None, None, None, None, None
 
@@ -454,21 +547,19 @@ class GroupedDownProjLoRA(torch.autograd.Function):
         ma_pts: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         E, dim1, dim2 = w2.shape
+        ctx.merge_aware = merge_aware
+        if merge_aware:
+            y = _merge_aware_grouped_forward(
+                a_grouped, w2, expert_offsets, lora_A2, lora_B2, scaling, ma_pts
+            )
+            ctx.save_for_backward(a_grouped, w2, expert_offsets, lora_A2, lora_B2)
+            ctx.scaling, ctx.ma_pts = scaling, ma_pts
+            return y
         B_c = (
             _b3d_contiguous(lora_B2, E, dim1)
             if _use_grouped_mm(a_grouped) and lora_A2.dtype == a_grouped.dtype
             else None
         )
-        ctx.merge_aware = merge_aware
-        if merge_aware:
-            w_dense = dequantize_expert_weight(w2)
-            w_fq = _merge_aware_wfq(w_dense, lora_A2, lora_B2, scaling, ma_pts)
-            y = grouped_down_gemm(a_grouped, w_fq, expert_offsets, backend="torch")
-            ctx.save_for_backward(
-                a_grouped, w_fq, expert_offsets, lora_A2, lora_B2, B_c
-            )
-            ctx.scaling = scaling
-            return y
         delta = _lora_delta_per_group(
             a_grouped, expert_offsets, lora_A2, lora_B2, scaling, E, dim1, dim2, B_c=B_c
         )
@@ -486,6 +577,19 @@ class GroupedDownProjLoRA(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_y: torch.Tensor):
+        if ctx.merge_aware:
+            a_grouped, w2, expert_offsets, lora_A2, lora_B2 = ctx.saved_tensors
+            da, dA, dB = _merge_aware_grouped_backward(
+                grad_y.contiguous(),
+                a_grouped,
+                expert_offsets,
+                w2,
+                lora_A2,
+                lora_B2,
+                ctx.scaling,
+                ctx.ma_pts,
+            )
+            return da, None, None, dA, dB, None, None, None, None
         a_grouped, w2, expert_offsets, lora_A2, lora_B2, B_c = ctx.saved_tensors
         da, dA, dB = _lora_backward_per_group(
             grad_y.contiguous(),
@@ -496,7 +600,6 @@ class GroupedDownProjLoRA(torch.autograd.Function):
             w2,
             ctx.scaling,
             B_c=B_c,
-            dx_via_weight_only=ctx.merge_aware,
         )
         return da, None, None, dA, dB, None, None, None, None
 
@@ -780,8 +883,9 @@ def grouped_moe_reference_forward(
     ma_pts1 = w1.per_tensor_scale if ma1 else None  # type: ignore[attr-defined]
     ma_pts2 = w2.per_tensor_scale if ma2 else None  # type: ignore[attr-defined]
     if backend == "dequant" or ((ma1 or ma2) and backend == "fp4_cute"):
-        w1 = dequantize_expert_weight(w1)
-        w2 = dequantize_expert_weight(w2)
+        # merge-aware weights stay packed and dequantize chunk by chunk
+        w1 = w1 if ma1 else dequantize_expert_weight(w1)
+        w2 = w2 if ma2 else dequantize_expert_weight(w2)
         backend = "torch"
     elif backend == "fp4_cute":
         from .fp4_cute import fp4_cute_available
@@ -883,9 +987,9 @@ def grouped_moe_merge_aware_ep_forward(
     y_grouped = grouped_expert_mlp_lora(
         x_grouped,
         expert_offsets,
-        dequantize_expert_weight(w1),
+        w1 if merge_aware1 else dequantize_expert_weight(w1),
         b1,
-        dequantize_expert_weight(w2),
+        w2 if merge_aware2 else dequantize_expert_weight(w2),
         b2,
         lora1,
         lora2,

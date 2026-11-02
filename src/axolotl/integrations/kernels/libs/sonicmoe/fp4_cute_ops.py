@@ -83,6 +83,7 @@ class _EngineEntry(NamedTuple):
 _ENGINE_CACHE: dict = {}
 
 
+# TODO(nano): verify on B200 that FSDP2 unshard re-allocation cannot hand a same-shape layer an earlier layer's data_ptr (stale engine).
 def _engine_key(qdata: torch.Tensor) -> tuple:
     return (qdata.data_ptr(), tuple(qdata.shape), qdata.device.index)
 

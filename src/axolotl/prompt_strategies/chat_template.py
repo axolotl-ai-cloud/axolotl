@@ -16,7 +16,7 @@ from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnaly
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.prompters import IGNORE_TOKEN_ID, Prompter
 from axolotl.utils.chat_templates import get_chat_template_from_config
-from axolotl.utils.dict import remove_none_values
+from axolotl.utils.dict import DictDefault, remove_none_values
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
 
@@ -1622,7 +1622,10 @@ class StrategyLoader:
         prompter_params = {
             "tokenizer": tokenizer,
             "chat_template": chat_template_string,
-            "chat_template_kwargs": cfg.get("chat_template_kwargs", {}),
+            # nested DictDefault breaks pydantic in mistral-common
+            "chat_template_kwargs": DictDefault(
+                cfg.get("chat_template_kwargs") or {}
+            ).to_dict(),
             "message_property_mappings": dataset_config.get(
                 "message_property_mappings", {}
             ),

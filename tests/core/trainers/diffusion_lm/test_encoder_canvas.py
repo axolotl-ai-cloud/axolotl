@@ -802,7 +802,7 @@ def test_gemma_native_trainer_evaluate_uses_diffusion_loss(tmp_path):
     assert torch.isfinite(torch.tensor(metrics["eval_loss"]))
 
 
-def test_flex_backend_raises_the_dynamo_recompile_budget(monkeypatch):
+def test_flex_backend_raises_the_dynamo_recompile_budget():
     import torch._dynamo
 
     from axolotl.core.trainers.diffusion_lm.attention import FLEX_RECOMPILE_LIMIT
@@ -810,11 +810,13 @@ def test_flex_backend_raises_the_dynamo_recompile_budget(monkeypatch):
         EncoderCanvasBackend,
     )
 
-    monkeypatch.setattr(torch._dynamo.config, "recompile_limit", 8)
-    EncoderCanvasBackend(32, 8, attention_backend="dense")
-    assert torch._dynamo.config.recompile_limit == 8
-    EncoderCanvasBackend(32, 8, attention_backend="flex_attention")
-    assert torch._dynamo.config.recompile_limit == FLEX_RECOMPILE_LIMIT
-    monkeypatch.setattr(torch._dynamo.config, "recompile_limit", 256)
-    EncoderCanvasBackend(32, 8, attention_backend="flex_attention")
-    assert torch._dynamo.config.recompile_limit == 256
+    config = torch._dynamo.config
+    # Not monkeypatch: from pytest 9.2 its undo deletes the key, which hides it.
+    with config.patch(recompile_limit=8):
+        EncoderCanvasBackend(32, 8, attention_backend="dense")
+        assert config.recompile_limit == 8
+        EncoderCanvasBackend(32, 8, attention_backend="flex_attention")
+        assert config.recompile_limit == FLEX_RECOMPILE_LIMIT
+        config.recompile_limit = 256
+        EncoderCanvasBackend(32, 8, attention_backend="flex_attention")
+        assert config.recompile_limit == 256

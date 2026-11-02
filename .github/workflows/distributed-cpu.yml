@@ -68,7 +68,7 @@ jobs:
           uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
           uv pip install --no-build-isolation -e '.[ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install pytest pytest-cov pytest-xdist
+          uv pip install pytest==9.1.1 pytest-cov pytest-xdist
       - name: Override with nightly HF packages
         if: inputs.nightly
         run: |

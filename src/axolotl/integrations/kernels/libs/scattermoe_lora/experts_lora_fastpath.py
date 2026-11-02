@@ -105,17 +105,9 @@ def patch_paramwrapper_fastpath() -> None:
         # a closure default that may differ from the one register_scattermoe_experts() populated, so
         # register into the one THIS module dispatches through.
         if not getattr(base, "_scattermoe_iface_ok", False):
-            _fn = type(base).forward
-            _cells = dict(
-                zip(_fn.__code__.co_freevars, _fn.__closure__ or (), strict=False)
-            )
-            _ei = _cells.get("experts_interface")
-            if _ei is not None:
-                _ei = _ei.cell_contents
-                if "scattermoe" not in _ei:
-                    from .experts import scattermoe_experts_forward
+            from .experts import bound_experts_interface, register_scattermoe_interface
 
-                    _ei.register("scattermoe", scattermoe_experts_forward)
+            register_scattermoe_interface(bound_experts_interface(base))
             base._scattermoe_iface_ok = True
         try:
             return base(x, *args, **kwargs)

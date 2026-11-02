@@ -17,7 +17,7 @@ dependencies = [
     "huggingface_hub>=1.31.0",
     "peft==0.21.2",
     "tokenizers==0.23.3",
-    "transformers==5.20.1",
+    "transformers==5.22.0",
     "accelerate==1.15.0",
     "datasets==5.0.1",
     "trl==1.14.1",
@@ -75,7 +75,7 @@ dependencies = [
     # Telemetry
     "posthog==6.7.11",
 
-    "mistral-common==1.12.0",
+    "mistral-common==1.13.0",
 
     # Platform-specific (Linux only)
     "bitsandbytes==0.50.2 ; sys_platform != 'darwin'",
@@ -162,7 +162,7 @@ dev = [
 test = [
     "codecov",
     "codecov-cli",
-    "pytest",
+    "pytest==9.1.1",
     "pytest-cov",
     "pytest-retry",
     "pytest-sugar",

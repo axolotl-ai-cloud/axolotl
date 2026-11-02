@@ -322,7 +322,7 @@ def test_nvfp4_lora_parity(impl, monkeypatch):
                 "up_proj": _convert_smoe_lora(A1, B1, E, R, SC),
                 "down_proj": _convert_smoe_lora(A2, B2, E, R, SC),
             }
-            monkeypatch.setattr(sm_ex.RUNTIME, "fp4_grouped_mode", fp4_mode)
+            monkeypatch.setattr(sm_ex.RUNTIME, "grouped_mode", fp4_mode)
         else:
             experts._sonicmoe_lora = {
                 "up_proj": (A1, B1, SC),
@@ -344,3 +344,11 @@ def test_nvfp4_lora_parity(impl, monkeypatch):
     for i, (a, b) in enumerate(zip(gl_nv, gl_bf, strict=True)):
         assert _rel(a, b) < 6e-2, f"lora grad {i}"
         assert torch.isfinite(a).all()
+
+    if impl == "scattermoe":
+        # moe_swiglu_epilogue splits a gate/up pair; the relu2 experts must keep the unfused path
+        monkeypatch.setattr(sm_ex.RUNTIME, "swiglu_epilogue", True)
+        out_ep, dx_ep, gl_ep = run(up_nv, dn_nv, "nvfp4")
+        # same unfused path; only the bf16 atomic combine order differs between runs
+        for a, b in zip((out_ep, dx_ep, *gl_ep), (out_nv, dx_nv, *gl_nv), strict=True):
+            assert _rel(a, b) < 1e-2

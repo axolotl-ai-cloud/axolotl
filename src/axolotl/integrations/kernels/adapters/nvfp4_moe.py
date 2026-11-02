@@ -25,7 +25,7 @@ SUPPORTED_ROUTED_PROJS = frozenset({"gate_proj", "up_proj", "down_proj"})
 
 # model_types a specialized adapter owns (its own extra patches); the generic gate defers to them
 _SPECIALIZED_MOE_MODEL_TYPES = frozenset(
-    {"glm_moe_dsa", "qwen3_moe", "qwen3_next", "nemotron_h"}
+    {"glm_moe_dsa", "qwen3_moe", "qwen3_next", "nemotron_h", "mistral_large4"}
 )
 
 
@@ -54,6 +54,16 @@ class Nvfp4MoeAdapter(ModelAdapter):
     """
 
     name = "nvfp4_moe"
+    supported_routed_projs: tuple[frozenset, ...] = (SUPPORTED_ROUTED_PROJS,)
+
+    def _conversion_model_type(self, cfg) -> str:
+        """The model_type whose conversion mapping holds the expert converters."""
+        # normalize_config already resolved the model's type, so reuse it instead of re-reading.
+        return str(cfg.model_config_type)
+
+    def _registration_layout(self, cfg, layout: dict) -> dict:
+        """``layout`` with checkpoint names translated to what the converters match."""
+        return layout
 
     def _validate_supported_layout(self, cfg, model_type: str, layout: dict) -> None:
         """Reject checkpoints whose expert layout the routed NVFP4 converter cannot fuse.
@@ -69,7 +79,7 @@ class Nvfp4MoeAdapter(ModelAdapter):
             feature="sonicmoe/scattermoe NVFP4 experts",
         )
         projs = set(layout.get("routed_projs", []))
-        if projs and not projs <= SUPPORTED_ROUTED_PROJS:
+        if projs and not any(projs <= ok for ok in self.supported_routed_projs):
             raise ValueError(
                 f"{self.name}: unsupported routed NVFP4 expert layout {sorted(projs)} for "
                 f"model_type={model_type}. The routed NVFP4 converter currently fuses only "
@@ -91,9 +101,7 @@ class Nvfp4MoeAdapter(ModelAdapter):
             register_nvfp4_converters_for_layout,
         )
 
-        # transformers looks the conversion mapping up under the model's type; normalize_config
-        # already resolved it into cfg.model_config_type, so reuse that instead of re-reading.
-        model_type = str(cfg.model_config_type)
+        model_type = self._conversion_model_type(cfg)
 
         # FSDP2 cpu_ram_efficient_loading materializes meta receive-buffers via zeros_like/empty_like.
         patch_nvfp4_tensor_meta_ops()
@@ -137,6 +145,7 @@ class Nvfp4MoeAdapter(ModelAdapter):
             and layout["routed_present"]
         )
         self._routed_projs = layout.get("routed_projs", [])
+        layout = self._registration_layout(cfg, layout)
         if self._direct_expert_load:
             reg_layout = dict(layout)
             reg_layout["routed_present"] = (

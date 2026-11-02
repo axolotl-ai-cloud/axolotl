@@ -7,7 +7,7 @@ python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expec
 
 bash ./cicd/prepare_hf_cache.sh
 
-env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=4, trust_remote_code=True)"
 
 TESTMON_BASELINE_DIR="/workspace/data/testmon/${BASE_TAG:?}/single-gpu"
 TESTMON_DIR="/workspace/axolotl/.testmon"

@@ -396,3 +396,86 @@ def test_source_pattern_alternation_disambiguates_scales():
         assert _resolve(f"experts.3.{proj}.weight_scale_2").endswith(
             f"{proj}.weight_scale_2"
         )
+
+
+# ===========================================================================
+# fuse_nvfp4_experts scale reconcile: e4m3 overflow -> NaN regression
+# ===========================================================================
+
+
+def test_fuse_reconcile_saturated_scale_no_nan():
+    """Gate/up with DIFFERENT per-tensor scales and block scales saturated at the e4m3 max (448,
+    ubiquitous in real modelopt checkpoints) must fuse WITHOUT NaN: reconciling onto the max pts
+    folds every ratio <= 1 so scales only shrink. The old fold-up path multiplied 448 by ratio > 1
+    and torch's float->e4m3fn cast maps overflow to NaN (not saturation), silently poisoning the
+    fused scale."""
+    import torch
+
+    from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
+        fuse_nvfp4_experts,
+    )
+
+    torch.manual_seed(0)
+    E, N, K = 4, 32, 64
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+
+    def proj(pts_val, saturate):
+        qd = [
+            torch.randint(0, 256, (N, K // 2), dtype=torch.uint8, device=dev)
+            for _ in range(E)
+        ]
+        sc = []
+        for _ in range(E):
+            s = (torch.rand(N, K // 16, device=dev) * 400 + 8).to(torch.float8_e4m3fn)
+            if saturate:
+                s[0, 0] = 448.0  # the e4m3 ceiling, as real checkpoints ship
+            sc.append(s)
+        pts = [torch.tensor(pts_val, device=dev) for _ in range(E)]
+        return {"qd": qd, "sc": sc, "pts": pts}
+
+    # proj #1 (up) has the LARGER pts: the old code multiplied its 448 block scales by 2 -> NaN.
+    gate = proj(1e-4, saturate=True)
+    up = proj(2e-4, saturate=True)
+    fused = fuse_nvfp4_experts([gate, up])
+
+    assert torch.isfinite(fused.scale.float()).all(), "fused scale contains NaN/inf"
+    # reconcile is exact: dequant(fused slice) == dequant(original proj) up to e4m3 re-rounding
+    deq = fused.scale.float() * fused.per_tensor_scale.view(-1, 1, 1)
+    ref_gate = torch.stack(gate["sc"]).float() * 1e-4
+    ref_up = torch.stack(up["sc"]).float() * 2e-4
+    rel_g = (deq[:, :N] - ref_gate).abs().max() / ref_gate.abs().max()
+    rel_u = (deq[:, N:] - ref_up).abs().max() / ref_up.abs().max()
+    assert rel_g < 0.07, f"gate scale reconcile drift {rel_g:.4f}"
+    assert rel_u < 0.07, f"up scale reconcile drift {rel_u:.4f}"
+
+
+def test_fuse_reconcile_equal_pts_untouched():
+    """Equal per-tensor scales across projs -> block scales must pass through bit-identical."""
+    import torch
+
+    from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
+        fuse_nvfp4_experts,
+    )
+
+    torch.manual_seed(1)
+    E, N, K = 2, 16, 32
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    mk = lambda: {  # noqa: E731
+        "qd": [
+            torch.randint(0, 256, (N, K // 2), dtype=torch.uint8, device=dev)
+            for _ in range(E)
+        ],
+        "sc": [
+            (torch.rand(N, K // 16, device=dev) * 440).to(torch.float8_e4m3fn)
+            for _ in range(E)
+        ],
+        "pts": [torch.tensor(1e-4, device=dev) for _ in range(E)],
+    }
+    a, b = mk(), mk()
+    fused = fuse_nvfp4_experts([a, b])
+    assert torch.equal(
+        fused.scale[:, :N].view(torch.uint8), torch.stack(a["sc"]).view(torch.uint8)
+    )
+    assert torch.equal(
+        fused.scale[:, N:].view(torch.uint8), torch.stack(b["sc"]).view(torch.uint8)
+    )

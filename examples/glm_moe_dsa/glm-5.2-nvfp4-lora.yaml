@@ -7,7 +7,10 @@ plugins:
 use_kernels: true
 use_scattermoe: true
 experts_implementation: scattermoe
-dsv4_fp4_grouped_mode: nvfp4
+# moe_grouped_mode defaults to auto: nvfp4 here (fused 4-bit grouped MoE GEMM)
+# Fused DSA attention: MLA weight absorption + head-batched sparse-gather flash attn (fwd+bwd) +
+# fused Lightning-Indexer, replacing the dense [B,S,T]-mask sdpa path. Router kept fp32. Wins at
+# long context (S >> index_topk); a length-aware dispatcher uses the dense path below the crossover.
 use_glm_dsa_kernels: true
 strict: false
 
