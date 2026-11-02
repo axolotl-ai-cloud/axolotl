@@ -24,6 +24,7 @@ from axolotl.integrations.kernels.args import KernelsArgs  # noqa: E402
 from axolotl.integrations.kernels.libs.mistral_large4.lora_attn import (  # noqa: E402
     MLA_PROJ_SUFFIXES,
     _quant_kind,
+    is_mla_proj,
     patch_mistral_large4_attn_lora,
 )
 from axolotl.utils.dict import DictDefault  # noqa: E402
@@ -297,6 +298,8 @@ def test_attn_patch_skips_vision_tower():
         n for n, m in peft_model.named_modules() if hasattr(m, "_ml4_orig_forward")
     ]
     assert all(".language_model.layers." in n for n in patched)
+    # Pixtral names its attention differently today; the anchor still keeps a self_attn tower out
+    assert not is_mla_proj("model.vision_tower.transformer.layers.0.self_attn.q_proj")
 
 
 def test_quant_kind_bf16_and_fp8():
