@@ -245,6 +245,19 @@ def kernel_accepts(fn, name: str) -> bool | None:
         return None
 
 
+def kernelized_copy(module, fn):
+    """The copy of the hub-wrapped ``fn`` that ``kernelize`` binds for ``module``.
+
+    kernels >= 0.18 gives every ``use_kernelized_func`` instance its own copy and
+    routes the module's calls to it, leaving the global ``fn`` on its fallback;
+    older releases bind ``fn`` itself.
+    """
+    for copy in vars(module).get("_kernel_funcs", {}).values():
+        if type(copy) is type(fn):
+            return copy
+    return fn
+
+
 def require_seq_idx_kernels(mod, names, model_type: str, kernels_enabled: bool) -> None:
     """Raise unless every kernel in ``names`` honours ``seq_idx`` (or Hub kernels will)."""
     if kernels_enabled:

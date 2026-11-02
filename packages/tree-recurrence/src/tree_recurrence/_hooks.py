@@ -13,6 +13,7 @@ from __future__ import annotations
 import dis
 import functools
 import inspect
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -38,7 +39,7 @@ class Hook:
     def kernel_backed(self) -> bool:
         """Whether ``original`` runs a kernel rather than its torch reference (see
         ``dispatches_to_kernel``), checked again when it is rebound."""
-        original = self.original
+        original = _routed(self.original)
         bound = getattr(original, "__dict__", {}).get("forward")
         check = self._kernel_check
         if check is None or check[0] is not original or check[1] is not bound:
@@ -125,6 +126,15 @@ def _nonlocals(fn: Any) -> dict[str, Any]:
         return {}
 
 
+def _routed(fn: Any) -> Any:
+    """What a call to ``fn`` runs right now: kernels >= 0.18 routes a hub-wrapped
+    function to the calling module's own copy, the one ``kernelize`` binds."""
+    layer = sys.modules.get("kernels.layer.layer")
+    active = getattr(layer, "_ACTIVE_KERNEL_FUNCS", None)
+    routes = active.get() if active is not None else None
+    return routes.get(id(fn), fn) if routes else fn
+
+
 def dispatches_to_kernel(fn: Any) -> bool:
     """Whether transformers' kernel dispatcher ``fn`` runs a kernel.
 
@@ -139,6 +149,7 @@ def dispatches_to_kernel(fn: Any) -> bool:
     hook = _ours(fn)
     if hook is not None:
         return dispatches_to_kernel(hook.original)
+    fn = _routed(fn)
     if isinstance(fn, torch.nn.Module):
         bound = vars(fn).get("forward")
         if (
