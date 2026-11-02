@@ -35,15 +35,21 @@ jobs:
             core.setOutput('run', String(ageHours < 24));
             // The CPU baseline is cached per cell and commit, so refresh whenever main's head has none:
             // [skip ci] or path-filtered pushes, cancelled runs and evicted caches all leave gaps.
-            const caches = await github.paginate(github.rest.actions.getActionsCacheList, {
-              ...context.repo,
-              key: 'testmon-cpu-py',
-              ref: 'refs/heads/main',
-              per_page: 100,
-            });
-            const cached = caches.map((c) => c.key).filter((key) => key.endsWith(`-${commit.sha}`));
-            core.info(`testmon-cpu baselines for ${commit.sha}: ${cached.join(', ') || 'none'}`);
-            core.setOutput('cpu', String(cached.length === 0));
+            // A failed lookup refreshes anyway; failing this job would also skip single-gpu.
+            try {
+              const caches = await github.paginate(github.rest.actions.getActionsCacheList, {
+                ...context.repo,
+                key: 'testmon-cpu-py',
+                ref: 'refs/heads/main',
+                per_page: 100,
+              });
+              const cached = caches.map((c) => c.key).filter((key) => key.endsWith(`-${commit.sha}`));
+              core.info(`testmon-cpu baselines for ${commit.sha}: ${cached.join(', ') || 'none'}`);
+              core.setOutput('cpu', String(cached.length === 0));
+            } catch (error) {
+              core.warning(`testmon-cpu cache lookup failed, refreshing anyway: ${error.message}`);
+              core.setOutput('cpu', 'true');
+            }
 
   cpu:
     needs: main-changed
