@@ -19,9 +19,11 @@ else
   echo "testmon: no baseline at $TESTMON_BASELINE_DIR, running everything"
 fi
 
+# Every block runs even after a failure, so the baseline covers all of them
+failed=0
 tm() {
   local name=$1; shift
-  TESTMON_DATAFILE="$TESTMON_DIR/${name}.testmondata" pytest --testmon-forceselect --maxfail=10 "$@"
+  TESTMON_DATAFILE="$TESTMON_DIR/${name}.testmondata" pytest --testmon-forceselect --maxfail=10 "$@" || failed=1
 }
 
 # testmon only traces the pytest process; these files run the code under test in child processes
@@ -66,10 +68,13 @@ tm e2e -v --durations=10 -m "not slow and not gpu_blackwell" \
   /workspace/axolotl/tests/e2e/
 
 # shellcheck disable=SC2086
-pytest -v --durations=10 --maxfail=10 -m "not slow and not gpu_blackwell" $SUBPROCESS_TESTS
+pytest -v --durations=10 --maxfail=10 -m "not slow and not gpu_blackwell" $SUBPROCESS_TESTS || failed=1
 
+# Saved after test failures too; testmon re-runs a failing test's file until it passes
 if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
   mkdir -p "$TESTMON_BASELINE_DIR"
   cp -a "$TESTMON_DIR"/. "$TESTMON_BASELINE_DIR"/
   echo "testmon: saved baseline to $TESTMON_BASELINE_DIR"
 fi
+
+exit $failed
