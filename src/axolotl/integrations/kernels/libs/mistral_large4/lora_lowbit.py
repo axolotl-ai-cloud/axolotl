@@ -153,7 +153,5 @@ def lowbit_lora_forward(lora_layer, x, kind: str):
     W, b, _qs, A, B, s, lb, drop, mag = get_lora_parameters(lora_layer)
     if mag is not None:  # DoRA: let the generic path handle it
         return None
-    if not hasattr(W, "dequantize"):
-        return None
     x_drop = _apply_dropout(drop, x, lora_layer.training)  # None when no dropout
     return _LowbitLora.apply(x, x_drop, W, A, B, s if A is not None else 0.0, b, lb)
