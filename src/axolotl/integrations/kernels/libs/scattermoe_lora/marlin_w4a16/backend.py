@@ -19,7 +19,22 @@ from .prep import (
     marlin_make_workspace_new,
     marlin_moe_gemm,
     prepare_nvfp4_weight_for_marlin,
+    prepare_transposed_dx_weight,
 )
+
+
+def _marlin_dx_enabled() -> bool:
+    """Transposed-Marlin backward dX: dX runs as a marlin grouped GEMM on GPU-resident transposed
+    expert packs (fastest, ~doubles expert residency). Config knob ``moe_marlin_dx``
+    (RUNTIME.marlin_dx; configure_scattermoe_runtime falls back to env ``AXOLOTL_MARLIN_DX``).
+
+    A CPU-offload/streaming mode was tried and removed: the active pack must be on-GPU to run, so
+    offload's floor is still ~1 layer's pack set, and at multi-GiB per-layer packs the per-step
+    H2D never hides under backward compute on PCIe (3x slower than plain dequant dX)."""
+    from ..runtime import RUNTIME
+
+    return bool(RUNTIME.marlin_dx)
+
 
 # Must equal the marlin MoE block (BSM) so each padded tile maps to exactly one expert; 64
 # halves the thin-M padding vs CUTLASS's 128.
@@ -99,14 +114,19 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
     each step, so a module cache (not a per-tensor attr) avoids re-repacking 256 experts/forward.
     Falls back to a per-tensor attribute, then a one-shot compute.
 
-    On the first build (single-GPU only), saves original scales + per-tensor scale in cache under
-    key+"_bwd" for the fused backward dequant, then frees nv.qdata to drop the duplicate 4-bit copy.
-    Under FSDP the gathered param is fresh each step so weight_recipe() re-gathers it anyway; skips
-    the free when distributed is active."""
+    On the first build of a rank-resident weight (single GPU or DDP), saves original scales +
+    per-tensor scale in cache under key+"_bwd" for the fused backward dequant, then frees nv.qdata
+    to drop the duplicate 4-bit copy. Under FSDP/DeepSpeed the gathered param is fresh each step so
+    weight_recipe() re-gathers it anyway; skips the free there."""
     import torch.distributed as dist
 
-    _is_distributed = (
-        dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
+    from ..runtime import RUNTIME
+
+    _gathered = (
+        RUNTIME.experts_gathered
+        and dist.is_available()
+        and dist.is_initialized()
+        and dist.get_world_size() > 1
     )
     bwd_key = key + "_bwd"
     if cache is not None and key in cache:
@@ -127,18 +147,33 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
             torch.bfloat16,
             ext.gptq_marlin_repack,
         )
-        # Stash the full-layer marlin weight on the gathered tensor ONLY single-GPU. Under FSDP2 the
+        # Stash the full-layer marlin weight on the tensor ONLY when rank-resident. Under FSDP2 the
         # gathered param is a fresh tensor every forward AND every backward recompute, so this attr
         # never produces a cache hit — it only pins ~9 GiB/proj alive on each layer's gathered tensor,
         # and during the backward sweep FSDP keeps several layers' gathered tensors live at once →
         # the marlin weights accumulate across depth and OOM (bypassing the module-cache guard below).
-        if not _is_distributed:
+        if not _gathered:
             try:
                 nv._marlin_w4a16 = cached
             except (AttributeError, RuntimeError):
                 pass
-    if cache is not None and not _is_distributed:
-        # Single-GPU: persist the marlin weight and drop the duplicate 4-bit qdata.
+    dxt_key = key + "_dxT"
+    if (
+        cache is not None
+        and dxt_key not in cache
+        and nv.qdata.numel() > 0
+        and _marlin_dx_enabled()
+        and (not _gathered or _marlin_cache_under_fsdp(nv.qdata.device))
+        # marlin tiling: dxT output dim (fwd size_k) needs %64, reduction (fwd size_n) %16
+        and size_k % 64 == 0
+        and size_n % 16 == 0
+    ):
+        E, dev = nv.qdata.size(0), nv.qdata.device
+        cache[dxt_key] = prepare_transposed_dx_weight(
+            nv.qdata, nv.scale, _pt(nv, E, dev), size_k, size_n, ext.gptq_marlin_repack
+        )
+    if cache is not None and not _gathered:
+        # Rank-resident: persist the marlin weight and drop the duplicate 4-bit qdata.
         cache[key] = cached
         if qdata_fresh and bwd_key not in cache:
             E, dev = nv.qdata.size(0), nv.qdata.device
@@ -282,3 +317,75 @@ def marlin_bwd_data(base):
     if gu_qw is None or dn_qw is None:
         return None
     return (gu_qw[0], gu_bwd), (dn_qw[0], dn_bwd)
+
+
+def marlin_dx_data(base):
+    """(gu_dxT, dn_dxT) marlin weight tuples for the transposed backward-dX GEMM, or None if the
+    packs weren't built (env-disabled, no cache, FSDP without headroom, or odd dims)."""
+    cache = base[4] if len(base) > 4 else None
+    if cache is None:
+        return None
+    gu = cache.get("marlin_gate_up_dxT")
+    dn = cache.get("marlin_down_dxT")
+    if gu is None or dn is None:
+        return None
+    return gu, dn
+
+
+def marlin_dx_gemm(pack, g, m_indices, size_n, size_k, b_type_id, moe_block_size=64):
+    """Generic transposed-pack marlin dX: ``g [Mt, size_k] -> [Mt, size_n]`` on the contiguous-
+    grouped layout. ``pack`` = (qw, scales, global_scale_or_None)."""
+    ext = load_ext()
+    qw, sc, gs = pack
+    Mt = g.size(0)
+    si, ei, ntpp, tw = marlin_route(m_indices, Mt, g.device)
+    ws = marlin_make_workspace_new(torch.device(g.device.type, g.device.index or 0), 4)
+    return marlin_moe_gemm(
+        ext,
+        g,
+        qw,
+        sc,
+        gs,
+        ws,
+        si,
+        ei,
+        ntpp,
+        tw,
+        moe_block_size,
+        1,
+        False,
+        Mt,
+        size_n,
+        size_k,
+        b_type_id=b_type_id,
+    )
+
+
+def marlin_base_dx(base, dx_data, which, g, m_indices):
+    """Backward base-dX via the transposed-Marlin pack: one W4A16 grouped GEMM, no dequant.
+    which=0: dx = dgu @ Wgu  (g[Mt,2I] -> [Mt,H]); which=1: dh = d_dn @ Wdn  (g[Mt,H] -> [Mt,I]).
+    Same routing layout as the forward (identical m_indices/tile)."""
+    ext = load_ext()
+    _, _, (twoI, H, I), ws = base[0], base[1], base[2], base[3]  # noqa: E741
+    w = dx_data[which]
+    Mt = g.size(0)
+    si, ei, ntpp, tw = marlin_route(m_indices, Mt, g.device)
+    size_n, size_k = (H, twoI) if which == 0 else (I, H)
+    return marlin_moe_gemm(
+        ext,
+        g,
+        w[0],
+        w[1],
+        w[2],
+        ws,
+        si,
+        ei,
+        ntpp,
+        tw,
+        _BSM,
+        1,
+        False,
+        Mt,
+        size_n,
+        size_k,
+    )

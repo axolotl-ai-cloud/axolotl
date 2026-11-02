@@ -1,0 +1,85 @@
+# 1 x 8 B200: EP=8 over DeepEP (16 of the 128 experts per GPU); dense weights are replicated per GPU (dp_shard_size: 1).
+# SonicMoE keeps the NVFP4 experts packed and trains merge-aware LoRA, so the adapter survives the
+# NVFP4 merge (ordinary expert LoRA rounds away). The FP8 projections dequantize to bf16 at load.
+base_model: mistralai/Mistral-Large-4-1T-A52B-NVFP4
+# the repo ships no config.json yet; run from the axolotl root (or `axolotl fetch examples`)
+base_model_config: examples/mistral-large-4/config
+tokenizer_config: mistralai/Mistral-Large-4-1T-A52B-NVFP4
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+
+# exact hidden-state gradients; the defaults understate them ~15% here (204k vocab, softcapped logits)
+cut_cross_entropy_accum_e_fp32: true
+cut_cross_entropy_gradient_filtering: false
+
+use_kernels: true
+use_sonicmoe: true
+nvfp4_merge_aware: true
+strict: false
+
+expert_parallel_size: 8
+dp_shard_size: 1
+expert_parallel_backend: deep_ep
+
+# eager / sdpa only: the DSA indexer turns its top-k into an attention mask
+attn_implementation: sdpa
+
+tokenizer_use_mistral_common: true
+chat_template_kwargs:
+  reasoning_effort: high
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0
+output_dir: ./outputs/mistral-large-4-nvfp4-lora
+
+sequence_len: 2048
+sample_packing: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# bf16 MLA projections only: q_proj, o_proj and the shared/dense MLP are FP8 and not merge-exact (README tips)
+lora_target_modules: 'model.language_model.layers.[\d]+.self_attn.(kv_a_proj_with_mqa|kv_b_proj)'
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: true
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+logging_steps: 1
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: true
+  state_dict_type: FULL_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: MistralLarge4TextDecoderLayer
+  reshard_after_forward: true

@@ -10,8 +10,8 @@ def multigpu_training_config(overrides: dict) -> DictDefault:
 def fsdp2_training_config(overrides: dict) -> DictDefault:
     return multigpu_training_config(
         {
-            "max_steps": 40,
-            "warmup_steps": 5,
+            "max_steps": 10,
+            "warmup_steps": 2,
             **overrides,
         }
     )

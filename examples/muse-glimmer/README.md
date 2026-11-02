@@ -25,7 +25,7 @@ Let us know how it goes. Happy finetuning! 🚀
 ### Tips
 
 - Fused LoRA kernels are not available for this architecture.
-- We added custom Liger Kernel support for RMSNorm, the SwiGLU MLP, RoPE, and the vision tower's LayerNorms.
+- Liger Kernel supports RMSNorm, the SwiGLU MLP, RoPE, and fused linear cross entropy for this architecture.
 - Reasoning strength is set in the system prompt (`low` / `medium` / `high` / `xhigh`, defaulting to `high`). Keep it consistent between training and inference.
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 

@@ -1,27 +1,14 @@
 #!/bin/bash
 set -e
 
+export COVERAGE_CORE=sysmon
+
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
 set -o pipefail
-mkdir -p "${HF_HOME:?}/hub/"
-for i in 1 2 3; do
-  if curl --silent --show-error --fail -L \
-    https://axolotl-ci.b-cdn.net/hf-cache.tar.zst \
-    | tar -xpf - -C "${HF_HOME}/hub/" --use-compress-program unzstd --strip-components=1; then
-    echo "HF cache extracted successfully"
-    break
-  fi
-  if [ "$i" -eq 3 ]; then
-    echo "HF cache download failed after 3 attempts" >&2
-    exit 1
-  fi
-  echo "Attempt $i failed, cleaning up and retrying in 15s..."
-  rm -rf "${HF_HOME:?}/hub/"*
-  sleep 15
-done
+bash ./cicd/prepare_hf_cache.sh
 
-env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=4, trust_remote_code=True)"
 
 pytest -v --durations=10 -n1 --maxfail=10 -m gpu \
   /workspace/axolotl/tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \

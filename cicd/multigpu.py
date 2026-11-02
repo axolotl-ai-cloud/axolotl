@@ -11,6 +11,8 @@ import modal
 from jinja2 import select_autoescape
 from modal import App, Image
 
+from .deep_ep import DEEP_EP_WHEELS, deep_ep_volume, install_deep_ep
+
 cicd_path = pathlib.Path(__file__).parent.resolve()
 
 template_loader = jinja2.FileSystemLoader(searchpath=cicd_path)
@@ -47,10 +49,15 @@ temp_dir = tempfile.mkdtemp()
 with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
     f.write(dockerfile_contents)
 
-cicd_image = Image.from_dockerfile(
-    pathlib.Path(temp_dir) / "Dockerfile",
-    gpu="A10G",
-).env(df_args)
+cicd_image = (
+    Image.from_dockerfile(
+        pathlib.Path(temp_dir) / "Dockerfile",
+        gpu="A10G",
+    )
+    # cwd leads sys.path; from the image's checkout it shadows the cicd/ Modal mounts at /root
+    .workdir("/root")
+    .env(df_args)
+)
 
 app = App("Axolotl CI/CD", secrets=[])
 
@@ -59,7 +66,11 @@ hf_cache_volume = modal.Volume.from_name(
 )
 VOLUME_CONFIG = {
     "/workspace/data/huggingface-cache/hub": hf_cache_volume,
+    DEEP_EP_WHEELS: deep_ep_volume,
 }
+
+# only these suites run deep_ep tests
+DEEP_EP_SUITES = {"multigpu", "multigpu_selected"}
 
 N_GPUS = int(os.environ.get("N_GPUS", 2))
 GPU_TYPE = os.environ.get("GPU_TYPE", "H100")
@@ -155,6 +166,8 @@ def cicd_pytest():
         "gpu_slow_distributed": "bash ./cicd/gpu_slow.sh",
         "gpu_slow_four_rank": "bash ./cicd/gpu_slow.sh",
     }
+    if suite in DEEP_EP_SUITES and install_deep_ep(DEEP_EP_WHEELS):
+        deep_ep_volume.commit()
     run_cmd(scripts[suite], "/workspace/axolotl")
 
 

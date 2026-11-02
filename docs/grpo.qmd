@@ -330,6 +330,15 @@ CUDA_VISIBLE_DEVICES=1 axolotl train config.yaml         # GPU 1: training
 vLLM must be restarted between experiments — stale weight syncs corrupt server state. See [Restart Requirements](vllm_serving.qmd#sec-restart).
 :::
 
+### LoRA weight sync precision
+
+Without `vllm_lora_sync`, the adapter reaches vLLM merged into BF16 weights. At GRPO learning rates the BF16 cast drops most of the LoRA update: vLLM generates from a policy that kept about 24% of the update at `learning_rate: 1e-5` and about 2.5% at `1e-6` (Qwen3-1.7B-Base, rank-16 LoRA on all linear layers, step 100). The trainer logs `lora_merge/retained` at the first sync and every `trl.vllm_merge_check_interval` steps, and warns when less than half the update survives. Keep the update with one of these options:
+
+- `trl.vllm_lora_sync: true` with the async trainer (`use_data_producer` or `async_prefetch`) in server mode. vLLM then applies the adapter unmerged.
+- `lora_merge_aware: bf16` when weights must be merged: colocate mode, or the standard trainer without `use_data_producer` or `async_prefetch`. The trainer then optimizes the merged BF16 weights directly.
+
+See [Merged Sync Rounding](vllm_serving.qmd#sec-merge-rounding) for details and restrictions.
+
 
 ## Async Training Features
 
@@ -492,6 +501,7 @@ DeepSpeed ZeRO-3 requires `use_reentrant: true` for gradient checkpointing. This
 |---------|---------------|
 | vLLM GPU allocation | Dedicate one or more GPUs to vLLM; do not share with trainer GPUs |
 | Weight sync contention | Use `vllm_lora_sync: true` to avoid NCCL contention between training and vLLM |
+| Generation bottleneck | Add vLLM nodes; see [Multi-Node Serving](vllm_serving.qmd#sec-multi-node) |
 | FSDP + async | Use `async_prefetch: false` or rely on rank-0-only background generation |
 | DeepSpeed + gradient checkpoint | Must use `use_reentrant: true` |
 | OOM during scoring | Reduce `micro_batch_size` or `num_generations`. The logits tensor scales with `batch_size * vocab_size` |
@@ -582,6 +592,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `prefetch_depth` | int | `null` | Number of batches to prefetch ahead |
 | `vllm_sync_interval` | int | `null` | Sync LoRA weights to vLLM every N steps |
 | `vllm_lora_sync` | bool | `false` | Use filesystem LoRA sync instead of NCCL merge |
+| `vllm_merge_check_interval` | int | `50` | Log how much of the LoRA update survives merged weight sync every N steps; `0` disables |
 | `streaming_partial_batch` | bool | `null` | Score prompt groups incrementally |
 | `streaming_min_groups` | int | `null` | Minimum groups per streaming chunk |
 | `skip_zero_advantage_batches` | bool | `true` | Skip micro-batches with zero learning signal |

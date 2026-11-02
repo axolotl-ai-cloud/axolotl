@@ -46,15 +46,9 @@ class _NativeFp8Lora(torch.autograd.Function):
         fp8_linear = _fp8_linear()
         shape = x.shape
         x2 = x.reshape(-1, shape[-1])
-        # frozen base: native blockwise fp8 GEMM (activation quantized 1x128 inside)
-        out = fp8_linear(
-            x2,
-            qdata,
-            scale_inv,
-            block_size=list(block_size),
-            bias=bias,
-            output_dtype=x.dtype,
-        )
+        # frozen base: native blockwise fp8 GEMM (activation quantized 1x128 inside); the
+        # output takes the activation dtype
+        out = fp8_linear(x2, qdata, scale_inv, block_size=list(block_size), bias=bias)
         # fused LoRA update via addmm_ (avoids a [M,out] temp)
         xA = x2 @ A.t()
         out = out.addmm_(xA, B.t(), alpha=float(scaling))

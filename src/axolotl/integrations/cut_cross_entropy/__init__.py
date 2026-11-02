@@ -37,7 +37,7 @@ LOG = get_logger(__name__)
 
 _CCE_INSTALL_MESSAGE = (
     "Please install Axolotl's fork of cut_cross_entropy with transformers support using "
-    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.1.1"`'
+    '`pip uninstall -y cut-cross-entropy && pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@v0.2.1"`'
 )
 
 # logit transforms the generic (Llama) CCE forward drops, mapped to their no-op value
@@ -118,6 +118,10 @@ class CutCrossEntropyPlugin(BasePlugin):
                 "remote_model_id": cfg.base_model if cfg.trust_remote_code else None,
                 "accum_c_fp32": bool(cfg.cut_cross_entropy_accum_c_fp32),
             }
+            if cfg.cut_cross_entropy_accum_e_fp32:
+                patch_kwargs["accum_e_fp32"] = True
+            if cfg.cut_cross_entropy_gradient_filtering is False:
+                patch_kwargs["filter_eps"] = None
             if cfg.cut_cross_entropy_c_grad_chunk_size:
                 if "c_grad_chunk_size" not in inspect.signature(cce_patch).parameters:
                     raise ImportError(

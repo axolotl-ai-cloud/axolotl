@@ -54,10 +54,48 @@ def _resolve_repo_file(repo_id: str, filename: str) -> str:
     return hf_hub_download(repo_id, filename)
 
 
+_DEFAULT_INDEX = "model.safetensors.index.json"
+_CONSOLIDATED_INDEX = "consolidated.safetensors.index.json"
+
+
+def _repo_has_file(repo_id: str, filename: str) -> bool:
+    if os.path.isdir(repo_id):
+        return os.path.exists(os.path.join(repo_id, filename))
+    from huggingface_hub import file_exists, try_to_load_from_cache
+
+    if isinstance(try_to_load_from_cache(repo_id, filename), str):
+        return True
+    try:
+        return file_exists(repo_id, filename)
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
+def _index_filename(repo_id: str) -> str:
+    """The safetensors index transformers loads: config ``transformers_weights`` when it names
+    one (e.g. Mistral's ``consolidated.safetensors.index.json``), else the default."""
+    import json
+
+    name = None
+    try:
+        with open(_resolve_repo_file(repo_id, "config.json")) as f:
+            name = json.load(f).get("transformers_weights")
+    except Exception:  # pylint: disable=broad-except
+        pass
+    if isinstance(name, str) and name.endswith(".safetensors.index.json"):
+        return name
+    # Mistral-native repos without a config.json (config via base_model_config) ship only these
+    if not _repo_has_file(repo_id, _DEFAULT_INDEX) and _repo_has_file(
+        repo_id, _CONSOLIDATED_INDEX
+    ):
+        return _CONSOLIDATED_INDEX
+    return _DEFAULT_INDEX
+
+
 def _load_index(repo_id: str):
     import json
 
-    with open(_resolve_repo_file(repo_id, "model.safetensors.index.json")) as f:
+    with open(_resolve_repo_file(repo_id, _index_filename(repo_id))) as f:
         return json.load(f)["weight_map"]
 
 
@@ -74,8 +112,9 @@ def _local_shard_paths(repo_id: str) -> list[str] | None:
     only the hub metadata API can answer. A local snapshot dir always returns paths (a missing
     shard there is a broken checkpoint, and surfacing that beats a bogus hub lookup).
     """
+    index_name = _index_filename(repo_id)
     if os.path.isdir(repo_id):
-        if os.path.exists(os.path.join(repo_id, "model.safetensors.index.json")):
+        if os.path.exists(os.path.join(repo_id, index_name)):
             shards = sorted(set(_load_index(repo_id).values()))
         else:  # single-file checkpoint
             shards = ["model.safetensors"]
@@ -85,7 +124,7 @@ def _local_shard_paths(repo_id: str) -> list[str] | None:
 
     from huggingface_hub import try_to_load_from_cache
 
-    index = try_to_load_from_cache(repo_id, "model.safetensors.index.json")
+    index = try_to_load_from_cache(repo_id, index_name)
     if isinstance(index, str):
         with open(index) as f:
             shards = sorted(set(json.load(f)["weight_map"].values()))
@@ -122,9 +161,16 @@ def _safetensors_metadata(repo_id: str) -> dict[str, tuple[str, tuple[int, ...]]
             f"cache ({constants.HF_HUB_CACHE}), so its NVFP4 layout cannot be inspected. Download "
             "the checkpoint, or point base_model at a local snapshot directory."
         )
-    meta = HfApi().get_safetensors_metadata(repo_id)
+    api = HfApi()
+    if _index_filename(repo_id) == _DEFAULT_INDEX:
+        files = api.get_safetensors_metadata(repo_id).files_metadata.values()
+    else:  # get_safetensors_metadata only knows the default index name
+        files = [
+            api.parse_safetensors_file_metadata(repo_id, shard)
+            for shard in sorted(set(_load_index(repo_id).values()))
+        ]
     out = {}
-    for fmeta in meta.files_metadata.values():
+    for fmeta in files:
         for name, tinfo in fmeta.tensors.items():
             out[name] = (str(tinfo.dtype), tuple(tinfo.shape))
     return out

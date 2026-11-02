@@ -50,6 +50,12 @@ class VllmServeCliArgs:
             "help": "Number of data parallel workers to use for vLLM serving. This controls how many model replicas are used for parallel inference."
         },
     )
+    node_rank: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "Rank of this node when `vllm.nnodes > 1`. Node 0 serves the API."
+        },
+    )
     host: Optional[str] = field(
         default=None,  # nosec B104
         metadata={"help": "Host address to run the server on."},

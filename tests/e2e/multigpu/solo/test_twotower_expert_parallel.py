@@ -19,7 +19,7 @@ unsharded on its own GPU as the single-GPU reference and compares:
 * the routing of its own tokens, router by router, against the reference;
 * denoiser gradient checkpointing through the plugin's selective-checkpoint policy:
   backward never re-runs the router ``topk`` or the split host copy, and the gradients
-  equal the uncheckpointed EP step's;
+  equal an uncheckpointed EP step's on the same routing;
 * unequal per-rank document counts (the context tower runs once per prompt, and every
   MoE call is a collective): the ranks pad their context-tower calls to the same count.
 
@@ -50,6 +50,8 @@ from torch.utils._python_dispatch import TorchDispatchMode
 
 pytestmark = [
     pytest.mark.gpu,
+    # a cold Triton autotune of the scattermoe LoRA kernels takes minutes
+    pytest.mark.slow,
     pytest.mark.skipif(
         not torch.cuda.is_available() or torch.cuda.device_count() < 2,
         reason="needs two CUDA GPUs",
@@ -391,7 +393,6 @@ def _ep_checks(dtype, rank):
     with _routing(base, natural):
         logits, loss = _loss(peft_model, batch)
     loss.backward()
-    natural_grads = _synced_grads(peft_model, reference["grads"])
     out["routing"] = _routing_diff(natural, reference["routing"][rank])
     out["context_calls"] = len(
         next(v for k, v in natural.items() if k.startswith("context_tower."))
@@ -439,17 +440,34 @@ def _ep_checks(dtype, rank):
         dtype, rank, reference["adapter"], gradient_checkpointing=True
     )
     forward, backward = _OpCounter(), _OpCounter()
-    with forward:
+    checkpointed_routing: dict = {}
+    with forward, _routing(base, checkpointed_routing):
         logits, loss = _loss(peft_model, batch)
     with backward:
         loss.backward()
+    checkpointed_loss = loss.item()
     checkpointed = _synced_grads(peft_model, reference["grads"])
+    checkpointed_memory = _memory(peft_model)
+    del peft_model, base
+    torch.cuda.empty_cache()
+
+    _progress(rank, f"{dtype}: EP step on the checkpointed routing")
+    # The combine's index_add_ sums in atomic order, so two bf16 forwards differ in the
+    # last bits and flip near-tied top-6 choices: compare against the same routing.
+    peft_model, base, _ = _build_ep(
+        dtype, rank, reference["adapter"], gradient_checkpointing=False
+    )
+    with _routing(base, {}, replay=checkpointed_routing):
+        _, loss = _loss(peft_model, batch)
+    loss.backward()
     out["checkpointing"] = {
         "forward": dict(forward.counts),
         "backward": dict(backward.counts),
-        "loss_diff": abs(loss.item() - out["natural"]["loss"]),
-        "grads_vs_plain_ep": _grad_report(checkpointed, natural_grads),
-        "memory": _memory(peft_model),
+        "loss_diff": abs(checkpointed_loss - loss.item()),
+        "grads_vs_plain_ep": _grad_report(
+            checkpointed, _synced_grads(peft_model, reference["grads"])
+        ),
+        "memory": checkpointed_memory,
     }
     del peft_model, base
     torch.cuda.empty_cache()
@@ -598,8 +616,8 @@ def test_gradient_checkpointing_saves_routing(ep2_results, dtype):
             for name, (diff, rel) in ckpt["grads_vs_plain_ep"].items():
                 assert not (rel > 1e-2 and diff > 1e-4), (rank, name, diff, rel)
         else:
-            # two bf16 runs differ in the last bits (atomics), which flips a few
-            # near-tied top-6 choices: hold them to the parity tolerances
+            # same routing, but bf16 atomics still differ in the last bits: hold
+            # them to the parity tolerances
             assert ckpt["loss_diff"] <= LOGITS_TOLERANCE[dtype] * loss, ckpt
             for name, (diff, rel) in ckpt["grads_vs_plain_ep"].items():
                 assert not (rel > 0.1 and diff > 1e-2), (rank, name, diff, rel)

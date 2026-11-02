@@ -17,7 +17,11 @@ def _native_weight():
 
 def _ep_experts(weight):
     return SimpleNamespace(
-        gate_up_proj=weight, down_proj=weight, num_experts=2, num_experts_global=4
+        gate_up_proj=weight,
+        down_proj=weight,
+        num_experts=2,
+        num_experts_global=4,
+        training=True,
     )
 
 
@@ -62,12 +66,13 @@ def test_sonicmoe_ep_keeps_dense_sentinel_and_bucket_behavior(monkeypatch):
     experts.down_proj = torch.randn(2, 16, 16)
     received = {}
 
-    def cutlass(module, hidden_states, topk_idx, topk_weights):
+    def cutlass(module, hidden_states, topk_idx, topk_weights, pairs=None):
         received.update(
             module=module,
             hidden_states=hidden_states,
             topk_idx=topk_idx,
             topk_weights=topk_weights,
+            pairs=pairs,
         )
         return hidden_states
 
@@ -88,6 +93,7 @@ def test_sonicmoe_ep_keeps_dense_sentinel_and_bucket_behavior(monkeypatch):
     assert torch.all(received["topk_idx"][3:] == experts.num_experts)
     assert torch.equal(received["topk_weights"][:3], weights)
     assert torch.all(received["topk_weights"][3:] == 0)
+    assert received["pairs"] is None  # compaction is opt-in
 
 
 def test_sonicmoe_ep_native_empty_batch_preserves_raw_routing(monkeypatch):

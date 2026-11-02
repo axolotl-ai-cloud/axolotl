@@ -698,6 +698,48 @@ def test_fake_quant_triton_bitwise_vs_reference():
             )
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA + triton")
+@pytest.mark.parametrize("lora_dtype", [torch.bfloat16, torch.float32])
+@pytest.mark.parametrize("r", [3, 16, 24])
+def test_fused_merge_aware_snap_bitwise_vs_unfused(monkeypatch, lora_dtype, r):
+    """The one-kernel snap from packed NVFP4 must equal dequant -> W + s*B@A ->
+    fake-quant bit for bit, for padded ranks, ragged tiles and every pts form."""
+    pytest.importorskip("torchao")
+    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+    from axolotl.integrations.kernels.libs.sonicmoe import nvfp4_lora
+    from axolotl.integrations.kernels.libs.sonicmoe.triton_nvfp4 import (
+        merge_aware_snap_triton,
+        triton_available,
+    )
+
+    if not triton_available():
+        pytest.skip("triton unavailable")
+
+    torch.manual_seed(17)
+    E, N, K = 5, 80, 176  # tiles of 64 do not divide N or K
+    base = _make_nvfp4_base(E, N, K)
+    for orig_dtype in (torch.bfloat16, torch.float32):
+        for pts in (base.per_tensor_scale, base.per_tensor_scale[1].reshape(()), None):
+            w = NVFP4Tensor(
+                base.qdata.cuda(),
+                base.scale.cuda(),
+                16,
+                orig_dtype,
+                per_tensor_scale=None if pts is None else pts.cuda(),
+            )
+            A = (torch.randn(r * E, K, device="cuda") * 0.05).to(lora_dtype)
+            B = (torch.randn(N, r * E, device="cuda") * 0.05).to(lora_dtype)
+            ma_pts = w.per_tensor_scale
+            for e0, e1 in ((0, E), (1, 3), (4, 5)):
+                got = merge_aware_snap_triton(w, A, B, 1.75, ma_pts, e0, e1)
+                monkeypatch.setenv("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL", "0")
+                ref = nvfp4_lora._snapped_chunk(w, A, B, 1.75, ma_pts, e0, e1)
+                monkeypatch.delenv("AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL")
+                assert got.dtype == ref.dtype == orig_dtype
+                assert torch.equal(got, ref), (orig_dtype, pts is None, e0, e1)
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA + Triton required")
 @pytest.mark.parametrize("r", [3, 4, 8])
 def test_bf16_grouped_merge_aware_triton_matches_actual_expert_writer_after_update(

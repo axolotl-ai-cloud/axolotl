@@ -56,7 +56,7 @@ def test_c1_cutlass_nonunit_weight_scale_2_without_alt_backend_raises(monkeypatc
 
 
 def test_a4_nvfp4_lora_grouped_unavailable_raises(monkeypatch):
-    # A4: NVFP4 experts + LoRA select the grouped path (dsv4_fp4_grouped_mode set), but no fused
+    # A4: NVFP4 experts + LoRA select the grouped path (moe_grouped_mode set), but no fused
     # grouped backend resolves -> must hard-error instead of falling through to the SIGSEGV MX kernel.
     from axolotl.integrations.kernels.libs.scattermoe_lora import (
         experts as ex,
@@ -65,7 +65,7 @@ def test_a4_nvfp4_lora_grouped_unavailable_raises(monkeypatch):
 
     monkeypatch.setattr(ex, "is_nvfp4_param", lambda p: True)
     monkeypatch.setattr(gt, "grouped_fp4_available", lambda mode: False)
-    monkeypatch.setattr(ex.RUNTIME, "fp4_grouped_mode", "nvfp4")
+    monkeypatch.setattr(ex.RUNTIME, "grouped_mode", "nvfp4")
 
     E, H, topk, N = 4, 8, 2, 6
     self_ = _mock_experts(E)
@@ -78,12 +78,12 @@ def test_a4_nvfp4_lora_grouped_unavailable_raises(monkeypatch):
 
 
 def test_b2_nvfp4_lora_without_grouped_mode_raises_on_blackwell(monkeypatch):
-    # B2: NVFP4 experts + LoRA WITHOUT dsv4_fp4_grouped_mode would fall through to the legacy MX
+    # B2: NVFP4 experts + LoRA WITHOUT moe_grouped_mode would fall through to the legacy MX
     # kernel, which SIGSEGVs on Blackwell. On sm100/sm120 it must hard-error with guidance instead.
     from axolotl.integrations.kernels.libs.scattermoe_lora import experts as ex
 
     monkeypatch.setattr(ex, "is_nvfp4_param", lambda p: True)
-    monkeypatch.setattr(ex.RUNTIME, "fp4_grouped_mode", None)
+    monkeypatch.setattr(ex.RUNTIME, "grouped_mode", None)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: (10, 0))
 
@@ -103,7 +103,7 @@ def test_b2_nvfp4_lora_without_grouped_mode_ok_off_blackwell(monkeypatch):
     from axolotl.integrations.kernels.libs.scattermoe_lora import experts as ex
 
     monkeypatch.setattr(ex, "is_nvfp4_param", lambda p: True)
-    monkeypatch.setattr(ex.RUNTIME, "fp4_grouped_mode", None)
+    monkeypatch.setattr(ex.RUNTIME, "grouped_mode", None)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: (8, 9))
 
@@ -118,3 +118,70 @@ def test_b2_nvfp4_lora_without_grouped_mode_ok_off_blackwell(monkeypatch):
     with pytest.raises(Exception) as exc:
         ex.scattermoe_experts_forward(self_, hidden, top_k_index, top_k_weights)
     assert "grouped fp4 MoE path on Blackwell" not in str(exc.value)
+
+
+class _Picked(Exception):
+    pass
+
+
+def _pick(name):
+    def _raise(*_args, **_kwargs):
+        raise _Picked(name)
+
+    return _raise
+
+
+@pytest.mark.parametrize("inter,expected", [(704, "marlin"), (768, "deepgemm")])
+def test_deepgemm_unaligned_intermediate_falls_back_to_marlin(
+    monkeypatch, inter, expected
+):
+    # DeepGEMM's fp8 activation cast asserts K % 128 == 0; Gemma4's I=704 must route to marlin
+    # before the forward instead of tripping that assert on sm100.
+    from axolotl.integrations.kernels.libs.scattermoe_lora import (
+        dequant_grouped,
+        grouped_train as gt,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import (
+        backend as marlin_backend,
+    )
+
+    monkeypatch.setattr(gt, "_train_backend", lambda mode: "deepgemm")
+    monkeypatch.setattr(gt, "_backend_available", lambda name: name == "marlin")
+    monkeypatch.setattr(marlin_backend, "build_marlin_forward_base", _pick("marlin"))
+    monkeypatch.setattr(dequant_grouped, "_cached_mxfp4", _pick("deepgemm"))
+
+    E, H, topk, N = 2, 256, 2, 4
+    gu = SimpleNamespace(qdata=torch.zeros(E, 2 * inter, H // 2, dtype=torch.uint8))
+    dn = SimpleNamespace(qdata=torch.zeros(E, H, inter // 2, dtype=torch.uint8))
+    idx = torch.randint(0, E, (N, topk))
+    wts = torch.rand(N, topk)
+
+    with pytest.raises(_Picked) as picked:
+        gt.grouped_fp4_moe_train(
+            torch.zeros(N, H), idx, wts, gu, dn, None, None, None, "nvfp4"
+        )
+    assert picked.value.args[0] == expected
+
+
+def test_deepgemm_unaligned_without_marlin_raises(monkeypatch):
+    from axolotl.integrations.kernels.libs.scattermoe_lora import grouped_train as gt
+
+    monkeypatch.setattr(gt, "_train_backend", lambda mode: "deepgemm")
+    monkeypatch.setattr(gt, "_backend_available", lambda name: False)
+
+    E, H, inter, topk, N = 2, 256, 704, 2, 4
+    gu = SimpleNamespace(qdata=torch.zeros(E, 2 * inter, H // 2, dtype=torch.uint8))
+    dn = SimpleNamespace(qdata=torch.zeros(E, H, inter // 2, dtype=torch.uint8))
+
+    with pytest.raises(RuntimeError, match="divisible by 128"):
+        gt.grouped_fp4_moe_train(
+            torch.zeros(N, H),
+            torch.randint(0, E, (N, topk)),
+            torch.rand(N, topk),
+            gu,
+            dn,
+            None,
+            None,
+            None,
+            "nvfp4",
+        )

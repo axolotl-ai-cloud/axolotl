@@ -30,11 +30,17 @@ This subclass loads everything in place, with no checkpoint re-read of weights/s
 Net: no UNEXPECTED/MISSING warning, no random init, correct NVFP4 experts, no multi-GB
 re-read. Installed by swapping it into ``AUTO_QUANTIZER_MAPPING["fp8"]`` before
 ``from_pretrained``.
+
+All of the above runs only for checkpoints whose routed experts are NVFP4, detected from the
+per-expert ``weight_scale_2`` keys in the safetensors headers (``FineGrainedFP8Config`` drops
+``moe_quant_algo``). Any other fp8 checkpoint, e.g. FP8 experts or DeepSeek's own ue8m0 FP4
+experts, loads exactly as with the stock ``FineGrainedFP8HfQuantizer``.
 """
 
 from __future__ import annotations
 
 import os
+import re
 
 import torch
 import torch.nn as nn
@@ -69,6 +75,21 @@ _IGNORE_UNEXPECTED = (
     r"experts\..*\.weight_scale_2$",
     r"experts\..*\.input_scale$",
 )
+
+_NVFP4_EXPERT_SCALE_2 = re.compile(r"\.experts\.\d+\.[^.]+\.weight_scale_2$")
+
+
+def _checkpoint_has_nvfp4_experts(checkpoint_files) -> bool:
+    """True iff the checkpoint's safetensors headers carry a routed-expert ``weight_scale_2``."""
+    from safetensors import safe_open
+
+    for path in checkpoint_files or ():
+        if not str(path).endswith(".safetensors"):
+            continue
+        with safe_open(path, framework="pt") as f:
+            if any(_NVFP4_EXPERT_SCALE_2.search(k) for k in f.keys()):
+                return True
+    return False
 
 
 def _nvfp4_cls():
@@ -299,7 +320,15 @@ def make_nvfp4_fp8_quantizer():
     class NVFP4MoEFP8HfQuantizer(FineGrainedFP8HfQuantizer):
         """FineGrained-FP8 quantizer that also loads NVFP4 routed experts correctly."""
 
-        def update_weight_conversions(self, weight_conversions):
+        # Set per load by `_process_model_before_weight_loading`, which from_pretrained runs
+        # before building the conversion mapping.
+        _nvfp4_experts = False
+
+        def update_weight_conversions(self, weight_conversions, *args, **kwargs):
+            if not self._nvfp4_experts:
+                return super().update_weight_conversions(
+                    weight_conversions, *args, **kwargs
+                )
             rebuilt = []
             for conv in weight_conversions:
                 if not (
@@ -311,6 +340,8 @@ def make_nvfp4_fp8_quantizer():
                 ops = [type(op)(op.dim) for op in conv.operations]
                 # weight: anchor `.weight$` so the converter fuses ONLY the packed weight
                 # and stops swallowing `.weight_scale*` (the 0-D `_scale_2` concat raises).
+                # The `$` also keeps transformers>=5.21's base `update_weight_conversions`
+                # from rewriting these into Fp8Dequantize + `weight_scale_inv` converters.
                 w_conv = WeightConverter(
                     source_patterns=[
                         p + "$" if p.endswith(".weight") else p
@@ -337,10 +368,15 @@ def make_nvfp4_fp8_quantizer():
                     new.scope_prefix = conv.scope_prefix
                     new.base_model_prefix = conv.base_model_prefix
                 rebuilt.extend((w_conv, s_conv))
-            return super().update_weight_conversions(rebuilt)
+            return super().update_weight_conversions(rebuilt, *args, **kwargs)
 
         def _process_model_before_weight_loading(self, model, **kwargs):
             super()._process_model_before_weight_loading(model, **kwargs)
+            self._nvfp4_experts = _checkpoint_has_nvfp4_experts(
+                kwargs.get("checkpoint_files")
+            )
+            if not self._nvfp4_experts:
+                return
             n = 0
             for mod in model.modules():
                 if not _is_nvfp4_experts(mod):
@@ -392,9 +428,11 @@ def make_nvfp4_fp8_quantizer():
         def _process_model_after_weight_loading(self, model, **kwargs):
             super()._process_model_after_weight_loading(model, **kwargs)
             # The swap into AUTO_QUANTIZER_MAPPING['fp8'] is process-global, so this runs for EVERY
-            # fp8 checkpoint loaded after install. Gate all NVFP4-specific work on actually finding
-            # NVFP4 experts; a plain fp8 model behaves exactly like the original quantizer (super()
-            # above) and is NOT re-wrapped as Float8Tensor.
+            # fp8 checkpoint loaded after install. A non-NVFP4 checkpoint behaves exactly like the
+            # original quantizer (super() above) and is NOT re-wrapped as Float8Tensor. The module
+            # check alone isn't enough: DeepSeek's own FP4 experts are int8-packed too.
+            if not self._nvfp4_experts:
+                return
             mods = [
                 (name, m) for name, m in model.named_modules() if _is_nvfp4_experts(m)
             ]
@@ -416,7 +454,6 @@ def make_nvfp4_fp8_quantizer():
                 model.config, "_name_or_path", None
             )
             wmap, opener = _scale_2_path(repo)
-            import re
 
             for name, mod in mods:
                 layer = int(re.search(r"layers\.(\d+)\.", name).group(1))
@@ -475,7 +512,8 @@ _ORIGINAL_FP8_QUANTIZER = None
 
 def install_nvfp4_fp8_quantizer() -> None:
     """Swap the NVFP4-aware quantizer into ``AUTO_QUANTIZER_MAPPING["fp8"]`` so any
-    ``quant_method: fp8`` checkpoint with NVFP4 experts loads correctly. Idempotent."""
+    ``quant_method: fp8`` checkpoint with NVFP4 experts loads correctly; other fp8 checkpoints
+    load as with the stock quantizer. Idempotent."""
     global _ORIGINAL_FP8_QUANTIZER
     from transformers.quantizers import auto as _auto
 

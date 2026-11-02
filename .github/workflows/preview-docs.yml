@@ -14,6 +14,7 @@ on:
       - 'docs/**'
       - 'src/axolotl/**.py'
       - .github/workflows/preview-docs.yml
+      - '!packages/tree-recurrence/**'  # not part of the docs site
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

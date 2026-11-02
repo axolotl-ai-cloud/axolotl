@@ -4,7 +4,6 @@ Liger-Kernel Plugin for Axolotl
 
 import inspect
 import sys
-from types import SimpleNamespace
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.model_support import check_capability, get_model_support
@@ -292,34 +291,6 @@ class LigerPlugin(BasePlugin):
                 nn.functional.cross_entropy = liger_cross_entropy
             if patch_fused_linear_cross_entropy:
                 modeling_jamba.JambaForCausalLM.forward = jamba_lce_forward
-        elif cfg.model_config_type == "deepseek_v2":
-            from accelerate import init_empty_weights
-            from transformers import AutoModelForCausalLM
-
-            with init_empty_weights():
-                model = AutoModelForCausalLM.from_pretrained(
-                    cfg.base_model, trust_remote_code=cfg.trust_remote_code or False
-                )
-                modeling_mod = sys.modules[model.__class__.__module__]
-
-            from .models.deepseekv2 import lce_forward as deepseekv2_lce_forward
-
-            if cfg.liger_rope:
-                # The DeepseekV2 version of RoPE is different than upstream LLaMA.
-                # See https://github.com/linkedin/Liger-Kernel/issues/129#issuecomment-2313763528
-                LOG.warning("Fused liger_rope is not supported for DeepseekV2.")
-            if cfg.liger_rms_norm:
-                modeling_mod.DeepseekV2RMSNorm = LigerRMSNorm
-            if cfg.liger_glu_activation:
-                modeling_mod.DeepseekV2MLP.forward = LigerSwiGLUMLP.forward
-            if cfg.liger_layer_norm:
-                LOG.warning("liger_layer_norm is not supported for DeepseekV2.")
-            if cfg.liger_cross_entropy:
-                # We do not patch `nn.functional.cross_entropy` for DeepseekV2 as it still uses
-                # nn.CrossEntropyLoss in the forward method.
-                modeling_mod.CrossEntropyLoss = LigerCrossEntropyLoss
-            if patch_fused_linear_cross_entropy:
-                modeling_mod.DeepseekV2ForCausalLM.forward = deepseekv2_lce_forward
         elif cfg.model_config_type == "qwen3_5":
             from axolotl.integrations.liger.models.qwen3_5 import (
                 apply_liger_kernel_to_qwen3_5,
@@ -442,73 +413,6 @@ class LigerPlugin(BasePlugin):
                 f"Applied Liger kernels for cohere_compass: "
                 f"rms_norm=False (no RMSNorm in the arch), glu={cfg.liger_glu_activation}, "
                 f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm} (vision tower)"
-            )
-        elif cfg.model_config_type == "muse_glimmer":
-            from transformers.models.muse_glimmer import modeling_muse_glimmer
-
-            if cfg.liger_rms_norm:
-                from liger_kernel.transformers.rms_norm import (
-                    LigerRMSNormForGemma2,
-                    LigerRMSNormForGemma4,
-                )
-
-                class _LigerMuseGlimmerRMSNorm(LigerRMSNormForGemma4):
-                    """`dim` is omitted at the three with_scale=False call sites
-                    (qk_norm, embed_norm, perception_emb_norm)."""
-
-                    def __init__(self, dim=None, eps=1e-6, with_scale=True):
-                        super().__init__(dim, eps, with_scale=with_scale)
-
-                # The four decoder norms are Gemma2-shaped ((1 + w), zeros init); the
-                # final norm and the weightless norms are Gemma4-shaped (w, ones init).
-                modeling_muse_glimmer.MuseGlimmerTextCenteredRMSNorm = (
-                    LigerRMSNormForGemma2
-                )
-                modeling_muse_glimmer.MuseGlimmerRMSNorm = _LigerMuseGlimmerRMSNorm
-            if cfg.liger_glu_activation:
-
-                class _LigerMuseGlimmerTextMLP(LigerSwiGLUMLP):
-                    """SwiGLU MLP for MuseGlimmer.
-
-                    MuseGlimmerTextConfig names the activation `hidden_activation`;
-                    Liger reads `hidden_act`, which only exists on the vision config.
-                    """
-
-                    def __init__(self, config):
-                        super().__init__(
-                            SimpleNamespace(
-                                hidden_size=config.hidden_size,
-                                intermediate_size=config.intermediate_size,
-                                hidden_act=config.hidden_activation,
-                            )
-                        )
-                        self.config = config
-
-                modeling_muse_glimmer.MuseGlimmerTextMLP = _LigerMuseGlimmerTextMLP
-            if cfg.liger_rope:
-                from liger_kernel.transformers.rope import liger_rotary_pos_emb
-
-                # NoPE layers never call this, so only the sliding layers are affected.
-                modeling_muse_glimmer.apply_rotary_pos_emb = liger_rotary_pos_emb
-            if cfg.liger_layer_norm:
-                # Patches the vision tower's four nn.LayerNorm sites; the text decoder
-                # has none.
-                modeling_muse_glimmer.nn.LayerNorm = LigerLayerNorm
-            if cfg.liger_cross_entropy:
-                LOG.warning(
-                    "MuseGlimmer computes its loss through self.loss_function, not "
-                    "nn.CrossEntropyLoss, so the Liger swap would be a no-op. Skipping."
-                )
-            if patch_fused_linear_cross_entropy:
-                LOG.warning(
-                    "Liger fused linear cross entropy is not compatible with MuseGlimmer: "
-                    "logits are scaled by output_multiplier and tanh-softcapped after "
-                    "lm_head. Use cut_cross_entropy instead. Skipping."
-                )
-            LOG.info(
-                f"Applied Liger kernels for muse_glimmer: "
-                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
-                f"rope={cfg.liger_rope}, layer_norm={cfg.liger_layer_norm} (vision tower)"
             )
         elif patch_fused_linear_cross_entropy:
             try:

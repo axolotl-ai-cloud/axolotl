@@ -334,7 +334,6 @@ quartodoc:
         - integrations.liger.plugin
         - integrations.liger.utils
         - integrations.liger.models.base
-        - integrations.liger.models.deepseekv2
         - integrations.liger.models.jamba
         - integrations.liger.models.qwen3_5
         - integrations.liger.models.qwen3_5_moe
@@ -436,6 +435,7 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/mistral-large-4.qmd
                 - docs/models/beam.qmd
                 - docs/models/k2-horizon.qmd
                 - docs/models/nex-n2.5.qmd

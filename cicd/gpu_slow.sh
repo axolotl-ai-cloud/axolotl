@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+export COVERAGE_CORE=sysmon
+
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, torch.__version__"
 
 case "${MULTIGPU_TEST_SUITE}" in
@@ -12,7 +14,10 @@ case "${MULTIGPU_TEST_SUITE}" in
     ;;
   gpu_slow_distributed)
     required_gpus=2
-    tests=(tests/e2e/multigpu/test_ringmaster.py)
+    tests=(
+      tests/e2e/multigpu/test_ringmaster.py
+      tests/e2e/multigpu/solo/test_twotower_expert_parallel.py
+    )
     selection=(-k "not test_axolotl_gdn_cp_parity and not test_fla_cp_four_rank_parity")
     ;;
   gpu_slow_four_rank)

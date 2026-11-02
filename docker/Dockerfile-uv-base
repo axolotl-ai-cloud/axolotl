@@ -37,13 +37,23 @@ RUN uv venv --no-project --relocatable axolotl-venv
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install packaging setuptools wheel psutil \
-    && if [ -n "$TORCH_INDEX_URL" ]; then \
-        uv pip install --index-url "$TORCH_INDEX_URL" torch==${PYTORCH_VERSION} torchvision; \
+    set -e; \
+    NV_BACKEND="${TORCH_BACKEND%?}"; \
+    CUTLASS_DSL="nvidia-cutlass-dsl"; \
+    if [ "$NV_BACKEND" = "cu13" ]; then \
+        CUTLASS_DSL="${CUTLASS_DSL}[cu13]"; \
+    fi; \
+    uv pip install packaging setuptools wheel psutil; \
+    if [ -n "$TORCH_INDEX_URL" ]; then \
+        uv pip install --extra-index-url "$TORCH_INDEX_URL" \
+            torch==${PYTORCH_VERSION} apache-tvm-ffi torchvision \
+            "${CUTLASS_DSL}" nvidia-nvshmem-${NV_BACKEND}; \
     else \
-        UV_TORCH_BACKEND=$TORCH_BACKEND uv pip install torch==${PYTORCH_VERSION} torchvision; \
-    fi \
-    && uv pip install awscli pydantic
+        UV_TORCH_BACKEND=$TORCH_BACKEND uv pip install \
+            torch==${PYTORCH_VERSION} apache-tvm-ffi torchvision \
+            "${CUTLASS_DSL}" nvidia-nvshmem-${NV_BACKEND}; \
+    fi; \
+    uv pip install awscli pydantic
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$TARGETARCH" = "amd64" ]; then \

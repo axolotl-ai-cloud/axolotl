@@ -365,13 +365,14 @@ def matmul_lora(
     dtype = X.dtype
     W = dequantize(W.t(), W_quant)
 
-    reshape = False
-    if X.dim() == 3:
-        batch, seq_len, _ = X.shape
-        X = X.view(-1, X.shape[-1])
+    lead = X.shape[:-1]
+    reshape = X.dim() > 2
+    if reshape:
+        X = X.reshape(-1, X.shape[-1])
         if X_drop is not None:
-            X_drop = X_drop.view(-1, X_drop.shape[-1])
-        reshape = True
+            X_drop = X_drop.reshape(-1, X_drop.shape[-1])
+        if out is not None:
+            out = out.view(-1, out.shape[-1])
 
     out = torch.matmul(X, W, out=out)
     if W_quant is not None:
@@ -387,7 +388,7 @@ def matmul_lora(
     if b is not None:
         out += b
 
-    return out.view(batch, seq_len, -1) if reshape else out
+    return out.view(*lead, -1) if reshape else out
 
 
 class LoRA_MLP(torch.autograd.Function):
@@ -656,7 +657,7 @@ class LoRA_MLP(torch.autograd.Function):
         down_B_t = down_B.t() if down_B is not None else None
 
         # Reshape inputs
-        batch, seq_len, hd = X.shape
+        in_shape = X.shape
         grad_output = grad_output.view(-1, grad_output.shape[-1])
         X = X.view(-1, X.shape[-1])
         X_lora = X_lora.view(-1, X_lora.shape[-1])
@@ -776,14 +777,14 @@ class LoRA_MLP(torch.autograd.Function):
                     dX_drop.addmm_(grad_B_up, up_A_t.t(), alpha=up_scale)  # type: ignore[union-attr]
                 if grad_B_gate is not None:
                     dX_drop.addmm_(grad_B_gate, gate_A_t.t(), alpha=gate_scale)  # type: ignore[union-attr]
-                dX_drop = dX_drop.view(batch, seq_len, hd)
+                dX_drop = dX_drop.view(in_shape)
             else:
                 if grad_B_up is not None:
                     dX.addmm_(grad_B_up, up_A_t.t(), alpha=up_scale)  # type: ignore[union-attr]
                 if grad_B_gate is not None:
                     dX.addmm_(grad_B_gate, gate_A_t.t(), alpha=gate_scale)  # type: ignore[union-attr]
 
-            dX = dX.view(batch, seq_len, hd)
+            dX = dX.view(in_shape)
 
         # Return gradients matching forward input order:
         # X, X_drop,
@@ -1175,7 +1176,7 @@ class LoRA_QKV(torch.autograd.Function):
             q_mag_scale = k_mag_scale = v_mag_scale = None
             Q_combined = K_combined = V_combined = None
 
-        batch, seq_len = X.shape[:2]
+        lead = X.shape[:-1]
         q_grad = q_grad.view(-1, q_grad.shape[-1])
         k_grad = k_grad.reshape(-1, k_grad.shape[-1])
         v_grad = v_grad.view(-1, v_grad.shape[-1])
@@ -1309,9 +1310,9 @@ class LoRA_QKV(torch.autograd.Function):
             d_A_v = d_A_v.t()
             d_B_v = d_B_v.t()  # type: ignore[union-attr]
 
-        grad_X = grad_X.view(batch, seq_len, -1)
+        grad_X = grad_X.view(*lead, -1)
         if grad_X_drop is not None:
-            grad_X_drop = grad_X_drop.view(batch, seq_len, -1)
+            grad_X_drop = grad_X_drop.view(*lead, -1)
 
         # Return gradients for all forward inputs:
         # X, X_drop,
@@ -1369,16 +1370,15 @@ def _lora_only(
             device=X.device,
             dtype=dtype,
         )
-    reshape = False
-    if X.dim() == 3:
-        batch, seq_len, _ = X.shape
-        X = X.view(-1, X.shape[-1])
-        reshape = True
+    lead = X.shape[:-1]
+    reshape = X.dim() > 2
+    if reshape:
+        X = X.reshape(-1, X.shape[-1])
     At, Bt = A.t().to(dtype), B.t().to(dtype)  # type: ignore[union-attr]
     out = s * X @ At @ Bt
     if lora_bias is not None:
         out = out + s * lora_bias
-    return out.view(batch, seq_len, -1) if reshape else out
+    return out.view(*lead, -1) if reshape else out
 
 
 def apply_lora_qkv(
@@ -1613,7 +1613,7 @@ class LoRA_QK(torch.autograd.Function):
             q_mag_scale = k_mag_scale = None
             Q_combined = K_combined = None
 
-        batch, seq_len = X.shape[:2]
+        lead = X.shape[:-1]
         q_grad = q_grad.view(-1, q_grad.shape[-1])
         k_grad = k_grad.reshape(-1, k_grad.shape[-1])
         X = X.view(-1, X.shape[-1])
@@ -1695,9 +1695,9 @@ class LoRA_QK(torch.autograd.Function):
             d_A_k = d_A_k.t()
             d_B_k = d_B_k.t()  # type: ignore[union-attr]
 
-        grad_X = grad_X.view(batch, seq_len, -1)
+        grad_X = grad_X.view(*lead, -1)
         if grad_X_drop is not None:
-            grad_X_drop = grad_X_drop.view(batch, seq_len, -1)
+            grad_X_drop = grad_X_drop.view(*lead, -1)
 
         # Return gradients for all forward inputs:
         # X, X_drop,
@@ -1873,7 +1873,7 @@ class LoRA_O(torch.autograd.Function):
             A, B, X, X_lora, lora_bias = ctx.saved_tensors
             magnitude = mag_scale = combined = None
 
-        batch, seq_len, hd = X.shape
+        in_shape = X.shape
         dY = dY.reshape(-1, dY.shape[-1])
         X = X.reshape(-1, X.shape[-1])
         X_lora = X_lora.reshape(-1, X_lora.shape[-1])
@@ -1913,7 +1913,7 @@ class LoRA_O(torch.autograd.Function):
         if has_dropout:
             dX_drop = None
             if grad_B is not None:
-                dX_drop = (grad_B @ A * s).view(batch, seq_len, hd)
+                dX_drop = (grad_B @ A * s).view(in_shape)
         else:
             dX_drop = None
             if grad_B is not None:
@@ -1921,7 +1921,7 @@ class LoRA_O(torch.autograd.Function):
 
         # X, X_drop, W, b, W_quant, A, B, s, lora_bias, magnitude
         return (
-            dX.view(batch, seq_len, hd),
+            dX.view(in_shape),
             dX_drop,
             None,
             None,
@@ -2114,7 +2114,7 @@ class LoRA_FusedProj(torch.autograd.Function):
         scales, quants, weights = ctx.scales, ctx.quants, ctx.weights
         has_dropout = ctx.has_dropout
 
-        batch, seq_len = X.shape[:2]
+        lead = X.shape[:-1]
         X_lora = X_lora.view(-1, X_lora.shape[-1])
         # X_lora aliases X when there is no dropout; keep grad_X out-of-place so
         # this transpose stays valid across every projection's LoRA grads.
@@ -2178,9 +2178,9 @@ class LoRA_FusedProj(torch.autograd.Function):
             )
 
         assert grad_X is not None  # every projection contributes a base dY @ W
-        grad_X = grad_X.view(batch, seq_len, -1)
+        grad_X = grad_X.view(*lead, -1)
         if grad_X_drop is not None:
-            grad_X_drop = grad_X_drop.view(batch, seq_len, -1)
+            grad_X_drop = grad_X_drop.view(*lead, -1)
 
         # scales, quants, X, X_drop, *tensors
         return (None, None, grad_X, grad_X_drop, *tensor_grads)

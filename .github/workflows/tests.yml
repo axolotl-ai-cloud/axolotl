@@ -11,6 +11,9 @@ on:
       - ".github/workflows/*.yml"
       - "cicd/*.sh"
       - "cicd/*.jinja"
+      # tree-recurrence has its own workflow until axolotl depends on it
+      - "!packages/tree-recurrence/**"
+      - "!.github/workflows/tree-recurrence*.yml"
   pull_request:
     # GPU tests are label-gated, so adding the label re-runs this workflow via
     # gpu-label.yml after the initial CPU run has completed.
@@ -21,6 +24,9 @@ on:
       - ".github/workflows/*.yml"
       - "cicd/*.sh"
       - "cicd/*.jinja"
+      # tree-recurrence has its own workflow until axolotl depends on it
+      - "!packages/tree-recurrence/**"
+      - "!.github/workflows/tree-recurrence*.yml"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
@@ -35,6 +41,7 @@ permissions:
 env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
+  COVERAGE_CORE: "sysmon"
 
 jobs:
   pre-commit:
@@ -131,7 +138,7 @@ jobs:
           uv pip install --no-build-isolation -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+            codecov-cli pytest==9.1.1 pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -231,7 +238,7 @@ jobs:
           wheel=$(ls dist/axolotl-*.whl)
           uv pip install --no-build-isolation "${wheel}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install pytest pytest-retry pytest-sugar pytest-xdist tbparse
+          uv pip install pytest==9.1.1 pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |

@@ -81,6 +81,7 @@ def load_ext():
             sources=[
                 os.path.join(_MOE, "ops_standalone.cu"),
                 os.path.join(_MOE, "sm80_kernel_bfloat16_fe2m1f_bfloat16.cu"),
+                os.path.join(_MOE, "sm80_kernel_bfloat16_fe4m3fn_bfloat16.cu"),
                 os.path.join(_MOE, "repack_standalone.cu"),
             ],
             extra_cuda_cflags=[

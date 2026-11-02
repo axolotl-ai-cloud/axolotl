@@ -643,7 +643,7 @@ class AxolotlInputConfig(
     gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
         default=False,
         json_schema_extra={
-            "description": "Whether to use gradient checkpointing. Available options are: true, false, 'offload', 'offload_disk'. https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing"
+            "description": "Whether to use gradient checkpointing. Available options are: true, false, 'offload' (deprecated, use activation_offloading: true). https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing"
         },
     )
     gradient_checkpointing_kwargs: dict[str, Any] | None = Field(
@@ -663,18 +663,17 @@ class AxolotlInputConfig(
             )
         },
     )
-    activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
-        Field(
-            default=False,
-            json_schema_extra={
-                "description": (
-                    "Whether to offload activations. Options: true/false, 'legacy', "
-                    "'disk' (TRL offloader), or 'hidden_states' (checkpoint input "
-                    "offload; non-reentrant by default, ALST-style when "
-                    "gradient_checkpointing_kwargs.use_reentrant is true)."
-                )
-            },
-        )
+    activation_offloading: Literal["hidden_states"] | bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Whether to offload activations. Options: true/false (TRL offloader; "
+                "gradient_checkpointing decides whether layers recompute), or "
+                "'hidden_states' (checkpoint input offload; non-reentrant by default, "
+                "ALST-style when gradient_checkpointing_kwargs.use_reentrant is true). "
+                "'legacy' is a deprecated alias of true; 'disk' is disabled."
+            )
+        },
     )
     layer_offloading: bool | None = Field(
         default=False,
@@ -746,6 +745,18 @@ class AxolotlInputConfig(
         strict=True,
         json_schema_extra={
             "description": "Optimizer steps per cross-step label-balancing refinement window for non-streaming training. Requires balance_labels. Defaults to within-step refinement only."
+        },
+    )
+    label_keep_prob: dict[int, float] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Advanced: {token_id: keep_prob}. Each trained label equal to a listed token id is kept with probability keep_prob and otherwise masked to -100, re-drawn independently per position every optimizer step (inputs unchanged; eval is not masked). Ids must be exactly what the chat template emits; find them with `axolotl preprocess --debug` or tokenizer.convert_tokens_to_ids."
+        },
+    )
+    label_keep_prob_normalize: Literal["dropped", "original"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Loss normalization with label_keep_prob. 'dropped' (default) divides by the trained-token count after masking, like ordinary label masking. 'original' divides by the count before masking, so each other token's weight is unchanged."
         },
     )
     sample_packing_group_size: int | None = Field(
@@ -1771,6 +1782,54 @@ class AxolotlInputConfig(
                 f"Allowed: {sorted(INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)}."
             )
         return value
+
+    @field_validator("label_keep_prob")
+    @classmethod
+    def check_label_keep_prob(cls, value):
+        if value is None:
+            return value
+        if not value:
+            raise ValueError("label_keep_prob must list at least one token id")
+        for token_id, keep_prob in value.items():
+            if token_id < 0:
+                raise ValueError(
+                    f"label_keep_prob token ids must be non-negative, got {token_id}"
+                )
+            if not 0.0 <= keep_prob <= 1.0:
+                raise ValueError(
+                    f"label_keep_prob[{token_id}] must be in [0, 1], got {keep_prob}"
+                )
+        return value
+
+    @model_validator(mode="after")
+    def check_label_keep_prob_trainer(self):
+        if self.label_keep_prob_normalize and not self.label_keep_prob:
+            raise ValueError("label_keep_prob_normalize requires label_keep_prob")
+        if not self.label_keep_prob:
+            return self
+        conflicts = [
+            name
+            for name in (
+                "rl",
+                "reward_model",
+                "process_reward_model",
+                "kd_trainer",
+                "diffusion_lm",
+            )
+            if getattr(self, name, None)
+        ]
+        if conflicts:
+            raise ValueError(
+                "label_keep_prob is only supported for SFT / causal LM training, "
+                f"not with: {', '.join(conflicts)}"
+            )
+        if (self.tensor_parallel_size or 1) > 1:
+            raise ValueError(
+                "label_keep_prob is not supported with tensor_parallel_size > 1: ranks "
+                "that share a batch draw different masks, so the TP ranks would compute "
+                "a shared loss on different targets"
+            )
+        return self
 
     @model_validator(mode="after")
     def check_label_balanced_packing(self):

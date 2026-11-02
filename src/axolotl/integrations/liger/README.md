@@ -31,14 +31,16 @@ liger_kernel_impl: cutedsl
 
 ## Supported Models
 
-Any model type in liger-kernel's native dispatch table (`liger_kernel.transformers.monkey_patch.MODEL_TYPE_TO_APPLY_LIGER_FN`) is supported out of the box — llama, mistral, mixtral, qwen2/qwen3 families, gemma through gemma4, deepseek_v4, glm4, phi3, olmo2, paligemma, and many more (50+ types as of liger 0.8.1).
+Any model type in liger-kernel's native dispatch table (`liger_kernel.transformers.monkey_patch.MODEL_TYPE_TO_APPLY_LIGER_FN`) is supported out of the box — llama, mistral, mixtral, qwen2/qwen3 families, gemma through gemma4, deepseek_v2/deepseek_v4, glm4, phi3, olmo2, paligemma, and many more (50+ types as of liger 0.8.1).
 
 On top of the native table, axolotl hand-patches these types (not covered upstream, or extended with kernels the native path lacks):
 
-- deepseek_v2
+- cohere_compass
 - gemma4_unified / gemma4_unified_text
+- glm4_moe_lite
 - granitemoe
 - jamba
+- mistral3 / ministral3
 - qwen3_5 / qwen3_5_moe (adds the fused gated-RMSNorm kernel for linear-attention layers)
 
 ## Citation

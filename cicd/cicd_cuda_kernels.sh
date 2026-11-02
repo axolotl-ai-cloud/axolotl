@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+export COVERAGE_CORE=sysmon
+
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
 bash ./cicd/prepare_hf_cache.sh
@@ -10,7 +12,8 @@ pytest -v --durations=10 --maxfail=10 \
   /workspace/axolotl/tests/e2e/kernels/lora_patching/ \
   --cov=axolotl
 
-pytest -v --durations=10 --maxfail=10 \
+# gpu_blackwell tests run on B200 in cicd/cicd_blackwell.sh.
+pytest -v --durations=10 --maxfail=10 -m "not slow and not gpu_blackwell" \
   --ignore=tests/e2e/kernels/lora_patching/ \
   /workspace/axolotl/tests/e2e/kernels/ \
   /workspace/axolotl/tests/integrations/kernels/ \

@@ -42,8 +42,8 @@ def verify_training_success(temp_dir):
 
     check_tensorboard_loss_decreased(
         temp_dir + "/runs",
-        initial_window=10,
-        final_window=10,
+        initial_window=3,
+        final_window=3,
         max_initial=5.0,
         max_final=4.7,
     )

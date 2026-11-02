@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+export COVERAGE_CORE=sysmon
+
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
 bash ./cicd/prepare_hf_cache.sh
@@ -10,10 +12,10 @@ bash ./cicd/prepare_hf_cache.sh
 # hf download "microsoft/Phi-3.5-mini-instruct"
 # hf download "microsoft/Phi-3-medium-128k-instruct"
 
-env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=3, trust_remote_code=True)"
+env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=4, trust_remote_code=True)"
 
 # Run unit tests with initial coverage report
-pytest -v --durations=10 -n8 --maxfail=10 -m "gpu and not slow and not nf4_distributed" \
+pytest -v --durations=10 -n8 --maxfail=10 -m "gpu and not slow and not nf4_distributed and not gpu_blackwell" \
   --ignore=tests/e2e/ \
   --ignore=tests/integrations/ \
   --ignore=tests/patched/ \
@@ -48,7 +50,7 @@ pytest -v --durations=10 --maxfail=10 \
   --cov=axolotl \
   --cov-append
 
-pytest -v --durations=10 -n8 --dist loadfile --maxfail=10 -m gpu \
+pytest -v --durations=10 -n8 --dist loadfile --maxfail=10 -m "gpu and not gpu_blackwell" \
   --ignore=tests/e2e/kernels/ \
   --ignore=tests/integrations/kernels/ \
   /workspace/axolotl/tests/integrations/ \
@@ -57,7 +59,7 @@ pytest -v --durations=10 -n8 --dist loadfile --maxfail=10 -m gpu \
 
 # Run remaining e2e tests with coverage append and final report. Serial: parallel
 # workers OOM the GPU.
-pytest -v --durations=10 --maxfail=10 \
+pytest -v --durations=10 --maxfail=10 -m "not slow and not gpu_blackwell" \
   --ignore=tests/e2e/kernels/ \
   --ignore=tests/e2e/solo/ \
   --ignore=tests/e2e/patched/ \

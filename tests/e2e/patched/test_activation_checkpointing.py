@@ -29,7 +29,15 @@ class TestActivationCheckpointing:
 
     @pytest.mark.parametrize(
         "gradient_checkpointing",
-        ["offload", "offload_disk"],
+        [
+            "offload",
+            pytest.param(
+                "offload_disk",
+                marks=pytest.mark.skip(
+                    reason="activation_offloading: disk is disabled"
+                ),
+            ),
+        ],
     )
     def test_activation_checkpointing_offload(
         self,

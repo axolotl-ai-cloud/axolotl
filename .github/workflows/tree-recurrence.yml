@@ -1,0 +1,99 @@
+name: tree-recurrence
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "packages/tree-recurrence/**"
+      - ".github/workflows/tree-recurrence*.yml"
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "packages/tree-recurrence/**"
+      - ".github/workflows/tree-recurrence*.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Tests' pre-commit job skips changes confined to the package
+  pre-commit:
+    name: tree-recurrence pre-commit
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: "pip"
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        env:
+          SKIP: no-commit-to-branch,check-cli-config-options
+        with:
+          extra_args: --files $(git ls-files packages/tree-recurrence .github/workflows/tree-recurrence*.yml)
+
+  test:
+    name: tree-recurrence (py${{ matrix.python }}, ${{ matrix.extras }})
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the oldest supported Python, without TRL
+          - python: "3.10"
+            extras: "transformers"
+          - python: "3.12"
+            extras: "transformers,trl"
+    defaults:
+      run:
+        working-directory: packages/tree-recurrence
+    env:
+      HF_HUB_OFFLINE: "1"
+      TRL_EXPERIMENTAL_SILENCE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
+
+      - name: Install the package alone, on CPU torch
+        run: |
+          uv venv --python ${{ matrix.python }}
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e ".[${{ matrix.extras }}]" pytest
+
+      - name: Check axolotl stays out
+        run: |
+          .venv/bin/python - <<'PY'
+          import importlib.util
+          import sys
+
+          assert importlib.util.find_spec("axolotl") is None, "axolotl is installed"
+          import tree_recurrence
+          import tree_recurrence.integrations.transformers
+          import tree_recurrence.integrations.trl
+
+          loaded = {name.split(".")[0] for name in sys.modules}
+          assert "axolotl" not in loaded, "importing tree_recurrence imported axolotl"
+          PY
+
+      - name: Run the tests
+        run: .venv/bin/python -m pytest -v --durations=10 tests

@@ -2,7 +2,11 @@
 
 import pytest
 
-from tests.conftest import is_gpu_skip_reason, skip_marker_text
+from tests.conftest import (
+    is_blackwell_skip_reason,
+    is_gpu_skip_reason,
+    skip_marker_text,
+)
 
 
 @pytest.mark.parametrize(
@@ -49,3 +53,35 @@ def test_skip_marker_text_reads_reason_and_string_conditions():
         == "CUDA required"
     )
     assert skip_marker_text(pytest.mark.skip(reason="flaky").mark) == "flaky"
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "CUDA sm100+ required",
+        "test requires sm>=100",
+        "grouped NVFP4 training backends require Blackwell (sm100/sm120)",
+        "grouped fp4 needs sm100/sm120 (Blackwell)",
+        "requires an SM_100 GPU",
+    ],
+)
+def test_blackwell_reasons_match(reason):
+    assert is_blackwell_skip_reason(reason)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "SonicMoE requires Hopper (sm_90) or Blackwell (sm_100+)",
+        "grouped NVFP4 needs CUDA + a resolvable fp4 forward backend (Marlin sm80+ / "
+        "DeepGEMM sm90+ / CUTLASS sm120)",
+        "marlin W4A16 ext (sm80+, nvcc) required",
+        "test requires h100 or newer GPU",
+        "CUDA required",
+        "sm1000 is not an arch",
+        "",
+        None,
+    ],
+)
+def test_non_blackwell_reasons_do_not_match(reason):
+    assert not is_blackwell_skip_reason(reason)

@@ -22,8 +22,9 @@ RUN git clone --depth 1 --branch $DEEP_EP_REF https://github.com/deepseek-ai/Dee
     cd /workspace && rm -rf /tmp/DeepEP /tmp/wheels && \
     python -c "import deep_ep; print(deep_ep.Buffer)"
 
-# flash-attn-4 is still a pre-release; it pulls quack-kernels and the cutlass DSL, which SonicMoE
-# needs too, and the [cu13] extra selects the CUDA 13 cutlass runtime libraries.
+# flash-attn-4 and the quack kernels behind SonicMoE, pinned by axolotl's `blackwell` extra. Both
+# require an unbounded torch, so pin the image's build (DeepEP above links against it).
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install "flash-attn-4[cu13]==4.0.0b35" "quack-kernels[cu13]==0.6.5" && \
+    uv pip install --no-build-isolation -e "/workspace/axolotl[blackwell]" \
+        "torch==$(python -c 'import torch; print(torch.__version__)')" && \
     python -c "import importlib.metadata as m; [print(p, m.version(p)) for p in ('flash-attn-4', 'quack-kernels', 'nvidia-cutlass-dsl', 'deep-ep')]"

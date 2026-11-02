@@ -350,6 +350,19 @@ class TestHFCausalTrainerBuilder:
         assert decays <= {weight_decay, 0.0}
         assert weight_decay in decays
 
+    def test_label_keep_prob(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["label_keep_prob"] = {1: 0.25, 2: 0.0}
+        cfg["label_keep_prob_normalize"] = "original"
+        trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        assert trainer.args.label_keep_prob == {1: 0.25, 2: 0.0}
+        assert trainer.args.label_keep_prob_normalize == "original"
+        assert trainer._label_dropout.token_ids.tolist() == [1, 2]
+
+        cfg["label_keep_prob"] = {len(tokenizer): 0.5}
+        with pytest.raises(ValueError, match="outside the tokenizer vocabulary"):
+            HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+
     def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
         cfg = sft_cfg.copy()
         cfg["optimizer"] = "sinkgd"

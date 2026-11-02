@@ -319,6 +319,50 @@ def test_lora_mlp_with_adapters(
     assert not torch.isnan(down_B.grad).any()
 
 
+def test_lora_mlp_4d_input_matches_3d(sample_tensors):
+    """A 4-D input runs the same MLP as its 3-D view, forward and backward."""
+    X = sample_tensors["X"]
+    hidden_dim, out_dim, rank = (
+        sample_tensors["shapes"][k] for k in ("hidden", "out", "rank")
+    )
+    projections = []
+    for in_f, out_f in (
+        (hidden_dim, out_dim),
+        (hidden_dim, out_dim),
+        (out_dim, hidden_dim),
+    ):
+        lin = nn.Linear(in_f, out_f).to(device="cuda", dtype=torch.float16)
+        A = (
+            torch.randn(rank, in_f, device="cuda", dtype=torch.float16) * 0.1
+        ).requires_grad_()
+        B = (
+            torch.randn(out_f, rank, device="cuda", dtype=torch.float16) * 0.1
+        ).requires_grad_()
+        projections.append((lin.weight, lin.bias, A, B))
+
+    def run(x):
+        x = x.detach().clone().requires_grad_()
+        args = [
+            a for W, b, A, B in projections for a in (W, b, None, A, B, 0.5, None, None)
+        ]
+        out = LoRA_MLP.apply(x, None, *args, swiglu_forward, swiglu_backward, False)
+        out.backward(torch.ones_like(out))
+        grads = [x.grad] + [
+            g.grad.clone() for _, _, A, B in projections for g in (A, B)
+        ]
+        for _, _, A, B in projections:
+            A.grad = B.grad = None
+        return out.detach(), grads
+
+    out_3d, grads_3d = run(X)
+    out_4d, grads_4d = run(X.unsqueeze(1))
+    assert out_4d.shape == X.unsqueeze(1).shape
+    torch.testing.assert_close(out_4d, out_3d.unsqueeze(1))
+    torch.testing.assert_close(grads_4d[0], grads_3d[0].unsqueeze(1))
+    for got, want in zip(grads_4d[1:], grads_3d[1:], strict=True):
+        torch.testing.assert_close(got, want)
+
+
 def test_lora_qkv(sample_tensors):
     """Tests LoRA QKV implementation with and without adapters"""
     X = sample_tensors["X"]
