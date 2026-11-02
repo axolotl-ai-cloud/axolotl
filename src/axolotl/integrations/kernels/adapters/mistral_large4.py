@@ -1,9 +1,9 @@
 """Mistral Large 4 (``mistral_large4``) kernel adapter.
 
 Runs on transformers' built-in modeling (``MistralLarge4ForConditionalGeneration``, loaded as
-image-text-to-text; sdpa / eager only), never remote code. Its MLA is *clean* — a single
-``q_proj`` (``q_lora_rank=null``) and no gradientless fused indexer — so the attention
-projections are safe to LoRA-adapt.
+image-text-to-text; sdpa / eager only), never remote code. Its MLA has a single ``q_proj``
+(``q_lora_rank=null``), and its gradientless DSA indexer reads the hidden states rather than the
+MLA projections, so all four attention projections are safe to LoRA-adapt.
 
 NVFP4 checkpoint: modelopt ``MIXED_PRECISION`` in Mistral-native naming: NVFP4 routed experts as
 ``w1/w3/w2`` and 128x128 block-FP8 attention / indexer ``wq_b`` / shared experts / dense layer 0.
@@ -16,9 +16,10 @@ puts the block-FP8 experts on the fp8_block grouped path (NVFP4 experts on nvfp4
 Genuine block-FP8 experts are never reinterpreted as NVFP4.
 
 For a LoRA run on a block-FP8 or bf16 checkpoint the adapter also swaps the MLA attention LoRA
-layers for the fused quant-dispatching kernel (``libs/mistral_large4``) and keeps the RMSNorms in
-their own fp32 FSDP2 shard group. Both stay off on the NVFP4 checkpoint unless
-``mistral_large4_attn_lora_kernel: true``.
+layers for the fused quant-dispatching kernel (``libs/mistral_large4``), off on the NVFP4
+checkpoint unless ``mistral_large4_attn_lora_kernel: true``. Off the NVFP4 checkpoint it also
+registers the RMSNorms as fp32 FSDP2 shard classes, which only take effect once
+``mistral_large4_attn_quantization`` puts torchao low-bit weights in the model.
 """
 
 from __future__ import annotations

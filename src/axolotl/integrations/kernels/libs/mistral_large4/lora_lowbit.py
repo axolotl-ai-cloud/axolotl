@@ -1,12 +1,10 @@
 """Fused LoRA for low-bit (NVFP4 / MXFP4 / MXFP8) attention projections.
 
-When an MLA attention projection's frozen base weight is a torchao ``NVFP4Tensor`` / ``MXTensor``
-(a ``nonexpert_quantization`` policy quantized it, or the checkpoint ships it low-bit), PEFT still
-wraps the ``nn.Linear`` with LoRA but its default path can't run the base GEMM. This provides a
-fused LoRA forward: dequantize the frozen 4-/8-bit weight transiently to the compute dtype (the
+When ``mistral_large4_attn_quantization`` makes an MLA attention projection's frozen base weight a
+torchao ``NVFP4Tensor`` / ``MXTensor``, PEFT's default path can't run the base GEMM. This provides
+a fused LoRA forward: dequantize the frozen 4-/8-bit weight transiently to the compute dtype (the
 weight stays low-bit in memory), run ``X@W + s·X_drop@A@B``, with a custom autograd ``Function`` so
-``dX`` and the LoRA grads flow (base frozen -> no weight grad). Marlin-W4A16-accelerated base GEMM
-is a later optimization; this is the correct, memory-efficient path.
+``dX`` and the LoRA grads flow (base frozen -> no weight grad).
 """
 
 from __future__ import annotations

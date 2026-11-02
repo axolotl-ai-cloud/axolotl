@@ -5,16 +5,15 @@ The generic ``lora_kernels`` path assumes standard ``q/k/v/o_proj`` attention an
 walks the PEFT-wrapped MLA projections and swaps their forward for a fused LoRA kernel that
 dispatches the frozen base GEMM on the base weight's quantization:
 
-  * **bf16 / nf4(bnb) / fp8-as-dequant** — the generic fused ``LoRA_O`` autograd kernel (a
-    per-Linear ``X@W + s·X_drop@A@B`` with quant handled by ``dequantize``). Reused as-is.
-  * **fp8-blockwise (native)** — ``_NativeFp8Lora`` (``fp8_linear`` / DeepGEMM 128×128 on
+  * **bf16 / nf4(bnb) / fp8-as-dequant**: the generic fused ``LoRA_O`` autograd kernel (a
+    per-Linear ``X@W + s·X_drop@A@B`` with quant handled by ``dequantize``).
+  * **fp8-blockwise (native)**: ``_NativeFp8Lora`` (``fp8_linear`` / DeepGEMM 128×128 on
     sm90/sm100, Triton fallback on sm120): real fp8 throughput on the large projections, no
     dequant. This is the block-FP8 Mistral-Large-4 checkpoint's format.
-  * **nvfp4 / mxfp4 / mxfp8** — dispatched to ``lora_lowbit`` (dequantize the frozen 4-/8-bit
-    weight transiently → fused LoRA; weight stays low-bit in memory). Marlin-W4A16-accelerated
-    base GEMM is a later optimization.
+  * **nvfp4 / mxfp4 / mxfp8**: dispatched to ``lora_lowbit`` (dequantize the frozen 4-/8-bit
+    weight transiently, then fused LoRA; weight stays low-bit in memory).
 
-Mistral-Large-4's MLA has no gradientless indexer (unlike DSV4), so adapting all four projections
+The gradientless DSA indexer reads the hidden states, not these projections, so adapting all four
 is safe.
 """
 
