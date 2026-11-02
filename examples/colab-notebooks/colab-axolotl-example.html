@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.20">
+<meta name="generator" content="quarto-1.11.9">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -73,14 +73,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../favicon.jpg" rel="icon" type="image/jpeg">
 <script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/scrollable-regions/scrollable-regions.js" type="module"></script>
 <script src="../../site_libs/quarto-html/popper.min.js"></script>
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-0ae969d3293726db143f6e9eb89af930.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-447e42e69aaa9833c0ba1b986f430b20.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-f02b750fa8da0cf57c2c28d81e4fa7b8.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-6f0f3137e2c2eb6260f150ad0eb053cd.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -126,11 +127,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <link rel="stylesheet" href="../../styles.css">
 </head>
 
-<body class="nav-sidebar docked nav-fixed quarto-light">
+<body class="nav-sidebar docked nav-fixed quarto-light"><a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
-    <nav class="navbar navbar-expand " data-bs-theme="dark">
+    <nav class="navbar navbar-expand " data-bs-theme="dark" aria-label="Site">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a href="../../index.html" class="navbar-brand navbar-brand-logo">
@@ -146,13 +147,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
           <div id="quarto-search" class="" title="Search"></div>
       </div> <!-- /container-fluid -->
     </nav>
-  <nav class="quarto-secondary-nav">
+  <nav class="quarto-secondary-nav" aria-label="Toolbar">
     <div class="container-fluid d-flex">
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item">Fine-Tune Qwen3 14B with Axolotl</li></ol></nav>
-        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        <nav class="quarto-page-breadcrumbs" aria-label="Breadcrumbs"><ol class="breadcrumb"><li class="breadcrumb-item">Fine-Tune Qwen3 14B with Axolotl</li></ol></nav>
+        <a class="flex-grow-1" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
   </nav>
@@ -160,7 +161,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <!-- content -->
 <div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
-  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto" aria-label="Section">
     <div class="sidebar-menu-container"> 
     <ul class="list-unstyled mt-1">
         <li class="sidebar-item">
@@ -171,13 +172,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
- <span class="menu-text">Getting Started</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-controls="quarto-sidebar-section-1" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-1-label">Getting Started</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-1" aria-labelledby="quarto-sidebar-section-1-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/getting-started.html" class="sidebar-item-text sidebar-link">
@@ -210,13 +208,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
- <span class="menu-text">Model Guides</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" aria-controls="quarto-sidebar-section-2" aria-expanded="false">
+ <span class="menu-text" id="quarto-sidebar-section-2-label">Model Guides</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+      <ul id="quarto-sidebar-section-2" aria-labelledby="quarto-sidebar-section-2-label" class="collapse list-unstyled sidebar-section depth2 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/mistral-large-4.html" class="sidebar-item-text sidebar-link">
@@ -333,13 +328,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
- <span class="menu-text">Ministral3</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" aria-controls="quarto-sidebar-section-3" aria-expanded="false">
+ <span class="menu-text" id="quarto-sidebar-section-3-label">Ministral3</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth3 ">  
+      <ul id="quarto-sidebar-section-3" aria-labelledby="quarto-sidebar-section-3-label" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
@@ -362,13 +354,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
           <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
- <span class="menu-text">Magistral</span></a>
-          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" aria-controls="quarto-sidebar-section-4" aria-expanded="false">
+ <span class="menu-text" id="quarto-sidebar-section-4-label">Magistral</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth3 ">  
+      <ul id="quarto-sidebar-section-4" aria-labelledby="quarto-sidebar-section-4-label" class="collapse list-unstyled sidebar-section depth3 ">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
@@ -582,12 +571,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a href="../../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Dataset Formats</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+ <span class="menu-text" id="quarto-sidebar-section-5-label">Dataset Formats</span></a>
+            <button type="button" class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" aria-controls="quarto-sidebar-section-5" aria-expanded="true" aria-label="Toggle section: Dataset Formats">
+              <i class="bi bi-chevron-right ms-2" aria-hidden="true"></i>
+            </button> 
       </div>
-      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-5" aria-labelledby="quarto-sidebar-section-5-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
@@ -628,13 +617,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
- <span class="menu-text">Deployments</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" aria-controls="quarto-sidebar-section-6" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-6-label">Deployments</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-6" aria-labelledby="quarto-sidebar-section-6-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/docker.html" class="sidebar-item-text sidebar-link">
@@ -705,13 +691,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
- <span class="menu-text">How To Guides</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" aria-controls="quarto-sidebar-section-7" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-7-label">How To Guides</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-7" aria-labelledby="quarto-sidebar-section-7-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/multimodal.html" class="sidebar-item-text sidebar-link">
@@ -818,13 +801,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
- <span class="menu-text">Core Concepts</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" aria-controls="quarto-sidebar-section-8" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-8-label">Core Concepts</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-8" aria-labelledby="quarto-sidebar-section-8-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
@@ -871,13 +851,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
- <span class="menu-text">Advanced Features</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" aria-controls="quarto-sidebar-section-9" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-9-label">Advanced Features</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-9" aria-labelledby="quarto-sidebar-section-9-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
@@ -924,13 +901,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   </li>
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
-            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
- <span class="menu-text">Troubleshooting</span></a>
-          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
-            <i class="bi bi-chevron-right ms-2"></i>
-          </a> 
+            <button type="button" class="sidebar-item-text sidebar-item-toggle sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" aria-controls="quarto-sidebar-section-10" aria-expanded="true">
+ <span class="menu-text" id="quarto-sidebar-section-10-label">Troubleshooting</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
       </div>
-      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-10" aria-labelledby="quarto-sidebar-section-10-label" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../docs/faq.html" class="sidebar-item-text sidebar-link">
@@ -963,7 +937,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
-        <nav id="TOC" role="doc-toc" class="toc-active">
+        <nav id="TOC" role="doc-toc" aria-labelledby="toc-title" class="toc-active">
     <h2 id="toc-title">On this page</h2>
    
   <ul>
@@ -983,7 +957,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
+<main class="content" id="quarto-document-content" tabindex="-1">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
@@ -1133,13 +1107,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-08 13:40:27,488] [INFO] [root.register:348] [PID:174] Attempting to load plugin: axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-
 [2025-05-08 13:40:27,493] [INFO] [root.register:351] [PID:174] Plugin loaded successfully: axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-
 [2025-05-08 13:40:27,959] [INFO] [axolotl.utils.schemas.config.check_eval_packing:721] [PID:174] [RANK:0] explicitly setting `eval_sample_packing` to match `sample_packing`
-
 [2025-05-08 13:40:27,960] [INFO] [axolotl.utils.schemas.config.hint_sample_packing_padding:514] [PID:174] [RANK:0] Setting `pad_to_sequence_len: true` to prevent memory leaks when sample_packing
-
 [2025-05-08 13:40:27,961] [INFO] [axolotl.utils.schemas.config.check_bf16:1251] [PID:174] [RANK:0] bf16 support detected, but not enabled for this configuration.
 </pre>
 </div>
@@ -1194,19 +1164,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-08 13:41:00,844] [DEBUG] [axolotl.utils.models.load_tokenizer:441] [PID:174] [RANK:0] EOS: 151645 / &lt;|im_end|&gt;
-
 [2025-05-08 13:41:00,845] [DEBUG] [axolotl.utils.models.load_tokenizer:442] [PID:174] [RANK:0] BOS: None / None
-
 [2025-05-08 13:41:00,846] [DEBUG] [axolotl.utils.models.load_tokenizer:443] [PID:174] [RANK:0] PAD: 151643 / &lt;|endoftext|&gt;
-
 [2025-05-08 13:41:00,847] [DEBUG] [axolotl.utils.models.load_tokenizer:444] [PID:174] [RANK:0] UNK: None / None
-
 [2025-05-08 13:41:00,869] [INFO] [axolotl.utils.data.sft.load_tokenized_prepared_datasets:271] [PID:174] [RANK:0] Unable to find prepared dataset in last_run_prepared/97037817611d38b3a9c681753c3c4c95
-
 [2025-05-08 13:41:00,870] [INFO] [axolotl.utils.data.sft.load_tokenized_prepared_datasets:272] [PID:174] [RANK:0] Loading raw datasets...
-
 <span class="ansi-yellow-fg">[2025-05-08 13:41:00,870] [WARNING] [axolotl.utils.data.sft.load_tokenized_prepared_datasets:274] [PID:174] [RANK:0] Processing datasets during training can lead to VRAM instability. Please pre-process your dataset.</span>
-
 [2025-05-08 13:41:00,871] [INFO] [axolotl.utils.data.sft.load_tokenized_prepared_datasets:281] [PID:174] [RANK:0] No seed provided, using default seed of 42
 </pre>
 </div>
@@ -1224,181 +1187,93 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-08 13:41:04,196] [INFO] [axolotl.utils.data.sft.get_dataset_wrapper:484] [PID:174] [RANK:0] Loading dataset with base_type: chat_template and prompt_style: None
-
 [2025-05-08 13:41:04,233] [INFO] [axolotl.__call__:761] [PID:174] [RANK:0] Using chat template:
-
 ---
-
 {%- if tools %}
-
     {{- '&lt;|im_start|&gt;system\n' }}
-
     {%- if messages[0].role == 'system' %}
-
         {{- messages[0].content + '\n\n' }}
-
     {%- endif %}
-
     {{- "# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within &lt;tools&gt;&lt;/tools&gt; XML tags:\n&lt;tools&gt;" }}
-
     {%- for tool in tools %}
-
         {{- "\n" }}
-
         {{- tool | tojson }}
-
     {%- endfor %}
-
     {{- "\n&lt;/tools&gt;\n\nFor each function call, return a json object with function name and arguments within &lt;tool_call&gt;&lt;/tool_call&gt; XML tags:\n&lt;tool_call&gt;\n{\"name\": &lt;function-name&gt;, \"arguments\": &lt;args-json-object&gt;}\n&lt;/tool_call&gt;&lt;|im_end|&gt;\n" }}
-
 {%- else %}
-
     {%- if messages[0].role == 'system' %}
-
         {{- '&lt;|im_start|&gt;system\n' + messages[0].content + '&lt;|im_end|&gt;\n' }}
-
     {%- endif %}
-
 {%- endif %}
-
 {%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}
-
 {%- for message in messages[::-1] %}
-
     {%- set index = (messages|length - 1) - loop.index0 %}
-
     {%- if ns.multi_step_tool and message.role == "user" and not(message.content.startswith('&lt;tool_response&gt;') and message.content.endswith('&lt;/tool_response&gt;')) %}
-
         {%- set ns.multi_step_tool = false %}
-
         {%- set ns.last_query_index = index %}
-
     {%- endif %}
-
 {%- endfor %}
-
 {%- for message in messages %}
-
     {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}
-
         {{- '&lt;|im_start|&gt;' + message.role + '\n' + message.content + '&lt;|im_end|&gt;' + '\n' }}
-
     {%- elif message.role == "assistant" %}
-
         {%- set content = message.content %}
-
         {%- set reasoning_content = '' %}
-
         {%- if message.reasoning_content is defined and message.reasoning_content is not none %}
-
             {%- set reasoning_content = message.reasoning_content %}
-
         {%- else %}
-
             {%- if '&lt;/think&gt;' in message.content %}
-
                 {%- set content = message.content.split('&lt;/think&gt;')[-1].lstrip('\n') %}
-
                 {%- set reasoning_content = message.content.split('&lt;/think&gt;')[0].rstrip('\n').split('&lt;think&gt;')[-1].lstrip('\n') %}
-
             {%- endif %}
-
         {%- endif %}
-
         {%- if loop.index0 &gt; ns.last_query_index %}
-
             {%- if loop.last or (not loop.last and reasoning_content) %}
-
                 {{- '&lt;|im_start|&gt;' + message.role + '\n&lt;think&gt;\n' + reasoning_content.strip('\n') + '\n&lt;/think&gt;\n\n' + content.lstrip('\n') }}
-
             {%- else %}
-
                 {{- '&lt;|im_start|&gt;' + message.role + '\n' + content }}
-
             {%- endif %}
-
         {%- else %}
-
             {{- '&lt;|im_start|&gt;' + message.role + '\n' + content }}
-
         {%- endif %}
-
         {%- if message.tool_calls %}
-
             {%- for tool_call in message.tool_calls %}
-
                 {%- if (loop.first and content) or (not loop.first) %}
-
                     {{- '\n' }}
-
                 {%- endif %}
-
                 {%- if tool_call.function %}
-
                     {%- set tool_call = tool_call.function %}
-
                 {%- endif %}
-
                 {{- '&lt;tool_call&gt;\n{"name": "' }}
-
                 {{- tool_call.name }}
-
                 {{- '", "arguments": ' }}
-
                 {%- if tool_call.arguments is string %}
-
                     {{- tool_call.arguments }}
-
                 {%- else %}
-
                     {{- tool_call.arguments | tojson }}
-
                 {%- endif %}
-
                 {{- '}\n&lt;/tool_call&gt;' }}
-
             {%- endfor %}
-
         {%- endif %}
-
         {{- '&lt;|im_end|&gt;\n' }}
-
     {%- elif message.role == "tool" %}
-
         {%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}
-
             {{- '&lt;|im_start|&gt;user' }}
-
         {%- endif %}
-
         {{- '\n&lt;tool_response&gt;\n' }}
-
         {{- message.content }}
-
         {{- '\n&lt;/tool_response&gt;' }}
-
         {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}
-
             {{- '&lt;|im_end|&gt;\n' }}
-
         {%- endif %}
-
     {%- endif %}
-
 {%- endfor %}
-
 {%- if add_generation_prompt %}
-
     {{- '&lt;|im_start|&gt;assistant\n' }}
-
     {%- if enable_thinking is defined and enable_thinking is false %}
-
         {{- '&lt;think&gt;\n\n&lt;/think&gt;\n\n' }}
-
     {%- endif %}
-
 {%- endif %}
-
 ---
 </pre>
 </div>
@@ -1411,7 +1286,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-08 13:42:09,195] [INFO] [axolotl.utils.data.utils.drop_long_seq_in_dataset:177] [PID:174] [RANK:0] min_input_len: 23
-
 [2025-05-08 13:42:09,196] [INFO] [axolotl.utils.data.utils.drop_long_seq_in_dataset:179] [PID:174] [RANK:0] max_input_len: 3380
 </pre>
 </div>
@@ -1445,7 +1319,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-08 13:42:25,711] [INFO] [axolotl.utils.samplers.multipack.calc_min_len:411] [PID:174] [RANK:0] gather_len_batches: [1540]
-
 [2025-05-08 13:42:25,714] [INFO] [axolotl.calc_sample_packing_eff_est:491] [PID:174] [RANK:0] sample_packing_eff_est across ranks: [0.9987832601968344]
 </pre>
 </div>
@@ -1464,31 +1337,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>     #@@ #@@      @@# @@#
-
     @@  @@          @@  @@           =@@#                               @@                 #@    =@@#.
-
     @@    #@@@@@@@@@    @@           #@#@=                              @@                 #@     .=@@
-
       #@@@@@@@@@@@@@@@@@            =@# @#     ##=     ##    =####=+    @@      =#####+  =#@@###.   @@
-
     @@@@@@@@@@/  +@@/  +@@          #@  =@=     #@=   @@   =@#+  +#@#   @@    =@#+  +#@#   #@.      @@
-
     @@@@@@@@@@  ##@@  ##@@         =@#   @#      =@# @#    @@      @@   @@    @@      #@   #@       @@
-
      @@@@@@@@@@@@@@@@@@@@          #@=+++#@=      =@@#     @@      @@   @@    @@      #@   #@       @@
-
                                   =@#=====@@     =@# @#    @@      @@   @@    @@      #@   #@       @@
-
     @@@@@@@@@@@@@@@@  @@@@        #@      #@=   #@=  +@@   #@#    =@#   @@.   =@#    =@#   #@.      @@
-
                                  =@#       @#  #@=     #@   =#@@@@#=    +#@@=  +#@@@@#=    .##@@+   @@
-
     @@@@  @@@@@@@@@@@@@@@@
 
-
-
 [2025-05-07 22:08:14,344] [INFO] [axolotl.monkeypatch.peft.utils.patch_peft_prep_code:76] [PID:1336] [RANK:0] patching prepare_model_for_kbit_training to allow for overrides
-
 [2025-05-07 22:08:14,549] [INFO] [axolotl.integrations.cut_cross_entropy.pre_model_load:80] [PID:1336] [RANK:0] Applying Cut Cross Entropy to model type: qwen3
 </pre>
 </div>
@@ -1554,13 +1414,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-07 22:11:37,521] [INFO] [axolotl.utils.models.load_model:1302] [PID:1336] [RANK:0] cuda memory usage after model load: 9.264GB (+1.721GB cache, +0.375GB misc)
-
 [2025-05-07 22:11:37,532] [INFO] [axolotl.utils.models.prepare_model:1205] [PID:1336] [RANK:0] converting PEFT model w/ prepare_model_for_kbit_training
-
 [2025-05-07 22:11:37,537] [INFO] [axolotl.utils.models.load_model:1341] [PID:1336] [RANK:0] Converting modules to torch.float16
-
 trainable params: 128,450,560 || all params: 14,896,757,760 || trainable%: 0.8623
-
 [2025-05-07 22:11:40,170] [INFO] [axolotl.utils.models.load_model:1402] [PID:1336] [RANK:0] cuda memory usage after adapters: 9.743GB (+1.476GB cache, +0.375GB misc)
 </pre>
 </div>
@@ -1573,13 +1429,9 @@ No label_names provided for model class `PeftModelForCausalLM`. Since `PeftModel
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-07 22:11:41,755] [INFO] [axolotl.train.save_initial_configs:359] [PID:1336] [RANK:0] Pre-saving adapter config to ./outputs/qwen-sft-pirate-rrr...
-
 [2025-05-07 22:11:41,756] [INFO] [axolotl.train.save_initial_configs:363] [PID:1336] [RANK:0] Pre-saving tokenizer to ./outputs/qwen-sft-pirate-rrr...
-
 [2025-05-07 22:11:41,974] [INFO] [axolotl.train.save_initial_configs:366] [PID:1336] [RANK:0] Pre-saving model config to ./outputs/qwen-sft-pirate-rrr...
-
 [2025-05-07 22:11:41,982] [INFO] [axolotl.train.execute_training:211] [PID:1336] [RANK:0] Starting trainer...
-
 [2025-05-07 22:11:45,047] [INFO] [axolotl.utils.samplers.multipack.calc_min_len:411] [PID:1336] [RANK:0] gather_len_batches: [1540]
 </pre>
 </div>
@@ -1710,7 +1562,6 @@ You're using a Qwen2TokenizerFast tokenizer. Please note that with a fast tokeni
 <div class="cell-output cell-output-stdout">
 <div class="ansi-escaped-output">
 <pre>[2025-05-07 22:12:42,746] [INFO] [axolotl.callbacks.on_step_end:128] [PID:1336] [RANK:0] cuda memory usage while training: 9.768GB (+3.287GB cache, +0.646GB misc)
-
 [2025-05-07 22:21:46,859] [INFO] [axolotl.train.save_trained_model:231] [PID:1336] [RANK:0] Training completed! Saving pre-trained model to ./outputs/qwen-sft-pirate-rrr.
 </pre>
 </div>
@@ -1938,7 +1789,8 @@ KeyboardInterrupt
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
       // Inspect non-navigation links and adorn them if external
-     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      window.quartoDecorateExternalLinks = function (root) {
+     var links = (root || window.document).querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
       for (var i=0; i<links.length; i++) {
         const link = links[i];
         if (!isInternal(link.href)) {
@@ -1947,8 +1799,69 @@ KeyboardInterrupt
           if (link.dataset.originalHref !== undefined) {
             link.href = link.dataset.originalHref;
           }
+          if (!link.classList.contains('no-external-icon')) {
+          }
         }
       }
+      };
+      window.quartoDecorateExternalLinks(window.document);
+    // Esc closes the popup (WCAG 1.4.13) and focus leaving both trigger and
+    // popup closes it (WCAG 2.4.11); tippy handles neither for interactive popups.
+    const hideOnEscAndFocusOut = {
+      name: 'hideOnEscAndFocusOut',
+      defaultValue: true,
+      fn(instance) {
+        const dismiss = () => {
+          // A show scheduled by the trigger delay would otherwise reopen it
+          instance.clearDelayTimeouts();
+          instance.hide();
+        };
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          // Keep Esc from also reaching page handlers (e.g. reveal.js overview),
+          // except an open reveal.js slide menu, which Esc should close too.
+          // The menu handles keys only when its keyboard option is on.
+          const menuHandlesEsc = window.Reveal?.getPlugin?.('menu')?.isOpen() &&
+            window.Reveal.getConfig().menu?.keyboard !== false;
+          if (!menuHandlesEsc) {
+            event.stopPropagation();
+          }
+          if (instance.popper.contains(window.document.activeElement)) {
+            // Disabled while refocusing so the focus trigger does not reopen it
+            instance.disable();
+            instance.reference.focus();
+            instance.enable();
+          }
+          dismiss();
+        };
+        const onFocusOut = (event) => {
+          const target = event.relatedTarget;
+          if (target && !instance.reference.contains(target) &&
+              !instance.popper.contains(target)) {
+            dismiss();
+          }
+        };
+        // On the trigger too: a click trigger (code-annotations: select) has no
+        // blur handling. Attached for the instance's lifetime so leaving the
+        // trigger also cancels a show still pending on the trigger delay.
+        instance.reference.addEventListener('focusout', onFocusOut);
+        return {
+          onShow() {
+            window.document.addEventListener('keydown', onKeyDown, true);
+            instance.popper.addEventListener('focusout', onFocusOut);
+          },
+          onHide() {
+            window.document.removeEventListener('keydown', onKeyDown, true);
+            instance.popper.removeEventListener('focusout', onFocusOut);
+          },
+          onDestroy() {
+            instance.reference.removeEventListener('focusout', onFocusOut);
+          },
+        };
+      },
+    };
     function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
       const config = {
         allowHTML: true,
@@ -1962,6 +1875,7 @@ KeyboardInterrupt
         interactiveBorder: 10,
         theme: 'quarto',
         placement: 'bottom-start',
+        plugins: [hideOnEscAndFocusOut],
       };
       if (contentFn) {
         config.content = contentFn;
@@ -2124,44 +2038,54 @@ KeyboardInterrupt
           const lineIds = lines.map((line) => {
             return targetCell + "-" + line;
           })
-          let top = null;
-          let height = null;
-          let parent = null;
+          // Each band is positioned against its own containing block, which is
+          // not the offsetParent of the lines, so place it from client rects.
+          const placeBand = (band, firstEl, lastEl, codeBlock) => {
+            const container = band.offsetParent;
+            if (container === null) {
+              return;
+            }
+            const containerRect = container.getBoundingClientRect();
+            // Reveal.js scales slides with a transform, so convert client
+            // pixels back to the CSS pixels of the container.
+            const scale = containerRect.height / container.offsetHeight || 1;
+            const firstRect = firstEl.getBoundingClientRect();
+            const lastRect = lastEl.getBoundingClientRect();
+            const top = (firstRect.top - containerRect.top) / scale - container.clientTop + container.scrollTop;
+            const height = (lastRect.bottom - firstRect.top) / scale;
+            band.style.top = top - 2 + "px";
+            band.style.height = height + 4 + "px";
+            if (codeBlock) {
+              // Without the copy button wrapper, the containing block is wider
+              // than the code block, so span the code block explicitly.
+              const blockRect = codeBlock.getBoundingClientRect();
+              band.style.left = (blockRect.left - containerRect.left) / scale - container.clientLeft + container.scrollLeft + "px";
+              band.style.width = blockRect.width / scale + "px";
+            }
+          };
           if (lineIds.length > 0) {
-              //compute the position of the single el (top and bottom and make a div)
-              const el = window.document.getElementById(lineIds[0]);
-              top = el.offsetTop;
-              height = el.offsetHeight;
-              parent = el.parentElement.parentElement;
-            if (lineIds.length > 1) {
-              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
-              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
-              height = bottom - top;
+            const el = window.document.getElementById(lineIds[0]);
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const parent = el.parentElement.parentElement;
+            // cook up a div (if necessary) and position it
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
             }
-            if (top !== null && height !== null && parent !== null) {
-              // cook up a div (if necessary) and position it 
-              let div = window.document.getElementById("code-annotation-line-highlight");
-              if (div === null) {
-                div = window.document.createElement("div");
-                div.setAttribute("id", "code-annotation-line-highlight");
-                div.style.position = 'absolute';
-                parent.appendChild(div);
-              }
-              div.style.top = top - 2 + "px";
-              div.style.height = height + 4 + "px";
-              div.style.left = 0;
-              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
-              if (gutterDiv === null) {
-                gutterDiv = window.document.createElement("div");
-                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
-                gutterDiv.style.position = 'absolute';
-                const codeCell = window.document.getElementById(targetCell);
-                const gutter = codeCell.querySelector('.code-annotation-gutter');
-                gutter.appendChild(gutterDiv);
-              }
-              gutterDiv.style.top = top - 2 + "px";
-              gutterDiv.style.height = height + 4 + "px";
+            placeBand(div, el, lastEl, parent.closest("div.sourceCode") || parent);
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
             }
+            placeBand(gutterDiv, el, lastEl);
             selectedAnnoteEl = annoteEl;
           }
         };
@@ -2259,6 +2183,9 @@ KeyboardInterrupt
       }
     }
   });
+  </script>
+  <script type="application/javascript">
+  window.quartoScrollableRegionsLabels = {"code":"Scrollable code","output":"Scrollable output"};
   </script>
 </div> <!-- /content -->
 
