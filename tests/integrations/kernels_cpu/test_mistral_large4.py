@@ -268,7 +268,7 @@ def test_attn_quantization_rejects_unknown_format(value):
 @pytest.mark.parametrize("value", [None, "none", "nvfp4", "MXFP4", "mxfp8"])
 def test_attn_quantization_accepts_known_formats(value):
     args = KernelsArgs.model_validate({"mistral_large4_attn_quantization": value})
-    assert args.mistral_large4_attn_quantization == value
+    assert args.mistral_large4_attn_quantization == (value and value.lower())
 
 
 def test_mla_proj_suffixes():

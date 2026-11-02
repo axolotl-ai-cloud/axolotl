@@ -319,20 +319,16 @@ class KernelsArgs(BaseModel):
     mistral_large4_attn_native_fp8: bool | None = None
     # Optionally quantize the frozen MLA attention bases (post-PEFT-wrap) to a low-bit format so the
     # fused attention-LoRA kernel runs the 4-/8-bit path: none (default) | nvfp4 | mxfp4 | mxfp8.
-    mistral_large4_attn_quantization: str | None = None
+    mistral_large4_attn_quantization: (
+        Literal["none", "nvfp4", "mxfp4", "mxfp8"] | None
+    ) = None
 
     @model_validator(mode="before")
     @classmethod
     def check_mistral_large4_attn_quantization(cls, data):
         quant = data.get("mistral_large4_attn_quantization")
-        if not quant or str(quant).lower() == "none":
-            return data
-        valid = {"nvfp4", "mxfp4", "mxfp8"}
-        if str(quant).lower() not in valid:
-            raise ValueError(
-                "mistral_large4_attn_quantization must be 'none' or one of "
-                f"{sorted(valid)}, got {quant!r}"
-            )
+        if isinstance(quant, str):
+            data["mistral_large4_attn_quantization"] = quant.lower()
         return data
 
     @model_validator(mode="before")
