@@ -25,10 +25,12 @@ from axolotl.integrations.kernels.libs.sonicmoe.sf_layout import (
     gate_up_interleave_perm,
 )
 
+from tests.cuda_gates import AtSetup
+
 pytestmark = [
     pytest.mark.gpu_blackwell,
     pytest.mark.skipif(
-        not fp4_cute_available(),
+        AtSetup(lambda: not fp4_cute_available()),
         reason="requires an SM100 (Blackwell) GPU with quack fp4 GEMM",
     ),
 ]

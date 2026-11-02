@@ -26,13 +26,11 @@ from .test_grouped_fp4_train import (
     _cos,
     quantize_nvfp4,
 )
+from tests.cuda_gates import cuda_major_not_in
 
-_BLACKWELL = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] in (
-    10,
-    12,
-)
 pytestmark = pytest.mark.skipif(
-    not _BLACKWELL, reason="grouped fp4 needs sm100/sm120 (Blackwell)"
+    not torch.cuda.is_available() or cuda_major_not_in(10, 12),
+    reason="grouped fp4 needs sm100/sm120 (Blackwell)",
 )
 
 SKEWS = ["balanced", "moderate", "extreme", "all_to_one"]

@@ -19,18 +19,16 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from tests.cuda_gates import cuda_capability_below
+
 E_LOCAL, TOP_K, NUM_TOKENS, RANK, SCALING = 8, 4, 300, 8, 2.0
 IDLE_EXPERT, NO_LOCAL_TOKEN = 7, 5
-
-
-def _is_hopper_or_newer() -> bool:
-    return torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 9
 
 
 pytestmark = [
     pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires CUDA GPU"),
     pytest.mark.skipif(
-        not _is_hopper_or_newer(),
+        cuda_capability_below(9),
         reason="SonicMoE requires Hopper (sm_90) or Blackwell (sm_100+)",
     ),
     pytest.mark.skipif(

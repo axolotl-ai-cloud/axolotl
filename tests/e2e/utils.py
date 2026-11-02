@@ -104,30 +104,50 @@ def require_llmcompressor(test_case):
     )(test_case)
 
 
-def requires_sm_ge_100(test_case):
-    is_sm_ge_100 = (
+def _skip_unless_at_call(condition, reason):
+    """``unittest.skipUnless`` for a test function, but ``condition()`` runs when the test does:
+    device queries initialize CUDA, and at decoration time that happens during collection."""
+
+    def decorator(test_func):
+        @wraps(test_func)
+        def wrapper(*args, **kwargs):
+            if not condition():
+                raise unittest.SkipTest(reason)
+            return test_func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def _is_cuda_sm_ge(major, minor=0):
+    return bool(
         torch.cuda.is_available()
         and torch.version.cuda
-        and torch.cuda.get_device_capability() >= (10, 0)
+        and torch.cuda.get_device_capability() >= (major, minor)
     )
+
+
+def requires_sm_ge_100(test_case):
     return pytest.mark.gpu_blackwell(
-        unittest.skipUnless(is_sm_ge_100, "test requires sm>=100")(test_case)
+        _skip_unless_at_call(lambda: _is_cuda_sm_ge(10), "test requires sm>=100")(
+            test_case
+        )
     )
 
 
 def requires_cuda_ge_8_9(test_case):
-    is_cuda_ge_8_9 = (
-        torch.cuda.is_available()
-        and torch.version.cuda
-        and torch.cuda.get_device_capability() >= (8, 9)
-    )
-    return unittest.skipUnless(is_cuda_ge_8_9, "test requires cuda>=8.9")(test_case)
+    return _skip_unless_at_call(
+        lambda: _is_cuda_sm_ge(8, 9), "test requires cuda>=8.9"
+    )(test_case)
 
 
 def supports_fp8(test_case):
-    compute_capability = torch.cuda.get_device_capability()
-    return unittest.skipUnless(
-        compute_capability >= (9, 0), "test requires h100 or newer GPU"
+    return _skip_unless_at_call(
+        lambda: (
+            torch.cuda.is_available() and torch.cuda.get_device_capability() >= (9, 0)
+        ),
+        "test requires h100 or newer GPU",
     )(test_case)
 
 
