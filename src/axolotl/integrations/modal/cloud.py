@@ -255,19 +255,19 @@ class ModalCloud(CloudLauncher):
         family = (self.config.gpu or "l40s").lower()
 
         if family == "l40s":
-            return modal.gpu.L40S(count=count)
+            return f"L40S:{count}"
         if family in ["a100", "a100-40gb"]:
-            return modal.gpu.A100(count=count, size="40GB")
+            return f"A100-40GB:{count}"
         if family == "a100-80gb":
-            return modal.gpu.A100(count=count, size="80GB")
+            return f"A100-80GB:{count}"
         if family in ["a10", "a10g"]:
-            return modal.gpu.A10G(count=count)
+            return f"A10G:{count}"
         if family == "h100":
             return f"H100:{count}"
         if family == "t4":
-            return modal.gpu.T4(count=count)
+            return f"T4:{count}"
         if family == "l4":
-            return modal.gpu.L4(count=count)
+            return f"L4:{count}"
         raise ValueError(f"Unsupported GPU family: {family}")
 
     def get_train_memory(self):
