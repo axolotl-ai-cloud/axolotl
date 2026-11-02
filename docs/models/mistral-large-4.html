@@ -940,6 +940,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#getting-started" id="toc-getting-started" class="nav-link active" data-scroll-target="#getting-started">Getting started</a></li>
   <li><a href="#reasoning-effort" id="toc-reasoning-effort" class="nav-link" data-scroll-target="#reasoning-effort">Reasoning Effort</a></li>
   <li><a href="#thinking-support" id="toc-thinking-support" class="nav-link" data-scroll-target="#thinking-support">Thinking Support</a></li>
+  <li><a href="#fused-attention-lora" id="toc-fused-attention-lora" class="nav-link" data-scroll-target="#fused-attention-lora">Fused Attention LoRA</a></li>
   <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">Tips</a></li>
   <li><a href="#optimization-guides" id="toc-optimization-guides" class="nav-link" data-scroll-target="#optimization-guides">Optimization Guides</a></li>
   <li><a href="#related-resources" id="toc-related-resources" class="nav-link" data-scroll-target="#related-resources">Related Resources</a></li>
@@ -1005,6 +1006,17 @@ Due to limited compute, we can only do minor testing, so please let us know if y
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"user"</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"What is 2+2?"</span><span class="fu">}</span><span class="ot">,</span></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span><span class="dt">"role"</span><span class="fu">:</span> <span class="st">"assistant"</span><span class="fu">,</span> <span class="dt">"reasoning_content"</span><span class="fu">:</span> <span class="st">"2+2=4."</span><span class="fu">,</span> <span class="dt">"content"</span><span class="fu">:</span> <span class="st">"4"</span><span class="fu">}</span></span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ot">]</span><span class="fu">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="fused-attention-lora" class="level2">
+<h2 class="anchored" data-anchor-id="fused-attention-lora">Fused Attention LoRA</h2>
+<p>With the kernels plugin enabled (<code>axolotl.integrations.kernels.KernelsPlugin</code>, <code>use_kernels: true</code>), LoRA on the MLA attention projections (<code>q_proj</code>, <code>kv_a_proj_with_mqa</code>, <code>kv_b_proj</code>, <code>o_proj</code>) runs a fused kernel that dispatches on the base weight’s format.</p>
+<ul>
+<li><code>mistral_large4_attn_lora_kernel</code>: on by default for <code>adapter: lora</code> on a block-FP8 or bf16 checkpoint; off by default on the NVFP4 checkpoint and when <code>selective_checkpointing</code> saves matmul outputs. Set <code>true</code> or <code>false</code> to override.</li>
+<li><code>mistral_large4_attn_native_fp8</code>: on by default. On an FP8 base, <code>q_proj</code>, <code>kv_b_proj</code> and <code>o_proj</code> run the native block-FP8 GEMM instead of a dequantized one.</li>
+<li><code>mistral_large4_attn_quantization</code>: <code>none</code> (default), <code>nvfp4</code>, <code>mxfp4</code> or <code>mxfp8</code>. Quantizes the frozen attention bases after the LoRA wrap to save memory. Needs the fused kernel on, and does not combine with <code>peft_use_dora</code>, <code>load_in_8bit</code>, <code>load_in_4bit</code> or <code>lora_merge_aware</code>.</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">mistral_large4_attn_lora_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">mistral_large4_attn_quantization</span><span class="kw">:</span><span class="at"> mxfp8</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="tips" class="level2">
 <h2 class="anchored" data-anchor-id="tips">Tips</h2>
