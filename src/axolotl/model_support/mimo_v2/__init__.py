@@ -67,7 +67,7 @@ def _weight_conversions():
     from .modeling_mimo_v2 import MiMoV2Dequantize, SplitQKV
 
     def dequant(*names):
-        return [f"{n}.weight{s}$" for n in names for s in ("", "_scale_inv")]
+        return [f"{n}.weight{s}" for n in names for s in ("", "_scale_inv")]
 
     experts = "mlp.experts.*"
     return {
@@ -95,7 +95,7 @@ def _weight_conversions():
             ),
             # first-match fallback for the remaining FP8 linears (dense MLP)
             WeightConverter(
-                ["weight$", "weight_scale_inv"],
+                ["weight", "weight_scale_inv"],
                 "weight",
                 operations=[MiMoV2Dequantize()],
             ),
