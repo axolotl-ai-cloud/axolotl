@@ -95,6 +95,8 @@ jobs:
             pytorch_version: "2.13.0"
           - python_version: "3.14"
             pytorch_version: "2.14.1"
+          - python_version: "3.14"
+            pytorch_version: "2.15.0"
     timeout-minutes: 45
     env:
       AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
