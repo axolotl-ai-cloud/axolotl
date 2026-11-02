@@ -248,6 +248,28 @@ def test_attn_quantization_rejects_attn_lora_kernel_off(tmp_path, overrides):
         MistralLarge4Adapter().pre_model_load(cfg)
 
 
+@pytest.mark.parametrize("target_linear,warned", [(True, True), (False, False)])
+def test_target_linear_warns_about_indexer(
+    tmp_path, monkeypatch, target_linear, warned
+):
+    from axolotl.monkeypatch.accelerate import fsdp2_quantized
+
+    monkeypatch.setattr(fsdp2_quantized, "_FP32_SHARD_CLASS_NAMES", set())
+    warnings = []
+    monkeypatch.setattr(
+        ml4_adapter.LOG, "warning", lambda msg, *a: warnings.append(msg)
+    )
+    cfg = DictDefault(
+        {
+            "base_model": _saved(tmp_path, tiny_config()),
+            "adapter": "lora",
+            "lora_target_linear": target_linear,
+        }
+    )
+    MistralLarge4Adapter().pre_model_load(cfg)
+    assert any("indexer" in msg for msg in warnings) is warned
+
+
 def test_config_flags_accepted():
     a = KernelsArgs(
         mistral_large4_attn_lora_kernel=True,

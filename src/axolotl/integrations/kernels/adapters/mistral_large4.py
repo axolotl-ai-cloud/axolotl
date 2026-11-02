@@ -100,6 +100,12 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
                 f"{cfg.base_model} ships remote modeling code (auto_map), but the Mistral Large 4 "
                 "kernels target transformers' built-in modeling. Drop trust_remote_code."
             )
+        if cfg.get("adapter") in ("lora", "qlora") and cfg.get("lora_target_linear"):
+            LOG.warning(
+                "lora_target_linear: true also puts LoRA on the DSA indexer projections "
+                "(self_attn.indexer.wq_b / wk / weights_proj), which run under no_grad, so those "
+                "adapters never train. List the targets with lora_target_modules instead."
+            )
         if self._attn_quantization(cfg):
             if not self._attn_lora_kernel_enabled(cfg):
                 raise ValueError(
