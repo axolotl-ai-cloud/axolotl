@@ -24,7 +24,7 @@ import types
 
 import torch
 
-from axolotl.kernels.lora import get_lora_parameters
+from axolotl.kernels.lora import _apply_dropout, get_lora_parameters
 from axolotl.kernels.quantize import dequantize_fp8
 from axolotl.utils.logging import get_logger
 
@@ -43,7 +43,18 @@ def _fp8_linear():
 class _NativeFp8Lora(torch.autograd.Function):
     @staticmethod
     def forward(
-        ctx, x, qdata, scale_inv, block_size, A, B, scaling, bias, allow_deepgemm=True
+        ctx,
+        x,
+        qdata,
+        scale_inv,
+        block_size,
+        A,
+        B,
+        scaling,
+        bias,
+        allow_deepgemm=True,
+        x_lora=None,
+        lora_bias=None,
     ):
         fp8_linear = _fp8_linear()
         shape = x.shape
@@ -58,28 +69,52 @@ class _NativeFp8Lora(torch.autograd.Function):
             bias=bias,
             allow_deepgemm=allow_deepgemm,
         )
+        # x_lora is the dropout-applied input; the base GEMM always sees the undropped x
+        xl2 = x2 if x_lora is None else x_lora.reshape(-1, shape[-1])
         # fused LoRA update via addmm_ (avoids a [M,out] temp)
-        xA = x2 @ A.t()
+        xA = xl2 @ A.t()
         out = out.addmm_(xA, B.t(), alpha=float(scaling))
-        ctx.save_for_backward(x2, qdata, scale_inv, A, B, xA)
+        if lora_bias is not None:
+            out = out.add_(lora_bias, alpha=float(scaling))
+        ctx.save_for_backward(xl2, qdata, scale_inv, A, B, xA)
         ctx.scaling = float(scaling)
         ctx.block_size = tuple(block_size)
         ctx.shape = shape
+        ctx.has_x_lora = x_lora is not None
+        ctx.has_lora_bias = lora_bias is not None
         return out.view(*shape[:-1], -1)
 
     @staticmethod
     def backward(ctx, grad):
-        x2, qdata, scale_inv, A, B, xA = ctx.saved_tensors
+        xl2, qdata, scale_inv, A, B, xA = ctx.saved_tensors
         s = ctx.scaling
         g = grad.reshape(-1, grad.shape[-1])
         # dX through a bf16 dequant of W (Option A: block scale on the contraction axis, so an
         # fp8 dX would need a transposed fp8 weight copy = 2x weight mem). W transient.
         w_deq = dequantize_fp8(qdata, scale_inv, g.dtype)
         dxA = g @ B
-        dX = (g @ w_deq).addmm_(dxA, A, alpha=s)
-        dA = (dxA.t() * s) @ x2  # [r, in]
+        dX = g @ w_deq
+        dX_lora = None
+        if ctx.has_x_lora:
+            dX_lora = (dxA @ A).mul_(s).view(*ctx.shape)
+        else:
+            dX = dX.addmm_(dxA, A, alpha=s)
+        dA = (dxA.t() * s) @ xl2  # [r, in]
         dB = (g.t() * s) @ xA  # [out, r]
-        return dX.view(*ctx.shape), None, None, None, dA, dB, None, None, None
+        d_lora_bias = g.sum(dim=0) * s if ctx.has_lora_bias else None
+        return (
+            dX.view(*ctx.shape),
+            None,
+            None,
+            None,
+            dA,
+            dB,
+            None,
+            None,
+            None,
+            dX_lora,
+            d_lora_bias,
+        )
 
 
 def _fp8_from_weight(w, base_layer):
@@ -107,18 +142,26 @@ def _make_forward(lora_layer):
     def forward(self, x, *args, **kwargs):
         # get_lora_parameters unshards the LoRA A/B DTensors (FSDP2), grad-tracked. The base
         # Float8Tensor is all-gathered by FSDP before forward, so this reads the live weight.
-        W, bias, _qs, A, B, scaling, _lora_bias, dropout, _mag = get_lora_parameters(
-            self
+        W, bias, _qs, A, B, scaling, lora_bias, dropout, magnitude = (
+            get_lora_parameters(self)
         )
         fp8 = _fp8_from_weight(W, self.base_layer)
-        if (
-            fp8 is None or A is None
-        ):  # disabled/merged adapter, or base not fp8: fall back
+        # disabled/merged adapter, base not fp8, or DoRA (no native path): PEFT's forward
+        if fp8 is None or A is None or magnitude is not None:
             return self._dsv4_orig_forward(x, *args, **kwargs)
         qdata, scale_inv, block_size = fp8
-        xin = dropout(x) if dropout is not None else x
         return _NativeFp8Lora.apply(
-            xin, qdata, scale_inv, block_size, A, B, scaling, bias
+            x,
+            qdata,
+            scale_inv,
+            block_size,
+            A,
+            B,
+            scaling,
+            bias,
+            not getattr(self.base_layer, "_deepgemm_disabled", False),
+            _apply_dropout(dropout, x, self.training),
+            lora_bias,
         )
 
     return forward
