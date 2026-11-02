@@ -22,14 +22,14 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.12"
             pytorch: 2.13.0
             axolotl_extras:
             num_gpus: 2
             test_suite: multigpu
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             axolotl_extras:
@@ -37,7 +37,7 @@ jobs:
             gpu_type: B200
             test_suite: nvfp4
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             axolotl_extras:
@@ -98,7 +98,7 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             axolotl_extras:
