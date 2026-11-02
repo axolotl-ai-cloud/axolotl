@@ -972,6 +972,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.get_seq_idx" id="toc-axolotl.monkeypatch.models.mamba_utils.get_seq_idx" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.get_seq_idx">get_seq_idx</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.is_cp_active" id="toc-axolotl.monkeypatch.models.mamba_utils.is_cp_active" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.is_cp_active">is_cp_active</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.kernel_accepts" id="toc-axolotl.monkeypatch.models.mamba_utils.kernel_accepts" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.kernel_accepts">kernel_accepts</a></li>
+  <li><a href="#axolotl.monkeypatch.models.mamba_utils.kernelized_copy" id="toc-axolotl.monkeypatch.models.mamba_utils.kernelized_copy" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.kernelized_copy">kernelized_copy</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available" id="toc-axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available">mamba2_seq_idx_kernels_available</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.patch_model_forward_seq_idx" id="toc-axolotl.monkeypatch.models.mamba_utils.patch_model_forward_seq_idx" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.patch_model_forward_seq_idx">patch_model_forward_seq_idx</a></li>
   <li><a href="#axolotl.monkeypatch.models.mamba_utils.require_seq_idx_kernels" id="toc-axolotl.monkeypatch.models.mamba_utils.require_seq_idx_kernels" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.mamba_utils.require_seq_idx_kernels">require_seq_idx_kernels</a></li>
@@ -1022,14 +1023,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Whether a hub-wrapped kernel’s live implementation takes <code>name</code>.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.monkeypatch.models.mamba_utils.kernelized_copy">kernelized_copy</a></td>
+<td>The copy of the hub-wrapped <code>fn</code> that <code>kernelize</code> binds for <code>module</code>.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available">mamba2_seq_idx_kernels_available</a></td>
 <td>True when the installed Mamba2 kernels honour <code>seq_idx</code>.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.models.mamba_utils.patch_model_forward_seq_idx">patch_model_forward_seq_idx</a></td>
 <td>Inject <code>seq_idx</code> (from <code>position_ids</code>) into <code>model_cls.forward</code> kwargs.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.models.mamba_utils.require_seq_idx_kernels">require_seq_idx_kernels</a></td>
 <td>Raise unless every kernel in <code>names</code> honours <code>seq_idx</code> (or Hub kernels will).</td>
 </tr>
@@ -1085,9 +1090,17 @@ own signature is checked instead; the Hub layers declare <code>**kwargs</code> a
 the name inside, so their source is searched. Returns None when nothing can
 be told.</p>
 </section>
+<section id="axolotl.monkeypatch.models.mamba_utils.kernelized_copy" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.kernelized_copy">kernelized_copy</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.kernelized_copy(module, fn)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The copy of the hub-wrapped <code>fn</code> that <code>kernelize</code> binds for <code>module</code>.</p>
+<p>kernels &gt;= 0.18 gives every <code>use_kernelized_func</code> instance its own copy and
+routes the module’s calls to it, leaving the global <code>fn</code> on its fallback;
+older releases bind <code>fn</code> itself.</p>
+</section>
 <section id="axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available">mamba2_seq_idx_kernels_available</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.mamba2_seq_idx_kernels_available()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>True when the installed Mamba2 kernels honour <code>seq_idx</code>.</p>
 <p>transformers resolves <code>mamba-ssm</code> / <code>causal-conv1d</code> ahead of its own
 torch fallbacks, and those fallbacks drop unknown kwargs — so without the
@@ -1096,7 +1109,7 @@ packed samples.</p>
 </section>
 <section id="axolotl.monkeypatch.models.mamba_utils.patch_model_forward_seq_idx" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.patch_model_forward_seq_idx">patch_model_forward_seq_idx</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.patch_model_forward_seq_idx(model_cls)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.patch_model_forward_seq_idx(model_cls)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Inject <code>seq_idx</code> (from <code>position_ids</code>) into <code>model_cls.forward</code> kwargs.</p>
 <p>For architectures whose mixers already accept <code>seq_idx</code> through <code>**kwargs</code>
 but whose model forward never derives it, this is the only piece missing for
@@ -1104,12 +1117,12 @@ sample packing.</p>
 </section>
 <section id="axolotl.monkeypatch.models.mamba_utils.require_seq_idx_kernels" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.mamba_utils.require_seq_idx_kernels">require_seq_idx_kernels</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.require_seq_idx_kernels(</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    mod,</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    names,</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    model_type,</span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    kernels_enabled,</span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.mamba_utils.require_seq_idx_kernels(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    mod,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    names,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    model_type,</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    kernels_enabled,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Raise unless every kernel in <code>names</code> honours <code>seq_idx</code> (or Hub kernels will).</p>
 
 
