@@ -77,7 +77,7 @@ def _quantize_weight(w_bf16: torch.Tensor, kind: str):
     if kind == "nvfp4":
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
-        pts = (w_bf16.abs().max() / (6.0 * 448.0)).reshape(1).float().clamp(min=1e-12)
+        pts = (w_bf16.abs().max() / (6.0 * 448.0)).reshape(()).float().clamp(min=1e-12)
         return NVFP4Tensor.to_nvfp4(
             w_bf16, per_tensor_scale=pts, is_swizzled_scales=False
         )
