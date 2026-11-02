@@ -8,7 +8,10 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.scatter_fuse import (
     weighted_scatter,
 )
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+pytestmark = [
+    pytest.mark.gpu,
+    pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA"),
+]
 
 
 TOP_K = 4
