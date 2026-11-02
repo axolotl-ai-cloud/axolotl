@@ -54,6 +54,8 @@ from axolotl.core.trainers.grpo import GRPOStrategy
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.lora_merge_precision import merged_lora_weight
 
+pytestmark = pytest.mark.usefixtures("restore_attention_registries")
+
 ONES = np.ones(1)
 needs_score_centering = pytest.mark.skipif(
     not SCORE_CENTERING, reason="score centering is on TRL main only"
