@@ -99,7 +99,15 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
                 f"{cfg.base_model} ships remote modeling code (auto_map), but the Mistral Large 4 "
                 "kernels target transformers' built-in modeling. Drop trust_remote_code."
             )
-        if self._attn_quantization(cfg) and self._attn_lora_kernel_enabled(cfg):
+        if self._attn_quantization(cfg):
+            if not self._attn_lora_kernel_enabled(cfg):
+                raise ValueError(
+                    "mistral_large4_attn_quantization quantizes the bases of the fused attention "
+                    "LoRA, which is off for this config: it needs adapter: lora, and defaults off "
+                    "on the modelopt NVFP4 checkpoint and under a selective_checkpointing that "
+                    "saves matmul outputs. Set mistral_large4_attn_lora_kernel: true or drop "
+                    "mistral_large4_attn_quantization."
+                )
             for key, reason in (
                 ("peft_use_dora", "the low-bit attention LoRA has no DoRA path"),
                 (

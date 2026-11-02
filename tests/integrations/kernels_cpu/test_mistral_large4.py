@@ -197,7 +197,6 @@ def test_remote_code_checkpoint_rejected(monkeypatch):
     "overrides,rejected",
     [
         ({}, True),
-        ({"mistral_large4_attn_lora_kernel": False}, False),
         ({"mistral_large4_attn_quantization": "none"}, False),
     ],
 )
@@ -220,6 +219,31 @@ def test_attn_quantization_rejects_incompatible_bases(
         with pytest.raises(ValueError, match=key):
             MistralLarge4Adapter().pre_model_load(cfg)
     else:
+        MistralLarge4Adapter().pre_model_load(cfg)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"mistral_large4_attn_lora_kernel": False},
+        {"adapter": "qlora", "load_in_4bit": True},
+        {"quantization_config": MODELOPT_NVFP4},
+    ],
+)
+def test_attn_quantization_rejects_attn_lora_kernel_off(tmp_path, overrides):
+    overrides = dict(overrides)
+    extra = overrides.pop("quantization_config", None)
+    config = tiny_config(quantization_config=extra) if extra else tiny_config()
+    cfg = DictDefault(
+        {
+            "base_model": _saved(tmp_path, config),
+            "adapter": "lora",
+            "use_scattermoe": True,
+            "mistral_large4_attn_quantization": "nvfp4",
+            **overrides,
+        }
+    )
+    with pytest.raises(ValueError, match="mistral_large4_attn_lora_kernel: true"):
         MistralLarge4Adapter().pre_model_load(cfg)
 
 
