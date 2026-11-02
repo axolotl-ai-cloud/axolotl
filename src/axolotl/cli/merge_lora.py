@@ -130,6 +130,7 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
 def _cast_keeping_fp32_modules(model, dtype: torch.dtype) -> None:
     from transformers.core_model_loading import build_glob_alternation
 
+    # model.to() ignores _keep_in_fp32_modules_strict (only from_pretrained applies it);
     # noaux_tc router biases collapse in bf16, which reroutes the experts
     keep = build_glob_alternation(sorted(model._keep_in_fp32_modules_strict))[0]
     for name, tensor in [*model.named_parameters(), *model.named_buffers()]:
