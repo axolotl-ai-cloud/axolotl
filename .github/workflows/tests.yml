@@ -375,6 +375,65 @@ jobs:
             for (const hit of hits) core.info(`  ${hit}`);
             core.setOutput('run_multigpu', String(hits.length > 0));
 
+  modal-image:
+    name: Modal image build (py${{ matrix.python_version }}, torch ${{ matrix.pytorch }}${{ matrix.axolotl_extras && format(', {0}', matrix.axolotl_extras) || '' }})
+    # Builds the single-GPU e2e images without the GPU label. Same-repo branches only: fork
+    # code must not reach the self-hosted Modal runners before a maintainer adds the label.
+    if: >
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft &&
+      github.repository_owner == 'axolotl-ai-cloud' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, modal]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cuda: 130
+            python_version: "3.12"
+            pytorch: 2.13.0
+            axolotl_extras:
+          - cuda: 130
+            python_version: "3.14"
+            pytorch: 2.14.1
+            axolotl_extras:
+          - cuda: 130
+            python_version: "3.14"
+            pytorch: 2.14.1
+            axolotl_extras: blackwell
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install Modal
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal==1.3.0.post1 jinja2
+      # Must render the same Dockerfile as docker-e2e-jobs.yml so a labeled run reuses the build
+      - name: Update env vars
+        run: |
+          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "PYTORCH_VERSION=${{ matrix.pytorch }}" >> $GITHUB_ENV
+          echo "AXOLOTL_ARGS=" >> $GITHUB_ENV
+          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras }}" >> $GITHUB_ENV
+          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=Dockerfile-uv.jinja" >> $GITHUB_ENV
+      - name: Compute deps hash
+        run: python cicd/deps_hash.py
+      - name: Image inputs match main's
+        if: env.IMAGE_REF == 'refs/heads/main'
+        run: echo "DEPS_HASH=$DEPS_HASH matches main; main's e2e run builds this image, skipping"
+      - name: Build the image and start it on Modal
+        if: env.IMAGE_REF != 'refs/heads/main'
+        run: modal run -m cicd.image_build
+
   check-gpu-label:
     # Deferred so a label added while CPU jobs run is seen without a rerun
     needs: [pre-commit, distributed-cpu, pytest-testmon, sdist]
