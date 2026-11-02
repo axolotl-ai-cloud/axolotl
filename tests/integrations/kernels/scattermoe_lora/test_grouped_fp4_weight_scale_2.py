@@ -34,6 +34,7 @@ from .test_grouped_fp4_train import (
     _cos,
     _fp4_codebook,
 )
+from tests.cuda_gates import AtSetup
 
 _IS_CUDA = torch.cuda.is_available()
 
@@ -54,7 +55,7 @@ def _ws2_backend_available() -> bool:
 
 
 pytestmark = pytest.mark.skipif(
-    not _ws2_backend_available(),
+    AtSetup(lambda: not _ws2_backend_available()),
     reason="non-unit weight_scale_2 needs a folding forward backend (Marlin sm80+ / DeepGEMM "
     "sm90+); CUTLASS drops it and there is no CPU path - hardware-only",
 )
