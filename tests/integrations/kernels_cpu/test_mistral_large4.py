@@ -185,15 +185,25 @@ def test_remote_code_checkpoint_rejected(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "key,value",
+    [
+        ("peft_use_dora", True),
+        ("load_in_8bit", True),
+        ("load_in_4bit", True),
+        ("lora_merge_aware", "bf16"),
+    ],
+)
+@pytest.mark.parametrize(
     "overrides,rejected",
     [
         ({}, True),
         ({"mistral_large4_attn_lora_kernel": False}, False),
         ({"mistral_large4_attn_quantization": "none"}, False),
-        ({"peft_use_dora": False}, False),
     ],
 )
-def test_attn_quantization_rejects_dora(tmp_path, monkeypatch, overrides, rejected):
+def test_attn_quantization_rejects_incompatible_bases(
+    tmp_path, monkeypatch, key, value, overrides, rejected
+):
     from axolotl.monkeypatch.accelerate import fsdp2_quantized
 
     monkeypatch.setattr(fsdp2_quantized, "_FP32_SHARD_CLASS_NAMES", set())
@@ -201,13 +211,13 @@ def test_attn_quantization_rejects_dora(tmp_path, monkeypatch, overrides, reject
         {
             "base_model": _saved(tmp_path, tiny_config()),
             "adapter": "lora",
-            "peft_use_dora": True,
+            key: value,
             "mistral_large4_attn_quantization": "nvfp4",
             **overrides,
         }
     )
     if rejected:
-        with pytest.raises(ValueError, match="peft_use_dora"):
+        with pytest.raises(ValueError, match=key):
             MistralLarge4Adapter().pre_model_load(cfg)
     else:
         MistralLarge4Adapter().pre_model_load(cfg)
@@ -300,6 +310,29 @@ def test_attn_lora_leaves_int8_base_to_peft():
     peft_out = torch.zeros(1)
     proj._ml4_orig_forward = lambda x, *args, **kwargs: peft_out
     assert proj(torch.randn(2, 3, 64, dtype=torch.bfloat16)) is peft_out
+
+
+def test_quantize_attn_bases_skips_int8_base():
+    from peft import LoraConfig, get_peft_model
+
+    from axolotl.integrations.kernels.libs.mistral_large4.lora_lowbit import (
+        quantize_attn_bases,
+    )
+
+    lin = nn.Linear(64, 32, bias=False)
+    # bnb 8-bit storage: casting it to bf16 without its SCB scales would requantize garbage
+    int8 = torch.randint(-127, 127, (32, 64), dtype=torch.int8)
+    lin.weight = nn.Parameter(int8.clone(), requires_grad=False)
+    layer = nn.Module()
+    layer.self_attn = nn.Module()
+    layer.self_attn.q_proj = lin
+    root = nn.Module()
+    root.language_model = nn.Module()
+    root.language_model.layers = nn.ModuleList([layer])
+    model = get_peft_model(root, LoraConfig(r=4, target_modules=["q_proj"]))
+
+    assert quantize_attn_bases(model, "mxfp8", MLA_PROJ_SUFFIXES) == 0
+    assert torch.equal(lin.weight, int8)
 
 
 MLA_TARGETS = ["q_proj", "kv_a_proj_with_mqa", "kv_b_proj", "o_proj"]

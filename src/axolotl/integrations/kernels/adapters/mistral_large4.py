@@ -99,15 +99,27 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
                 f"{cfg.base_model} ships remote modeling code (auto_map), but the Mistral Large 4 "
                 "kernels target transformers' built-in modeling. Drop trust_remote_code."
             )
-        if (
-            cfg.get("peft_use_dora")
-            and self._attn_quantization(cfg)
-            and self._attn_lora_kernel_enabled(cfg)
-        ):
-            raise ValueError(
-                "mistral_large4_attn_quantization does not support peft_use_dora: the low-bit "
-                "attention LoRA has no DoRA path. Drop one of them."
-            )
+        if self._attn_quantization(cfg) and self._attn_lora_kernel_enabled(cfg):
+            for key, reason in (
+                ("peft_use_dora", "the low-bit attention LoRA has no DoRA path"),
+                (
+                    "load_in_8bit",
+                    "bitsandbytes attention bases cannot be requantized to a low-bit format",
+                ),
+                (
+                    "load_in_4bit",
+                    "bitsandbytes attention bases cannot be requantized to a low-bit format",
+                ),
+                (
+                    "lora_merge_aware",
+                    "the merge-aware forward cannot merge LoRA into a low-bit base",
+                ),
+            ):
+                if cfg.get(key):
+                    raise ValueError(
+                        f"mistral_large4_attn_quantization does not support {key}: {reason}. "
+                        "Drop one of them."
+                    )
         conflict = self._selective_checkpointing_conflict(cfg)
         if (
             conflict

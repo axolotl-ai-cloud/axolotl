@@ -107,7 +107,7 @@ def quantize_attn_bases(model, kind: str, suffixes) -> int:
     def _is_mxtensor(t):
         return type(t).__name__ == "MXTensor"
 
-    n = 0
+    n = skipped = 0
     for name, mod in model.named_modules():
         if not isinstance(mod, LoraLayer) or not is_mla_proj(name, suffixes):
             continue
@@ -115,6 +115,10 @@ def quantize_attn_bases(model, kind: str, suffixes) -> int:
         w = base.weight
         if is_nvfp4_param(w) or is_mxfp4_param(w) or _is_mxtensor(w):
             continue  # already a low-bit torchao tensor
+        if not w.is_floating_point():
+            # integer storage (e.g. bitsandbytes) needs its own scales to dequantize
+            skipped += 1
+            continue
         # get a bf16 view of the frozen base (dequant fp8 if needed)
         if (
             w.dtype == torch.float8_e4m3fn
@@ -131,6 +135,13 @@ def quantize_attn_bases(model, kind: str, suffixes) -> int:
         n += 1
     if n:
         LOG.info("mistral_large4: quantized %d MLA attention bases to %s", n, kind)
+    if skipped:
+        LOG.warning(
+            "mistral_large4: left %d integer-quantized MLA attention bases unquantized "
+            "(%s needs a float or fp8 base)",
+            skipped,
+            kind,
+        )
     return n
 
 
