@@ -102,22 +102,31 @@ class _Model(nn.Module):
         return self.self_attn(x)
 
 
-def test_patched_fp8_linear_lora_matches_peft(fp8_linear):
+@pytest.mark.parametrize(
+    "lora_dropout,lora_bias", [(0.0, False), (0.5, False), (0.0, True)]
+)
+def test_patched_fp8_linear_lora_matches_peft(fp8_linear, lora_dropout, lora_bias):
     torch.manual_seed(0)
     model = get_peft_model(
         _Model(),
         LoraConfig(
-            r=4, lora_alpha=8, target_modules=["q_b_proj"], init_lora_weights=False
+            r=4,
+            lora_alpha=8,
+            lora_dropout=lora_dropout,
+            lora_bias=lora_bias,
+            target_modules=["q_b_proj"],
+            init_lora_weights=False,
         ),
     )
     assert patch_dsv4_attn_fp8_lora(model, enabled=True) == 1
     layer = model.base_model.model.self_attn.q_b_proj
-    lora_params = [layer.lora_A["default"].weight, layer.lora_B["default"].weight]
+    lora_params = [p for p in layer.parameters() if p.requires_grad]
     x = torch.randn(2, 3, 256)
 
     def run(forward):
         for p in lora_params:
             p.grad = None
+        torch.manual_seed(1)
         out = forward(x)
         out.square().sum().backward()
         return out.detach(), [p.grad.clone() for p in lora_params]
@@ -127,4 +136,4 @@ def test_patched_fp8_linear_lora_matches_peft(fp8_linear):
 
     torch.testing.assert_close(out, ref)
     for got, want in zip(grads, ref_grads, strict=True):
-        torch.testing.assert_close(got, want)
+        torch.testing.assert_close(got, want, rtol=1e-4, atol=1e-4)

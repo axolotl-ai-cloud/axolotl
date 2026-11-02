@@ -306,6 +306,29 @@ class KernelsArgs(BaseModel):
                 raise bad
         return data
 
+    # Mistral-Large-4 fused, quantization-dispatching LoRA for the MLA attention projections
+    # (q_proj/kv_a_proj_with_mqa/kv_b_proj/o_proj): bf16 / nf4 / fp8-dequant via the shared LoRA_O
+    # kernel, native blockwise-fp8 on the large projections, low-bit (nvfp4/mx) by transient
+    # dequant. None = on for a LoRA run on a block-FP8 / bf16 checkpoint, off on the modelopt
+    # NVFP4 checkpoint and under a selective_checkpointing that saves matmul outputs.
+    mistral_large4_attn_lora_kernel: bool | None = None
+    # Use the native blockwise-fp8 GEMM (vs dequant) on q_proj/kv_b_proj/o_proj when the base is
+    # fp8. Default on (DeepGEMM sm90/sm100, Triton sm120).
+    mistral_large4_attn_native_fp8: bool | None = None
+    # Optionally quantize the frozen MLA attention bases (post-PEFT-wrap) to a low-bit format so the
+    # fused attention-LoRA kernel runs the 4-/8-bit path: none (default) | nvfp4 | mxfp4 | mxfp8.
+    mistral_large4_attn_quantization: (
+        Literal["none", "nvfp4", "mxfp4", "mxfp8"] | None
+    ) = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mistral_large4_attn_quantization(cls, data):
+        quant = data.get("mistral_large4_attn_quantization")
+        if isinstance(quant, str):
+            data["mistral_large4_attn_quantization"] = quant.lower()
+        return data
+
     @model_validator(mode="before")
     @classmethod
     def check_moe_grouped_mode(cls, data):

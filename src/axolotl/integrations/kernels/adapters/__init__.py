@@ -45,16 +45,33 @@ class ModelAdapter:
         """After PEFT wraps the model (dtype policy, fused-LoRA kernel swaps)."""
 
 
+# Successful reads keyed on the cfg fields load_model_config builds the config from; adapter
+# detection asks many times per run and each hub read costs a network round-trip.
+_MODEL_CONFIG_CACHE: dict[str, object] = {}
+
+
 def load_base_model_config(cfg):
     """The base model's HF config via the canonical ``load_model_config``, or None on any failure.
 
-    Adapter matchers must use this rather than a raw ``AutoConfig.from_pretrained``: it reuses the
-    HF-cached read ``normalize_config`` already did and honors base_model_config / revision /
-    overrides / cfg-gated trust_remote_code, so detection matches how the model actually loads."""
+    Adapter matchers must use this rather than a raw ``AutoConfig.from_pretrained``: it honors
+    base_model_config / revision / overrides / cfg-gated trust_remote_code, so detection matches
+    how the model actually loads, and it reads each config once per process."""
     from axolotl.loaders.utils import load_model_config
 
     try:
-        return load_model_config(cfg)
+        key = repr(
+            (
+                cfg.base_model_config or cfg.base_model or cfg.tokenizer_config,
+                cfg.trust_remote_code is True,
+                cfg.revision_of_model,
+                cfg.num_labels,
+                cfg.cls_model_config,
+                cfg.overrides_of_model_config,
+            )
+        )
+        if key not in _MODEL_CONFIG_CACHE:
+            _MODEL_CONFIG_CACHE[key] = load_model_config(cfg)
+        return _MODEL_CONFIG_CACHE[key]
     except Exception:
         return None
 
