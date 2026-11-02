@@ -149,20 +149,9 @@ def _make_forward(name: str, native_fp8: bool):
             return _generic_forward(self, x, *args, **kwargs)
 
         if kind in ("nvfp4", "mxfp4", "mxfp8"):
-            try:
-                from .lora_lowbit import lowbit_lora_forward
+            from .lora_lowbit import lowbit_lora_forward
 
-                out = lowbit_lora_forward(self, x, kind)
-                if out is not None:
-                    return out
-            except Exception as e:  # pragma: no cover - fall back, never break training
-                LOG.warning_once(
-                    "mistral_large4: low-bit (%s) fused attn LoRA unavailable (%s); "
-                    "falling back to dequant path",
-                    kind,
-                    e,
-                )
-            # fall through to generic (dequant) if the low-bit kernel isn't available
+            return lowbit_lora_forward(self, x, kind)
 
         return _generic_forward(self, x, *args, **kwargs)
 

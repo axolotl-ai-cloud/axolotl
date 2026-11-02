@@ -144,12 +144,15 @@ def quantize_attn_bases(model, kind: str, suffixes) -> int:
 
 
 def lowbit_lora_forward(lora_layer, x, kind: str):
-    """Fused LoRA forward for an NVFP4/MX base attention projection, or None to fall back.
+    """Fused LoRA forward for an NVFP4/MX base attention projection.
 
     ``kind`` in {"nvfp4", "mxfp4", "mxfp8"} (already classified by the caller).
     """
     W, b, _qs, A, B, s, lb, drop, mag = get_lora_parameters(lora_layer)
-    if mag is not None:  # DoRA: let the generic path handle it
-        return None
+    if mag is not None:
+        raise NotImplementedError(
+            f"DoRA is not supported on a {kind} attention base; drop peft_use_dora or "
+            "mistral_large4_attn_quantization."
+        )
     x_drop = _apply_dropout(drop, x, lora_layer.training)  # None when no dropout
     return _LowbitLora.apply(x, x_drop, W, A, B, s if A is not None else 0.0, b, lb)
