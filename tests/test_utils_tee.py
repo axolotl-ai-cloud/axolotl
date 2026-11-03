@@ -105,3 +105,32 @@ def test_truncate_vs_append_behavior(monkeypatch):
             assert "B\n" in content and "C\n" in content
         finally:
             tee.close_debug_log()
+
+
+def test_nonzero_rank_uses_own_file(monkeypatch):
+    from axolotl.utils import tee
+
+    with tempfile.TemporaryDirectory() as td:
+        monkeypatch.setenv("AXOLOTL_TEE_STDOUT", "0")
+
+        monkeypatch.setenv("RANK", "0")
+        path0 = tee.prepare_debug_log(_dummy_cfg(td))
+        try:
+            tee.file_only_stream.write("rank0\n")
+            tee.file_only_stream.flush()
+        finally:
+            tee.close_debug_log()
+
+        # a later rank truncating its own file must not touch rank 0's
+        monkeypatch.setenv("RANK", "3")
+        path3 = tee.prepare_debug_log(_dummy_cfg(td))
+        try:
+            tee.file_only_stream.write("rank3\n")
+            tee.file_only_stream.flush()
+        finally:
+            tee.close_debug_log()
+
+        assert os.path.basename(path0) == "debug.log"
+        assert os.path.basename(path3) == "debug.rank3.log"
+        assert read(path0) == "rank0\n"
+        assert read(path3) == "rank3\n"
