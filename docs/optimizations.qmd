@@ -95,6 +95,7 @@ Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
 - **SonicMoE**: CUTLASS / cute-DSL, Hopper (H100/H200) or Blackwell (B200/GB200).
 
 - **Config:** `use_scattermoe: true` or `use_sonicmoe: true`
+- **Quantized experts:** `moe_grouped_mode: nvfp4` (4-bit), `fp8_block` (native 128×128 block-fp8), or `mxfp8` (OCP-MX fp8, Blackwell-native) keeps the frozen experts quantized through the grouped GEMM. See [MoE Expert Quantization](expert_quantization.qmd).
 - **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration), [NVFP4 MoE LoRA](nvfp4_lora.qmd) for 4-bit checkpoints
 
 ## Long Context Models

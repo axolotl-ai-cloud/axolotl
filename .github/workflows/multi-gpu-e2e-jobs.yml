@@ -22,14 +22,14 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.12"
             pytorch: 2.13.0
             axolotl_extras:
             num_gpus: 2
             test_suite: multigpu
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             axolotl_extras:
@@ -37,7 +37,7 @@ jobs:
             gpu_type: B200
             test_suite: nvfp4
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             axolotl_extras:
@@ -58,7 +58,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Install Modal
@@ -98,7 +98,7 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             axolotl_extras:
@@ -128,7 +128,7 @@ jobs:
           persist-credentials: false
       - name: Install Python
         if: steps.selection.outputs.mode == 'subset'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Install Modal

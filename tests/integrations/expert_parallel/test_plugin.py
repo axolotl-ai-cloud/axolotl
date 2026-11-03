@@ -625,12 +625,16 @@ class TestPluginLifecycle:
             ({"experts_implementation": "eager"}, "eager"),
         ],
     )
-    def test_pre_model_load_wraps_local(self, _restore_ep_state, extra, local):
+    def test_pre_model_load_wraps_local(
+        self, monkeypatch, _restore_ep_state, extra, local
+    ):
+        registered = _record_kernel_registration(monkeypatch, local)
         cfg = self._ep_cfg(**extra)
         ExpertParallelPlugin().pre_model_load(cfg)
         assert cfg.experts_implementation == EXPERT_PARALLEL
         assert experts_fn.get_backend() == "deep_ep"
         assert experts_fn.get_local_implementation() == local
+        assert registered == ([local] if local in _KERNEL_REGISTRATIONS else [])
 
     def test_disabled_by_default(self):
         """expert_parallel_size=1 (default) means EP is off — pre_model_load no-ops."""
@@ -1414,6 +1418,23 @@ def _fake_find_spec(monkeypatch, deep_ep_installed):
     )
 
 
+_KERNEL_REGISTRATIONS = {
+    "scattermoe": "axolotl.integrations.kernels.libs.scattermoe_lora.experts.register_scattermoe_experts",
+    "sonicmoe": "axolotl.integrations.kernels.libs.sonicmoe.experts.register_sonicmoe_experts",
+}
+
+
+def _record_kernel_registration(monkeypatch, local):
+    """The real scattermoe/sonicmoe registration patches transformers' experts registries,
+    PreTrainedModel and PEFT's ParamWrapper for the rest of the process."""
+    registered = []
+    if local in _KERNEL_REGISTRATIONS:
+        monkeypatch.setattr(
+            _KERNEL_REGISTRATIONS[local], lambda: registered.append(local)
+        )
+    return registered
+
+
 class TestBackendResolution:
     def test_args_accept_backends(self):
         for backend in ("auto", "deep_ep", "torch"):
@@ -1476,12 +1497,14 @@ class TestBackendResolution:
     )
     def test_pre_model_load_torch(self, monkeypatch, _restore_ep_state, extra, local):
         _forbid_find_spec(monkeypatch)
+        registered = _record_kernel_registration(monkeypatch, local)
         cfg = _torch_ep_cfg(**extra)
         ExpertParallelPlugin().pre_model_load(cfg)
         assert cfg.experts_implementation == EXPERT_PARALLEL
         assert cfg.expert_parallel_backend == "torch"
         assert experts_fn.get_backend() == "torch"
         assert experts_fn.get_local_implementation() == local
+        assert registered == ([local] if local in _KERNEL_REGISTRATIONS else [])
 
     def test_pre_model_load_rejects_unregistered_local(self, monkeypatch):
         _forbid_find_spec(monkeypatch)

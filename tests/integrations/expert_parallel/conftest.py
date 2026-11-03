@@ -3,6 +3,24 @@
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_experts_registration(monkeypatch):
+    """``register_all`` (run by every ``pre_model_load``) registers into transformers'
+    experts interface and wraps ``PreTrainedModel.get_correct_experts_implementation``
+    for the rest of the process."""
+    from transformers.integrations.moe import ExpertsInterface
+    from transformers.modeling_utils import PreTrainedModel
+
+    monkeypatch.setattr(
+        ExpertsInterface, "_global_mapping", dict(ExpertsInterface._global_mapping)
+    )
+    monkeypatch.setattr(
+        PreTrainedModel,
+        "get_correct_experts_implementation",
+        PreTrainedModel.get_correct_experts_implementation,
+    )
+
+
 @pytest.fixture
 def fake_ep_sharder(monkeypatch):
     """Run the real ``shard_expert_weights`` as one rank of a faked two-rank EP group.

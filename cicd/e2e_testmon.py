@@ -19,9 +19,11 @@ testmon_volume = modal.Volume.from_name("axolotl-ci-testmon", create_if_missing=
     volumes={**VOLUME_CONFIG, TESTMON_MOUNT: testmon_volume},
 )
 def cicd_pytest_testmon():
-    run_cmd("bash ./cicd/cicd_testmon.sh", "/workspace/axolotl")
-    if os.environ.get("GITHUB_REF") == "refs/heads/main":
-        testmon_volume.commit()
+    try:
+        run_cmd("bash ./cicd/cicd_testmon.sh", "/workspace/axolotl")
+    finally:
+        if os.environ.get("GITHUB_REF") == "refs/heads/main":
+            testmon_volume.commit()
 
 
 @app.local_entrypoint()

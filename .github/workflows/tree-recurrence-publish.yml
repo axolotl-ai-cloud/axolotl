@@ -1,7 +1,7 @@
 name: publish tree-recurrence
 
-# Inert until the PyPI project's trusted publisher exists: it runs only for a
-# tree-recurrence/v<version> tag, which pypi.yml's "v*" filter does not match.
+# Runs only for a tree-recurrence/v<version> tag, which pypi.yml's "v*" filter does not
+# match. The tag sets the published version, as pypi.yml does for axolotl.
 on:
   push:
     tags:
@@ -22,19 +22,14 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false
 
-      - name: Check the tag matches VERSION
+      - name: Update version in VERSION file
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          version="$(cat packages/tree-recurrence/VERSION)"
-          if [ "${TAG#tree-recurrence/v}" != "$version" ]; then
-            echo "tag $TAG does not match packages/tree-recurrence/VERSION ($version)"
-            exit 1
-          fi
+        run: echo "${TAG#tree-recurrence/v}" > packages/tree-recurrence/VERSION
 
       - name: Build sdist and wheel
         run: uv build packages/tree-recurrence --out-dir dist
@@ -60,4 +55,4 @@ jobs:
           path: dist/
 
       - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

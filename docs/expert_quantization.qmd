@@ -43,6 +43,99 @@ lora_target_parameters:
 `lora_dropout` must be `0` when using `lora_target_parameters`.
 :::
 
+## ScatterMoE grouped-mode quantization (nvfp4 / fp8_block / mxfp8)
+
+`quantize_moe_experts` (above) uses bitsandbytes NF4/int8. When you run the **Kernels plugin** with
+`use_scattermoe: true`, the experts additionally have a fused grouped-GEMM path whose precision is
+selected by `moe_grouped_mode`:
+
+```yaml
+plugins: [axolotl.integrations.kernels.KernelsPlugin]
+use_kernels: true
+use_scattermoe: true
+# moe_grouped_mode: auto       # default: auto | nvfp4 | fp8_block | mxfp8 | none
+lora_target_parameters: [experts.gate_up_proj, experts.down_proj]
+```
+
+By default (`moe_grouped_mode: auto`) the mode follows the routed experts' format, read from the
+checkpoint's safetensors headers (falling back to its `quantization_config`) before any weight
+loads, and one startup log line reports the resolved mode, the reason, the GPU, the backend and
+whether it requantizes:
+
+| Experts load as | `auto` picks | Explicit modes |
+|---|---|---|
+| NVFP4 | `nvfp4` | `fp8_block` / `mxfp8`: error |
+| 128×128 block-FP8 (incl. `model_quantization_config: FineGrainedFP8Config`) | `fp8_block` | `nvfp4` / `mxfp8` requantize: need `moe_grouped_requant: true` |
+| bf16 | none | `mxfp8` requantizes: needs `moe_grouped_requant: true`; `nvfp4` / `fp8_block`: error |
+| DeepSeek packed FP4 | error | error |
+| different formats in different layers | error | error (`none` runs each layer on its own path) |
+| other (bnb `quantize_moe_experts`, mxfp4, per-tensor FP8) | none | error |
+
+`moe_grouped_mode: none` turns the grouped path off. When `auto` resolves to a mode that has no
+backend on this GPU it falls back to the plain scattermoe kernels with a warning; an explicit mode
+without a backend fails at startup.
+
+- **`nvfp4`** — 4-bit NVFP4 experts (a block-fp8 checkpoint is requantized fp8→nvfp4 at load; a
+  native NVFP4-modelopt checkpoint loads as-is). Backend: Marlin / CUTLASS / DeepGEMM, overridable
+  via `moe_grouped_backend: auto|marlin|cutlass|deepgemm`.
+- **`fp8_block`** — keeps the checkpoint's native 128×128 block-fp8 experts (no requant, higher
+  fidelity). Runs everywhere (Triton `blockfp8_triton`) and uses DeepGEMM fp8×fp8 on sm90/sm100.
+  `moe_grouped_backend: marlin` opts the forward into Marlin W8A16 packs. By default the pack is
+  rebuilt transiently per projection per forward and freed immediately — **memory-neutral at any
+  model depth** (works under FSDP, where the gathered weight is a fresh per-step copy anyway) for
+  ~1.3× the layer at DeepSeek-scale experts. With headroom to spare, set
+  `AXOLOTL_MARLIN_CACHE_MIN_FREE_GB=<N>` to keep packs resident: ~1.5× the layer (~2.3× combined
+  with `moe_marlin_dx: true`) but a resident repacked expert copy per layer.
+- **`mxfp8`** — OCP-MX fp8 experts (e4m3 data + e8m0 scale every 32 elements; bf16/block-fp8 is
+  requantized to mxfp8 at load). Same 1 byte/elem as `fp8_block` — *no VRAM win over it* — but the
+  layout is the native Blackwell MX tensor-core format with a finer 32-wide scale. The forward base
+  GEMM is arch-split: **sm100** (datacenter Blackwell) uses the hardware-MX `torch._scaled_grouped_mm`
+  (W8A8, e8m0 scaling in hardware); **sm120 / sm90** use the portable W8A16 Triton kernel
+  (`mxfp8_triton`, fp8 weight × bf16 act) — on sm120 the per-tile hardware path is ~7× slower
+  (launch overhead), so Triton is the default there. The backward is always the Triton W8A16 kernel.
+  Choose `fp8_block` for memory savings alone; choose `mxfp8` for a native mxfp8 checkpoint or the
+  Blackwell hardware MX-GEMM.
+
+### Backward dX tuning (Marlin backend)
+
+Two knobs control how the frozen-expert backward `dX = grad @ W` runs when the Marlin backend is
+active (sm120 and pre-Blackwell GPUs):
+
+```yaml
+moe_marlin_dx: false   # false (default) | true (GPU-resident transposed packs)
+moe_fp8_dx: true       # dequant-dX precision: true = fp8-read (fast), false = bf16-dequant (accurate)
+```
+
+- **`moe_marlin_dx`** runs dX as a Marlin grouped GEMM on a transposed `W^T` pack built once at
+  load. It covers both grouped expert formats:
+  - `moe_grouped_mode: nvfp4` — W4A16 pack **requantized** along the flipped axis (~9% fixed error
+    on the dX weight; LoRA gradients barely affected, `d_hidden` cosine ≥ 0.996). ~3–6× faster dX,
+    ~2× the full expert layer at DeepSeek-scale experts.
+  - `moe_grouped_mode: fp8_block` — W8A16 pack via the **exact** quantization-aware transpose
+    (128×128 block scales are transpose-symmetric: byte permute + scale-grid transpose, zero
+    requant error). ~1.5–1.7× faster dX than the Triton fp8-read path at sparse-MoE scale.
+
+  ::: {.callout-warning}
+  `moe_marlin_dx: true` **increases resident VRAM** and is therefore **off by default**: a second
+  resident expert pack (~the size of the forward pack) roughly doubles expert weight residency —
+  a cost that grows with model size (e.g. +12 GiB on Gemma-4-26B-A4B) even though per-step
+  transients shrink. Enable it when the speedup is worth that headroom; leave it off when VRAM is
+  the constraint.
+  :::
+
+- **`moe_swiglu_epilogue`** (opt-in, default `false`) fuses the gated activation into the
+  gate_up LoRA-B GEMM epilogue, eliminating the separate activation pass's `[Mt, 2I]` read.
+  Memory-neutral; measured ~speed-neutral at DeepSeek-scale expert widths (the activation pass is
+  ~1% of the layer there) — most useful at small expert widths where the elementwise pass is a
+  larger share.
+
+- **`moe_fp8_dx`** selects the dequant-based dX precision (used when `moe_marlin_dx: false` and as
+  the fallback path): `true` = fp8-read (sm120 default, ~2% grad error, ~half the transient),
+  `false` = bf16-dequant (most accurate).
+
+See [Kernels Integration](custom_integrations.qmd#kernels-integration) for the full expert-kernel
+config surface (including `nonexpert_quantization` for the attention/MLP linears).
+
 ## Requirements
 
 - Requires (`adapter: lora` and `load_in_8bit: true`) or (`adapter: qlora` and `load_in_4bit: true`)

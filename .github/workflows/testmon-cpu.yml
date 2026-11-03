@@ -9,7 +9,8 @@ permissions:
 env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
-  PYTHON_VERSION: "3.14"
+  # Exact patch: testmon re-runs everything when the Python micro version changes
+  PYTHON_VERSION: "3.14.9"
   PYTORCH_VERSION: "2.14.1"
 
 jobs:
@@ -19,6 +20,8 @@ jobs:
     # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
     continue-on-error: true
     timeout-minutes: 45
+    env:
+      AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
 
     steps:
       - name: cleanup node
@@ -38,12 +41,12 @@ jobs:
           ls -ltr ~/.cache/huggingface/hub/
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
           prune-cache: true
@@ -59,7 +62,7 @@ jobs:
           uv pip install --no-build-isolation -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov-cli pytest==9.1.1 pytest-retry pytest-sugar pytest-testmon pytest-xdist tbparse
+            codecov-cli pytest==9.1.1 pytest-retry pytest-sugar pytest-testmon==2.2.0 pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -76,24 +79,28 @@ jobs:
       - name: Show HF cache
         run: hf cache ls
 
-      # testmon stores the package set and Python version itself and starts over when they change,
-      # so one baseline per arm is enough; the key only needs the commit.
+      # One cache key per Python/torch cell, so cells never restore or claim each other's baseline
       - name: Restore testmon baseline
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .testmon
-          key: testmon-cpu-${{ github.sha }}
+          key: testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}
           restore-keys: |
-            testmon-cpu-
+            testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-
 
       - name: Run tests with testmon selection (xdist -n4 kept, pytest-testmon 2.2.0 syncs workers)
+        id: testmon
         timeout-minutes: 30
         shell: bash
         run: |
           mkdir -p .testmon
+          ignore_deps=$(python cicd/testmon_ignore_deps.py)
+          # Every arm runs even after a failure, so the baseline covers all of them
+          failed=0
           tm() {
             local name=$1; shift
-            TESTMON_DATAFILE=".testmon/${name}.testmondata" pytest --testmon-forceselect "$@" | tee -a testmon-run.log
+            TESTMON_DATAFILE=".testmon/${name}.testmondata" pytest --testmon-forceselect \
+              -o "testmon_ignore_dependencies=${ignore_deps}" "$@" | tee -a testmon-run.log || failed=1
           }
           tm core -v --durations=10 -n4 --dist loadfile -m "not slow and not distributed_cpu" --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
           tm monkeypatch -v --durations=10 -m "not slow and not nf4_distributed and not distributed_cpu" tests/monkeypatch/
@@ -101,6 +108,7 @@ jobs:
           tm cli -v --durations=10 tests/cli/
           tm utils -v --durations=10 tests/utils/
           tm integrations -v --durations=10 -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/
+          exit $failed
 
       - name: testmon selection summary
         if: always()
@@ -108,9 +116,13 @@ jobs:
           grep -hE "^testmon:|estmon savings|deselected" testmon-run.log || true
 
       # Main is the only writer: PR runs read the baseline and discard their own datafile.
+      # Saved after test failures too; testmon re-runs a failing test's file until it passes.
       - name: Save testmon baseline
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: >-
+          ${{ !cancelled()
+          && contains(fromJSON('["success", "failure"]'), steps.testmon.outcome)
+          && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .testmon
-          key: testmon-cpu-${{ github.sha }}
+          key: testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}

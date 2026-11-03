@@ -22,8 +22,8 @@ DSV4_FP32_SHARD_CLASSES = ("DeepseekV4HyperConnection", "DeepseekV4HyperHead")
 
 def scattermoe_unsupported_expert_dtype(cfg) -> str | None:
     """The routed-expert dtype of an fp8-quantized checkpoint whose experts are not NVFP4, else
-    None. scattermoe runs NVFP4Tensor or unquantized experts only; blockwise FP8/FP4 experts would
-    reach its kernels as raw quantized weights with their ``*_scale_inv`` ignored."""
+    None. scattermoe runs NVFP4Tensor or unquantized experts only; blockwise FP8/FP4 experts
+    fall back to transformers' FP8 experts forward, without expert LoRA."""
     model_config = load_base_model_config(cfg)
     qcfg = getattr(model_config, "quantization_config", None)
     if not isinstance(qcfg, dict) or qcfg.get("quant_method") != "fp8":
@@ -36,10 +36,12 @@ def scattermoe_unsupported_expert_dtype(cfg) -> str | None:
 
 
 def check_scattermoe_expert_dtype(cfg) -> None:
-    """Refuse DeepSeek's packed-FP4 experts under scattermoe and warn on block-FP8 ones, which
-    load on the stock FP8 path but have no scattermoe kernel."""
+    """Refuse DeepSeek's packed-FP4 experts under scattermoe and warn on block-FP8 ones unless
+    moe_grouped_mode resolved to fp8_block (otherwise they run on the stock FP8 path)."""
     expert_dtype = scattermoe_unsupported_expert_dtype(cfg)
     if expert_dtype is None:
+        return
+    if expert_dtype == "fp8" and cfg.get("moe_grouped_mode") == "fp8_block":
         return
     if expert_dtype == "fp4":
         raise ValueError(
@@ -49,9 +51,10 @@ def check_scattermoe_expert_dtype(cfg) -> None:
             "nvidia/DeepSeek-V4-Flash-NVFP4). Use the NVFP4 checkpoint or drop use_scattermoe."
         )
     LOG.warning(
-        "use_scattermoe with use_dsv4_kernels: %s has blockwise expert_dtype=%r routed experts. "
-        "They load with their *_scale_inv block scales, which the scattermoe experts forward does "
-        "not apply. Use an NVFP4-expert checkpoint or drop use_scattermoe.",
+        "use_scattermoe with use_dsv4_kernels: %s has blockwise expert_dtype=%r routed experts "
+        "and moe_grouped_mode is not fp8_block. They run on transformers' FP8 experts forward, "
+        "and expert LoRA on them raises. Use moe_grouped_mode: fp8_block (block FP8), an "
+        "NVFP4-expert checkpoint, or drop use_scattermoe.",
         cfg.base_model,
         expert_dtype,
     )

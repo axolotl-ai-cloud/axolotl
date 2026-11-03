@@ -108,15 +108,14 @@ def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     `x` is the gate tensor.
 
     Args:
-        gate: Input gate tensor of shape `[batch, seq_len, hidden_dim]`.
-        up: Up-projection tensor of shape `[batch, seq_len, hidden_dim]`.
+        gate: Input gate tensor of shape `[..., hidden_dim]`.
+        up: Up-projection tensor of shape `[..., hidden_dim]`.
 
     Returns:
-        Output tensor of shape `[batch, seq_len, hidden_dim]`.
+        Output tensor of shape `[..., hidden_dim]`.
     """
-    batch, seq_len, hidden_dim = gate.shape
     n_elements = gate.numel()
-    out = torch.empty((batch, seq_len, hidden_dim), dtype=gate.dtype, device="cuda")
+    out = torch.empty(gate.shape, dtype=gate.dtype, device="cuda")
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["block_size"]),)  # noqa: E731
     _swiglu_fwd_kernel[grid](
@@ -163,9 +162,9 @@ def swiglu_backward(
     SwiGLU backward pass using in-place operations.
 
     Args:
-        grad_output: Gradient of loss with respect to output, shape `[batch, seq_len, hidden_dim]`.
-        gate: Gate tensor from forward pass, shape `[batch, seq_len, hidden_dim]`.
-        up: Up-projection tensor from forward pass, shape `[batch, seq_len, hidden_dim]`.
+        grad_output: Gradient of loss with respect to output, shape `[..., hidden_dim]`.
+        gate: Gate tensor from forward pass, shape `[..., hidden_dim]`.
+        up: Up-projection tensor from forward pass, shape `[..., hidden_dim]`.
 
     Returns:
         Tuple containing:
