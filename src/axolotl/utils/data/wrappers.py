@@ -103,6 +103,16 @@ def get_dataset_wrapper(
     if cfg.skip_prepare_dataset:
         return dataset, None
 
+    # ``type`` is optional in the config schema and _parse_dataset_type accepts
+    # None, but every branch below reads it: say it is missing instead of letting
+    # the first startswith() fail with an AttributeError on None.
+    if dataset_config.type is None:
+        raise ValueError(
+            f"dataset type is required for dataset {dataset_config.path!r}. "
+            "Set `type` in the dataset config, for example `type: completion` or "
+            "`type: chat_template`."
+        )
+
     # Bradley-Terry dataset
     if dataset_config.type.startswith("bradley_terry"):
         return _handle_bradley_terry_dataset(
