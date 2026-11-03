@@ -404,6 +404,10 @@ jobs:
             python_version: "3.14"
             pytorch: 2.14.1
             axolotl_extras: blackwell
+          - cuda: 132
+            python_version: "3.14"
+            pytorch: 2.15.0
+            axolotl_extras:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
