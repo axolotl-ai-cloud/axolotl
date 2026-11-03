@@ -46,6 +46,34 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None, **kwargs):
     )
 
 
+
+def _get_preference_thread(prompt: Dict[str, Any], field: str) -> List[Dict[str, Any]]:
+    """Return a validated ``chosen``/``rejected`` thread from a dataset row.
+
+    Preference rows come from user JSONL files, so a missing field or a thread
+    shaped differently used to surface as a bare KeyError, TypeError or
+    IndexError far from the row that caused it.
+    """
+    if field not in prompt:
+        raise ValueError(
+            f"preference dataset row is missing the `{field}` field; it should be "
+            "a list of message dicts"
+        )
+    thread = prompt[field]
+    if not isinstance(thread, list) or not thread:
+        raise ValueError(
+            f"preference dataset row field `{field}` must be a non-empty list of "
+            f"message dicts, got {type(thread).__name__}"
+        )
+    for index, message in enumerate(thread):
+        if not isinstance(message, dict) or "content" not in message:
+            raise ValueError(
+                f"preference dataset row field `{field}` message {index} is not a "
+                "dict with a `content` key"
+            )
+    return thread
+
+
 class ORPODatasetParsingStrategy:
     """Strategy to parse chosen rejected dataset into messagelist"""
 
@@ -55,14 +83,20 @@ class ORPODatasetParsingStrategy:
         messages: List[Message] = []
         if system := prompt.get("system", None):
             messages.append(Message(role="system", content=system, label=False))
+        chosen = _get_preference_thread(prompt, "chosen")
+        if len(chosen) < 2:
+            raise ValueError(
+                "preference dataset row field `chosen` needs at least a user and an "
+                f"assistant turn, got {len(chosen)}"
+            )
         messages.append(
-            Message(role="user", content=prompt["chosen"][0]["content"], label=False)
+            Message(role="user", content=chosen[0]["content"], label=False)
         )
         messages.append(
             Message(
                 role="assistant",
-                content=prompt["chosen"][1]["content"],
-                reasoning_content=prompt["chosen"][1].get("reasoning_content"),
+                content=chosen[1]["content"],
+                reasoning_content=chosen[1].get("reasoning_content"),
                 label=True,
             )
         )
@@ -74,14 +108,20 @@ class ORPODatasetParsingStrategy:
         messages: List[Message] = []
         if system := prompt.get("system", None):
             messages.append(Message(role="system", content=system, label=False))
+        chosen = _get_preference_thread(prompt, "rejected")
+        if len(chosen) < 2:
+            raise ValueError(
+                "preference dataset row field `chosen` needs at least a user and an "
+                f"assistant turn, got {len(chosen)}"
+            )
         messages.append(
-            Message(role="user", content=prompt["rejected"][0]["content"], label=False)
+            Message(role="user", content=chosen[0]["content"], label=False)
         )
         messages.append(
             Message(
                 role="assistant",
-                content=prompt["rejected"][1]["content"],
-                reasoning_content=prompt["rejected"][1].get("reasoning_content"),
+                content=chosen[1]["content"],
+                reasoning_content=chosen[1].get("reasoning_content"),
                 label=True,
             )
         )
@@ -89,9 +129,14 @@ class ORPODatasetParsingStrategy:
 
     def get_prompt(self, prompt) -> MessageList:
         """Map the data to extract everything up to the last turn"""
-        total_msg_len = len(prompt["chosen"])
+        chosen = _get_preference_thread(prompt, "chosen")
+        total_msg_len = len(chosen)
         total_msg_turns, remainder = divmod(total_msg_len, 2)
-        assert remainder == 0, "invalid number of turns"
+        if remainder != 0:
+            raise ValueError(
+                "preference dataset row field `chosen` has an odd number of turns "
+                f"({total_msg_len}); it should alternate user and assistant"
+            )
 
         messages: List[Message] = []
         if system := prompt.get("system", None):
