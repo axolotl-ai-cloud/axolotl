@@ -310,3 +310,33 @@ class TestWrongCollisions(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestTrainValidationSplitFingerprint:
+    """Split fingerprints must be derived from the dataset that is really split."""
+
+    def _dataset(self):
+        return Dataset.from_dict({"text": ["a", "b", "a", "c", "b", "d"]})
+
+    def _cfg(self, dedup: bool):
+        return DictDefault(seed=42, dataset_exact_deduplication=dedup)
+
+    def test_split_fingerprint_reflects_deduplication(self):
+        dataset = self._dataset()
+
+        deduped_train, deduped_eval = create_train_validation_split(
+            dataset, self._cfg(True), 0.5
+        )
+        plain_train, plain_eval = create_train_validation_split(
+            dataset, self._cfg(False), 0.5
+        )
+
+        assert len(plain_train) == 3
+        assert len(deduped_train) == 2
+        assert deduped_train._fingerprint != plain_train._fingerprint
+        assert deduped_eval._fingerprint != plain_eval._fingerprint
+
+    def test_split_fingerprint_is_deterministic(self):
+        dataset = self._dataset()
+        first_train, _ = create_train_validation_split(dataset, self._cfg(True), 0.5)
+        second_train, _ = create_train_validation_split(dataset, self._cfg(True), 0.5)
+        assert first_train._fingerprint == second_train._fingerprint
