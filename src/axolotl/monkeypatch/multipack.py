@@ -72,7 +72,6 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "minimax_m2",
     "bailing_hybrid",
     "k2_horizon",
-    "kolibri1",
 ]
 
 
