@@ -12,7 +12,7 @@ pytest.importorskip("jinja2")
 CICD = Path(__file__).resolve().parents[2] / "cicd"
 
 
-@pytest.mark.parametrize("name", ["single_gpu", "multigpu"])
+@pytest.mark.parametrize("name", ["single_gpu", "multigpu", "image_build"])
 def test_functions_run_from_the_mount_root(monkeypatch, name):
     workdirs = []
     workdir = modal.Image.workdir

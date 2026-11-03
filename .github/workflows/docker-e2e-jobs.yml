@@ -62,7 +62,7 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             num_gpus: 1
@@ -130,15 +130,21 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.12"
             pytorch: 2.13.0
             num_gpus: 1
             axolotl_extras:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 132
+            cuda_version: 13.2.1
+            python_version: "3.14"
+            pytorch: 2.15.0
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -195,15 +201,21 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.12"
             pytorch: 2.13.0
             num_gpus: 1
             axolotl_extras:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
+            num_gpus: 1
+            axolotl_extras:
+          - cuda: 132
+            cuda_version: 13.2.1
+            python_version: "3.14"
+            pytorch: 2.15.0
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -252,7 +264,7 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             num_gpus: 1
@@ -305,7 +317,7 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
             axolotl_extras:
@@ -374,7 +386,7 @@ jobs:
       matrix:
         include:
           - cuda: 130
-            cuda_version: 13.0.0
+            cuda_version: 13.0.3
             python_version: "3.12"
             pytorch: 2.14.1
             num_gpus: 1
