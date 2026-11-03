@@ -443,13 +443,16 @@ def create_train_validation_split(
     Returns:
         Tuple of (train_dataset, eval_dataset).
     """
-    train_fingerprint, test_fingerprint = generate_split_fingerprints(
-        dataset, val_set_size, cfg.seed
-    )
-
     # Apply deduplication before splitting if configured
     if cfg.dataset_exact_deduplication:
         dataset, _ = deduplicate_and_log_datasets(dataset=dataset)
+
+    # Fingerprints must be derived from the dataset that is actually split, so
+    # that a deduped and a non-deduped split can never share a fingerprint (and
+    # with it, each other's map/select cache files).
+    train_fingerprint, test_fingerprint = generate_split_fingerprints(
+        dataset, val_set_size, cfg.seed
+    )
 
     split_dataset = dataset.train_test_split(
         test_size=val_set_size,
