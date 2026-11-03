@@ -115,8 +115,20 @@ def chat_message_transform_builder(
             )
 
         messages = []
-        for message in sample[conversations_field]:
-            role = role_value_mappings[message[role_field]]
+        for message_index, message in enumerate(sample[conversations_field]):
+            if role_field not in message:
+                raise ValueError(
+                    f"Message {message_index} in '{conversations_field}' is missing the "
+                    f"role field '{role_field}'."
+                )
+            source_role = message[role_field]
+            if source_role not in role_value_mappings:
+                raise ValueError(
+                    f"Unknown role '{source_role}' in message {message_index} of "
+                    f"'{conversations_field}'. Valid roles are: "
+                    f"{', '.join(sorted(set(role_value_mappings)))}."
+                )
+            role = role_value_mappings[source_role]
             weight = (
                 int(message[message_weight_field])
                 if message_weight_field
