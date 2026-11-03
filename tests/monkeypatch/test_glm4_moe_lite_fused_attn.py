@@ -7,9 +7,9 @@ import torch
 
 from axolotl.utils.dict import DictDefault
 
-requires_cuda = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required"
-)
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
+requires_cuda = pytest.mark.skipif(not gpu_available(), reason="GPU required")
 
 
 def _config(interleave=True, q_rank=64, v_head_dim=256):
@@ -63,16 +63,18 @@ def test_attention_outputs_and_all_parameter_gradients(
     torch.manual_seed(42)
     config = _config(interleave, q_rank, v_head_dim)
     config._attn_implementation = backend
-    original = Glm4MoeLiteAttention(config, 0).cuda().bfloat16()
+    original = Glm4MoeLiteAttention(config, 0).to(DEVICE_TYPE).bfloat16()
     fused = copy.deepcopy(original)
     fused.forward = _make_fused_forward(type(original).forward).__get__(fused)
-    x = torch.randn(1, 34, 128, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    x = torch.randn(
+        1, 34, 128, device=DEVICE_TYPE, dtype=torch.bfloat16, requires_grad=True
+    )
     y = x.detach().clone().requires_grad_()
-    positions = torch.arange(17, device="cuda").repeat(2).unsqueeze(0)
-    cos, sin = Glm4MoeLiteRotaryEmbedding(config).cuda()(x, positions)
+    positions = torch.arange(17, device=DEVICE_TYPE).repeat(2).unsqueeze(0)
+    cos, sin = Glm4MoeLiteRotaryEmbedding(config).to(DEVICE_TYPE)(x, positions)
     mask = None
     if backend == "sdpa":
-        index = torch.arange(34, device="cuda")
+        index = torch.arange(34, device=DEVICE_TYPE)
         mask = (
             (index[:, None] >= index[None, :])
             & (index[:, None] // 17 == index[None, :] // 17)
@@ -108,15 +110,15 @@ def test_cached_decoding_preserves_compressed_cache(monkeypatch):
     monkeypatch.setattr(kernels, "fused_mla_prepare", unexpected)
     config = _config()
     config._attn_implementation = "sdpa"
-    original = Glm4MoeLiteAttention(config, 0).cuda().bfloat16().eval()
+    original = Glm4MoeLiteAttention(config, 0).to(DEVICE_TYPE).bfloat16().eval()
     fused = copy.deepcopy(original)
     fused.forward = _make_fused_forward(type(original).forward).__get__(fused)
     caches = [DynamicCache(config=config), DynamicCache(config=config)]
-    rotary = Glm4MoeLiteRotaryEmbedding(config).cuda()
+    rotary = Glm4MoeLiteRotaryEmbedding(config).to(DEVICE_TYPE)
     with torch.no_grad():
         for step in range(2):
-            x = torch.randn(1, 1, 128, device="cuda", dtype=torch.bfloat16)
-            embeddings = rotary(x, torch.tensor([[step]], device="cuda"))
+            x = torch.randn(1, 1, 128, device=DEVICE_TYPE, dtype=torch.bfloat16)
+            embeddings = rotary(x, torch.tensor([[step]], device=DEVICE_TYPE))
             expected = original(x, embeddings, None, past_key_values=caches[0])[0]
             actual = fused(x, embeddings, None, past_key_values=caches[1])[0]
             torch.testing.assert_close(actual, expected, rtol=0, atol=0)

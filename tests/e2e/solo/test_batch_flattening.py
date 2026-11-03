@@ -19,6 +19,7 @@ from transformers import AutoModelForCausalLM
 from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
 
 from ..utils import requires_flash_attn
+from tests.accelerator import DEVICE_TYPE, device_module
 
 pytestmark = requires_flash_attn
 
@@ -45,7 +46,7 @@ def _fix_patched_attention(model):
 def setup_model(eval_mode=True):
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME, dtype=torch.bfloat16, attn_implementation="flash_attention_2"
-    ).cuda()
+    ).to(DEVICE_TYPE)
     _fix_patched_attention(model)
     if eval_mode:
         model.eval()
@@ -108,30 +109,32 @@ def make_grpo_batch(B=4, max_compl=64, vocab_range=(100, 5000)):
     logits_to_keep = max_compl
 
     # Build like real GRPO: prompt_ids (B, max_prompt) + completion_ids (B, max_compl)
-    prompt_ids = torch.zeros(B, max_prompt, dtype=torch.long, device="cuda")
-    completion_ids = torch.randint(*vocab_range, (B, max_compl), device="cuda")
-    prompt_mask_raw = torch.zeros(B, max_prompt, dtype=torch.long, device="cuda")
+    prompt_ids = torch.zeros(B, max_prompt, dtype=torch.long, device=DEVICE_TYPE)
+    completion_ids = torch.randint(*vocab_range, (B, max_compl), device=DEVICE_TYPE)
+    prompt_mask_raw = torch.zeros(B, max_prompt, dtype=torch.long, device=DEVICE_TYPE)
 
     for i in range(B):
         prompt_ids[i, : prompt_lens[i]] = torch.randint(
-            *vocab_range, (prompt_lens[i],), device="cuda"
+            *vocab_range, (prompt_lens[i],), device=DEVICE_TYPE
         )
         prompt_mask_raw[i, : prompt_lens[i]] = 1
 
     # Concatenate like _compute_loss does
     input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
-    completion_mask_raw = torch.ones(B, max_compl, dtype=torch.long, device="cuda")
+    completion_mask_raw = torch.ones(B, max_compl, dtype=torch.long, device=DEVICE_TYPE)
     attention_mask = torch.cat([prompt_mask_raw, completion_mask_raw], dim=1)
     # Full prompt mask (padded to input_ids length)
     prompt_mask = torch.cat(
         [
             prompt_mask_raw,
-            torch.zeros(B, max_compl, dtype=torch.long, device="cuda"),
+            torch.zeros(B, max_compl, dtype=torch.long, device=DEVICE_TYPE),
         ],
         dim=1,
     )
 
-    completion_mask = torch.ones(B, logits_to_keep, dtype=torch.float32, device="cuda")
+    completion_mask = torch.ones(
+        B, logits_to_keep, dtype=torch.float32, device=DEVICE_TYPE
+    )
 
     total_lens = [p + max_compl for p in prompt_lens]
 
@@ -244,13 +247,13 @@ def test_training_loss_correctness():
     print(f"  Batch: {input_ids.shape[0]} seqs, logits_to_keep={logits_to_keep}")
 
     # Padded path (with grad)
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast(DEVICE_TYPE, dtype=torch.bfloat16):
         logps_pad, _, _ = trainer._get_per_token_logps_and_entropies(
             model, input_ids, attn_mask, logits_to_keep
         )
 
     # Flattened path (with grad)
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast(DEVICE_TYPE, dtype=torch.bfloat16):
         logps_flat, _ = trainer._get_per_token_logps_and_entropies_flattened(
             model, input_ids, attn_mask, logits_to_keep, prompt_mask=prompt_mask
         )
@@ -278,7 +281,7 @@ def test_gradient_correctness():
     input_ids, attn_mask, compl_mask, logits_to_keep, prompt_mask, _meta = (
         make_grpo_batch(B=4)
     )
-    advantages = torch.randn(input_ids.shape[0], device="cuda")
+    advantages = torch.randn(input_ids.shape[0], device=DEVICE_TYPE)
 
     # Model 1: padded path
     model_pad = setup_model(eval_mode=False)
@@ -290,7 +293,7 @@ def test_gradient_correctness():
         )
 
     model_pad.zero_grad()
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast(DEVICE_TYPE, dtype=torch.bfloat16):
         logps_pad, _, _ = trainer_pad._get_per_token_logps_and_entropies(
             model_pad, input_ids, attn_mask, logits_to_keep
         )
@@ -305,7 +308,7 @@ def test_gradient_correctness():
     trainer_flat = make_mock_trainer(model_flat)
 
     model_flat.zero_grad()
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast(DEVICE_TYPE, dtype=torch.bfloat16):
         logps_flat, _ = trainer_flat._get_per_token_logps_and_entropies_flattened(
             model_flat, input_ids, attn_mask, logits_to_keep, prompt_mask=prompt_mask
         )
@@ -339,7 +342,7 @@ def test_gradient_correctness():
     print()
 
     del model_pad, model_flat
-    torch.cuda.empty_cache()
+    device_module().empty_cache()
     return passed
 
 
@@ -365,20 +368,21 @@ def test_variable_completion_lengths():
     max_prompt = max(prompt_lens)
 
     # Build GRPO-style: prompt_ids (B, max_prompt) + completion_ids (B, max_compl)
-    prompt_ids = torch.zeros(B, max_prompt, dtype=torch.long, device="cuda")
-    completion_ids = torch.randint(100, 5000, (B, max_compl), device="cuda")
-    p_mask_raw = torch.zeros(B, max_prompt, dtype=torch.long, device="cuda")
+    prompt_ids = torch.zeros(B, max_prompt, dtype=torch.long, device=DEVICE_TYPE)
+    completion_ids = torch.randint(100, 5000, (B, max_compl), device=DEVICE_TYPE)
+    p_mask_raw = torch.zeros(B, max_prompt, dtype=torch.long, device=DEVICE_TYPE)
     for i in range(B):
         prompt_ids[i, : prompt_lens[i]] = torch.randint(
-            100, 5000, (prompt_lens[i],), device="cuda"
+            100, 5000, (prompt_lens[i],), device=DEVICE_TYPE
         )
         p_mask_raw[i, : prompt_lens[i]] = 1
 
     input_ids = torch.cat([prompt_ids, completion_ids], dim=1)
-    c_mask_raw = torch.ones(B, max_compl, dtype=torch.long, device="cuda")
+    c_mask_raw = torch.ones(B, max_compl, dtype=torch.long, device=DEVICE_TYPE)
     attn_mask = torch.cat([p_mask_raw, c_mask_raw], dim=1)
     p_mask = torch.cat(
-        [p_mask_raw, torch.zeros(B, max_compl, dtype=torch.long, device="cuda")], dim=1
+        [p_mask_raw, torch.zeros(B, max_compl, dtype=torch.long, device=DEVICE_TYPE)],
+        dim=1,
     )
 
     total_real = attn_mask.sum().item()
@@ -438,13 +442,13 @@ def test_prompt_mask_edge_case():
     total_lens = [p + c for p, c in zip(prompt_lens, compl_lens, strict=True)]
     max_len = max(p + logits_to_keep for p in prompt_lens)
 
-    input_ids = torch.zeros(B, max_len, dtype=torch.long, device="cuda")
-    attention_mask = torch.zeros(B, max_len, dtype=torch.long, device="cuda")
-    prompt_mask_tensor = torch.zeros(B, max_len, dtype=torch.long, device="cuda")
+    input_ids = torch.zeros(B, max_len, dtype=torch.long, device=DEVICE_TYPE)
+    attention_mask = torch.zeros(B, max_len, dtype=torch.long, device=DEVICE_TYPE)
+    prompt_mask_tensor = torch.zeros(B, max_len, dtype=torch.long, device=DEVICE_TYPE)
 
     for i in range(B):
         tl = total_lens[i]
-        input_ids[i, :tl] = torch.randint(100, 5000, (tl,), device="cuda")
+        input_ids[i, :tl] = torch.randint(100, 5000, (tl,), device=DEVICE_TYPE)
         attention_mask[i, :tl] = 1
         prompt_mask_tensor[i, : prompt_lens[i]] = 1
 
@@ -519,7 +523,7 @@ def test_training_flattened_gradients():
     input_ids, attn_mask, compl_mask, logits_to_keep, prompt_mask, _meta = (
         make_grpo_batch(B=4)
     )
-    advantages = torch.randn(input_ids.shape[0], device="cuda")
+    advantages = torch.randn(input_ids.shape[0], device=DEVICE_TYPE)
 
     # Get old_logps for the loss computation (shared between both paths)
     ref_model = setup_model()
@@ -529,7 +533,7 @@ def test_training_flattened_gradients():
             ref_model, input_ids, attn_mask, logits_to_keep
         )
     del ref_model
-    torch.cuda.empty_cache()
+    device_module().empty_cache()
 
     adv = advantages.unsqueeze(1)
 
@@ -537,7 +541,7 @@ def test_training_flattened_gradients():
     model_pad = setup_model(eval_mode=False)
     trainer_pad = make_mock_trainer(model_pad)
     model_pad.zero_grad()
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast(DEVICE_TYPE, dtype=torch.bfloat16):
         logps_pad, _, _ = trainer_pad._get_per_token_logps_and_entropies(
             model_pad, input_ids, attn_mask, logits_to_keep
         )
@@ -549,7 +553,7 @@ def test_training_flattened_gradients():
     model_flat = setup_model(eval_mode=False)
     trainer_flat = make_mock_trainer(model_flat)
     model_flat.zero_grad()
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast(DEVICE_TYPE, dtype=torch.bfloat16):
         logps_flat, _ = trainer_flat._get_per_token_logps_and_entropies_flattened(
             model_flat, input_ids, attn_mask, logits_to_keep, prompt_mask=prompt_mask
         )
@@ -586,7 +590,7 @@ def test_training_flattened_gradients():
     print()
 
     del model_pad, model_flat
-    torch.cuda.empty_cache()
+    device_module().empty_cache()
     return passed
 
 

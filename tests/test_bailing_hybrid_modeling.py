@@ -3,6 +3,8 @@
 import pytest
 import torch
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 # `import fla` succeeds without triton; the kernels and modules used here do not
 pytest.importorskip("fla.ops.kda", reason="Ling 3.0 linear attention needs fla-core")
 
@@ -296,15 +298,13 @@ class TestPackedDocumentIsolation:
         assert not torch.allclose(changed[:, :4], baseline[:, :4])
 
 
-@pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required for fla kernels"
-)
+@pytest.mark.skipif(not gpu_available(), reason="GPU required for fla kernels")
 class TestBailingHybridForward:
     """Mask handling through the real linear-attention kernels."""
 
     @pytest.fixture(name="model")
     def cuda_model_fixture(self, model):
-        return model.cuda()
+        return model.to(DEVICE_TYPE)
 
     def test_packed_batch_splits_documents(self, model):
         """The hybrid model as axolotl feeds it: no attention mask, position_ids

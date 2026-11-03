@@ -31,6 +31,8 @@ from axolotl.model_support.diffusion_gemma.modeling import (
 )
 from axolotl.utils.dict import DictDefault
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
 
 def _tiny_config(*, flex: bool = False) -> DiffusionGemmaConfig:
     hidden_size = 64 if flex else 32
@@ -511,10 +513,10 @@ def _set_attention_backend(model, backend: str) -> None:
         config._attn_implementation = backend
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+@pytest.mark.skipif(not gpu_available(), reason="requires a GPU")
 @pytest.mark.parametrize("dense_backend", ["sdpa", "eager"])
 def test_native_flex_packed_logits_loss_and_gradients_match_dense(dense_backend):
-    device = torch.device("cuda:0")
+    device = torch.device(f"{DEVICE_TYPE}:0")
     batch = DiffusionCollator(0, 3).build_batch(
         [
             {

@@ -15,8 +15,10 @@ from axolotl.model_support.diffusion_gemma.modeling import (
 )
 from axolotl.utils.dict import DictDefault
 
+from tests.accelerator import DEVICE_TYPE, gpu_available
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+
+@pytest.mark.skipif(not gpu_available(), reason="requires a GPU")
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16], ids=["fp32", "bf16"])
 @pytest.mark.parametrize("steps", [1, 2], ids=["k1", "k2"])
 def test_gemma_flex_trainer_compute_loss_backwards_padded_two_document_batch(
@@ -55,7 +57,7 @@ def test_gemma_flex_trainer_compute_loss_backwards_padded_two_document_batch(
         },
         canvas_length=8,
     )
-    device = torch.device("cuda")
+    device = torch.device(DEVICE_TYPE)
     model = (
         AxolotlDiffusionGemmaForBlockDiffusion._from_config(
             config, attn_implementation="flex_attention"
@@ -115,7 +117,9 @@ def test_gemma_flex_trainer_compute_loss_backwards_padded_two_document_batch(
         staticmethod(lambda _k_max, _device: steps),
     )
     trainer.post_set_axolotl_cfg()
-    with torch.autocast("cuda", dtype=torch.bfloat16, enabled=dtype is torch.bfloat16):
+    with torch.autocast(
+        DEVICE_TYPE, dtype=torch.bfloat16, enabled=dtype is torch.bfloat16
+    ):
         loss = trainer.compute_loss(model, batch.__dict__)
     assert torch.isfinite(loss)
     loss.backward()
@@ -125,7 +129,7 @@ def test_gemma_flex_trainer_compute_loss_backwards_padded_two_document_batch(
     )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+@pytest.mark.skipif(not gpu_available(), reason="requires a GPU")
 @pytest.mark.parametrize("steps", [1, 2], ids=["k1", "k2"])
 def test_nemotron_flex_trainer_compute_loss_backward(tmp_path, monkeypatch, steps):
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
@@ -162,7 +166,7 @@ def test_nemotron_flex_trainer_compute_loss_backward(tmp_path, monkeypatch, step
         },
         use_cache=False,
     )
-    device = torch.device("cuda")
+    device = torch.device(DEVICE_TYPE)
     model = resolve_nemotron_model_class(source)(config).to(device).train()
     model.config._attn_implementation = "flex_attention"
     model.encoder.config._attn_implementation = "flex_attention"
@@ -231,7 +235,7 @@ def test_nemotron_flex_trainer_compute_loss_backward(tmp_path, monkeypatch, step
     )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+@pytest.mark.skipif(not gpu_available(), reason="requires a GPU")
 def test_dream_flex_trainer_compute_loss_backward(tmp_path, monkeypatch):
     from transformers import AutoConfig
 
@@ -263,7 +267,7 @@ def test_dream_flex_trainer_compute_loss_backward(tmp_path, monkeypatch):
     }.items():
         setattr(config, name, value)
     config._name_or_path = str(source)
-    device = torch.device("cuda")
+    device = torch.device(DEVICE_TYPE)
     model = (
         _model_class()
         .from_config(
