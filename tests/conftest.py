@@ -18,6 +18,7 @@ import pytest
 
 from axolotl.utils.dict import DictDefault
 
+from tests.global_state import GlobalStateGuard
 from tests.hf_offline_utils import (
     enable_hf_offline,
     hf_offline_context,
@@ -80,8 +81,9 @@ def _apply_transformers_test_shims():
         )
 
 
-def pytest_configure(config):  # pylint: disable=unused-argument
+def pytest_configure(config):
     _apply_transformers_test_shims()
+    config.pluginmanager.register(GlobalStateGuard(config), "axolotl-global-state")
 
 
 # A device-side assert / illegal access poisons the process-wide CUDA context, so

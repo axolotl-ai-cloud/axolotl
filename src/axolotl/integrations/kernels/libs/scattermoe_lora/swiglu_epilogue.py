@@ -15,13 +15,9 @@ from triton.language.extra.cuda import libdevice
 
 
 def swiglu_epilogue_enabled() -> bool:
-    import os
-
+    # configure_scattermoe_runtime folds AXOLOTL_SWIGLU_EPILOGUE in when the config leaves it unset
     from .runtime import RUNTIME
 
-    env = os.environ.get("AXOLOTL_SWIGLU_EPILOGUE")
-    if env is not None:
-        return env != "0"
     return bool(RUNTIME.swiglu_epilogue)
 
 

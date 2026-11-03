@@ -498,6 +498,20 @@ def fixture_inductor_config_snapshot():
 class TestApplyTorchCompileOptions:
     # Runtime apply path; schema-layer validation is tested in TestTorchCompileValidation.
 
+    @pytest.fixture(autouse=True)
+    def _restore_dynamo_state(self):
+        # _configure_torch_compile sets these process-wide, and a MagicMock cfg is truthy
+        # for gradient_checkpointing, which would turn dynamo's LRU cache off for good.
+        with (
+            patch("torch._C._dynamo.eval_frame._set_lru_cache"),
+            _dynamo_cfg.patch(
+                suppress_errors=_dynamo_cfg.suppress_errors,
+                accumulated_recompile_limit=_dynamo_cfg.accumulated_recompile_limit,
+                recompile_limit=_dynamo_cfg.recompile_limit,
+            ),
+        ):
+            yield
+
     def test_allowlisted_flag_is_applied(self, inductor_config_snapshot):
         assert _inductor_cfg.coordinate_descent_tuning is False
         TrainerBuilderBase._apply_torch_compile_options(
@@ -582,12 +596,8 @@ class TestApplyTorchCompileOptions:
     def test_configure_torch_compile_raises_recompile_limit_for_regional(self):
         builder = MagicMock(spec=TrainerBuilderBase)
         builder.cfg = DictDefault(torch_compile=True, torch_compile_regional=True)
-        before = _dynamo_cfg.recompile_limit
-        try:
-            TrainerBuilderBase._configure_torch_compile(builder, {})
-            assert _dynamo_cfg.recompile_limit >= 64
-        finally:
-            _dynamo_cfg.recompile_limit = before
+        TrainerBuilderBase._configure_torch_compile(builder, {})
+        assert _dynamo_cfg.recompile_limit >= 64
 
     def test_configure_torch_compile_invokes_apply_when_options_set(self):
         builder = MagicMock(spec=TrainerBuilderBase)
