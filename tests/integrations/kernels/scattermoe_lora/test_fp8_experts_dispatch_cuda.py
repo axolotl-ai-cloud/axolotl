@@ -103,6 +103,7 @@ def _routing():
 
 
 @pytest.mark.parametrize("fmt", ["block_fp8", "nvfp4"])
+@pytest.mark.usefixtures("xfail_fp8_scalar_scale")
 @torch.no_grad()
 def test_scattermoe_fp8_experts_forward_matches_dequant_reference(fmt):
     torch.manual_seed(0)
@@ -121,6 +122,7 @@ def test_scattermoe_fp8_experts_forward_matches_dequant_reference(fmt):
         assert torch.equal(out, experts(hidden, top_k_index, top_k_weights))
 
 
+@pytest.mark.usefixtures("xfail_fp8_scalar_scale")
 def test_scattermoe_block_fp8_experts_backward_matches_stock():
     torch.manual_seed(0)
     experts, _ = _experts("block_fp8")

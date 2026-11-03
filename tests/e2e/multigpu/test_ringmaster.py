@@ -61,7 +61,7 @@ def test_ringmaster_mamba_fsdp2_parity(hub, packed):
         from kernels import has_kernel
 
         try:
-            available = has_kernel("kernels-community/mamba-ssm", version=2)
+            available = has_kernel("kernels-community/mamba-ssm", version=4)
         except httpx.HTTPError as exc:
             pytest.skip(f"Mamba Hub kernel availability probe failed: {exc}")
         if not available:

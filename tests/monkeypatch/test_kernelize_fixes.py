@@ -5,6 +5,85 @@ import pytest
 pytest.importorskip("kernels", reason="kernelize fixes only matter with kernels")
 
 
+@pytest.mark.parametrize(
+    "repo,version,expected",
+    [
+        ("mamba-ssm", 3, 4),
+        ("fla", 1, 2),
+        ("mamba-ssm", 4, 4),
+        ("mamba-ssm", 5, 5),
+        ("finegrained-fp8", 4, 4),
+    ],
+)
+def test_kernel_versions_preserve_original_mapping(repo, version, expected):
+    from kernels import LayerRepository, Mode
+
+    from axolotl.monkeypatch.kernelize_fixes import (
+        _kernel_mapping_with_compatible_versions,
+    )
+
+    entry = LayerRepository(
+        f"kernels-community/{repo}",
+        layer_name="test_layer",
+        version=version,
+        trust_remote_code=True,
+    )
+    mapping = {"test_layer": {"cuda": {Mode.TRAINING: entry}}}
+    wrapped = _kernel_mapping_with_compatible_versions(lambda: mapping)
+    actual = wrapped()["test_layer"]["cuda"][Mode.TRAINING]
+    assert actual._version == expected
+    assert entry._version == version
+    assert actual.layer_name == entry.layer_name
+    assert actual._trust_remote_code is True
+    assert wrapped() == wrapped()
+
+
+def test_kernel_versions_preserve_explicit_revision():
+    from kernels import LayerRepository
+
+    from axolotl.monkeypatch.kernelize_fixes import _with_compatible_kernel_versions
+
+    entry = LayerRepository(
+        "kernels-community/mamba-ssm", layer_name="test_layer", revision="custom"
+    )
+    assert _with_compatible_kernel_versions(entry) is entry
+
+
+def test_patch_restores_kernel_mapping(monkeypatch):
+    from kernels import LayerRepository
+    from transformers.integrations import hub_kernels
+
+    from axolotl.monkeypatch.kernelize_fixes import (
+        patch_kernelize_fixes,
+        unpatch_kernelize_fixes,
+    )
+
+    entry = LayerRepository(
+        "kernels-community/mamba-ssm", layer_name="test_layer", version=3
+    )
+
+    def get_mapping():
+        return {"test_layer": {"cuda": entry}}
+
+    def kernelize(model, **kwargs):
+        return model
+
+    monkeypatch.setattr(hub_kernels, "_kernels_kernelize", kernelize, raising=False)
+    monkeypatch.setattr(
+        hub_kernels, "get_kernel_mapping_transformers", get_mapping, raising=False
+    )
+    try:
+        assert patch_kernelize_fixes() is True
+        assert patch_kernelize_fixes() is True
+        actual = hub_kernels.get_kernel_mapping_transformers()
+        assert actual["test_layer"]["cuda"]._version == 4
+        assert entry._version == 3
+    finally:
+        unpatch_kernelize_fixes()
+    assert hub_kernels.get_kernel_mapping_transformers is get_mapping
+    assert hub_kernels._kernels_kernelize is kernelize
+
+
 @pytest.fixture
 def kernelize_patch():
     """Install the patch, restore everything afterwards."""
