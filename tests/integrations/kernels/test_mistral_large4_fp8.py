@@ -170,7 +170,6 @@ def test_block_fp8_layout(bf16_dir):
     )
 
 
-@pytest.mark.usefixtures("xfail_fp8_scalar_scale")
 def test_native_fp8_matches_dequant_forward(bf16_dir, monkeypatch):
     from transformers.integrations.finegrained_fp8 import FP8Linear
 
@@ -229,7 +228,6 @@ def test_fp8_linear_dx_matches_dequant_forward(bf16_dir, monkeypatch, suffix):
 
 
 @pytest.mark.parametrize("native_fp8", [True, False], ids=["native_fp8", "dequant"])
-@pytest.mark.usefixtures("xfail_fp8_scalar_scale")
 def test_attn_lora_kernel_matches_peft_on_fp8(bf16_dir, native_fp8, monkeypatch):
     from axolotl.integrations.kernels.libs.dsv4 import lora_fp8
     from axolotl.integrations.kernels.libs.mistral_large4 import (
