@@ -53,10 +53,22 @@ def load(tokenizer, cfg, ds_cfg: Optional[UserDefinedDatasetConfig] = None):
         system_prompt,
         prompt,
     ) -> Tuple[str, str, str, str]:
+        if field_instruction not in prompt:
+            raise ValueError(
+                "user_defined dataset row is missing the required field "
+                f"'{field_instruction}' (row keys: {sorted(prompt.keys())}). "
+                "Set field_instruction in the dataset config to match your data."
+            )
+        if field_output not in prompt:
+            raise ValueError(
+                "user_defined dataset row is missing the required field "
+                f"'{field_output}' (row keys: {sorted(prompt.keys())}). "
+                "Set field_output in the dataset config to match your data."
+            )
         return (
             prompt[field_instruction],
             prompt[field_input] if field_input in prompt else "",
-            prompt[field_output] if field_output in prompt else "",
+            prompt[field_output],
             system_prompt if prompt.get(field_system) is None else prompt[field_system],
         )
 
