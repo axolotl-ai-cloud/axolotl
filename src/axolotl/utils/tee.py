@@ -93,7 +93,8 @@ def prepare_debug_log(cfg, filename: str = "debug.log") -> str:
 
     Creates the output directory, handles append/truncate logic based on cfg, and opens
     the debug log file for subsequent writes via file-only handlers. Non-zero ranks
-    write to debug.rank{N}.log so ranks never share a file.
+    insert ``.rank{N}`` before the suffix (``debug.log`` -> ``debug.rank{N}.log``) so
+    ranks never share a file.
     """
     global _file_handle, _log_path, _tee_installed
 
