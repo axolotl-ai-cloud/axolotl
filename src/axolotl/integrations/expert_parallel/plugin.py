@@ -399,7 +399,7 @@ class ExpertParallelPlugin(BasePlugin):
             apply_selective_checkpointing,
         )
 
-        # PeftModel forwards gradient_checkpointing_enable to the base model, so
+        # PeftModel forwards the checkpointing enable call to the base model, so
         # wrapping the base covers callers holding either
         get_base_model = getattr(model, "get_base_model", None)
         base = get_base_model() if callable(get_base_model) else model

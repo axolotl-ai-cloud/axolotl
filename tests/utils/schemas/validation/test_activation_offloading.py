@@ -6,6 +6,10 @@ from unittest.mock import patch
 import pytest
 
 from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.utils.activation_checkpointing import (
+    CHECKPOINTING_ARG,
+    CHECKPOINTING_KWARGS_ARG,
+)
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
@@ -255,6 +259,6 @@ class TestActivationOffloading:
         TrainerBuilderBase._configure_gradient_checkpointing(
             SimpleNamespace(cfg=cfg), args
         )
-        assert args["gradient_checkpointing"] is True
-        assert args["gradient_checkpointing_kwargs"] == {"use_reentrant": True}
+        assert args[CHECKPOINTING_ARG] is True
+        assert args[CHECKPOINTING_KWARGS_ARG] == {"use_reentrant": True}
         assert args["activation_offloading"] is True

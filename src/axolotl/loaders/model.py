@@ -55,6 +55,7 @@ from axolotl.loaders.utils import (
 )
 from axolotl.model_support import get_model_support, resolve_model_support
 from axolotl.telemetry.errors import send_errors
+from axolotl.utils.activation_checkpointing import enable_activation_checkpointing
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
@@ -667,8 +668,8 @@ class ModelLoader:
             self.plugin_manager.is_lora_like(self.cfg.adapter)
             and self.cfg.gradient_checkpointing
         ):
-            self.model.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs=self.cfg.gradient_checkpointing_kwargs
+            enable_activation_checkpointing(
+                self.model, self.cfg.gradient_checkpointing_kwargs
             )
 
         self._prepare_model_for_quantization()

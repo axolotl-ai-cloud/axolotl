@@ -36,6 +36,10 @@ from axolotl.utils import (
     is_opentelemetry_available,
     is_trackio_available,
 )
+from axolotl.utils.activation_checkpointing import (
+    CHECKPOINTING_ARG,
+    CHECKPOINTING_KWARGS_ARG,
+)
 from axolotl.utils.callbacks import (
     GCCallback,
     SaveAxolotlConfigtoWandBCallback,
@@ -690,9 +694,9 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.layer_offloading:
             training_args_kwargs["layer_offloading"] = True
         if self.cfg.activation_offloading == "hidden_states":
-            training_args_kwargs["gradient_checkpointing"] = True
+            training_args_kwargs[CHECKPOINTING_ARG] = True
             gc_kwargs = dict(self.cfg.gradient_checkpointing_kwargs or {})
-            training_args_kwargs["gradient_checkpointing_kwargs"] = gc_kwargs
+            training_args_kwargs[CHECKPOINTING_KWARGS_ARG] = gc_kwargs
             if gc_kwargs["use_reentrant"] is False:
                 training_args_kwargs["activation_offloading"] = (
                     self.cfg.activation_offloading
@@ -705,15 +709,15 @@ class TrainerBuilderBase(abc.ABC):
                     self.cfg.activation_offloading
                 )
             if self.cfg.gradient_checkpointing is not None:
-                training_args_kwargs["gradient_checkpointing"] = (
+                training_args_kwargs[CHECKPOINTING_ARG] = (
                     self.cfg.gradient_checkpointing
                 )
                 if self.cfg.gradient_checkpointing_kwargs is not None:
-                    training_args_kwargs["gradient_checkpointing_kwargs"] = (
+                    training_args_kwargs[CHECKPOINTING_KWARGS_ARG] = (
                         self.cfg.gradient_checkpointing_kwargs
                     )
                 else:
-                    training_args_kwargs["gradient_checkpointing_kwargs"] = {
+                    training_args_kwargs[CHECKPOINTING_KWARGS_ARG] = {
                         "use_reentrant": False
                     }
 

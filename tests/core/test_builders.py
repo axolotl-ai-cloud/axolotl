@@ -15,6 +15,10 @@ from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 from axolotl.core.builders.base import TrainerBuilderBase
 from axolotl.core.trainers import AxolotlKTOTrainer, AxolotlTrainer
 from axolotl.model_support import ModelStrategies
+from axolotl.utils.activation_checkpointing import (
+    CHECKPOINTING_ARG,
+    CHECKPOINTING_KWARGS_ARG,
+)
 from axolotl.utils.collators import (
     BatchSamplerDataCollatorForSeq2Seq,
     DataCollatorForSeq2Seq,
@@ -127,8 +131,8 @@ class TestGradientCheckpointingConfig:
             )
         )
 
-        assert training_args_kwargs["gradient_checkpointing"] is True
-        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
+        assert training_args_kwargs[CHECKPOINTING_ARG] is True
+        assert training_args_kwargs[CHECKPOINTING_KWARGS_ARG] == {
             "use_reentrant": False
         }
         assert training_args_kwargs["activation_offloading"] == "hidden_states"
@@ -143,10 +147,8 @@ class TestGradientCheckpointingConfig:
             )
         )
 
-        assert training_args_kwargs["gradient_checkpointing"] is True
-        assert training_args_kwargs["gradient_checkpointing_kwargs"] == {
-            "use_reentrant": True
-        }
+        assert training_args_kwargs[CHECKPOINTING_ARG] is True
+        assert training_args_kwargs[CHECKPOINTING_KWARGS_ARG] == {"use_reentrant": True}
         assert "activation_offloading" not in training_args_kwargs
 
 
