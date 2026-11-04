@@ -64,10 +64,18 @@ def _torch_reference(dispatcher, name, package):
 @pytest.fixture
 def tree_hooks(monkeypatch):
     """tree-recurrence's hooks as packing_support installs them, off after the test,
-    over transformers' PyTorch reference of Qwen3.5's gated delta rule."""
+    over transformers' PyTorch reference of Qwen3.5's gated delta rule.
+
+    TRL's tree Gated DeltaNet, which packing_support picks, is Triton-only, so here
+    tree-recurrence's runs Gated DeltaNet trees in its place, as the reference tree
+    attention stands in for FA3 (tests/e2e/kernels/test_trl_tree_gdn.py runs TRL's).
+    """
     from transformers.models.qwen3_5 import modeling_qwen3_5
     from trl.experimental.async_grpo import packing
 
+    from axolotl.monkeypatch.models import tree_packing
+
+    monkeypatch.setattr(tree_packing, "TREE_BACKENDS", {})
     monkeypatch.setattr(packing, "tree_attention", reference_tree_attention)
     # Where FLA is installed, transformers binds its Triton kernel, which needs a GPU.
     monkeypatch.setattr(
@@ -133,6 +141,30 @@ class TestPackingSupport:
         support = packing_support(_tiny_qwen3_5(64))
         assert support.mode == "tree"
         assert support.owners == {"Qwen3_5GatedDeltaNet": "tree_recurrence"}
+
+    def test_gated_delta_nets_run_trls_tree_kernels(self, monkeypatch):
+        """TRL's patch_tree_gdn takes the transformers model, whose class names the
+        modeling module it patches, not the PEFT wrapper axolotl trains."""
+        from peft import LoraConfig, get_peft_model
+
+        from axolotl.monkeypatch.models import tree_packing
+
+        monkeypatch.setattr(tree_packing, "TREE_BACKENDS", {"gated_delta_net": "trl"})
+        installs = []
+
+        def install(model, **kwargs):
+            installs.append((type(model).__module__, kwargs))
+            return Support("tree", "stub")
+
+        monkeypatch.setattr(tree_packing, "install", install)
+        model = _tiny_qwen3_5(64)
+        packing_support(model)
+        packing_support(
+            get_peft_model(model, LoraConfig(r=4, target_modules=["q_proj"]))
+        )
+        modeling = "transformers.models.qwen3_5.modeling_qwen3_5"
+        backends = {"backends": {"gated_delta_net": "trl"}}
+        assert installs == [(modeling, backends)] * 2
 
     def test_recurrent_models_with_a_packing_patch_pack_chains(self):
         from transformers import MambaConfig, MambaForCausalLM
@@ -269,6 +301,8 @@ def test_trains_hybrid_model_on_cpu(
         report_to=[],
         save_strategy="no",
         gradient_checkpointing=False,
+        # The stub rollouts record no sampler top log-probs to center over.
+        loss_type="dapo",
     )
     trainer = AxolotlAsyncGRPOTrainer(
         model,

@@ -187,9 +187,10 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
     # an agent, set this to False and need no parser.
     _parses_responses = True
     # Whether completions are sampled through TRL's `_generate_one_turn`, which records
-    # the candidate set top-k/top-p sampled each token from. Loops that call vLLM, or
-    # an agent, themselves set this to False.
-    _records_sampling_masks = True
+    # the candidate set top-k/top-p sampled each token from and the sampler's top
+    # log-probs score centering needs. Loops that call vLLM, or an agent, themselves
+    # set this to False.
+    _samples_through_trl = True
 
     def __init__(
         self,
@@ -239,7 +240,7 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
                 tokenizer.response_template = None
         self._provides_rollout_reward = provides_rollout_reward
         replay = self.sampling_replay  # type: ignore[has-type]
-        if replay and not self._records_sampling_masks:
+        if replay and not self._samples_through_trl:
             LOG.warning(
                 f"{type(self).__name__} does not record the candidate set top_k/top_p "
                 "sampled each token from, so the trainer normalizes log-probs over the "

@@ -82,7 +82,7 @@ class EBFTRolloutLoop(AxolotlRolloutLoop):
     """
 
     _parses_responses = False
-    _records_sampling_masks = False
+    _samples_through_trl = False
 
     def __init__(
         self,

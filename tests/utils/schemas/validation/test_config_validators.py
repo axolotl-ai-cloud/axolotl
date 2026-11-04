@@ -548,6 +548,7 @@ class TestAsyncGRPOCompat:
                 trl={
                     "max_staleness": 2,
                     "reward_num_workers": 4,
+                    "loss_type": "dapo",
                     "epsilon": 0.2,
                     "epsilon_high": 0.28,
                     "scale_rewards": "none",
@@ -555,6 +556,18 @@ class TestAsyncGRPOCompat:
             )
         )
         assert validated.trl.max_staleness == 2
+
+    def test_score_centering_is_the_default(self, min_base_cfg):
+        """Its bounds are taken without a loss_type; dapo's need one."""
+        validated = validate_config(
+            self._cfg(min_base_cfg, trl={"vllm_importance_sampling_clip_min": 0.25})
+        )
+        assert validated.trl.loss_type is None
+        with pytest.raises(ValueError, match=r"\(the default\) ignores `epsilon_high`"):
+            validate_config(self._cfg(min_base_cfg, trl={"epsilon_high": 0.28}))
+        cfg = self._cfg(min_base_cfg, trl={"epsilon_high": 0.28})
+        cfg.rl, cfg.ebft = "ebft", {"mode": "structured"}
+        validate_config(cfg)
 
     def test_cispo_takes_the_importance_sampling_options(self, min_base_cfg):
         validated = validate_config(
@@ -574,11 +587,11 @@ class TestAsyncGRPOCompat:
         "trl,extra,match",
         [
             ({"beta": 0.04}, {}, "no reference model"),
-            ({"loss_type": "grpo"}, {}, "`loss_type` must be `dapo`"),
+            ({"loss_type": "grpo"}, {}, "`loss_type` must be `score_centering`"),
             (
                 {"vllm_importance_sampling_cap": 5.0},
                 {},
-                "ignores `vllm_importance_sampling_cap`; .* set `loss_type: cispo`",
+                "ignores `vllm_importance_sampling_cap`; .* or `cispo`",
             ),
             (
                 {"loss_type": "dapo", "vllm_importance_sampling_correction": True},
@@ -611,7 +624,7 @@ class TestAsyncGRPOCompat:
             ({"use_vllm": False}, {}, "use_vllm: true"),
             ({}, {"load_in_4bit": True, "adapter": "qlora"}, "vllm_lora_sync"),
             (
-                {"vllm_importance_sampling_clip_min": 0.5},
+                {"loss_type": "dapo", "vllm_importance_sampling_clip_min": 0.5},
                 {},
                 "bound `loss_type: score_centering` only",
             ),
@@ -727,16 +740,21 @@ class TestAsyncGRPOCompat:
     @pytest.mark.parametrize(
         "trl,adapter,warns",
         [
-            ({}, "lora", True),
+            ({"loss_type": "dapo"}, "lora", True),
             (
                 {"loss_type": "dapo", "max_staleness": 3, "vllm_lora_sync": True},
                 "qlora",
                 True,
             ),
-            ({"max_staleness": 2, "vllm_sync_interval": 2}, "lora", True),
-            ({"max_staleness": 2}, "lora", False),
+            (
+                {"loss_type": "dapo", "max_staleness": 2, "vllm_sync_interval": 2},
+                "lora",
+                True,
+            ),
+            ({"loss_type": "dapo", "max_staleness": 2}, "lora", False),
             ({"loss_type": "cispo"}, "lora", False),
-            ({}, None, False),
+            ({}, "lora", False),
+            ({"loss_type": "dapo"}, None, False),
         ],
     )
     def test_lora_with_stale_rollouts_recommends_cispo(

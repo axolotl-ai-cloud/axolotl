@@ -87,8 +87,6 @@ UPSTREAM = {
     "RolloutProgress keeps",
     "AsyncGRPOTrainer._save_checkpoint": "resumes from the trained and dropped "
     "groups that RolloutProgress keeps",
-    "AsyncGRPOTrainer._save": "DistributedParallelMixin._save hands it the FSDP2 "
-    "state dict",
     "_TrainBeginCallback.on_train_begin": "its cold weight sync must run in "
     "WeightSyncMixin._sync_weight",
     "_iter_vllm_named_params": "walked by the out-of-place merged weight sync",

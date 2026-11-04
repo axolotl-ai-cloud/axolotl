@@ -47,6 +47,11 @@ class AxolotlAsyncEBFTConfig(EBFTFieldsMixin, AxolotlAsyncGRPOConfig):
             "stop_token_ids."
         },
     )
+    # EBFT's rollout loop requests no top log-probs to score-center over.
+    loss_type: str = field(
+        default="dapo",
+        metadata={"help": "'dapo' (default) or 'cispo'; see AxolotlAsyncGRPOConfig."},
+    )
 
 
 class EBFTScorer(TrainerScorer):

@@ -566,7 +566,7 @@ def test_collate_splits_rows_into_equal_numbers_of_budgeted_chunks():
     chunks = chunk_inputs(inputs)
 
     def uids(row, chunk):
-        return chunk["uids"][row, : int(chunk["sizes"][row, 3]) - 1].tolist()
+        return chunk["uids"][row, : int(chunk["sizes"][row, 1]) - 1].tolist()
 
     # Both rows run two forwards; the short row's second scores no sample.
     assert [[uids(row, chunk) for chunk in chunks] for row in (0, 1)] == [

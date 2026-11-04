@@ -35,7 +35,10 @@ from axolotl.core.trainers.async_grpo.rollout import (
 )
 from axolotl.core.trainers.async_grpo.scoring import ScoredRow, ScoringCollator
 from axolotl.core.trainers.async_grpo.traces import TraceCollator
-from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
+from axolotl.core.trainers.async_grpo.trainer import (
+    AdapterPrecisionMixin,
+    AxolotlAsyncGRPOTrainer,
+)
 from axolotl.core.trainers.async_grpo.weight_sync import (
     AliasingVLLMClient,
     WeightSyncMixin,
@@ -47,6 +50,7 @@ from axolotl.integrations.nemo_gym.rollout import NemoGymRolloutLoop
 SUBCLASSES = [
     AxolotlAsyncGRPOTrainer,
     AsyncGRPOLossMixin,
+    AdapterPrecisionMixin,
     WeightSyncMixin,
     AxolotlAsyncEBFTTrainer,
     AxolotlRolloutLoop,
