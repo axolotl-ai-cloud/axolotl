@@ -47,6 +47,24 @@ def test_pack_sequences_without_sharing():
     assert chains["positions"].tolist() == list(range(8))
 
 
+@pytest.mark.parametrize(
+    ("row_cls", "share_prefixes"), [(TreeRow, True), (ChainRow, False)]
+)
+def test_pack_sequences_lays_trees_out_as_trl(row_cls, share_prefixes):
+    """The scoring forward's rows carry TRL's tree format, which TRL's Gated DeltaNet
+    kernels read alongside tree attention."""
+    samples = branching_samples()
+    row = row_cls()
+    for sample in samples:
+        row.add({**sample, "metrics": {}})
+    expected = row.pack()
+    packed = pack_sequences([s["input_ids"] for s in samples], share_prefixes)
+    for key in ("input_ids", "position_ids"):
+        assert torch.equal(packed[key], expected[key]), key
+    for key in [k for k in expected if k.startswith("tree_")]:
+        assert torch.equal(packed[key], expected[key]), key
+
+
 def _torch_reference(dispatcher, name, package):
     """``dispatcher`` (transformers' kernel dispatch of ``name``) bound to its PyTorch
     reference, as transformers binds it where ``package`` is not installed."""
