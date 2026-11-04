@@ -99,6 +99,7 @@ def test_mopd_training_args_allow_single_generation(tmp_path):
         "num_generations": 1,
         "per_device_train_batch_size": 1,
         "report_to": "none",
+        "use_cpu": True,
     }
     with pytest.raises(ValueError, match="at least 2 generations"):
         AxolotlGRPOConfig(**kwargs)
