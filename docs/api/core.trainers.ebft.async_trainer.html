@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>core.trainers.grpo.fast_async_trainer – Axolotl</title>
+<title>core.trainers.ebft.async_trainer – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -937,13 +937,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.core.trainers.grpo.fast_async_trainer" id="toc-axolotl.core.trainers.grpo.fast_async_trainer" class="nav-link active" data-scroll-target="#axolotl.core.trainers.grpo.fast_async_trainer">core.trainers.grpo.fast_async_trainer</a>
+  <li><a href="#axolotl.core.trainers.ebft.async_trainer" id="toc-axolotl.core.trainers.ebft.async_trainer" class="nav-link active" data-scroll-target="#axolotl.core.trainers.ebft.async_trainer">core.trainers.ebft.async_trainer</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOConfig" id="toc-axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOConfig">FastAsyncGRPOConfig</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer" id="toc-axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer">FastAsyncGRPOTrainer</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.fast_async_trainer.RerollDataProducer" id="toc-axolotl.core.trainers.grpo.fast_async_trainer.RerollDataProducer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.fast_async_trainer.RerollDataProducer">RerollDataProducer</a></li>
+  <li><a href="#axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTConfig" id="toc-axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTConfig">AxolotlAsyncEBFTConfig</a></li>
+  <li><a href="#axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTTrainer" id="toc-axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTTrainer">AxolotlAsyncEBFTTrainer</a></li>
+  <li><a href="#axolotl.core.trainers.ebft.async_trainer.EBFTScorer" id="toc-axolotl.core.trainers.ebft.async_trainer.EBFTScorer" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.async_trainer.EBFTScorer">EBFTScorer</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -955,14 +955,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.core.trainers.grpo.fast_async_trainer" class="level1">
-<h1>core.trainers.grpo.fast_async_trainer</h1>
-<p><code>core.trainers.grpo.fast_async_trainer</code></p>
-<p>Experimental GRPO extensions: parallel reward workers, replay buffer,
-deferred re-roll, and zero-advantage skipping.</p>
-<p>These features are built as subclasses of GRPOTrainer and GRPODataProducer,
-using the hook system (_compute_rewards_for_batch, _post_advantage_hook,
-_pre_produce_hook) defined in the base classes.</p>
+<section id="axolotl.core.trainers.ebft.async_trainer" class="level1">
+<h1>core.trainers.ebft.async_trainer</h1>
+<p><code>core.trainers.ebft.async_trainer</code></p>
+<p>Async EBFT on TRL’s AsyncGRPOTrainer.</p>
+<p>The rollout process (<code>EBFTRolloutLoop</code>) generates and leaves the advantage pending;
+<code>EBFTScorer</code> scores each optimizer step’s groups on the trainer, collectively on
+every rank: a no-grad forward of each completion’s feature sequence and its group’s
+reference through the frozen feature network (the actor with adapters disabled, or a
+frozen copy for full fine-tuning), pooled hidden states at <code>ebft_feature_layers</code>,
+then <code>group_feature_rewards</code>. See <code>axolotl.core.trainers.async_grpo.scoring</code>.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -974,100 +976,132 @@ _pre_produce_hook) defined in the base classes.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOConfig">FastAsyncGRPOConfig</a></td>
-<td>GRPOConfig with additional experimental parameters.</td>
+<td><a href="#axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTConfig">AxolotlAsyncEBFTConfig</a></td>
+<td><code>AxolotlAsyncGRPOConfig</code> plus EBFT’s fields.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer">FastAsyncGRPOTrainer</a></td>
-<td>GRPOTrainer with experimental extensions.</td>
+<td><a href="#axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTTrainer">AxolotlAsyncEBFTTrainer</a></td>
+<td>Structured-mode EBFT on async GRPO (see module doc).</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.fast_async_trainer.RerollDataProducer">RerollDataProducer</a></td>
-<td>GRPODataProducer that injects re-roll candidates into prompt batches.</td>
+<td><a href="#axolotl.core.trainers.ebft.async_trainer.EBFTScorer">EBFTScorer</a></td>
+<td>EBFT’s feature-matching reward, scored on the trainer.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOConfig">FastAsyncGRPOConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.fast_async_trainer.FastAsyncGRPOConfig(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    use_data_producer<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    async_prefetch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    prefetch_depth<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    vllm_sync_interval<span class="op">=</span><span class="dv">1</span>,</span>
+<section id="axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTConfig" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTConfig">AxolotlAsyncEBFTConfig</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.async_trainer.AxolotlAsyncEBFTConfig(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    model_type<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    lr_quadratic_warmup<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    pretraining<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    sample_packing<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    batch_flattening<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    streaming_partial_batch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    streaming_min_groups<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_correction<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_mode<span class="op">=</span><span class="st">'token_truncate'</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_cap<span class="op">=</span><span class="fl">3.0</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    off_policy_mask_threshold<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    use_bias_correction_kl<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    reward_num_workers<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    replay_buffer_size<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    replay_recompute_logps<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    reroll_start_fraction<span class="op">=</span><span class="fl">0.5</span>,</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    reroll_max_groups<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    skip_zero_advantage_batches<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>GRPOConfig with additional experimental parameters.</p>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    balance_labels<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    label_balance_window_optim_steps<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    label_keep_prob<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    label_keep_prob_normalize<span class="op">=</span><span class="st">'dropped'</span>,</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    sample_packing_sequentially<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    sample_packing_mp_start_method<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    sample_packing_drop_attention_mask<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    multipack_real_batches<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    checkpoint_save_retry_wait<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    checkpoint_save_retries<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    include_tkps<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    eval_sample_packing<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    sample_packing_efficiency<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    sample_packing_bin_size<span class="op">=</span><span class="dv">200</span>,</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    sample_packing_group_size<span class="op">=</span><span class="dv">100000</span>,</span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    max_seq_length<span class="op">=</span><span class="dv">2048</span>,</span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    dataset_num_proc<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    relora_prune_ratio<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    relora_prune_method<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    jagged_restart_steps<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    jagged_restart_warmup_steps<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    jagged_restart_anneal_steps<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    bench_split<span class="op">=</span><span class="st">'eval'</span>,</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    bench_dataset<span class="op">=</span><span class="st">'pharaouk/dharma-1/dharma_1_mini.json'</span>,</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    do_bench_eval<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>    do_causal_lm_eval<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>    max_bench_samples<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>    bench_source_max_len<span class="op">=</span><span class="dv">2048</span>,</span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>    dataloader_prefetch_factor<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>    cosine_min_lr_ratio<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>    cosine_constant_lr_ratio<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>    loraplus_lr_ratio<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>    loraplus_lr_embedding<span class="op">=</span><span class="fl">1e-06</span>,</span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>    embedding_lr_scale<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>    lr_groups<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>    embedding_lr<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>    qlora<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>    orpo_alpha<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>    lisa_n_layers<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>    lisa_step_interval<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a>    lisa_layers_attribute<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>    curriculum_sampling<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a>    alternate_lr_scheduler_type<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a>    chat_template<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a>    adam_beta3<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a>    adam_epsilon2<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a>    activation_offloading<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a>    layer_offloading<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a>    image_size<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a>    image_resize_algorithm<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a>    dion_learning_rate<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a>    dion_momentum<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a>    dion_rank_fraction<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-60"><a href="#cb1-60" aria-hidden="true" tabindex="-1"></a>    dion_rank_multiple_of<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-61"><a href="#cb1-61" aria-hidden="true" tabindex="-1"></a>    reward_weights<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-62"><a href="#cb1-62" aria-hidden="true" tabindex="-1"></a>    multi_objective_aggregation<span class="op">=</span><span class="st">'sum_then_normalize'</span>,</span>
+<span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a>    scale_rewards<span class="op">=</span><span class="st">'group'</span>,</span>
+<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a>    mask_truncated_completions<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a>    skip_zero_advantage_batches<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a>    reward_num_workers<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb1-67"><a href="#cb1-67" aria-hidden="true" tabindex="-1"></a>    scoring_token_budget<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-68"><a href="#cb1-68" aria-hidden="true" tabindex="-1"></a>    loss_type<span class="op">=</span><span class="st">'dapo'</span>,</span>
+<span id="cb1-69"><a href="#cb1-69" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_mode<span class="op">=</span><span class="st">'token_truncate'</span>,</span>
+<span id="cb1-70"><a href="#cb1-70" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_cap<span class="op">=</span><span class="fl">3.0</span>,</span>
+<span id="cb1-71"><a href="#cb1-71" aria-hidden="true" tabindex="-1"></a>    rollout_loop<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-72"><a href="#cb1-72" aria-hidden="true" tabindex="-1"></a>    rollout_loop_kwargs<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-73"><a href="#cb1-73" aria-hidden="true" tabindex="-1"></a>    vllm_merge_check_interval<span class="op">=</span>DEFAULT_MERGE_CHECK_INTERVAL,</span>
+<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a>    vllm_lora_alias<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-75"><a href="#cb1-75" aria-hidden="true" tabindex="-1"></a>    ebft_feature_layers<span class="op">=</span>(<span class="kw">lambda</span>: [<span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>])(),</span>
+<span id="cb1-76"><a href="#cb1-76" aria-hidden="true" tabindex="-1"></a>    ebft_embed_method<span class="op">=</span><span class="st">'last_token'</span>,</span>
+<span id="cb1-77"><a href="#cb1-77" aria-hidden="true" tabindex="-1"></a>    ebft_use_whitening<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-78"><a href="#cb1-78" aria-hidden="true" tabindex="-1"></a>    ebft_alignment_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb1-79"><a href="#cb1-79" aria-hidden="true" tabindex="-1"></a>    ebft_diversity_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb1-80"><a href="#cb1-80" aria-hidden="true" tabindex="-1"></a>    ebft_ce_coef<span class="op">=</span><span class="fl">0.0</span>,</span>
+<span id="cb1-81"><a href="#cb1-81" aria-hidden="true" tabindex="-1"></a>    ebft_adaptive_max_tokens<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb1-82"><a href="#cb1-82" aria-hidden="true" tabindex="-1"></a>    ebft_gt_length_multiplier<span class="op">=</span><span class="fl">1.5</span>,</span>
+<span id="cb1-83"><a href="#cb1-83" aria-hidden="true" tabindex="-1"></a>    generation_kwargs<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-84"><a href="#cb1-84" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>AxolotlAsyncGRPOConfig</code> plus EBFT’s fields.</p>
 </section>
-<section id="axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer">FastAsyncGRPOTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>GRPOTrainer with experimental extensions.</p>
-<p>Adds:
-- Parallel reward subprocess workers (<code>reward_num_workers</code>)
-- Replay buffer for high-signal group reuse (<code>replay_buffer_size</code>)
-- Deferred re-roll of failed prompts (<code>reroll_start_fraction</code>)
-- Zero-advantage micro-batch skipping</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer.compute_liger_loss">compute_liger_loss</a></td>
-<td>Liger loss with zero-adv skipping and off-policy sequence masking (OPSM).</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer.compute_liger_loss" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer.compute_liger_loss">compute_liger_loss</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.fast_async_trainer.FastAsyncGRPOTrainer.compute_liger_loss(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    unwrapped_model,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    inputs,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Liger loss with zero-adv skipping and off-policy sequence masking (OPSM).</p>
-<p>The base class Liger path doesn’t support OPSM because the fused kernel
-doesn’t expose per-token logprobs needed for the KL computation. This
-override computes them via chunked lm_head matmul (no grad, low memory)
-and applies the OPSM to the loss mask before calling the kernel.</p>
+<section id="axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTTrainer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTTrainer">AxolotlAsyncEBFTTrainer</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.async_trainer.AxolotlAsyncEBFTTrainer(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    train_dataset<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    processing_class<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    callbacks<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    optimizers<span class="op">=</span>(<span class="va">None</span>, <span class="va">None</span>),</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Structured-mode EBFT on async GRPO (see module doc).</p>
 </section>
-</section>
-</section>
-<section id="axolotl.core.trainers.grpo.fast_async_trainer.RerollDataProducer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.fast_async_trainer.RerollDataProducer">RerollDataProducer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.fast_async_trainer.RerollDataProducer(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    config,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    prompt_dataset,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    num_generations,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    generation_batch_size,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    train_batch_size,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    steps_per_generation,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    shuffle_dataset,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    seed,</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>GRPODataProducer that injects re-roll candidates into prompt batches.</p>
-<p>Reads from the trainer’s <code>_reroll_buffer</code> (populated by
-<code>GRPOExperimentalTrainer._post_advantage_hook</code>) and replaces the
-last N prompt groups with previously-failed prompts.</p>
+<section id="axolotl.core.trainers.ebft.async_trainer.EBFTScorer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.async_trainer.EBFTScorer">EBFTScorer</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.async_trainer.EBFTScorer(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    layer_indices,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    embed_method,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    use_whitening,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    alignment_coef,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    diversity_coef,</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    feature_network<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>EBFT’s feature-matching reward, scored on the trainer.</p>
 
 
 </section>

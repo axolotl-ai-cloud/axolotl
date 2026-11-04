@@ -941,6 +941,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.models.recurrent_support.packs_async_grpo_rollouts" id="toc-axolotl.monkeypatch.models.recurrent_support.packs_async_grpo_rollouts" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.recurrent_support.packs_async_grpo_rollouts">packs_async_grpo_rollouts</a></li>
+  <li><a href="#axolotl.monkeypatch.models.recurrent_support.recurrent_layer_types" id="toc-axolotl.monkeypatch.models.recurrent_support.recurrent_layer_types" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.recurrent_support.recurrent_layer_types">recurrent_layer_types</a></li>
+  <li><a href="#axolotl.monkeypatch.models.recurrent_support.trains_on_packed_rows" id="toc-axolotl.monkeypatch.models.recurrent_support.trains_on_packed_rows" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.recurrent_support.trains_on_packed_rows">trains_on_packed_rows</a></li>
   <li><a href="#axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config" id="toc-axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config" class="nav-link" data-scroll-target="#axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config">validate_recurrent_model_config</a></li>
   </ul></li>
   </ul></li>
@@ -974,14 +977,44 @@ failure raises: the loss just quietly trains on cross-document state.</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.monkeypatch.models.recurrent_support.packs_async_grpo_rollouts">packs_async_grpo_rollouts</a></td>
+<td>Async GRPO (and structured EBFT on it) packs every rank’s rollouts into one row.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.monkeypatch.models.recurrent_support.recurrent_layer_types">recurrent_layer_types</a></td>
+<td>The <code>layer_types</code> of a model config that are not attention.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.models.recurrent_support.trains_on_packed_rows">trains_on_packed_rows</a></td>
+<td>Whether batches concatenate samples, each starting where position_ids restart at 0.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config">validate_recurrent_model_config</a></td>
 <td>Raise when a recurrent architecture would silently train on leaked state.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.monkeypatch.models.recurrent_support.packs_async_grpo_rollouts" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.recurrent_support.packs_async_grpo_rollouts">packs_async_grpo_rollouts</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.recurrent_support.packs_async_grpo_rollouts(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Async GRPO (and structured EBFT on it) packs every rank’s rollouts into one row.</p>
+</section>
+<section id="axolotl.monkeypatch.models.recurrent_support.recurrent_layer_types" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.recurrent_support.recurrent_layer_types">recurrent_layer_types</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.recurrent_support.recurrent_layer_types(config)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The <code>layer_types</code> of a model config that are not attention.</p>
+</section>
+<section id="axolotl.monkeypatch.models.recurrent_support.trains_on_packed_rows" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.recurrent_support.trains_on_packed_rows">trains_on_packed_rows</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.recurrent_support.trains_on_packed_rows(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Whether batches concatenate samples, each starting where position_ids restart at 0.</p>
+</section>
 <section id="axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.models.recurrent_support.validate_recurrent_model_config">validate_recurrent_model_config</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.recurrent_support.validate_recurrent_model_config(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.models.recurrent_support.validate_recurrent_model_config(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    model_config<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Raise when a recurrent architecture would silently train on leaked state.</p>
 
 

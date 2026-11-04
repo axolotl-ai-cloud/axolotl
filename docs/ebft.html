@@ -1097,8 +1097,9 @@ GPU 1: Trainer (feature extraction, reward computation, GRPO training)</code></p
 </section>
 <section id="structured-mode-async" class="level3">
 <h3 class="anchored" data-anchor-id="structured-mode-async">Structured Mode (Async)</h3>
-<p>Same architecture as sync, but overlaps generation of the next batch with training on the current batch. Faster throughput at the cost of slightly stale weights during generation.</p>
-<p><strong>When to use</strong>: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by <code>vllm_sync_interval</code>).</p>
+<p><code>trl.async_prefetch: true</code> runs structured EBFT on <a href="../docs/grpo.html">async GRPO</a> (TRL’s <code>AsyncGRPOTrainer</code>): a CUDA-free rollout process keeps generating against the vLLM server while the trainer trains on finished rollouts up to <code>trl.max_staleness</code> weight syncs old. The feature-matching reward needs the feature network’s hidden states, so it is computed on the trainer: each optimizer step holds whole prompt groups, every rank runs a no-grad forward of its completions and their references with adapters disabled, and the embeddings are all-gathered to score each group. This works under FSDP2. The scored sequences (whole conversations with <code>remaining_turns</code>, references) can be much longer than the trained tokens that <code>token_budget</code> bounds, so each rank splits them into forwards of at most <code>trl.scoring_token_budget</code> tokens (default <code>token_budget</code>); every rank runs the same number of forwards.</p>
+<p>Only the first assistant turn is trained; with <code>remaining_turns</code>, the later assistant turns are generated as reward context. Differences from the sync trainer: rewards use the sampled token IDs; the adaptive max_tokens budget is set per prompt; the loss is async GRPO’s (<code>loss_type: dapo</code>, TRL’s clipped objective, by default, or <code>cispo</code>; see <a href="../docs/grpo.html#async-loss">Loss</a>); replay, re-roll, streaming and <code>num_iterations &gt; 1</code> are not available.</p>
+<p><strong>When to use</strong>: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by <code>vllm_sync_interval</code> and <code>max_staleness</code>).</p>
 </section>
 <section id="strided-mode" class="level3">
 <h3 class="anchored" data-anchor-id="strided-mode">Strided Mode</h3>
@@ -1135,34 +1136,32 @@ GPU 1: Trainer (feature extraction, reward computation, GRPO training)</code></p
 <span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
 <span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
-<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_data_producer</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">async_prefetch</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">scale_rewards</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">loss_type</span><span class="kw">:</span><span class="at"> grpo</span></span>
-<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="fu">vllm</span><span class="kw">:</span></span>
-<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">gpu_memory_utilization</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span></span>
-<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_model_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">1024</span></span>
-<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> nvidia/OpenCodeInstruct</span></span>
-<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> ebft_opencode.transform</span></span>
-<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train[:500]</span></span>
-<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a><span class="co"># Standard training settings (see getting-started.qmd for details)</span></span>
-<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
-<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
-<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
-<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">1024</span></span>
-<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
-<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a><span class="fu">max_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">20</span></span>
-<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">5.0e-6</span></span>
-<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> auto</span></span>
-<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> flash_attention_2</span></span>
-<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs/ebft-quickstart</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">async_prefetch</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">scale_rewards</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a><span class="fu">vllm</span><span class="kw">:</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">gpu_memory_utilization</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_model_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">1024</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> nvidia/OpenCodeInstruct</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> ebft_opencode.transform</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train[:500]</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a><span class="co"># Standard training settings (see getting-started.qmd for details)</span></span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">1024</span></span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a><span class="fu">max_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">20</span></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">5.0e-6</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> auto</span></span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> flash_attention_2</span></span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs/ebft-quickstart</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong>Step 2</strong>: Start vLLM on GPU 0:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> vllm-serve ebft_quickstart.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><strong>Step 3</strong>: Wait approximately 30 seconds for vLLM to initialize, then start training on GPU 1:</p>
@@ -1607,7 +1606,7 @@ Warning
 <td><code>adaptive_max_tokens</code></td>
 <td><code>bool</code></td>
 <td><code>true</code></td>
-<td>Dynamically set vLLM <code>max_tokens</code> based on ground-truth length (structured mode)</td>
+<td>Dynamically set vLLM <code>max_tokens</code> based on ground-truth length (async structured mode)</td>
 </tr>
 <tr class="odd">
 <td><code>gt_length_multiplier</code></td>
@@ -1753,25 +1752,37 @@ Warning
 <td><code>use_data_producer</code></td>
 <td><code>bool</code></td>
 <td>–</td>
-<td>Required for sync mode with LoRA sync</td>
+<td>Deprecated: <code>async_prefetch: true</code> with <code>max_staleness: 0</code>, which discards in-flight rollouts at every sync; prefer <code>async_prefetch</code> with the default <code>max_staleness</code></td>
 </tr>
 <tr class="even">
 <td><code>async_prefetch</code></td>
 <td><code>bool</code></td>
 <td><code>false</code></td>
-<td>Enable async generation (overlaps with training)</td>
+<td>Run on async GRPO (overlaps generation with training)</td>
 </tr>
 <tr class="odd">
-<td><code>streaming_partial_batch</code></td>
-<td><code>bool</code></td>
-<td><code>false</code></td>
-<td>Score groups incrementally (async mode)</td>
+<td><code>max_staleness</code></td>
+<td><code>int</code></td>
+<td><code>4</code></td>
+<td>Async: drop rollouts more than this many weight syncs old</td>
+</tr>
+<tr class="even">
+<td><code>scoring_token_budget</code></td>
+<td><code>int</code></td>
+<td><code>token_budget</code></td>
+<td>Async: max tokens per feature-network forward; longer scored sets are split</td>
+</tr>
+<tr class="odd">
+<td><code>generation_kwargs</code></td>
+<td><code>dict</code></td>
+<td>–</td>
+<td>Extra vLLM sampling parameters, e.g.&nbsp;<code>stop_token_ids</code></td>
 </tr>
 <tr class="even">
 <td><code>skip_zero_advantage_batches</code></td>
 <td><code>bool</code></td>
-<td><code>false</code></td>
-<td>Skip micro-batches where all advantages are zero</td>
+<td><code>true</code></td>
+<td>Async: leave samples with zero advantage out of the loss</td>
 </tr>
 <tr class="odd">
 <td><code>scale_rewards</code></td>
@@ -1782,8 +1793,8 @@ Warning
 <tr class="even">
 <td><code>loss_type</code></td>
 <td><code>string</code></td>
-<td><code>"grpo"</code></td>
-<td>Loss type for policy optimization</td>
+<td><code>"dapo"</code></td>
+<td>Loss type for policy optimization (async: <code>dapo</code> or <code>cispo</code>)</td>
 </tr>
 <tr class="odd">
 <td><code>epsilon</code></td>
@@ -1965,36 +1976,18 @@ Note
 <td>Single-GPU strided training on code data</td>
 </tr>
 <tr class="even">
-<td><code>qwen3-4b-ebft-structured.yaml</code></td>
-<td>Qwen3 4B</td>
-<td>Structured (sync)</td>
-<td>Two-GPU structured training</td>
-</tr>
-<tr class="odd">
-<td><code>qwen3-4b-ebft-structured-async.yaml</code></td>
-<td>Qwen3 4B</td>
-<td>Structured (async)</td>
-<td>Two-GPU async training with prefetch</td>
-</tr>
-<tr class="even">
-<td><code>qwen3-8b-ebft-structured.yaml</code></td>
-<td>Qwen3 8B</td>
-<td>Structured (sync)</td>
-<td>Two-GPU structured training for larger model</td>
-</tr>
-<tr class="odd">
 <td><code>qwen35-4b-ebft-structured.yaml</code></td>
 <td>Qwen3.5 4B</td>
 <td>Structured (sync)</td>
 <td>Two-GPU with Qwen3.5</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>qwen35-4b-ebft-structured-async.yaml</code></td>
 <td>Qwen3.5 4B</td>
 <td>Structured (async)</td>
 <td>Two-GPU async with Qwen3.5</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>qwen35-9b-ebft-structured.yaml</code></td>
 <td>Qwen3.5 9B</td>
 <td>Structured (sync)</td>

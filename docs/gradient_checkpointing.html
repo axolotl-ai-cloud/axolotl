@@ -1063,6 +1063,8 @@ on ZeRO-3 need it set explicitly.</p>
 PCIe bandwidth. Can be faster for LoRA/QLoRA, whose activations are small. Not supported for
 ORPO, SimPO, EBFT or process reward models.</li>
 </ul>
+<p>Activation offloading and selective checkpointing also apply to synchronous and async GRPO, whose
+TRL trainers do not offload on their own.</p>
 <p>Checkpointing runs exactly as it would without offloading, for adapters and full finetunes alike,
 honoring <code>gradient_checkpointing_kwargs</code>; the non-reentrant default above applies to <code>rl:</code> runs as
 well (DeepSpeed ZeRO-3 stays reentrant). <code>hidden_states</code> requires <code>gradient_checkpointing: true</code>.</p>

@@ -989,6 +989,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="key-async-features" class="level2">
 <h2 class="anchored" data-anchor-id="key-async-features">Key Async Features</h2>
+<p><code>async_prefetch: true</code> with <code>rl: grpo</code> runs TRL’s <code>AsyncGRPOTrainer</code> (vLLM server, FSDP2/DDP, <code>beta: 0</code>, conversational prompts, picklable reward functions).</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 34%">
@@ -1004,37 +1005,48 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td>Async prefetch</td>
+<td>Async GRPO</td>
 <td><code>async_prefetch: true</code></td>
-<td>Overlap generation with training</td>
+<td>Generate and score continuously while training</td>
 </tr>
 <tr class="even">
+<td>Staleness bound</td>
+<td><code>max_staleness: 4</code></td>
+<td>Drop rollouts more than N weight syncs old</td>
+</tr>
+<tr class="odd">
 <td>LoRA sync</td>
 <td><code>vllm_lora_sync: true</code></td>
 <td>Fast adapter sync via filesystem</td>
 </tr>
-<tr class="odd">
-<td>Streaming scoring</td>
-<td><code>streaming_partial_batch: true</code></td>
-<td>Score one group at a time</td>
-</tr>
 <tr class="even">
-<td>Zero-adv skip</td>
+<td>Zero-adv filter</td>
 <td><code>skip_zero_advantage_batches: true</code></td>
-<td>Skip batches with no learning signal</td>
+<td>Drop samples with no learning signal before packing</td>
 </tr>
 <tr class="odd">
-<td>Replay buffer</td>
-<td><code>replay_buffer_size: 100</code></td>
-<td>Cache high-signal groups</td>
+<td>Reward workers</td>
+<td><code>reward_num_workers: 4</code></td>
+<td>Score rewards in processes, several groups at once</td>
 </tr>
 <tr class="even">
-<td>IS correction</td>
-<td><code>vllm_importance_sampling_correction: true</code></td>
-<td>Fix off-policy distribution shift</td>
+<td>Loss</td>
+<td><code>loss_type: dapo</code> (default)</td>
+<td>TRL’s surrogate, clipped against the vLLM sampler at <code>epsilon</code> / <code>epsilon_high</code></td>
+</tr>
+<tr class="odd">
+<td>Importance weights</td>
+<td><code>loss_type: cispo</code>, <code>vllm_importance_sampling_cap: 3.0</code></td>
+<td>Weight each token by its policy/sampler ratio, capped, instead of clipping; with LoRA / higher lr it learns faster, and <code>dapo</code>’s completions can run to the length cap</td>
+</tr>
+<tr class="even">
+<td>Score centering</td>
+<td><code>loss_type: score_centering</code></td>
+<td>Experimental, TRL installed from main only: TRL’s score centering with masked importance sampling, centered over vLLM’s top <code>num_sampler_logprobs</code> tokens</td>
 </tr>
 </tbody>
 </table>
+<p>OPSM (<code>off_policy_mask_threshold</code>) applies to synchronous GRPO only. Axolotl’s own data producer trainer was removed; <code>use_data_producer</code> is a deprecated alias for <code>async_prefetch</code> with <code>max_staleness: 0</code> (it discards in-flight rollouts at every sync and is slower than the default staleness), and its streaming, replay and re-roll options fail validation (see docs/grpo.qmd#sec-data-producer-migration).</p>
 </section>
 <section id="health-checks" class="level2">
 <h2 class="anchored" data-anchor-id="health-checks">Health Checks</h2>
@@ -1052,8 +1064,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   cli/train.py                     # Entry point
   cli/vllm_serve.py                # Launches vLLM's native OpenAI server (dev mode, NCCL weight transfer, optional LoRA)
   core/trainers/grpo/
-    trainer.py                     # AxolotlGRPOTrainer
+    trainer.py                     # AxolotlGRPOTrainer (sync) and its context-parallel variant
     sampler.py                     # Sampling utilities
+  core/trainers/async_grpo/        # Async GRPO on TRL's AsyncGRPOTrainer (package doc lists the extensions)
+    config.py                      # AxolotlAsyncGRPOConfig
+    trainer.py                     # AxolotlAsyncGRPOTrainer: model loading, sample filtering, dataloader, stop
+    loss.py                        # compute_loss with loss_type dapo / cispo / score_centering
+    weight_sync.py                 # Out-of-place merged sync, adapter retiring, vllm_lora_alias client
+    progress.py                    # Sample filter, consumed/trained groups, end-of-run and stall stops
+    rollout.py                     # Rollout process: rewards, advantages, reward pool, custom rollout loops
+    scoring.py                     # Rewards scored on the trainer (EBFT)
+    traces.py                      # The on_rollouts_scored plugin hook
+    trl_compat.py                  # Every TRL import, module swap and patch; pins in tests/core/test_trl_compat.py
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
   utils/schemas/trl.py             # TRL config schema (all trl: options)
 

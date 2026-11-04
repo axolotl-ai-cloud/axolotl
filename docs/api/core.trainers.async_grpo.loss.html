@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>core.trainers.grpo.replay_buffer – Axolotl</title>
+<title>core.trainers.async_grpo.loss – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -937,11 +937,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.core.trainers.grpo.replay_buffer" id="toc-axolotl.core.trainers.grpo.replay_buffer" class="nav-link active" data-scroll-target="#axolotl.core.trainers.grpo.replay_buffer">core.trainers.grpo.replay_buffer</a>
+  <li><a href="#axolotl.core.trainers.async_grpo.loss" id="toc-axolotl.core.trainers.async_grpo.loss" class="nav-link active" data-scroll-target="#axolotl.core.trainers.async_grpo.loss">core.trainers.async_grpo.loss</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer" id="toc-axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer">ReplayBuffer</a></li>
+  <li><a href="#axolotl.core.trainers.async_grpo.loss.AsyncGRPOLossMixin" id="toc-axolotl.core.trainers.async_grpo.loss.AsyncGRPOLossMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.loss.AsyncGRPOLossMixin">AsyncGRPOLossMixin</a></li>
+  </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.core.trainers.async_grpo.loss.support_ids" id="toc-axolotl.core.trainers.async_grpo.loss.support_ids" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.loss.support_ids">support_ids</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -953,10 +957,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.core.trainers.grpo.replay_buffer" class="level1">
-<h1>core.trainers.grpo.replay_buffer</h1>
-<p><code>core.trainers.grpo.replay_buffer</code></p>
-<p>Simple replay buffer for storing and sampling high-signal rollout groups.</p>
+<section id="axolotl.core.trainers.async_grpo.loss" class="level1">
+<h1>core.trainers.async_grpo.loss</h1>
+<p><code>core.trainers.async_grpo.loss</code></p>
+<p>Async GRPO’s per-token losses (<code>loss_type</code>) and their metrics.</p>
+<p><code>compute_loss</code> is TRL’s, with <code>_policy_loss</code> in place of TRL’s clipped objective
+and its metrics per loss type.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -968,19 +974,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer">ReplayBuffer</a></td>
-<td>Min-heap replay buffer that keeps the highest-scoring rollout groups.</td>
+<td><a href="#axolotl.core.trainers.async_grpo.loss.AsyncGRPOLossMixin">AsyncGRPOLossMixin</a></td>
+<td><code>compute_loss</code> with the loss of <code>args.loss_type</code>.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer">ReplayBuffer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.replay_buffer.ReplayBuffer(max_size)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Min-heap replay buffer that keeps the highest-scoring rollout groups.
-Groups are scored by signal quality (advantage magnitude * reward variance).
-When sampling, groups are drawn proportional to their scores.</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<section id="axolotl.core.trainers.async_grpo.loss.AsyncGRPOLossMixin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.loss.AsyncGRPOLossMixin">AsyncGRPOLossMixin</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.loss.AsyncGRPOLossMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>compute_loss</code> with the loss of <code>args.loss_type</code>.</p>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
 <thead>
 <tr class="header">
@@ -990,28 +996,19 @@ When sampling, groups are drawn proportional to their scores.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer.add">add</a></td>
-<td>Add a group to the buffer. If full, replaces lowest-scoring entry.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer.sample">sample</a></td>
-<td>Sample groups weighted by their scores. Returns None if buffer is empty.</td>
+<td><a href="#axolotl.core.trainers.async_grpo.loss.support_ids">support_ids</a></td>
+<td>Each position’s top-k/top-p candidate set, padded with -1, which TRL main’s</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer.add" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer.add">add</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.replay_buffer.ReplayBuffer.add(score, data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Add a group to the buffer. If full, replaces lowest-scoring entry.</p>
-</section>
-<section id="axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer.sample" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.replay_buffer.ReplayBuffer.sample">sample</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.replay_buffer.ReplayBuffer.sample(num_samples)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Sample groups weighted by their scores. Returns None if buffer is empty.</p>
+<section id="axolotl.core.trainers.async_grpo.loss.support_ids" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.loss.support_ids">support_ids</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.loss.support_ids(inputs, mask_bool)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Each position’s top-k/top-p candidate set, padded with -1, which TRL main’s
+fused head renormalizes the log-probs over as the sampler did; None without
+truncation, and on TRL releases, which do not record the sets.</p>
 
 
-</section>
-</section>
 </section>
 </section>
 </section>

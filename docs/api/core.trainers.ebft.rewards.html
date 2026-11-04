@@ -945,6 +945,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.core.trainers.ebft.rewards.extract_hidden_states" id="toc-axolotl.core.trainers.ebft.rewards.extract_hidden_states" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.rewards.extract_hidden_states">extract_hidden_states</a></li>
   <li><a href="#axolotl.core.trainers.ebft.rewards.get_alignment_rewards" id="toc-axolotl.core.trainers.ebft.rewards.get_alignment_rewards" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.rewards.get_alignment_rewards">get_alignment_rewards</a></li>
   <li><a href="#axolotl.core.trainers.ebft.rewards.get_diversity_rewards" id="toc-axolotl.core.trainers.ebft.rewards.get_diversity_rewards" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.rewards.get_diversity_rewards">get_diversity_rewards</a></li>
+  <li><a href="#axolotl.core.trainers.ebft.rewards.group_feature_rewards" id="toc-axolotl.core.trainers.ebft.rewards.group_feature_rewards" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.rewards.group_feature_rewards">group_feature_rewards</a></li>
+  <li><a href="#axolotl.core.trainers.ebft.rewards.pool_sequence" id="toc-axolotl.core.trainers.ebft.rewards.pool_sequence" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.rewards.pool_sequence">pool_sequence</a></li>
   <li><a href="#axolotl.core.trainers.ebft.rewards.whiten_embeddings_batched" id="toc-axolotl.core.trainers.ebft.rewards.whiten_embeddings_batched" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.rewards.whiten_embeddings_batched">whiten_embeddings_batched</a></li>
   </ul></li>
   </ul></li>
@@ -989,6 +991,14 @@ Paper: “Matching Features, Not Tokens: Energy-Based Fine-Tuning of Language Mo
 <tr class="even">
 <td><a href="#axolotl.core.trainers.ebft.rewards.get_diversity_rewards">get_diversity_rewards</a></td>
 <td>Compute diversity penalty as mean pairwise dot-product similarity</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.core.trainers.ebft.rewards.group_feature_rewards">group_feature_rewards</a></td>
+<td>EBFT rewards of one prompt’s (n, D) generations against its (1, D) reference.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.core.trainers.ebft.rewards.pool_sequence">pool_sequence</a></td>
+<td><code>apply_embed_method</code> for one unpadded sequence’s (L, D) hidden states.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.core.trainers.ebft.rewards.whiten_embeddings_batched">whiten_embeddings_batched</a></td>
@@ -1288,14 +1298,33 @@ between samples from the same prompt (excluding self-similarity).</p>
 </table>
 </section>
 </section>
+<section id="axolotl.core.trainers.ebft.rewards.group_feature_rewards" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.rewards.group_feature_rewards">group_feature_rewards</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.rewards.group_feature_rewards(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    gen_embedding,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    gt_embedding,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    use_whitening,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    alignment_coef,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    diversity_coef,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>EBFT rewards of one prompt’s (n, D) generations against its (1, D) reference.</p>
+<p>Returns the rewards, alignment and diversity terms (each (n,)), and the group’s
+CFM loss <code>||mean(phi(y_hat)) - phi(y)||^2</code> (paper eq. 2). The alignment and
+diversity terms are scaled by 2 per paper eq. 7.</p>
+</section>
+<section id="axolotl.core.trainers.ebft.rewards.pool_sequence" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.rewards.pool_sequence">pool_sequence</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.rewards.pool_sequence(hidden, method, pool_start)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>apply_embed_method</code> for one unpadded sequence’s (L, D) hidden states.</p>
+</section>
 <section id="axolotl.core.trainers.ebft.rewards.whiten_embeddings_batched" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.rewards.whiten_embeddings_batched">whiten_embeddings_batched</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.rewards.whiten_embeddings_batched(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    phi,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    phi_gt,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    whiten_tol<span class="op">=</span><span class="fl">1e-05</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    normalize<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.rewards.whiten_embeddings_batched(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    phi,</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    phi_gt,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    whiten_tol<span class="op">=</span><span class="fl">1e-05</span>,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    normalize<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Whiten generated embeddings using SVD, then apply same transform to ground-truth.</p>
 <p>Whitening decorrelates feature dimensions so no single direction dominates
 the feature-matching loss. Uses pseudo-inverse for rank-deficient cases.</p>

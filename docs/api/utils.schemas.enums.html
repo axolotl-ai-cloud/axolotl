@@ -949,6 +949,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.utils.schemas.enums.attn_impl_base" id="toc-axolotl.utils.schemas.enums.attn_impl_base" class="nav-link" data-scroll-target="#axolotl.utils.schemas.enums.attn_impl_base">attn_impl_base</a></li>
+  <li><a href="#axolotl.utils.schemas.enums.rl_uses_fused_lm_head" id="toc-axolotl.utils.schemas.enums.rl_uses_fused_lm_head" class="nav-link" data-scroll-target="#axolotl.utils.schemas.enums.rl_uses_fused_lm_head">rl_uses_fused_lm_head</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -1027,12 +1028,21 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.utils.schemas.enums.attn_impl_base">attn_impl_base</a></td>
 <td>Strip the <code>@revision</code> / <code>:kernel_name</code> suffix so <code>org/name@v2</code> still matches above.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.utils.schemas.enums.rl_uses_fused_lm_head">rl_uses_fused_lm_head</a></td>
+<td>Whether the config’s RL trainer scores tokens with TRL’s fused LM head.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.utils.schemas.enums.attn_impl_base" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.enums.attn_impl_base">attn_impl_base</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.enums.attn_impl_base(attn_implementation)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Strip the <code>@revision</code> / <code>:kernel_name</code> suffix so <code>org/name@v2</code> still matches above.</p>
+</section>
+<section id="axolotl.utils.schemas.enums.rl_uses_fused_lm_head" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.schemas.enums.rl_uses_fused_lm_head">rl_uses_fused_lm_head</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.enums.rl_uses_fused_lm_head(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Whether the config’s RL trainer scores tokens with TRL’s fused LM head.</p>
 
 
 </section>

@@ -980,17 +980,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    sync_dir,</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    version,</span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    timeout,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    alias<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Register <code>&lt;sync_dir&gt;/v&lt;version&gt;</code> under a fresh versioned adapter name.</p>
 <p>Each version gets its own name because vLLM re-reads an adapter reloaded in
 place from disk on every request and keys its prefix cache on the name alone.
 In-flight requests are drained first so at most the previous version can
 still be referenced once generation resumes.</p>
-<p><code>alias</code> is a fixed name that is re-pointed at every version, for clients
-that cannot follow the versioned name. It should be the served base model
-name: requests arriving between the unload and the reload then fall back to
-the base model instead of failing.</p>
 
 
 </section>

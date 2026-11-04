@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>integrations.nemo_gym.multi_turn – Axolotl</title>
+<title>core.trainers.async_grpo.progress – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -937,12 +937,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.integrations.nemo_gym.multi_turn" id="toc-axolotl.integrations.nemo_gym.multi_turn" class="nav-link active" data-scroll-target="#axolotl.integrations.nemo_gym.multi_turn">integrations.nemo_gym.multi_turn</a>
+  <li><a href="#axolotl.core.trainers.async_grpo.progress" id="toc-axolotl.core.trainers.async_grpo.progress" class="nav-link active" data-scroll-target="#axolotl.core.trainers.async_grpo.progress">core.trainers.async_grpo.progress</a>
   <ul class="collapse">
-  <li><a href="#architecture" id="toc-architecture" class="nav-link" data-scroll-target="#architecture">Architecture</a></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.integrations.nemo_gym.multi_turn.create_nemo_gym_rollout_func" id="toc-axolotl.integrations.nemo_gym.multi_turn.create_nemo_gym_rollout_func" class="nav-link" data-scroll-target="#axolotl.integrations.nemo_gym.multi_turn.create_nemo_gym_rollout_func">create_nemo_gym_rollout_func</a></li>
+  <li><a href="#axolotl.core.trainers.async_grpo.progress.ProgressCollator" id="toc-axolotl.core.trainers.async_grpo.progress.ProgressCollator" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.progress.ProgressCollator">ProgressCollator</a></li>
+  <li><a href="#axolotl.core.trainers.async_grpo.progress.RolloutProgress" id="toc-axolotl.core.trainers.async_grpo.progress.RolloutProgress" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.progress.RolloutProgress">RolloutProgress</a></li>
+  <li><a href="#axolotl.core.trainers.async_grpo.progress.RolloutStop" id="toc-axolotl.core.trainers.async_grpo.progress.RolloutStop" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.progress.RolloutStop">RolloutStop</a></li>
+  <li><a href="#axolotl.core.trainers.async_grpo.progress.StopAwareDataset" id="toc-axolotl.core.trainers.async_grpo.progress.StopAwareDataset" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.progress.StopAwareDataset">StopAwareDataset</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -954,25 +956,23 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.integrations.nemo_gym.multi_turn" class="level1">
-<h1>integrations.nemo_gym.multi_turn</h1>
-<p><code>integrations.nemo_gym.multi_turn</code></p>
-<p>Multi-turn rollout function for NeMo Gym environments.</p>
-<p>Delegates multi-turn orchestration to NeMo Gym’s agent servers via the /run
-endpoint. The agent handles generation (by calling our vLLM server), tool
-execution, session management, and reward computation.</p>
-<p>This follows the same pattern as TRL’s reference implementation at
-examples/scripts/nemo_gym/train_multi_environment.py.</p>
-<section id="architecture" class="level2 doc-section doc-section-architecture">
-<h2 class="doc-section doc-section-architecture anchored" data-anchor-id="architecture">Architecture</h2>
-<p>rollout_func(prompts, trainer)
--&gt; expand prompts by num_generations
--&gt; async POST /run to agent servers (one per sample)
--&gt; parse response: prompt_ids, completion_ids, logprobs, env_mask, reward
--&gt; return to TRL for GRPO training</p>
-</section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<section id="axolotl.core.trainers.async_grpo.progress" class="level1">
+<h1>core.trainers.async_grpo.progress</h1>
+<p><code>core.trainers.async_grpo.progress</code></p>
+<p>Progress accounting and termination for async GRPO’s rollout stream.</p>
+<p>TRL’s rollout worker cycles the prompts forever, and TRL ends an epoch-bounded run
+only when an optimizer step ends. Rollouts dropped before training (no reward signal,
+truncated, too stale, too long) complete no step, so a run whose remaining rollouts
+are all dropped would generate forever.</p>
+<p><code>SampleFilterQueue</code> drops the rollouts that would train nothing. Every drop and
+every trained micro-batch reports to <code>RolloutProgress</code>, which keeps
+TRL’s set of consumed prompt groups (read for the epoch bound and for resume). When
+the run’s prompt groups are consumed, or a full pass over the prompts trains nothing,
+the rank-0 pipeline raises <code>RolloutStop</code>. <code>StopAwareDataset</code> turns it into one
+stop micro-batch that accelerate’s dispatcher hands to every rank, so all ranks end
+training (or raise the stall error) at the same micro-batch.</p>
+<section id="classes" class="level2">
+<h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
 <thead>
 <tr class="header">
@@ -982,84 +982,106 @@ examples/scripts/nemo_gym/train_multi_environment.py.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.integrations.nemo_gym.multi_turn.create_nemo_gym_rollout_func">create_nemo_gym_rollout_func</a></td>
-<td>Create a TRL-compatible rollout_func that delegates to NeMo Gym agents.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.nemo_gym.multi_turn.create_nemo_gym_rollout_func" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.multi_turn.create_nemo_gym_rollout_func">create_nemo_gym_rollout_func</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.multi_turn.create_nemo_gym_rollout_func(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    agent_servers,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    dataset_lookup,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    request_timeout<span class="op">=</span><span class="dv">10800</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Create a TRL-compatible rollout_func that delegates to NeMo Gym agents.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 13%">
-<col style="width: 14%">
-<col style="width: 62%">
-<col style="width: 9%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>agent_servers</td>
-<td>dict[str, str]</td>
-<td>Mapping of agent_name → agent URL (e.g., {“simple_agent”: “http://host:port”}).</td>
-<td><em>required</em></td>
+<td><a href="#axolotl.core.trainers.async_grpo.progress.ProgressCollator">ProgressCollator</a></td>
+<td>TRL’s collator, reporting trained groups and passing a stream stop on.</td>
 </tr>
 <tr class="even">
-<td>dataset_lookup</td>
-<td>dict[int, dict]</td>
-<td>Mapping of dataset index → full JSONL row dict.</td>
-<td><em>required</em></td>
+<td><a href="#axolotl.core.trainers.async_grpo.progress.RolloutProgress">RolloutProgress</a></td>
+<td>Consumed and trained prompt groups, and the stream’s stop conditions.</td>
 </tr>
 <tr class="odd">
-<td>request_timeout</td>
-<td>float</td>
-<td>HTTP timeout for /run requests.</td>
-<td><code>10800</code></td>
+<td><a href="#axolotl.core.trainers.async_grpo.progress.RolloutStop">RolloutStop</a></td>
+<td>Ends the rollout stream; <code>error</code> is set when the run made no progress.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.core.trainers.async_grpo.progress.StopAwareDataset">StopAwareDataset</a></td>
+<td>A rollout batcher whose stream ends with the <code>RolloutStop</code> it raised.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.core.trainers.async_grpo.progress.ProgressCollator" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.ProgressCollator">ProgressCollator</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.ProgressCollator(progress<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>TRL’s collator, reporting trained groups and passing a stream stop on.</p>
 </section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
+<section id="axolotl.core.trainers.async_grpo.progress.RolloutProgress" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.RolloutProgress">RolloutProgress</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.RolloutProgress(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    consumed,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    epochs_done,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    stall_groups,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Consumed and trained prompt groups, and the stream’s stop conditions.</p>
+<p><code>consumed</code> is the trainer’s set TRL counts epochs and resumes from: a group
+counts once it trained or its rollouts were dropped. <code>stall_groups</code> bounds how
+many groups may be consumed in a row without one training.</p>
+<p>Only rank 0 reports, from the rollout stream and, with trainer-side scoring,
+from <code>score_step</code>; the stream raises the stop, so that it reaches every rank
+as a stop micro-batch.</p>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
 <table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 9%">
-<col style="width: 81%">
-</colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
-<th>Type</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td></td>
-<td></td>
-<td>A rollout_func with signature (prompts: list[str], trainer) -&gt; dict.</td>
+<td><a href="#axolotl.core.trainers.async_grpo.progress.RolloutProgress.check">check</a></td>
+<td>End the stream when a full pass over the prompts trained no group.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.core.trainers.async_grpo.progress.RolloutProgress.drop">drop</a></td>
+<td>Count <code>group_id</code> as consumed without training; may end the stream.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.core.trainers.async_grpo.progress.RolloutProgress.exclude">exclude</a></td>
+<td>Count a collated group whose every sample scoring took out of the loss.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.core.trainers.async_grpo.progress.RolloutProgress.train">train</a></td>
+<td>Record groups that trained.</td>
 </tr>
 </tbody>
 </table>
-
-
+<section id="axolotl.core.trainers.async_grpo.progress.RolloutProgress.check" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.RolloutProgress.check">check</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.RolloutProgress.check()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>End the stream when a full pass over the prompts trained no group.</p>
 </section>
+<section id="axolotl.core.trainers.async_grpo.progress.RolloutProgress.drop" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.RolloutProgress.drop">drop</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.RolloutProgress.drop(group_id, reason)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Count <code>group_id</code> as consumed without training; may end the stream.</p>
+</section>
+<section id="axolotl.core.trainers.async_grpo.progress.RolloutProgress.exclude" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.RolloutProgress.exclude">exclude</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.RolloutProgress.exclude(group_id, reason)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Count a collated group whose every sample scoring took out of the loss.</p>
+<p>Runs outside the stream, so the stall it may complete is raised by the
+stream’s next <code>check</code>.</p>
+</section>
+<section id="axolotl.core.trainers.async_grpo.progress.RolloutProgress.train" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.RolloutProgress.train">train</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.RolloutProgress.train(group_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Record groups that trained.</p>
+</section>
+</section>
+</section>
+<section id="axolotl.core.trainers.async_grpo.progress.RolloutStop" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.RolloutStop">RolloutStop</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.RolloutStop(error<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Ends the rollout stream; <code>error</code> is set when the run made no progress.</p>
+</section>
+<section id="axolotl.core.trainers.async_grpo.progress.StopAwareDataset" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.StopAwareDataset">StopAwareDataset</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.StopAwareDataset(batcher)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>A rollout batcher whose stream ends with the <code>RolloutStop</code> it raised.</p>
+
+
 </section>
 </section>
 </section>

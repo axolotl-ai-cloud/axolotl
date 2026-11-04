@@ -969,9 +969,9 @@ Handles server lifecycle, dataset loading, and reward function wiring.</p>
 <section id="supports-two-modes" class="level2 doc-section doc-section-supports-two-modes">
 <h2 class="doc-section doc-section-supports-two-modes anchored" data-anchor-id="supports-two-modes">Supports two modes</h2>
 <ul>
-<li>Single-turn (default): reward_fn calls /verify after each generation</li>
-<li>Multi-turn (nemo_gym_multi_turn: true): rollout_func orchestrates
-multi-step interactions with tool execution via resource servers</li>
+<li>Single-turn (default): a reward function calls /verify after each generation</li>
+<li>Multi-turn (nemo_gym_multi_turn: true, async GRPO): agent servers run whole
+rollouts, with tool execution, behind their /run endpoint</li>
 </ul>
 </section>
 <section id="classes" class="level2">
@@ -1002,8 +1002,8 @@ multi-step interactions with tool execution via resource servers</li>
 1. Clones and sets up the NeMo Gym repo (if needed)
 2. Starts NeMo Gym resource servers
 3. Loads datasets from NeMo Gym JSONL files
-4. For single-turn: creates a reward function calling /verify
-5. For multi-turn: creates a rollout_func with tool execution and env_mask</p>
+4. For single-turn: adds a reward function calling /verify
+5. For multi-turn: runs async GRPO’s rollouts through agent /run endpoints</p>
 <section id="methods" class="level4">
 <h4 class="anchored" data-anchor-id="methods">Methods</h4>
 <table class="caption-top table">
@@ -1015,41 +1015,50 @@ multi-step interactions with tool execution via resource servers</li>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.get_training_args">get_training_args</a></td>
-<td>Pass through vLLM settings and force async trainer for multi-turn.</td>
+<td><a href="#axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.get_reward_funcs">get_reward_funcs</a></td>
+<td>Single-turn rollouts are scored by the resource servers’ /verify.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.get_training_args">get_training_args</a></td>
+<td>Run multi-turn rollouts through the agents, or pass through vLLM settings.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.post_train_unload">post_train_unload</a></td>
 <td>Cleanup NeMo Gym servers if we started them.</td>
 </tr>
-<tr class="odd">
-<td><a href="#axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.post_trainer_create">post_trainer_create</a></td>
-<td>Wire NeMo Gym into the trainer (reward_fn or rollout_func).</td>
-</tr>
 <tr class="even">
+<td><a href="#axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.post_trainer_create">post_trainer_create</a></td>
+<td>Check and install weight sync for trainers that generate with vLLM.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.pre_model_load">pre_model_load</a></td>
 <td>Probe vLLM weight-sync routes and conditionally bypass NCCL init.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.get_reward_funcs" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.get_reward_funcs">get_reward_funcs</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.get_reward_funcs(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Single-turn rollouts are scored by the resource servers’ /verify.</p>
+</section>
 <section id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.get_training_args" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.get_training_args">get_training_args</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.get_training_args(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Pass through vLLM settings and force async trainer for multi-turn.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.get_training_args(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Run multi-turn rollouts through the agents, or pass through vLLM settings.</p>
 </section>
 <section id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.post_train_unload" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.post_train_unload">post_train_unload</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.post_train_unload(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.post_train_unload(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Cleanup NeMo Gym servers if we started them.</p>
 </section>
 <section id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.post_trainer_create" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.post_trainer_create">post_trainer_create</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.post_trainer_create(cfg, trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Wire NeMo Gym into the trainer (reward_fn or rollout_func).</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.post_trainer_create(cfg, trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Check and install weight sync for trainers that generate with vLLM.</p>
 </section>
 <section id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.pre_model_load" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.plugin.NemoGymPlugin.pre_model_load">pre_model_load</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.pre_model_load(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.NemoGymPlugin.pre_model_load(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Probe vLLM weight-sync routes and conditionally bypass NCCL init.</p>
 <p>Replaces the previous unconditional <code>init_communicator</code> monkey-patch
 with a probe of the configured vLLM server’s <code>/openapi.json</code>. We only
@@ -1063,13 +1072,13 @@ sync weights.</p>
 </section>
 <section id="axolotl.integrations.nemo_gym.plugin.VLLMWeightSyncCapabilities" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.plugin.VLLMWeightSyncCapabilities">VLLMWeightSyncCapabilities</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.VLLMWeightSyncCapabilities(</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    nccl<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    lora_filesystem<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    probed<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    probe_error<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    routes<span class="op">=</span><span class="bu">list</span>(),</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.VLLMWeightSyncCapabilities(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    nccl<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    lora_filesystem<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    probed<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    probe_error<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    routes<span class="op">=</span><span class="bu">list</span>(),</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>What weight-sync routes a vLLM server actually exposes.</p>
 <p>Discovered once at <code>pre_model_load</code> time by fetching the server’s
 <code>/openapi.json</code>. Drives the transport-selection table below.</p>
@@ -1097,7 +1106,7 @@ sync weights.</p>
 </table>
 <section id="axolotl.integrations.nemo_gym.plugin.probe_vllm_weight_sync" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.plugin.probe_vllm_weight_sync">probe_vllm_weight_sync</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.probe_vllm_weight_sync(base_url, timeout<span class="op">=</span><span class="fl">5.0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.probe_vllm_weight_sync(base_url, timeout<span class="op">=</span><span class="fl">5.0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Detect which weight-sync routes the configured vLLM server exposes.</p>
 <p>Uses the server’s FastAPI <code>/openapi.json</code> — every weight-sync transport
 we care about is mounted as a POST route there. Falls back to all-False
@@ -1106,12 +1115,12 @@ a clear error rather than silently no-op).</p>
 </section>
 <section id="axolotl.integrations.nemo_gym.plugin.select_weight_sync_transport" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.plugin.select_weight_sync_transport">select_weight_sync_transport</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.select_weight_sync_transport(</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    caps,</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    has_lora,</span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync_pref,</span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.plugin.select_weight_sync_transport(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    caps,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    has_lora,</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync_pref,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Pick the right transport for a (server caps, model type) combo.</p>
 <p>Returns one of: <code>"lora_filesystem"</code>, <code>"nccl"</code>, or <code>"none"</code>. The caller
 decides what to do with <code>"none"</code> (typically: raise an error explaining the

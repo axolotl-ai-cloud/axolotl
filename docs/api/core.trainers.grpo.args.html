@@ -941,7 +941,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.grpo.args.AxolotlAsyncGRPOConfig" id="toc-axolotl.core.trainers.grpo.args.AxolotlAsyncGRPOConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.args.AxolotlAsyncGRPOConfig">AxolotlAsyncGRPOConfig</a></li>
   <li><a href="#axolotl.core.trainers.grpo.args.AxolotlGRPOConfig" id="toc-axolotl.core.trainers.grpo.args.AxolotlGRPOConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.args.AxolotlGRPOConfig">AxolotlGRPOConfig</a></li>
   </ul></li>
   </ul></li>
@@ -969,48 +968,17 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.args.AxolotlAsyncGRPOConfig">AxolotlAsyncGRPOConfig</a></td>
-<td>Axolotl Async GRPO Config — adds async prefetch, streaming scoring, and IS correction.</td>
-</tr>
-<tr class="even">
 <td><a href="#axolotl.core.trainers.grpo.args.AxolotlGRPOConfig">AxolotlGRPOConfig</a></td>
 <td>Axolotl GRPO Config for GRPO training</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.grpo.args.AxolotlAsyncGRPOConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.args.AxolotlAsyncGRPOConfig">AxolotlAsyncGRPOConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.args.AxolotlAsyncGRPOConfig(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    use_data_producer<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    async_prefetch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    prefetch_depth<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    vllm_sync_interval<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    batch_flattening<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    streaming_partial_batch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    streaming_min_groups<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_correction<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_mode<span class="op">=</span><span class="st">'token_truncate'</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_cap<span class="op">=</span><span class="fl">3.0</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    off_policy_mask_threshold<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    use_bias_correction_kl<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    reward_num_workers<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    replay_buffer_size<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    replay_recompute_logps<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    reroll_start_fraction<span class="op">=</span><span class="fl">0.5</span>,</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    reroll_max_groups<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    skip_zero_advantage_batches<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    context_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    vllm_merge_check_interval<span class="op">=</span>DEFAULT_MERGE_CHECK_INTERVAL,</span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Axolotl Async GRPO Config — adds async prefetch, streaming scoring, and IS correction.</p>
-</section>
 <section id="axolotl.core.trainers.grpo.args.AxolotlGRPOConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.args.AxolotlGRPOConfig">AxolotlGRPOConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.args.AxolotlGRPOConfig(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    context_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    vllm_merge_check_interval<span class="op">=</span>DEFAULT_MERGE_CHECK_INTERVAL,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.args.AxolotlGRPOConfig(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    context_parallel_size<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    vllm_merge_check_interval<span class="op">=</span>DEFAULT_MERGE_CHECK_INTERVAL,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Axolotl GRPO Config for GRPO training</p>
 
 

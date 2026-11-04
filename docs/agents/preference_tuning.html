@@ -975,6 +975,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tbody>
 </table>
 <p>Default: start with DPO. All methods require <code>sample_packing: false</code>.</p>
+<p>DPO/IPO and KTO score tokens with TRL’s fused LM head (no full <code>[batch, seq, vocab]</code> logits), so <code>cut_cross_entropy</code> and <code>liger_fused_linear_cross_entropy</code> are skipped for them and a LoRA adapter on <code>lm_head</code> is rejected (use <code>lora_modules_to_save: [lm_head]</code>).</p>
 <p>DPO/IPO and KTO also accept image datasets for VLMs (<code>images</code>/<code>image</code> column, <code>processor_type: AutoProcessor</code>); ORPO and SimPO do not. See <a href="../../docs/rlhf.html#multimodal">rlhf.qmd</a>.</p>
 </section>
 <section id="architecture" class="level2">

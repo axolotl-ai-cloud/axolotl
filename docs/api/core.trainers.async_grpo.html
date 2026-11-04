@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>core.trainers.grpo.async_trainer – Axolotl</title>
+<title>core.trainers.async_grpo – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -25,41 +25,6 @@ ul.task-list li input[type="checkbox"] {
   width: 0.8em;
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
-}
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
 </style>
 
@@ -937,27 +902,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer" id="toc-axolotl.core.trainers.grpo.async_trainer" class="nav-link active" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer">core.trainers.grpo.async_trainer</a>
-  <ul class="collapse">
-  <li><a href="#features" id="toc-features" class="nav-link" data-scroll-target="#features">Features</a></li>
-  <li><a href="#classes-exported" id="toc-classes-exported" class="nav-link" data-scroll-target="#classes-exported">Classes exported</a></li>
-  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer" id="toc-axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer">AsyncDataProducer</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncGRPOConfig" id="toc-axolotl.core.trainers.grpo.async_trainer.AsyncGRPOConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.AsyncGRPOConfig">AsyncGRPOConfig</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer" id="toc-axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer">AsyncGRPOTrainer</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.BaseDataProducer" id="toc-axolotl.core.trainers.grpo.async_trainer.BaseDataProducer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.BaseDataProducer">BaseDataProducer</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.DataProducer" id="toc-axolotl.core.trainers.grpo.async_trainer.DataProducer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.DataProducer">DataProducer</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.DataProducerCallback" id="toc-axolotl.core.trainers.grpo.async_trainer.DataProducerCallback" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.DataProducerCallback">DataProducerCallback</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.GRPODataProducer" id="toc-axolotl.core.trainers.grpo.async_trainer.GRPODataProducer" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.GRPODataProducer">GRPODataProducer</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.ProducerConfig" id="toc-axolotl.core.trainers.grpo.async_trainer.ProducerConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.ProducerConfig">ProducerConfig</a></li>
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.RolloutDataset" id="toc-axolotl.core.trainers.grpo.async_trainer.RolloutDataset" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.RolloutDataset">RolloutDataset</a></li>
-  </ul></li>
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.grpo.async_trainer.make_rollout_collator" id="toc-axolotl.core.trainers.grpo.async_trainer.make_rollout_collator" class="nav-link" data-scroll-target="#axolotl.core.trainers.grpo.async_trainer.make_rollout_collator">make_rollout_collator</a></li>
-  </ul></li>
-  </ul></li>
+  <li><a href="#axolotl.core.trainers.async_grpo" id="toc-axolotl.core.trainers.async_grpo" class="nav-link active" data-scroll-target="#axolotl.core.trainers.async_grpo">core.trainers.async_grpo</a></li>
   </ul>
 </nav>
     </div>
@@ -967,459 +912,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.core.trainers.grpo.async_trainer" class="level1">
-<h1>core.trainers.grpo.async_trainer</h1>
-<p><code>core.trainers.grpo.async_trainer</code></p>
-<p>Async GRPO training with streaming scoring and IS correction.</p>
-<p>Works on stock TRL v0.29.0 and transformers v5.3.0 — no custom branches needed.</p>
-<section id="features" class="level2 doc-section doc-section-features">
-<h2 class="doc-section doc-section-features anchored" data-anchor-id="features">Features</h2>
+<section id="axolotl.core.trainers.async_grpo" class="level1">
+<h1>core.trainers.async_grpo</h1>
+<p><code>core.trainers.async_grpo</code></p>
+<p>Async GRPO on TRL’s experimental <code>AsyncGRPOTrainer</code>.</p>
+<p>TRL generates, scores and computes advantages continuously in a CUDA-free child
+process that streams requests to a vLLM server, while the trainer consumes scored
+samples from a queue (dropping those older than <code>max_staleness</code> policy versions),
+tree-packs them by token budget and syncs weights every <code>weight_sync_steps</code>.</p>
+<p>On top of TRL, this trainer:</p>
 <ul>
-<li>Async prefetch: background thread generates completions via vLLM while the main
-thread trains on the previous rollout.</li>
-<li>Deferred scoring: rewards, advantages, and policy logprobs computed on the main
-thread (thread-safe with GPU forward passes).</li>
-<li>Streaming group scoring: scores prompt groups incrementally so that reward
-computation overlaps with the next group’s logprob computation.</li>
-<li>Importance sampling (IS) correction: corrects for stale vLLM weights.</li>
-<li>Off-Policy Sequence Mask (OPSM): drops sequences with high KL + negative advantage.</li>
-<li>Configurable vLLM weight sync interval.</li>
+<li>takes the model axolotl loaded (quantized, patched, LoRA-wrapped) instead of a
+path, and plugs in axolotl’s optimizer, scheduler and distributed mixins;</li>
+<li>drops samples that carry no gradient (<code>skip_zero_advantage_batches</code>,
+<code>mask_truncated_completions</code>) before they are packed and forwarded;</li>
+<li>scores rewards in a process pool, several groups at a time
+(<code>reward_num_workers</code>);</li>
+<li>honors <code>reward_weights</code>, <code>multi_objective_aggregation</code> and <code>scale_rewards</code>;</li>
+<li>offers <code>loss_type: cispo</code>, which weights each token by its policy/sampler ratio,
+capped at <code>vllm_importance_sampling_cap</code>, instead of clipping that ratio, and,
+experimentally on TRL main, <code>loss_type: score_centering</code>, TRL’s score centering;</li>
+<li>syncs merged LoRA weights without merging into the trained model, bitwise equal to
+the <code>lora_merge_aware</code> forward, and measures how much of the update the merge
+keeps (<code>vllm_merge_check_interval</code>);</li>
+<li>with adapter-only sync, keeps each adapter it retires loadable by vLLM, which may
+still hold requests for it, rather than deleting it;</li>
+<li>runs a custom rollout loop (<code>rollout_loop</code>), e.g.&nbsp;one that delegates whole
+rollouts to an agent server, and serves the synced adapter under a fixed name
+for clients that cannot follow TRL’s versioned one (<code>vllm_lora_alias</code>).</li>
 </ul>
-</section>
-<section id="classes-exported" class="level2 doc-section doc-section-classes-exported">
-<h2 class="doc-section doc-section-classes-exported anchored" data-anchor-id="classes-exported">Classes exported</h2>
-<ul>
-<li>AsyncGRPOConfig: GRPOConfig extended with async/streaming/IS fields</li>
-<li>AsyncGRPOTrainer: GRPOTrainer with async prefetch and IS correction</li>
-<li>ProducerConfig, DataProducer, BaseDataProducer, AsyncDataProducer: data producer protocol</li>
-</ul>
-</section>
-<section id="classes" class="level2">
-<h2 class="anchored" data-anchor-id="classes">Classes</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer">AsyncDataProducer</a></td>
-<td>Wraps a synchronous :class:<code>DataProducer</code> for background-thread data generation.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncGRPOConfig">AsyncGRPOConfig</a></td>
-<td>GRPOConfig extended with async prefetch, streaming scoring, and IS correction fields.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer">AsyncGRPOTrainer</a></td>
-<td>GRPOTrainer with async prefetch, streaming scoring, and IS correction.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.BaseDataProducer">BaseDataProducer</a></td>
-<td>Convenience base class with a default :class:<code>ProducerConfig</code> and lifecycle hooks.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.DataProducer">DataProducer</a></td>
-<td>Abstract base class for online data producers.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.DataProducerCallback">DataProducerCallback</a></td>
-<td>Marker class: if a DataProducer also inherits from this, the Trainer will</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.GRPODataProducer">GRPODataProducer</a></td>
-<td>Produces GRPO training rollouts using the trainer’s generation pipeline.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.ProducerConfig">ProducerConfig</a></td>
-<td>Configuration for a :class:<code>DataProducer</code>.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.RolloutDataset">RolloutDataset</a></td>
-<td>A Dataset wrapping the output dict from _generate_and_score_completions.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer">AsyncDataProducer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.AsyncDataProducer(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    inner,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    background_produce_kwargs<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Wraps a synchronous :class:<code>DataProducer</code> for background-thread data generation.</p>
-<p>While the Trainer trains on the current rollout, this wrapper produces upcoming
-datasets in a background thread.</p>
-<p>FSDP compatibility: Background threads must NOT call cross-rank collectives
-(gather_object, broadcast_object_list, FSDP all-gather) because the main thread
-may be doing FSDP forward/backward concurrently, causing deadlocks. When
-<code>num_processes &gt; 1</code>, only rank 0 runs BG generation; results are broadcast
-to other ranks on the main thread when <code>produce()</code> is next called.</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer.produce">produce</a></td>
-<td>Return the next dataset, blocking if the prefetch hasn’t finished.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer.shutdown">shutdown</a></td>
-<td>Shut down the background thread pool and cancel pending futures.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer.produce" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer.produce">produce</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.AsyncDataProducer.produce(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    global_step,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Return the next dataset, blocking if the prefetch hasn’t finished.</p>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer.shutdown" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.AsyncDataProducer.shutdown">shutdown</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.AsyncDataProducer.shutdown()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Shut down the background thread pool and cancel pending futures.</p>
-</section>
-</section>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.AsyncGRPOConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.AsyncGRPOConfig">AsyncGRPOConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.AsyncGRPOConfig(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    use_data_producer<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    async_prefetch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    prefetch_depth<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    vllm_sync_interval<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    batch_flattening<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    streaming_partial_batch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    streaming_min_groups<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_correction<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_mode<span class="op">=</span><span class="st">'token_truncate'</span>,</span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_cap<span class="op">=</span><span class="fl">3.0</span>,</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    off_policy_mask_threshold<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    use_bias_correction_kl<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>GRPOConfig extended with async prefetch, streaming scoring, and IS correction fields.</p>
-<p>Fields already present in stock GRPOConfig (e.g.&nbsp;<code>importance_sampling_level</code>,
-<code>multi_objective_aggregation</code>) are listed here for safety: if the stock version
-does not define them, the defaults below ensure everything works.</p>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer">AsyncGRPOTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.AsyncGRPOTrainer(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>args,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    data_collator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>GRPOTrainer with async prefetch, streaming scoring, and IS correction.</p>
-<p>Drop-in replacement: pass <code>AsyncGRPOConfig</code> as <code>args</code> and use this trainer
-instead of <code>GRPOTrainer</code>.</p>
-<section id="methods-1" class="level4">
-<h4 class="anchored" data-anchor-id="methods-1">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer.get_off_policy_mask">get_off_policy_mask</a></td>
-<td>OPSM from DeepSeek-V3.2: drop sequences with negative advantage + high KL.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer.get_off_policy_mask" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.AsyncGRPOTrainer.get_off_policy_mask">get_off_policy_mask</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.AsyncGRPOTrainer.get_off_policy_mask(</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    advantages,</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    per_token_logps,</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    sampling_per_token_logps,</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    mask,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    off_policy_threshold,</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>OPSM from DeepSeek-V3.2: drop sequences with negative advantage + high KL.</p>
-</section>
-</section>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.BaseDataProducer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.BaseDataProducer">BaseDataProducer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.BaseDataProducer(config<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Convenience base class with a default :class:<code>ProducerConfig</code> and lifecycle hooks.</p>
-<section id="methods-2" class="level4">
-<h4 class="anchored" data-anchor-id="methods-2">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.BaseDataProducer.on_rollout_begin">on_rollout_begin</a></td>
-<td>Called before each produce() invocation.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.BaseDataProducer.on_rollout_end">on_rollout_end</a></td>
-<td>Called after each produce() invocation with the produced dataset.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.grpo.async_trainer.BaseDataProducer.on_rollout_begin" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.BaseDataProducer.on_rollout_begin">on_rollout_begin</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.BaseDataProducer.on_rollout_begin(global_step)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Called before each produce() invocation.</p>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.BaseDataProducer.on_rollout_end" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.BaseDataProducer.on_rollout_end">on_rollout_end</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.BaseDataProducer.on_rollout_end(</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    dataset,</span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    global_step,</span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Called after each produce() invocation with the produced dataset.</p>
-</section>
-</section>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.DataProducer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.DataProducer">DataProducer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.DataProducer()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Abstract base class for online data producers.</p>
-<p>Subclass this and implement :meth:<code>produce</code> to supply fresh training data
-each rollout round.</p>
-<section id="methods-3" class="level4">
-<h4 class="anchored" data-anchor-id="methods-3">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.DataProducer.produce">produce</a></td>
-<td>Generate a fresh training dataset.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.grpo.async_trainer.DataProducer.produce" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.DataProducer.produce">produce</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.DataProducer.produce(</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    global_step,</span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    processing_class<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    accelerator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Generate a fresh training dataset.</p>
-</section>
-</section>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.DataProducerCallback" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.DataProducerCallback">DataProducerCallback</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.DataProducerCallback()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Marker class: if a DataProducer also inherits from this, the Trainer will
-automatically register it as a callback.</p>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.GRPODataProducer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.GRPODataProducer">GRPODataProducer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.GRPODataProducer(</span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    config,</span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    prompt_dataset,</span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    num_generations,</span>
-<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    generation_batch_size,</span>
-<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>    train_batch_size,</span>
-<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>    steps_per_generation,</span>
-<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>    shuffle_dataset,</span>
-<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>    seed,</span>
-<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Produces GRPO training rollouts using the trainer’s generation pipeline.</p>
-<p>Created before Trainer.__init__ completes; the trainer reference is injected
-later via set_trainer().</p>
-<section id="methods-4" class="level4">
-<h4 class="anchored" data-anchor-id="methods-4">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.GRPODataProducer.produce">produce</a></td>
-<td>Generate a fresh GRPO training rollout.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.GRPODataProducer.set_trainer">set_trainer</a></td>
-<td>Inject the live trainer reference and create the prompt DataLoader.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.grpo.async_trainer.GRPODataProducer.produce" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.GRPODataProducer.produce">produce</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.GRPODataProducer.produce(</span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    global_step,</span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    skip_policy_logps<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>    processing_class<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    accelerator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>    _rank0_only<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Generate a fresh GRPO training rollout.</p>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.GRPODataProducer.set_trainer" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.GRPODataProducer.set_trainer">set_trainer</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.GRPODataProducer.set_trainer(trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Inject the live trainer reference and create the prompt DataLoader.</p>
-</section>
-</section>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.ProducerConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.ProducerConfig">ProducerConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.ProducerConfig(</span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    mini_epochs<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>    max_rollouts<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    steps_per_generation<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>    num_iterations<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>    async_prefetch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>    prefetch_depth<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>    sync_warmup_rollouts<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>    eval_during_produce<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>    empty_cache_before_produce<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>    empty_cache_after_produce<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Configuration for a :class:<code>DataProducer</code>.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 23%">
-<col style="width: 10%">
-<col style="width: 57%">
-<col style="width: 9%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>mini_epochs</td>
-<td>int</td>
-<td>Number of training passes over each produced dataset.</td>
-<td><code>1</code></td>
-</tr>
-<tr class="even">
-<td>max_rollouts</td>
-<td>int | None</td>
-<td>Maximum number of produce-then-train rounds (None = unlimited).</td>
-<td><code>None</code></td>
-</tr>
-<tr class="odd">
-<td>steps_per_generation</td>
-<td>int | None</td>
-<td>Optimisation steps per produced dataset before regenerating.</td>
-<td><code>None</code></td>
-</tr>
-<tr class="even">
-<td>num_iterations</td>
-<td>int</td>
-<td>Number of times to reuse each generation across optimisation steps.</td>
-<td><code>1</code></td>
-</tr>
-<tr class="odd">
-<td>async_prefetch</td>
-<td>bool</td>
-<td>Produce the next dataset in a background thread.</td>
-<td><code>False</code></td>
-</tr>
-<tr class="even">
-<td>prefetch_depth</td>
-<td>int</td>
-<td>How many rollouts to queue ahead when async.</td>
-<td><code>1</code></td>
-</tr>
-<tr class="odd">
-<td>sync_warmup_rollouts</td>
-<td>int</td>
-<td>Initial on-policy rollouts before switching to async.</td>
-<td><code>0</code></td>
-</tr>
-<tr class="even">
-<td>eval_during_produce</td>
-<td>bool</td>
-<td>Switch model to eval() during produce().</td>
-<td><code>True</code></td>
-</tr>
-<tr class="odd">
-<td>empty_cache_before_produce</td>
-<td>bool</td>
-<td>torch.cuda.empty_cache() before produce().</td>
-<td><code>False</code></td>
-</tr>
-<tr class="even">
-<td>empty_cache_after_produce</td>
-<td>bool</td>
-<td>torch.cuda.empty_cache() after produce().</td>
-<td><code>False</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.core.trainers.grpo.async_trainer.RolloutDataset" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.RolloutDataset">RolloutDataset</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.RolloutDataset(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>A Dataset wrapping the output dict from _generate_and_score_completions.</p>
-<p>Per-sample tensors are sliced by index; shared metadata is passed through.</p>
-</section>
-</section>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.core.trainers.grpo.async_trainer.make_rollout_collator">make_rollout_collator</a></td>
-<td>Return a collator that stacks per-sample tensors and passes shared keys through.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.core.trainers.grpo.async_trainer.make_rollout_collator" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.async_trainer.make_rollout_collator">make_rollout_collator</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.async_trainer.make_rollout_collator(shared_keys)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Return a collator that stacks per-sample tensors and passes shared keys through.</p>
 
 
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->

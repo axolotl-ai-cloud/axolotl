@@ -1181,6 +1181,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>EBFT Trainer — Energy-Based Fine-Tuning integrated via GRPOTrainer.</td>
 </tr>
 <tr class="even">
+<td><a href="../../docs/api/core.trainers.ebft.async_rollout.html#axolotl.core.trainers.ebft.async_rollout">core.trainers.ebft.async_rollout</a></td>
+<td>EBFT rollouts in async GRPO’s rollout process.</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/core.trainers.ebft.async_trainer.html#axolotl.core.trainers.ebft.async_trainer">core.trainers.ebft.async_trainer</a></td>
+<td>Async EBFT on TRL’s AsyncGRPOTrainer.</td>
+</tr>
+<tr class="even">
 <td><a href="../../docs/api/core.trainers.grpo.html#axolotl.core.trainers.grpo">core.trainers.grpo</a></td>
 <td>GRPO Specific Strategy for training</td>
 </tr>
@@ -1193,20 +1201,44 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Axolotl GRPO trainers (with and without context parallelism handling)</td>
 </tr>
 <tr class="odd">
-<td><a href="../../docs/api/core.trainers.grpo.async_trainer.html#axolotl.core.trainers.grpo.async_trainer">core.trainers.grpo.async_trainer</a></td>
-<td>Async GRPO training with streaming scoring and IS correction.</td>
-</tr>
-<tr class="even">
-<td><a href="../../docs/api/core.trainers.grpo.fast_async_trainer.html#axolotl.core.trainers.grpo.fast_async_trainer">core.trainers.grpo.fast_async_trainer</a></td>
-<td>Experimental GRPO extensions: parallel reward workers, replay buffer,</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/core.trainers.grpo.replay_buffer.html#axolotl.core.trainers.grpo.replay_buffer">core.trainers.grpo.replay_buffer</a></td>
-<td>Simple replay buffer for storing and sampling high-signal rollout groups.</td>
-</tr>
-<tr class="even">
 <td><a href="../../docs/api/core.trainers.grpo.sampler.html#axolotl.core.trainers.grpo.sampler">core.trainers.grpo.sampler</a></td>
 <td>Repeat random sampler (similar to the one implemented in</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.async_grpo.html#axolotl.core.trainers.async_grpo">core.trainers.async_grpo</a></td>
+<td>Async GRPO on TRL’s experimental <code>AsyncGRPOTrainer</code>.</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/core.trainers.async_grpo.config.html#axolotl.core.trainers.async_grpo.config">core.trainers.async_grpo.config</a></td>
+<td>Training arguments of axolotl’s async GRPO trainer.</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.async_grpo.trainer.html#axolotl.core.trainers.async_grpo.trainer">core.trainers.async_grpo.trainer</a></td>
+<td>Axolotl’s async GRPO trainer on TRL’s <code>AsyncGRPOTrainer</code> (see the package doc).</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/core.trainers.async_grpo.loss.html#axolotl.core.trainers.async_grpo.loss">core.trainers.async_grpo.loss</a></td>
+<td>Async GRPO’s per-token losses (<code>loss_type</code>) and their metrics.</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.async_grpo.weight_sync.html#axolotl.core.trainers.async_grpo.weight_sync">core.trainers.async_grpo.weight_sync</a></td>
+<td>Async GRPO’s weight sync to vLLM.</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/core.trainers.async_grpo.progress.html#axolotl.core.trainers.async_grpo.progress">core.trainers.async_grpo.progress</a></td>
+<td>Progress accounting and termination for async GRPO’s rollout stream.</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.async_grpo.rollout.html#axolotl.core.trainers.async_grpo.rollout">core.trainers.async_grpo.rollout</a></td>
+<td>Rollout-process extensions for TRL’s async GRPO worker.</td>
+</tr>
+<tr class="odd">
+<td><a href="../../docs/api/core.trainers.async_grpo.scoring.html#axolotl.core.trainers.async_grpo.scoring">core.trainers.async_grpo.scoring</a></td>
+<td>Scoring async GRPO rollouts on the trainer.</td>
+</tr>
+<tr class="even">
+<td><a href="../../docs/api/core.trainers.async_grpo.traces.html#axolotl.core.trainers.async_grpo.traces">core.trainers.async_grpo.traces</a></td>
+<td>The <code>on_rollouts_scored</code> plugin hook for async GRPO.</td>
 </tr>
 <tr class="odd">
 <td><a href="../../docs/api/core.trainers.utils.html#axolotl.core.trainers.utils">core.trainers.utils</a></td>
@@ -1273,18 +1305,22 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Trainer mixin for layer-wise parameter offloading to CPU.</td>
 </tr>
 <tr class="odd">
+<td><a href="../../docs/api/core.trainers.mixins.lora_merge_check.html#axolotl.core.trainers.mixins.lora_merge_check">core.trainers.mixins.lora_merge_check</a></td>
+<td>Merge-rounding diagnostic for LoRA weight sync to vLLM.</td>
+</tr>
+<tr class="even">
 <td><a href="../../docs/api/core.trainers.mixins.optimizer.html#axolotl.core.trainers.mixins.optimizer">core.trainers.mixins.optimizer</a></td>
 <td>Module for Axolotl trainer optimizer mixin</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/core.trainers.mixins.packing.html#axolotl.core.trainers.mixins.packing">core.trainers.mixins.packing</a></td>
 <td>Trainer mixin to support packing</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/core.trainers.mixins.rng_state_loader.html#axolotl.core.trainers.mixins.rng_state_loader">core.trainers.mixins.rng_state_loader</a></td>
 <td>Temporary fix/override for bug in resume from checkpoint</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/core.trainers.mixins.scheduler.html#axolotl.core.trainers.mixins.scheduler">core.trainers.mixins.scheduler</a></td>
 <td>Module for Axolotl trainer scheduler mixin</td>
 </tr>
@@ -2213,16 +2249,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Input arguments for the NeMo Gym integration plugin.</td>
 </tr>
 <tr class="odd">
-<td><a href="../../docs/api/integrations.nemo_gym.data_producer.html#axolotl.integrations.nemo_gym.data_producer">integrations.nemo_gym.data_producer</a></td>
-<td>NeMo Gym Data Producer for async GRPO training.</td>
-</tr>
-<tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.dataset.html#axolotl.integrations.nemo_gym.dataset">integrations.nemo_gym.dataset</a></td>
 <td>Dataset loading for NeMo Gym JSONL files.</td>
-</tr>
-<tr class="odd">
-<td><a href="../../docs/api/integrations.nemo_gym.multi_turn.html#axolotl.integrations.nemo_gym.multi_turn">integrations.nemo_gym.multi_turn</a></td>
-<td>Multi-turn rollout function for NeMo Gym environments.</td>
 </tr>
 <tr class="even">
 <td><a href="../../docs/api/integrations.nemo_gym.plugin.html#axolotl.integrations.nemo_gym.plugin">integrations.nemo_gym.plugin</a></td>
@@ -2233,30 +2261,34 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>NeMo Gym reward functions.</td>
 </tr>
 <tr class="even">
+<td><a href="../../docs/api/integrations.nemo_gym.rollout.html#axolotl.integrations.nemo_gym.rollout">integrations.nemo_gym.rollout</a></td>
+<td>Multi-turn NeMo Gym rollouts for async GRPO.</td>
+</tr>
+<tr class="odd">
 <td><a href="../../docs/api/integrations.nemo_gym.server.html#axolotl.integrations.nemo_gym.server">integrations.nemo_gym.server</a></td>
 <td>NeMo Gym server lifecycle management.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.spectrum.html#axolotl.integrations.spectrum">integrations.spectrum</a></td>
 <td>Spectrum Plugin to automatically generate unfrozen parameters based on SNR data.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.spectrum.args.html#axolotl.integrations.spectrum.args">integrations.spectrum.args</a></td>
 <td>Module for handling Spectrum input arguments.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.swanlab.args.html#axolotl.integrations.swanlab.args">integrations.swanlab.args</a></td>
 <td>SwanLab configuration arguments</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.swanlab.callbacks.html#axolotl.integrations.swanlab.callbacks">integrations.swanlab.callbacks</a></td>
 <td>SwanLab callbacks for Axolotl trainers.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="../../docs/api/integrations.swanlab.completion_logger.html#axolotl.integrations.swanlab.completion_logger">integrations.swanlab.completion_logger</a></td>
 <td>SwanLab completion logger for RLHF/DPO/KTO/ORPO/GRPO training.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="../../docs/api/integrations.swanlab.plugins.html#axolotl.integrations.swanlab.plugins">integrations.swanlab.plugins</a></td>
 <td>SwanLab Plugin for Axolotl</td>
 </tr>

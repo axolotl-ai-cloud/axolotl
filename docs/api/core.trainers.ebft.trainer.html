@@ -942,7 +942,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#matching-features-not-tokens-energy-based-fine-tuning-of-language-models" id="toc-matching-features-not-tokens-energy-based-fine-tuning-of-language-models" class="nav-link" data-scroll-target="#matching-features-not-tokens-energy-based-fine-tuning-of-language-models">“Matching Features, Not Tokens: Energy-Based Fine-Tuning of Language Models”</a></li>
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.ebft.trainer.AxolotlAsyncEBFTTrainer" id="toc-axolotl.core.trainers.ebft.trainer.AxolotlAsyncEBFTTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.trainer.AxolotlAsyncEBFTTrainer">AxolotlAsyncEBFTTrainer</a></li>
   <li><a href="#axolotl.core.trainers.ebft.trainer.AxolotlEBFTTrainer" id="toc-axolotl.core.trainers.ebft.trainer.AxolotlEBFTTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.trainer.AxolotlEBFTTrainer">AxolotlEBFTTrainer</a></li>
   <li><a href="#axolotl.core.trainers.ebft.trainer.EBFTMixin" id="toc-axolotl.core.trainers.ebft.trainer.EBFTMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.trainer.EBFTMixin">EBFTMixin</a></li>
   </ul></li>
@@ -977,22 +976,18 @@ the standard GRPO reward function interface.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.ebft.trainer.AxolotlAsyncEBFTTrainer">AxolotlAsyncEBFTTrainer</a></td>
-<td>EBFT trainer using async GRPO (prefetches next batch during training).</td>
-</tr>
-<tr class="even">
 <td><a href="#axolotl.core.trainers.ebft.trainer.AxolotlEBFTTrainer">AxolotlEBFTTrainer</a></td>
 <td>EBFT trainer using synchronous GRPO (standard vLLM generation).</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.core.trainers.ebft.trainer.EBFTMixin">EBFTMixin</a></td>
 <td>Mixin that adds EBFT feature-matching reward logic to any GRPO-based trainer.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.ebft.trainer.AxolotlAsyncEBFTTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.trainer.AxolotlAsyncEBFTTrainer">AxolotlAsyncEBFTTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.trainer.AxolotlAsyncEBFTTrainer(</span>
+<section id="axolotl.core.trainers.ebft.trainer.AxolotlEBFTTrainer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.trainer.AxolotlEBFTTrainer">AxolotlEBFTTrainer</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.trainer.AxolotlEBFTTrainer(</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    train_dataset<span class="op">=</span><span class="va">None</span>,</span>
@@ -1002,11 +997,11 @@ the standard GRPO reward function interface.</p>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    optimizers<span class="op">=</span>(<span class="va">None</span>, <span class="va">None</span>),</span>
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>EBFT trainer using async GRPO (prefetches next batch during training).</p>
+<p>EBFT trainer using synchronous GRPO (standard vLLM generation).</p>
 </section>
-<section id="axolotl.core.trainers.ebft.trainer.AxolotlEBFTTrainer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.trainer.AxolotlEBFTTrainer">AxolotlEBFTTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.trainer.AxolotlEBFTTrainer(</span>
+<section id="axolotl.core.trainers.ebft.trainer.EBFTMixin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.trainer.EBFTMixin">EBFTMixin</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.trainer.EBFTMixin(</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    train_dataset<span class="op">=</span><span class="va">None</span>,</span>
@@ -1016,20 +1011,6 @@ the standard GRPO reward function interface.</p>
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    optimizers<span class="op">=</span>(<span class="va">None</span>, <span class="va">None</span>),</span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>EBFT trainer using synchronous GRPO (standard vLLM generation).</p>
-</section>
-<section id="axolotl.core.trainers.ebft.trainer.EBFTMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.trainer.EBFTMixin">EBFTMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.trainer.EBFTMixin(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    train_dataset<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    eval_dataset<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    processing_class<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    callbacks<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    optimizers<span class="op">=</span>(<span class="va">None</span>, <span class="va">None</span>),</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Mixin that adds EBFT feature-matching reward logic to any GRPO-based trainer.</p>
 <p>Provides:
 - Frozen feature network setup (shared weights for PEFT, deepcopy otherwise)

@@ -939,11 +939,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul>
   <li><a href="#axolotl.integrations.nemo_gym.rewards" id="toc-axolotl.integrations.nemo_gym.rewards" class="nav-link active" data-scroll-target="#axolotl.integrations.nemo_gym.rewards">integrations.nemo_gym.rewards</a>
   <ul class="collapse">
+  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.integrations.nemo_gym.rewards.NemoGymVerifyReward" id="toc-axolotl.integrations.nemo_gym.rewards.NemoGymVerifyReward" class="nav-link" data-scroll-target="#axolotl.integrations.nemo_gym.rewards.NemoGymVerifyReward">NemoGymVerifyReward</a></li>
+  </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.integrations.nemo_gym.rewards.create_nemo_gym_reward_fn" id="toc-axolotl.integrations.nemo_gym.rewards.create_nemo_gym_reward_fn" class="nav-link" data-scroll-target="#axolotl.integrations.nemo_gym.rewards.create_nemo_gym_reward_fn">create_nemo_gym_reward_fn</a></li>
+  <li><a href="#axolotl.integrations.nemo_gym.rewards.parse_reward" id="toc-axolotl.integrations.nemo_gym.rewards.parse_reward" class="nav-link" data-scroll-target="#axolotl.integrations.nemo_gym.rewards.parse_reward">parse_reward</a></li>
   <li><a href="#axolotl.integrations.nemo_gym.rewards.reward_env" id="toc-axolotl.integrations.nemo_gym.rewards.reward_env" class="nav-link" data-scroll-target="#axolotl.integrations.nemo_gym.rewards.reward_env">reward_env</a></li>
   <li><a href="#axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify" id="toc-axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify" class="nav-link" data-scroll-target="#axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify">reward_nemo_gym_verify</a></li>
+  <li><a href="#axolotl.integrations.nemo_gym.rewards.verify_request" id="toc-axolotl.integrations.nemo_gym.rewards.verify_request" class="nav-link" data-scroll-target="#axolotl.integrations.nemo_gym.rewards.verify_request">verify_request</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -959,13 +964,78 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h1>integrations.nemo_gym.rewards</h1>
 <p><code>integrations.nemo_gym.rewards</code></p>
 <p>NeMo Gym reward functions.</p>
-<p>Provides ready-to-use reward functions for axolotl configs::</p>
-<pre><code>trl:
-  reward_funcs:
-    # Multi-turn: passthrough reward from agent /run
-    - axolotl.integrations.nemo_gym.rewards.reward_env
-    # Single-turn: call /verify endpoints directly
-    - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify</code></pre>
+<p>The plugin scores single-turn rollouts with :class:<code>NemoGymVerifyReward</code> and
+multi-turn rollouts with the agent’s own reward, so configs list neither.
+<code>reward_nemo_gym_verify</code> remains for using <code>/verify</code> without the plugin.</p>
+<section id="classes" class="level2">
+<h2 class="anchored" data-anchor-id="classes">Classes</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.nemo_gym.rewards.NemoGymVerifyReward">NemoGymVerifyReward</a></td>
+<td>Scores single-turn completions with the resource servers’ <code>/verify</code>.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.nemo_gym.rewards.NemoGymVerifyReward" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.rewards.NemoGymVerifyReward">NemoGymVerifyReward</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.rewards.NemoGymVerifyReward(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    verify_endpoints,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    model_name<span class="op">=</span><span class="st">'axolotl-model'</span>,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    timeout<span class="op">=</span><span class="fl">30.0</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Scores single-turn completions with the resource servers’ <code>/verify</code>.</p>
+<p>An instance pickles with its endpoint map, so async GRPO can score with it in
+its rollout process, and it verifies a group’s completions concurrently. A
+completion it cannot get a verdict for scores <code>None</code>, which keeps it out of
+its group’s baseline.</p>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 17%">
+<col style="width: 17%">
+<col style="width: 46%">
+<col style="width: 18%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>verify_endpoints</td>
+<td>dict[str, str]</td>
+<td>Resource server name to <code>/verify</code> URL.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>model_name</td>
+<td>str</td>
+<td>Model name reported in the verified response.</td>
+<td><code>'axolotl-model'</code></td>
+</tr>
+<tr class="odd">
+<td>timeout</td>
+<td>float</td>
+<td>Seconds per <code>/verify</code> request.</td>
+<td><code>30.0</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+</section>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -977,57 +1047,57 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.integrations.nemo_gym.rewards.create_nemo_gym_reward_fn">create_nemo_gym_reward_fn</a></td>
-<td>Create a reward function bound to specific verify endpoints.</td>
+<td><a href="#axolotl.integrations.nemo_gym.rewards.parse_reward">parse_reward</a></td>
+<td>A NeMo Gym reward, or None (unscored) when it is missing or not a number.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.integrations.nemo_gym.rewards.reward_env">reward_env</a></td>
-<td>Passthrough: extract pre-computed reward from NeMo Gym agent /run response.</td>
+<td>Deprecated passthrough of a precomputed <code>env_reward</code> column.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify">reward_nemo_gym_verify</a></td>
 <td>Call NeMo Gym <code>/verify</code> endpoint for each completion (single-turn).</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.nemo_gym.rewards.verify_request">verify_request</a></td>
+<td>The <code>/verify</code> body scoring <code>completion</code> as the response to <code>prompt</code>.</td>
+</tr>
 </tbody>
 </table>
-<section id="axolotl.integrations.nemo_gym.rewards.create_nemo_gym_reward_fn" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.rewards.create_nemo_gym_reward_fn">create_nemo_gym_reward_fn</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.rewards.create_nemo_gym_reward_fn(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    global_config,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    verify_endpoints,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    model_name<span class="op">=</span><span class="st">'axolotl-model'</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    verify_timeout<span class="op">=</span><span class="dv">30</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Create a reward function bound to specific verify endpoints.</p>
-<p>Used internally by <code>NemoGymPlugin._wire_single_turn()</code> to inject a
-reward function that already knows the endpoint map (no discovery needed).</p>
+<section id="axolotl.integrations.nemo_gym.rewards.parse_reward" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.rewards.parse_reward">parse_reward</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.rewards.parse_reward(value, source)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>A NeMo Gym reward, or None (unscored) when it is missing or not a number.</p>
 </section>
 <section id="axolotl.integrations.nemo_gym.rewards.reward_env" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.rewards.reward_env">reward_env</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.rewards.reward_env(completions, prompts<span class="op">=</span><span class="va">None</span>, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Passthrough: extract pre-computed reward from NeMo Gym agent /run response.</p>
-<p>The <code>NemoGymDataProducer</code> injects <code>env_reward</code> into each sample’s
-kwargs after the agent returns from <code>/run</code>. This function simply
-forwards that value so TRL can log it alongside other reward signals.</p>
-<p>Use this in your config when <code>nemo_gym_multi_turn: true</code>::</p>
-<pre><code>trl:
-  reward_funcs:
-    - axolotl.integrations.nemo_gym.rewards.reward_env</code></pre>
+<p>Deprecated passthrough of a precomputed <code>env_reward</code> column.</p>
+<p>Multi-turn rollouts now score the agent’s <code>/run</code> reward themselves, and the
+plugin drops this function from <code>trl.reward_funcs</code>.</p>
 </section>
 <section id="axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify">reward_nemo_gym_verify</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.rewards.reward_nemo_gym_verify(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    completions,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    prompts<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.rewards.reward_nemo_gym_verify(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    completions,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    prompts<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Call NeMo Gym <code>/verify</code> endpoint for each completion (single-turn).</p>
 <p>Requires <code>resources_server_ref</code> and <code>verify_extra</code> kwargs, which the
-NeMo Gym dataset loader injects automatically.</p>
-<p>Use this in your config when <code>nemo_gym_multi_turn: false</code>::</p>
-<pre><code>trl:
-  reward_funcs:
-    - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify</code></pre>
+NeMo Gym dataset loader injects automatically. Discovers the endpoints from a
+head server on the default port; the plugin passes a configured
+:class:<code>NemoGymVerifyReward</code> instead.</p>
+</section>
+<section id="axolotl.integrations.nemo_gym.rewards.verify_request" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.rewards.verify_request">verify_request</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.rewards.verify_request(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    extra,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    prompt,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    completion,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    model_name,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The <code>/verify</code> body scoring <code>completion</code> as the response to <code>prompt</code>.</p>
 
 
 </section>

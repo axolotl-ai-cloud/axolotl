@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>integrations.nemo_gym.data_producer – Axolotl</title>
+<title>core.trainers.mixins.lora_merge_check – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -937,11 +937,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.integrations.nemo_gym.data_producer" id="toc-axolotl.integrations.nemo_gym.data_producer" class="nav-link active" data-scroll-target="#axolotl.integrations.nemo_gym.data_producer">integrations.nemo_gym.data_producer</a>
+  <li><a href="#axolotl.core.trainers.mixins.lora_merge_check" id="toc-axolotl.core.trainers.mixins.lora_merge_check" class="nav-link active" data-scroll-target="#axolotl.core.trainers.mixins.lora_merge_check">core.trainers.mixins.lora_merge_check</a>
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer" id="toc-axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer" class="nav-link" data-scroll-target="#axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer">NemoGymDataProducer</a></li>
+  <li><a href="#axolotl.core.trainers.mixins.lora_merge_check.LoraMergeCheckMixin" id="toc-axolotl.core.trainers.mixins.lora_merge_check.LoraMergeCheckMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.mixins.lora_merge_check.LoraMergeCheckMixin">LoraMergeCheckMixin</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -953,14 +953,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.integrations.nemo_gym.data_producer" class="level1">
-<h1>integrations.nemo_gym.data_producer</h1>
-<p><code>integrations.nemo_gym.data_producer</code></p>
-<p>NeMo Gym Data Producer for async GRPO training.</p>
-<p>Replaces GRPODataProducer to generate rollouts via NeMo Gym agent /run endpoints
-instead of vLLM. The agent handles generation, tool execution, and reward computation.
-Returns RolloutDataset in the same format as the standard producer, so all downstream
-components (deferred scoring, IS correction, streaming, replay, re-roll) work unchanged.</p>
+<section id="axolotl.core.trainers.mixins.lora_merge_check" class="level1">
+<h1>core.trainers.mixins.lora_merge_check</h1>
+<p><code>core.trainers.mixins.lora_merge_check</code></p>
+<p>Merge-rounding diagnostic for LoRA weight sync to vLLM.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
 <table class="caption-top table">
@@ -972,61 +968,20 @@ components (deferred scoring, IS correction, streaming, replay, re-roll) work un
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer">NemoGymDataProducer</a></td>
-<td>Produces GRPO rollouts by calling NeMo Gym agent /run endpoints.</td>
+<td><a href="#axolotl.core.trainers.mixins.lora_merge_check.LoraMergeCheckMixin">LoraMergeCheckMixin</a></td>
+<td>Measure how much of the LoRA update a merged vLLM weight sync keeps.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer">NemoGymDataProducer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.data_producer.NemoGymDataProducer(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>args,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    agent_servers,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    dataset_lookup,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    request_timeout<span class="op">=</span><span class="dv">10800</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Produces GRPO rollouts by calling NeMo Gym agent /run endpoints.</p>
-<p>Drop-in replacement for GRPODataProducer. Instead of calling vLLM for generation,
-sends prompts to NeMo Gym agents which handle generation + tool execution + reward.
-Returns the same RolloutDataset format so deferred scoring, IS correction,
-replay buffer, and re-roll all work unchanged.</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer.produce">produce</a></td>
-<td>Generate rollouts via NeMo Gym agents.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer.produce" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.integrations.nemo_gym.data_producer.NemoGymDataProducer.produce">produce</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.nemo_gym.data_producer.NemoGymDataProducer.produce(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    global_step,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    skip_policy_logps<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    processing_class<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    accelerator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    _rank0_only<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Generate rollouts via NeMo Gym agents.</p>
-<p>Calls agent /run endpoints, parses responses into padded tensors,
-and returns a RolloutDataset for deferred scoring on the main thread.</p>
+<section id="axolotl.core.trainers.mixins.lora_merge_check.LoraMergeCheckMixin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.mixins.lora_merge_check.LoraMergeCheckMixin">LoraMergeCheckMixin</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.mixins.lora_merge_check.LoraMergeCheckMixin(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Measure how much of the LoRA update a merged vLLM weight sync keeps.</p>
+<p>Runs on the main process at the first sync after training starts and then every
+<code>vllm_merge_check_interval</code> optimizer steps, logging <code>lora_merge/retained</code> and
+<code>lora_merge/changed_fraction</code>.</p>
 
 
-</section>
-</section>
 </section>
 </section>
 </section>

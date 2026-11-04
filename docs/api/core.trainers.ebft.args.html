@@ -941,7 +941,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
-  <li><a href="#axolotl.core.trainers.ebft.args.AxolotlAsyncEBFTConfig" id="toc-axolotl.core.trainers.ebft.args.AxolotlAsyncEBFTConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.args.AxolotlAsyncEBFTConfig">AxolotlAsyncEBFTConfig</a></li>
   <li><a href="#axolotl.core.trainers.ebft.args.AxolotlEBFTConfig" id="toc-axolotl.core.trainers.ebft.args.AxolotlEBFTConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.args.AxolotlEBFTConfig">AxolotlEBFTConfig</a></li>
   <li><a href="#axolotl.core.trainers.ebft.args.AxolotlStridedEBFTConfig" id="toc-axolotl.core.trainers.ebft.args.AxolotlStridedEBFTConfig" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.args.AxolotlStridedEBFTConfig">AxolotlStridedEBFTConfig</a></li>
   <li><a href="#axolotl.core.trainers.ebft.args.EBFTFieldsMixin" id="toc-axolotl.core.trainers.ebft.args.EBFTFieldsMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.ebft.args.EBFTFieldsMixin">EBFTFieldsMixin</a></li>
@@ -974,61 +973,37 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.core.trainers.ebft.args.AxolotlAsyncEBFTConfig">AxolotlAsyncEBFTConfig</a></td>
-<td>EBFT config for async structured QA data — extends FastAsyncGRPOConfig.</td>
-</tr>
-<tr class="even">
 <td><a href="#axolotl.core.trainers.ebft.args.AxolotlEBFTConfig">AxolotlEBFTConfig</a></td>
 <td>EBFT config for structured QA data — extends GRPOConfig.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.core.trainers.ebft.args.AxolotlStridedEBFTConfig">AxolotlStridedEBFTConfig</a></td>
 <td>EBFT config for unstructured text with strided block-parallel generation.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.core.trainers.ebft.args.EBFTFieldsMixin">EBFTFieldsMixin</a></td>
 <td>Common fields shared between structured and strided EBFT configs.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.core.trainers.ebft.args.AxolotlAsyncEBFTConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.args.AxolotlAsyncEBFTConfig">AxolotlAsyncEBFTConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.args.AxolotlAsyncEBFTConfig(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    use_data_producer<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    async_prefetch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    prefetch_depth<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    vllm_sync_interval<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    batch_flattening<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    streaming_partial_batch<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    streaming_min_groups<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_correction<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_mode<span class="op">=</span><span class="st">'token_truncate'</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    vllm_importance_sampling_cap<span class="op">=</span><span class="fl">3.0</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    off_policy_mask_threshold<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    use_bias_correction_kl<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    reward_num_workers<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    replay_buffer_size<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    replay_recompute_logps<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    reroll_start_fraction<span class="op">=</span><span class="fl">0.5</span>,</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    reroll_max_groups<span class="op">=</span><span class="dv">1</span>,</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    skip_zero_advantage_batches<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    ebft_feature_layers<span class="op">=</span>(<span class="kw">lambda</span>: [<span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>])(),</span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>    ebft_embed_method<span class="op">=</span><span class="st">'last_token'</span>,</span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>    ebft_use_whitening<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>    ebft_alignment_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    ebft_diversity_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    ebft_ce_coef<span class="op">=</span><span class="fl">0.0</span>,</span>
-<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    ebft_adaptive_max_tokens<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    ebft_gt_length_multiplier<span class="op">=</span><span class="fl">1.5</span>,</span>
-<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>EBFT config for async structured QA data — extends FastAsyncGRPOConfig.</p>
-<p>Includes all async fields: async_prefetch, vllm_lora_sync,
-skip_zero_advantage_batches, streaming_partial_batch, replay_buffer_size, etc.</p>
-</section>
 <section id="axolotl.core.trainers.ebft.args.AxolotlEBFTConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.args.AxolotlEBFTConfig">AxolotlEBFTConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.args.AxolotlEBFTConfig(</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.args.AxolotlEBFTConfig(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    ebft_feature_layers<span class="op">=</span>(<span class="kw">lambda</span>: [<span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>])(),</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    ebft_embed_method<span class="op">=</span><span class="st">'last_token'</span>,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    ebft_use_whitening<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    ebft_alignment_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    ebft_diversity_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    ebft_ce_coef<span class="op">=</span><span class="fl">0.0</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    ebft_adaptive_max_tokens<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    ebft_gt_length_multiplier<span class="op">=</span><span class="fl">1.5</span>,</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>EBFT config for structured QA data — extends GRPOConfig.</p>
+</section>
+<section id="axolotl.core.trainers.ebft.args.AxolotlStridedEBFTConfig" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.args.AxolotlStridedEBFTConfig">AxolotlStridedEBFTConfig</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.args.AxolotlStridedEBFTConfig(</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    ebft_feature_layers<span class="op">=</span>(<span class="kw">lambda</span>: [<span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>])(),</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    ebft_embed_method<span class="op">=</span><span class="st">'last_token'</span>,</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    ebft_use_whitening<span class="op">=</span><span class="va">False</span>,</span>
@@ -1037,13 +1012,21 @@ skip_zero_advantage_batches, streaming_partial_batch, replay_buffer_size, etc.</
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    ebft_ce_coef<span class="op">=</span><span class="fl">0.0</span>,</span>
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    ebft_adaptive_max_tokens<span class="op">=</span><span class="va">True</span>,</span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    ebft_gt_length_multiplier<span class="op">=</span><span class="fl">1.5</span>,</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    vllm_lora_sync<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>EBFT config for structured QA data — extends GRPOConfig.</p>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    ebft_stride<span class="op">=</span><span class="dv">8</span>,</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    ebft_context_length<span class="op">=</span><span class="dv">8</span>,</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    ebft_generate_max_len<span class="op">=</span><span class="dv">8</span>,</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    ebft_n_samples_per_prompt<span class="op">=</span><span class="dv">4</span>,</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    ebft_temperature<span class="op">=</span><span class="fl">0.6</span>,</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    ebft_top_p<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    ebft_rl_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>    ebft_advantage_estimator<span class="op">=</span><span class="st">'rloo'</span>,</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>    ebft_min_completion_prefix<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>EBFT config for unstructured text with strided block-parallel generation.</p>
 </section>
-<section id="axolotl.core.trainers.ebft.args.AxolotlStridedEBFTConfig" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.args.AxolotlStridedEBFTConfig">AxolotlStridedEBFTConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.args.AxolotlStridedEBFTConfig(</span>
+<section id="axolotl.core.trainers.ebft.args.EBFTFieldsMixin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.args.EBFTFieldsMixin">EBFTFieldsMixin</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.args.EBFTFieldsMixin(</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    ebft_feature_layers<span class="op">=</span>(<span class="kw">lambda</span>: [<span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>])(),</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    ebft_embed_method<span class="op">=</span><span class="st">'last_token'</span>,</span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    ebft_use_whitening<span class="op">=</span><span class="va">False</span>,</span>
@@ -1052,30 +1035,7 @@ skip_zero_advantage_batches, streaming_partial_batch, replay_buffer_size, etc.</
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    ebft_ce_coef<span class="op">=</span><span class="fl">0.0</span>,</span>
 <span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    ebft_adaptive_max_tokens<span class="op">=</span><span class="va">True</span>,</span>
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    ebft_gt_length_multiplier<span class="op">=</span><span class="fl">1.5</span>,</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    ebft_stride<span class="op">=</span><span class="dv">8</span>,</span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    ebft_context_length<span class="op">=</span><span class="dv">8</span>,</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    ebft_generate_max_len<span class="op">=</span><span class="dv">8</span>,</span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    ebft_n_samples_per_prompt<span class="op">=</span><span class="dv">4</span>,</span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    ebft_temperature<span class="op">=</span><span class="fl">0.6</span>,</span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    ebft_top_p<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    ebft_rl_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    ebft_advantage_estimator<span class="op">=</span><span class="st">'rloo'</span>,</span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    ebft_min_completion_prefix<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>EBFT config for unstructured text with strided block-parallel generation.</p>
-</section>
-<section id="axolotl.core.trainers.ebft.args.EBFTFieldsMixin" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.core.trainers.ebft.args.EBFTFieldsMixin">EBFTFieldsMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>core.trainers.ebft.args.EBFTFieldsMixin(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    ebft_feature_layers<span class="op">=</span>(<span class="kw">lambda</span>: [<span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>])(),</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    ebft_embed_method<span class="op">=</span><span class="st">'last_token'</span>,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    ebft_use_whitening<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    ebft_alignment_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    ebft_diversity_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    ebft_ce_coef<span class="op">=</span><span class="fl">0.0</span>,</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    ebft_adaptive_max_tokens<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    ebft_gt_length_multiplier<span class="op">=</span><span class="fl">1.5</span>,</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Common fields shared between structured and strided EBFT configs.</p>
 
 

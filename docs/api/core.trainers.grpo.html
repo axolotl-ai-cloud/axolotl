@@ -999,6 +999,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.core.trainers.grpo.GRPOStrategy.get_vllm_kwargs">get_vllm_kwargs</a></td>
 <td>Map <code>trl.vllm_*</code> and the <code>vllm:</code> block onto TRL’s vLLM training args.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.core.trainers.grpo.GRPOStrategy.is_async">is_async</a></td>
+<td><code>trl.async_prefetch</code> runs on TRL’s AsyncGRPOTrainer.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.core.trainers.grpo.GRPOStrategy.set_async_training_args_kwargs">set_async_training_args_kwargs</a></td>
+<td>Map the <code>trl:</code> block onto AxolotlAsyncGRPOConfig (TRL’s AsyncGRPOConfig).</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.core.trainers.grpo.GRPOStrategy.get_reward_func" class="level5">
@@ -1138,6 +1146,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Map <code>trl.vllm_*</code> and the <code>vllm:</code> block onto TRL’s vLLM training args.</p>
 <p>Unset values are omitted so TRL’s defaults apply (notably colocate’s 0.3 GPU
 memory utilization, which leaves room for training on the shared GPU).</p>
+</section>
+<section id="axolotl.core.trainers.grpo.GRPOStrategy.is_async" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.GRPOStrategy.is_async">is_async</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.GRPOStrategy.is_async(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>trl.async_prefetch</code> runs on TRL’s AsyncGRPOTrainer.</p>
+</section>
+<section id="axolotl.core.trainers.grpo.GRPOStrategy.set_async_training_args_kwargs" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.trainers.grpo.GRPOStrategy.set_async_training_args_kwargs">set_async_training_args_kwargs</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>core.trainers.grpo.GRPOStrategy.set_async_training_args_kwargs(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Map the <code>trl:</code> block onto AxolotlAsyncGRPOConfig (TRL’s AsyncGRPOConfig).</p>
 
 
 </section>
