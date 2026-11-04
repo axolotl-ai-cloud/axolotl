@@ -2,22 +2,11 @@
 
 import os
 import pathlib
-import tempfile
 
-import jinja2
 import modal
-import modal.experimental
-from jinja2 import select_autoescape
 from modal import App
 
-cicd_path = pathlib.Path(__file__).parent.resolve()
-
-template_loader = jinja2.FileSystemLoader(searchpath=cicd_path)
-template_env = jinja2.Environment(
-    loader=template_loader, autoescape=select_autoescape()
-)
-dockerfile = os.environ.get("E2E_DOCKERFILE", "Dockerfile-uv.jinja")
-df_template = template_env.get_template(dockerfile)
+from .ci_image import ci_image
 
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
@@ -38,22 +27,7 @@ df_args = {
     "E2E_SELECTED_TESTS": os.environ.get("E2E_SELECTED_TESTS", ""),
 }
 
-dockerfile_contents = df_template.render(**df_args)
-
-temp_dir = tempfile.mkdtemp()
-with open(pathlib.Path(temp_dir) / "Dockerfile", "w", encoding="utf-8") as f:
-    f.write(dockerfile_contents)
-
-cicd_image = (
-    modal.experimental.raw_dockerfile_image(
-        pathlib.Path(temp_dir) / "Dockerfile",
-        # context_mount=None,
-        # gpu="A10G",
-    )
-    # cwd leads sys.path; from the image's checkout it shadows the cicd/ Modal mounts at /root
-    .workdir("/root")
-    .env(df_args)
-)
+cicd_image = ci_image(df_args)
 
 app = App("Axolotl CI/CD", secrets=[])
 
@@ -118,7 +92,7 @@ def refresh_source(run_folder: str) -> None:
         return
     checkout_source(run_folder, os.environ.get("GITHUB_REF", "refs/heads/main"), sha)
     subprocess.run(  # nosec
-        ["uv", "pip", "install", "--no-build-isolation", "--no-deps", "-e", "."],
+        ["uv", "pip", "install", "--no-deps", "-e", "."],
         cwd=run_folder,
         check=True,
     )

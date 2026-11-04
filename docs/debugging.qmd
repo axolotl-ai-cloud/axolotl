@@ -79,7 +79,7 @@ Make sure you have an [editable install](https://setuptools.pypa.io/en/latest/us
 export UV_TORCH_BACKEND=cu130  # or cu128
 uv venv --no-project --relocatable
 source .venv/bin/activate
-uv pip install --no-build-isolation -e '.[deepspeed]' --group dev --group test
+uv pip install -e '.[deepspeed]' --group dev --group test
 ```
 
 #### Remote Hosts
@@ -221,7 +221,7 @@ You will now be in the container.  Next, install Axolotl with dev dependencies:
 ```bash
 uv venv --no-project --relocatable
 source .venv/bin/activate
-uv pip install --no-build-isolation -e '.[deepspeed]' --group dev --group test
+uv pip install -e '.[deepspeed]' --group dev --group test
 ```
 
 ### Attach To Container

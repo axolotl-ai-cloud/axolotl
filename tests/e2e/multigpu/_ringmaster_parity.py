@@ -80,6 +80,9 @@ def main():
             reference.set_attn_implementation("sdpa")
         reference.load_state_dict(model.state_dict())
         if os.environ.get("RM_HUB") == "1":
+            from axolotl.monkeypatch.kernelize_fixes import patch_kernelize_fixes
+
+            patch_kernelize_fixes()
             model = model.to(torch.bfloat16)
             reference = reference.to(torch.bfloat16)
             from transformers.integrations.hub_kernels import (
