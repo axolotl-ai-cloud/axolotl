@@ -36,7 +36,7 @@ class TestSyncProfiler(unittest.TestCase):
                 "sample_packing": True,
                 "pad_to_sequence_len": True,
                 "flash_attention": True,
-                "gradient_checkpointing": True,
+                "activation_checkpointing": True,
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,

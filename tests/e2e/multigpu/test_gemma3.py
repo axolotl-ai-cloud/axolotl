@@ -61,10 +61,7 @@ class TestMultiGPUGemma3:
                 "num_epochs": 1,
                 "max_steps": 2,
                 "micro_batch_size": 4,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {
-                    "use_reentrant": False,
-                },
+                "activation_checkpointing": {"enabled": True, "reentrant": False},
                 "gradient_accumulation_steps": 2,
                 "output_dir": temp_dir,
                 "dataset_prepared_path": temp_dir + "/last_run_prepared",

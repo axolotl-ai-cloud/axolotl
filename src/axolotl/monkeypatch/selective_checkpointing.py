@@ -487,7 +487,7 @@ def install_layer_type_hooks(model, state: SacPolicyState) -> int:
         hooked += 1
     if hooked:
         LOG.info(
-            f"selective_checkpointing: layer-type hooks on {hooked} decoder layers "
+            f"activation_checkpointing.selective: layer-type hooks on {hooked} decoder layers "
             "(sliding/chunked-window attention will be recomputed)"
         )
     return hooked
@@ -555,7 +555,7 @@ def install_module_scope_hooks(
     if not hasattr(model, "named_modules"):
         for entry in save_modules:
             LOG.warning(
-                f"selective_checkpointing: save_modules entry {entry!r} matched no "
+                f"activation_checkpointing.selective: save_modules entry {entry!r} matched no "
                 f"module in {type(model).__name__}; the rule is inert."
             )
         return {}
@@ -613,7 +613,7 @@ def install_module_scope_hooks(
         if enclosing:
             name, layer = enclosing[0]
             LOG.warning(
-                f"selective_checkpointing: save_modules entry {entry!r} matches "
+                f"activation_checkpointing.selective: save_modules entry {entry!r} matches "
                 f"{len(enclosing)} module(s) that enclose checkpointed decoder "
                 f"layers (e.g. {name or '<root>'!r} contains {layer!r}); their "
                 "forward runs outside the checkpoint regions, so they were not "
@@ -621,12 +621,12 @@ def install_module_scope_hooks(
             )
         if targets:
             LOG.info(
-                f"selective_checkpointing: module-scope hooks on {len(targets)} "
+                f"activation_checkpointing.selective: module-scope hooks on {len(targets)} "
                 f"modules for save_modules entry {entry!r}"
             )
         elif not enclosing:
             LOG.warning(
-                f"selective_checkpointing: save_modules entry {entry!r} matched no "
+                f"activation_checkpointing.selective: save_modules entry {entry!r} matched no "
                 f"module in {type(model).__name__}; the rule is inert. Leaf module "
                 f"names in this model include: {_leaf_name_hint(model)}"
             )
@@ -713,7 +713,7 @@ def build_sac_policy(
                     else "registered"
                 )
                 LOG.info(
-                    f"selective_checkpointing: saving `{name}` ({kind}; backward "
+                    f"activation_checkpointing.selective: saving `{name}` ({kind}; backward "
                     "will not recompute it)"
                 )
             return registered
@@ -723,7 +723,7 @@ def build_sac_policy(
                 if name not in state.sliding_op_names:
                     state.sliding_op_names.add(name)
                     LOG.info(
-                        f"selective_checkpointing: recomputing `{name}` in "
+                        f"activation_checkpointing.selective: recomputing `{name}` in "
                         f"{state.current_layer_type} layers"
                     )
                 if has_rules:
@@ -733,7 +733,7 @@ def build_sac_policy(
                 if name not in state.sliding_op_names:
                     state.sliding_op_names.add(name)
                     LOG.info(
-                        f"selective_checkpointing: recomputing sliding-window "
+                        f"activation_checkpointing.selective: recomputing sliding-window "
                         f"calls of `{name}` (save_sliding_window: false)"
                     )
                 if has_rules:
@@ -742,7 +742,7 @@ def build_sac_policy(
             if name not in state.saved_op_names:
                 state.saved_op_names.add(name)
                 LOG.info(
-                    f"selective_checkpointing: saving `{name}` "
+                    f"activation_checkpointing.selective: saving `{name}` "
                     "(backward will not recompute it)"
                 )
             if not getattr(ctx, "is_recompute", False):
@@ -775,7 +775,7 @@ def build_sac_policy(
                 if logged not in state.saved_op_names:
                     state.saved_op_names.add(logged)
                     LOG.info(
-                        f"selective_checkpointing: saving `{name}` inside "
+                        f"activation_checkpointing.selective: saving `{name}` inside "
                         f"save_modules entry {entry!r} (backward will not "
                         "recompute it)"
                     )
@@ -789,7 +789,7 @@ def build_sac_policy(
                 if logged not in state.saved_op_names:
                     state.saved_op_names.add(logged)
                     LOG.info(
-                        f"selective_checkpointing: saving `{name}` with K={k} >= "
+                        f"activation_checkpointing.selective: saving `{name}` with K={k} >= "
                         f"{min_k} (backward will not recompute it)"
                     )
                 return CheckpointPolicy.MUST_SAVE
@@ -811,7 +811,7 @@ def _warn_unmatched_rules(state: SacPolicyState) -> None:
     )
     if state.save_list and not save_list_saved:
         message = (
-            f"selective_checkpointing: no op matched the save policy after "
+            f"activation_checkpointing.selective: no op matched the save policy after "
             f"{n} checkpoint regions. Your attention "
             "implementation may not be dispatcher-visible (e.g. a custom "
             "kernel not registered via torch.library)"
@@ -832,7 +832,7 @@ def _warn_unmatched_rules(state: SacPolicyState) -> None:
             entry, 0
         ):
             LOG.warning(
-                f"selective_checkpointing: save_modules entry {entry!r} never saved "
+                f"activation_checkpointing.selective: save_modules entry {entry!r} never saved "
                 f"a tensor after {n} checkpoint regions: its module only runs "
                 "outside the checkpoint regions (e.g. lm_head, embed_tokens, a "
                 "final norm), so the policy never sees its matmuls. The rule is "
@@ -840,14 +840,14 @@ def _warn_unmatched_rules(state: SacPolicyState) -> None:
             )
         elif state.hook_fires.get(entry, 0) == 0:
             LOG.warning(
-                f"selective_checkpointing: save_modules entry {entry!r} never saved "
+                f"activation_checkpointing.selective: save_modules entry {entry!r} never saved "
                 f"a tensor after {n} checkpoint regions: its module hooks never "
                 "fired, so the module forward is bypassed (fused kernel such as "
                 "lora_mlp_kernel, or a replaced forward). The rule is inert."
             )
         else:
             LOG.warning(
-                f"selective_checkpointing: save_modules entry {entry!r} never saved "
+                f"activation_checkpointing.selective: save_modules entry {entry!r} never saved "
                 f"a tensor after {n} checkpoint regions: its hooks fired but the "
                 "module forward does not dispatch a visible matmul (fused/custom "
                 "kernel?). The rule is inert."
@@ -855,7 +855,7 @@ def _warn_unmatched_rules(state: SacPolicyState) -> None:
     k = state.save_matmul_min_k
     if k and not state.rule_saves.get("shape", 0):
         LOG.warning(
-            f"selective_checkpointing: save_matmul_min_k={k} never matched after "
+            f"activation_checkpointing.selective: save_matmul_min_k={k} never matched after "
             f"{n} checkpoint regions: no visible matmul with K >= {k} was "
             "dispatched inside a checkpoint region. Lower the threshold (K is a "
             "linear's in_features) or check that the projections are not fused."
@@ -881,7 +881,7 @@ def _warn_dead_rule_saves(state: SacPolicyState) -> None:
         if key == "save" or not saves or state.rule_replays.get(key, 0):
             continue
         LOG.warning(
-            f"selective_checkpointing: {_rule_label(state, key)} saved {saves} "
+            f"activation_checkpointing.selective: {_rule_label(state, key)} saved {saves} "
             "tensors in forward but backward's recompute never read one. Torch's "
             "checkpoint early stop ends the replay at the last tensor backward "
             "needs, and this op runs after it (e.g. a layer's final projection "
@@ -1026,5 +1026,5 @@ def apply_selective_checkpointing(
         else ""
     )
     LOG.info(
-        f"selective_checkpointing enabled: save={save}{rules} (eager SAC, non-reentrant)"
+        f"activation_checkpointing.selective enabled: save={save}{rules} (eager SAC, non-reentrant)"
     )

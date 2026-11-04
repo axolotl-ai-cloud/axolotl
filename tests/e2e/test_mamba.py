@@ -31,7 +31,7 @@ def _packed_cfg(base_model, temp_dir, **overrides):
                     "type": "alpaca",
                 },
             ],
-            "gradient_checkpointing": False,
+            "activation_checkpointing": False,
             "num_epochs": 2,
             "micro_batch_size": 2,
             "gradient_accumulation_steps": 1,

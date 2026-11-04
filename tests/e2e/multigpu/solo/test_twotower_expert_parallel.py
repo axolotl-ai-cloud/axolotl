@@ -277,7 +277,7 @@ def _build_ep(dtype, rank, adapter, *, gradient_checkpointing):
         expert_parallel_size=WORLD,
         expert_parallel_backend="torch",
         use_scattermoe=True,
-        gradient_checkpointing=gradient_checkpointing,
+        activation_checkpointing={"enabled": gradient_checkpointing},
     )
     plugin = ExpertParallelPlugin()
     plugin.pre_model_load(cfg)

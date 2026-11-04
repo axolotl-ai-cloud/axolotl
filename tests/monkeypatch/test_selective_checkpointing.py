@@ -906,7 +906,7 @@ class TestRuleWarnings:
     def test_no_rules_message_unchanged(self, sac_log):
         self._drain(build_sac_context_fn(["attention"]))
         assert self._warnings(sac_log) == [
-            f"selective_checkpointing: no op matched the save policy after "
+            f"activation_checkpointing.selective: no op matched the save policy after "
             f"{_NO_MATCH_WARN_REGIONS} checkpoint regions. Your attention "
             "implementation may not be dispatcher-visible (e.g. a custom kernel "
             "not registered via torch.library); everything is being recomputed "

@@ -105,7 +105,7 @@ def test_mistral_large4_fp8_lora_trains(bf16_dir, temp_dir, attn_kernel):
             ],
             "attn_implementation": "sdpa",
             "bf16": True,
-            "gradient_checkpointing": True,
+            "activation_checkpointing": True,
             "sequence_len": 128,
             "micro_batch_size": 2,
             "num_epochs": 1,

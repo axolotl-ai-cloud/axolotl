@@ -145,13 +145,13 @@ def test_attn_lora_kernel_defers_to_selective_checkpointing(tmp_path, monkeypatc
     base = {
         "base_model": _saved(tmp_path, tiny_config()),
         "adapter": "lora",
-        "selective_checkpointing": sac,
+        "activation_checkpointing": {"enabled": True, "selective": sac},
     }
     adapter = MistralLarge4Adapter()
     assert adapter._attn_lora_kernel_enabled(DictDefault(base)) is False
 
     forced = DictDefault({**base, "mistral_large4_attn_lora_kernel": True})
-    with pytest.raises(ValueError, match="selective_checkpointing"):
+    with pytest.raises(ValueError, match="activation_checkpointing.selective"):
         adapter.pre_model_load(forced)
     off = DictDefault({**base, "mistral_large4_attn_lora_kernel": False})
     adapter.pre_model_load(off)
@@ -163,7 +163,7 @@ def test_attn_lora_kernel_keeps_attention_only_selective_checkpointing(tmp_path,
         {
             "base_model": _saved(tmp_path, tiny_config()),
             "adapter": "lora",
-            "selective_checkpointing": sac,
+            "activation_checkpointing": {"enabled": True, "selective": sac},
         }
     )
     assert MistralLarge4Adapter()._attn_lora_kernel_enabled(cfg) is True

@@ -86,7 +86,7 @@ class TestValidation(BaseValidation):
             {
                 "torch_compile": True,
                 "torch_compile_regional": True,
-                "gradient_checkpointing": True,
+                "activation_checkpointing": True,
             }
             | minimal_cfg
         )
@@ -96,15 +96,14 @@ class TestValidation(BaseValidation):
         ):
             validate_config(test_cfg)
 
-        test_cfg.gradient_checkpointing = False
+        test_cfg.activation_checkpointing = False
         validate_config(test_cfg)
 
     def test_zero3_qlora_use_reentrant_false(self, minimal_cfg):
         test_cfg = DictDefault(
             {
                 "deepspeed": "deepspeed_configs/zero3_bf16.json",
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "activation_checkpointing": {"enabled": True, "reentrant": False},
                 "load_in_4bit": True,
                 "adapter": "qlora",
             }
@@ -114,7 +113,8 @@ class TestValidation(BaseValidation):
         with self._caplog.at_level("WARNING"):
             validate_config(test_cfg)
             assert (
-                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
+                "qlora + zero3 with activation_checkpointing.reentrant: false may "
+                "result in a CheckpointError about recomputed values"
                 in self._caplog.records[0].message
             )
 
@@ -122,8 +122,7 @@ class TestValidation(BaseValidation):
         test_cfg = DictDefault(
             {
                 "deepspeed": "",
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "activation_checkpointing": {"enabled": True, "reentrant": False},
                 "load_in_4bit": True,
                 "adapter": "qlora",
             }
@@ -136,8 +135,7 @@ class TestValidation(BaseValidation):
         test_cfg = DictDefault(
             {
                 "deepspeed": None,
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": False},
+                "activation_checkpointing": {"enabled": True, "reentrant": False},
                 "load_in_4bit": True,
                 "adapter": "qlora",
             }
@@ -544,14 +542,14 @@ class TestValidation(BaseValidation):
         validate_config(cfg)
 
     def test_mpt_gradient_checkpointing(self, minimal_cfg):
-        regex_exp = r".*gradient_checkpointing is not supported for MPT models*"
+        regex_exp = r".*activation_checkpointing is not supported for MPT models*"
 
         # Check for lower-case
         cfg = (
             DictDefault(
                 {
                     "base_model": "mosaicml/mpt-7b",
-                    "gradient_checkpointing": True,
+                    "activation_checkpointing": True,
                 }
             )
             | minimal_cfg

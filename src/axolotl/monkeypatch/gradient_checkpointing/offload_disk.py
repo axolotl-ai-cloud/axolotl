@@ -2,7 +2,7 @@
 DISCO - DIsk-based Storage and Checkpointing with Optimized prefetching
 """
 
-__ci_config_keys__ = ("activation_offloading",)
+__ci_config_keys__ = ("activation_checkpointing",)
 
 # Copyright 2025 Axolotl AI. All rights reserved.
 #

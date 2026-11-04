@@ -8,94 +8,105 @@ from axolotl.utils.dict import DictDefault
 
 class TestSelectiveCheckpointing:
     """
-    Test cases for selective_checkpointing schema validation
+    Test cases for activation_checkpointing.selective schema validation
     """
 
     def test_bool_shorthand_normalizes_to_attention(self, min_base_cfg):
-        cfg = (
-            DictDefault(
-                gradient_checkpointing=True,
-                selective_checkpointing=True,
-            )
-            | min_base_cfg
-        )
+        cfg = DictDefault(activation_checkpointing={"selective": True}) | min_base_cfg
 
         cfg = validate_config(cfg)
-        assert cfg.selective_checkpointing["save"] == ["attention"]
-        assert cfg.selective_checkpointing["save_sliding_window"] is False
+        assert cfg.activation_checkpointing.selective["save"] == ["attention"]
+        assert cfg.activation_checkpointing.selective["save_sliding_window"] is False
 
     def test_false_normalizes_to_none(self, min_base_cfg):
-        cfg = (
-            DictDefault(
-                gradient_checkpointing=True,
-                selective_checkpointing=False,
-            )
-            | min_base_cfg
-        )
+        cfg = DictDefault(activation_checkpointing={"selective": False}) | min_base_cfg
 
         cfg = validate_config(cfg)
-        assert cfg.selective_checkpointing is None
+        assert "selective" not in cfg.activation_checkpointing
 
     def test_custom_save_list_preserved(self, min_base_cfg):
         cfg = (
             DictDefault(
-                gradient_checkpointing=True,
-                selective_checkpointing={"save": ["attention", "aten::mm"]},
+                activation_checkpointing={
+                    "selective": {"save": ["attention", "aten::mm"]}
+                }
             )
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
-        assert cfg.selective_checkpointing["save"] == ["attention", "aten::mm"]
+        assert cfg.activation_checkpointing.selective["save"] == [
+            "attention",
+            "aten::mm",
+        ]
 
-    def test_requires_gradient_checkpointing(self, min_base_cfg):
+    def test_requires_checkpointing(self, min_base_cfg):
         cfg = (
-            DictDefault(
-                selective_checkpointing=True,
-            )
+            DictDefault(activation_checkpointing={"enabled": False, "selective": True})
             | min_base_cfg
         )
 
-        with pytest.raises(ValueError, match="requires gradient_checkpointing"):
+        with pytest.raises(ValueError, match="requires checkpointing"):
             validate_config(cfg)
 
     def test_rejects_reentrant(self, min_base_cfg):
         cfg = (
-            DictDefault(
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": True},
-                selective_checkpointing=True,
-            )
+            DictDefault(activation_checkpointing={"reentrant": True, "selective": True})
             | min_base_cfg
         )
 
         with pytest.raises(ValueError, match="non-reentrant"):
             validate_config(cfg)
 
-    @pytest.mark.parametrize("mode", [True, "hidden_states"])
-    def test_composes_with_activation_offloading(self, min_base_cfg, mode):
+    def test_offload_moved_to_offload_saves(self, min_base_cfg):
         cfg = (
             DictDefault(
-                gradient_checkpointing=True,
-                activation_offloading=mode,
-                selective_checkpointing=True,
+                activation_checkpointing={
+                    "selective": {"save": ["attention"], "offload": True}
+                }
+            )
+            | min_base_cfg
+        )
+
+        with pytest.raises(ValueError, match=r"offload.saves: cpu"):
+            validate_config(cfg)
+
+    def test_offload_saves_requires_selective(self, min_base_cfg):
+        cfg = (
+            DictDefault(activation_checkpointing={"offload": {"saves": "cpu"}})
+            | min_base_cfg
+        )
+
+        with pytest.raises(ValueError, match="tensors `selective` saves"):
+            validate_config(cfg)
+
+    @pytest.mark.parametrize("target", ["all", "hidden_states"])
+    def test_composes_with_activation_offloading(self, min_base_cfg, target):
+        cfg = (
+            DictDefault(
+                activation_checkpointing={
+                    "selective": True,
+                    "offload": {target: "cpu", "saves": "cpu"},
+                }
             )
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
-        assert cfg.selective_checkpointing["save"] == ["attention"]
-        assert cfg.activation_offloading == mode
+        assert cfg.activation_checkpointing.selective["save"] == ["attention"]
+        assert cfg.activation_checkpointing.offload[target] == "cpu"
+        assert cfg.activation_checkpointing.offload.saves == "cpu"
 
     def test_rejects_matmul_save_with_adapter(self, min_base_cfg):
         cfg = (
             DictDefault(
-                gradient_checkpointing=True,
                 adapter="lora",
                 lora_r=16,
                 lora_alpha=32,
                 lora_target_linear=True,
-                selective_checkpointing={"save": ["attention", "aten::mm"]},
+                activation_checkpointing={
+                    "selective": {"save": ["attention", "aten::mm"]}
+                },
             )
             | min_base_cfg
         )
@@ -113,9 +124,7 @@ _KERNELS_OFF = {
 
 def _sac_cfg(min_base_cfg, sac, **overrides):
     return (
-        DictDefault(
-            gradient_checkpointing=True, selective_checkpointing=sac, **overrides
-        )
+        DictDefault(activation_checkpointing={"selective": sac}, **overrides)
         | min_base_cfg
     )
 
@@ -139,13 +148,16 @@ class TestSelectiveCheckpointingRules:
         cfg = validate_config(
             _sac_cfg(min_base_cfg, {"save_modules": [" down_proj ", "*.o_proj"]})
         )
-        assert cfg.selective_checkpointing["save_modules"] == ["down_proj", "*.o_proj"]
-        assert cfg.selective_checkpointing["save_matmul_min_k"] is None
-        assert cfg.selective_checkpointing["save"] == ["attention"]
+        assert cfg.activation_checkpointing.selective["save_modules"] == [
+            "down_proj",
+            "*.o_proj",
+        ]
+        assert cfg.activation_checkpointing.selective["save_matmul_min_k"] is None
+        assert cfg.activation_checkpointing.selective["save"] == ["attention"]
 
     def test_empty_save_modules_normalizes_to_none(self, min_base_cfg):
         cfg = validate_config(_sac_cfg(min_base_cfg, {"save_modules": []}))
-        assert cfg.selective_checkpointing["save_modules"] is None
+        assert cfg.activation_checkpointing.selective["save_modules"] is None
 
     def test_rejects_empty_save_modules_entry(self, min_base_cfg):
         with pytest.raises(ValueError, match="non-empty"):
@@ -155,7 +167,7 @@ class TestSelectiveCheckpointingRules:
 
     def test_save_matmul_min_k_preserved(self, min_base_cfg):
         cfg = validate_config(_sac_cfg(min_base_cfg, {"save_matmul_min_k": 8192}))
-        assert cfg.selective_checkpointing["save_matmul_min_k"] == 8192
+        assert cfg.activation_checkpointing.selective["save_matmul_min_k"] == 8192
 
     def test_rejects_min_k_below_one(self, min_base_cfg):
         with pytest.raises(ValueError, match="save_matmul_min_k"):
@@ -194,7 +206,7 @@ class TestSelectiveCheckpointingRules:
                 min_base_cfg, {"save_modules": ["down_proj"]}, lora_mlp_kernel=False
             )
         )
-        assert cfg.selective_checkpointing["save_modules"] == ["down_proj"]
+        assert cfg.activation_checkpointing.selective["save_modules"] == ["down_proj"]
 
     def test_explicit_kernel_flag_stops_auto_enable(self, min_base_cfg):
         cfg = validate_config(
@@ -204,7 +216,10 @@ class TestSelectiveCheckpointingRules:
                 lora_mlp_kernel=False,
             )
         )
-        assert cfg.selective_checkpointing["save_modules"] == ["q_proj", "o_proj"]
+        assert cfg.activation_checkpointing.selective["save_modules"] == [
+            "q_proj",
+            "o_proj",
+        ]
 
     @pytest.mark.parametrize(
         "flag,entry",
@@ -234,7 +249,10 @@ class TestSelectiveCheckpointingRules:
                 lora_o_kernel=True,
             )
         )
-        assert cfg.selective_checkpointing["save_modules"] == ["down_proj", "gate_proj"]
+        assert cfg.activation_checkpointing.selective["save_modules"] == [
+            "down_proj",
+            "gate_proj",
+        ]
 
     def test_lora_rejects_shape_rule_with_fused_kernels(self, min_base_cfg):
         with pytest.raises(ValueError, match="save_matmul_min_k"):
@@ -244,13 +262,16 @@ class TestSelectiveCheckpointingRules:
         cfg = validate_config(
             _lora_cfg(min_base_cfg, {"save_matmul_min_k": 8192}, **_KERNELS_OFF)
         )
-        assert cfg.selective_checkpointing["save_matmul_min_k"] == 8192
+        assert cfg.activation_checkpointing.selective["save_matmul_min_k"] == 8192
 
     def test_lora_allows_raw_matmul_save_with_kernels_off(self, min_base_cfg):
         cfg = validate_config(
             _lora_cfg(min_base_cfg, {"save": ["attention", "aten::mm"]}, **_KERNELS_OFF)
         )
-        assert cfg.selective_checkpointing["save"] == ["attention", "aten::mm"]
+        assert cfg.activation_checkpointing.selective["save"] == [
+            "attention",
+            "aten::mm",
+        ]
 
     def test_rl_lora_does_not_auto_enable_kernels(self, min_base_cfg):
         cfg = validate_config(
@@ -260,7 +281,7 @@ class TestSelectiveCheckpointingRules:
                 rl="dpo",
             )
         )
-        assert cfg.selective_checkpointing["save_modules"] == ["down_proj"]
+        assert cfg.activation_checkpointing.selective["save_modules"] == ["down_proj"]
 
     def test_kernel_flags_without_adapter_are_ignored(self, min_base_cfg):
         cfg = validate_config(
@@ -270,7 +291,7 @@ class TestSelectiveCheckpointingRules:
                 lora_mlp_kernel=True,
             )
         )
-        assert cfg.selective_checkpointing["save_modules"] == ["down_proj"]
+        assert cfg.activation_checkpointing.selective["save_modules"] == ["down_proj"]
 
     def test_flash_attn_fuse_mlp_rejects_mlp_entries(self, min_base_cfg):
         cfg = _sac_cfg(
@@ -314,4 +335,4 @@ class TestSelectiveCheckpointingRules:
         cfg = validate_config(
             _lora_cfg(min_base_cfg, {"save_modules": [entry]}, **_KERNELS_OFF)
         )
-        assert cfg.selective_checkpointing["save_modules"] == [entry]
+        assert cfg.activation_checkpointing.selective["save_modules"] == [entry]

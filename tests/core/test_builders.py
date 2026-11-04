@@ -125,9 +125,11 @@ class TestGradientCheckpointingConfig:
         training_args_kwargs = _gradient_checkpointing_kwargs(
             SimpleNamespace(
                 layer_offloading=False,
-                activation_offloading="hidden_states",
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": False},
+                activation_checkpointing={
+                    "enabled": True,
+                    "reentrant": False,
+                    "offload": {"hidden_states": "cpu"},
+                },
             )
         )
 
@@ -141,15 +143,53 @@ class TestGradientCheckpointingConfig:
         training_args_kwargs = _gradient_checkpointing_kwargs(
             SimpleNamespace(
                 layer_offloading=False,
-                activation_offloading="hidden_states",
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": True},
+                activation_checkpointing={
+                    "enabled": True,
+                    "reentrant": True,
+                    "offload": {"hidden_states": "cpu"},
+                },
             )
         )
 
         assert training_args_kwargs[CHECKPOINTING_ARG] is True
         assert training_args_kwargs[CHECKPOINTING_KWARGS_ARG] == {"use_reentrant": True}
         assert "activation_offloading" not in training_args_kwargs
+
+    def test_fsdp_implementation_leaves_transformers_checkpointing_off(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_checkpointing={"enabled": True, "implementation": "fsdp"},
+            )
+        )
+
+        assert training_args_kwargs[CHECKPOINTING_ARG] is False
+        assert training_args_kwargs[CHECKPOINTING_KWARGS_ARG] == {
+            "use_reentrant": False
+        }
+
+    @pytest.mark.parametrize(
+        ("implementation", "expected"),
+        [
+            ("fsdp", {"reshard_after_forward": True, "activation_checkpointing": True}),
+            ("hf", {"reshard_after_forward": True}),
+        ],
+    )
+    def test_fsdp_training_config_carries_fsdp_checkpointing(
+        self, implementation, expected
+    ):
+        cfg = DictDefault(
+            fsdp_config={"reshard_after_forward": True},
+            activation_checkpointing={
+                "enabled": True,
+                "implementation": implementation,
+            },
+        )
+
+        fsdp_config = TrainerBuilderBase._fsdp_training_config(SimpleNamespace(cfg=cfg))
+
+        assert dict(fsdp_config) == expected
+        assert "activation_checkpointing" not in cfg.fsdp_config
 
 
 def _reward_dataset():
@@ -583,14 +623,18 @@ class TestApplyTorchCompileOptions:
 
     def test_configure_torch_compile_disables_dynamo_lru_under_checkpointing(self):
         builder = MagicMock(spec=TrainerBuilderBase)
-        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=True)
+        builder.cfg = DictDefault(
+            torch_compile=True, activation_checkpointing={"enabled": True}
+        )
         with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
             TrainerBuilderBase._configure_torch_compile(builder, {})
         set_lru.assert_called_once_with(False)
 
     def test_configure_torch_compile_keeps_dynamo_lru_without_checkpointing(self):
         builder = MagicMock(spec=TrainerBuilderBase)
-        builder.cfg = DictDefault(torch_compile=True, gradient_checkpointing=False)
+        builder.cfg = DictDefault(
+            torch_compile=True, activation_checkpointing={"enabled": False}
+        )
         with patch("torch._C._dynamo.eval_frame._set_lru_cache") as set_lru:
             TrainerBuilderBase._configure_torch_compile(builder, {})
         set_lru.assert_not_called()

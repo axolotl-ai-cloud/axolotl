@@ -553,8 +553,8 @@ def _activation_checkpointing_active(model: torch.nn.Module) -> bool:
         getattr(m, "gradient_checkpointing", False) is True for m in model.modules()
     ):
         LOG.warning(
-            "fsdp_config.activation_checkpointing skipped: gradient_checkpointing already "
-            "recomputes every layer; set one of the two."
+            "FSDP activation checkpointing skipped: transformers' activation "
+            "checkpointing already recomputes every layer."
         )
         return True
     return False

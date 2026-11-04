@@ -28,9 +28,6 @@ LORA = {
     "lora_alpha": 8,
     "lora_target_modules": ["q_proj", "v_proj"],
 }
-DISK = pytest.param(
-    "disk", marks=pytest.mark.skip(reason="activation_offloading: disk is disabled")
-)
 
 
 @pytest.fixture(scope="module")
@@ -172,21 +169,17 @@ def _checkpoint_wrapped(model):
     )
 
 
-@pytest.mark.parametrize("mode", [True, DISK])
 @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
-def test_offload_without_gc_offloads_everything(
-    base_model_path, min_base_cfg, mode, adapter
-):
+def test_offload_without_gc_offloads_everything(base_model_path, min_base_cfg, adapter):
     step = _train_step(
         base_model_path,
         min_base_cfg,
-        gradient_checkpointing=False,
-        activation_offloading=mode,
+        activation_checkpointing={"enabled": False, "offload": {"all": "cpu"}},
         **(LORA if adapter else {}),
     )
 
     assert step.args[CHECKPOINTING_ARG] is False
-    assert step.args["activation_offloading"] == mode
+    assert step.args["activation_offloading"] is True
     assert not step.model.is_gradient_checkpointing
     assert not _checkpoint_wrapped(step.model)
     assert step.mlp_calls == NUM_LAYERS
@@ -200,16 +193,14 @@ def test_offload_without_gc_offloads_everything(
     } <= step.offload.param_storages
 
 
-@pytest.mark.parametrize("mode", [True, DISK])
 @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
 def test_offload_with_gc_recomputes_and_offloads_saved_tensors(
-    base_model_path, min_base_cfg, mode, adapter
+    base_model_path, min_base_cfg, adapter
 ):
     step = _train_step(
         base_model_path,
         min_base_cfg,
-        gradient_checkpointing=True,
-        activation_offloading=mode,
+        activation_checkpointing={"offload": {"all": "cpu"}},
         **(LORA if adapter else {}),
     )
 
@@ -217,7 +208,7 @@ def test_offload_with_gc_recomputes_and_offloads_saved_tensors(
     assert step.args[CHECKPOINTING_ARG] is True
     assert step.model.is_gradient_checkpointing
     assert not _checkpoint_wrapped(step.model)
-    assert step.args["activation_offloading"] == mode
+    assert step.args["activation_offloading"] is True
     assert step.mlp_calls == 2 * NUM_LAYERS
     # The checkpointed layers keep their saves to themselves; the offloader still
     # sees, and offloads, what is saved outside them.
@@ -236,9 +227,10 @@ def test_hidden_states_offload_keeps_checkpointing(
     step = _train_step(
         base_model_path,
         min_base_cfg,
-        gradient_checkpointing=True,
-        activation_offloading="hidden_states",
-        selective_checkpointing=selective,
+        activation_checkpointing={
+            "offload": {"hidden_states": "cpu"},
+            "selective": selective,
+        },
         **(LORA if adapter else {}),
     )
 

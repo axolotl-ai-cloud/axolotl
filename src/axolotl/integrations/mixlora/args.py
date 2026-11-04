@@ -157,14 +157,26 @@ class MixLoraArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def set_mixlora_gradient_checkpointing_kwargs(cls, data):
+    def set_mixlora_non_reentrant_checkpointing(cls, data):
         # MixLoRA reads _aux_loss from the module after the forward pass; reentrant
         # checkpointing recomputes forward under no_grad, dropping the autograd graph.
-        if not isinstance(data, dict):
+        if not isinstance(data, dict) or data.get("adapter") != "mixlora":
             return data
-        if data.get("adapter") == "mixlora" and data.get("gradient_checkpointing"):
-            kwargs = dict(data.get("gradient_checkpointing_kwargs") or {})
-            if kwargs.get("use_reentrant") is not False:
-                kwargs["use_reentrant"] = False
-            data["gradient_checkpointing_kwargs"] = kwargs
+        checkpointing = data.get("activation_checkpointing")
+        if checkpointing is True:
+            checkpointing = {}
+        if (
+            not isinstance(checkpointing, dict)
+            or not checkpointing.get("enabled", True)
+            or checkpointing.get("implementation", "hf") != "hf"
+        ):
+            return data
+        checkpointing = {**checkpointing, "reentrant": False}
+        if "use_reentrant" in (checkpointing.get("kwargs") or {}):
+            checkpointing["kwargs"] = {
+                key: value
+                for key, value in checkpointing["kwargs"].items()
+                if key != "use_reentrant"
+            }
+        data["activation_checkpointing"] = checkpointing
         return data

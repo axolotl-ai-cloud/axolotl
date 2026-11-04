@@ -388,11 +388,17 @@ class ExpertParallelPlugin(BasePlugin):
 
     @staticmethod
     def _install_required_checkpoint_policy(cfg, model) -> None:
-        """Without ``selective_checkpointing``, still checkpoint through a policy that
-        holds the registered routing saves (and nothing else). FSDP2
-        ``activation_checkpointing`` picks the saves up in its own checkpoint wrapper."""
-        if not getattr(cfg, "gradient_checkpointing", None) or getattr(
-            cfg, "selective_checkpointing", None
+        """Without ``activation_checkpointing.selective``, still checkpoint through a
+        policy that holds the registered routing saves (and nothing else). FSDP2's
+        checkpoint wrapper (``implementation: fsdp``) picks the saves up on its own."""
+        from axolotl.utils.activation_checkpointing import (
+            checkpointing_config,
+            hf_checkpointing_enabled,
+        )
+
+        if (
+            not hf_checkpointing_enabled(cfg)
+            or checkpointing_config(cfg).selective is not None
         ):
             return
         from axolotl.monkeypatch.selective_checkpointing import (

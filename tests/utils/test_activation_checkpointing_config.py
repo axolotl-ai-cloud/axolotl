@@ -1,5 +1,5 @@
 """Each activation checkpointing config resolves to the same TrainingArguments kwargs and
-model checkpointing state.
+model checkpointing state as the legacy keys it replaces.
 
 A case runs config validation and normalization, the trainer builder's checkpointing
 args, ModelLoader's checkpointing setup and one HF Trainer step on a tiny Llama, and
@@ -214,28 +214,22 @@ def _expected(
 CASES = [
     pytest.param({}, "llama", _expected(), id="absent"),
     pytest.param(
-        {"gradient_checkpointing": False}, "llama", _expected(), id="disabled"
+        {"activation_checkpointing": False}, "llama", _expected(), id="disabled"
     ),
     pytest.param(
-        {"gradient_checkpointing": True},
+        {"activation_checkpointing": True},
         "llama",
         _expected(checkpointing=True, after_train=_on()),
         id="enabled",
     ),
     pytest.param(
-        {
-            "gradient_checkpointing": True,
-            "gradient_checkpointing_kwargs": {"use_reentrant": False},
-        },
+        {"activation_checkpointing": {"enabled": True, "reentrant": False}},
         "llama",
         _expected(checkpointing=True, after_train=_on()),
         id="non_reentrant",
     ),
     pytest.param(
-        {
-            "gradient_checkpointing": True,
-            "gradient_checkpointing_kwargs": {"use_reentrant": True},
-        },
+        {"activation_checkpointing": {"enabled": True, "reentrant": True}},
         "llama",
         _expected(
             checkpointing=True,
@@ -246,11 +240,11 @@ CASES = [
     ),
     pytest.param(
         {
-            "gradient_checkpointing": True,
-            "gradient_checkpointing_kwargs": {
-                "use_reentrant": False,
-                "preserve_rng_state": False,
-            },
+            "activation_checkpointing": {
+                "enabled": True,
+                "reentrant": False,
+                "kwargs": {"preserve_rng_state": False},
+            }
         },
         "llama",
         _expected(
@@ -261,31 +255,39 @@ CASES = [
         id="torch_kwargs",
     ),
     pytest.param(
-        {"gradient_checkpointing": "offload"},
+        {"activation_checkpointing": {"enabled": True, "offload": {"all": "cpu"}}},
         "llama",
         _expected(checkpointing=True, activation_offloading=True, after_train=_on()),
         id="offload_string",
     ),
     pytest.param(
-        {"gradient_checkpointing": True, "activation_offloading": True},
+        {"activation_checkpointing": {"enabled": True, "offload": {"all": True}}},
         "llama",
         _expected(checkpointing=True, activation_offloading=True, after_train=_on()),
         id="offload_all",
     ),
     pytest.param(
-        {"gradient_checkpointing": True, "activation_offloading": "legacy"},
+        {"activation_checkpointing": {"offload": {"all": "cpu"}}},
         "llama",
         _expected(checkpointing=True, activation_offloading=True, after_train=_on()),
         id="offload_legacy",
     ),
     pytest.param(
-        {"activation_offloading": True, **LORA},
+        {
+            "activation_checkpointing": {"enabled": False, "offload": {"all": "cpu"}},
+            **LORA,
+        },
         "llama",
         _expected(activation_offloading=True),
         id="lora_offload_without_recompute",
     ),
     pytest.param(
-        {"gradient_checkpointing": True, "activation_offloading": "hidden_states"},
+        {
+            "activation_checkpointing": {
+                "enabled": True,
+                "offload": {"hidden_states": "cpu"},
+            }
+        },
         "llama",
         _expected(
             checkpointing=True,
@@ -296,9 +298,11 @@ CASES = [
     ),
     pytest.param(
         {
-            "gradient_checkpointing": True,
-            "activation_offloading": "hidden_states",
-            "gradient_checkpointing_kwargs": {"use_reentrant": True},
+            "activation_checkpointing": {
+                "enabled": True,
+                "reentrant": True,
+                "offload": {"hidden_states": "cpu"},
+            }
         },
         "llama",
         _expected(
@@ -310,7 +314,7 @@ CASES = [
         id="hidden_states_reentrant",
     ),
     pytest.param(
-        {"gradient_checkpointing": True, "selective_checkpointing": True},
+        {"activation_checkpointing": {"enabled": True, "selective": True}},
         "llama",
         _expected(
             checkpointing=True,
@@ -320,8 +324,11 @@ CASES = [
     ),
     pytest.param(
         {
-            "gradient_checkpointing": True,
-            "selective_checkpointing": {"save": ["attention"], "offload": True},
+            "activation_checkpointing": {
+                "enabled": True,
+                "selective": {"save": ["attention"]},
+                "offload": {"saves": "cpu"},
+            }
         },
         "llama",
         _expected(
@@ -332,9 +339,11 @@ CASES = [
     ),
     pytest.param(
         {
-            "gradient_checkpointing": True,
-            "activation_offloading": "hidden_states",
-            "selective_checkpointing": {"save": ["attention"], "offload": True},
+            "activation_checkpointing": {
+                "enabled": True,
+                "selective": {"save": ["attention"]},
+                "offload": {"hidden_states": "cpu", "saves": "cpu"},
+            }
         },
         "llama",
         _expected(
@@ -345,17 +354,17 @@ CASES = [
         id="selective_offload_hidden_states",
     ),
     pytest.param(
-        {"gradient_checkpointing": True, **LORA},
+        {"activation_checkpointing": True, **LORA},
         "llama",
         _expected(checkpointing=True, after_load=_on(), after_train=_on()),
         id="lora",
     ),
     pytest.param(
         {
-            "gradient_checkpointing": True,
-            "gradient_checkpointing_kwargs": {
-                "use_reentrant": False,
-                "every_n_layers": 2,
+            "activation_checkpointing": {
+                "enabled": True,
+                "reentrant": False,
+                "kwargs": {"every_n_layers": 2},
             },
             **LORA,
         },
@@ -363,14 +372,15 @@ CASES = [
         _expected(
             checkpointing=True,
             kwargs={"use_reentrant": False, "every_n_layers": 2},
-            after_load=_on(every_n_layers=2),
+            # every_n_layers used to reach the torch partial on the loader path
+            after_load={**_on(), "layers": [True, False]},
             after_train={**_on(), "layers": [True, False]},
         ),
         id="lora_every_n_layers",
     ),
     pytest.param(
         {
-            "gradient_checkpointing": True,
+            "activation_checkpointing": True,
             "adapter": "qlora",
             "load_in_4bit": True,
             **{k: v for k, v in LORA.items() if k != "adapter"},
@@ -380,29 +390,30 @@ CASES = [
         id="qlora",
     ),
     pytest.param(
-        {**FSDP, "fsdp_config": {"activation_checkpointing": True}},
+        {**FSDP, "activation_checkpointing": {"implementation": "fsdp"}},
         "llama",
         _expected(fsdp_env="true"),
         id="fsdp",
     ),
     pytest.param(
-        {**FSDP, "fsdp_config": {"fsdp_activation_checkpointing": True}},
+        {
+            **FSDP,
+            "activation_checkpointing": {"enabled": True, "implementation": "fsdp"},
+        },
         "llama",
         _expected(fsdp_env="true"),
         id="fsdp_prefixed",
     ),
     pytest.param(
-        {
-            "gradient_checkpointing": True,
-            **FSDP,
-            "fsdp_config": {"activation_checkpointing": True},
-        },
+        {"activation_checkpointing": True, **FSDP},
         "llama",
-        _expected(checkpointing=True, after_train=_on(), fsdp_env="true"),
+        # the legacy config also requested FSDP's wrapper, which Trainer rejects
+        # alongside transformers' checkpointing
+        _expected(checkpointing=True, after_train=_on()),
         id="hf_and_fsdp",
     ),
     pytest.param(
-        {"gradient_checkpointing": True, **ZERO3},
+        {"activation_checkpointing": True, **ZERO3},
         "llama",
         _expected(
             checkpointing=True,
@@ -412,7 +423,7 @@ CASES = [
         id="zero3",
     ),
     pytest.param(
-        {"gradient_checkpointing": True, "activation_offloading": True, **ZERO3},
+        {"activation_checkpointing": {"offload": {"all": "cpu"}}, **ZERO3},
         "llama",
         _expected(
             checkpointing=True,
@@ -423,14 +434,14 @@ CASES = [
         id="zero3_offload_all",
     ),
     pytest.param(
-        {"gradient_checkpointing": True, **ZERO3, **DPO},
+        {"activation_checkpointing": True, **ZERO3, **DPO},
         "llama",
         _expected(checkpointing=True, after_train=_on()),
         id="zero3_rl",
     ),
     pytest.param(
         {
-            "gradient_checkpointing": True,
+            "activation_checkpointing": True,
             "unfrozen_parameters": ["model.layers.0.*"],
             **ZERO3,
         },
@@ -439,19 +450,13 @@ CASES = [
         id="zero3_unfrozen",
     ),
     pytest.param(
-        {
-            "gradient_checkpointing": True,
-            "gradient_checkpointing_kwargs": {"use_reentrant": True},
-        },
+        {"activation_checkpointing": {"enabled": True, "reentrant": True}},
         "mistral_large4",
         _expected(checkpointing=True, after_train=_on()),
         id="mistral_large4_forces_non_reentrant",
     ),
     pytest.param(
-        {
-            "gradient_checkpointing": True,
-            "gradient_checkpointing_kwargs": {"use_reentrant": True},
-        },
+        {"activation_checkpointing": {"enabled": True, "reentrant": True}},
         "gemma4",
         _expected(checkpointing=True, after_train=_on()),
         id="gemma4_forces_non_reentrant",

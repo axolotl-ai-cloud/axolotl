@@ -308,7 +308,7 @@ class SacOffloadEngine:
             return
         self.stats.logged = True
         LOG.info(
-            "selective_checkpointing offload: "
+            "activation_checkpointing.offload.saves: "
             f"{self.stats.offloaded_tensors} tensors "
             f"({self.stats.offloaded_bytes / 2**30:.2f} GiB) offloaded to CPU "
             "in the first forward"
@@ -439,7 +439,7 @@ class _OffloadCachedMode(TorchDispatchMode):
             entries = self.storage.get(func)
             if not entries:
                 raise RuntimeError(
-                    f"selective_checkpointing offload: {func} encountered during "
+                    f"activation_checkpointing.offload.saves: {func} encountered during "
                     "recompute but nothing was saved for it (or an extra backward "
                     "was attempted)"
                 )

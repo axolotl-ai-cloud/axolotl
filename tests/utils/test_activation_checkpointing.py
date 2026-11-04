@@ -96,3 +96,14 @@ def test_enable_disable_helpers(kwargs):
         disable_activation_checkpointing(model)
     assert not any(layer.gradient_checkpointing for layer in model.model.layers)
     assert not _checkpointing_deprecations(caught)
+
+
+def test_enable_pops_every_n_layers_into_the_named_parameter():
+    model = _model()
+    enable_activation_checkpointing(
+        model, {"use_reentrant": False, "every_n_layers": 2}
+    )
+
+    layers = model.model.layers
+    assert [layer.gradient_checkpointing for layer in layers] == [True, False]
+    assert layers[0]._gradient_checkpointing_func.keywords == {"use_reentrant": False}

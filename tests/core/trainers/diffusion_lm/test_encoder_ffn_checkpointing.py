@@ -246,7 +246,7 @@ def test_reentrant_checkpointing_is_rejected():
     try:
         import pytest
 
-        with pytest.raises(ValueError, match="use_reentrant: false"):
+        with pytest.raises(ValueError, match="reentrant: false"):
             model.get_base_model().gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs={"use_reentrant": True}
             )

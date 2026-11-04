@@ -72,6 +72,8 @@ def configure_scattermoe_runtime(cfg) -> None:
     Resets to defaults first so a long-lived process never inherits stale state, then maps the
     relevant config fields. ``cfg`` is the resolved config (DictDefault).
     """
+    from axolotl.utils.activation_checkpointing import hf_checkpointing_enabled
+
     RUNTIME.reset()
     RUNTIME.grouped_mode = cfg.get("moe_grouped_mode") or cfg.get(
         "dsv4_fp4_grouped_mode"
@@ -109,7 +111,7 @@ def configure_scattermoe_runtime(cfg) -> None:
         swiglu_ep = os.environ["AXOLOTL_SWIGLU_EPILOGUE"] != "0"
     if swiglu_ep is not None:
         RUNTIME.swiglu_epilogue = bool(swiglu_ep)
-    RUNTIME.layer_gc_active = bool(cfg.get("gradient_checkpointing"))
+    RUNTIME.layer_gc_active = hf_checkpointing_enabled(cfg)
     fast = cfg.get("moe_bnb_fast")
     RUNTIME.bnb_fast = True if fast is None else bool(fast)
     # Cache only in the non-FSDP case; under FSDP a persistent mxfp4 cache holds a full-model copy

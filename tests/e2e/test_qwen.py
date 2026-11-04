@@ -62,7 +62,7 @@ class TestE2eQwen:
                 "flash_attention": True,
                 "bf16": "auto",
                 "tf32": True,
-                "gradient_checkpointing": True,
+                "activation_checkpointing": True,
                 "save_first_step": False,
             }
         )

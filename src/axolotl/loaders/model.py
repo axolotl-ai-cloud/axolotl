@@ -55,7 +55,13 @@ from axolotl.loaders.utils import (
 )
 from axolotl.model_support import get_model_support, resolve_model_support
 from axolotl.telemetry.errors import send_errors
-from axolotl.utils.activation_checkpointing import enable_activation_checkpointing
+from axolotl.utils.activation_checkpointing import (
+    checkpointing_config,
+    checkpointing_kwargs,
+    enable_activation_checkpointing,
+    hf_checkpointing_enabled,
+    offload_placement,
+)
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
@@ -503,8 +509,8 @@ class ModelLoader:
         self.model.set_experts_implementation(impl)
 
     def _apply_selective_checkpointing(self):
-        sac = self.cfg.selective_checkpointing
-        if not sac:
+        sac = checkpointing_config(self.cfg).selective
+        if sac is None:
             return
 
         from axolotl.monkeypatch.selective_checkpointing import (
@@ -517,20 +523,16 @@ class ModelLoader:
             save=sac_kwargs.get("save"),
             save_sliding_window=bool(sac_kwargs.get("save_sliding_window")),
             recompute_layer_types=sac_kwargs.get("recompute_layer_types"),
-            offload=bool(sac_kwargs.get("offload")),
+            offload=offload_placement(self.cfg, "saves") == "cpu",
             save_modules=sac_kwargs.get("save_modules"),
             save_matmul_min_k=sac_kwargs.get("save_matmul_min_k"),
         )
 
     def _apply_activation_checkpointing(self):
-        ao = self.cfg.activation_offloading
-        if ao == "hidden_states":
-            use_reentrant = (self.cfg.gradient_checkpointing_kwargs or {}).get(
-                "use_reentrant", False
-            )
-            if not use_reentrant:
-                return
-
+        if (
+            offload_placement(self.cfg, "hidden_states") == "cpu"
+            and checkpointing_config(self.cfg).reentrant
+        ):
             from axolotl.monkeypatch.activation_offload_checkpoint import (
                 patch_hidden_states_offload,
             )
@@ -663,14 +665,11 @@ class ModelLoader:
         ):
             self._set_z3_leaf_modules()
 
-        # Apply gradient checkpointing if needed
-        if (
-            self.plugin_manager.is_lora_like(self.cfg.adapter)
-            and self.cfg.gradient_checkpointing
-        ):
-            enable_activation_checkpointing(
-                self.model, self.cfg.gradient_checkpointing_kwargs
-            )
+        # Apply activation checkpointing if needed
+        if self.plugin_manager.is_lora_like(
+            self.cfg.adapter
+        ) and hf_checkpointing_enabled(self.cfg):
+            enable_activation_checkpointing(self.model, checkpointing_kwargs(self.cfg))
 
         self._prepare_model_for_quantization()
 
@@ -1491,7 +1490,8 @@ class ModelLoader:
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
             self.model = prepare_model_for_kbit_training(
-                self.model, use_gradient_checkpointing=self.cfg.gradient_checkpointing
+                self.model,
+                use_gradient_checkpointing=hf_checkpointing_enabled(self.cfg),
             )
 
     def _convert_embedding_modules_dtype(

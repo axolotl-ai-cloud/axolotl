@@ -175,14 +175,14 @@ def _register_router_topk_saves(model) -> int:
 def _sac_checkpoint_kwargs(gradient_checkpointing_kwargs: dict | None) -> dict:
     """Non-reentrant checkpoint kwargs carrying a SAC ``context_fn``.
 
-    ``selective_checkpointing:`` (``apply_selective_checkpointing``) supplies its own
+    ``activation_checkpointing.selective`` (``apply_selective_checkpointing``) supplies its own
     context_fn; without it, a policy that saves only the registered ops (the router
     topk) is installed, as the expert-parallel plugin does.
     """
     kwargs = dict(gradient_checkpointing_kwargs or {})
     if kwargs.get("use_reentrant", False):
         raise ValueError(
-            "DiffusionGemma requires gradient_checkpointing_kwargs.use_reentrant: false; "
+            "DiffusionGemma requires activation_checkpointing.reentrant: false; "
             "reentrant checkpointing drops the decoder -> encoder gradient and cannot "
             "replay the router's topk."
         )
