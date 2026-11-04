@@ -13,15 +13,6 @@ pytestmark = [
 BATCH, SEQ, VOCAB = 4, 64, 4096
 
 
-@pytest.fixture(scope="module", autouse=True)
-def patched():
-    from axolotl.monkeypatch.trainer.trl_offload import (
-        patch_trl_offload_dense_layout,
-    )
-
-    patch_trl_offload_dense_layout()
-
-
 def _offload(enabled, use_streams=True):
     from trl.models.activation_offloading import OffloadActivations
 
