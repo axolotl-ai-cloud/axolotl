@@ -186,7 +186,7 @@ REMOVED_KEYS = [
         "removed. Use `activation_checkpointing: true` instead. transformers' "
         "Trainer rejects both at once, so this config failed at startup. "
         "`{enabled: true, implementation: fsdp}` uses FSDP's checkpoint wrapper "
-        "instead, which supports no other activation_checkpointing setting.",
+        "instead.",
         id="hf_and_fsdp",
     ),
     pytest.param(
@@ -363,37 +363,31 @@ def test_offload_all_covers_hidden_states():
     )
 
 
-@pytest.mark.parametrize(
-    ("block", "field", "why"),
-    [
-        (
-            {"selective": True},
-            "selective",
-            "FSDP's checkpoint wrapper applies only plugin-registered saves.",
-        ),
-        (
-            {"offload": {"hidden_states": "cpu"}},
-            "offload.hidden_states",
-            "the offload marks checkpoint inputs through transformers' checkpointing "
-            "layers.",
-        ),
-        (
-            {"kwargs": {"preserve_rng_state": False}},
-            "kwargs",
-            "FSDP's checkpoint wrapper is built without them.",
-        ),
-        (
-            {"reentrant": True},
-            "reentrant: true",
-            "FSDP's checkpoint wrapper is non-reentrant.",
-        ),
-        ({"offload": {"all": "cpu"}}, "offload.all", "this combination is untested."),
-    ],
-)
-def test_fsdp_implementation_supports_only_enabled(block, field, why):
+def test_fsdp_implementation_rejects_reentrant():
     _rejects(
-        {"implementation": "fsdp", **block},
-        f"`activation_checkpointing.{field}` requires `implementation: hf`: {why}",
+        {"implementation": "fsdp", "reentrant": True},
+        "`activation_checkpointing.reentrant: true` requires `implementation: hf`: "
+        "FSDP's checkpoint wrapper is non-reentrant.",
+    )
+
+
+def test_fsdp_implementation_takes_every_other_setting():
+    block = ActivationCheckpointingConfig.model_validate(
+        {
+            "implementation": "fsdp",
+            "reentrant": False,
+            "kwargs": {"every_n_layers": 2, "preserve_rng_state": False},
+            "selective": {"save": ["attention"]},
+            "offload": {"hidden_states": "cpu", "saves": "cpu"},
+        }
+    )
+    assert block.selective.save == ["attention"]
+    assert block.kwargs == {"every_n_layers": 2, "preserve_rng_state": False}
+    assert (
+        ActivationCheckpointingConfig.model_validate(
+            {"implementation": "fsdp", "offload": {"all": "cpu"}}
+        ).offload.all
+        == "cpu"
     )
 
 

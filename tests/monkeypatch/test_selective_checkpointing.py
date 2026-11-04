@@ -1326,9 +1326,13 @@ class TestRegisteredSaves:
             _activation_checkpoint_wrapper_fn,
         )
 
-        assert "context_fn" not in _activation_checkpoint_wrapper_fn().keywords
+        def checkpoint_keywords():
+            wrapped = _activation_checkpoint_wrapper_fn()(torch.nn.Linear(2, 2))
+            return wrapped.checkpoint_fn.keywords
+
+        assert "context_fn" not in checkpoint_keywords()
         selective_checkpointing.register_mandatory_save(ops={"aten::topk"})
-        assert callable(_activation_checkpoint_wrapper_fn().keywords["context_fn"])
+        assert callable(checkpoint_keywords()["context_fn"])
 
 
 class _TopkModule(torch.nn.Module):

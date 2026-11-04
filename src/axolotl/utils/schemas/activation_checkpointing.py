@@ -244,8 +244,8 @@ class ActivationCheckpointingConfig(BaseModel):
         json_schema_extra={
             "description": (
                 "`hf`: transformers' layer checkpointing. `fsdp`: FSDP2's checkpoint "
-                "wrapper (requires fsdp_config; supports no other setting in this "
-                "block)."
+                "wrapper around each decoder layer (requires fsdp_config; "
+                "non-reentrant only)."
             )
         },
     )
@@ -380,45 +380,11 @@ class ActivationCheckpointingConfig(BaseModel):
                 "`activation_checkpointing.offload.all` already offloads each "
                 "checkpointed layer's input; set `offload.hidden_states: none`."
             )
-        if self.implementation == "fsdp":
-            for field, is_set, why in (
-                (
-                    "selective",
-                    self.selective is not None,
-                    "FSDP's checkpoint wrapper applies only plugin-registered saves.",
-                ),
-                (
-                    "offload.hidden_states",
-                    self.offload.hidden_states != "none",
-                    "the offload marks checkpoint inputs through transformers' "
-                    "checkpointing layers.",
-                ),
-                (
-                    "offload.saves",
-                    self.offload.saves != "none",
-                    "FSDP's checkpoint wrapper applies only plugin-registered saves.",
-                ),
-                (
-                    "kwargs",
-                    bool(self.kwargs),
-                    "FSDP's checkpoint wrapper is built without them.",
-                ),
-                (
-                    "reentrant: true",
-                    self.reentrant is True,
-                    "FSDP's checkpoint wrapper is non-reentrant.",
-                ),
-                (
-                    "offload.all",
-                    self.offload.all != "none",
-                    "this combination is untested.",
-                ),
-            ):
-                if is_set:
-                    raise ValueError(
-                        f"`activation_checkpointing.{field}` requires "
-                        f"`implementation: hf`: {why}"
-                    )
+        if self.implementation == "fsdp" and self.reentrant is True:
+            raise ValueError(
+                "`activation_checkpointing.reentrant: true` requires "
+                "`implementation: hf`: FSDP's checkpoint wrapper is non-reentrant."
+            )
         if self.offload.hidden_states != "none" and self.reentrant is None:
             self.reentrant = False
         return self
@@ -568,8 +534,7 @@ def legacy_checkpointing_replacement(
         notes.append(
             "transformers' Trainer rejects both at once, so this config failed at "
             "startup. `{enabled: true, implementation: fsdp}` uses FSDP's checkpoint "
-            "wrapper instead, which supports no other activation_checkpointing "
-            "setting."
+            "wrapper instead."
         )
 
     replacement: dict | bool = block

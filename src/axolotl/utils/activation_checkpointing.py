@@ -10,6 +10,9 @@ calls: on 5.23+ ``activation_checkpointing_enable`` hands off to an overridden
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
 from transformers import PreTrainedModel, TrainingArguments
 
 from axolotl.utils.dict import DictDefault
@@ -92,3 +95,27 @@ def checkpointing_kwargs(cfg) -> dict:
     """`use_reentrant` plus the passthrough kwargs, as TrainingArguments takes them."""
     block = checkpointing_config(cfg)
     return {"use_reentrant": bool(block.reentrant), **(block.get("kwargs") or {})}
+
+
+@dataclass
+class FSDPCheckpointing:
+    """What FSDP2's checkpoint wrapper applies, attached to the model at load."""
+
+    context_fn: Callable | None = None
+    checkpoint_kwargs: dict[str, Any] = field(default_factory=dict)
+    every_n_layers: int = 1
+    offload_inputs: bool = False
+
+
+_FSDP_CHECKPOINTING_ATTR = "_axolotl_fsdp_checkpointing"
+
+
+def set_fsdp_checkpointing(model, options: FSDPCheckpointing) -> None:
+    get_base_model = getattr(model, "get_base_model", None)
+    base = get_base_model() if callable(get_base_model) else model
+    setattr(base, _FSDP_CHECKPOINTING_ATTR, options)
+
+
+def get_fsdp_checkpointing(model) -> FSDPCheckpointing:
+    # PeftModel forwards attribute lookups to the model it wraps
+    return getattr(model, _FSDP_CHECKPOINTING_ATTR, None) or FSDPCheckpointing()

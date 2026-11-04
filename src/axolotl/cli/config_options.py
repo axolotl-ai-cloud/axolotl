@@ -2370,7 +2370,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--activation-checkpointing.implementation",),
         "activation_checkpointing__implementation",
         None,
-        "`hf`: transformers' layer checkpointing. `fsdp`: FSDP2's checkpoint wrapper (requires fsdp_config; supports no other setting in this block).",
+        "`hf`: transformers' layer checkpointing. `fsdp`: FSDP2's checkpoint wrapper around each decoder layer (requires fsdp_config; non-reentrant only).",
     ),
     (
         (

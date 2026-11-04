@@ -168,6 +168,21 @@ class TestGradientCheckpointingConfig:
             "use_reentrant": False
         }
 
+    def test_fsdp_implementation_runs_hidden_states_offload_through_the_trainer(self):
+        training_args_kwargs = _gradient_checkpointing_kwargs(
+            SimpleNamespace(
+                layer_offloading=False,
+                activation_checkpointing={
+                    "enabled": True,
+                    "implementation": "fsdp",
+                    "offload": {"hidden_states": "cpu"},
+                },
+            )
+        )
+
+        assert training_args_kwargs[CHECKPOINTING_ARG] is False
+        assert training_args_kwargs["activation_offloading"] == "hidden_states"
+
     @pytest.mark.parametrize(
         ("implementation", "expected"),
         [

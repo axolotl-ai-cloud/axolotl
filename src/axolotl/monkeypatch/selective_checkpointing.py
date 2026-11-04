@@ -929,7 +929,7 @@ def build_sac_context_fn(
     return context_fn
 
 
-def apply_selective_checkpointing(
+def build_selective_checkpointing(
     model,
     save: list[str] | None = None,
     save_sliding_window: bool = False,
@@ -938,19 +938,12 @@ def apply_selective_checkpointing(
     *,
     save_modules: list[str] | None = None,
     save_matmul_min_k: int | None = None,
-) -> None:
-    """Wrap the model's checkpointing enable method to inject the SAC ``context_fn``.
+) -> Callable:
+    """Install the SAC hooks on ``model`` and return the ``context_fn`` for its policy.
 
-    Wrapping the instance method covers every enable call site (axolotl's model
-    loader, HF Trainer at train() time, PEFT's kbit prep) without placing a
-    non-serializable callable into ``TrainingArguments``. ``save=[]`` with no
-    rules installs a policy that saves only the registered (mandatory/preferred) ops.
+    ``save=[]`` with no rules builds a policy that saves only the registered
+    (mandatory/preferred) ops.
     """
-    enable_name = checkpointing_enable_name(model)
-    orig_enable = getattr(model, enable_name)
-    if getattr(orig_enable, "_axolotl_sac", False):
-        return
-
     save = _normalize_save(save)
     state = SacPolicyState()
     skip_layer_types = (
@@ -988,6 +981,57 @@ def apply_selective_checkpointing(
             save_modules=save_modules,
             save_matmul_min_k=save_matmul_min_k,
         )
+    rules = (
+        f", save_modules={save_modules}, save_matmul_min_k={save_matmul_min_k}"
+        if save_modules or save_matmul_min_k
+        else ""
+    )
+    LOG.info(
+        f"activation_checkpointing.selective enabled: save={save}{rules} "
+        "(eager SAC, non-reentrant)"
+    )
+    return context_fn
+
+
+def sac_checkpoint_kwargs(context_fn: Callable) -> dict:
+    """``torch.utils.checkpoint`` kwargs that apply a SAC ``context_fn``."""
+    kwargs: dict = {"context_fn": context_fn}
+    if _SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS:
+        kwargs["respect_saved_tensors_hooks"] = False
+    return kwargs
+
+
+def apply_selective_checkpointing(
+    model,
+    save: list[str] | None = None,
+    save_sliding_window: bool = False,
+    recompute_layer_types: list[str] | None = None,
+    offload: bool = False,
+    *,
+    save_modules: list[str] | None = None,
+    save_matmul_min_k: int | None = None,
+) -> None:
+    """Wrap the model's checkpointing enable method to inject the SAC ``context_fn``.
+
+    Wrapping the instance method covers every enable call site (axolotl's model
+    loader, HF Trainer at train() time, PEFT's kbit prep) without placing a
+    non-serializable callable into ``TrainingArguments``. ``save=[]`` with no
+    rules installs a policy that saves only the registered (mandatory/preferred) ops.
+    """
+    enable_name = checkpointing_enable_name(model)
+    orig_enable = getattr(model, enable_name)
+    if getattr(orig_enable, "_axolotl_sac", False):
+        return
+
+    context_fn = build_selective_checkpointing(
+        model,
+        save,
+        save_sliding_window,
+        recompute_layer_types,
+        offload,
+        save_modules=save_modules,
+        save_matmul_min_k=save_matmul_min_k,
+    )
 
     def with_sac(checkpointing_kwargs):
         gc_kwargs = dict(checkpointing_kwargs or {})
@@ -1020,11 +1064,3 @@ def apply_selective_checkpointing(
 
     enable_with_sac._axolotl_sac = True
     setattr(model, enable_name, enable_with_sac)
-    rules = (
-        f", save_modules={save_modules}, save_matmul_min_k={save_matmul_min_k}"
-        if save_modules or save_matmul_min_k
-        else ""
-    )
-    LOG.info(
-        f"activation_checkpointing.selective enabled: save={save}{rules} (eager SAC, non-reentrant)"
-    )
