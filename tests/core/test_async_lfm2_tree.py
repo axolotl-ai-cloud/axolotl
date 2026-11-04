@@ -13,6 +13,8 @@ from tree_recurrence import uninstall
 
 from axolotl.monkeypatch.models.tree_packing import packing_support
 
+pytestmark = pytest.mark.usefixtures("restore_attention_registries")
+
 LAYERS = {"layer_types": ["conv", "full_attention", "conv"], "conv_L_cache": 3}
 FAMILIES = {
     "lfm2": ("Lfm2", {"block_auto_adjust_ff_dim": False, **LAYERS}),

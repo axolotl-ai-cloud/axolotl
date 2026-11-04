@@ -23,6 +23,8 @@ from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
 from axolotl.core.trainers.async_grpo.trl_compat import unsampled_fields
 from axolotl.monkeypatch.models.tree_packing import packing_support
 
+pytestmark = pytest.mark.usefixtures("restore_attention_registries")
+
 
 def test_pack_sequences_without_sharing():
     sequences = [np.array([1, 2, 3, 4]), np.array([1, 2, 3, 5])]

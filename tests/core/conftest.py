@@ -1,6 +1,8 @@
-"""Shared fixtures for axolotl.core.builders trainer-builder tests."""
+"""Shared fixtures for axolotl.core tests."""
 
 import pytest
+from transformers import AttentionInterface
+from transformers.masking_utils import AttentionMaskInterface
 
 from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config
@@ -243,3 +245,19 @@ def fixture_tokenizer(base_cfg):
 def fixture_model(base_cfg, tokenizer):
     model, _ = ModelLoader(base_cfg, tokenizer).load()
     return model
+
+
+@pytest.fixture(name="restore_attention_registries")
+def fixture_restore_attention_registries():
+    """Undo attention registrations at teardown. TRL registers whatever
+    ``packing.tree_attention`` is at the time, so an entry made while a test swaps in
+    a CPU stand-in would otherwise serve it to later tests."""
+    mappings = (
+        AttentionInterface._global_mapping,
+        AttentionMaskInterface._global_mapping,
+    )
+    saved = [dict(mapping) for mapping in mappings]
+    yield
+    for mapping, entries in zip(mappings, saved, strict=True):
+        mapping.clear()
+        mapping.update(entries)
