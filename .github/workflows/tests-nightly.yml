@@ -16,7 +16,7 @@ permissions:
 
 env:
   UV_SYSTEM_PYTHON: "1"
-  MODAL_IMAGE_BUILDER_VERSION: "2025.06"
+  MODAL_IMAGE_BUILDER_VERSION: "2026.10"
 
 jobs:
   pre-commit:

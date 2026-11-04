@@ -430,7 +430,7 @@ jobs:
           echo "AXOLOTL_ARGS=" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras }}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
-          echo "MODAL_IMAGE_BUILDER_VERSION=2025.06" >> $GITHUB_ENV
+          echo "MODAL_IMAGE_BUILDER_VERSION=2026.10" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=Dockerfile-uv.jinja" >> $GITHUB_ENV
       - name: Compute deps hash
         run: python cicd/deps_hash.py
