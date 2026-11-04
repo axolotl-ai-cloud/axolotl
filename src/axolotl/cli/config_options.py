@@ -1875,6 +1875,36 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Minimum tokens into completion before placing anchors. Skips anchors too close to the prompt boundary where features are dominated by prompt context.",
     ),
     (
+        ("--mopd.teachers",),
+        "mopd__teachers",
+        None,
+        "Mapping from domain name to its teacher. Each rollout is scored by the teacher named by its row's `domain_field` value.",
+    ),
+    (
+        ("--mopd.domain-field",),
+        "mopd__domain_field",
+        "str",
+        "Dataset column holding each prompt's domain name",
+    ),
+    (
+        ("--mopd.advantage-clip",),
+        "mopd__advantage_clip",
+        "float",
+        "Two-sided clip on the per-token advantage log pi_teacher - log pi_student",
+    ),
+    (
+        ("--mopd.reward-weight",),
+        "mopd__reward_weight",
+        "float",
+        "Weight of the GRPO reward advantage added to the MOPD advantage. 0 means pure distillation (reward_funcs optional).",
+    ),
+    (
+        ("--mopd.timeout",),
+        "mopd__timeout",
+        "float",
+        "Teacher request timeout in seconds",
+    ),
+    (
         ("--qat.activation-dtype",),
         "qat__activation_dtype",
         None,
