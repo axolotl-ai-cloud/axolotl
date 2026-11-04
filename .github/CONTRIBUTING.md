@@ -294,7 +294,7 @@ ubiquitous keys, declare the key so the selector can narrow instead of running
 everything:
 
 ```python
-__ci_config_keys__ = ("activation_offloading",)
+__ci_config_keys__ = ("activation_checkpointing",)
 ```
 
 The selector then picks exactly the tests that set any declared key. A declared

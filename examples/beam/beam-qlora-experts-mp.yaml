@@ -57,9 +57,9 @@ train_on_inputs: false
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 
 # flash_attention_2: transformers>=5.18.0 fixed the FA2 version mapping for this
 # arch; FA2 gives the varlen path the hybrid sliding-window attention wants.

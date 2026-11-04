@@ -147,7 +147,7 @@ description: Frequently asked questions
 
 **Q: `ValueError("Backward pass should have cleared tracker of all tensors")`
 
-> A: This may happen due to edge cases in the OffloadActivations context manager. `activation_offloading: legacy` is now an alias of `true`, so it is no longer a workaround; try `activation_offloading: hidden_states` instead, and please report the config that triggers it.
+> A: This may happen due to edge cases in the OffloadActivations context manager. Try `activation_checkpointing.offload.hidden_states: cpu` instead of `offload.all`, and please report the config that triggers it.
 
 **Q: `Error parsing tool_calls arguments as JSON.`
 

@@ -63,6 +63,9 @@ save_steps: 10
 save_total_limit: 3
 
 fsdp_version: 2
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 fsdp_config:
   # Full finetune of 8B sharded over 2 GPUs is ~48GB each before activations.
   # Set this to true if you have less than 80GB per GPU.
@@ -72,6 +75,5 @@ fsdp_config:
   transformer_layer_cls_to_wrap: Qwen3DecoderLayer
   state_dict_type: FULL_STATE_DICT
   reshard_after_forward: true
-  activation_checkpointing: true
 
 special_tokens:

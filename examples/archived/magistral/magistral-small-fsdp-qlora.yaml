@@ -56,7 +56,9 @@ learning_rate: 0.0002
 bf16: auto
 tf32: false
 
-gradient_checkpointing:
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 resume_from_checkpoint:
 logging_steps: 1
 attn_implementation: flash_attention_2
@@ -71,6 +73,5 @@ fsdp:
 fsdp_config:
   fsdp_state_dict_type: FULL_STATE_DICT
   fsdp_transformer_layer_cls_to_wrap: MistralDecoderLayer
-  fsdp_activation_checkpointing: true
 
 # save_first_step: true  # uncomment this to validate checkpoint saving works with your config

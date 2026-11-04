@@ -375,9 +375,9 @@ datasets:
     type: llama3.ultra
     split: train
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: true
+activation_checkpointing:
+  enabled: true
+  reentrant: true
 ```
 
 KTO supports the following types with the following dataset format:
@@ -810,7 +810,7 @@ micro_batch_size: 2
 max_steps: 500
 learning_rate: 1e-5
 bf16: true
-gradient_checkpointing: true
+activation_checkpointing: true
 ```
 
 ```bash
@@ -831,8 +831,8 @@ fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Qwen2DecoderLayer
   reshard_after_forward: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  reentrant: false
 ```
 
 ```bash
@@ -1055,9 +1055,9 @@ datasets:
     split: train[:1%]
 
 attn_implementation: flex_attention   # Strided mode uses flex_attention
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: true    # Required for flex_attention
+activation_checkpointing:
+  enabled: true
+  reentrant: true    # Required for flex_attention
 ```
 
 ```bash
@@ -1326,7 +1326,7 @@ gradient_accumulation_steps: 4
 learning_rate: 5.0e-6
 num_epochs: 1
 bf16: true
-gradient_checkpointing: true
+activation_checkpointing: true
 output_dir: ./outputs/qwen2.5-vl-dpo
 ```
 
@@ -1401,7 +1401,7 @@ gradient_accumulation_steps: 1
 learning_rate: 5.0e-6
 num_epochs: 1
 bf16: true
-gradient_checkpointing: true
+activation_checkpointing: true
 output_dir: ./outputs/qwen2.5-vl-grpo
 ```
 

@@ -37,5 +37,5 @@ learning_rate: 1.0e-5
 optimizer: adamw_torch
 lr_scheduler: cosine
 bf16: true
-gradient_checkpointing: true    # compose with axolotl memory opts (tiled_mlp, CCE, offload)
+activation_checkpointing: true  # compose with axolotl memory opts (tiled_mlp, CCE, offload)
 num_epochs: 1

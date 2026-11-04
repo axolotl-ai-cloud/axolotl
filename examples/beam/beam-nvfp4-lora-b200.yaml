@@ -96,9 +96,9 @@ max_grad_norm: 1.0
 bf16: true
 tf32: true
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 # Flash Attention 4 (CuTe DSL) shares the image's cutlass-dsl 4.8 with quack-kernels 0.6.5
 attn_implementation: flash_attention_4
 # fused LoRA kernels: the QKV/O patch keeps Beam's gate and norms in place (A/B: identical losses)

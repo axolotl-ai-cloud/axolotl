@@ -60,6 +60,9 @@ warmup_ratio: 0.1
 weight_decay: 0.0
 fsdp_version: 2
 
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 fsdp_config:
   offload_params: false
   cpu_ram_efficient_loading: true
@@ -67,7 +70,6 @@ fsdp_config:
   transformer_layer_cls_to_wrap: Gemma3DecoderLayer
   state_dict_type: FULL_STATE_DICT
   reshard_after_forward: true
-  activation_checkpointing: true
 
 special_tokens:
 

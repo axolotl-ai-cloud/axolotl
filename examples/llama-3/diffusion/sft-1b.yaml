@@ -39,7 +39,7 @@ learning_rate: 1e-5
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
+activation_checkpointing: true
 resume_from_checkpoint:
 attn_implementation: sdpa
 

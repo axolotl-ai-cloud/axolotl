@@ -55,7 +55,7 @@ group_by_length: false
 bf16: auto
 tf32: true
 
-gradient_checkpointing: false
+activation_checkpointing: false
 resume_from_checkpoint:
 logging_steps: 1
 

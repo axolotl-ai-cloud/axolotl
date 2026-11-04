@@ -48,6 +48,9 @@ saves_per_epoch: 1
 weight_decay: 0.0
 
 fsdp_version: 2
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 fsdp_config:
   offload_params: false
   cpu_ram_efficient_loading: false
@@ -55,4 +58,3 @@ fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Mistral4DecoderLayer
   reshard_after_forward: true
-  activation_checkpointing: true

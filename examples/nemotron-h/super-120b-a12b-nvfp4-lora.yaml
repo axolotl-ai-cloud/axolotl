@@ -64,7 +64,7 @@ learning_rate: 1e-4
 bf16: true
 tf32: true
 
-gradient_checkpointing: true
+activation_checkpointing: true
 logging_steps: 1
 flash_attention: true
 
