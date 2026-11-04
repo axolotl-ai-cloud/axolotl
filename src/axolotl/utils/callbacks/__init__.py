@@ -526,19 +526,20 @@ def causal_lm_bench_eval_callback_factory(trainer: Trainer, tokenizer):
                                 **prompt_encoding, generation_config=generation_config
                             )
 
+                            # Every row of the output starts with the *padded*
+                            # prompt, and re-tokenizing the decoded prompt may have
+                            # added special tokens, so the number of leading
+                            # positions to drop is the width of this batch rather
+                            # than the length of any one unpadded prompt.
+                            prompt_width = prompt_encoding["input_ids"].shape[1]
+
                             del prompt_encoding
 
                         prediction_all_tokens = predictions["sequences"].cpu().tolist()
-                        prediction_without_prompt_tokens_list = []
-                        for prompt_token_ids, prediction_tokens in zip(
-                            prompt_token_ids_list, prediction_all_tokens, strict=False
-                        ):
-                            prediction_without_prompt_tokens = prediction_tokens[
-                                len(prompt_token_ids) :
-                            ]
-                            prediction_without_prompt_tokens_list.append(
-                                prediction_without_prompt_tokens
-                            )
+                        prediction_without_prompt_tokens_list = [
+                            prediction_tokens[prompt_width:]
+                            for prediction_tokens in prediction_all_tokens
+                        ]
 
                         predicted_texts = tokenizer.batch_decode(
                             prediction_without_prompt_tokens_list,
