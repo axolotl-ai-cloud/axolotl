@@ -237,6 +237,23 @@ def _max_lora_rank(cfg) -> int | None:
     return max((r for r in ranks if r), default=None)
 
 
+def _max_loras(cfg) -> int:
+    trl = cfg.trl
+    async_grpo = bool(trl and trl.async_prefetch) and cfg.rl in ("grpo", "gdpo", "ebft")
+    if not async_grpo:
+        return VllmServeArguments.max_loras
+    from trl.experimental.async_grpo.async_grpo_config import AsyncGRPOConfig
+
+    max_staleness = trl.max_staleness
+    if max_staleness is None:
+        max_staleness = AsyncGRPOConfig.__dataclass_fields__["max_staleness"].default
+    # Async GRPO keeps an adapter per policy version a queued rollout may still name,
+    # and loads the next one before unloading the oldest. NeMo Gym agents address
+    # the policy by a fixed name, an alias that takes one more slot.
+    alias = 1 if cfg.nemo_gym_enabled and cfg.nemo_gym_multi_turn else 0
+    return max(VllmServeArguments.max_loras, max_staleness + 2 + alias)
+
+
 def do_vllm_serve(
     config: Union[Path, str],
     cli_args: dict,
@@ -286,6 +303,7 @@ def do_vllm_serve(
         enable_reasoning=cli_or_cfg_flag("enable_reasoning"),
         enable_lora=bool(getattr(cfg.trl, "vllm_lora_sync", False)),
         max_lora_rank=_max_lora_rank(cfg) or VllmServeArguments.max_lora_rank,
+        max_loras=_max_loras(cfg),
         worker_extension_cls=worker_extension_cls,
     )
 

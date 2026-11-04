@@ -19,6 +19,7 @@ from axolotl.monkeypatch.models.mamba_utils import (
     is_cp_active,
     patch_model_forward_seq_idx,
 )
+from axolotl.monkeypatch.models.nemotron_h.modeling import guard_nemotron_h_fused_scan
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -36,11 +37,19 @@ def patch_granitemoehybrid_modeling_packing():
         )
         return
 
-    ensure_mamba_kernels_loaded(mod)
-
     GraniteMoeHybridModel = mod.GraniteMoeHybridModel
     GraniteMoeHybridMambaLayer = mod.GraniteMoeHybridMambaLayer
 
+    if not hasattr(GraniteMoeHybridMambaLayer, "cuda_kernels_forward"):
+        # transformers >= 5.20: one forward over module-level kernels, which take
+        # seq_idx through kwargs (and raise on it without mamba-ssm); the same
+        # Mamba2 layout as Nemotron-H's, so it shares its fused-kernel guard
+        patch_model_forward_seq_idx(GraniteMoeHybridModel)
+        guard_nemotron_h_fused_scan(mod)
+        LOG.info("Applied Granite MoE Hybrid sample packing patch (seq_idx)")
+        return
+
+    ensure_mamba_kernels_loaded(mod)
     patch_model_forward_seq_idx(GraniteMoeHybridModel)
 
     # Minimal wrapper to force slow path when CP is active.

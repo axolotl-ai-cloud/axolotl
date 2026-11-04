@@ -11,7 +11,10 @@ import torch
 import torch.distributed as dist
 from torch import nn
 
-from axolotl.monkeypatch.accelerate.fsdp2_grouping import carve_trainable_dtype
+from axolotl.monkeypatch.accelerate.fsdp2_grouping import (
+    carve_trainable_dtype,
+    output_head_modules,
+)
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.fp32_norms import get_fp32_norm_patterns, shard_norms_fp32
 from axolotl.utils.logging import get_logger
@@ -854,9 +857,10 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     from axolotl.utils.lora_tying import tied_lora_no_wrap_modules
 
     tied_no_wrap = tied_lora_no_wrap_modules(model)
+    head_no_wrap = output_head_modules(model)
     # Modules the loop leaves unwrapped read their parameters directly; a unit of their own
     # would never gather them, so the dtype carve-out must not create one either.
-    no_carve = set(nf4_unwrapped_children) | set(tied_no_wrap)
+    no_carve = set(nf4_unwrapped_children) | set(tied_no_wrap) | head_no_wrap
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     fp32_norm_patterns = get_fp32_norm_patterns(model)
@@ -910,7 +914,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
         if auto_wrap_policy is not None:
             for module in get_module_children_bottom_up(model)[:-1]:
-                if module in nf4_unwrapped_children or module in tied_no_wrap:
+                if (
+                    module in nf4_unwrapped_children
+                    or module in tied_no_wrap
+                    or module in head_no_wrap
+                ):
                     continue
                 if isinstance(
                     module,

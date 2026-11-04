@@ -29,6 +29,10 @@ from axolotl.model_support import (
     resolve_model_support,
     run_model_support_hooks,
 )
+from axolotl.monkeypatch.models.recurrent_support import (
+    packs_async_grpo_rollouts,
+    trains_on_packed_rows,
+)
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -142,6 +146,7 @@ class PatchManager:
         self._apply_self_attention_lora_patch()
         self._apply_model_support_registrations()
         self._apply_model_support_pre_load_hook()
+        self._apply_causal_conv1d_hub_patch()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -279,6 +284,16 @@ class PatchManager:
         self._apply_scaling_softmax_patch(model)
         self._apply_fp8_attention_patches(model)
         self._apply_tiled_mlp_post_load(model)
+        self._apply_tree_packing(model)
+
+    def _apply_tree_packing(self, model: PreTrainedModel):
+        """Make a recurrent model's mixers follow async GRPO's prefix trie."""
+        if not packs_async_grpo_rollouts(self.cfg):
+            return
+        from axolotl.monkeypatch.models.tree_packing import packing_support
+
+        support = packing_support(model)
+        LOG.info(f"Async GRPO packs {support.mode}: {support.reason}")
 
     def _apply_gemma4_loss_kwargs(self):
         # Flip accepts_loss_kwargs True so the Trainer normalizes loss by
@@ -543,6 +558,15 @@ class PatchManager:
                 sorted(PatchManager._FUSED_ATTN_KERNEL_SUPPORTED),
             )
 
+    def _apply_causal_conv1d_hub_patch(self):
+        """Short causal convs on the hub kernel when the package is missing."""
+        if getattr(self.cfg, "use_kernels", None):
+            # kernelize maps these through transformers' own hub mapping
+            return
+        from axolotl.monkeypatch.models.causal_conv1d_hub import patch_causal_conv1d
+
+        patch_causal_conv1d(self.cfg.model_config_type)
+
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
         self._warn_if_fused_attn_unsupported(self.cfg)
@@ -562,12 +586,17 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
-        # packed rows (multipack) and flattened batches both mark document
+        # packed rows (multipack, async GRPO) and flattened batches mark document
         # boundaries with position_ids restarting at 0; recurrent mixers need
         # that threaded into their kernels as seq_idx / cu_seqlens.
-        packed_boundaries_needed = bool(
-            self.cfg.sample_packing or getattr(self.cfg, "batch_flattening", False)
-        )
+        packed_boundaries_needed = trains_on_packed_rows(self.cfg)
+        if packs_async_grpo_rollouts(self.cfg):
+            from axolotl.monkeypatch.models.tree_packing import hooked_model_types
+
+            # tree-recurrence's hooks follow async GRPO's trie through the stock
+            # forwards, which the packing patches would replace
+            if self.cfg.model_config_type in hooked_model_types():
+                packed_boundaries_needed = False
 
         if self.cfg.model_config_type == "nemotron_h":
             from axolotl.monkeypatch.models.nemotron_h.modeling import (
