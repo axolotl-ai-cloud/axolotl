@@ -1189,7 +1189,7 @@ class RLValidationMixin:
             # don't have enough info to validate anything. Let TRL's own
             # init handle the default-vs-batch interaction.
             return data
-        if num_gen < 2:
+        if num_gen < 2 and not data.get("mopd"):
             raise ValueError(
                 f"GRPO requires `trl.num_generations >= 2` (got {num_gen}). "
                 "With num_generations=1, every group has zero advantage and "
@@ -2768,6 +2768,42 @@ class GRPOVllmValidationMixin:
         return self
 
 
+class MOPDValidationMixin:
+    """Validation for Multi-teacher On-Policy Distillation (MOPD)."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_mopd(cls, data):
+        if not data.get("mopd"):
+            return data
+        if data.get("rl") != "grpo":
+            raise ValueError("`mopd` requires `rl: grpo`.")
+        trl_cfg = data.get("trl") or {}
+        unsupported = [
+            name
+            for name, enabled in (
+                ("trl.async_prefetch", trl_cfg.get("async_prefetch")),
+                ("trl.use_data_producer", trl_cfg.get("use_data_producer")),
+                ("trl.use_liger_loss", trl_cfg.get("use_liger_loss")),
+                (
+                    "context_parallel_size > 1",
+                    (data.get("context_parallel_size") or 1) > 1,
+                ),
+            )
+            if enabled
+        ]
+        if unsupported:
+            raise ValueError(f"`mopd` does not support: {', '.join(unsupported)}.")
+        # vLLM teacher prompt logprobs are untempered; student logps are divided by
+        # the sampling temperature, so the per-token KL is only consistent at 1.0.
+        temperature = trl_cfg.get("temperature")
+        if temperature is not None and temperature != 1.0:
+            raise ValueError(
+                f"`mopd` requires `trl.temperature: 1.0` (got {temperature})."
+            )
+        return data
+
+
 class ValidationMixin(
     DatasetValidationMixin,
     AttentionValidationMixin,
@@ -2783,5 +2819,6 @@ class ValidationMixin(
     DistributedValidationMixin,
     EBFTValidationMixin,
     GRPOVllmValidationMixin,
+    MOPDValidationMixin,
 ):
     """Full validation mixin for Axolotl configuration."""

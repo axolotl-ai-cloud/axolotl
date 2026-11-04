@@ -99,6 +99,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls = GRPOStrategy.get_trainer_class(
                 context_parallel=self.cfg.context_parallel_size > 1,
                 async_grpo=async_grpo,
+                mopd=bool(self.cfg.mopd),
             )
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
@@ -204,7 +205,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
                 )
             )
             training_args_cls = GRPOStrategy.get_training_args_class(
-                async_grpo=async_grpo
+                async_grpo=async_grpo, mopd=bool(self.cfg.mopd)
             )
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()

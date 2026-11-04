@@ -10,7 +10,12 @@ from huggingface_hub import snapshot_download
 from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
 from trl.trainer.grpo_trainer import RewardFunc
 
-from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOConfig
+from axolotl.core.trainers.grpo.args import (
+    AxolotlAsyncGRPOConfig,
+    AxolotlGRPOConfig,
+    AxolotlMOPDConfig,
+)
+from axolotl.core.trainers.grpo.mopd import AxolotlMOPDTrainer, zero_reward
 from axolotl.core.trainers.grpo.trainer import (
     AxolotlAsyncGRPOTrainer,
     AxolotlGRPOContextParallelTrainer,
@@ -34,6 +39,7 @@ class GRPOStrategy:
         context_parallel: bool = False,
         async_grpo: bool = False,
         sequence_parallel: bool | None = None,
+        mopd: bool = False,
     ) -> (
         type[AxolotlGRPOTrainer]
         | type[AxolotlGRPOContextParallelTrainer]
@@ -51,6 +57,8 @@ class GRPOStrategy:
                 "context_parallel and async_grpo cannot both be enabled. "
                 "Disable one of context_parallel_size > 1 or async_prefetch/use_data_producer."
             )
+        if mopd:
+            return AxolotlMOPDTrainer
         if context_parallel:
             return AxolotlGRPOContextParallelTrainer
         if async_grpo:
@@ -59,8 +67,10 @@ class GRPOStrategy:
 
     @classmethod
     def get_training_args_class(
-        cls, async_grpo: bool = False
+        cls, async_grpo: bool = False, mopd: bool = False
     ) -> type[AxolotlGRPOConfig] | type[AxolotlAsyncGRPOConfig]:
+        if mopd:
+            return AxolotlMOPDConfig
         if async_grpo:
             return AxolotlAsyncGRPOConfig
         return AxolotlGRPOConfig
@@ -272,6 +282,8 @@ class GRPOStrategy:
             for reward_func_fqn in cfg.trl.reward_funcs:
                 reward_funcs.append(cls.get_reward_func(reward_func_fqn))
             trainer_args.append(reward_funcs)
+        elif cfg.mopd:
+            trainer_args.append([zero_reward])
 
         return trainer_args
 
@@ -284,6 +296,8 @@ class GRPOStrategy:
             )
         if cfg.trl and cfg.trl.rollout_func:
             trainer_kwargs["rollout_func"] = cls.get_rollout_func(cfg.trl.rollout_func)
+        if cfg.mopd:
+            trainer_kwargs["mopd_config"] = cfg.mopd
 
         return trainer_kwargs
 
