@@ -1,11 +1,16 @@
 """GPU check: Gated DeltaNet trees run on TRL's Triton kernels (``patch_tree_gdn``),
-which async GRPO's packing picks, score every sample as it scores alone."""
+which async GRPO's packing picks, score every sample as it scores alone.
+
+TRL's own TestTreePackingParity checks those kernels' parity on its Qwen3.5 models,
+so this end-to-end run through axolotl's packing_support is a slow test.
+"""
 
 import pytest
 import torch
 
 pytestmark = [
     pytest.mark.gpu,
+    pytest.mark.slow,
     pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required"),
 ]
 
