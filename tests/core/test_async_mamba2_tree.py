@@ -13,6 +13,8 @@ from tree_recurrence import uninstall
 
 from axolotl.monkeypatch.models.tree_packing import packing_support
 
+pytestmark = pytest.mark.usefixtures("restore_attention_registries")
+
 
 def _segments(seq_idx, tokens):
     if seq_idx is None:

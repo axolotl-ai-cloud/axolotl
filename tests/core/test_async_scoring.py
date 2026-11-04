@@ -64,7 +64,7 @@ def tokenizer():
 
 
 @pytest.fixture(autouse=True)
-def _cpu_tree_attention(monkeypatch):
+def _cpu_tree_attention(monkeypatch, restore_attention_registries):
     from accelerate.state import PartialState
 
     PartialState()
