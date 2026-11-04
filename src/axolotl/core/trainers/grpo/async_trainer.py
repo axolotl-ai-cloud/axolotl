@@ -96,6 +96,11 @@ try:
 except ImportError:
     _fused_selective_log_softmax = None
 
+from axolotl.core.trainers.grpo.routing_replay import (
+    RoutingReplay,
+    capturing_client,
+    pad_routed_experts,
+)
 from axolotl.monkeypatch.lora_merge_aware import merge_aware_vllm_sync
 from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.utils.logging import get_logger
@@ -181,6 +186,13 @@ class AsyncGRPOConfig(GRPOConfig):
     vllm_importance_sampling_cap: float = field(
         default=3.0,
         metadata={"help": "Cap C for IS ratio clipping/masking."},
+    )
+
+    routing_replay: bool = field(
+        default=False,
+        metadata={
+            "help": "Rollout Routing Replay (R3): force vLLM's MoE expert choices in training forwards."
+        },
     )
 
     # --- Off-policy sequence mask (OPSM) ---
@@ -424,10 +436,10 @@ class AsyncDataProducer:
             _dp_logger.info(
                 f"AsyncDataProducer: sync warmup rollout (remaining={self._warmup_remaining})"
             )
-            return self._inner.produce(model, global_step, **kwargs)
+            return self._produce_sync(model, global_step, **kwargs)
 
         if not self._initialized:
-            dataset = self._inner.produce(model, global_step, **kwargs)
+            dataset = self._produce_sync(model, global_step, **kwargs)
             bg_kwargs = {**kwargs, **self._background_kwargs}
             # With FSDP (multi-process), only submit BG tasks on rank 0.
             # Non-rank-0 processes will receive data via broadcast.
@@ -457,6 +469,19 @@ class AsyncDataProducer:
             self._executor.submit(self._locked_produce, model, next_step, **bg_kwargs)
         )
         return dataset
+
+    def _produce_sync(self, model: Any, global_step: int, **kwargs) -> Dataset:
+        trainer = getattr(self._inner, "_trainer", None)
+        if getattr(trainer, "_routing_replay", None) is None:
+            return self._inner.produce(model, global_step, **kwargs)
+        # Only the background generation path returns vLLM's routed experts.
+        kwargs = {**kwargs, **self._background_kwargs}
+        if (self._num_processes or 1) > 1:
+            kwargs["_rank0_only"] = True
+            return self._broadcast_dataset(
+                self._inner.produce(model, global_step, **kwargs)
+            )
+        return self._inner.produce(model, global_step, **kwargs)
 
     def _broadcast_dataset(self, dataset) -> Dataset:
         """Broadcast a prefetched dataset from rank 0 to all ranks (main thread).
@@ -840,6 +865,7 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
     instead of ``GRPOTrainer``.
     """
 
+    _routing_replay: RoutingReplay | None = None
     # Fixed adapter name re-pointed at each LoRA sync; set by the NeMo Gym plugin.
     _vllm_lora_alias: str | None = None
 
@@ -902,6 +928,12 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
         # extreme values that accumulate at unattended positions).
         self._zero_pad_embedding_for_fp8()
 
+        self._routing_replay = (
+            RoutingReplay(self.model)
+            if getattr(self.args, "routing_replay", False)
+            else None
+        )
+
         # Ensure custom attributes exist (stock GRPOTrainer.__init__ may not set them).
         for attr, cfg_key, default in [
             (
@@ -937,6 +969,23 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
         if self.args.async_prefetch and self.data_producer is None:
             # Legacy path: direct _prepare_inputs override without data producer
             self._setup_async()
+
+    def _replaying(self, routed_experts):
+        if self._routing_replay is None:
+            return nullcontext()
+        if routed_experts is None and self.model.training:
+            raise RuntimeError("routing_replay: rollout has no routed_experts")
+        return self._routing_replay.replay(routed_experts)
+
+    def training_step(self, *args, **kwargs):
+        try:
+            return super().training_step(*args, **kwargs)
+        finally:
+            if self._routing_replay is not None:
+                self._routing_replay.tokens = None
+                rate = self._routing_replay.pop_agreement()
+                if rate is not None:
+                    self._metrics["train"]["routing_replay/agreement"].append(rate)
 
     def _create_data_producer(self, args, train_dataset):
         """Create and return the GRPODataProducer (possibly wrapped in AsyncDataProducer)."""
@@ -1491,8 +1540,11 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
         # Call vLLM directly (no collectives)
         from trl.data_utils import is_conversational
 
+        client = vg.vllm_client
+        if self._routing_replay is not None:
+            client = capturing_client(client)
         if is_conversational({"prompt": unique_prompts[0]}):
-            output = vg.vllm_client.chat(
+            output = client.chat(
                 messages=unique_prompts,
                 **sampling_params,
                 chat_template_kwargs=self.chat_template_kwargs,
@@ -1500,7 +1552,11 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
                 chat_template=getattr(self, "chat_template", None),
             )
         else:
-            output = vg.vllm_client.generate(prompts=unique_prompts, **sampling_params)
+            output = client.generate(prompts=unique_prompts, **sampling_params)
+        if self._routing_replay is not None:
+            output["routed_experts"] = client.session.routes_for(
+                output["completion_ids"]
+            )
 
         # vLLM returns 1 prompt_ids per unique prompt, but num_generations completion_ids.
         # Duplicate prompt_ids to match completions (one per generation).
@@ -1558,6 +1614,15 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
             inputs: list of dicts (one per sample), as yielded by the DataLoader
                     with ``identity`` collate_fn.
         """
+        if self._routing_replay is not None:
+            if self.rollout_func is not None or self.tools:
+                raise ValueError(
+                    "trl.routing_replay does not support rollout_func or tools"
+                )
+            if not rank0_only and self.accelerator.num_processes > 1:
+                raise ValueError(
+                    "trl.routing_replay with multiple processes needs rank-0 rollouts"
+                )
         device = self.accelerator.device
 
         prompts = [x["prompt"] for x in inputs]
@@ -1585,7 +1650,11 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
 
         # --- Generate completions ---
         # rank0_only (FSDP): call vLLM directly without cross-rank collectives
-        generate = self._generate_rank0_only if rank0_only else self._generate
+        generate = (
+            self._generate_rank0_only
+            if rank0_only or self._routing_replay is not None
+            else self._generate
+        )
         (
             prompt_ids_list,
             completion_ids_list,
@@ -1641,6 +1710,17 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
             tool_mask = pad(tool_mask, padding_value=1, padding_side="right")
         else:
             tool_mask = None
+
+        routed_experts = (
+            extra_fields.pop("routed_experts", None) if extra_fields else None
+        )
+        if routed_experts is not None:
+            routed_experts = pad_routed_experts(
+                routed_experts,
+                [len(ids) for ids in prompt_ids_list],
+                prompt_ids.size(1),
+                completion_ids.size(1),
+            )
 
         # --- Mask truncated completions ---
         if self.mask_truncated_completions:
@@ -1729,6 +1809,8 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
         }
         if sampling_per_token_logps is not None:
             output["sampling_per_token_logps"] = sampling_per_token_logps
+        if routed_experts is not None:
+            output["routed_experts"] = routed_experts
         if tool_mask is not None:
             output["tool_mask"] = tool_mask
         if images is not None:
@@ -1893,26 +1975,29 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
                 self.use_vllm
                 and getattr(self, "vllm_importance_sampling_correction", False)
             ):
-                if can_flatten:
-                    old_per_token_logps = self._get_per_token_logps_flattened(
-                        self.model,
-                        prompt_completion_ids,
-                        attention_mask,
-                        logits_to_keep,
-                        batch_size=logprob_batch_size,
-                        prompt_mask=prompt_mask,
-                    )
-                else:
-                    old_per_token_logps, _, _ = self._get_per_token_logps_and_entropies(
-                        self.model,
-                        prompt_completion_ids,
-                        attention_mask,
-                        logits_to_keep,
-                        logprob_batch_size,
-                        num_images=num_images,
-                        num_tiles=num_tiles,
-                        **forward_kwargs,
-                    )
+                with self._replaying(data.get("routed_experts")):
+                    if can_flatten:
+                        old_per_token_logps = self._get_per_token_logps_flattened(
+                            self.model,
+                            prompt_completion_ids,
+                            attention_mask,
+                            logits_to_keep,
+                            batch_size=logprob_batch_size,
+                            prompt_mask=prompt_mask,
+                        )
+                    else:
+                        old_per_token_logps, _, _ = (
+                            self._get_per_token_logps_and_entropies(
+                                self.model,
+                                prompt_completion_ids,
+                                attention_mask,
+                                logits_to_keep,
+                                logprob_batch_size,
+                                num_images=num_images,
+                                num_tiles=num_tiles,
+                                **forward_kwargs,
+                            )
+                        )
                 data["old_per_token_logps"] = old_per_token_logps
             else:
                 old_per_token_logps = None
@@ -2265,26 +2350,30 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
                 self.use_vllm
                 and getattr(self, "vllm_importance_sampling_correction", False)
             ):
-                if can_flatten:
-                    old_logps = self._get_per_token_logps_flattened(
-                        self.model,
-                        prompt_completion_ids,
-                        attention_mask,
-                        logits_to_keep,
-                        batch_size=logprob_batch_size,
-                        prompt_mask=chunk_prompt_mask,
-                    )
-                else:
-                    old_logps, _, _ = self._get_per_token_logps_and_entropies(
-                        self.model,
-                        prompt_completion_ids,
-                        attention_mask,
-                        logits_to_keep,
-                        logprob_batch_size,
-                        num_images=num_images,
-                        num_tiles=num_tiles,
-                        **forward_kwargs,
-                    )
+                routed = data.get("routed_experts")
+                with self._replaying(
+                    routed[s_start:s_end] if routed is not None else None
+                ):
+                    if can_flatten:
+                        old_logps = self._get_per_token_logps_flattened(
+                            self.model,
+                            prompt_completion_ids,
+                            attention_mask,
+                            logits_to_keep,
+                            batch_size=logprob_batch_size,
+                            prompt_mask=chunk_prompt_mask,
+                        )
+                    else:
+                        old_logps, _, _ = self._get_per_token_logps_and_entropies(
+                            self.model,
+                            prompt_completion_ids,
+                            attention_mask,
+                            logits_to_keep,
+                            logprob_batch_size,
+                            num_images=num_images,
+                            num_tiles=num_tiles,
+                            **forward_kwargs,
+                        )
                 if "old_per_token_logps" not in data:
                     total = len(data["prompt_ids"])
                     data["old_per_token_logps"] = torch.zeros(
@@ -2791,6 +2880,8 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
 
             # The only remaining per-chunk sync: the number of valid tokens.
             flat_idx = chunk_mask.reshape(-1).nonzero(as_tuple=True)[0]
+            if self._routing_replay is not None:
+                self._routing_replay.select(chunk_start, chunk_end, flat_idx)
             flat_ids = chunk_ids.reshape(-1)[flat_idx].unsqueeze(0)
             flat_pos = (flat_idx % L).unsqueeze(0)
 
@@ -2875,6 +2966,8 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
 
             # The only remaining per-chunk sync: the number of valid tokens.
             flat_idx = chunk_mask.reshape(-1).nonzero(as_tuple=True)[0]
+            if self._routing_replay is not None:
+                self._routing_replay.select(chunk_start, chunk_end, flat_idx)
             flat_ids = chunk_ids.reshape(-1)[flat_idx].unsqueeze(0)
             flat_pos = (flat_idx % L).unsqueeze(0)
 
@@ -2986,6 +3079,8 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
                 end = min(start + batch_size, input_ids.size(0))
                 input_ids_batch = input_ids[start:end]
                 attention_mask_batch = attention_mask[start:end]
+                if self._routing_replay is not None:
+                    self._routing_replay.select(start, end)
 
                 # Build model inputs
                 model_inputs = {
@@ -3176,30 +3271,31 @@ class AsyncGRPOTrainer(LoraMergeCheckMixin, GRPOTrainer):
             and not self.aux_loss_enabled
         )
 
-        if can_flatten:
-            per_token_logps, entropies = (
-                self._get_per_token_logps_and_entropies_flattened(
-                    model,
-                    input_ids,
-                    attention_mask,
-                    logits_to_keep,
-                    prompt_mask=prompt_mask,
-                    compute_entropy=True,
+        with self._replaying(inputs.get("routed_experts")):
+            if can_flatten:
+                per_token_logps, entropies = (
+                    self._get_per_token_logps_and_entropies_flattened(
+                        model,
+                        input_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        prompt_mask=prompt_mask,
+                        compute_entropy=True,
+                    )
                 )
-            )
-            aux_loss = None
-        else:
-            per_token_logps, entropies, aux_loss = (
-                self._get_per_token_logps_and_entropies(
-                    model,
-                    input_ids,
-                    attention_mask,
-                    logits_to_keep,
-                    compute_entropy=True,
-                    compute_aux_loss=self.aux_loss_enabled,
-                    **forward_kwargs,
+                aux_loss = None
+            else:
+                per_token_logps, entropies, aux_loss = (
+                    self._get_per_token_logps_and_entropies(
+                        model,
+                        input_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        compute_entropy=True,
+                        compute_aux_loss=self.aux_loss_enabled,
+                        **forward_kwargs,
+                    )
                 )
-            )
         if self.top_entropy_quantile < 1.0:
             entropy_mask = self.get_high_entropy_mask(
                 entropies, mask, 1 - self.top_entropy_quantile

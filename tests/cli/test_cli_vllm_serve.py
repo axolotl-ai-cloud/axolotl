@@ -180,6 +180,13 @@ def test_legacy_worker_extension_dropped(
     assert "--worker-extension-cls" not in calls[0][1]
 
 
+@pytest.mark.parametrize("routing_replay", [True, False])
+def test_native_routing_replay_flag(cli_runner, tmp_path, native_serve, routing_replay):
+    calls = native_serve(trl={"routing_replay": routing_replay})
+    _run(cli_runner, tmp_path)
+    assert ("--enable-return-routed-experts" in calls[0][1]) is routing_replay
+
+
 def test_native_reasoning_parser_forwarded(cli_runner, tmp_path, native_serve):
     calls = native_serve(vllm={"reasoning_parser": "qwen3", "enable_reasoning": True})
     _run(cli_runner, tmp_path)
