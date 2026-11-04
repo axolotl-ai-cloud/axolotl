@@ -440,6 +440,41 @@ Use `token` level IS. Sequence-level has numerical issues with Liger's chunked c
 For detailed coverage of IS modes (`token_mask`, `token_truncate`, etc.), capping, and bias-corrected KL, see [vLLM Serving — IS Correction](vllm_serving.qmd#sec-weight-sync).
 
 
+## Multi-Teacher On-Policy Distillation (MOPD)
+
+[MOPD](https://arxiv.org/abs/2606.30406) merges several domain RL teachers into one student. The student generates its own rollouts. Each rollout goes to the teacher for its prompt's domain, and that teacher scores the rollout's tokens. The GRPO advantage is then replaced, token by token, with `clip(log π_teacher(y_t) − log π_student(y_t), −A, A)`, which is the policy-gradient form of per-token reverse KL.
+
+The recipe has three stages. First, SFT a base model. Second, train one GRPO teacher per domain from that SFT checkpoint. Third, run MOPD with the student initialised from the same SFT checkpoint. Use teachers trained from the student's own checkpoint. A stronger teacher from a different model family starts much further from the student in KL and destabilises training.
+
+Serve each teacher with vLLM's OpenAI-compatible server:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 vllm serve ./outputs/math-teacher --port 8001 --max-model-len 8192
+CUDA_VISIBLE_DEVICES=1 vllm serve ./outputs/if-teacher   --port 8002 --max-model-len 8192
+```
+
+Then add a `mopd:` block to a GRPO config. Every dataset row needs a column naming its domain, so keep that column in your dataset transform:
+
+```yaml
+rl: grpo
+trl:
+  use_vllm: true
+  num_generations: 1          # MOPD advantages are per-token, so one rollout per prompt works
+  temperature: 1.0            # required
+  max_completion_length: 4096
+
+mopd:
+  domain_field: domain        # dataset column naming the teacher for each prompt
+  teachers:
+    math: {url: http://localhost:8001}
+    if:   {url: http://localhost:8002}
+  advantage_clip: 5.0
+  reward_weight: 0.0          # >0 adds the reward advantage from trl.reward_funcs
+```
+
+With `reward_weight: 0`, `trl.reward_funcs` is optional. Training logs `mopd/reverse_kl` (the mean per-token student−teacher log-ratio) and `mopd/clip_frac`. MOPD currently runs on the synchronous GRPO trainer only: it is not compatible with `async_prefetch`, `use_data_producer`, `use_liger_loss`, or `context_parallel_size > 1`.
+
+
 ## Scaling
 
 ### FP8 training
