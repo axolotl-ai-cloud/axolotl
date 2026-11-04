@@ -19,8 +19,15 @@ def ci_image(df_args: dict[str, str]) -> modal.Image:
     template = template_env.get_template(
         os.environ.get("E2E_DOCKERFILE", "Dockerfile-uv.jinja")
     )
+    # deps_hash.py pins BASE_IMAGE to a digest; the tag is the fallback outside CI
+    base_image = (
+        os.environ.get("BASE_IMAGE")
+        or f"axolotlai/axolotl-base-uv:{df_args['BASE_TAG']}"
+    )
     dockerfile = pathlib.Path(tempfile.mkdtemp()) / "Dockerfile"
-    dockerfile.write_text(template.render(**df_args), encoding="utf-8")
+    dockerfile.write_text(
+        template.render(**df_args, BASE_IMAGE=base_image), encoding="utf-8"
+    )
     # Builder 2025.06+ (MODAL_IMAGE_BUILDER_VERSION in the workflows) adds no client-dependency
     # layer; 2024.10 pip-installs into the image's python, which the pip-less uv venv lacks.
     return (
