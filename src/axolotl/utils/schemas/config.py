@@ -64,6 +64,7 @@ from axolotl.utils.schemas.model import (
     ModelOutputConfig,
     SpecialTokensConfig,
 )
+from axolotl.utils.schemas.mopd import MOPDConfig
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
@@ -291,6 +292,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Configuration for Energy-Based Fine-Tuning (EBFT)"
+        },
+    )
+    mopd: MOPDConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Multi-teacher On-Policy Distillation on top of `rl: grpo`"
         },
     )
     qat: QATConfig | None = None
