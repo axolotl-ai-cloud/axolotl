@@ -2730,6 +2730,12 @@ class EBFTValidationMixin:
         return data
 
 
+def _truncates_without_top_k(trl) -> bool:
+    """Whether top-p or min-p sampling is set without top-k, as TRL's configs check."""
+    truncates = (trl.top_p is not None and trl.top_p < 1.0) or (trl.min_p or 0.0) > 0.0
+    return truncates and not trl.top_k
+
+
 class GRPOVllmValidationMixin:
     """Validation mixin for vllm when using GRPO."""
 
@@ -2799,6 +2805,32 @@ class GRPOVllmValidationMixin:
                 "Set `vllm.max_model_len` (longest prompt + max_completion_length) for "
                 "`vllm_mode: colocate`; otherwise vLLM reserves KV cache for the model's "
                 "full context and may fail to start on the shared GPU."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_grpo_sampling_needs_top_k(self):
+        """TRL's synchronous GRPOConfig refuses top-p/min-p sampling without top_k
+        under vLLM importance sampling, which it renormalizes over vLLM's candidate
+        sets (async GRPO is checked in `check_async_grpo_compat`)."""
+        trl = self.trl
+        ebft = getattr(self, "ebft", None)
+        structured_ebft = self.rl == "ebft" and getattr(ebft, "mode", None) != "strided"
+        if (
+            (self.rl in ("grpo", "gdpo") or structured_ebft)
+            and trl
+            and not trl.async_prefetch
+            and trl.use_vllm
+            and trl.vllm_importance_sampling_correction is not False
+            and _truncates_without_top_k(trl)
+        ):
+            raise ValueError(
+                "GRPO with vLLM importance sampling needs `trl.top_k > 0` (e.g. "
+                "`top_k: 512`) when `trl.top_p < 1` or `trl.min_p > 0`: the "
+                "importance ratios renormalize the policy's log-probs over the "
+                "candidate set vLLM sampled each token from, which vLLM bounds with "
+                "`top_k`. Alternatively, set "
+                "`trl.vllm_importance_sampling_correction: false`."
             )
         return self
 
@@ -2882,10 +2914,6 @@ class GRPOVllmValidationMixin:
                     "down-weight or drop every token the sampler agrees with"
                 )
         elif trl.loss_type == "score_centering":
-            from axolotl.core.trainers.async_grpo import trl_compat
-
-            if not trl_compat.SCORE_CENTERING:
-                problems.append(trl_compat.score_centering_unavailable())
             eps_options = [
                 f"`{option}`"
                 for option in ("epsilon", "epsilon_high")
@@ -2909,7 +2937,7 @@ class GRPOVllmValidationMixin:
             problems.append(
                 "`loss_type` must be `dapo` (TRL's clipped objective, the default), "
                 "`cispo` (policy gradient weighted by the capped policy/sampler "
-                "ratio), or `score_centering` (TRL's score centering, TRL main only)"
+                "ratio), or `score_centering` (TRL's score centering)"
             )
         if trl.importance_sampling_level not in (None, "token"):
             problems.append("only `importance_sampling_level: token` is supported")
@@ -2963,6 +2991,13 @@ class GRPOVllmValidationMixin:
                 problems.append(
                     f"`trl.{option}` applies to synchronous GRPO only; remove it"
                 )
+        if _truncates_without_top_k(trl):
+            problems.append(
+                "`top_p < 1` or `min_p > 0` needs `top_k > 0` (e.g. `top_k: 512`): "
+                "the trainer renormalizes the policy's log-probs over the candidate "
+                "set vLLM sampled each token from, and vLLM bounds that set with "
+                "`top_k`"
+            )
         if problems:
             raise ValueError(
                 f"`trl.async_prefetch` with rl: {getattr(self.rl, 'value', self.rl)} "

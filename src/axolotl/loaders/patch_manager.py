@@ -891,12 +891,10 @@ class PatchManager:
             or offload_placement(self.cfg, "hidden_states") != "none"
         ):
             from axolotl.monkeypatch.trainer.trl_offload import (
-                patch_trl_logprob_entropy_saved_layout,
                 patch_trl_offload_dense_layout,
             )
 
             patch_trl_offload_dense_layout()
-            patch_trl_logprob_entropy_saved_layout()
 
     def _apply_mistral_cross_entropy_patch(self):
         """Apply Mistral cross entropy patch if configured."""

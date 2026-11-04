@@ -1,16 +1,10 @@
 """Keep saved-tensor layouts intact under TRL's activation offloader.
 
 ``OffloadActivations`` copies a non-contiguous saved tensor to CPU as a contiguous one, so
-backward receives it with other strides than forward saved. Two backward kernels depend on
-the saved layout and compute wrong gradients (or read out of bounds) from such a copy:
-
-* SDPA's memory-efficient attention backward, given its transposed ``query`` / ``out``;
-* TRL's fused log-prob/entropy kernel (``selective_log_softmax`` on CUDA), which indexes
-  the saved ``logits`` / ``index`` / ``row_mask`` with strides recorded in forward, e.g.
-  for the ``logits[:, :-1]`` view DPO and KTO pass.
+backward receives it with other strides than forward saved. SDPA's memory-efficient
+attention backward depends on the saved layout of its transposed ``query`` / ``out`` and
+computes wrong gradients from such a copy.
 """
-
-import inspect
 
 import torch
 
@@ -70,57 +64,4 @@ def patch_trl_offload_dense_layout() -> None:
     LOG.info(
         "Patched TRL OffloadActivations to return transposed saved tensors with their "
         "original strides (fixes wrong SDPA memory-efficient attention gradients)"
-    )
-
-
-class _UnpackedCtx:
-    """The backward ctx with ``saved_tensors`` unpacked once and layouts recomputed."""
-
-    def __init__(self, ctx, saved_tensors):
-        self._ctx = ctx
-        self.saved_tensors = saved_tensors
-
-    def __getattr__(self, name):
-        return getattr(self._ctx, name)
-
-
-def patch_trl_logprob_entropy_saved_layout() -> None:
-    """Index TRL's fused log-prob saved tensors with the strides backward receives."""
-    try:
-        from trl.kernels import logprob_entropy
-    except ImportError:
-        return
-    function = getattr(logprob_entropy, "_LogProbEntropyFunction", None)
-    layout = getattr(logprob_entropy, "_layout", None)
-    if function is None or layout is None:
-        return
-    if getattr(function, "_axolotl_saved_layout", False):
-        return
-    original_backward = function.backward
-    try:
-        uses_forward_layout = "ctx.layout" in inspect.getsource(original_backward)
-    except (OSError, TypeError):
-        uses_forward_layout = True
-    if not uses_forward_layout:
-        return
-
-    def backward(ctx, *grads):
-        # one unpack: TRL's offloader releases each saved tensor when it is unpacked
-        saved = ctx.saved_tensors
-        logits, index, row_mask = saved[0], saved[1], saved[-1]
-        unpacked = _UnpackedCtx(ctx, saved)
-        unpacked.layout = layout(logits)
-        if hasattr(ctx, "index_strides"):
-            unpacked.index_strides = layout(index.unsqueeze(-1))[2:]
-        if hasattr(ctx, "mask_strides"):
-            unpacked.mask_strides = (
-                (0, 0) if row_mask is None else layout(row_mask.unsqueeze(-1))[2:]
-            )
-        return original_backward(unpacked, *grads)
-
-    function.backward = staticmethod(backward)
-    function._axolotl_saved_layout = True
-    LOG.info(
-        "Patched TRL's fused log-prob/entropy backward to read saved tensors with "
-        "their unpacked layout (fixes wrong gradients under activation offloading)"
     )

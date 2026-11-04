@@ -15,10 +15,20 @@ from async_test_utils import (
     reference_tree_attention,
 )
 from tree_recurrence import Support, uninstall
+from tree_recurrence.integrations.trl import ChainRow, tree_kwargs_from_batch
+from trl.experimental.async_grpo.async_grpo_trainer import (
+    AsyncGRPOTrainer,
+    DataCollatorForRollout,
+)
 from trl.experimental.async_grpo.async_rollout_worker import RolloutSample
+from trl.experimental.async_grpo.packing import TreeRow
 
 from axolotl.core.trainers.async_grpo.config import AxolotlAsyncGRPOConfig
-from axolotl.core.trainers.async_grpo.scoring import pack_sequences
+from axolotl.core.trainers.async_grpo.scoring import (
+    ScoredChainRow,
+    ScoredRow,
+    pack_sequences,
+)
 from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
 from axolotl.core.trainers.async_grpo.trl_compat import unsampled_fields
 from axolotl.monkeypatch.models.tree_packing import packing_support
@@ -72,6 +82,24 @@ def tree_hooks(monkeypatch):
     uninstall()
     yield
     uninstall()
+
+
+@pytest.mark.parametrize("row_cls", [TreeRow, ChainRow, ScoredRow, ScoredChainRow])
+def test_rows_collate_to_the_inputs_trl_reads(row_cls):
+    """Every row type packs, through TRL's collator, to exactly the columns TRL's
+    trainer keeps, and its padded tree reads back whole."""
+    trainer = types.SimpleNamespace(_signature_columns=None)
+    AsyncGRPOTrainer._set_signature_columns_if_needed(trainer)
+    rows = [row_cls(), row_cls()]
+    for i, sample in enumerate(branching_samples()):
+        rows[i % 2].add({**sample, "metrics": {}})
+    batch = DataCollatorForRollout(pad_token_id=0, num_processes=2)([rows])
+    assert set(batch) == set(trainer._signature_columns)
+    for rank, row in enumerate(rows):
+        packed = row.pack()
+        tree = tree_kwargs_from_batch({k: v[rank : rank + 1] for k, v in batch.items()})
+        for key in ("tree_kv_index", "tree_cu_seqlens_q", "tree_cu_seqlens_k"):
+            assert torch.equal(tree[key], packed[key])
 
 
 class _Hybrid(torch.nn.Module):

@@ -6,10 +6,7 @@ import pytest
 import torch
 
 from axolotl.monkeypatch.trainer import trl_offload
-from axolotl.monkeypatch.trainer.trl_offload import (
-    patch_trl_logprob_entropy_saved_layout,
-    patch_trl_offload_dense_layout,
-)
+from axolotl.monkeypatch.trainer.trl_offload import patch_trl_offload_dense_layout
 
 
 class _CompactingOffloader:
@@ -129,90 +126,3 @@ def test_real_offloader_returns_transposed_strides(monkeypatch):
 
     assert _SavesTransposed.seen == [inputs.transpose(1, 2).stride()]
     assert torch.equal(inputs.grad, inputs.detach())
-
-
-@pytest.fixture
-def logprob_function():
-    kernels = pytest.importorskip("trl.kernels.logprob_entropy")
-    return kernels._LogProbEntropyFunction
-
-
-class _Ctx:
-    def __init__(self, saved, **attrs):
-        self._saved = saved
-        self.unpacks = 0
-        self.__dict__.update(attrs)
-
-    @property
-    def saved_tensors(self):
-        self.unpacks += 1
-        return self._saved
-
-
-@pytest.fixture
-def patched(monkeypatch, logprob_function):
-    seen = {}
-
-    def backward(ctx, grad_logprobs, grad_entropy):
-        seen["saved"] = ctx.saved_tensors
-        seen["layout"] = ctx.layout
-        seen["index_strides"] = getattr(ctx, "index_strides", None)
-        seen["mask_strides"] = getattr(ctx, "mask_strides", None)
-        seen["temperature"] = ctx.temperature
-        return None, None, None, None
-
-    monkeypatch.setattr(logprob_function, "backward", staticmethod(backward))
-    monkeypatch.setattr(logprob_function, "_axolotl_saved_layout", False, raising=False)
-    patch_trl_logprob_entropy_saved_layout()
-    return seen
-
-
-@pytest.mark.parametrize("with_mask", [False, True])
-def test_backward_uses_the_unpacked_layout(patched, logprob_function, with_mask):
-    # what the offloader hands back for a shifted logits[:, :-1] / labels[:, 1:] view
-    logits = torch.zeros(4, 7, 11)
-    index = torch.zeros(4, 7, dtype=torch.long)
-    row_mask = torch.ones(4, 7, dtype=torch.bool) if with_mask else None
-    saved = (logits, index, torch.zeros(4, 7), torch.zeros(4, 7), row_mask)
-    ctx = _Ctx(
-        saved,
-        layout=(4, 7, 8 * 11, 11),
-        index_strides=(8, 1),
-        mask_strides=(8, 1) if with_mask else (0, 0),
-        temperature=0.7,
-    )
-
-    logprob_function.backward(ctx, torch.ones(4, 7), None)
-
-    assert ctx.unpacks == 1
-    assert patched["saved"] is saved
-    assert patched["layout"] == (4, 7, 7 * 11, 11)
-    assert patched["index_strides"] == (7, 1)
-    assert patched["mask_strides"] == ((7, 1) if with_mask else (0, 0))
-    assert patched["temperature"] == 0.7
-
-
-def test_older_ctx_without_index_strides(patched, logprob_function):
-    logits = torch.zeros(2, 3, 5)
-    saved = (logits, torch.zeros(2, 3, dtype=torch.long), None, None, None)
-    ctx = _Ctx(saved, layout=(2, 3, 4 * 5, 5), temperature=1.0)
-
-    logprob_function.backward(ctx, torch.ones(2, 3), None)
-
-    assert patched["layout"] == (2, 3, 15, 5)
-    assert patched["index_strides"] is None
-    assert patched["mask_strides"] is None
-
-
-def test_skips_a_backward_that_no_longer_reads_the_forward_layout(
-    monkeypatch, logprob_function
-):
-    def backward(ctx, grad_logprobs, grad_entropy):
-        return None, None, None, None
-
-    monkeypatch.setattr(logprob_function, "backward", staticmethod(backward))
-    monkeypatch.setattr(logprob_function, "_axolotl_saved_layout", False, raising=False)
-    patch_trl_logprob_entropy_saved_layout()
-
-    assert logprob_function.backward is backward
-    assert logprob_function._axolotl_saved_layout is False

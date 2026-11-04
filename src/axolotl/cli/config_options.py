@@ -1492,7 +1492,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--trl.loss-type",),
         "trl__loss_type",
         "str",
-        "Loss formulation to use. Synchronous GRPO: grpo, bnpo, dr_grpo, dapo, cispo, and the others TRL's GRPOTrainer supports. Async GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler), cispo (policy gradient weighted by the policy/sampler ratio, capped at vllm_importance_sampling_cap), or, experimentally and with TRL installed from main, score_centering (TRL's score centering with masked importance sampling).",
+        "Loss formulation to use. Synchronous GRPO: grpo, bnpo, dr_grpo, dapo, cispo, and the others TRL's GRPOTrainer supports. Async GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler), cispo (policy gradient weighted by the policy/sampler ratio, capped at vllm_importance_sampling_cap), or score_centering (TRL's score centering with masked importance sampling).",
     ),
     (
         ("--trl.mask-truncated-completions/--no-trl.mask-truncated-completions",),

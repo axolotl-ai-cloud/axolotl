@@ -55,9 +55,9 @@ from axolotl.core.trainers.async_grpo.trl_compat import (
     TokenBudgetBatcher,
     add_fused_lm_head,
     check_version,
-    get_config_model_id,
     install_runtime_patches,
     patched_trainer_module,
+    register_tree_attention,
 )
 from axolotl.core.trainers.async_grpo.weight_sync import (
     AliasingVLLMClient,
@@ -77,16 +77,6 @@ from axolotl.monkeypatch.models.tree_packing import packing_support
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-
-def _use_loaded_model(model: PreTrainedModel):
-    """Stand-in for TRL's ``create_model_from_path`` that returns ``model``."""
-
-    def load(_model_id, *_args, **_kwargs):
-        _set_tree_attention(model.get_base_model() if is_peft_model(model) else model)
-        return model
-
-    return load
 
 
 def _set_tree_attention(base: PreTrainedModel) -> None:
@@ -268,6 +258,7 @@ class AxolotlAsyncGRPOTrainer(
                 scale_rewards=args.scale_rewards,
                 reward_num_workers=args.reward_num_workers,
                 trainer_scored=bool(self._trainer_scorers),
+                skip_zero_advantage=args.skip_zero_advantage_batches,
                 **(args.rollout_loop_kwargs or {}),
             )
         }
@@ -275,7 +266,6 @@ class AxolotlAsyncGRPOTrainer(
             replacements["VLLMClient"] = functools.partial(
                 AliasingVLLMClient, alias=args.vllm_lora_alias
             )
-        model_id = model
         self._share_prefixes = True
         hide_layer_types: contextlib.AbstractContextManager = contextlib.nullcontext()
         loaded: PreTrainedModel | None = None
@@ -286,9 +276,11 @@ class AxolotlAsyncGRPOTrainer(
             # axolotl hands it the model already wrapped, trainable as it should be.
             loaded = model
             trainable = {n: p.requires_grad for n, p in model.named_parameters()}
-            replacements["create_model_from_path"] = _use_loaded_model(model)
+            register_tree_attention()
+            _set_tree_attention(
+                model.get_base_model() if is_peft_model(model) else model
+            )
             replacements["add_fused_lm_head"] = _add_fused_lm_head_to_base
-            model_id = get_config_model_id(model.config)
             self._share_prefixes = packing_support(model).shares_prefixes
             if recurrent_layer_types(model.config):
                 hide_layer_types = hidden_layer_types(model)
@@ -299,7 +291,7 @@ class AxolotlAsyncGRPOTrainer(
         install_runtime_patches()
         with patched_trainer_module(**replacements), hide_layer_types:
             super().__init__(
-                model=model_id,
+                model=model,
                 reward_funcs=reward_funcs,
                 args=args,
                 train_dataset=train_dataset,
@@ -326,10 +318,11 @@ class AxolotlAsyncGRPOTrainer(
                 "`axolotl vllm-serve`)."
             )
 
-        # TRL's set of trained groups is what it counts epochs and resumes from, so
-        # it holds every consumed group; a pass over the prompts must train one.
+        # TRL counts epochs and resumes from its trained and dropped groups; a pass
+        # over the prompts must train one.
         self._progress = RolloutProgress(
             self._trained_groups,
+            self._dropped_groups,
             epochs_done=self._epochs_consumed,
             stall_groups=len(train_dataset)
             if isinstance(train_dataset, Sized)
@@ -366,9 +359,14 @@ class AxolotlAsyncGRPOTrainer(
 
     def _epochs_consumed(self) -> bool:
         """Whether ``num_train_epochs`` passes over the prompts were consumed."""
-        target = self._epoch_stop_groups
-        consumed = self._groups_before_resume + len(self._trained_groups)
-        return target is not None and consumed >= target
+        if self._epoch_stop_groups is None:
+            return False
+        target = self._epoch_stop_groups - self._groups_before_resume
+        trained, dropped = self._trained_groups, self._dropped_groups
+        # Checked at every dropped group: build the union only once it can reach it.
+        return (
+            len(trained) + len(dropped) >= target and len(trained | dropped) >= target
+        )
 
     def _stop_token_ids(self) -> frozenset[int]:
         return frozenset([*self.eos_token_ids, self.processing_class.pad_token_id])
@@ -406,6 +404,7 @@ class AxolotlAsyncGRPOTrainer(
                 check_health_fn=self.rollout_worker.check_health,
                 stale_after_s=self.args.heartbeat_stale_after_s,
                 metrics=self._metrics["train"],
+                dropped_groups=self._dropped_groups,
                 max_staleness=self.args.max_staleness,
                 report_to=self.args.report_to,
             )
