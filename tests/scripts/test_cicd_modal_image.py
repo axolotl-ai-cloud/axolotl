@@ -51,3 +51,30 @@ def test_single_and_multi_gpu_apps_build_the_same_image(monkeypatch):
     assert set(builds) == {"single_gpu", "multigpu"}
     assert builds["single_gpu"] == builds["multigpu"]
     assert builds["single_gpu"][1] == {}
+
+
+PINNED = "axolotlai/axolotl-base-uv@sha256:" + "0" * 64
+
+
+@pytest.mark.parametrize(
+    ("base_image", "from_line"),
+    [(PINNED, f"FROM {PINNED}"), (None, "FROM axolotlai/axolotl-base-uv:tag1")],
+)
+def test_image_builds_from_the_pinned_base(monkeypatch, base_image, from_line):
+    # a lone first-line FROM is what lets builder 2026.10 cache the base pull as its own layer
+    first_lines = []
+    from_dockerfile = modal.Image.from_dockerfile
+
+    def spy(path, **kwargs):
+        first_lines.append(Path(path).read_text(encoding="utf-8").split("\n", 1)[0])
+        return from_dockerfile(path, **kwargs)
+
+    monkeypatch.setattr(modal.Image, "from_dockerfile", staticmethod(spy))
+    monkeypatch.setenv("BASE_TAG", "tag1")
+    if base_image:
+        monkeypatch.setenv("BASE_IMAGE", base_image)
+    else:
+        monkeypatch.delenv("BASE_IMAGE", raising=False)
+    _import_fresh(monkeypatch, "single_gpu")
+
+    assert first_lines == [from_line]
