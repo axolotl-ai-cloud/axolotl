@@ -134,6 +134,7 @@ class NemoGymRolloutLoop(AxolotlRolloutLoop):
     _provides_rollout_reward = True
     _rollout_reward_name = "nemo_gym"
     _parses_responses = False
+    _records_sampling_masks = False
     # Failed rollouts train nothing and stay out of the group baseline.
     _UNSCORABLE: tuple = ([], [], [], 0, 0, None)
 

@@ -15,8 +15,8 @@ On top of TRL, this trainer:
   (``reward_num_workers``);
 - honors ``reward_weights``, ``multi_objective_aggregation`` and ``scale_rewards``;
 - offers ``loss_type: cispo``, which weights each token by its policy/sampler ratio,
-  capped at ``vllm_importance_sampling_cap``, instead of clipping that ratio, and,
-  experimentally on TRL main, ``loss_type: score_centering``, TRL's score centering;
+  capped at ``vllm_importance_sampling_cap``, instead of clipping that ratio, and
+  ``loss_type: score_centering``, TRL's score centering;
 - syncs merged LoRA weights without merging into the trained model, bitwise equal to
   the ``lora_merge_aware`` forward, and measures how much of the update the merge
   keeps (``vllm_merge_check_interval``);

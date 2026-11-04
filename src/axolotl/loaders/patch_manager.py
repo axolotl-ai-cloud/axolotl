@@ -885,12 +885,10 @@ class PatchManager:
         # TRL's own trainers (DPO, KTO) run their offloader for any truthy mode, hidden_states too
         if self.cfg.activation_offloading:
             from axolotl.monkeypatch.trainer.trl_offload import (
-                patch_trl_logprob_entropy_saved_layout,
                 patch_trl_offload_dense_layout,
             )
 
             patch_trl_offload_dense_layout()
-            patch_trl_logprob_entropy_saved_layout()
 
     def _apply_mistral_cross_entropy_patch(self):
         """Apply Mistral cross entropy patch if configured."""

@@ -6,9 +6,10 @@ truncated, too stale, too long) complete no step, so a run whose remaining rollo
 are all dropped would generate forever.
 
 ``SampleFilterQueue`` drops the rollouts that would train nothing. Every drop and
-every trained micro-batch reports to ``RolloutProgress``, which keeps
-TRL's set of consumed prompt groups (read for the epoch bound and for resume). When
-the run's prompt groups are consumed, or a full pass over the prompts trains nothing,
+every trained micro-batch reports to ``RolloutProgress``, which keeps TRL's sets of
+trained and dropped prompt groups (their union is read for the epoch bound and for
+resume). When the run's prompt groups are consumed, or a full pass over the prompts
+trains nothing,
 the rank-0 pipeline raises ``RolloutStop``. ``StopAwareDataset`` turns it into one
 stop micro-batch that accelerate's dispatcher hands to every rank, so all ranks end
 training (or raise the stall error) at the same micro-batch.
@@ -62,11 +63,14 @@ class RolloutStop(Exception):
 
 
 class RolloutProgress:
-    """Consumed and trained prompt groups, and the stream's stop conditions.
+    """Trained and dropped prompt groups, and the stream's stop conditions.
 
-    ``consumed`` is the trainer's set TRL counts epochs and resumes from: a group
-    counts once it trained or its rollouts were dropped. ``stall_groups`` bounds how
-    many groups may be consumed in a row without one training.
+    ``trained`` and ``dropped`` are the trainer's ``_trained_groups`` and
+    ``_dropped_groups``, whose union TRL counts epochs and resumes from: a group
+    counts once it trained or its rollouts were dropped. TRL's collator adds every
+    group it packs to ``trained``. ``drop_reasons`` counts the dropped groups by
+    reason, and ``stall_groups`` bounds how many groups may be consumed in a row
+    without one training.
 
     Only rank 0 reports, from the rollout stream and, with trainer-side scoring,
     from ``score_step``; the stream raises the stop, so that it reaches every rank
@@ -75,14 +79,15 @@ class RolloutProgress:
 
     def __init__(
         self,
-        consumed: set[int],
+        trained: set[int],
+        dropped: set[int],
         *,
         epochs_done: Callable[[], bool],
         stall_groups: int | None,
     ):
-        self.consumed = consumed
-        self.trained: set[int] = set()
-        self.dropped: Counter[str] = Counter()
+        self.trained = trained
+        self.dropped = dropped
+        self.drop_reasons: Counter[str] = Counter()
         self.stop: RolloutStop | None = None
         self._epochs_done = epochs_done
         self._stall_groups = stall_groups
@@ -90,9 +95,9 @@ class RolloutProgress:
 
     def drop(self, group_id: int, reason: str) -> None:
         """Count ``group_id`` as consumed without training; may end the stream."""
-        if group_id in self.consumed:
+        if group_id in self.trained or group_id in self.dropped:
             return
-        self.consumed.add(group_id)
+        self.dropped.add(group_id)
         self._untrained(reason)
         self.check()
         if self._epochs_done():
@@ -104,7 +109,8 @@ class RolloutProgress:
         Runs outside the stream, so the stall it may complete is raised by the
         stream's next ``check``.
         """
-        self.consumed.add(group_id)
+        self.trained.discard(group_id)
+        self.dropped.add(group_id)
         self._untrained(reason)
 
     def check(self) -> None:
@@ -116,12 +122,11 @@ class RolloutProgress:
         """Record groups that trained."""
         group_ids = set(group_ids)
         if group_ids:
-            self.consumed.update(group_ids)
             self.trained.update(group_ids)
             self._since_trained.clear()
 
     def _untrained(self, reason: str) -> None:
-        self.dropped[reason] += 1
+        self.drop_reasons[reason] += 1
         self._since_trained[reason] += 1
 
     def _raise(self, stop: RolloutStop) -> None:
@@ -194,7 +199,9 @@ class SampleFilterQueue:
     A group whose every row was dropped counts as consumed in ``progress``, so
     epochs and resume stay keyed on the prompts generated, and may end the stream
     (see the module doc). Rows are dropped one by one, so a group is settled
-    once all of them arrived; one that keeps a row is counted when it trains.
+    once all of them arrived; one that keeps a row is counted when it trains. The
+    rollout process sends a group whose every advantage is zero as its bare
+    ``int`` id, which is settled as dropped right away.
     """
 
     def __init__(
@@ -254,6 +261,10 @@ class SampleFilterQueue:
                 None if deadline is None else max(0.0, deadline - time.monotonic())
             )
             sample = self._inner.get(timeout=remaining)
+            if isinstance(sample, int):
+                self._metrics["sample/dropped_zero_adv_groups_total"].append(1.0)
+                self._progress.drop(sample, "zero_adv")
+                continue
             group_rows = sample.metrics.pop(GROUP_ROWS, None)
             reason = self._drop_reason(sample)
             self._metrics["sample/dropped_frac"].append(

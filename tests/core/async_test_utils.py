@@ -129,7 +129,11 @@ def assert_tree_rows_match_alone(model, samples, on_row=None):
     ``on_row(row_tokens)`` runs after each packed forward. Returns the trie's and
     the chains' row lengths.
     """
-    from tree_recurrence.integrations.trl import ChainRow, sample_boundaries
+    from tree_recurrence.integrations.trl import (
+        ChainRow,
+        sample_boundaries,
+        tree_kwargs_from_batch,
+    )
     from trl.experimental.async_grpo import packing
     from trl.experimental.async_grpo.packing import TreeRow
 
@@ -147,13 +151,7 @@ def assert_tree_rows_match_alone(model, samples, on_row=None):
         for sample in samples:
             row.add(sample)
         packed = row.pack()
-        tree = {
-            "tree_kv_index": packed["tree_kv_index"],
-            "tree_cu_seqlens_q": packed["tree_cu_seqlens_q"],
-            "tree_cu_seqlens_k": packed["tree_cu_seqlens_k"],
-            "tree_max_seqlen_q": int(packed["tree_max_seqlens"][0]),
-            "tree_max_seqlen_k": int(packed["tree_max_seqlens"][1]),
-        }
+        tree = tree_kwargs_from_batch(packed)
         if isinstance(row, ChainRow):
             tree.update(sample_boundaries(tree))
         logits = model(

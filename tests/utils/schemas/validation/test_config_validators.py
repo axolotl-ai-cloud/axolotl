@@ -499,6 +499,36 @@ class TestVllmColocateCompat:
             validate_config(cfg)
 
 
+class TestGRPOSamplingNeedsTopK:
+    """TRL's GRPOConfig refuses top-p/min-p without top-k under vLLM importance
+    sampling."""
+
+    @staticmethod
+    def _cfg(min_base_cfg, **trl):
+        return min_base_cfg | DictDefault(rl="grpo", trl={"use_vllm": True, **trl})
+
+    @pytest.mark.parametrize("trl", [{"top_p": 0.95}, {"min_p": 0.05}])
+    def test_truncated_sampling_needs_top_k(self, min_base_cfg, trl):
+        with pytest.raises(ValueError, match="needs `trl.top_k > 0`"):
+            validate_config(self._cfg(min_base_cfg, **trl))
+
+    @pytest.mark.parametrize(
+        "trl",
+        [
+            {"top_p": 0.95, "top_k": 512},
+            {"top_p": 0.95, "vllm_importance_sampling_correction": False},
+            {"top_p": 1.0, "min_p": 0.0},
+        ],
+    )
+    def test_passes_with_top_k_or_without_correction(self, min_base_cfg, trl):
+        validate_config(self._cfg(min_base_cfg, **trl))
+
+    def test_without_vllm_nothing_is_renormalized(self, min_base_cfg):
+        cfg = self._cfg(min_base_cfg, top_p=0.95)
+        cfg.trl.use_vllm = False
+        validate_config(cfg)
+
+
 class TestAsyncGRPOCompat:
     """async_prefetch with rl: grpo runs on TRL's AsyncGRPOTrainer."""
 
@@ -629,13 +659,6 @@ class TestAsyncGRPOCompat:
         with pytest.raises(ValueError, match="num_generations >= 2"):
             validate_config(self._cfg(min_base_cfg, trl={"num_generations": 1}))
 
-    @pytest.fixture
-    def score_centering(self, monkeypatch):
-        from axolotl.core.trainers.async_grpo import trl_compat
-
-        monkeypatch.setattr(trl_compat, "SCORE_CENTERING", True)
-
-    @pytest.mark.usefixtures("score_centering")
     def test_score_centering_takes_its_bounds(self, min_base_cfg):
         validated = validate_config(
             self._cfg(
@@ -651,7 +674,6 @@ class TestAsyncGRPOCompat:
         assert validated.trl.loss_type == "score_centering"
         assert validated.trl.num_sampler_logprobs == 16
 
-    @pytest.mark.usefixtures("score_centering")
     @pytest.mark.parametrize(
         "trl,match",
         [
@@ -670,21 +692,18 @@ class TestAsyncGRPOCompat:
                 self._cfg(min_base_cfg, trl={"loss_type": "score_centering", **trl})
             )
 
-    @pytest.mark.usefixtures("score_centering")
     def test_custom_rollout_loops_cannot_score_center(self, min_base_cfg):
         cfg = self._cfg(min_base_cfg, trl={"loss_type": "score_centering"})
         cfg.rl, cfg.ebft = "ebft", {"mode": "structured"}
         with pytest.raises(ValueError, match="only TRL's own rollout loop"):
             validate_config(cfg)
 
-    def test_score_centering_needs_trl_main(self, min_base_cfg, monkeypatch):
-        from axolotl.core.trainers.async_grpo import trl_compat
-
-        monkeypatch.setattr(trl_compat, "SCORE_CENTERING", False)
-        with pytest.raises(ValueError, match="only TRL main has"):
-            validate_config(
-                self._cfg(min_base_cfg, trl={"loss_type": "score_centering"})
-            )
+    @pytest.mark.parametrize("trl", [{"top_p": 0.95}, {"min_p": 0.05}])
+    def test_top_p_and_min_p_need_top_k(self, min_base_cfg, trl):
+        with pytest.raises(ValueError, match="needs `top_k > 0`"):
+            validate_config(self._cfg(min_base_cfg, trl=trl))
+        validated = validate_config(self._cfg(min_base_cfg, trl={**trl, "top_k": 512}))
+        assert validated.trl.top_k == 512
 
     def test_lists_every_problem(self, min_base_cfg):
         with pytest.raises(ValueError) as error:

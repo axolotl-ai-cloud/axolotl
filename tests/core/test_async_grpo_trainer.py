@@ -45,7 +45,6 @@ from axolotl.core.trainers.async_grpo.rollout import (
 )
 from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
 from axolotl.core.trainers.async_grpo.trl_compat import (
-    SCORE_CENTERING,
     sampler_fields,
     unsampled_fields,
     unsampled_sequence_fields,
@@ -57,9 +56,6 @@ from axolotl.utils.lora_merge_precision import merged_lora_weight
 pytestmark = pytest.mark.usefixtures("restore_attention_registries")
 
 ONES = np.ones(1)
-needs_score_centering = pytest.mark.skipif(
-    not SCORE_CENTERING, reason="score centering is on TRL main only"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -127,7 +123,9 @@ def _sample(
 
 
 def _progress(stall_groups=None, epochs_done=lambda: False):
-    return RolloutProgress(set(), epochs_done=epochs_done, stall_groups=stall_groups)
+    return RolloutProgress(
+        set(), set(), epochs_done=epochs_done, stall_groups=stall_groups
+    )
 
 
 class TestRolloutProgress:
@@ -136,8 +134,9 @@ class TestRolloutProgress:
         progress.drop(3, "zero_adv")
         progress.drop(3, "zero_adv")
         progress.train([4])
-        assert progress.consumed == {3, 4} and progress.trained == {4}
-        assert progress.dropped == {"zero_adv": 1}
+        progress.drop(4, "stale")
+        assert progress.dropped == {3} and progress.trained == {4}
+        assert progress.drop_reasons == {"zero_adv": 1}
 
     def test_stalls_after_a_pass_without_training(self):
         progress = _progress(stall_groups=3)
@@ -151,21 +150,26 @@ class TestRolloutProgress:
         assert "No rollout group trained in the last 3 groups" in stop.value.error
         assert "2 did not fit token_budget, 1 had a zero advantage" in stop.value.error
         assert "raise token_budget" in stop.value.error
-        assert progress.dropped == {"oversize": 3, "zero_adv": 1}
+        assert progress.drop_reasons == {"oversize": 3, "zero_adv": 1}
 
     def test_scoring_exclusions_stall_at_the_streams_next_check(self):
         progress = _progress(stall_groups=2)
         progress.train([0])
         progress.exclude(0, "zero_adv")
         progress.exclude(1, "truncated")
+        assert progress.trained == set() and progress.dropped == {0, 1}
         assert progress.stop is None
         with pytest.raises(RolloutStop, match="1 had a zero advantage, 1 were"):
             progress.check()
 
     def test_a_drop_that_consumes_the_epochs_ends_the_stream(self):
-        consumed: set[int] = set()
+        trained: set[int] = set()
+        dropped: set[int] = set()
         progress = RolloutProgress(
-            consumed, epochs_done=lambda: len(consumed) >= 2, stall_groups=10
+            trained,
+            dropped,
+            epochs_done=lambda: len(trained | dropped) >= 2,
+            stall_groups=10,
         )
         progress.train([0])
         with pytest.raises(RolloutStop) as stop:
@@ -181,7 +185,7 @@ class TestSampleFilterQueue:
         progress, metrics = progress or _progress(), defaultdict(list)
         options = {"skip_zero_advantage": True, "stop_token_ids": None, **kwargs}
         filtered = SampleFilterQueue(inner, progress, metrics, **options)
-        return filtered, progress.consumed, metrics
+        return filtered, progress.dropped, metrics
 
     def test_drops_zero_advantage_and_counts_group_consumed(self):
         filtered, consumed, metrics = self._filter(
@@ -191,6 +195,14 @@ class TestSampleFilterQueue:
         assert consumed == {0}
         assert metrics["sample/dropped_zero_adv_total"] == [1.0, 1.0]
         assert metrics["sample/dropped_frac"] == [(1.0, 1.0), (1.0, 1.0), (0.0, 1.0)]
+
+    def test_settles_a_bare_group_id_as_dropped(self):
+        """The rollout process sends a group whose every advantage is zero as its id."""
+        filtered, consumed, metrics = self._filter([3, _sample(4, 1.0)])
+        assert filtered.get(timeout=1).group_id == 4
+        assert consumed == {3}
+        assert metrics["sample/dropped_zero_adv_groups_total"] == [1.0]
+        assert metrics["sample/dropped_frac"] == [(0.0, 1.0)]
 
     def test_keeps_zero_advantage_when_disabled(self):
         filtered, _, _ = self._filter([_sample(0, 0.0)], skip_zero_advantage=False)
@@ -251,9 +263,9 @@ class TestSampleFilterQueue:
         assert consumed == {0}
 
     def test_the_epoch_limit_waits_for_a_groups_last_row(self):
-        consumed: set[int] = set()
+        dropped: set[int] = set()
         progress = RolloutProgress(
-            consumed, epochs_done=lambda: len(consumed) >= 1, stall_groups=None
+            set(), dropped, epochs_done=lambda: len(dropped) >= 1, stall_groups=None
         )
         filtered, _, _ = self._filter(
             [_sample(0, 0.0, group_rows=2), _sample(0, 1.0, group_rows=2)],
@@ -341,7 +353,6 @@ class TestConfig:
         assert args.loss_type == "dapo"
         assert not hasattr(args, "vllm_importance_sampling_correction")
 
-    @needs_score_centering
     @pytest.mark.parametrize("loss_type", ["dapo", "cispo", "score_centering"])
     def test_loss_type_decides_trls_objective(self, tmp_path, loss_type):
         args = AxolotlAsyncGRPOConfig(
@@ -372,10 +383,6 @@ def _rollout_loop(reward_funcs, processing_class=None, **kwargs):
         metrics_queue=mp.Queue(),
         **kwargs,
     )
-
-
-# TRL main's _generate_one_turn also returns the sampling mask and top log-probs.
-_TURN_EXTRAS = (None, None) if SCORE_CENTERING else ()
 
 
 def _group(group_id, contents):
@@ -422,11 +429,44 @@ class TestRolloutLoop:
         samples = loop._loop.run_until_complete(
             loop._score_group(_group(7, ["a", "abc"]))
         )
-        assert [s.metrics["reward"] for s in samples] == [2.5, 3.5]
+        assert [s.metrics["reward_kept"] for s in samples] == [2.5, 3.5]
         assert samples[0].advantage < 0 < samples[1].advantage
         assert samples[0].metrics["rewards/length_reward"] == 1.0
         assert {s.group_id for s in samples} == {7}
         assert [s.metrics[GROUP_ROWS] for s in samples] == [2, 2]
+
+    @pytest.mark.parametrize("skip", [True, False])
+    def test_a_group_without_signal_is_sent_as_its_id(self, skip):
+        """As TRL's loop does, a group whose every advantage is zero scores to no
+        sample, and its bare id still reaches the trainer to count as consumed."""
+
+        def constant_reward(completions, **kwargs):
+            return [1.0] * len(completions)
+
+        loop = _rollout_loop([constant_reward], skip_zero_advantage=skip)
+        loop._loop.run_until_complete(
+            loop._score_and_push(_group(7, ["a", "b"]), asyncio.Event())
+        )
+        queued = [loop.rollout_buffer.get_nowait() for _ in range(2 - skip)]
+        assert loop.rollout_buffer.empty()
+        if skip:
+            assert queued == [7]
+        else:
+            assert [s.advantage for s in queued] == [0.0, 0.0]
+        pushed = loop._metrics_queue.get(timeout=5)
+        assert pushed["frac_reward_zero_std"] == (1.0, 1.0)
+        assert pushed["reward"] == (2.0, 2.0)
+
+    def test_trls_score_loop_logs_completions(self):
+        from async_grpo_rewards import length_reward
+
+        loop = _rollout_loop([length_reward])
+        loop.log_completions = True
+        loop._groups_to_score.put_nowait(_group(3, ["a", "abc"]))
+        loop._groups_to_score.put_nowait(None)
+        loop._loop.run_until_complete(loop._score_loop(asyncio.Event()))
+        samples = [loop.rollout_buffer.get_nowait() for _ in range(2)]
+        assert [s.metrics["reward_kept"] for s in samples] == [1.0, 3.0]
 
     @pytest.fixture
     def chatml_tokenizer(self, download_smollm2_135m_instruct_model):
@@ -448,7 +488,7 @@ class TestRolloutLoop:
         )["input_ids"]
 
         async def generate_one_turn(prompt_ids):
-            return answer, [-0.5] * len(answer), *_TURN_EXTRAS
+            return answer, [-0.5] * len(answer), None, None
 
         loop._generate_one_turn = generate_one_turn
         completion, completion_ids, sequences, *_ = loop._loop.run_until_complete(
@@ -1010,9 +1050,9 @@ def test_dropped_tail_ends_the_epochs_without_another_step(
 
     assert trainer.state.global_step == 4
     assert transfer.syncs == 5 and worker.versions == [1, 2, 3, 4, 5]
-    assert trainer._trained_groups == set(range(16))
-    assert trainer._progress.trained == set(range(8))
-    assert trainer._progress.dropped == {"zero_adv": 8}
+    assert trainer._trained_groups == set(range(8))
+    assert trainer._dropped_groups == set(range(8, 16))
+    assert trainer._progress.drop_reasons == {"zero_adv": 8}
 
 
 def test_trains_axolotl_loaded_lora_model_on_cpu(
@@ -1057,7 +1097,8 @@ def test_trains_axolotl_loaded_lora_model_on_cpu(
     assert transfer.syncs == 4 and worker.versions == [1, 2, 3, 4]
     assert not any("lora" in name for name in transfer.names)
     # Groups 0 and 4 have no reward signal: dropped, yet counted as consumed.
-    assert set(range(8)) <= trainer._trained_groups
+    assert {0, 4} <= trainer._dropped_groups
+    assert set(range(8)) <= trainer._trained_groups | trainer._dropped_groups
     logs = trainer.state.log_history
     assert sum(log.get("sample/dropped_zero_adv_total", 0) for log in logs) >= 8
     assert any(log.get("sampling/capped_token_frac", 0) > 0 for log in logs)
@@ -1118,21 +1159,21 @@ TRL_LOSSES = {
 
 @pytest.mark.parametrize(
     "loss_type",
-    ["dapo", pytest.param("score_centering", marks=needs_score_centering)],
+    ["dapo", "score_centering"],
 )
 def test_loss_is_trls(
     download_smollm2_135m_instruct_model, tmp_path, monkeypatch, loss_type
 ):
     """compute_loss is TRL's AsyncGRPOTrainer's: dapo, the default, its clipped
-    objective, and score_centering TRL main's score centering, with the log-probs
+    objective, and score_centering TRL's score centering, with the log-probs
     renormalized over each token's top-k/top-p candidates as TRL does."""
     from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer
 
     trainer_kwargs, binding, compared = TRL_LOSSES[loss_type]
     trainer, _, _, samples = _cpu_trainer(tmp_path, monkeypatch, **trainer_kwargs)
     assert trainer.args.loss_type == loss_type
-    if SCORE_CENTERING and loss_type == "dapo":
-        # TRL main's clipped objective also drops tokens outside its importance
+    if loss_type == "dapo":
+        # TRL's clipped objective also drops tokens outside its importance
         # sampling bounds, which dapo does not; open them so the objectives compare.
         trainer.args.vllm_importance_sampling_clip_min = 0.0
         trainer.args.vllm_importance_sampling_clip_max = float("inf")
@@ -1244,7 +1285,6 @@ def test_score_centering_centers_the_masked_score():
     assert uncentered.abs().max() > 1e-2
 
 
-@needs_score_centering
 def test_trains_with_score_centering_on_cpu(
     download_smollm2_135m_instruct_model, tmp_path, monkeypatch
 ):
@@ -1287,7 +1327,7 @@ class TestTreeFlashAttn:
                 "CUDA capability 12.0 of the current device is not supported by "
                 "the architectures of the build: 8.0, 9.0a"
             ),
-            # TRL main's flash-attn4 v0 under nvidia-cutlass-dsl 4.7
+            # TRL's flash-attn4 v0 under nvidia-cutlass-dsl 4.7
             AttributeError("module 'cutlass.cute.core' has no attribute 'ThrMma'"),
         ],
         ids=["fa3_no_build", "fa4_import"],
@@ -1318,7 +1358,7 @@ class TestTreeFlashAttn:
     def test_routes_flash_attn4_for_selective_checkpointing(
         self, tree_flash_attn, monkeypatch, attrs, routed
     ):
-        """TRL main's FA4 kernel registers no torch op; routed through axolotl's FA4
+        """TRL's FA4 kernel registers no torch op; routed through axolotl's FA4
         op, selective checkpointing can save tree attention."""
         from axolotl.monkeypatch.attention import flash_attn_4_ops
 

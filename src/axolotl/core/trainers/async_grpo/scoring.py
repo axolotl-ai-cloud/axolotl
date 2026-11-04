@@ -245,7 +245,10 @@ def unpack_sequences(inputs: dict[str, torch.Tensor]) -> dict[str, Any]:
 
 
 class GroupedQueue:
-    """A view of the rollout queue that releases each group's samples together."""
+    """A view of the rollout queue that releases each group's samples together.
+
+    A bare ``int`` group id (a group with nothing to train) passes straight through.
+    """
 
     def __init__(self, inner):
         self._inner = inner
@@ -262,6 +265,8 @@ class GroupedQueue:
                 None if deadline is None else max(0.0, deadline - time.monotonic())
             )
             sample = self._inner.get(timeout=remaining)
+            if isinstance(sample, int):
+                return sample
             rows = self._pending.setdefault(sample.group_id, [])
             rows.append(sample)
             if len(rows) == sample.metrics[SCORE_PAYLOAD]["group_rows"]:

@@ -12,7 +12,6 @@ naming the function, when an upgrade changes one.
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import functools
 import math
 from importlib.metadata import version
@@ -46,11 +45,14 @@ from trl.experimental.async_grpo.async_rollout_worker import (
     _AsyncRolloutLoop as AsyncRolloutLoop,
     _chain_to_sequences as chain_to_sequences,
 )
-from trl.experimental.async_grpo.packing import TREE_ATTENTION, TreeRow
+from trl.experimental.async_grpo.packing import (
+    TREE_ATTENTION,
+    TreeRow,
+    register_tree_attention,
+)
 from trl.experimental.async_grpo.vllm_client import VLLMClient
 from trl.trainer.utils import (
     add_fused_lm_head,
-    get_config_model_id,
     is_async_callable,
     nanmax,
     nanmin,
@@ -63,26 +65,30 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 # The release the overrides and copies below were written against (pyproject's pin).
-TRL_VERSION = "1.16.0"
-# TRL main, experimental: the version it reports and the commit last checked against.
-TRL_MAIN_VERSION = "1.17.0.dev0"
-TRL_MAIN_COMMIT = "636cb0fc"
+TRL_VERSION = "1.17.1"
 
-# TRL code axolotl copies or re-implements rather than subclasses; the drift test
-# pins these besides every TRL method an axolotl subclass overrides.
+# TRL code axolotl copies, re-implements or feeds rather than subclasses; the drift
+# test pins these besides every TRL method an axolotl subclass overrides.
 UPSTREAM = {
     "AsyncGRPOTrainer.compute_loss": "copied into AsyncGRPOLossMixin, with the "
     "loss behind loss_type",
     "TreeRow.pack": "packs ChainRow and ScoredRow rows; compute_loss reads its keys",
+    "unpad_tree": "re-implemented by tree-recurrence's tree_kwargs_from_batch, "
+    "which compute_loss reads the packed tree with",
     "AsyncGRPOConfig": "its defaults are mirrored in axolotl's validation "
-    "(max_staleness, weight_sync_steps), and its dispatch_batches/split_batches "
-    "carry the rollout stream's stop micro-batch to every rank",
+    "(max_staleness, weight_sync_steps, top_k with top_p/min_p), and its "
+    "dispatch_batches/split_batches carry the rollout stream's stop micro-batch to "
+    "every rank",
     "RolloutQueueDataset.__iter__": "its staleness rule is applied ahead of it by "
-    "SampleFilterQueue",
+    "SampleFilterQueue, which also takes the bare group ids it would count as dropped",
     "TokenBudgetBatcher.__iter__": "its oversize rule is applied ahead of it by "
     "SampleFilterQueue",
-    "_EpochStopCallback.on_step_end": "reads the consumed-groups set that "
+    "_EpochStopCallback.on_step_end": "counts the trained and dropped groups that "
     "RolloutProgress keeps",
+    "AsyncGRPOTrainer._save_checkpoint": "resumes from the trained and dropped "
+    "groups that RolloutProgress keeps",
+    "AsyncGRPOTrainer._save": "DistributedParallelMixin._save hands it the FSDP2 "
+    "state dict",
     "_TrainBeginCallback.on_train_begin": "its cold weight sync must run in "
     "WeightSyncMixin._sync_weight",
     "_iter_vllm_named_params": "walked by the out-of-place merged weight sync",
@@ -96,12 +102,7 @@ UPSTREAM = {
 
 def check_version() -> None:
     installed = version("trl")
-    if installed == TRL_MAIN_VERSION:
-        LOG.warning_once(
-            f"Async GRPO on trl {installed} (TRL main) is experimental: it was checked "
-            f"against TRL main at {TRL_MAIN_COMMIT}, and later commits may break it."
-        )
-    elif installed != TRL_VERSION:
+    if installed != TRL_VERSION:
         LOG.warning_once(
             f"Async GRPO extends trl {TRL_VERSION}'s experimental AsyncGRPOTrainer; "
             f"trl {installed} is installed. Re-check "
@@ -109,72 +110,46 @@ def check_version() -> None:
         )
 
 
-def _field_names(cls) -> frozenset[str]:
-    return frozenset(field.name for field in dataclasses.fields(cls))
-
-
-_SAMPLE_FIELDS = _field_names(RolloutSample)
-_SEQUENCE_FIELDS = _field_names(TrainingSequence)
-
-# TRL main's score centering (huggingface/trl#7760); no release has it yet.
-SCORE_CENTERING = "score_centering" in _field_names(AsyncGRPOConfig)
-
-
-def score_centering_unavailable() -> str:
-    return (
-        "`loss_type: score_centering` needs TRL's score centering, which only TRL "
-        f"main has (trl {version('trl')} is installed). Install the commit async GRPO "
-        "was checked against: pip install "
-        f"'trl @ git+https://github.com/huggingface/trl.git@{TRL_MAIN_COMMIT}'"
-    )
-
-
 def sampler_fields(sequence: TrainingSequence) -> dict[str, Any]:
-    """The ``RolloutSample`` fields TRL main derives from a ``TrainingSequence``'s
-    per-token sampler record, as its ``_score_group`` does; none on TRL 1.16."""
-    fields: dict[str, Any] = {}
-    if "sampling_mask" in _SAMPLE_FIELDS:
-        fields["sampling_mask"] = sequence.sampling_mask
-    if "sampler_ids" in _SAMPLE_FIELDS:
-        tops = sequence.sampler_logprobs
-        width = max(map(len, tops), default=0)
-        shape = (len(tops), width)
-        fields["sampler_ids"] = np.fromiter(
+    """The ``RolloutSample`` fields TRL's ``_score_group`` derives from a
+    ``TrainingSequence``'s per-token sampler record."""
+    tops = sequence.sampler_logprobs
+    width = max(map(len, tops), default=0)
+    shape = (len(tops), width)
+    return {
+        "sampling_mask": sequence.sampling_mask,
+        "sampler_ids": np.fromiter(
             chain.from_iterable(
                 chain(top, repeat(-1, width - len(top))) for top in tops
             ),
             dtype=np.int64,
             count=shape[0] * width,
-        ).reshape(shape)
-        fields["sampler_log_probs"] = np.fromiter(
+        ).reshape(shape),
+        "sampler_log_probs": np.fromiter(
             chain.from_iterable(
                 chain(top.values(), repeat(-math.inf, width - len(top))) for top in tops
             ),
             dtype=np.float32,
             count=shape[0] * width,
-        ).reshape(shape)
-    return fields
+        ).reshape(shape),
+    }
 
 
 def unsampled_fields(n_tokens: int) -> dict[str, Any]:
     """``sampler_fields`` of ``n_tokens`` tokens the sampler recorded nothing for."""
-    fields: dict[str, Any] = {}
-    if "sampling_mask" in _SAMPLE_FIELDS:
-        fields["sampling_mask"] = [[] for _ in range(n_tokens)]
-    if "sampler_ids" in _SAMPLE_FIELDS:
-        fields["sampler_ids"] = np.full((n_tokens, 0), -1, dtype=np.int64)
-        fields["sampler_log_probs"] = np.full((n_tokens, 0), -math.inf, np.float32)
-    return fields
+    return {
+        "sampling_mask": [[] for _ in range(n_tokens)],
+        "sampler_ids": np.full((n_tokens, 0), -1, dtype=np.int64),
+        "sampler_log_probs": np.full((n_tokens, 0), -math.inf, np.float32),
+    }
 
 
 def unsampled_sequence_fields(n_tokens: int) -> dict[str, Any]:
-    """The per-token sampler record TRL main's ``TrainingSequence`` requires, empty."""
-    fields: dict[str, Any] = {}
-    if "sampling_mask" in _SEQUENCE_FIELDS:
-        fields["sampling_mask"] = [[] for _ in range(n_tokens)]
-    if "sampler_logprobs" in _SEQUENCE_FIELDS:
-        fields["sampler_logprobs"] = [{} for _ in range(n_tokens)]
-    return fields
+    """The per-token sampler record a ``TrainingSequence`` requires, empty."""
+    return {
+        "sampling_mask": [[] for _ in range(n_tokens)],
+        "sampler_logprobs": [{} for _ in range(n_tokens)],
+    }
 
 
 @contextlib.contextmanager
@@ -238,9 +213,9 @@ class _DenseView:
 
 @functools.cache
 def tree_flash_attn():
-    """TRL's kernel (FA3; FA4 on Blackwell from TRL 1.17), or FA2's where it cannot
-    load: FA3 has no Blackwell build, and FA4's CuTe DSL code fails to import under
-    nvidia-cutlass-dsl releases it was not built against."""
+    """TRL's kernel (FA3, or FA4 on Blackwell), or FA2's where it cannot load: FA4's
+    CuTe DSL code fails to import under nvidia-cutlass-dsl releases it was not built
+    against."""
     try:
         kernel = _trl_flash_attn()
     except Exception as err:  # pylint: disable=broad-exception-caught
@@ -278,10 +253,7 @@ class _WideValues:
 
 
 __all__ = [
-    "SCORE_CENTERING",
     "TREE_ATTENTION",
-    "TRL_MAIN_COMMIT",
-    "TRL_MAIN_VERSION",
     "TRL_VERSION",
     "UPSTREAM",
     "AsyncGRPOConfig",
@@ -304,7 +276,6 @@ __all__ = [
     "chain_to_sequences",
     "check_version",
     "flops_per_token",
-    "get_config_model_id",
     "install_runtime_patches",
     "is_async_callable",
     "iter_vllm_named_params",
@@ -314,9 +285,9 @@ __all__ = [
     "pad",
     "patched_trainer_module",
     "print_prompt_completions_sample",
+    "register_tree_attention",
     "sampler_fields",
     "save_lora_adapter",
-    "score_centering_unavailable",
     "trainer_module",
     "tree_flash_attn",
     "unsampled_fields",
