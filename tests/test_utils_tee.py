@@ -28,6 +28,7 @@ def test_file_only_stream_writes_after_prepare(monkeypatch):
     with tempfile.TemporaryDirectory() as td:
         # Avoid stdout tee in this test
         monkeypatch.setenv("AXOLOTL_TEE_STDOUT", "0")
+        monkeypatch.delenv("RANK", raising=False)
         cfg = _dummy_cfg(td, append=False)
 
         # before prepare: writing to file_only_stream creates no file
@@ -51,6 +52,7 @@ def test_stdout_is_mirrored_after_prepare(capsys, monkeypatch):
     from axolotl.utils import tee
 
     with tempfile.TemporaryDirectory() as td:
+        monkeypatch.delenv("RANK", raising=False)
         cfg = _dummy_cfg(td, append=False)
         try:
             # Install tee while capture is disabled so stdout tee wraps real stdout.
