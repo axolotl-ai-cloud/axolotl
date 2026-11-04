@@ -1,8 +1,9 @@
 """How async GRPO packs a recurrent model's rows: prefix-shared trees, or chains.
 
-TRL packs each rank's rollouts into a prefix trie. The ``tree-recurrence`` package
-makes transformers' recurrent mixers follow it (Gated DeltaNet, Mamba2, LFM2's
-short convs) through hooks ``packing_support`` installs. Axolotl adds:
+TRL packs each rank's rollouts into a prefix trie. Transformers' Gated DeltaNet
+layers follow it through TRL's own ``patch_tree_gdn`` (huggingface/trl#7686), and the
+other recurrent mixers (Mamba2, LFM2's short convs) through the ``tree-recurrence``
+package's hooks; ``packing_support`` installs both. Axolotl adds:
 
 - the KDA families of its in-tree Kimi-Linear and Bailing models, whose own
   forwards follow trees;
@@ -13,12 +14,16 @@ short convs) through hooks ``packing_support`` installs. Axolotl adds:
 
 from __future__ import annotations
 
+from accelerate.utils import is_peft_model
 from tree_recurrence import Support, TreeFamily, families, install, register_family
 
 from axolotl.monkeypatch.models.recurrent_support import PACKING_PATCHED
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+# Who runs each tree family: TRL's Triton tree kernels for Gated DeltaNet.
+TREE_BACKENDS = {"gated_delta_net": "trl"}
 
 for _name, _model_types, _mixer in (
     ("kimi_delta_attention", ("kimi_linear",), "KimiDeltaAttention"),
@@ -58,7 +63,10 @@ def packing_support(model) -> Support:
     Idempotent: the PatchManager calls it once the model is loaded, and the trainer
     again for the answer.
     """
-    support = install(model)
+    # TRL's patch_tree_gdn finds the modeling module from the model's class, which
+    # for a PEFT model is PEFT's.
+    base = model.get_base_model() if is_peft_model(model) else model
+    support = install(base, backends=TREE_BACKENDS)
     if support.mode != "none":
         return support
     covered = {t for family in families() for t in family.model_types}

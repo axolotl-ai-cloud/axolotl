@@ -319,6 +319,9 @@ class NemoGymPlugin(BasePlugin):
                 if cfg.adapter in ("lora", "qlora"):
                     # The agents' model proxy names the policy by a fixed model name.
                     args["vllm_lora_alias"] = self._model_name(cfg)
+                if not cfg.trl.loss_type:
+                    # Agents sample without the top log-probs score centering needs.
+                    args["loss_type"] = "dapo"
         elif cfg.vllm:
             vllm_cfg = cfg.vllm
             max_len = getattr(vllm_cfg, "max_model_len", None)

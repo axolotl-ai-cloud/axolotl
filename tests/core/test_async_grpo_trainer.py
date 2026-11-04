@@ -350,8 +350,14 @@ class TestPolicyLoss:
 class TestConfig:
     def test_defaults_to_trls_objective(self, tmp_path):
         args = AxolotlAsyncGRPOConfig(output_dir=str(tmp_path), use_cpu=True)
-        assert args.loss_type == "dapo"
+        assert args.loss_type == "score_centering" and args.score_centering
         assert not hasattr(args, "vllm_importance_sampling_correction")
+
+    def test_ebft_defaults_to_the_clipped_objective(self, tmp_path):
+        from axolotl.core.trainers.ebft.async_trainer import AxolotlAsyncEBFTConfig
+
+        args = AxolotlAsyncEBFTConfig(output_dir=str(tmp_path), use_cpu=True)
+        assert args.loss_type == "dapo" and not args.score_centering
 
     @pytest.mark.parametrize("loss_type", ["dapo", "cispo", "score_centering"])
     def test_loss_type_decides_trls_objective(self, tmp_path, loss_type):
@@ -1055,6 +1061,45 @@ def test_dropped_tail_ends_the_epochs_without_another_step(
     assert trainer._progress.drop_reasons == {"zero_adv": 8}
 
 
+def test_saves_lora_adapters_in_fp32(
+    download_smollm2_135m_instruct_model, tmp_path, monkeypatch
+):
+    """TRL casts what FSDP mixed precision saves to the bf16 compute dtype, and FSDP2
+    trains LoRA in bf16 without lora_fp32_gradients; the adapter is written in fp32
+    either way, from FSDP's gathered state dict or from the model itself."""
+    from transformers import Trainer
+    from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer
+
+    trainer, _, _, _ = _cpu_trainer(tmp_path, monkeypatch, old_log_probs=lambda g: 0.0)
+    written = []
+    monkeypatch.setattr(
+        Trainer,
+        "_save",
+        lambda self, output_dir=None, state_dict=None: written.append(state_dict),
+    )
+    monkeypatch.setattr(
+        type(trainer.accelerator), "mixed_precision", property(lambda self: "bf16")
+    )
+    trainer.is_fsdp_enabled = True
+    trainer.compute_dtype = "bfloat16"
+    for name, param in trainer.model.named_parameters():
+        if "lora_" in name:
+            param.data = param.data.bfloat16()
+    gathered = {n: p.detach().clone() for n, p in trainer.model.state_dict().items()}
+    trainer._save(str(tmp_path / "out"), state_dict=dict(gathered))
+    trainer._save(str(tmp_path / "out"))
+    AsyncGRPOTrainer._save(trainer, str(tmp_path / "out"), state_dict=dict(gathered))
+    from_fsdp, from_model, trl_cast = written
+
+    def dtypes(state, lora):
+        return {t.dtype for n, t in state.items() if ("lora_" in n) is lora}
+
+    for state in (from_fsdp, from_model):
+        assert dtypes(state, lora=True) == {torch.float32}
+        assert dtypes(state, lora=False) == dtypes(gathered, lora=False)
+    assert dtypes(trl_cast, lora=True) == {torch.bfloat16}
+
+
 def test_trains_axolotl_loaded_lora_model_on_cpu(
     download_smollm2_135m_instruct_model, tmp_path, monkeypatch
 ):
@@ -1139,7 +1184,7 @@ def _packed_batch(trainer, samples):
 TRL_LOSSES = {
     "dapo": (
         # Ratios on both sides of the trust region, for both advantage signs.
-        {"old_log_probs": lambda g: (-12.0, -8.0, -12.0, -8.0)[g]},
+        {"old_log_probs": lambda g: (-12.0, -8.0, -12.0, -8.0)[g], "loss_type": "dapo"},
         ("clip_ratio/low_mean", "clip_ratio/high_mean"),
         ("clip_ratio/", "ratio", "kl", "entropy"),
     ),

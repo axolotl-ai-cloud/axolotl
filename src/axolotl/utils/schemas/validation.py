@@ -2903,15 +2903,23 @@ class GRPOVllmValidationMixin:
             )
             if getattr(trl, option) is not None
         ]
-        if trl.loss_type in (None, "dapo"):
+        # Score centering needs the sampler's top log-probs, which only TRL's own
+        # rollout loop requests; EBFT and NeMo Gym multi-turn default to dapo.
+        own_loop = structured_ebft or getattr(self, "nemo_gym_multi_turn", None)
+        default_loss = "dapo" if own_loop else "score_centering"
+        loss_type = trl.loss_type or default_loss
+        named = f"`loss_type: {loss_type}`" + (
+            " (the default)" if trl.loss_type is None else ""
+        )
+        if loss_type == "dapo":
             if is_options:
                 problems.append(
-                    "`loss_type: dapo` (the default, TRL's objective) clips the "
-                    "policy/sampler ratio at `epsilon` / `epsilon_high` and ignores "
+                    f"{named}, TRL's clipped objective, clips the policy/sampler "
+                    "ratio at `epsilon` / `epsilon_high` and ignores "
                     f"{', '.join(is_options)}; to weight tokens by the capped ratio "
                     "instead, set `loss_type: cispo`"
                 )
-        elif trl.loss_type == "cispo":
+        elif loss_type == "cispo":
             eps_options = [
                 f"`{option}`"
                 for option in ("epsilon", "epsilon_high")
@@ -2946,7 +2954,7 @@ class GRPOVllmValidationMixin:
                     "`vllm_importance_sampling_cap` must exceed 1, or it would "
                     "down-weight or drop every token the sampler agrees with"
                 )
-        elif trl.loss_type == "score_centering":
+        elif loss_type == "score_centering":
             eps_options = [
                 f"`{option}`"
                 for option in ("epsilon", "epsilon_high")
@@ -2954,13 +2962,13 @@ class GRPOVllmValidationMixin:
             ]
             if eps_options or is_options:
                 problems.append(
-                    "`loss_type: score_centering` ignores "
-                    f"{', '.join(eps_options + is_options)}; it drops the tokens whose "
-                    "policy/sampler ratio falls outside "
+                    f"{named} ignores {', '.join(eps_options + is_options)}; it "
+                    "drops the tokens whose policy/sampler ratio falls outside "
                     "`vllm_importance_sampling_clip_min` / "
-                    "`vllm_importance_sampling_clip_max`"
+                    "`vllm_importance_sampling_clip_max`. Set `loss_type: dapo` for "
+                    "the clipped objective, or `cispo` for capped importance weights"
                 )
-            if structured_ebft or getattr(self, "nemo_gym_multi_turn", None):
+            if own_loop:
                 problems.append(
                     "`loss_type: score_centering` centers over the vLLM sampler's top "
                     "log-probs, which only TRL's own rollout loop requests; EBFT and "
@@ -2968,9 +2976,10 @@ class GRPOVllmValidationMixin:
                 )
         else:
             problems.append(
-                "`loss_type` must be `dapo` (TRL's clipped objective, the default), "
-                "`cispo` (policy gradient weighted by the capped policy/sampler "
-                "ratio), or `score_centering` (TRL's score centering)"
+                "`loss_type` must be `score_centering` (TRL's score centering, the "
+                "default), `dapo` (TRL's clipped objective, the default for EBFT and "
+                "NeMo Gym multi-turn), or `cispo` (policy gradient weighted by the "
+                "capped policy/sampler ratio)"
             )
         if trl.importance_sampling_level not in (None, "token"):
             problems.append("only `importance_sampling_level: token` is supported")
@@ -2983,7 +2992,7 @@ class GRPOVllmValidationMixin:
                 "`scale_rewards: batch` is not supported: groups are scored as they "
                 "finish, so use `group` or `none`"
             )
-        if trl.loss_type != "score_centering":
+        if loss_type != "score_centering":
             if (
                 trl.vllm_importance_sampling_clip_min is not None
                 or trl.vllm_importance_sampling_clip_max is not None
@@ -3050,14 +3059,14 @@ class GRPOVllmValidationMixin:
         sync_interval = trl.vllm_sync_interval or 1
         if (
             self.adapter in ("lora", "qlora")
-            and trl.loss_type in (None, "dapo")
+            and loss_type == "dapo"
             and staleness * sync_interval > 2
         ):
             LOG.warning(
                 f"Async GRPO with a LoRA adapter trains on rollouts up to "
                 f"{staleness * sync_interval} optimizer steps old (`max_staleness: "
                 f"{staleness}`, `vllm_sync_interval: {sync_interval}`). "
-                "`loss_type: dapo` (the default) drops the gradient of tokens whose "
+                f"{named} drops the gradient of tokens whose "
                 "probability moved past `epsilon` since sampling, and in 200-step "
                 "LoRA runs it stopped ending completions; `trl.loss_type: cispo` is "
                 "recommended. See docs/grpo.qmd#async-loss."

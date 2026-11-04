@@ -185,10 +185,11 @@ class TRLConfig(BaseModel):
         json_schema_extra={
             "description": "Loss formulation to use. Synchronous GRPO: grpo, bnpo, "
             "dr_grpo, dapo, cispo, and the others TRL's GRPOTrainer supports. Async "
-            "GRPO: dapo (default, TRL's surrogate clipped against the vLLM sampler), "
-            "cispo (policy gradient weighted by the policy/sampler ratio, capped at "
-            "vllm_importance_sampling_cap), or score_centering (TRL's score centering "
-            "with masked importance sampling)."
+            "GRPO: score_centering (default, TRL's score centering with masked "
+            "importance sampling), dapo (TRL's surrogate clipped against the vLLM "
+            "sampler; the default for EBFT and NeMo Gym multi-turn), or cispo "
+            "(policy gradient weighted by the policy/sampler ratio, capped at "
+            "vllm_importance_sampling_cap)."
         },
     )
     mask_truncated_completions: bool = Field(

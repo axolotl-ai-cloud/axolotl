@@ -75,6 +75,7 @@ from axolotl.integrations.base import PluginManager
 from axolotl.monkeypatch.models.recurrent_support import recurrent_layer_types
 from axolotl.monkeypatch.models.tree_packing import packing_support
 from axolotl.utils.logging import get_logger
+from axolotl.utils.lora_precision import is_lora_tensor_name
 
 LOG = get_logger(__name__)
 
@@ -153,6 +154,31 @@ def _is_quantized(model: PreTrainedModel) -> bool:
     )
 
 
+class AdapterPrecisionMixin(AsyncGRPOTrainer):
+    """Saves a PEFT adapter's LoRA tensors in fp32.
+
+    Under FSDP mixed precision, TRL's ``_save`` casts every floating tensor it writes
+    to the bf16/fp16 compute dtype, and FSDP2 trains LoRA factors in that dtype unless
+    ``lora_fp32_gradients`` is set. The adapter is written in fp32 either way; a full
+    model is still written as TRL writes it.
+    """
+
+    def _save(self, output_dir=None, state_dict=None):
+        model = self.accelerator.unwrap_model(self.model)
+        if not is_peft_model(model):
+            return super()._save(output_dir, state_dict)
+        if state_dict is None:
+            state_dict = model.state_dict()
+        state_dict = {
+            name: value.float()
+            if is_lora_tensor_name(name) and value.is_floating_point()
+            else value
+            for name, value in state_dict.items()
+        }
+        # transformers' Trainer._save, without TRL's cast
+        return super(AsyncGRPOTrainer, self)._save(output_dir, state_dict)
+
+
 class AxolotlAsyncGRPOTrainer(
     CheckpointWriteRetryMixin,
     RngLoaderMixin,
@@ -162,6 +188,7 @@ class AxolotlAsyncGRPOTrainer(
     DistributedParallelMixin,
     ActivationOffloadingMixin,
     WeightSyncMixin,
+    AdapterPrecisionMixin,
     AsyncGRPOLossMixin,
     AsyncGRPOTrainer,
 ):
@@ -214,6 +241,12 @@ class AxolotlAsyncGRPOTrainer(
             if args.rollout_loop
             else AxolotlRolloutLoop
         )
+        if args.score_centering and not loop_cls._samples_through_trl:
+            raise ValueError(
+                "`loss_type: score_centering` centers over the sampler's top log-probs, "
+                f"which {loop_cls.__name__} does not request; use `loss_type: dapo` or "
+                "`cispo`."
+            )
         if not reward_funcs and not (
             kwargs.get("rollout_worker")
             or kwargs.get("environment_factory")
