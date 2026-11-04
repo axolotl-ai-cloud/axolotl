@@ -13,7 +13,12 @@
 # limitations under the License.
 
 """
-loss for top_k KL divergence
+Reference (pure-PyTorch) top-k forward-KL KD loss.
+
+This is the readable, dependency-free reference for the fused KD loss used on
+the live training path (``axolotl.integrations.kd.kernels.liger.LigerFusedLinearKLTopKLogprobLoss``). It is kept for correctness comparisons
+and as a fallback for environments without the Liger kernel; it is not wired
+into the trainer by default.
 """
 
 import torch
