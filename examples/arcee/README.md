@@ -17,7 +17,7 @@ Thanks to the team at Arcee.ai for using Axolotl in supervised fine-tuning the A
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-uv pip install --no-build-isolation -e '.'
+uv pip install -e '.'
 
 # Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
 python scripts/cutcrossentropy_install.py | sh

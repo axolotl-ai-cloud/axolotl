@@ -61,7 +61,7 @@ def _hub_mamba_kernels_available() -> bool:
     from kernels import has_kernel
 
     try:
-        return has_kernel("kernels-community/mamba-ssm", version=2)
+        return has_kernel("kernels-community/mamba-ssm", version=4)
     except httpx.HTTPError:
         return False
 
