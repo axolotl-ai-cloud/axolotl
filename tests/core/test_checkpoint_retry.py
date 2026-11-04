@@ -278,6 +278,7 @@ def test_decorated_override_runs_inside_the_scope():
 def test_every_axolotl_trainer_retries_checkpoint_writes():
     from axolotl.core.trainers.base import AxolotlTrainer
     from axolotl.core.trainers.dpo.trainer import AxolotlDPOTrainer
+    from axolotl.core.trainers.ebft.async_trainer import AxolotlAsyncEBFTTrainer
     from axolotl.core.trainers.grpo.trainer import (
         AxolotlAsyncGRPOTrainer,
         AxolotlGRPOTrainer,
@@ -295,6 +296,7 @@ def test_every_axolotl_trainer_retries_checkpoint_writes():
         AxolotlDPOTrainer,
         AxolotlGRPOTrainer,
         AxolotlAsyncGRPOTrainer,
+        AxolotlAsyncEBFTTrainer,
         AxolotlORPOTrainer,
         AxolotlKTOTrainer,
         AxolotlCPOTrainer,

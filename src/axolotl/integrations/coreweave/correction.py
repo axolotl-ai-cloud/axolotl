@@ -11,7 +11,7 @@ def install_sampler_correction(trainer):
         return
     if trainer.loss_type == "vespo" and trainer.vllm_importance_sampling_correction:
         raise ValueError("VESPO requires vllm_importance_sampling_correction: false")
-    if trainer.use_liger_kernel:
+    if trainer.args.use_liger_kernel:
         raise ValueError(
             "CoreWeave sampler correction currently requires use_liger_kernel: false"
         )
@@ -20,7 +20,7 @@ def install_sampler_correction(trainer):
         @wraps(method)
         def call(*args, **kwargs):
             previous = trainer.use_vllm
-            # TRL 1.14.1 gates both correction and backend lifecycle on this flag.
+            # TRL gates both correction and backend lifecycle on this flag.
             trainer.use_vllm = enabled
             try:
                 return method(*args, **kwargs)

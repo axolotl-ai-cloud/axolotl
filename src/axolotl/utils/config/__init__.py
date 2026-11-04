@@ -312,7 +312,7 @@ def normalize_config(cfg):
     )
 
     cfg.model_config_type = model_config.model_type
-    validate_recurrent_model_config(cfg)
+    validate_recurrent_model_config(cfg, model_config)
 
     native_text_diffusion = (
         resolved_support is not None

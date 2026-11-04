@@ -14,6 +14,8 @@ Reference for DPO, IPO, KTO, ORPO, and SimPO. For config templates and dataset f
 
 Default: start with DPO. All methods require `sample_packing: false`.
 
+DPO/IPO and KTO score tokens with TRL's fused LM head (no full `[batch, seq, vocab]` logits), so `cut_cross_entropy` and `liger_fused_linear_cross_entropy` are skipped for them and a LoRA adapter on `lm_head` is rejected (use `lora_modules_to_save: [lm_head]`).
+
 DPO/IPO and KTO also accept image datasets for VLMs (`images`/`image` column, `processor_type: AutoProcessor`); ORPO and SimPO do not. See [rlhf.qmd](../rlhf.qmd#multimodal).
 
 ## Architecture

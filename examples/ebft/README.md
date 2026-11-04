@@ -48,10 +48,10 @@ For **unstructured text** without prompt/completion splits (e.g., raw code, pros
 
 ```bash
 # 1. Start vLLM server (native OpenAI server; LoRA loading enabled when vllm_lora_sync: true)
-CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve examples/ebft/qwen3-4b-ebft-structured-async.yaml
+CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve examples/ebft/qwen35-4b-ebft-structured-async.yaml
 
 # 2. Train on a separate GPU
-CUDA_VISIBLE_DEVICES=1 axolotl train examples/ebft/qwen3-4b-ebft-structured-async.yaml
+CUDA_VISIBLE_DEVICES=1 axolotl train examples/ebft/qwen35-4b-ebft-structured-async.yaml
 ```
 
 ### Strided Mode (unstructured text)

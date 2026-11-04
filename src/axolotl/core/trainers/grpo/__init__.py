@@ -10,13 +10,15 @@ from huggingface_hub import snapshot_download
 from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
 from trl.trainer.grpo_trainer import RewardFunc
 
-from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOConfig
+from axolotl.core.trainers.async_grpo.config import AxolotlAsyncGRPOConfig
+from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
+from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
 from axolotl.core.trainers.grpo.trainer import (
-    AxolotlAsyncGRPOTrainer,
     AxolotlGRPOContextParallelTrainer,
     AxolotlGRPOSequenceParallelTrainer,  # noqa: F401  deprecated alias, kept importable
     AxolotlGRPOTrainer,
 )
+from axolotl.integrations.base import PluginManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.trl import TRLConfig
@@ -27,6 +29,11 @@ LOG = get_logger(__name__)
 
 class GRPOStrategy:
     """Strategy for GRPO training"""
+
+    @staticmethod
+    def is_async(cfg: DictDefault) -> bool:
+        """`trl.async_prefetch` runs on TRL's AsyncGRPOTrainer."""
+        return bool(cfg.trl and cfg.trl.async_prefetch)
 
     @classmethod
     def get_trainer_class(
@@ -49,7 +56,7 @@ class GRPOStrategy:
         if context_parallel and async_grpo:
             raise ValueError(
                 "context_parallel and async_grpo cannot both be enabled. "
-                "Disable one of context_parallel_size > 1 or async_prefetch/use_data_producer."
+                "Disable one of context_parallel_size > 1 or async_prefetch."
             )
         if context_parallel:
             return AxolotlGRPOContextParallelTrainer
@@ -170,6 +177,12 @@ class GRPOStrategy:
             grpo_args_kwargs["epsilon_high"] = trl.epsilon_high
 
         if trl.use_liger_loss is not None:
+            if trl.use_liger_loss:
+                LOG.warning(
+                    "`trl.use_liger_loss` is deprecated by TRL and no longer selects "
+                    "Liger's fused GRPO loss: GRPO scores tokens with TRL's fused LM "
+                    "head, so only Liger's layer kernels apply."
+                )
             grpo_args_kwargs["use_liger_kernel"] = trl.use_liger_loss
 
         if trl.multi_objective_aggregation is not None:
@@ -204,73 +217,95 @@ class GRPOStrategy:
         if trl.log_multimodal is not None:
             grpo_args_kwargs["log_multimodal"] = trl.log_multimodal
 
-        # Async GRPO fields
-        if getattr(trl, "use_data_producer", None) is not None:
-            grpo_args_kwargs["use_data_producer"] = trl.use_data_producer
-        if getattr(trl, "async_prefetch", None) is not None:
-            grpo_args_kwargs["async_prefetch"] = trl.async_prefetch
-        if getattr(trl, "prefetch_depth", None) is not None:
-            grpo_args_kwargs["prefetch_depth"] = trl.prefetch_depth
-        if getattr(trl, "vllm_sync_interval", None) is not None:
-            grpo_args_kwargs["vllm_sync_interval"] = trl.vllm_sync_interval
-        if getattr(trl, "streaming_partial_batch", None) is not None:
-            grpo_args_kwargs["streaming_partial_batch"] = trl.streaming_partial_batch
-        if getattr(trl, "streaming_min_groups", None) is not None:
-            grpo_args_kwargs["streaming_min_groups"] = trl.streaming_min_groups
-        if getattr(trl, "vllm_importance_sampling_correction", None) is not None:
+        if trl.vllm_importance_sampling_correction is not None:
             grpo_args_kwargs["vllm_importance_sampling_correction"] = (
                 trl.vllm_importance_sampling_correction
             )
-        if getattr(trl, "vllm_importance_sampling_mode", None) is not None:
+        if trl.vllm_importance_sampling_mode is not None:
             grpo_args_kwargs["vllm_importance_sampling_mode"] = (
                 trl.vllm_importance_sampling_mode
             )
-        if getattr(trl, "vllm_importance_sampling_cap", None) is not None:
+        if trl.vllm_importance_sampling_cap is not None:
             grpo_args_kwargs["vllm_importance_sampling_cap"] = (
                 trl.vllm_importance_sampling_cap
             )
-        if getattr(trl, "off_policy_mask_threshold", None) is not None:
+        if trl.off_policy_mask_threshold is not None:
             grpo_args_kwargs["off_policy_mask_threshold"] = (
                 trl.off_policy_mask_threshold
             )
-        if getattr(trl, "use_bias_correction_kl", None) is not None:
+        if trl.use_bias_correction_kl is not None:
             grpo_args_kwargs["use_bias_correction_kl"] = trl.use_bias_correction_kl
 
-        # Fast Async GRPO fields
-        if getattr(trl, "reward_num_workers", None) is not None:
-            grpo_args_kwargs["reward_num_workers"] = trl.reward_num_workers
-        if getattr(trl, "replay_buffer_size", None) is not None:
-            grpo_args_kwargs["replay_buffer_size"] = trl.replay_buffer_size
-        if getattr(trl, "replay_recompute_logps", None) is not None:
-            grpo_args_kwargs["replay_recompute_logps"] = trl.replay_recompute_logps
-        if getattr(trl, "reroll_start_fraction", None) is not None:
-            grpo_args_kwargs["reroll_start_fraction"] = trl.reroll_start_fraction
-        if getattr(trl, "reroll_max_groups", None) is not None:
-            grpo_args_kwargs["reroll_max_groups"] = trl.reroll_max_groups
-        if getattr(trl, "skip_zero_advantage_batches", None) is not None:
-            grpo_args_kwargs["skip_zero_advantage_batches"] = (
-                trl.skip_zero_advantage_batches
-            )
-        if getattr(trl, "vllm_lora_sync", None) is not None:
-            grpo_args_kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
         if trl.vllm_merge_check_interval is not None:
             grpo_args_kwargs["vllm_merge_check_interval"] = (
                 trl.vllm_merge_check_interval
             )
 
-        # Batch flattening (top-level config, not under trl)
-        if getattr(cfg, "batch_flattening", None):
-            grpo_args_kwargs["batch_flattening"] = cfg.batch_flattening
-
         return grpo_args_kwargs
+
+    @classmethod
+    def set_async_training_args_kwargs(cls, cfg: DictDefault) -> dict[str, Any]:
+        """Map the `trl:` block onto AxolotlAsyncGRPOConfig (TRL's AsyncGRPOConfig)."""
+        trl: TRLConfig = cfg.trl  # type: ignore
+        vllm_cfg: VllmConfig | None = cfg.vllm
+        host = trl.vllm_server_host or (vllm_cfg.host if vllm_cfg else None)
+        if not host or host in ("0.0.0.0", "::"):  # nosec B104
+            # A bind-all address is where the server listens, not where to reach it.
+            host = "localhost"
+        port = trl.vllm_server_port or (vllm_cfg.port if vllm_cfg else None) or 8000
+        kwargs: dict[str, Any] = {"vllm_server_base_url": f"http://{host}:{port}"}
+
+        scale_rewards = trl.scale_rewards
+        if isinstance(scale_rewards, bool):
+            scale_rewards = "group" if scale_rewards else "none"
+        optional = {
+            "vllm_server_timeout": trl.vllm_server_timeout,
+            "num_generations": trl.num_generations,
+            "max_completion_length": trl.max_completion_length,
+            "temperature": trl.temperature,
+            "top_p": trl.top_p,
+            "top_k": trl.top_k,
+            "min_p": trl.min_p,
+            "repetition_penalty": trl.repetition_penalty,
+            "chat_template_kwargs": trl.chat_template_kwargs,
+            "loss_type": trl.loss_type,
+            "epsilon": trl.epsilon,
+            "epsilon_high": trl.epsilon_high,
+            "log_completions": trl.log_completions,
+            "num_completions_to_print": trl.num_completions_to_print,
+            "weight_sync_steps": trl.vllm_sync_interval,
+            "max_staleness": trl.max_staleness,
+            "max_inflight_tasks": trl.max_inflight_tasks,
+            "token_budget": trl.token_budget,
+            "scoring_token_budget": trl.scoring_token_budget,
+            "reward_weights": trl.reward_weights,
+            "multi_objective_aggregation": trl.multi_objective_aggregation,
+            "scale_rewards": scale_rewards,
+            "mask_truncated_completions": trl.mask_truncated_completions,
+            "skip_zero_advantage_batches": trl.skip_zero_advantage_batches,
+            "reward_num_workers": trl.reward_num_workers,
+            "vllm_importance_sampling_mode": trl.vllm_importance_sampling_mode,
+            "vllm_importance_sampling_cap": trl.vllm_importance_sampling_cap,
+            # TRL main only; validation rejects them on releases.
+            "vllm_importance_sampling_clip_min": trl.vllm_importance_sampling_clip_min,
+            "vllm_importance_sampling_clip_max": trl.vllm_importance_sampling_clip_max,
+            "num_sampler_logprobs": trl.num_sampler_logprobs,
+            "vllm_merge_check_interval": trl.vllm_merge_check_interval,
+        }
+        kwargs.update(
+            {key: value for key, value in optional.items() if value is not None}
+        )
+        return kwargs
 
     @classmethod
     def set_trainer_args(cls, cfg: DictDefault) -> list[Any]:
         trainer_args = []
-        if cfg.trl and cfg.trl.reward_funcs:
-            reward_funcs = []
-            for reward_func_fqn in cfg.trl.reward_funcs:
-                reward_funcs.append(cls.get_reward_func(reward_func_fqn))
+        reward_funcs = [
+            cls.get_reward_func(reward_func_fqn)
+            for reward_func_fqn in (cfg.trl.reward_funcs if cfg.trl else None) or []
+        ]
+        reward_funcs.extend(PluginManager.get_instance().get_reward_funcs(cfg))
+        if reward_funcs:
             trainer_args.append(reward_funcs)
 
         return trainer_args

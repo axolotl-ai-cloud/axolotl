@@ -37,14 +37,20 @@ Image datasets (`images`/`image` column, `processor_type: AutoProcessor`) also w
 
 ## Key Async Features
 
+`async_prefetch: true` with `rl: grpo` runs TRL's `AsyncGRPOTrainer` (vLLM server, FSDP2/DDP, `beta: 0`, conversational prompts, picklable reward functions).
+
 | Feature | Config | Purpose |
 |---------|--------|---------|
-| Async prefetch | `async_prefetch: true` | Overlap generation with training |
+| Async GRPO | `async_prefetch: true` | Generate and score continuously while training |
+| Staleness bound | `max_staleness: 4` | Drop rollouts more than N weight syncs old |
 | LoRA sync | `vllm_lora_sync: true` | Fast adapter sync via filesystem |
-| Streaming scoring | `streaming_partial_batch: true` | Score one group at a time |
-| Zero-adv skip | `skip_zero_advantage_batches: true` | Skip batches with no learning signal |
-| Replay buffer | `replay_buffer_size: 100` | Cache high-signal groups |
-| IS correction | `vllm_importance_sampling_correction: true` | Fix off-policy distribution shift |
+| Zero-adv filter | `skip_zero_advantage_batches: true` | Drop samples with no learning signal before packing |
+| Reward workers | `reward_num_workers: 4` | Score rewards in processes, several groups at once |
+| Loss | `loss_type: dapo` (default) | TRL's surrogate, clipped against the vLLM sampler at `epsilon` / `epsilon_high` |
+| Importance weights | `loss_type: cispo`, `vllm_importance_sampling_cap: 3.0` | Weight each token by its policy/sampler ratio, capped, instead of clipping; with LoRA / higher lr it learns faster, and `dapo`'s completions can run to the length cap |
+| Score centering | `loss_type: score_centering` | Experimental, TRL installed from main only: TRL's score centering with masked importance sampling, centered over vLLM's top `num_sampler_logprobs` tokens |
+
+OPSM (`off_policy_mask_threshold`) applies to synchronous GRPO only. Axolotl's own data producer trainer was removed; `use_data_producer` is a deprecated alias for `async_prefetch` with `max_staleness: 0` (it discards in-flight rollouts at every sync and is slower than the default staleness), and its streaming, replay and re-roll options fail validation (see docs/grpo.qmd#sec-data-producer-migration).
 
 ## Health Checks
 
@@ -62,8 +68,18 @@ src/axolotl/
   cli/train.py                     # Entry point
   cli/vllm_serve.py                # Launches vLLM's native OpenAI server (dev mode, NCCL weight transfer, optional LoRA)
   core/trainers/grpo/
-    trainer.py                     # AxolotlGRPOTrainer
+    trainer.py                     # AxolotlGRPOTrainer (sync) and its context-parallel variant
     sampler.py                     # Sampling utilities
+  core/trainers/async_grpo/        # Async GRPO on TRL's AsyncGRPOTrainer (package doc lists the extensions)
+    config.py                      # AxolotlAsyncGRPOConfig
+    trainer.py                     # AxolotlAsyncGRPOTrainer: model loading, sample filtering, dataloader, stop
+    loss.py                        # compute_loss with loss_type dapo / cispo / score_centering
+    weight_sync.py                 # Out-of-place merged sync, adapter retiring, vllm_lora_alias client
+    progress.py                    # Sample filter, consumed/trained groups, end-of-run and stall stops
+    rollout.py                     # Rollout process: rewards, advantages, reward pool, custom rollout loops
+    scoring.py                     # Rewards scored on the trainer (EBFT)
+    traces.py                      # The on_rollouts_scored plugin hook
+    trl_compat.py                  # Every TRL import, module swap and patch; pins in tests/core/test_trl_compat.py
   core/builders/rl.py              # HFRLTrainerBuilder — routes rl type → trainer
   utils/schemas/trl.py             # TRL config schema (all trl: options)
 

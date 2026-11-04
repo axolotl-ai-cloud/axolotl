@@ -104,6 +104,7 @@ src/axolotl/
     trainers/                    # Trainer classes, mixins (optimizer, scheduler, packing)
       dpo/                       # DPO trainer and config
       grpo/                      # GRPO trainer and sampler
+      async_grpo/                # Async GRPO on TRL's AsyncGRPOTrainer
   loaders/                       # Model, tokenizer, adapter, processor loading
   prompt_strategies/             # Dataset format handlers (chat_template, alpaca, dpo/, kto/, orpo/)
   utils/schemas/                 # Pydantic config schemas (config, model, training, peft, trl, fsdp)

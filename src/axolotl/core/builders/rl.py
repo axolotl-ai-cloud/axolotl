@@ -1,5 +1,6 @@
 """Builder for RLHF trainers"""
 
+import dataclasses
 import inspect
 from pathlib import Path
 
@@ -89,16 +90,9 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             from axolotl.core.trainers.grpo import GRPOStrategy
 
-            async_grpo = bool(
-                self.cfg.trl
-                and (
-                    getattr(self.cfg.trl, "async_prefetch", False)
-                    or getattr(self.cfg.trl, "use_data_producer", False)
-                )
-            )
             trainer_cls = GRPOStrategy.get_trainer_class(
                 context_parallel=self.cfg.context_parallel_size > 1,
-                async_grpo=async_grpo,
+                async_grpo=GRPOStrategy.is_async(self.cfg),
             )
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
@@ -196,34 +190,25 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             from axolotl.core.trainers.grpo import GRPOStrategy
 
-            async_grpo = bool(
-                self.cfg.trl
-                and (
-                    getattr(self.cfg.trl, "async_prefetch", False)
-                    or getattr(self.cfg.trl, "use_data_producer", False)
-                )
-            )
+            async_grpo = GRPOStrategy.is_async(self.cfg)
             training_args_cls = GRPOStrategy.get_training_args_class(
                 async_grpo=async_grpo
             )
-            training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
-            if not async_grpo:
-                # Filter out async/fast-async-only fields not in standard GRPOConfig.
-                # These are defined in FastAsyncGRPOConfig and only used by
-                # AxolotlAsyncGRPOConfig. Standard GRPOConfig rejects them.
-                import dataclasses
-
-                from trl import GRPOConfig as _BaseGRPOConfig
-
-                from axolotl.core.trainers.grpo.fast_async_trainer import (
-                    FastAsyncGRPOConfig,
+            if async_grpo:
+                training_args_kwargs.update(
+                    GRPOStrategy.set_async_training_args_kwargs(self.cfg)
                 )
-
-                async_only_fields = {
-                    f.name for f in dataclasses.fields(FastAsyncGRPOConfig)
-                } - {f.name for f in dataclasses.fields(_BaseGRPOConfig)}
-                blocklist_args_kwargs.extend(list(async_only_fields))
+                # `beta` (validated to 0) and other GRPOConfig-only keys have no
+                # counterpart in TRL's AsyncGRPOConfig.
+                async_fields = {f.name for f in dataclasses.fields(training_args_cls)}
+                blocklist_args_kwargs.extend(
+                    key for key in training_args_kwargs if key not in async_fields
+                )
+            else:
+                training_args_kwargs.update(
+                    GRPOStrategy.set_training_args_kwargs(self.cfg)
+                )
             if self.cfg.rl is RLType.GDPO:
                 training_args_kwargs.setdefault(
                     "multi_objective_aggregation", "normalize_then_sum"
@@ -239,6 +224,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             training_args_cls = EBFTStrategy.get_training_args_class(self.cfg)
             training_args_kwargs.update(EBFTStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = EBFTStrategy.get_blocklist_args_kwargs(self.cfg)
+            if EBFTStrategy.is_async(self.cfg):
+                # As for async GRPO: GRPOConfig-only keys have no counterpart in
+                # TRL's AsyncGRPOConfig.
+                ebft_fields = {f.name for f in dataclasses.fields(training_args_cls)}
+                blocklist_args_kwargs.extend(
+                    key for key in training_args_kwargs if key not in ebft_fields
+                )
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 

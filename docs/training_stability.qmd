@@ -44,7 +44,7 @@ GRPO training logs a richer set of metrics. These are the critical ones:
 | `kl` | 0.0--0.5 | > 2.0 suggests policy has diverged too far from reference |
 | `sampling/sampling_logp_difference/mean` | < 0.1 | > 1.0 means policy has diverged far from vLLM server weights |
 | `sampling/importance_sampling_ratio/min` | > 0.1 | Near 0 indicates stale off-policy data; increase `vllm_sync_interval` |
-| `clip_ratio/region_mean` | < 0.1 | > 0.3 means PPO clipping is too aggressive |
+| `clip_ratio/region_mean` | < 0.1 | > 0.3 means PPO clipping is too aggressive (not logged by async GRPO's `loss_type: cispo` or `score_centering`) |
 | `completions/mean_length` | Task-dependent | Monotonically increasing to max length suggests reward hacking |
 | `completions/clipped_ratio` | < 0.3 | > 0.8 means most completions hit `max_completion_length` -- increase it |
 
@@ -123,7 +123,7 @@ This means the policy has diverged significantly from the weights used by vLLM f
 **Fixes**:
 
 - Decrease `vllm_sync_interval` (sync weights more often).
-- Enable `off_policy_mask_threshold` (e.g., 0.5) to mask stale off-policy samples.
+- Enable `off_policy_mask_threshold` (e.g., 0.5) to mask stale off-policy samples (synchronous GRPO; for async GRPO, `loss_type: cispo` weights tokens by the capped ratio instead of clipping it).
 - Use `importance_sampling_level: token` for finer-grained correction.
 
 ### Gradient Norm Instability
@@ -281,7 +281,6 @@ This generates PyTorch profiler traces you can inspect to see exactly which tens
 | `CheckpointError` (tensor count mismatch) | Non-reentrant checkpointing + ZeRO-3 or flex_attention | Set `use_reentrant: true` in `gradient_checkpointing_kwargs` |
 | `Content end boundary is before start boundary` | Chat template parsing issue | Check `eos_token` matches template; file a GitHub issue if persistent |
 | `CAS service error` during data processing | HuggingFace XET issue | Set `export HF_HUB_DISABLE_XET=1` |
-| Training hangs (multi-GPU) | FSDP + async prefetch deadlock | Set `async_prefetch: false` with FSDP |
 
 ## Profiling
 
@@ -381,7 +380,7 @@ axolotl train config.yaml 2>&1 | tee /tmp/my_run.log
 - `completions/mean_terminated_length`, `completions/min_terminated_length`, `completions/max_terminated_length` -- lengths of naturally terminated completions
 - `kl` -- KL divergence between policy and reference
 - `entropy` -- policy entropy (measure of output diversity)
-- `clip_ratio/region_mean`, `clip_ratio/low_mean`, `clip_ratio/high_mean` -- PPO clipping statistics
+- `clip_ratio/region_mean`, `clip_ratio/low_mean`, `clip_ratio/high_mean` -- PPO clipping statistics (not logged by async GRPO's `loss_type: cispo` or `score_centering`)
 - `sampling/sampling_logp_difference/mean`, `sampling/sampling_logp_difference/max` -- log-probability difference between policy and sampling distribution
 - `sampling/importance_sampling_ratio/min`, `sampling/importance_sampling_ratio/mean`, `sampling/importance_sampling_ratio/max` -- IS ratio statistics for off-policy correction
 - `num_tokens` -- total tokens processed

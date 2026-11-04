@@ -117,6 +117,7 @@ jobs:
             tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \
             tests/monkeypatch/test_fsdp2_mixed_dtype_groups.py \
             tests/monkeypatch/test_lora_merge_aware_distributed.py \
+            tests/monkeypatch/test_fsdp2_fused_lm_head_distributed.py \
             tests/integrations/test_expert_parallel_bnb.py \
             tests/integrations/expert_parallel/test_ep_checkpoint_resume.py \
             tests/integrations/expert_parallel/test_ep_lora_adapter_save_distributed.py \
@@ -134,6 +135,7 @@ jobs:
             tests/integrations/context_parallel/test_mesh.py \
             tests/core/trainers/diffusion_lm/test_full_sequence.py \
             tests/core/test_checkpoint_mirror_dist.py \
+            tests/core/test_async_scoring_two_rank.py \
             --cov=axolotl --cov-append --cov-report=xml:distributed-cpu-coverage.xml
       - name: Run slow CPU integrations
         if: inputs.slow

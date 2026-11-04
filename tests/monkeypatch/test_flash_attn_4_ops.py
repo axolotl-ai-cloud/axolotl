@@ -428,6 +428,28 @@ def test_install_is_idempotent_and_skipped_without_registered_ops(cute, monkeypa
     assert interface.FlashAttnFunc is original
 
 
+def test_each_routed_module_runs_its_own_functions(cute):
+    """A hub FA4 kernel (TRL's tree attention) routed next to flash_attn.cute runs its
+    own forward and backward, and flash_attn.cute keeps running its own."""
+    interface = types.ModuleType("_flash_attn4_cuda_test")
+    exec(FAKE_INTERFACE, interface.__dict__)  # nosec B102
+    assert fa4_ops.install_fa4_ops(interface)
+    hub = types.SimpleNamespace(
+        interface=interface,
+        flash_attn_func=interface.flash_attn_func,
+        flash_attn_varlen_func=interface.flash_attn_varlen_func,
+    )
+    for module, other in ((cute, hub), (hub, cute)):
+        block = _varlen_block(module)
+        _, _, reference = _run(module, block, checkpointed=False)
+        other.interface.CALLS.update(fwd=0, bwd=0)
+        forward, calls, grads = _run(module, block, build_sac_context_fn(["attention"]))
+        assert forward == 1 and calls == {"fwd": 1, "bwd": 1}
+        assert other.interface.CALLS == {"fwd": 0, "bwd": 0}
+        _assert_exact(grads, reference)
+    assert not fa4_ops._PENDING
+
+
 def test_ops_match_the_sac_attention_rules():
     assert _is_flash_attention_forward("axolotl::flash_attn_4_fwd")
     assert _is_flash_attention_forward("axolotl::flash_attn_4_varlen_fwd")
