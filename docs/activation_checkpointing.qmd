@@ -103,7 +103,9 @@ redundant all-gather in backward under FSDP. It requires `fsdp_config`, and the 
 applies the same way: `selective` and `offload.saves` install the same save policy in the wrapper,
 `offload.hidden_states` offloads each wrapped layer's input, `offload.all` runs TRL's offloader,
 and `kwargs` (including `every_n_layers`) go to the wrapper. Only `reentrant: true` is rejected,
-since the wrapper is non-reentrant. DiffusionGemma, whose split checkpointing hooks transformers'
+since the wrapper is non-reentrant. accelerate's own wrapper turns off `preserve_rng_state`; Axolotl
+keeps torch's default (`true`), so dropout draws the same masks in the recompute. Set
+`kwargs: {preserve_rng_state: false}` to skip saving the RNG state. DiffusionGemma, whose split checkpointing hooks transformers'
 enable method, needs `implementation: hf`. Plugin-registered saves apply with either implementation.
 
 ### Enabling Activation Offloading

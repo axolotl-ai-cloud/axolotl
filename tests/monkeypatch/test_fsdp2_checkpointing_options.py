@@ -176,6 +176,8 @@ def test_without_options_the_wrapper_matches_the_default():
     assert len(wrappers) == NUM_LAYERS
     for wrapper in wrappers.values():
         assert "context_fn" not in wrapper.checkpoint_fn.keywords
+        # torch's default (true), not accelerate's stock false
+        assert "preserve_rng_state" not in wrapper.checkpoint_fn.keywords
 
 
 def test_wrapped_layers_do_not_fill_the_kv_cache(ids):
