@@ -16,9 +16,20 @@ OFFLOAD_TARGETS = ("hidden_states", "saves", "all")
 
 # torch passes any other key to the checkpointed function: each decoder layer's forward
 TORCH_CHECKPOINT_KWARGS = tuple(
-    name
-    for name, param in inspect.signature(_torch_checkpoint).parameters.items()
-    if param.kind is inspect.Parameter.KEYWORD_ONLY
+    dict.fromkeys(
+        [
+            "use_reentrant",
+            # torch < 2.14 pops it from **kwargs instead of naming it
+            "preserve_rng_state",
+            *(
+                name
+                for name, param in inspect.signature(
+                    _torch_checkpoint
+                ).parameters.items()
+                if param.kind is inspect.Parameter.KEYWORD_ONLY
+            ),
+        ]
+    )
 )
 # keys transformers' enable method takes by name rather than forwarding to torch
 HF_CHECKPOINT_KWARGS = ("every_n_layers",)

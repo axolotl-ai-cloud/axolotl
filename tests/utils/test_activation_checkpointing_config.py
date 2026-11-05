@@ -13,6 +13,9 @@ from unittest import mock
 import pytest
 import torch
 
+from axolotl.monkeypatch.selective_checkpointing import (
+    _SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS,
+)
 from axolotl.utils.activation_checkpointing import (
     CHECKPOINTING_ARG,
     CHECKPOINTING_KWARGS_ARG,
@@ -182,7 +185,11 @@ def _on(reentrant=False, **keywords):
 
 SAC = "build_sac_context_fn.<locals>.context_fn"
 SAC_OFFLOAD = "build_sac_offload_context_fn.<locals>.context_fn"
-SAC_KEYWORDS = {"respect_saved_tensors_hooks": False}
+SAC_KEYWORDS = (
+    {"respect_saved_tensors_hooks": False}
+    if _SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS
+    else {}
+)
 
 
 def _expected(
