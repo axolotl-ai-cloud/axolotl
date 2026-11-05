@@ -17,6 +17,10 @@ class FSDPConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "FSDP version"},
     )
+    activation_checkpointing: bool | None = Field(
+        default=None,
+        description="Deprecated: use `activation_checkpointing: {implementation: fsdp}`.",
+    )
     offload_params: bool | None = Field(
         default=None,
         description="Offload parameters to CPU to reduce GPU memory usage",

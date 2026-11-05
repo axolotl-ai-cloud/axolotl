@@ -85,6 +85,30 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--gradient-checkpointing",),
+        None,
+        None,
+        "Deprecated: use activation_checkpointing (`activation_checkpointing: true`).",
+    ),
+    (
+        ("--gradient-checkpointing-kwargs",),
+        None,
+        None,
+        "Deprecated: use activation_checkpointing.reentrant and activation_checkpointing.kwargs.",
+    ),
+    (
+        ("--selective-checkpointing",),
+        None,
+        None,
+        "Deprecated: use activation_checkpointing.selective (and activation_checkpointing.offload.saves).",
+    ),
+    (
+        ("--activation-offloading",),
+        None,
+        None,
+        "Deprecated: use activation_checkpointing.offload.",
+    ),
+    (
         ("--overrides-of-model-config",),
         None,
         None,
@@ -2873,6 +2897,14 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "fsdp_config__fsdp_version",
         "int",
         "FSDP version",
+    ),
+    (
+        (
+            "--fsdp-config.activation-checkpointing/--no-fsdp-config.activation-checkpointing",
+        ),
+        "fsdp_config__activation_checkpointing",
+        None,
+        "Deprecated: use `activation_checkpointing: {implementation: fsdp}`.",
     ),
     (
         ("--fsdp-config.offload-params/--no-fsdp-config.offload-params",),

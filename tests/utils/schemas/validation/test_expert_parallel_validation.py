@@ -79,14 +79,17 @@ class TestTorchExpertParallelCheckpointing:
         expected = "cpu" if placement is True else placement
         assert cfg.activation_checkpointing.offload.all == expected
 
-    @pytest.mark.parametrize("mode", [True, "legacy", "disk"])
-    def test_rejects_legacy_activation_offloading(self, min_base_cfg, mode):
-        with pytest.raises(ValueError, match="was removed"):
-            _validate(
-                min_base_cfg,
-                expert_parallel_backend="torch",
-                activation_offloading=mode,
-            )
+    @pytest.mark.parametrize("mode", [True, "legacy"])
+    def test_migrates_legacy_activation_offloading(self, min_base_cfg, mode):
+        cfg = _validate(
+            min_base_cfg,
+            expert_parallel_backend="torch",
+            activation_checkpointing=None,
+            gradient_checkpointing=True,
+            activation_offloading=mode,
+        )
+        assert cfg.activation_checkpointing.enabled is True
+        assert cfg.activation_checkpointing.offload.all == "cpu"
 
     @pytest.mark.parametrize(
         "extra",

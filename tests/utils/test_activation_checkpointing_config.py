@@ -1,5 +1,5 @@
-"""Each activation checkpointing config resolves to the same TrainingArguments kwargs and
-model checkpointing state as the legacy keys it replaces.
+"""Each activation checkpointing config, and the deprecated keys it replaces, resolves to
+the same TrainingArguments kwargs and model checkpointing state the deprecated keys did.
 
 A case runs config validation and normalization, the trainer builder's checkpointing
 args, ModelLoader's checkpointing setup and one HF Trainer step on a tiny Llama, and
@@ -466,6 +466,97 @@ CASES = [
 
 @pytest.mark.parametrize(("overrides", "model_type", "expected"), CASES)
 def test_resolves_to_the_same_checkpointing(
+    tiny_llama, min_base_cfg, overrides, model_type, expected
+):
+    observed = _resolve(tiny_llama, min_base_cfg, overrides, model_type)
+    assert observed == expected
+
+
+_KWARGS = "gradient_checkpointing_kwargs"
+# the deprecated form of each case; hf_and_fsdp has none, since setting both
+# deprecated flags is rejected
+DEPRECATED_INPUTS = {
+    "disabled": {"gradient_checkpointing": False},
+    "enabled": {"gradient_checkpointing": True},
+    "non_reentrant": {
+        "gradient_checkpointing": True,
+        _KWARGS: {"use_reentrant": False},
+    },
+    "reentrant": {"gradient_checkpointing": True, _KWARGS: {"use_reentrant": True}},
+    "torch_kwargs": {
+        "gradient_checkpointing": True,
+        _KWARGS: {"use_reentrant": False, "preserve_rng_state": False},
+    },
+    "offload_string": {"gradient_checkpointing": "offload"},
+    "offload_all": {"gradient_checkpointing": True, "activation_offloading": True},
+    "offload_legacy": {
+        "gradient_checkpointing": True,
+        "activation_offloading": "legacy",
+    },
+    "lora_offload_without_recompute": {"activation_offloading": True, **LORA},
+    "hidden_states": {
+        "gradient_checkpointing": True,
+        "activation_offloading": "hidden_states",
+    },
+    "hidden_states_reentrant": {
+        "gradient_checkpointing": True,
+        "activation_offloading": "hidden_states",
+        _KWARGS: {"use_reentrant": True},
+    },
+    "selective": {"gradient_checkpointing": True, "selective_checkpointing": True},
+    "selective_offload": {
+        "gradient_checkpointing": True,
+        "selective_checkpointing": {"save": ["attention"], "offload": True},
+    },
+    "selective_offload_hidden_states": {
+        "gradient_checkpointing": True,
+        "activation_offloading": "hidden_states",
+        "selective_checkpointing": {"save": ["attention"], "offload": True},
+    },
+    "lora": {"gradient_checkpointing": True, **LORA},
+    "lora_every_n_layers": {
+        "gradient_checkpointing": True,
+        _KWARGS: {"use_reentrant": False, "every_n_layers": 2},
+        **LORA,
+    },
+    "qlora": {
+        "gradient_checkpointing": True,
+        "adapter": "qlora",
+        "load_in_4bit": True,
+        **{k: v for k, v in LORA.items() if k != "adapter"},
+    },
+    "fsdp": {**FSDP, "fsdp_config": {"activation_checkpointing": True}},
+    "fsdp_prefixed": {**FSDP, "fsdp_config": {"fsdp_activation_checkpointing": True}},
+    "zero3": {"gradient_checkpointing": True, **ZERO3},
+    "zero3_offload_all": {
+        "gradient_checkpointing": True,
+        "activation_offloading": True,
+        **ZERO3,
+    },
+    "zero3_rl": {"gradient_checkpointing": True, **ZERO3, **DPO},
+    "zero3_unfrozen": {
+        "gradient_checkpointing": True,
+        "unfrozen_parameters": ["model.layers.0.*"],
+        **ZERO3,
+    },
+    "mistral_large4_forces_non_reentrant": {
+        "gradient_checkpointing": True,
+        _KWARGS: {"use_reentrant": True},
+    },
+    "gemma4_forces_non_reentrant": {
+        "gradient_checkpointing": True,
+        _KWARGS: {"use_reentrant": True},
+    },
+}
+DEPRECATED_CASES = [
+    pytest.param(DEPRECATED_INPUTS[case.id], *case.values[1:], id=case.id)
+    for case in CASES
+    if case.id in DEPRECATED_INPUTS
+]
+
+
+@pytest.mark.parametrize(("overrides", "model_type", "expected"), DEPRECATED_CASES)
+def test_deprecated_keys_resolve_to_the_same_checkpointing(
     tiny_llama, min_base_cfg, overrides, model_type, expected
 ):
     observed = _resolve(tiny_llama, min_base_cfg, overrides, model_type)

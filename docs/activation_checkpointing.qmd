@@ -316,8 +316,14 @@ that is kept on GPU at any given time.
 ### Migrating from the legacy keys {#sec-migrate-activation-checkpointing}
 
 `gradient_checkpointing`, `gradient_checkpointing_kwargs`, `selective_checkpointing`,
-`activation_offloading` and `fsdp_config.activation_checkpointing` have been removed. A config that
-still sets one fails validation, and the error prints the block that replaces your values.
+`activation_offloading` and `fsdp_config.activation_checkpointing` are deprecated and will be
+removed in a future release. A config that sets them still trains as before: Axolotl rewrites them
+into the block at startup and logs a warning that prints the block replacing your values.
+
+Combinations that already failed still fail: disk offload, `selective_checkpointing` or
+`activation_offloading: hidden_states` without `gradient_checkpointing`, and
+`gradient_checkpointing` together with `fsdp_config.activation_checkpointing`. Setting a
+deprecated key next to `activation_checkpointing` is also an error.
 
 | Legacy | Replacement |
 |---|---|
@@ -325,16 +331,16 @@ still sets one fails validation, and the error prints the block that replaces yo
 | `gradient_checkpointing: false` | `activation_checkpointing: false` (the default) |
 | `gradient_checkpointing: offload` | `activation_checkpointing: {offload: {all: cpu}}` |
 | `gradient_checkpointing_kwargs: {use_reentrant: X}` | `activation_checkpointing: {reentrant: X}` |
-| other `gradient_checkpointing_kwargs` keys | `activation_checkpointing.kwargs` |
+| other `gradient_checkpointing_kwargs` keys | `activation_checkpointing.kwargs` (keys that `torch.utils.checkpoint` doesn't accept are dropped with a warning) |
 | `gradient_checkpointing_kwargs: {offload: true}` | `activation_checkpointing: {offload: {hidden_states: cpu}}` (stream-overlapped instead of synchronous) |
 | `selective_checkpointing: true` or `{...}` | `activation_checkpointing.selective: true` or `{...}` |
 | `selective_checkpointing.offload: true` | `activation_checkpointing.offload.saves: cpu` |
 | `activation_offloading: true` / `legacy` | `activation_checkpointing.offload.all: cpu` |
 | `activation_offloading: true` without `gradient_checkpointing` | `activation_checkpointing: {enabled: false, offload: {all: cpu}}` |
 | `activation_offloading: hidden_states` | `activation_checkpointing.offload.hidden_states: cpu` |
-| `activation_offloading: disk`, `gradient_checkpointing: offload_disk` | no disk replacement: disk offload is disabled pending a fix (these never wrote to disk; they ran the CPU offloader) |
+| `activation_offloading: disk`, `gradient_checkpointing: offload_disk` | rejected: disk offload is disabled pending a fix (these never wrote to disk; they ran the CPU offloader) |
 | `fsdp_config.activation_checkpointing: true` | `activation_checkpointing: {implementation: fsdp}` |
-| `gradient_checkpointing: true` and `fsdp_config.activation_checkpointing: true` | `activation_checkpointing: true` (transformers rejected the two together), or `{implementation: fsdp}` for FSDP's wrapper |
+| `gradient_checkpointing: true` and `fsdp_config.activation_checkpointing: true` | rejected, as transformers' Trainer rejected the two together: use `activation_checkpointing: true`, or `{implementation: fsdp}` for FSDP's wrapper |
 
 For example:
 

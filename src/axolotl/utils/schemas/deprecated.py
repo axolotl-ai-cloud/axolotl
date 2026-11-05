@@ -1,6 +1,6 @@
 """Pydantic models for deprecated and remapped configuration parameters"""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -25,6 +25,33 @@ class DeprecatedParameters(BaseModel):
     rpo_alpha: float | None = None
     s2_attention: bool | None = None
     flash_attn_rms_norm: bool | None = None
+    # rewritten into activation_checkpointing before validation
+    gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Deprecated: use activation_checkpointing (`activation_checkpointing: true`)."
+        },
+    )
+    gradient_checkpointing_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Deprecated: use activation_checkpointing.reentrant and activation_checkpointing.kwargs."
+        },
+    )
+    selective_checkpointing: dict[str, Any] | bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Deprecated: use activation_checkpointing.selective (and activation_checkpointing.offload.saves)."
+        },
+    )
+    activation_offloading: Literal["hidden_states", "legacy", "disk"] | bool | None = (
+        Field(
+            default=None,
+            json_schema_extra={
+                "description": "Deprecated: use activation_checkpointing.offload."
+            },
+        )
+    )
 
     @field_validator("max_packed_sequence_len")
     @classmethod

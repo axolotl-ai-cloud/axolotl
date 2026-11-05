@@ -559,6 +559,14 @@ def validate_config(
 ) -> DictDefault:
     from axolotl.integrations.base import get_builtin_plugins
     from axolotl.utils.schemas import config as config_schema
+    from axolotl.utils.schemas.activation_checkpointing import (
+        migrate_legacy_checkpointing_keys,
+    )
+
+    # before any validator, so plugin and cross-key validators only see the block
+    warning = migrate_legacy_checkpointing_keys(cfg)
+    if warning:
+        LOG.warning(warning)
 
     if cfg.plugins or get_builtin_plugins():
         AxolotlConfigWCapabilities, AxolotlInputConfig = merge_input_args()

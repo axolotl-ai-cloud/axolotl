@@ -17,7 +17,7 @@ from transformers.utils.import_utils import is_torch_npu_available
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.activation_checkpointing import (
-    removed_checkpointing_keys_message,
+    migrate_legacy_checkpointing_keys,
 )
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
@@ -2143,12 +2143,13 @@ class ModelCompatibilityValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_removed_checkpointing_keys(cls, data):
+    def migrate_legacy_checkpointing(cls, data):
         if not isinstance(data, dict):
             return data
-        message = removed_checkpointing_keys_message(data)
-        if message:
-            raise ValueError(message)
+        data = dict(data)
+        warning = migrate_legacy_checkpointing_keys(data)
+        if warning:
+            LOG.warning(warning)
         return data
 
     @model_validator(mode="after")

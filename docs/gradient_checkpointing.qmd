@@ -17,8 +17,8 @@ about one hidden-state tensor per layer, at the cost of roughly one extra forwar
 
 PyTorch, DeepSpeed, accelerate and transformers (from 5.23) call it activation checkpointing, and
 Axolotl's config follows them: `activation_checkpointing: true` replaces
-`gradient_checkpointing: true`, and the same block configures selective checkpointing and
-activation offloading.
+`gradient_checkpointing: true`, which still works but is deprecated, and the same block configures
+selective checkpointing and activation offloading.
 
 ```yaml
 activation_checkpointing: true

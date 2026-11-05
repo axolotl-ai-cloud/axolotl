@@ -38,6 +38,12 @@ OWNED_CHECKPOINT_KWARGS = {
     ),
 }
 
+_ACCEPTED_CHECKPOINT_KWARGS = tuple(
+    name
+    for name in (*TORCH_CHECKPOINT_KWARGS, *HF_CHECKPOINT_KWARGS)
+    if name not in OWNED_CHECKPOINT_KWARGS and name != "use_reentrant"
+)
+
 
 class DiskOffloadConfig(BaseModel):
     """Settings shared by every offload target placed on disk"""
@@ -313,17 +319,13 @@ class ActivationCheckpointingConfig(BaseModel):
                     f"({_yaml_scalar(self.reentrant)}). Set only `reentrant`."
                 )
             self.reentrant = use_reentrant
-        accepted = [
-            name
-            for name in (*TORCH_CHECKPOINT_KWARGS, *HF_CHECKPOINT_KWARGS)
-            if name not in OWNED_CHECKPOINT_KWARGS and name != "use_reentrant"
-        ]
         for key in self.kwargs:
-            if key not in accepted:
+            if key not in _ACCEPTED_CHECKPOINT_KWARGS:
                 raise ValueError(
                     f"`activation_checkpointing.kwargs.{key}` is not a "
                     "torch.utils.checkpoint.checkpoint argument or `every_n_layers` "
-                    f"(accepted: {', '.join(accepted)}). torch would pass it to each "
+                    f"(accepted: {', '.join(_ACCEPTED_CHECKPOINT_KWARGS)}). torch would pass it "
+                    "to each "
                     "checkpointed layer's forward, where it is ignored or overrides "
                     "the layer's own argument."
                 )
@@ -432,10 +434,15 @@ def legacy_checkpointing_replacement(
     is exact) and notes on values that have no exact replacement, or None when the
     config sets no legacy key.
     """
-    found = [key for key in LEGACY_CHECKPOINTING_KEYS if key in data]
+    found = [key for key in LEGACY_CHECKPOINTING_KEYS if data.get(key) is not None]
     fsdp_config = data.get("fsdp_config") or {}
     fsdp_key = next(
-        (key for key in LEGACY_FSDP_CHECKPOINTING_KEYS if key in fsdp_config), None
+        (
+            key
+            for key in LEGACY_FSDP_CHECKPOINTING_KEYS
+            if fsdp_config.get(key) is not None
+        ),
+        None,
     )
     if fsdp_key:
         found.append(f"fsdp_config.{fsdp_key}")
@@ -446,7 +453,6 @@ def legacy_checkpointing_replacement(
     offload: dict[str, str] = {}
     gc = data.get("gradient_checkpointing")
     ao = data.get("activation_offloading")
-    disk = gc == "offload_disk" or ao == "disk"
     if gc in ("offload", "offload_disk"):
         gc = True
         offload["all"] = "cpu"
@@ -455,25 +461,9 @@ def legacy_checkpointing_replacement(
     elif ao == "hidden_states":
         offload["hidden_states"] = "cpu"
 
-    hf = legacy_hf = bool(gc)
+    hf = bool(gc)
     fsdp = bool(fsdp_config.get(fsdp_key)) if fsdp_key else False
     sac = data.get("selective_checkpointing")
-    needs_recompute = [
-        key
-        for key, is_set in (
-            ("selective_checkpointing", bool(sac)),
-            ("activation_offloading: hidden_states", ao == "hidden_states"),
-        )
-        if is_set
-    ]
-    if needs_recompute and not hf:
-        # these were rejected without gradient_checkpointing
-        hf = True
-        notes.append(
-            f"{_join_names(needs_recompute)} "
-            f"{'require' if len(needs_recompute) > 1 else 'requires'} "
-            "checkpointing, so the replacement turns it on."
-        )
     block: dict[str, Any] = {"enabled": hf or fsdp}
     if fsdp and not hf:
         block["implementation"] = "fsdp"
@@ -510,6 +500,15 @@ def legacy_checkpointing_replacement(
         if key in kwargs:
             kwargs.pop(key)
             notes.append(f"`{key}` has no replacement: axolotl sets it.")
+    unknown = [key for key in kwargs if key not in _ACCEPTED_CHECKPOINT_KWARGS]
+    if unknown:
+        for key in unknown:
+            kwargs.pop(key)
+        notes.append(
+            f"{_join_names(unknown)} {'are' if len(unknown) > 1 else 'is'} not a "
+            "torch.utils.checkpoint.checkpoint argument and is dropped; torch passed "
+            "it to each checkpointed layer's forward."
+        )
     if kwargs:
         block["kwargs"] = kwargs
 
@@ -524,51 +523,123 @@ def legacy_checkpointing_replacement(
             name: offload[name] for name in OFFLOAD_TARGETS if name in offload
         }
 
-    if disk:
-        notes.append(
-            "Disk offload is disabled pending a fix; `activation_offloading: disk` "
-            "never wrote to disk (it ran the same CPU offloader as `true`), so the "
-            "replacement offloads to CPU."
-        )
-    if legacy_hf and fsdp:
-        notes.append(
-            "transformers' Trainer rejects both at once, so this config failed at "
-            "startup. `{enabled: true, implementation: fsdp}` uses FSDP's checkpoint "
-            "wrapper instead."
-        )
-
     replacement: dict | bool = block
     if set(block) == {"enabled"}:
         replacement = block["enabled"]
     return found, replacement, notes
 
 
-def removed_checkpointing_keys_message(data: dict) -> str | None:
-    """The error for a config that still sets legacy checkpointing keys, or None."""
-    resolved = legacy_checkpointing_replacement(data)
-    if resolved is None:
-        return None
-    found, replacement, notes = resolved
+def _legacy_error(data: dict, found: list[str], replacement) -> str | None:
+    """Why a legacy config can't be rewritten: combinations that were already rejected,
+    or legacy keys next to the block."""
     plural = len(found) > 1
-    message = f"{_join_names(found)} {'were' if plural else 'was'} removed."
     pronoun = "them" if plural else "it"
-    rendered = f"`activation_checkpointing: {_render_block(replacement)}`"
+    gc = data.get("gradient_checkpointing")
+    ao = data.get("activation_offloading")
+    fsdp_config = data.get("fsdp_config") or {}
+    fsdp = any(fsdp_config.get(key) for key in LEGACY_FSDP_CHECKPOINTING_KEYS)
+    if data.get("activation_checkpointing") is not None:
+        return (
+            f"{_join_names(found)} {'are' if plural else 'is'} deprecated and can't be "
+            "combined with `activation_checkpointing`. Merge "
+            f"`activation_checkpointing: {_render_block(replacement)}` into your "
+            f"`activation_checkpointing` block and delete {pronoun}."
+        )
+    if ao == "disk" or gc == "offload_disk":
+        name = (
+            "activation_offloading: disk"
+            if ao == "disk"
+            else "gradient_checkpointing: offload_disk"
+        )
+        return (
+            f"`{name}` is disabled pending a fix: it never wrote to disk (it ran the "
+            "same CPU offloader as `activation_offloading: true`). For CPU offload use "
+            f"`activation_checkpointing: {_render_block(replacement)}`."
+        )
+    needs_recompute = [
+        name
+        for name, is_set in (
+            ("selective_checkpointing", bool(data.get("selective_checkpointing"))),
+            ("activation_offloading: hidden_states", ao == "hidden_states"),
+        )
+        if is_set
+    ]
+    if needs_recompute and not gc:
+        resolved = legacy_checkpointing_replacement(
+            {**data, "gradient_checkpointing": True}
+        )
+        assert resolved is not None
+        enabled = resolved[1]
+        return (
+            f"`{needs_recompute[0]}` requires gradient checkpointing. Use "
+            f"`activation_checkpointing: {_render_block(enabled)}`."
+        )
+    if gc and fsdp:
+        return (
+            "`gradient_checkpointing` and `fsdp_config.activation_checkpointing` can't "
+            "both be set (transformers' Trainer rejects them together). Use "
+            "`activation_checkpointing: true` for transformers' checkpointing or "
+            "`activation_checkpointing: {enabled: true, implementation: fsdp}` for "
+            "FSDP's checkpoint wrapper."
+        )
+    return None
+
+
+def _deprecation_message(found: list[str], replacement, notes: list[str]) -> str:
+    plural = len(found) > 1
+    pronoun = "them" if plural else "it"
+    message = (
+        f"{_join_names(found)} {'are' if plural else 'is'} deprecated and will be "
+        "removed in a future release."
+    )
     if replacement is False and "gradient_checkpointing" not in found:
         if found == ["activation_offloading"]:
             reason = "activation offloading is off by default"
         elif found == ["gradient_checkpointing_kwargs"]:
-            reason = "checkpointing is off, so it had no effect"
+            reason = "checkpointing is off, so it has no effect"
             notes = []
         else:
             reason = "activation checkpointing and offloading are off by default"
         message += f" Delete {pronoun}: {reason}."
-    elif "activation_checkpointing" in data:
-        message += (
-            f" Merge {rendered} into your `activation_checkpointing` block and delete "
-            f"{pronoun}."
-        )
     else:
-        message += f" Use {rendered} instead."
+        message += (
+            f" Use `activation_checkpointing: {_render_block(replacement)}` instead."
+        )
     for note in notes:
         message += f" {note}"
-    return f"{message} See {MIGRATION_DOCS} for the migration guide."
+    return f"{message} See {MIGRATION_DOCS}."
+
+
+def migrate_legacy_checkpointing_keys(data: dict) -> str | None:
+    """Rewrite a config's legacy checkpointing keys into `activation_checkpointing`.
+
+    Edits ``data`` in place and returns the deprecation warning, or None when it sets no
+    legacy key. Raises for combinations that were already rejected, and for legacy keys
+    next to the block.
+    """
+    resolved = legacy_checkpointing_replacement(data)
+    if resolved is None:
+        return None
+    found, replacement, notes = resolved
+    error = _legacy_error(data, found, replacement)
+    if error:
+        raise ValueError(f"{error} See {MIGRATION_DOCS} for the migration guide.")
+    for key in LEGACY_CHECKPOINTING_KEYS:
+        data.pop(key, None)
+    # type(...) keeps a DictDefault's attribute access on the values set here
+    fsdp_config = data.get("fsdp_config")
+    if isinstance(fsdp_config, dict):
+        stripped = {
+            key: value
+            for key, value in fsdp_config.items()
+            if key not in LEGACY_FSDP_CHECKPOINTING_KEYS
+        }
+        if fsdp_config and not stripped:
+            # an empty fsdp_config turns FSDP off; validation mirrors the version in
+            stripped["fsdp_version"] = data.get("fsdp_version") or 2
+        data["fsdp_config"] = type(fsdp_config)(stripped)
+    if isinstance(replacement, dict):
+        data["activation_checkpointing"] = type(data)(replacement)
+    elif not (replacement is False and "gradient_checkpointing" not in found):
+        data["activation_checkpointing"] = replacement
+    return _deprecation_message(found, replacement, notes)
