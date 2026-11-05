@@ -92,7 +92,9 @@ def prepare_debug_log(cfg, filename: str = "debug.log") -> str:
     Prepare the debug log.
 
     Creates the output directory, handles append/truncate logic based on cfg, and opens
-    the debug log file for subsequent writes via file-only handlers.
+    the debug log file for subsequent writes via file-only handlers. Non-zero ranks
+    insert ``.rank{N}`` before the suffix (``debug.log`` -> ``debug.rank{N}.log``) so
+    ranks never share a file.
     """
     global _file_handle, _log_path, _tee_installed
 
@@ -103,6 +105,12 @@ def prepare_debug_log(cfg, filename: str = "debug.log") -> str:
 
         output_dir = cfg.output_dir
         os.makedirs(output_dir, exist_ok=True)
+
+        # one file per rank: concurrent unlink/append on a shared FS (NFS) loses or clobbers lines
+        rank = os.environ.get("RANK", "0")
+        if rank != "0":
+            stem, suffix = os.path.splitext(filename)
+            filename = f"{stem}.rank{rank}{suffix}"
 
         log_path = Path(output_dir) / filename
         append = bool(

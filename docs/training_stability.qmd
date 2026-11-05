@@ -352,6 +352,8 @@ For detailed axolotl-internal debug output:
 AXOLOTL_LOG_LEVEL=DEBUG axolotl train config.yaml 2>&1 | tee /tmp/training.log
 ```
 
+Axolotl also mirrors each run's output to `output_dir/debug.log`; in multi-GPU runs, rank N > 0 writes to `output_dir/debug.rank{N}.log` instead.
+
 ::: {.callout-tip}
 ## Always Log to a File
 Pipe training output to a log file so you can inspect it after the run:
