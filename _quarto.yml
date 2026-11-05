@@ -443,6 +443,7 @@ website:
             - docs/support-matrix.qmd
             - section: "Model Guides"
               contents:
+                - docs/models/kolibri.qmd
                 - docs/models/mistral-large-4.qmd
                 - docs/models/beam.qmd
                 - docs/models/k2-horizon.qmd
