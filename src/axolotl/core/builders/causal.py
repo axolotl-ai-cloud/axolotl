@@ -29,6 +29,7 @@ from axolotl.monkeypatch.relora import ReLoRACallback
 from axolotl.processing_strategies import get_processing_strategy
 from axolotl.utils import is_comet_available, is_mlflow_available
 from axolotl.utils.callbacks import (
+    DoRANormCacheResetCallback,
     LossWatchDogCallback,
     bench_eval_callback_factory,
     causal_lm_bench_eval_callback_factory,
@@ -80,6 +81,20 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         if self.cfg.relora:
             callbacks.append(ReLoRACallback(self.cfg))
+
+        # On the LoRA-kernel + DoRA path the cached weight norms live only in
+        # process memory; clear them every step so resumed runs match unbroken
+        # ones (see axolotl kernels/lora.py clear_dora_norm_caches).
+        if (
+            getattr(self.cfg, "peft_use_dora", False)
+            and (
+                self.cfg.lora_mlp_kernel
+                or self.cfg.lora_qkv_kernel
+                or self.cfg.lora_o_kernel
+                or self.cfg.lora_embedding_kernel
+            )
+        ):
+            callbacks.append(DoRANormCacheResetCallback())
 
         # TODO: check if can move to base class
         if self.cfg.loss_watchdog_threshold is not None:

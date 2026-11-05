@@ -333,6 +333,34 @@ def _compute_dora_scale_cached(
     return magnitude.to(dtype) / weight_norm
 
 
+def clear_dora_norm_caches(model: nn.Module) -> int:
+    """Clear all cached DoRA weight norms held on ``model``'s modules.
+
+    The DoRA weight norm caches (``magnitude._dora_cache`` and
+    ``proj._dora_norm_cache``) live only in process memory: they are plain
+    tensor/module attributes and are never serialized into a checkpoint. The
+    cache is keyed on ``lora_A``/``lora_B`` ``_version``, which some fused
+    optimizer paths do not bump on every update, so a stale norm can also
+    survive optimizer steps in-process. Call this after each optimizer step
+    and at checkpoint boundaries so a resumed run and an unbroken run see the
+    same (freshly recomputed) norms.
+
+    Returns:
+        number of caches cleared.
+    """
+    cleared = 0
+    for module in model.modules():
+        if hasattr(module, "_dora_norm_cache"):
+            delattr(module, "_dora_norm_cache")
+            cleared += 1
+        for tensors in (module._parameters, module._buffers):
+            for tensor in tensors.values():
+                if tensor is not None and hasattr(tensor, "_dora_cache"):
+                    delattr(tensor, "_dora_cache")
+                    cleared += 1
+    return cleared
+
+
 def matmul_lora(
     X: torch.Tensor,
     W: torch.Tensor,

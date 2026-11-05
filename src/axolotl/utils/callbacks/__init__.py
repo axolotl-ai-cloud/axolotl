@@ -98,6 +98,50 @@ class SaveModelOnFirstStepCallback(TrainerCallback):
         return control
 
 
+class DoRANormCacheResetCallback(TrainerCallback):
+    """Clear the in-memory DoRA weight-norm caches after every optimizer step.
+
+    On the LoRA-kernel + DoRA path, the weight norm computed by
+    ``axolotl.kernels.lora._compute_dora_scale`` is cached on the magnitude
+    parameter (or the projection module) keyed on ``lora_A``/``lora_B``
+    ``_version``. Some fused optimizer paths (e.g. fused AdamW) do not bump
+    that version counter on every update, so the cached norm can go stale
+    within a run; and the cache is a plain attribute that is never serialized,
+    so a run resumed from a checkpoint recomputes norms the unbroken run
+    served from a possibly-stale cache. Clearing after each optimizer step
+    (and before each checkpoint save) keeps both legs in sync: the norm is
+    recomputed once per step instead of being served across steps.
+    """
+
+    def on_step_end(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ) -> TrainerControl:
+        from axolotl.kernels.lora import clear_dora_norm_caches
+
+        model = kwargs.get("model")
+        if model is not None:
+            clear_dora_norm_caches(model)
+        return control
+
+    def on_save(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        **kwargs,
+    ) -> TrainerControl:
+        from axolotl.kernels.lora import clear_dora_norm_caches
+
+        model = kwargs.get("model")
+        if model is not None:
+            clear_dora_norm_caches(model)
+        return control
+
+
 class SkipEvalOnResumeCallback(TrainerCallback):
     """Skip the redundant evaluation that fires when resuming from a checkpoint
     whose step aligns with ``eval_steps``.
