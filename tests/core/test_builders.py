@@ -12,7 +12,7 @@ import torch._inductor.config as _inductor_cfg
 from datasets import Dataset
 
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
-from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.core.builders.base import TrainerBuilderBase, _fsdp_training_config
 from axolotl.core.trainers import AxolotlKTOTrainer, AxolotlTrainer
 from axolotl.model_support import ModelStrategies
 from axolotl.utils.activation_checkpointing import (
@@ -201,7 +201,7 @@ class TestGradientCheckpointingConfig:
             },
         )
 
-        fsdp_config = TrainerBuilderBase._fsdp_training_config(SimpleNamespace(cfg=cfg))
+        fsdp_config = _fsdp_training_config(cfg)
 
         assert dict(fsdp_config) == expected
         assert "activation_checkpointing" not in cfg.fsdp_config

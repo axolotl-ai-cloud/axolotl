@@ -68,6 +68,13 @@ def _eval_on_start(cfg) -> bool:
     return True if eval_on_start is None else bool(eval_on_start)
 
 
+def _fsdp_training_config(cfg):
+    """`fsdp_config` for TrainingArguments, which reads FSDP's checkpointing from it."""
+    if fsdp_checkpointing_enabled(cfg):
+        return {**cfg.fsdp_config, "activation_checkpointing": True}
+    return cfg.fsdp_config
+
+
 class TrainerBuilderBase(abc.ABC):
     """Base class for trainer builder."""
 
@@ -711,12 +718,6 @@ class TrainerBuilderBase(abc.ABC):
             # reentrant hidden_states offload is a patch the model loader applies
             training_args_kwargs["activation_offloading"] = "hidden_states"
 
-    def _fsdp_training_config(self):
-        """`fsdp_config` for TrainingArguments, which reads FSDP's checkpointing from it."""
-        if fsdp_checkpointing_enabled(self.cfg):
-            return {**self.cfg.fsdp_config, "activation_checkpointing": True}
-        return self.cfg.fsdp_config
-
     def _set_base_training_args(
         self, total_num_steps
     ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -796,7 +797,7 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["max_length"] = self.cfg.sequence_len
 
         if self.cfg.fsdp_config:
-            training_args_kwargs["fsdp_config"] = self._fsdp_training_config()
+            training_args_kwargs["fsdp_config"] = _fsdp_training_config(self.cfg)
             training_args_kwargs["fsdp"] = True
 
         self._configure_reporting(training_args_kwargs)
