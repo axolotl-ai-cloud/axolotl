@@ -1488,3 +1488,11 @@ class AxolotlTrainer(
 
         # Good practice: save your training arguments together with the trained model
         torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+
+        # save_pretrained rewrites a sharded index without MTP, e.g. the save inside push_to_hub
+        if self.axolotl_cfg and os.path.abspath(output_dir) == os.path.abspath(
+            self.args.output_dir
+        ):
+            from axolotl.utils.mtp import maybe_copy_mtp_weights
+
+            maybe_copy_mtp_weights(self.axolotl_cfg, output_dir)
