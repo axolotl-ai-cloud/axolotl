@@ -251,3 +251,47 @@ def test_loader_rejects_split_checkpointing_models(min_base_cfg):
     model._enable_split_checkpointing = lambda *args, **kwargs: None
     with pytest.raises(ValueError, match="implementation: hf"):
         _loader(cfg, model)._configure_fsdp_activation_checkpointing()
+
+
+def test_trl_prepare_fsdp_leaves_frozen_models_unwrapped(tmp_path, monkeypatch):
+    import torch.distributed as dist
+    from accelerate import FullyShardedDataParallelPlugin, PartialState
+    from torch.distributed.device_mesh import init_device_mesh
+
+    from axolotl.monkeypatch.trainer.trl import prepare_fsdp
+    from axolotl.utils import distributed as axolotl_distributed
+
+    for key, value in {"RANK": "0", "WORLD_SIZE": "1", "LOCAL_RANK": "0"}.items():
+        monkeypatch.setenv(key, value)
+    dist.init_process_group(
+        "gloo", init_method=f"file://{tmp_path / 'rendezvous'}", rank=0, world_size=1
+    )
+    axolotl_distributed.distributed_state = None
+    PartialState._reset_state()
+    try:
+        PartialState(cpu=True)
+        ref_model = _model().eval().requires_grad_(False)
+        plugin = FullyShardedDataParallelPlugin(
+            fsdp_version=2,
+            auto_wrap_policy="TRANSFORMER_BASED_WRAP",
+            transformer_cls_names_to_wrap=["LlamaDecoderLayer"],
+            activation_checkpointing=True,
+        )
+        accelerator = SimpleNamespace(
+            device=torch.device("cpu"),
+            is_main_process=True,
+            state=SimpleNamespace(
+                fsdp_plugin=plugin,
+                device_mesh=init_device_mesh("cpu", (1,), mesh_dim_names=("dp_shard",)),
+                parallelism_config=SimpleNamespace(fsdp_dim_names=("dp_shard",)),
+            ),
+        )
+
+        ref_model = prepare_fsdp(ref_model, accelerator)
+
+        # it only runs under no_grad, where a checkpoint wrapper recomputes nothing
+        assert not _wrappers(ref_model)
+    finally:
+        dist.destroy_process_group()
+        PartialState._reset_state()
+        axolotl_distributed.distributed_state = None

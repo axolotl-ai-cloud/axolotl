@@ -706,14 +706,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         pass  # auto_wrap_policy_type = "size"
 
     # We set `auto_wrap_policy` to `functools.partial` to avoid creating it again
-    # This is because of `apply_activation_checkpointing` which will can reuse this function
     fsdp2_plugin.set_auto_wrap_policy(model)
 
-    # accelerate >= 1.15 applies AC in `_prepare_fsdp2` (via the patched `fsdp2_apply_ac`)
-    # before calling this; wrapping again nests two checkpoints per layer.
-    if fsdp2_plugin.activation_checkpointing:
-        # Apply activation checkpointing before applying `fully_shard`
-        fsdp2_apply_ac(accelerator, model)
+    # No activation checkpointing here: `_prepare_fsdp2` applies it to the trained model
+    # before calling this, and TRL's `prepare_fsdp` (patched to this) only prepares
+    # frozen reference, teacher and reward models.
 
     mesh = getattr(accelerator.state, "device_mesh", None)
 
