@@ -132,13 +132,16 @@ def choose_device(cfg):
             if torch.cuda.is_available():
                 return f"cuda:{cfg.local_rank}"
 
+            if torch.xpu.is_available():
+                return f"xpu:{cfg.local_rank}"
+
             if torch.backends.mps.is_available():
                 return "mps"
 
             if is_torch_npu_available():
                 return f"npu:{cfg.local_rank}"
 
-            raise SystemError("No CUDA/mps/npu device found")
+            raise SystemError("No CUDA/xpu/mps/npu device found")
         except Exception:
             return "cpu"
 
