@@ -673,6 +673,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../../docs/runcrate.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Runcrate</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">AMD GPUs on HPC Systems</span></a>
   </div>
@@ -990,7 +996,9 @@ handlers.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.tee.prepare_debug_log(cfg, filename<span class="op">=</span><span class="st">'debug.log'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Prepare the debug log.</p>
 <p>Creates the output directory, handles append/truncate logic based on cfg, and opens
-the debug log file for subsequent writes via file-only handlers.</p>
+the debug log file for subsequent writes via file-only handlers. Non-zero ranks
+insert <code>.rank{N}</code> before the suffix (<code>debug.log</code> -&gt; <code>debug.rank{N}.log</code>) so
+ranks never share a file.</p>
 
 
 </section>
