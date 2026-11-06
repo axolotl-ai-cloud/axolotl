@@ -114,8 +114,8 @@ jobs:
           tm monkeypatch -v --durations=10 -m "not gpu and not slow and not nf4_distributed and not distributed_cpu" tests/monkeypatch/
           tm patched -v --durations=10 -m "not gpu and not slow" tests/patched/
           tm cli -v --durations=10 -m "not gpu and not slow" tests/cli/
-          tm utils -v --durations=10 -m "not gpu and not slow" tests/utils/
-          tm integrations -v --durations=10 -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/
+          tm utils -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow" tests/utils/
+          tm integrations -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/
           exit $failed
 
       - name: testmon selection summary

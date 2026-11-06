@@ -169,8 +169,8 @@ jobs:
           pytest -v --durations=10 -m "not gpu and not slow and not nf4_distributed and not distributed_cpu" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 -m "not gpu and not slow" tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 -m "not gpu and not slow" tests/cli/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 -m "not gpu and not slow" tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow" tests/utils/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
