@@ -41,7 +41,7 @@ TEST_FILE_GLOBS = ("test_*.py", "*_test.py")
 # Jobs that never run pytest; their logs are not downloaded
 NON_TEST_JOB_RE = re.compile(
     r"Modal image build|pre-commit|Prefetch S3|path filter|Select e2e tests|"
-    r"check-gpu-label|gate-skip-e2e|cleanup"
+    r"check-gpu-label|gate-skip-e2e|cleanup|Changed tests report"
 )
 GPU_JOB_PREFIXES = ("docker-e2e /", "multi-gpu-e2e /", "gpu-slow /")
 MAX_LISTED = 150
@@ -208,8 +208,12 @@ class Evidence:
 
 
 def gather_evidence(
-    repo: str, head_sha: str, log_cache: Path | None = None
+    repo: str,
+    head_sha: str,
+    log_cache: Path | None = None,
+    current_run: int | None = None,
 ) -> Evidence:
+    """Outcomes from every test job for ``head_sha``; ``current_run`` is not pending."""
     evidence = Evidence()
     runs = _gh_items(
         f"repos/{repo}/actions/runs?head_sha={head_sha}&per_page=100",
@@ -218,7 +222,7 @@ def gather_evidence(
     for run in runs:
         if run["name"] not in TEST_WORKFLOWS:
             continue
-        if run["status"] != "completed":
+        if run["status"] != "completed" and run["id"] != current_run:
             evidence.pending.append(run["name"])
         for raw in _gh_items(
             f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=all&per_page=100",
@@ -1046,6 +1050,11 @@ def main() -> int:
     parser.add_argument(
         "--strict", action="store_true", help="exit 1 unless every changed test ran"
     )
+    parser.add_argument(
+        "--annotate",
+        action="store_true",
+        help="emit the verdict as a GitHub Actions notice or warning",
+    )
     args = parser.parse_args()
     if not args.pr and not args.head_sha:
         parser.error("pass --pr or --head-sha")
@@ -1072,7 +1081,11 @@ def main() -> int:
     ensure_commits(args.repo, pr, [merge_base, head_sha])
 
     changes = collect_changes(merge_base, head_sha)
-    evidence = gather_evidence(args.repo, head_sha, args.log_cache)
+    # a report job inside a Tests run sees that run as in progress
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    evidence = gather_evidence(
+        args.repo, head_sha, args.log_cache, int(run_id) if run_id else None
+    )
     verdicts = [judge(test, evidence) for test in changes.tests]
     report = render(pr, head_sha, changes, verdicts, evidence, labels)
     print(report)
@@ -1088,6 +1101,9 @@ def main() -> int:
     print(f"{STATUS_CONTEXT}: {state} - {description}", file=sys.stderr)
     if args.status:
         post_status(args.repo, head_sha, state, description)
+    if args.annotate:
+        level = "notice" if state == "success" else "warning"
+        print(f"::{level} title={STATUS_CONTEXT}::{description}")
     return 1 if args.strict and state != "success" else 0
 
 

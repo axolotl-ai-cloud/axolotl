@@ -369,6 +369,30 @@ def test_find_pr_skips_heads_no_pull_request_has(monkeypatch):
     assert mod.find_pr("o/r", "a" * 40) is None
 
 
+def test_gather_evidence_does_not_wait_on_its_own_run(monkeypatch):
+    def items(path, jq):
+        if "/jobs?" in path:
+            return [
+                {
+                    "id": 9,
+                    "name": "Changed tests report",
+                    "run_attempt": 1,
+                    "status": "in_progress",
+                    "conclusion": None,
+                }
+            ]
+        return [
+            {"id": 1, "name": "Tests", "status": "in_progress"},
+            {"id": 2, "name": "Slow GPU", "status": "in_progress"},
+            {"id": 3, "name": "lint", "status": "in_progress"},
+        ]
+
+    monkeypatch.setattr(mod, "_gh_items", items)
+    evidence = mod.gather_evidence("o/r", "a" * 40, current_run=1)
+    assert evidence.pending == ["Slow GPU"]
+    assert mod.gather_evidence("o/r", "a" * 40).pending == ["Tests", "Slow GPU"]
+
+
 def test_status_payload():
     evidence = _evidence({CPU: {"tests/a.py::test_ran": {"PASSED"}}})
     ran = mod.judge(_test("tests/a.py::test_ran"), evidence)

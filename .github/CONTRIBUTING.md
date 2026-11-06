@@ -155,8 +155,9 @@ commit status reports whether every test the PR adds or edits ran in some job, f
 `pytest -v` lines in the logs of all jobs for the PR head. Tests that never ran or only
 skipped are grouped by the label that routes them (`run-gpu-tests`, `run-gpu-slow`,
 `run-cpu-slow`) or flagged when no lane selects them. The status is informational; its
-details link opens the full report. To check a PR locally with `gh`, run
-`python cicd/verify_changed_tests.py --pr <number>`.
+details link opens the full report. The Tests run's last job, `Changed tests report`,
+previews the same report in that run's summary before Slow CPU or Slow GPU finish. To
+check a PR locally with `gh`, run `python cicd/verify_changed_tests.py --pr <number>`.
 
 ## How to Contribute
 

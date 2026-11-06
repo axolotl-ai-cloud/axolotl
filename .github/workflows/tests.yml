@@ -457,3 +457,34 @@ jobs:
     if: github.event_name == 'pull_request' && needs.check-gpu-label.outputs.enabled == 'true' && needs.multigpu-paths.outputs.run_multigpu == 'true'
     uses: ./.github/workflows/multi-gpu-e2e.yml
     secrets: inherit
+
+  changed-tests:
+    name: Changed tests report
+    # Preview of changed-tests.yml, whose status also waits for Slow CPU / Slow GPU runs
+    needs: [pytest, pytest-testmon, distributed-cpu, sdist, docker-e2e, multi-gpu-e2e]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Report changed tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python cicd/verify_changed_tests.py --repo "$GITHUB_REPOSITORY" \
+            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --summary "$GITHUB_STEP_SUMMARY" --annotate
