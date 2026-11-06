@@ -133,6 +133,11 @@ def test_operation(device):
     # Exercise the operation on the selected device.
 ```
 
+The CPU jobs deselect `gpu`, so marking a whole test that also runs on CPU drops its
+CPU coverage. When Accelerate, PEFT or the Trainer picks the device rather than the
+test, request the `inferred_device` fixture (`@pytest.mark.usefixtures("inferred_device")`)
+instead: its `cuda` case carries `gpu`, and its `cpu` case runs only on hosts without CUDA.
+
 Use module-level `pytestmark` only when every test has the same requirement.
 Avoid CUDA allocation, kernel compilation, and dependency-sensitive initialization
 at module import time: pytest imports modules before marker deselection. Put that
