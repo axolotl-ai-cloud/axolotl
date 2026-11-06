@@ -38,12 +38,23 @@ Do not `pip install -r llama.cpp/requirements/...` into your training environmen
 axolotl export config.yml --quantize Q4_K_M,Q8_0
 ```
 
-LoRA/QLoRA runs must be merged first — export refuses an adapter-only directory:
+## LoRA adapters
+
+Set `export.lora` and an unmerged LoRA/QLoRA run exports as a *standalone GGUF LoRA* instead, through llama.cpp's [`convert_lora_to_gguf.py`](https://github.com/ggml-org/llama.cpp/blob/master/convert_lora_to_gguf.py). The adapter is not a model on its own. It is loaded at runtime on top of a GGUF of the same base model, so both files have to be present:
 
 ```bash
-axolotl merge-lora config.yml
-axolotl export config.yml
+axolotl export config.yml --lora
+llama-cli -m base-f16.gguf --lora outputs/my-run/gguf/my-run-lora-f32.gguf
 ```
+
+```yaml
+export:
+  lora: true
+```
+
+Without it, an adapter-only `output_dir` is refused and points you at `axolotl merge-lora`. Training pre-saves the base model's `config.json` beside the adapter, so the converter reads the base config locally instead of fetching it from the Hub.
+
+Two options work differently here. `quantize` is rejected, because `llama-quantize` only takes full models, and `outtype` is limited to `f32`, `f16`, `bf16`, `q8_0`, `auto`. It defaults to `f32` rather than `f16`, matching `convert_lora_to_gguf.py`'s own default. The default filename gains a `-lora` marker (`{output_dir}/gguf/{run}-lora-{ftype}.gguf`) so an adapter export cannot overwrite a full-model one.
 
 ## Configuration
 
@@ -52,13 +63,14 @@ Options are named after their `convert_hf_to_gguf.py` counterparts:
 ```yaml
 export:
   format: gguf         # Optional[str] = "gguf". Deployment format.
-  outtype: f16         # Optional[str] = "f16". Weight type of the conversion: f32, f16, bf16, q8_0, tq1_0, tq2_0, auto.
+  outtype: f16         # Optional[str]. Weight type of the conversion: f32, f16, bf16, q8_0, tq1_0, tq2_0, auto. Defaults to f16, or f32 for a LoRA export.
   quantize: [Q4_K_M]   # Optional[list[str]] = []. Additional llama.cpp quant types to emit.
   outfile:             # Optional[str]. Defaults to {output_dir}/gguf/{run}-{ftype}.gguf.
   llama_cpp_dir:       # Optional[str]. Defaults to $LLAMA_CPP_DIR.
+  lora: false          # Optional[bool] = false. Export the adapter as a standalone GGUF LoRA instead of a full model.
 ```
 
-Every key can be overridden from the CLI (`--outtype`, `--quantize`, `--outfile`, `--llama-cpp-dir`), and `--model-dir` exports an arbitrary checkpoint instead of the one in `output_dir`.
+Every key can be overridden from the CLI (`--outtype`, `--quantize`, `--outfile`, `--llama-cpp-dir`, `--lora/--no-lora`), and `--model-dir` exports an arbitrary checkpoint instead of the one in `output_dir`.
 
 As in llama.cpp, `{ftype}` in `outfile` is replaced by the weight type, so each requested quant type is written as its own file alongside the unquantized conversion:
 
@@ -78,6 +90,13 @@ Conversion is slow, so a few failure modes are caught up front:
 - **Multi-token-prediction layers** (`num_nextn_predict_layers`), which llama.cpp cannot load. See the [GLM-4.5 example](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm45).
 - **Missing chat template**, which is only a warning but usually means the runtime will fall back to a default template and undo your fine-tune.
 
+A LoRA export runs its own checks instead, for the two things the adapter converter cannot represent:
+
+- **DoRA** (`peft_use_dora`). The converter only pairs up `lora_A`/`lora_B` tensors and has no handling for DoRA's magnitude vectors.
+- **`lora_modules_to_save`**, whose layers PEFT writes out whole rather than as a low-rank pair.
+
+In both cases the fix is the same, which is to merge the adapter with `axolotl merge-lora` and export the merged model.
+
 ## Known gaps
 
-Not yet supported: importance-matrix (`imatrix`) calibration, `gguf-split` for large models, multimodal `mmproj` files, exporting a LoRA adapter as a standalone GGUF, and pushing to the Hub.
+Not yet supported: importance-matrix (`imatrix`) calibration, `gguf-split` for large models, multimodal `mmproj` files, and pushing to the Hub.

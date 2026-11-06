@@ -2,7 +2,7 @@
 Export Config Schema
 """
 
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -19,6 +19,26 @@ GGUF_QUANT_TYPES = frozenset(
     }
 )  # fmt: skip
 
+# `convert_lora_to_gguf.py` takes fewer weight types than `convert_hf_to_gguf.py`.
+GGUF_LORA_OUTTYPES = frozenset({"f32", "f16", "bf16", "q8_0", "auto"})
+GGUF_LORA_DEFAULT_OUTTYPE = "f32"
+GGUF_DEFAULT_OUTTYPE = "f16"
+
+
+def validate_lora_export(outtype: str, quantize: Sequence[str]) -> None:
+    """Reject settings the LoRA converter cannot honour."""
+    if quantize:
+        raise ValueError(
+            "`llama-quantize` only takes full models, so `export.quantize` cannot be "
+            "combined with a LoRA export. Run `axolotl merge-lora` and export the "
+            "merged model instead."
+        )
+    if outtype not in GGUF_LORA_OUTTYPES:
+        raise ValueError(
+            f"`convert_lora_to_gguf.py` cannot write {outtype}. `export.outtype` must "
+            f"be one of: {sorted(GGUF_LORA_OUTTYPES)}."
+        )
+
 
 class ExportConfig(BaseModel):
     """Config for exporting a trained model to a deployment format."""
@@ -26,8 +46,12 @@ class ExportConfig(BaseModel):
     format: Literal["gguf"] = Field(
         default="gguf", description="Deployment format to export to."
     )
-    outtype: Literal["f32", "f16", "bf16", "q8_0", "tq1_0", "tq2_0", "auto"] = Field(
-        default="f16", description="Weight type of the GGUF conversion."
+    outtype: Literal["f32", "f16", "bf16", "q8_0", "tq1_0", "tq2_0", "auto"] | None = (
+        Field(
+            default=None,
+            description="Weight type of the GGUF conversion. Default: f16 for a full "
+            "model, f32 for a LoRA adapter.",
+        )
     )
     quantize: list[str] = Field(
         default_factory=list,
@@ -40,6 +64,10 @@ class ExportConfig(BaseModel):
     llama_cpp_dir: str | None = Field(
         default=None,
         description="Path to a built llama.cpp checkout. Falls back to $LLAMA_CPP_DIR.",
+    )
+    lora: bool = Field(
+        default=False,
+        description="Export the adapter as a standalone GGUF LoRA instead of a full model.",
     )
 
     @field_validator("quantize", mode="before")
@@ -62,7 +90,7 @@ class ExportConfig(BaseModel):
         if not self.quantize:
             return self
         # llama.cpp refuses to dequantize an already-quantized source.
-        if self.outtype in ("q8_0", "tq1_0", "tq2_0"):
+        if self.resolved_outtype(False) in ("q8_0", "tq1_0", "tq2_0"):
             raise ValueError(
                 f"llama.cpp cannot requantize from {self.outtype}. Use an f16/bf16/f32 "
                 "`export.outtype`, or drop `export.quantize`."
@@ -73,3 +101,15 @@ class ExportConfig(BaseModel):
                 "is set, e.g. `model-{ftype}.gguf`."
             )
         return self
+
+    @model_validator(mode="after")
+    def validate_lora(self):
+        if self.lora:
+            validate_lora_export(self.resolved_outtype(True), self.quantize)
+        return self
+
+    def resolved_outtype(self, lora: bool) -> str:
+        """llama.cpp's two converters ship different defaults, f16 and f32."""
+        if self.outtype is not None:
+            return self.outtype
+        return GGUF_LORA_DEFAULT_OUTTYPE if lora else GGUF_DEFAULT_OUTTYPE
