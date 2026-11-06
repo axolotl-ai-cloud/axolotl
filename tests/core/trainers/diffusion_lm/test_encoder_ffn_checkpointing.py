@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import warnings
 
+import pytest
 import torch
 from peft import LoraConfig, get_peft_model
 from transformers import DiffusionGemmaConfig
@@ -14,6 +16,10 @@ from axolotl.model_support.diffusion_gemma.modeling import (
 )
 from axolotl.model_support.native_adapters import share_diffusion_gemma_tied_lora
 from axolotl.monkeypatch.selective_checkpointing import clear_registered_saves
+from axolotl.utils.activation_checkpointing import (
+    disable_activation_checkpointing,
+    enable_activation_checkpointing,
+)
 
 _TARGET = (
     r".*\.(encoder\.language_model|decoder)\.layers\.\d+\."
@@ -129,6 +135,33 @@ def test_encoder_feed_forward_checkpointing_matches_and_writes_the_cache_once():
 
     checkpointed.get_base_model().gradient_checkpointing_disable()
     assert all("forward" not in layer.__dict__ for layer in encoder_layers)
+
+
+@pytest.mark.parametrize("deprecated", [False, True], ids=["trainer", "deprecated"])
+def test_both_enable_entry_points_split_the_layers(deprecated):
+    base = _model().get_base_model()
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            if deprecated:
+                base.gradient_checkpointing_enable(
+                    gradient_checkpointing_kwargs={"use_reentrant": False}
+                )
+            else:
+                enable_activation_checkpointing(base, {"use_reentrant": False})
+        layers = (*base.model.encoder.language_model.layers, *base.model.decoder.layers)
+        assert all(layer.forward.__func__ is _encoder_layer_forward for layer in layers)
+        if not deprecated:
+            assert not [
+                w
+                for w in caught
+                if issubclass(w.category, FutureWarning)
+                and "checkpointing" in str(w.message)
+            ]
+        disable_activation_checkpointing(base)
+        assert all("forward" not in layer.__dict__ for layer in layers)
+    finally:
+        clear_registered_saves()
 
 
 def _near_tie_routers(model):

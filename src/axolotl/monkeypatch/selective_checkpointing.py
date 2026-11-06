@@ -30,6 +30,7 @@ from torch.utils.checkpoint import (
     create_selective_checkpoint_contexts,
 )
 
+from axolotl.utils.activation_checkpointing import checkpointing_enable_name
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -938,14 +939,16 @@ def apply_selective_checkpointing(
     save_modules: list[str] | None = None,
     save_matmul_min_k: int | None = None,
 ) -> None:
-    """Wrap ``model.gradient_checkpointing_enable`` to inject the SAC ``context_fn``.
+    """Wrap the model's checkpointing enable method to inject the SAC ``context_fn``.
 
     Wrapping the instance method covers every enable call site (axolotl's model
     loader, HF Trainer at train() time, PEFT's kbit prep) without placing a
     non-serializable callable into ``TrainingArguments``. ``save=[]`` with no
     rules installs a policy that saves only the registered (mandatory/preferred) ops.
     """
-    if getattr(model.gradient_checkpointing_enable, "_axolotl_sac", False):
+    enable_name = checkpointing_enable_name(model)
+    orig_enable = getattr(model, enable_name)
+    if getattr(orig_enable, "_axolotl_sac", False):
         return
 
     save = _normalize_save(save)
@@ -985,20 +988,38 @@ def apply_selective_checkpointing(
             save_modules=save_modules,
             save_matmul_min_k=save_matmul_min_k,
         )
-    orig_enable = model.gradient_checkpointing_enable
 
-    def enable_with_sac(gradient_checkpointing_kwargs=None, **kwargs):
-        gc_kwargs = dict(gradient_checkpointing_kwargs or {})
+    def with_sac(checkpointing_kwargs):
+        gc_kwargs = dict(checkpointing_kwargs or {})
         gc_kwargs["use_reentrant"] = False
         gc_kwargs["context_fn"] = context_fn
         if _SUPPORTS_RESPECT_SAVED_TENSORS_HOOKS:
             gc_kwargs.setdefault("respect_saved_tensors_hooks", False)
         else:
             gc_kwargs.pop("respect_saved_tensors_hooks", None)
-        return orig_enable(gradient_checkpointing_kwargs=gc_kwargs, **kwargs)
+        return gc_kwargs
+
+    # PEFT's kbit prep inspects the signature for the kwargs parameter by name
+    if enable_name == "activation_checkpointing_enable":
+
+        def enable_with_sac(activation_checkpointing_kwargs=None, **kwargs):
+            return orig_enable(
+                activation_checkpointing_kwargs=with_sac(
+                    activation_checkpointing_kwargs
+                ),
+                **kwargs,
+            )
+
+    else:
+
+        def enable_with_sac(gradient_checkpointing_kwargs=None, **kwargs):
+            return orig_enable(
+                gradient_checkpointing_kwargs=with_sac(gradient_checkpointing_kwargs),
+                **kwargs,
+            )
 
     enable_with_sac._axolotl_sac = True
-    model.gradient_checkpointing_enable = enable_with_sac
+    setattr(model, enable_name, enable_with_sac)
     rules = (
         f", save_modules={save_modules}, save_matmul_min_k={save_matmul_min_k}"
         if save_modules or save_matmul_min_k
