@@ -58,7 +58,7 @@ class TestSelectiveCheckpointing:
         with pytest.raises(ValueError, match="non-reentrant"):
             validate_config(cfg)
 
-    def test_offload_moved_to_offload_saves(self, min_base_cfg):
+    def test_offload_moved_to_offload_selective(self, min_base_cfg):
         cfg = (
             DictDefault(
                 activation_checkpointing={
@@ -68,12 +68,12 @@ class TestSelectiveCheckpointing:
             | min_base_cfg
         )
 
-        with pytest.raises(ValueError, match=r"offload.saves: cpu"):
+        with pytest.raises(ValueError, match=r"offload.selective: cpu"):
             validate_config(cfg)
 
-    def test_offload_saves_requires_selective(self, min_base_cfg):
+    def test_offload_selective_requires_selective(self, min_base_cfg):
         cfg = (
-            DictDefault(activation_checkpointing={"offload": {"saves": "cpu"}})
+            DictDefault(activation_checkpointing={"offload": {"selective": "cpu"}})
             | min_base_cfg
         )
 
@@ -86,7 +86,7 @@ class TestSelectiveCheckpointing:
             DictDefault(
                 activation_checkpointing={
                     "selective": True,
-                    "offload": {target: "cpu", "saves": "cpu"},
+                    "offload": {target: "cpu", "selective": "cpu"},
                 }
             )
             | min_base_cfg
@@ -95,7 +95,7 @@ class TestSelectiveCheckpointing:
         cfg = validate_config(cfg)
         assert cfg.activation_checkpointing.selective["save"] == ["attention"]
         assert cfg.activation_checkpointing.offload[target] == "cpu"
-        assert cfg.activation_checkpointing.offload.saves == "cpu"
+        assert cfg.activation_checkpointing.offload.selective == "cpu"
 
     def test_rejects_matmul_save_with_adapter(self, min_base_cfg):
         cfg = (

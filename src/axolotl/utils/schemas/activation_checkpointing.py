@@ -12,7 +12,7 @@ MIGRATION_DOCS = (
 )
 
 OffloadPlacement = Literal["none", "cpu", "disk"]
-OFFLOAD_TARGETS = ("hidden_states", "saves", "all")
+OFFLOAD_TARGETS = ("hidden_states", "selective", "all")
 
 # torch passes any other key to the checkpointed function: each decoder layer's forward
 TORCH_CHECKPOINT_KWARGS = tuple(
@@ -88,13 +88,14 @@ class ActivationOffloadConfig(BaseModel):
             )
         },
     )
-    saves: OffloadPlacement = Field(
+    selective: OffloadPlacement = Field(
         default="none",
         json_schema_extra={
             "description": (
-                "Tensors that `selective` saves. `cpu` moves them to pinned CPU "
-                "memory with side-stream copies, prefetched back during backward. "
-                "`true` means `cpu`."
+                "Tensors the selective checkpointing policy saves: `selective`'s "
+                "saves and those plugins require, such as expert-parallel routing. "
+                "`cpu` moves them to pinned CPU memory with side-stream copies, "
+                "prefetched back during backward. `true` means `cpu`."
             )
         },
     )
@@ -222,7 +223,7 @@ class SelectiveCheckpointingConfig(BaseModel):
         if isinstance(data, dict) and "offload" in data:
             raise ValueError(
                 "`activation_checkpointing.selective.offload` is not a field; use "
-                "`activation_checkpointing.offload.saves: cpu` to offload the saved "
+                "`activation_checkpointing.offload.selective: cpu` to offload the saved "
                 "tensors."
             )
         return data
@@ -360,7 +361,7 @@ class ActivationCheckpointingConfig(BaseModel):
                 for name, is_set in (
                     ("selective", self.selective is not None),
                     ("offload.hidden_states", self.offload.hidden_states != "none"),
-                    ("offload.saves", self.offload.saves != "none"),
+                    ("offload.selective", self.offload.selective != "none"),
                     ("reentrant", self.reentrant is not None),
                     ("kwargs", bool(self.kwargs)),
                     ("implementation", self.implementation != "hf"),
@@ -383,9 +384,9 @@ class ActivationCheckpointingConfig(BaseModel):
                 "checkpointing; set `activation_checkpointing.reentrant: false` or "
                 "leave it unset."
             )
-        if self.offload.saves != "none" and self.selective is None:
+        if self.offload.selective != "none" and self.selective is None:
             raise ValueError(
-                "`activation_checkpointing.offload.saves` offloads the tensors "
+                "`activation_checkpointing.offload.selective` offloads the tensors "
                 "`selective` saves; set `activation_checkpointing.selective`."
             )
         if self.offload.hidden_states != "none" and self.offload.all != "none":
@@ -526,7 +527,7 @@ def legacy_checkpointing_replacement(
     if sac:
         selective = dict(sac) if isinstance(sac, dict) else True
         if isinstance(selective, dict) and selective.pop("offload", False):
-            offload["saves"] = "cpu"
+            offload["selective"] = "cpu"
         block["selective"] = selective or True
 
     if offload:

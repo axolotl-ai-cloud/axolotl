@@ -334,7 +334,7 @@ CASES = [
             "activation_checkpointing": {
                 "enabled": True,
                 "selective": {"save": ["attention"]},
-                "offload": {"saves": "cpu"},
+                "offload": {"selective": "cpu"},
             }
         },
         "llama",
@@ -349,7 +349,7 @@ CASES = [
             "activation_checkpointing": {
                 "enabled": True,
                 "selective": {"save": ["attention"]},
-                "offload": {"hidden_states": "cpu", "saves": "cpu"},
+                "offload": {"hidden_states": "cpu", "selective": "cpu"},
             }
         },
         "llama",

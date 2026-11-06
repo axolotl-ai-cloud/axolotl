@@ -37,7 +37,7 @@ activation_checkpointing:
     save: [attention]
   offload:                   # where each target's tensors go
     hidden_states: cpu       # each checkpointed layer's input
-    saves: none              # what `selective` saves
+    selective: none          # what the selective policy saves
     all: none                # every saved activation (TRL's offloader)
 ```
 
@@ -45,7 +45,7 @@ activation_checkpointing:
 `false`, or leaving the key out, turns everything off. In the dict form `enabled` defaults to
 `true`. Unknown fields in the block are rejected.
 
-`offload` is a mapping, not a value. Each of its targets (`hidden_states`, `saves`, `all`) takes
+`offload` is a mapping, not a value. Each of its targets (`hidden_states`, `selective`, `all`) takes
 `none` (the default), `cpu` or `disk`, and `true` / `false` mean `cpu` / `none`. `disk` is
 rejected for now, pending a fix.
 
@@ -60,7 +60,7 @@ How recompute and offload placement combine (decoder layers; the output head alw
 | `true` | `hidden_states: cpu` | every layer | each layer's input only |
 
 Adding `selective` skips recomputing the saved ops. Their outputs stay on GPU, or move to CPU with
-`offload.saves: cpu`. For example, to offload each layer's input and not recompute attention:
+`offload.selective: cpu`. For example, to offload each layer's input and not recompute attention:
 
 ```yaml
 activation_checkpointing:
@@ -68,11 +68,11 @@ activation_checkpointing:
     save: [attention]
   offload:
     hidden_states: cpu
-    saves: cpu  # optional: keep the saved attention outputs in CPU RAM too
+    selective: cpu  # optional: keep the saved attention outputs in CPU RAM too
 ```
 
 With `enabled: false`, only `offload.all` applies; setting `selective`, `offload.hidden_states`,
-`offload.saves`, `reentrant`, `kwargs` or `implementation: fsdp` is an error rather than a silent
+`offload.selective`, `reentrant`, `kwargs` or `implementation: fsdp` is an error rather than a silent
 no-op.
 
 ### Enabling Activation Checkpointing
@@ -104,7 +104,7 @@ fsdp_config:
 `implementation: fsdp` wraps each decoder layer in FSDP2's non-reentrant `checkpoint_wrapper`
 instead of using transformers' checkpointing. transformers warns that its own checkpointing adds a
 redundant all-gather in backward under FSDP. It requires `fsdp_config`, and the rest of the block
-applies the same way: `selective` and `offload.saves` install the same save policy in the wrapper,
+applies the same way: `selective` and `offload.selective` install the same save policy in the wrapper,
 `offload.hidden_states` offloads each wrapped layer's input, `offload.all` runs TRL's offloader,
 and `kwargs` (including `every_n_layers`) go to the wrapper. Only `reentrant: true` is rejected,
 since the wrapper is non-reentrant. accelerate's own wrapper turns off `preserve_rng_state`; Axolotl
@@ -187,7 +187,7 @@ through `axolotl::flash_attn_4_fwd` / `axolotl::flash_attn_4_varlen_fwd`. These 
 forward, and their backward calls FA4's own backward on the saved output and log-sum-exp, so the
 kernels and numerics are unchanged and the backward does not re-run the attention forward.
 Sliding-window FA4 calls are recognized from their window and recomputed like any other
-(`save_sliding_window` applies), and `offload.saves: cpu` moves the saved FA4 outputs to CPU. FA4 calls
+(`save_sliding_window` applies), and `offload.selective: cpu` moves the saved FA4 outputs to CPU. FA4 calls
 with attention sinks (`learnable_sink`) or mask/score mods, calls outside checkpointed layers and
 calls under `torch.compile` go to FA4 directly and are recomputed as before. The
 `kernels-community/flash-attn4` hub kernel is not covered: use `flash_attention_4` with
@@ -220,15 +220,17 @@ activation_checkpointing:
   selective:
     save: [attention]
   offload:
-    saves: cpu
+    selective: cpu
 ```
 
 This makes the saved attention outputs cost ~zero GPU memory at the price of CPU RAM and PCIe
-traffic, and stacks with `offload.hidden_states` or `offload.all`.
+traffic, and stacks with `offload.hidden_states` or `offload.all`. It covers everything the
+selective policy saves, including saves a plugin requires, such as expert parallelism's routing
+decisions. It requires `selective`: without it, those plugin saves stay on GPU.
 
 Requires non-reentrant checkpointing (the default). Composes with `offload.hidden_states` or
 `offload.all`: layer inputs go to CPU (with `offload.all`, so does what is saved outside the
-layers) while the saved ops' outputs stay on GPU, or go to CPU with `offload.saves: cpu`.
+layers) while the saved ops' outputs stay on GPU, or go to CPU with `offload.selective: cpu`.
 Saving matmul ops (via `save`, `save_modules` or `save_matmul_min_k`) is rejected while a
 fused LoRA kernel is enabled, because the kernel adds the adapter delta into the base matmul
 output in place, which invalidates the cached tensor.
@@ -237,7 +239,7 @@ output in place, which invalidates the cached tensor.
 
 All projections dispatch the same `aten::mm`/`aten::addmm`, so `save: [aten::mm]` saves every
 one of them. Two rules target individual projections instead; both also work with
-`offload.saves: cpu`.
+`offload.selective: cpu`.
 
 `save_modules` saves the matmuls that run inside the named modules:
 
@@ -340,7 +342,7 @@ deprecated key next to `activation_checkpointing` is also an error.
 | other `gradient_checkpointing_kwargs` keys | `activation_checkpointing.kwargs` (keys that `torch.utils.checkpoint` doesn't accept are dropped with a warning) |
 | `gradient_checkpointing_kwargs: {offload: true}` | `activation_checkpointing: {offload: {hidden_states: cpu}}` (stream-overlapped instead of synchronous) |
 | `selective_checkpointing: true` or `{...}` | `activation_checkpointing.selective: true` or `{...}` |
-| `selective_checkpointing.offload: true` | `activation_checkpointing.offload.saves: cpu` |
+| `selective_checkpointing.offload: true` | `activation_checkpointing.offload.selective: cpu` |
 | `activation_offloading: true` / `legacy` | `activation_checkpointing.offload.all: cpu` |
 | `activation_offloading: true` without `gradient_checkpointing` | `activation_checkpointing: {enabled: false, offload: {all: cpu}}` |
 | `activation_offloading: hidden_states` | `activation_checkpointing.offload.hidden_states: cpu` |

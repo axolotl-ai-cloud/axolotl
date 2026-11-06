@@ -173,12 +173,12 @@ DEPRECATED_KEYS = [
         _deprecated(
             "`gradient_checkpointing` and `selective_checkpointing`",
             "Use `activation_checkpointing: {enabled: true, selective: {save: "
-            "[attention]}, offload: {saves: cpu}}` instead.",
+            "[attention]}, offload: {selective: cpu}}` instead.",
         ),
         {
             "enabled": True,
             "selective": {"save": ["attention"]},
-            "offload": {"saves": "cpu"},
+            "offload": {"selective": "cpu"},
         },
         id="selective_offload",
     ),
@@ -377,7 +377,11 @@ def _validate_logging(cfg, caplog):
                 "gradient_checkpointing": True,
                 "selective_checkpointing": {"save": ["attention"], "offload": True},
             },
-            {"enabled": True, "selective": {"save": ["attention"]}, "saves": "cpu"},
+            {
+                "enabled": True,
+                "selective": {"save": ["attention"]},
+                "offload_selective": "cpu",
+            },
             id="selective_offload",
         ),
         pytest.param(
@@ -408,7 +412,7 @@ def test_validation_migrates_deprecated_keys(min_base_cfg, caplog, legacy, expec
         assert block.reentrant is expected["reentrant"]
     if "selective" in expected:
         assert block.selective.save == expected["selective"]["save"]
-    assert block.offload.saves == expected.get("saves", "none")
+    assert block.offload.selective == expected.get("offload_selective", "none")
     assert block.offload.all == expected.get("all", "none")
     for key in ("gradient_checkpointing", "selective_checkpointing"):
         assert cfg.get(key) is None
@@ -523,8 +527,8 @@ def test_every_n_layers_must_be_positive_int(value):
 
 def test_disk_rejected_for_every_target():
     _rejects(
-        {"selective": True, "offload": {"saves": "disk", "hidden_states": "disk"}},
-        "activation_checkpointing.offload.hidden_states, saves: disk offload is "
+        {"selective": True, "offload": {"selective": "disk", "hidden_states": "disk"}},
+        "activation_checkpointing.offload.hidden_states, selective: disk offload is "
         "disabled pending a fix; use `cpu`.",
     )
 
@@ -539,10 +543,10 @@ def test_disk_settings_need_a_disk_target():
 
 def test_offload_bool_means_cpu():
     block = ActivationCheckpointingConfig.model_validate(
-        {"selective": True, "offload": {"hidden_states": True, "saves": False}}
+        {"selective": True, "offload": {"hidden_states": True, "selective": False}}
     )
     assert block.offload.hidden_states == "cpu"
-    assert block.offload.saves == "none"
+    assert block.offload.selective == "none"
 
 
 def test_disabled_rejects_recompute_settings():
@@ -591,7 +595,7 @@ def test_fsdp_implementation_takes_every_other_setting():
             "reentrant": False,
             "kwargs": {"every_n_layers": 2, "preserve_rng_state": False},
             "selective": {"save": ["attention"]},
-            "offload": {"hidden_states": "cpu", "saves": "cpu"},
+            "offload": {"hidden_states": "cpu", "selective": "cpu"},
         }
     )
     assert block.selective.save == ["attention"]

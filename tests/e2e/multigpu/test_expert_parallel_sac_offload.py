@@ -101,7 +101,7 @@ class TestExpertParallelSacOffload:
                     "enabled": True,
                     "reentrant": False,
                     "selective": {"save": []},
-                    "offload": {"saves": "cpu"},
+                    "offload": {"selective": "cpu"},
                 }
             out_dir.mkdir(parents=True, exist_ok=True)
             with open(out_dir / "config.yaml", "w", encoding="utf-8") as fout:

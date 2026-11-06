@@ -100,7 +100,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--selective-checkpointing",),
         None,
         None,
-        "Deprecated: use activation_checkpointing.selective (and activation_checkpointing.offload.saves).",
+        "Deprecated: use activation_checkpointing.selective (and activation_checkpointing.offload.selective).",
     ),
     (
         ("--activation-offloading",),
@@ -2449,10 +2449,10 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Checkpointed decoder layers' inputs. `cpu` moves them to CPU with stream-overlapped copies. With `reentrant: true` this uses the ALST-style reentrant implementation (DTensor-aware for sequence/context parallelism). `true` means `cpu`.",
     ),
     (
-        ("--activation-checkpointing.offload.saves",),
-        "activation_checkpointing__offload__saves",
+        ("--activation-checkpointing.offload.selective",),
+        "activation_checkpointing__offload__selective",
         None,
-        "Tensors that `selective` saves. `cpu` moves them to pinned CPU memory with side-stream copies, prefetched back during backward. `true` means `cpu`.",
+        "Tensors the selective checkpointing policy saves: `selective`'s saves and those plugins require, such as expert-parallel routing. `cpu` moves them to pinned CPU memory with side-stream copies, prefetched back during backward. `true` means `cpu`.",
     ),
     (
         ("--activation-checkpointing.offload.all",),

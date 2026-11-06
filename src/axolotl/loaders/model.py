@@ -519,7 +519,7 @@ class ModelLoader:
             "save": sac_kwargs.get("save"),
             "save_sliding_window": bool(sac_kwargs.get("save_sliding_window")),
             "recompute_layer_types": sac_kwargs.get("recompute_layer_types"),
-            "offload": offload_placement(self.cfg, "saves") == "cpu",
+            "offload": offload_placement(self.cfg, "selective") == "cpu",
             "save_modules": sac_kwargs.get("save_modules"),
             "save_matmul_min_k": sac_kwargs.get("save_matmul_min_k"),
         }

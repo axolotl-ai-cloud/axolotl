@@ -227,7 +227,7 @@ def test_loader_attaches_the_block_settings(min_base_cfg):
         {
             "kwargs": {"every_n_layers": 2, "preserve_rng_state": False},
             "selective": {"save": ["attention"]},
-            "offload": {"hidden_states": "cpu", "saves": "cpu"},
+            "offload": {"hidden_states": "cpu", "selective": "cpu"},
         },
     )
     model = _model()

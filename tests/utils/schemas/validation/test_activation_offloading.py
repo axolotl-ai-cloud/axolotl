@@ -154,10 +154,10 @@ class TestActivationOffloading:
         ):
             validate_config(cfg)
 
-    @pytest.mark.parametrize("target", ["hidden_states", "saves", "all"])
+    @pytest.mark.parametrize("target", ["hidden_states", "selective", "all"])
     def test_disk_offloading_is_disabled(self, min_base_cfg, target):
         block = {"offload": {target: "disk"}}
-        if target == "saves":
+        if target == "selective":
             block["selective"] = True
         cfg = DictDefault(activation_checkpointing=block) | min_base_cfg
 

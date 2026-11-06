@@ -41,7 +41,7 @@ class DeprecatedParameters(BaseModel):
     selective_checkpointing: dict[str, Any] | bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Deprecated: use activation_checkpointing.selective (and activation_checkpointing.offload.saves)."
+            "description": "Deprecated: use activation_checkpointing.selective (and activation_checkpointing.offload.selective)."
         },
     )
     activation_offloading: Literal["hidden_states", "legacy", "disk"] | bool | None = (
