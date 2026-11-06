@@ -8,7 +8,7 @@ import torch
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.nf4 import BnbNF4Parametrization, TorchaoNF4Parametrization
 
-pytestmark = pytest.mark.gpu
+pytestmark = pytest.mark.usefixtures("inferred_device")
 
 
 def _save_llama(path):

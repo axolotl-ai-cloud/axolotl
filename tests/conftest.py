@@ -54,6 +54,22 @@ def capture_axolotl_warnings(caplog):
         ax_logger.propagate = old_propagate
 
 
+@pytest.fixture(params=["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
+def inferred_device(request):
+    """For tests whose device is picked by Accelerate/PEFT rather than the test itself.
+
+    Each case runs only on the matching host, so the CPU lane keeps the cpu case and the
+    GPU lane's ``-m gpu`` keeps the cuda case without either running on the wrong device.
+    """
+    import torch
+
+    if request.param == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA required")
+    if request.param == "cpu" and torch.cuda.is_available():
+        pytest.skip("the library places this test on the accelerator here")
+    return request.param
+
+
 def _apply_transformers_test_shims():
     import transformers.utils as _transformers_utils
     import transformers.utils.import_utils as _import_utils

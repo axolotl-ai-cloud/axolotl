@@ -9,15 +9,14 @@ from axolotl.monkeypatch.attention.sdpa_varlen import (
     unpatch_sdpa_varlen,
 )
 
-pytestmark = pytest.mark.gpu
-
 requires_cuda = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="varlen_attn needs CUDA"
 )
+CUDA_MARKS = [pytest.mark.gpu, requires_cuda]
 
 DEV = "cuda"
 # The fallback path never reaches varlen_attn, so it runs on CPU too.
-FALLBACK_DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+FALLBACK_DEVICES = ["cpu", pytest.param("cuda", marks=CUDA_MARKS)]
 
 
 class _Mod:
@@ -62,6 +61,7 @@ def patched():
     unpatch_sdpa_varlen()
 
 
+@pytest.mark.gpu
 @requires_cuda
 @pytest.mark.parametrize(
     "doclens,sliding,label",
@@ -113,6 +113,7 @@ def _assert_defers_to_stock(mod, q, k, v, pos):
     assert torch.equal(out_w, out_o)
 
 
+@pytest.mark.gpu
 @requires_cuda
 def test_varlen_matches_flash_attention_2_e2e():
     """The varlen path matches FA2 (the canonical varlen-packing impl) on a real packed forward."""
@@ -198,8 +199,11 @@ def test_falls_back_on_large_head_dim(patched, device):
 @pytest.mark.parametrize(
     "device,dtype",
     # cpu/bf16 isolates the device guard, cuda/fp32 the dtype guard, cpu/fp32 hits both.
-    [("cpu", torch.bfloat16), ("cpu", torch.float32)]
-    + ([("cuda", torch.float32)] if torch.cuda.is_available() else []),
+    [
+        ("cpu", torch.bfloat16),
+        ("cpu", torch.float32),
+        pytest.param("cuda", torch.float32, marks=CUDA_MARKS),
+    ],
 )
 def test_falls_back_on_unsupported_dtype_or_device(patched, device, dtype):
     """Regression: only CUDA fp16/bf16 QKV may reach varlen_attn — its Flash kernel raises on
@@ -222,6 +226,7 @@ def test_falls_back_on_unsupported_dtype_or_device(patched, device, dtype):
     assert torch.allclose(out, ref, atol=1e-4 if dtype == torch.float32 else 1e-2)
 
 
+@pytest.mark.gpu
 @requires_cuda
 def test_varlen_engages_in_training_forward():
     """Regression: in a real training forward (use_cache=False) transformers builds a 4D

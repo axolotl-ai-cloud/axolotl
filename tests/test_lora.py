@@ -24,7 +24,7 @@ minimal_config = DictDefault(
 )
 
 
-@pytest.mark.gpu
+@pytest.mark.usefixtures("inferred_device")
 class TestLoRALoad:
     """
     Test class for loading LoRA weights

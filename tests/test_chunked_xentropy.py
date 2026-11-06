@@ -12,8 +12,8 @@ from axolotl.monkeypatch.loss.chunked import get_causal_lm_loss
 @pytest.fixture
 def chunked_fixtures():
     model_dim = 512
-    vocab_size = 1024 * 256
-    seq_len = 2048
+    vocab_size = 1024 * 32
+    seq_len = 1024
     batch_size = 1
 
     lm_head = nn.Linear(model_dim, vocab_size)

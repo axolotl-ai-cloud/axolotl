@@ -287,6 +287,8 @@ class TestKernelImplEnv:
         assert os.environ["LIGER_KERNEL_IMPL"] == "cutedsl"
 
     def test_already_imported_checks_loaded_backend_not_env(self, monkeypatch):
+        # cached submodule import doesn't re-import a popped parent package
+        import liger_kernel.ops  # noqa: F401
         import liger_kernel.ops.backends.registry as registry
 
         from axolotl.integrations.liger.plugin import LigerPlugin

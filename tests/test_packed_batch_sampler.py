@@ -29,16 +29,17 @@ class TestBatchedSamplerPacking:
     """
 
     @pytest.mark.parametrize(
-        "batch_size, num_workers",
+        "sequential, max_seq_length, batch_size, num_workers",
         [
-            (1, 0),
-            (2, 0),
-            (1, 2),
-            (2, 2),
-        ],
+            (sequential, max_seq_length, batch_size, 0)
+            for sequential in (True, False)
+            for max_seq_length in (4096, 512)
+            for batch_size in (1, 2)
+        ]
+        # Workers only move the patched fetcher into child processes, and starting them
+        # dominates under forkserver (Python 3.14's Linux default), so one shape per mode.
+        + [(True, 512, 2, 2), (False, 512, 2, 2)],
     )
-    @pytest.mark.parametrize("max_seq_length", [4096, 512])
-    @pytest.mark.parametrize("sequential", [True, False])
     @enable_hf_offline
     def test_packing(
         self,

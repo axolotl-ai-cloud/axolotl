@@ -8,9 +8,8 @@ from test_lora_fp32_gradients import projection
 from torch import nn
 
 
-@pytest.mark.gpu
 @pytest.mark.parametrize("kind", ["linear", "qkv", "swiglu", "geglu"])
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.gpu)])
 @pytest.mark.parametrize("fp32", [False, True])
 def test_native_nvfp4_projection_forward(kind, device, monkeypatch, fp32):
     if device == "cuda" and not torch.cuda.is_available():
