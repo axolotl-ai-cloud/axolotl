@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import ast
 import fnmatch
+import functools
 import json
 import os
 import re
@@ -138,6 +139,13 @@ def _gh(*args: str) -> str:
     return subprocess.check_output(  # nosec B603 B607
         ["gh", *args], text=True, stderr=subprocess.PIPE
     )
+
+
+@functools.cache
+def _gh_log_flags() -> tuple[str, ...]:
+    # newer gh refuses to print responses with ANSI escapes, which job logs are full of
+    flag = "--allow-escape-sequences"
+    return (flag,) if flag in _gh("api", "--help") else ()
 
 
 def _gh_items(path: str, jq: str) -> list[dict]:
@@ -256,7 +264,12 @@ def gather_evidence(
         for attempt in range(3):
             try:
                 raw = subprocess.check_output(  # nosec B603 B607
-                    ["gh", "api", f"repos/{repo}/actions/jobs/{job.id}/logs"],
+                    [
+                        "gh",
+                        "api",
+                        *_gh_log_flags(),
+                        f"repos/{repo}/actions/jobs/{job.id}/logs",
+                    ],
                     stderr=subprocess.PIPE,
                 )
                 break

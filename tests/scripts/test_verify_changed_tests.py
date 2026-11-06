@@ -399,6 +399,51 @@ def test_gather_evidence_does_not_wait_on_its_own_run(monkeypatch):
     assert mod.gather_evidence("o/r", "a" * 40).pending == ["Tests", "Slow GPU"]
 
 
+@pytest.mark.parametrize(
+    ("help_text", "flags"),
+    [
+        (
+            "  --allow-escape-sequences   Allow ...\n  --jq string",
+            ("--allow-escape-sequences",),
+        ),
+        ("  --jq string", ()),
+    ],
+)
+def test_log_downloads_allow_escapes_when_gh_supports_it(monkeypatch, help_text, flags):
+    commands = []
+
+    def check_output(argv, **kwargs):
+        commands.append(argv)
+        return b"tests/a.py::test_x PASSED [100%]\x1b[0m\n"
+
+    mod._gh_log_flags.cache_clear()
+    monkeypatch.setattr(mod, "_gh", lambda *args: help_text)
+    monkeypatch.setattr(mod.subprocess, "check_output", check_output)
+    monkeypatch.setattr(
+        mod,
+        "_gh_items",
+        lambda path, jq: (
+            [{"id": 1, "name": "Tests", "status": "completed"}]
+            if "runs?" in path
+            else [
+                {
+                    "id": 2,
+                    "name": "PyTest (3.14, 2.14.1)",
+                    "run_attempt": 1,
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ]
+        ),
+    )
+    evidence = mod.gather_evidence("o/r", "a" * 40)
+    mod._gh_log_flags.cache_clear()
+    assert commands == [["gh", "api", *flags, "repos/o/r/actions/jobs/2/logs"]]
+    assert evidence.by_base["tests/a.py::test_x"]["tests/a.py::test_x"] == {
+        CPU: {"PASSED"}
+    }
+
+
 def test_status_payload():
     evidence = _evidence({CPU: {"tests/a.py::test_ran": {"PASSED"}}})
     ran = mod.judge(_test("tests/a.py::test_ran"), evidence)
