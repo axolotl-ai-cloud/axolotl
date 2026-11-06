@@ -130,7 +130,7 @@ max_steps: 20
 learning_rate: 5.0e-6
 bf16: auto
 attn_implementation: flash_attention_2
-gradient_checkpointing: true
+activation_checkpointing: true
 output_dir: ./outputs/ebft-quickstart
 ```
 
@@ -305,9 +305,9 @@ lora_target_linear: true
 
 bf16: auto
 attn_implementation: flex_attention
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: true          # Required with flex_attention
+activation_checkpointing:
+  enabled: true
+  reentrant: true          # Required with flex_attention
 ```
 
 Run with a single command (no vLLM needed):
@@ -335,7 +335,7 @@ When `n_samples_per_prompt: 1`, the trainer automatically falls back to `reinfor
 - **`flex_attention: true`** is strongly recommended. Without it, dense 4D masks consume significantly more memory.
 - **`torch_compile: true`** must NOT be set. `flex_attention` compiles its own kernels internally; adding `torch_compile` causes conflicts and OOM.
 - **Gradient checkpointing** must use `use_reentrant: true`. Non-reentrant checkpointing causes `CheckpointError` with `flex_attention` block masks.
-- **`activation_offloading`** is incompatible with `flex_attention`.
+- **`activation_checkpointing.offload.all`** is incompatible with `flex_attention`.
 
 ### Cross-Entropy Loss
 
@@ -531,7 +531,7 @@ The arrows indicate the desired direction: alignment and reward should trend upw
 | `diversity` exceeds 1.0 | Mode collapse -- generations are too similar | Increase `diversity_coef` or `temperature` |
 | `reward` stuck at -1.0 | Diversity penalty dominates alignment | Reduce `diversity_coef` or increase `alignment_coef` |
 | `grad_norm` consistently 0.0 | All micro-batches have zero advantage | Increase `num_generations` or check data quality |
-| `CheckpointError` in strided mode | Incompatible gradient checkpointing settings | Set `use_reentrant: true` in `gradient_checkpointing_kwargs` |
+| `CheckpointError` in strided mode | Incompatible activation checkpointing settings | Set `activation_checkpointing.reentrant: true` |
 | OOM during training | Logits tensor too large | Reduce `sequence_len` or `micro_batch_size`; strided mode uses chunked lm_head to mitigate this |
 | vLLM 500 errors | Server missing required flags | Start it with `axolotl vllm-serve` (or the raw command in [vLLM Serving](vllm_serving.qmd#sec-server-mode)) |
 

@@ -69,6 +69,9 @@ evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
 fsdp_version: 2
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 fsdp_config:
   offload_params: false
   # cpu_ram_efficient_loading: true # does not work with load_in_8bit/4bit
@@ -76,7 +79,6 @@ fsdp_config:
   transformer_layer_cls_to_wrap: Llama4TextDecoderLayer
   state_dict_type: SHARDED_STATE_DICT
   reshard_after_forward: true
-  activation_checkpointing: true
 special_tokens:
   pad_token: <|finetune_right_pad|>
   eos_token: <|eot|>

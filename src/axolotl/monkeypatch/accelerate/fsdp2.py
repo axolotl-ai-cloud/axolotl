@@ -516,8 +516,30 @@ def _install_requested_native_nvfp4_merge_aware_lora_linears(model) -> int:
     return installed
 
 
-def _activation_checkpoint_wrapper_fn():
-    """Non-reentrant ``checkpoint_wrapper`` that honours registered mandatory SAC saves."""
+_CACHE_KWARGS = ("past_key_values", "past_key_value", "layer_past")
+
+
+def _drop_cache_kwargs(module, args, kwargs):
+    """transformers turns the KV cache off for the layers it checkpoints; under FSDP's
+    wrapper the layer runs uncheckpointed, so its forward fills the cache and the
+    recompute appends the same keys and values again."""
+    if not module.training:
+        return None
+    dropped = False
+    if kwargs.get("use_cache"):
+        kwargs["use_cache"] = False
+        dropped = True
+    for key in _CACHE_KWARGS:
+        if kwargs.get(key) is not None:
+            kwargs[key] = None
+            dropped = True
+    return (args, kwargs) if dropped else None
+
+
+def _activation_checkpoint_wrapper_fn(model: torch.nn.Module | None = None):
+    """Non-reentrant ``checkpoint_wrapper`` applying the model's ``activation_checkpointing``
+    settings (selective policy, checkpoint kwargs, checkpoint input offload) and the
+    registered mandatory SAC saves."""
     from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
         CheckpointImpl,
         checkpoint_wrapper,
@@ -526,14 +548,31 @@ def _activation_checkpoint_wrapper_fn():
     from axolotl.monkeypatch.selective_checkpointing import (
         build_sac_context_fn,
         has_registered_saves,
+        sac_checkpoint_kwargs,
     )
+    from axolotl.utils.activation_checkpointing import get_fsdp_checkpointing
 
-    kwargs = {}
-    if has_registered_saves():
-        kwargs["context_fn"] = build_sac_context_fn(save=[])
-    return functools.partial(
+    options = get_fsdp_checkpointing(model)
+    kwargs = dict(options.checkpoint_kwargs)
+    if options.context_fn is not None:
+        kwargs.update(sac_checkpoint_kwargs(options.context_fn))
+    elif has_registered_saves():
+        kwargs.update(sac_checkpoint_kwargs(build_sac_context_fn(save=[])))
+    wrap = functools.partial(
         checkpoint_wrapper, checkpoint_impl=CheckpointImpl.NO_REENTRANT, **kwargs
     )
+    from axolotl.monkeypatch.checkpoint_activation_offload import (
+        mark_checkpoint_input,
+    )
+
+    def wrap_layer(module):
+        wrapped = wrap(module)
+        wrapped.register_forward_pre_hook(_drop_cache_kwargs, with_kwargs=True)
+        if options.offload_inputs:
+            wrapped.register_forward_pre_hook(mark_checkpoint_input, with_kwargs=True)
+        return wrapped
+
+    return wrap_layer
 
 
 def _has_checkpoint_wrapper(model: torch.nn.Module) -> bool:
@@ -553,8 +592,8 @@ def _activation_checkpointing_active(model: torch.nn.Module) -> bool:
         getattr(m, "gradient_checkpointing", False) is True for m in model.modules()
     ):
         LOG.warning(
-            "fsdp_config.activation_checkpointing skipped: gradient_checkpointing already "
-            "recomputes every layer; set one of the two."
+            "FSDP activation checkpointing skipped: transformers' activation "
+            "checkpointing already recomputes every layer."
         )
         return True
     return False
@@ -568,18 +607,30 @@ def fsdp2_apply_ac(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         offload_wrapper,
     )
 
+    from axolotl.utils.activation_checkpointing import get_fsdp_checkpointing
+
     if _activation_checkpointing_active(model):
         return model
     plugin = accelerator.state.fsdp_plugin
     policy = fsdp2_prepare_auto_wrap_policy(plugin, model)
-    wrap = _activation_checkpoint_wrapper_fn()
+    wrap = _activation_checkpoint_wrapper_fn(model)
     offload = bool(getattr(plugin, "activation_checkpointing_offload", False))
-    for name, layer in get_module_children_bottom_up(model, return_fqns=True)[:-1]:
-        if policy(layer):
-            wrapped = wrap(layer)
-            if offload:
-                wrapped = offload_wrapper(wrapped)
-            model.set_submodule(name, wrapped)
+    every_n_layers = get_fsdp_checkpointing(model).every_n_layers
+    layers = [
+        (name, layer)
+        for name, layer in get_module_children_bottom_up(model, return_fqns=True)[:-1]
+        if policy(layer)
+    ]
+    # every_n_layers counts layers in forward order, as transformers' checkpointing does
+    position = {id(module): i for i, module in enumerate(model.modules())}
+    layers.sort(key=lambda item: position[id(item[1])])
+    for index, (name, layer) in enumerate(layers):
+        if index % every_n_layers:
+            continue
+        wrapped = wrap(layer)
+        if offload:
+            wrapped = offload_wrapper(wrapped)
+        model.set_submodule(name, wrapped)
     return model
 
 
@@ -655,24 +706,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         pass  # auto_wrap_policy_type = "size"
 
     # We set `auto_wrap_policy` to `functools.partial` to avoid creating it again
-    # This is because of `apply_activation_checkpointing` which will can reuse this function
     fsdp2_plugin.set_auto_wrap_policy(model)
 
-    # accelerate >= 1.15 applies AC in `_prepare_fsdp2` (via the patched `fsdp2_apply_ac`)
-    # before calling this; wrapping again nests two checkpoints per layer.
-    if fsdp2_plugin.activation_checkpointing and not _activation_checkpointing_active(
-        model
-    ):
-        from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
-            apply_activation_checkpointing,
-        )
-
-        # Apply activation checkpointing before applying `fully_shard`
-        apply_activation_checkpointing(
-            model,
-            checkpoint_wrapper_fn=_activation_checkpoint_wrapper_fn(),
-            auto_wrap_policy=fsdp2_plugin.auto_wrap_policy,
-        )
+    # No activation checkpointing here: `_prepare_fsdp2` applies it to the trained model
+    # before calling this, and TRL's `prepare_fsdp` (patched to this) only prepares
+    # frozen reference, teacher and reward models.
 
     mesh = getattr(accelerator.state, "device_mesh", None)
 

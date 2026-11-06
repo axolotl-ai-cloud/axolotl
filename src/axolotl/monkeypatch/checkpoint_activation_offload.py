@@ -62,6 +62,17 @@ def patch_gradient_checkpointing_layer_marker() -> None:
     GradientCheckpointingLayer.__call__ = _checkpoint_offload_call
 
 
+def mark_checkpoint_input(module, args, kwargs) -> None:
+    """Forward pre-hook for FSDP2's ``CheckpointWrapper``, whose wrapped layer runs with
+    transformers' ``gradient_checkpointing`` off, so the layer marker never fires."""
+    manager = _current_manager()
+    if manager is None or not module.training or not torch.is_grad_enabled():
+        return
+    hidden_states = args[0] if args else kwargs.get("hidden_states")
+    if torch.is_tensor(hidden_states):
+        manager.mark(hidden_states)
+
+
 class CheckpointHiddenStatesOffload(saved_tensors_hooks):
     """Offload only marked checkpoint inputs.
 

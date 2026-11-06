@@ -111,14 +111,13 @@ def _add_nested_model_options(
     function: Callable, parent_name: str, model_class: Type[BaseModel]
 ) -> Callable:
     """
-    Add Click options for all fields of a nested Pydantic model using dot-notation.
-
-    Note: Only single-level nesting is supported (e.g., ``--trl.beta``).
-    Deeper nesting (e.g., ``--trl.scheduler.warmup``) is not handled.
+    Add Click options for all fields of a nested Pydantic model using dot-notation,
+    recursing into nested models (e.g., ``--trl.beta``,
+    ``--activation-checkpointing.offload.hidden-states``).
 
     Args:
         function: Click command function to add options to.
-        parent_name: Parent field name (e.g., "trl").
+        parent_name: Dotted path of the parent field (e.g., "trl").
         model_class: Nested Pydantic model class.
 
     Returns:
@@ -126,10 +125,15 @@ def _add_nested_model_options(
     """
     for sub_name, sub_field in reversed(model_class.model_fields.items()):
         sub_type = _strip_optional_type(sub_field.annotation)
+        if _is_pydantic_model(sub_type):
+            function = _add_nested_model_options(
+                function, f"{parent_name}.{sub_name}", sub_type
+            )
+            continue
         # Use dot notation: --parent.sub_field
         cli_name = f"{parent_name}.{sub_name}".replace("_", "-")
         # The kwarg name uses double-underscore as separator
-        param_name = f"{parent_name}__{sub_name}"
+        param_name = f"{parent_name}__{sub_name}".replace(".", "__")
         description = _get_field_description(sub_field)
 
         if sub_type is bool:

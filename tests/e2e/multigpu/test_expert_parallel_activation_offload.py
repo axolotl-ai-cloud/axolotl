@@ -83,8 +83,7 @@ def checkpointing_reference(tmp_path_factory):
     out_dir = tmp_path_factory.mktemp("ep_offload") / "checkpointing"
     return _train_one_step(
         out_dir,
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
+        activation_checkpointing={"enabled": True, "reentrant": False},
     )
 
 
@@ -94,17 +93,17 @@ def checkpointing_reference(tmp_path_factory):
 def test_activation_offloading_matches_checkpointing(
     temp_dir, checkpointing_reference, gradient_checkpointing
 ):
-    """One SGD step with EP2 applies the same update with activation_offloading: true
-    as under plain checkpointing. With recompute, the routing saves must still apply
-    under the offloader: a re-run router topk would desync the all-to-all shapes."""
+    """One SGD step with EP2 applies the same update with
+    activation_checkpointing.offload.all: cpu as under plain checkpointing. With
+    recompute, the routing saves must still apply under the offloader: a re-run router
+    topk would desync the all-to-all shapes."""
     ref, grad_norm_ref = checkpointing_reference
-    overrides = {
-        "activation_offloading": True,
-        "gradient_checkpointing": gradient_checkpointing,
-    }
+    checkpointing = {"enabled": gradient_checkpointing, "offload": {"all": "cpu"}}
     if gradient_checkpointing:
-        overrides["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
-    test, grad_norm_test = _train_one_step(Path(temp_dir) / "offload", **overrides)
+        checkpointing["reentrant"] = False
+    test, grad_norm_test = _train_one_step(
+        Path(temp_dir) / "offload", activation_checkpointing=checkpointing
+    )
 
     grad_norm_ratio = grad_norm_test / grad_norm_ref
     assert 0.95 < grad_norm_ratio < 1.05, (

@@ -56,9 +56,9 @@ train_on_inputs: false
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 
 # no flash-attn build for torch 2.13+cu130; sample_packing is off so varlen is moot
 attn_implementation: sdpa

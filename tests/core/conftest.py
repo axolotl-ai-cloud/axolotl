@@ -49,8 +49,7 @@ def fixture_base_cfg():
             "save_total_limit": 4,
             "save_only_model": False,
             # Hardware/performance settings
-            "gradient_checkpointing": False,
-            "gradient_checkpointing_kwargs": {"use_reentrant": False},
+            "activation_checkpointing": {"enabled": False},
             "dataloader_num_workers": 1,
             "dataloader_pin_memory": True,
             "dataloader_prefetch_factor": 2,

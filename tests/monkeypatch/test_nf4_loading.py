@@ -383,6 +383,12 @@ def _distributed_nf4_worker(rank, case):
                 id(p) for group in optimizer.param_groups for p in group["params"]
             } == {id(p) for p in model.parameters() if p.requires_grad}
         else:
+            if plugin.activation_checkpointing:
+                from axolotl.monkeypatch.accelerate.fsdp2 import fsdp2_apply_ac
+
+                # accelerate's `_prepare_fsdp2` order
+                plugin.set_auto_wrap_policy(model)
+                model = fsdp2_apply_ac(accelerator, model)
             model = fsdp2_prepare_model(accelerator, model)
         torch_fsdp.fully_shard = real_fully_shard
         del unprepared.state_dict

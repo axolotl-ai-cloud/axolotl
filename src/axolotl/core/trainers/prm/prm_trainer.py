@@ -22,12 +22,10 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-import transformers
 from accelerate import PartialState
 from accelerate.logging import get_logger
 from accelerate.utils import is_peft_model
 from datasets import Dataset, features
-from packaging.version import Version
 from transformers import (
     BaseImageProcessor,
     DataCollator,
@@ -256,18 +254,6 @@ class PRMTrainer(_BaseTrainer):
                         }
                     else:
                         eval_dataset = tokenize_eval(eval_dataset)
-
-        # Transformers explicitly set use_reentrant=True in the past to silence a PyTorch warning, but the default was
-        # never updated once PyTorch switched to recommending use_reentrant=False. Until that change lands upstream
-        # (see https://github.com/huggingface/transformers/pull/43203) and is released (most likely in 5.0.0), we
-        # default to the recommended non-reentrant behavior here, while preserving any user-provided value.
-        if args.gradient_checkpointing and Version(transformers.__version__) < Version(
-            "5.0.0"
-        ):
-            args.gradient_checkpointing_kwargs = (
-                args.gradient_checkpointing_kwargs or {}
-            )
-            args.gradient_checkpointing_kwargs.setdefault("use_reentrant", False)
 
         super().__init__(
             model=model,

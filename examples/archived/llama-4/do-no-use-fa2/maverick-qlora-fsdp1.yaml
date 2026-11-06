@@ -62,9 +62,11 @@ tf32: true
 logging_steps: 1
 attn_implementation: flash_attention_2
 
-gradient_checkpointing: offload
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
+  offload:
+    all: cpu
 
 warmup_ratio: 0.1
 evals_per_epoch: 1

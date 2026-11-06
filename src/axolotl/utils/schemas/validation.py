@@ -16,6 +16,9 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.activation_checkpointing import (
+    migrate_legacy_checkpointing_keys,
+)
 from axolotl.utils.schemas.enums import (
     ChatTemplate,
     RLType,
@@ -231,6 +234,30 @@ def _get_kernel_from_cache(repo_id: str, version: int | None):
             errors.append(f"{snapshot.name}: {type(err).__name__}: {err}")
     detail = f": {'; '.join(errors)}" if errors else ""
     raise FileNotFoundError(f"no loadable cached snapshot of {repo_id}{detail}")
+
+
+def _raw_checkpointing(data: dict) -> dict:
+    """The `activation_checkpointing` block as written, for `mode="before"` validators."""
+    block = data.get("activation_checkpointing")
+    if block is True:
+        return {"enabled": True}
+    if not isinstance(block, dict):
+        return {"enabled": False}
+    block = {"enabled": True, **block}
+    kwargs = block.get("kwargs") or {}
+    if block.get("reentrant") is None and "use_reentrant" in kwargs:
+        block["reentrant"] = kwargs["use_reentrant"]
+    return block
+
+
+def _hf_checkpointing(checkpointing) -> bool:
+    """Whether transformers' layer checkpointing (not FSDP's wrapper) is on."""
+    get = (
+        checkpointing.get
+        if isinstance(checkpointing, dict)
+        else lambda name, default=None: getattr(checkpointing, name, default)
+    )
+    return bool(get("enabled")) and get("implementation", "hf") == "hf"
 
 
 SUPPORTED_METRICS = {"sacrebleu", "comet", "ter", "chrf", "perplexity"}
@@ -751,15 +778,15 @@ class TrainingValidationMixin:
                 "see speed improvements. Please consider setting `torch_compile: "
                 "true` in your config."
             )
-        fsdp_config = data.get("fsdp_config") or {}
-        if data.get("fp8") and (
-            fsdp_config.get("activation_checkpointing", False) is True
-            or fsdp_config.get("fsdp_activation_checkpointing", False) is True
+        checkpointing = _raw_checkpointing(data)
+        if (
+            data.get("fp8")
+            and checkpointing["enabled"]
+            and checkpointing.get("implementation") == "fsdp"
         ):
             LOG.warning(
                 "FP8 + FSDP2 + activation checkpointing may be slower than BF16 "
-                "training. Please considering setting `activation_checkpointing: false` "
-                "in your FSDP config."
+                "training. Please consider setting `activation_checkpointing: false`."
             )
         if data.get("fp8_enable_fsdp_float8_all_gather") and not data.get(
             "fsdp_config"
@@ -775,13 +802,12 @@ class TrainingValidationMixin:
     def check_use_reentrant_mismatch(cls, data):
         if (
             data.get("unfrozen_parameters")
-            and data.get("gradient_checkpointing_kwargs")
-            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
-            is True
+            and _raw_checkpointing(data).get("reentrant") is True
         ):
             # https://github.com/huggingface/transformers/issues/21381
             raise ValueError(
-                "`use_reentrant` must be false when used with partially frozen model."
+                "`activation_checkpointing.reentrant` must be false when used with "
+                "partially frozen model."
             )
         return data
 
@@ -947,9 +973,7 @@ class LoRAValidationMixin:
     def warn_qlora_zero3_w_use_reentrant(cls, data):
         if (
             data.get("adapter") == "qlora"
-            and data.get("gradient_checkpointing_kwargs", {})
-            and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
-            is False
+            and _raw_checkpointing(data).get("reentrant") is False
             and data.get("deepspeed", "") is not None
             and "zero3" in data.get("deepspeed", "")
         ):
@@ -958,7 +982,8 @@ class LoRAValidationMixin:
             # Recomputed values for the following tensors have different metadata
             # than during the forward pass.
             LOG.warning(
-                "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
+                "qlora + zero3 with activation_checkpointing.reentrant: false may "
+                "result in a CheckpointError about recomputed values"
             )
         return data
 
@@ -1109,25 +1134,25 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_rl_config_gradient_checkpointing(cls, data):
+    def check_rl_config_activation_checkpointing(cls, data):
         # TODO: SalmanMohammadi
-        # Distributed RL with QLoRA + gradient checkpointing
+        # Distributed RL with QLoRA + activation checkpointing
         # and use_reentrant = True is broken upstream in TRL
 
+        checkpointing = _raw_checkpointing(data)
         if (
             data.get("rl")
-            and data.get("gradient_checkpointing")
-            and data.get("gradient_checkpointing_kwargs")
-            and data.get("gradient_checkpointing_kwargs").get("use_reentrant")
+            and checkpointing["enabled"]
+            and checkpointing.get("reentrant")
             and data.get("load_in_4bit")
             and data.get("adapter") == "qlora"
             and data.get("capabilities")
             and data.get("capabilities").get("n_gpu", 1) > 1
         ):
             raise ValueError(
-                "The `use_reentrant: True` implementation of gradient checkpointing "
-                "is not supported for distributed RL training with QLoRA. Please set "
-                "`use_reentrant: False` in `gradient_checkpointing_kwargs`."
+                "Reentrant activation checkpointing is not supported for distributed "
+                "RL training with QLoRA. Please set "
+                "`activation_checkpointing.reentrant: false`."
             )
         return data
 
@@ -2110,62 +2135,29 @@ class ModelCompatibilityValidationMixin:
 
     @model_validator(mode="after")
     def check_mpt_checkpointing(self):
-        if (
-            self.base_model and "mpt" in self.base_model.lower()
-        ) and self.gradient_checkpointing:
-            raise ValueError("gradient_checkpointing is not supported for MPT models")
+        if (self.base_model and "mpt" in self.base_model.lower()) and _hf_checkpointing(
+            self.activation_checkpointing
+        ):
+            raise ValueError("activation_checkpointing is not supported for MPT models")
         return self
 
     @model_validator(mode="before")
     @classmethod
-    def check_offload_modes(cls, data):
+    def migrate_legacy_checkpointing(cls, data):
         if not isinstance(data, dict):
             return data
-        if (
-            data.get("activation_offloading") == "disk"
-            or data.get("gradient_checkpointing") == "offload_disk"
-        ):
-            raise ValueError(
-                "activation_offloading: disk is disabled: it never offloaded to disk "
-                "(it ran the same CPU offloader as activation_offloading: true). Use "
-                "activation_offloading: true or hidden_states."
-            )
-        if data.get("activation_offloading") == "legacy":
-            LOG.warning(
-                "activation_offloading: legacy is deprecated and is now an alias of "
-                "activation_offloading: true"
-            )
-            data["activation_offloading"] = True
+        data = dict(data)
+        warning = migrate_legacy_checkpointing_keys(data)
+        if warning:
+            LOG.warning(warning)
         return data
 
     @model_validator(mode="after")
-    def check_gradient_checkpointing_w_offload(self):
-        if self.gradient_checkpointing == "offload":
-            LOG.warning(
-                "`offload` is deprecated for gradient_checkpointing, use `activation_offloading: true`"
-            )
-            self.gradient_checkpointing = True
-            self.activation_offloading = True
-        return self
-
-    @model_validator(mode="after")
-    def check_activation_offloading_wo_gc(self):
-        if (
-            self.activation_offloading == "hidden_states"
-            and not self.gradient_checkpointing
-        ):
-            raise ValueError(
-                "activation_offloading: hidden_states requires gradient_checkpointing"
-            )
-        if self.activation_offloading is not True:
+    def check_offload_all_without_recompute(self):
+        checkpointing = self.activation_checkpointing
+        if checkpointing.enabled or checkpointing.offload.all == "none":
             return self
-        if self.gradient_checkpointing:
-            # ZeRO-3 keeps reentrant: non-reentrant recompute sees partitioned parameters.
-            if not is_deepspeed_zero3_config(self.deepspeed):
-                gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
-                gc_kwargs.setdefault("use_reentrant", False)
-                self.gradient_checkpointing_kwargs = gc_kwargs
-        elif self.process_reward_model or self.rl in (
+        if self.process_reward_model or self.rl in (
             RLType.ORPO,
             RLType.SIMPO,
             RLType.EBFT,
@@ -2177,37 +2169,35 @@ class ModelCompatibilityValidationMixin:
                 else f"rl: {self.rl.value}"
             )
             raise ValueError(
-                f"activation_offloading: {self.activation_offloading} without "
-                f"gradient_checkpointing is not supported for {trainer}; set "
-                "gradient_checkpointing: true"
+                "activation_checkpointing.offload.all without recompute is not "
+                f"supported for {trainer}; set activation_checkpointing.enabled: true"
             )
-        else:
-            LOG.warning(
-                f"activation_offloading: {self.activation_offloading} without "
-                "gradient_checkpointing offloads every activation with no recompute, "
-                "which is bound by host RAM and PCIe bandwidth; set "
-                "gradient_checkpointing: true to recompute the layers and offload only "
-                "what is saved outside them."
+        LOG.warning(
+            "activation_checkpointing.offload.all with enabled: false offloads every "
+            "activation with no recompute, which is bound by host RAM and PCIe "
+            "bandwidth; set activation_checkpointing.enabled: true to recompute the "
+            "layers and offload only what is saved outside them."
+        )
+        return self
+
+    @model_validator(mode="after")
+    def check_fsdp_activation_checkpointing(self):
+        checkpointing = self.activation_checkpointing
+        if (
+            checkpointing.enabled
+            and checkpointing.implementation == "fsdp"
+            and not self.fsdp_config
+        ):
+            raise ValueError(
+                "`activation_checkpointing.implementation: fsdp` requires `fsdp_config`."
             )
         return self
 
     @model_validator(mode="after")
     def check_selective_checkpointing(self):
-        if not self.selective_checkpointing:
-            self.selective_checkpointing = None
+        sac = self.activation_checkpointing.selective
+        if sac is None:
             return self
-        if self.selective_checkpointing is True:
-            from axolotl.utils.schemas.training import SelectiveCheckpointingConfig
-
-            self.selective_checkpointing = SelectiveCheckpointingConfig()
-        if not self.gradient_checkpointing:
-            raise ValueError("selective_checkpointing requires gradient_checkpointing")
-        if (self.gradient_checkpointing_kwargs or {}).get("use_reentrant"):
-            raise ValueError(
-                "selective_checkpointing requires non-reentrant checkpointing "
-                "(gradient_checkpointing_kwargs.use_reentrant: false)"
-            )
-        sac = self.selective_checkpointing
         fused_lora = any(
             _lora_kernel_enabled(self, flag)
             for flag in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel")
@@ -2221,8 +2211,9 @@ class ModelCompatibilityValidationMixin:
             ]
             if bad:
                 raise ValueError(
-                    f"selective_checkpointing.save entries {bad} match matmul ops, "
-                    "which cannot be saved while a fused LoRA kernel is enabled: the "
+                    f"activation_checkpointing.selective.save entries {bad} match "
+                    "matmul ops, which cannot be saved while a fused LoRA kernel is "
+                    "enabled: the "
                     "kernel adds the adapter delta into the base matmul output "
                     "in-place (addmm_), which invalidates the cached tensor. Set "
                     "lora_mlp_kernel: false, lora_qkv_kernel: false and "
@@ -2231,8 +2222,8 @@ class ModelCompatibilityValidationMixin:
                 )
             if sac.save_matmul_min_k:
                 raise ValueError(
-                    "selective_checkpointing.save_matmul_min_k saves the base matmul "
-                    "that a fused LoRA kernel then mutates in-place (addmm_). Set "
+                    "activation_checkpointing.selective.save_matmul_min_k saves the base "
+                    "matmul that a fused LoRA kernel then mutates in-place (addmm_). Set "
                     "lora_mlp_kernel: false, lora_qkv_kernel: false and "
                     "lora_o_kernel: false (they are auto-enabled for LoRA/QLoRA), "
                     "or drop save_matmul_min_k."
@@ -2248,16 +2239,16 @@ class ModelCompatibilityValidationMixin:
             for entry in sac.save_modules or []:
                 if any(_sac_entry_covers(entry, module) for module in modules):
                     raise ValueError(
-                        f"selective_checkpointing.save_modules entry {entry!r} names "
-                        f"a module whose forward is replaced by {flag}: true, so its "
+                        f"activation_checkpointing.selective.save_modules entry {entry!r} "
+                        f"names a module whose forward is replaced by {flag}: true, so its "
                         "hooks never fire and the rule would be a silent no-op. Set "
                         f"{flag}: false (LoRA kernels are auto-enabled for "
                         "LoRA/QLoRA) or remove the entry."
                     )
                 if flag.startswith("lora_") and _sac_entry_is_layer_container(entry):
                     raise ValueError(
-                        f"selective_checkpointing.save_modules entry {entry!r} scopes "
-                        "a decoder layer or model container, which holds the "
+                        f"activation_checkpointing.selective.save_modules entry {entry!r} "
+                        "scopes a decoder layer or model container, which holds the "
                         f"projections {flag}: true runs; the kernel adds the adapter "
                         "delta into their saved base matmul output in-place "
                         f"(addmm_), which invalidates the cached tensor. Set {flag}: "
@@ -2266,8 +2257,8 @@ class ModelCompatibilityValidationMixin:
                     )
         if self.torch_compile:
             LOG.warning(
-                "selective_checkpointing with torch_compile is untested in axolotl; "
-                "the SAC context_fn targets the eager checkpointing path"
+                "activation_checkpointing.selective with torch_compile is untested in "
+                "axolotl; the SAC context_fn targets the eager checkpointing path"
             )
         return self
 
@@ -2280,14 +2271,14 @@ class ModelCompatibilityValidationMixin:
         return backend
 
     @model_validator(mode="after")
-    def check_torch_compile_regional_with_gradient_checkpointing(self):
+    def check_torch_compile_regional_with_activation_checkpointing(self):
         if (
             self.torch_compile
             and self.torch_compile_regional
-            and self.gradient_checkpointing
+            and _hf_checkpointing(self.activation_checkpointing)
         ):
             raise ValueError(
-                "torch_compile_regional cannot be combined with gradient_checkpointing: "
+                "torch_compile_regional cannot be combined with activation_checkpointing: "
                 "the checkpoint recompute can run a different Dynamo cache entry than "
                 "the forward (pytorch/pytorch#166926). Use whole-model compile."
             )
@@ -2300,12 +2291,11 @@ class ModelCompatibilityValidationMixin:
         if self._resolved_expert_parallel_backend() != "torch":
             return self
         # recompute has to replay the forward's routing through a SAC policy
-        if self.gradient_checkpointing and (
-            self.gradient_checkpointing_kwargs or {}
-        ).get("use_reentrant"):
+        checkpointing = self.activation_checkpointing
+        if checkpointing.enabled and checkpointing.reentrant:
             raise ValueError(
-                "expert_parallel_backend: torch requires non-reentrant gradient "
-                "checkpointing (gradient_checkpointing_kwargs.use_reentrant: false): "
+                "expert_parallel_backend: torch requires non-reentrant activation "
+                "checkpointing (activation_checkpointing.reentrant: false): "
                 "recompute must reuse the forward's routing, which reentrant "
                 "checkpointing cannot guarantee"
             )
@@ -2323,22 +2313,14 @@ class ModelCompatibilityValidationMixin:
 
     @model_validator(mode="after")
     def check_hidden_states_offloading(self):
-        if self.activation_offloading != "hidden_states":
+        if self.activation_checkpointing.offload.hidden_states == "none":
             return self
-        gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
-        use_reentrant = gc_kwargs.setdefault("use_reentrant", False)
-        self.gradient_checkpointing_kwargs = gc_kwargs
-        if use_reentrant and self.unfrozen_parameters:
-            raise ValueError(
-                "activation_offloading: hidden_states with reentrant checkpointing "
-                "is incompatible with `unfrozen_parameters` (partially frozen model)."
-            )
         if self.adapter:
             LOG.warning(
-                "activation_offloading: hidden_states uses gradient checkpointing; "
-                "with LoRA/QLoRA, activation_offloading: true with "
-                "gradient_checkpointing: false can be faster because it avoids "
-                "recompute while offloading smaller adapter activations."
+                "activation_checkpointing.offload.hidden_states recomputes every layer; "
+                "with LoRA/QLoRA, offload.all: cpu with enabled: false can be faster "
+                "because it avoids recompute while offloading smaller adapter "
+                "activations."
             )
         return self
 
@@ -2548,9 +2530,9 @@ class ComplexValidationMixin:
             )
         return self
 
-    def hint_gradient_checkpointing_dpo_lora_ddp(self):
+    def hint_activation_checkpointing_dpo_lora_ddp(self):
         if (
-            (self.gradient_checkpointing is True or self.gradient_checkpointing is None)
+            self.activation_checkpointing.enabled
             and self.capabilities
             and self.capabilities.get("n_gpu", 1) > 1
             and self.adapter in ("lora", "qlora")
@@ -2559,7 +2541,7 @@ class ComplexValidationMixin:
             and not self.deepspeed
         ):
             LOG.warning(
-                "gradient_checkpointing with DPO + DDP + LoRA is not recommended."
+                "activation_checkpointing with DPO + DDP + LoRA is not recommended."
             )
         return self
 
@@ -2661,7 +2643,7 @@ class EBFTValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_ebft_torch_compile(cls, data):
-        """torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles
+        """torch_compile + flex_attention + activation_checkpointing causes dynamo recompiles
         and CheckpointErrors. The flex_attention kernel compiles itself internally —
         whole-model torch.compile is not needed and actively harmful."""
         if (
@@ -2669,9 +2651,9 @@ class EBFTValidationMixin:
             and data.get("torch_compile") is True
             and (data.get("ebft") or {}).get("mode") == "strided"
         ):
-            if data.get("gradient_checkpointing"):
+            if _hf_checkpointing(_raw_checkpointing(data)):
                 raise ValueError(
-                    "EBFT strided mode: `torch_compile: true` with `gradient_checkpointing: true` "
+                    "EBFT strided mode: `torch_compile: true` with `activation_checkpointing` "
                     "causes CheckpointError (BlockMask metadata mismatch during recomputation). "
                     "Remove `torch_compile` — the flex_attention kernel compiles itself internally."
                 )
@@ -2683,45 +2665,43 @@ class EBFTValidationMixin:
         return data
 
     @model_validator(mode="after")
-    def check_ebft_gradient_checkpointing_reentrant(self):
-        """flex_attention + non-reentrant gradient checkpointing causes CheckpointError."""
+    def check_ebft_activation_checkpointing_reentrant(self):
+        """flex_attention + non-reentrant activation checkpointing causes CheckpointError."""
+        checkpointing = self.activation_checkpointing
         if (
             self.rl == "ebft"
             and self.ebft is not None
             and self.ebft.mode == "strided"
             and self.attn_implementation == "flex_attention"
-            and self.gradient_checkpointing
+            and _hf_checkpointing(checkpointing)
+            and checkpointing.reentrant is not True
         ):
-            gc_kwargs = self.gradient_checkpointing_kwargs or {}
-            if not gc_kwargs.get("use_reentrant"):
-                LOG.warning(
-                    "EBFT strided mode with flex_attention: setting `use_reentrant: true` in "
-                    "gradient_checkpointing_kwargs (required for flex_attention compatibility). "
-                    "Non-reentrant checkpointing causes CheckpointError with BlockMask metadata."
-                )
-                if self.gradient_checkpointing_kwargs is None:
-                    self.gradient_checkpointing_kwargs = {}
-                self.gradient_checkpointing_kwargs["use_reentrant"] = True
+            LOG.warning(
+                "EBFT strided mode with flex_attention: setting "
+                "`activation_checkpointing.reentrant: true` (required for "
+                "flex_attention compatibility). Non-reentrant checkpointing causes "
+                "CheckpointError with BlockMask metadata."
+            )
+            checkpointing.reentrant = True
         return self
 
     @model_validator(mode="after")
     def check_ebft_activation_offloading(self):
-        """activation_offloading replaces gradient checkpointing with FSDP-style wrapping,
-        which conflicts with flex_attention's use_reentrant requirement."""
+        """TRL's offloader wraps the layers in a way that conflicts with
+        flex_attention's use_reentrant requirement."""
         if (
             self.rl == "ebft"
             and self.ebft is not None
             and self.ebft.mode == "strided"
-            and self.activation_offloading is True
+            and self.activation_checkpointing.offload.all != "none"
             and self.attn_implementation == "flex_attention"
         ):
             raise ValueError(
-                "EBFT strided mode: `activation_offloading: true` is incompatible with "
-                "`attn_implementation: flex_attention`. Activation offloading replaces "
-                "gradient checkpointing with FSDP-style wrapping that conflicts with "
-                "flex_attention's reentrant checkpoint requirement. Remove "
-                "`activation_offloading` — the strided trainer uses micro-batched forward "
-                "passes for memory efficiency instead."
+                "EBFT strided mode: `activation_checkpointing.offload.all` is "
+                "incompatible with `attn_implementation: flex_attention`. TRL's "
+                "activation offloader conflicts with flex_attention's reentrant "
+                "checkpoint requirement. Remove it — the strided trainer uses "
+                "micro-batched forward passes for memory efficiency instead."
             )
         return self
 

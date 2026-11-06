@@ -95,11 +95,14 @@ class TestExpertParallelSacOffload:
             if chunked_offload:
                 cfg["expert_parallel_dispatch_chunks"] = 2
                 cfg["expert_parallel_save_dispatch"] = True
-                cfg["gradient_checkpointing"] = True
-                cfg["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
                 # every SAC-saved tensor goes through the offload engine, and the
                 # empty save list leaves only the plugin's registered saves
-                cfg["selective_checkpointing"] = {"save": [], "offload": True}
+                cfg["activation_checkpointing"] = {
+                    "enabled": True,
+                    "reentrant": False,
+                    "selective": {"save": []},
+                    "offload": {"selective": "cpu"},
+                }
             out_dir.mkdir(parents=True, exist_ok=True)
             with open(out_dir / "config.yaml", "w", encoding="utf-8") as fout:
                 fout.write(yaml.dump(cfg.to_dict(), Dumper=yaml.Dumper))

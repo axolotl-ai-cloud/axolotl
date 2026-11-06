@@ -178,10 +178,10 @@ swanlab_completion_log_interval: 200  # Less frequent for long training
 
 ### Use Case 3: Optimize Training Performance
 Use `lora-swanlab-profiling.yml`, run multiple experiments with different optimizations:
-- Baseline: `flash_attention: false, gradient_checkpointing: false`
+- Baseline: `flash_attention: false, activation_checkpointing: false`
 - Flash Attention: `flash_attention: true`
-- Gradient Checkpointing: `gradient_checkpointing: true`
-- Both: `flash_attention: true, gradient_checkpointing: true`
+- Activation Checkpointing: `activation_checkpointing: true`
+- Both: `flash_attention: true, activation_checkpointing: true`
 
 Compare profiling metrics in SwanLab dashboard.
 

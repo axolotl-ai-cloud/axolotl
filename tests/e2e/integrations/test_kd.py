@@ -59,7 +59,7 @@ def min_cfg(temp_dir):
         "lr_scheduler": "cosine",
         "learning_rate": 0.00001,
         "bf16": "auto",
-        "gradient_checkpointing": True,
+        "activation_checkpointing": True,
         "flash_attention": True,
         "special_tokens": {
             "pad_token": "<|end_of_text|>",

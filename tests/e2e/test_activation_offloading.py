@@ -62,8 +62,10 @@ class TestActivationOffloading:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": "auto",
-                "gradient_checkpointing": True,
-                "activation_offloading": True,
+                "activation_checkpointing": {
+                    "enabled": True,
+                    "offload": {"all": "cpu"},
+                },
                 "save_first_step": False,
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -87,13 +89,13 @@ class TestActivationOffloading:
     @pytest.mark.parametrize(
         "offload_mode,expect_streams",
         [
+            ("cpu", True),
             (True, True),
-            ("legacy", True),
             pytest.param(
                 "disk",
                 True,
                 marks=pytest.mark.skip(
-                    reason="activation_offloading: disk is disabled"
+                    reason="activation_checkpointing.offload: disk is disabled"
                 ),
             ),
         ],
@@ -101,8 +103,8 @@ class TestActivationOffloading:
     def test_offload_mode_wiring(
         self, temp_dir, monkeypatch, offload_mode, expect_streams
     ):
-        """`activation_offloading` must reach the trainer as a live,
-        stream-overlapped offload context ('legacy' is an alias of true). Guards
+        """`activation_checkpointing.offload.all` must reach the trainer as a live,
+        stream-overlapped offload context (`true` means `cpu`). Guards
         the regression where string modes fell through to plain gradient
         checkpointing (no offload at all)."""
         from trl.models.activation_offloading import OffloadActivations
@@ -138,8 +140,10 @@ class TestActivationOffloading:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": "auto",
-                "gradient_checkpointing": True,
-                "activation_offloading": offload_mode,
+                "activation_checkpointing": {
+                    "enabled": True,
+                    "offload": {"all": offload_mode},
+                },
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -154,7 +158,7 @@ class TestActivationOffloading:
 
         ctx = captured.get("ctx")
         assert isinstance(ctx, OffloadActivations), (
-            f"activation_offloading={offload_mode!r} did not produce an offload "
+            f"offload.all={offload_mode!r} did not produce an offload "
             f"context (got {type(ctx).__name__}) — string modes likely fell "
             f"through to plain gradient checkpointing"
         )
@@ -163,7 +167,7 @@ class TestActivationOffloading:
 
     @requires_flash_attn
     def test_offload_full_finetune_uses_hf_checkpointing(self, temp_dir, monkeypatch):
-        """With gradient_checkpointing, a full finetune checkpoints through HF as it
+        """With checkpointing enabled, a full finetune checkpoints through HF as it
         does without offloading, and offloads what is saved outside the layers."""
         captured = {}
         original_step = ActivationOffloadingMixin.training_step
@@ -196,8 +200,10 @@ class TestActivationOffloading:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": "auto",
-                "gradient_checkpointing": True,
-                "activation_offloading": True,
+                "activation_checkpointing": {
+                    "enabled": True,
+                    "offload": {"all": "cpu"},
+                },
                 "save_first_step": False,
             }
         )
@@ -214,7 +220,7 @@ class TestActivationOffloading:
     def test_hidden_states_offload_full_param(
         self, temp_dir, monkeypatch, use_reentrant
     ):
-        """activation_offloading: hidden_states trains in both checkpoint modes."""
+        """offload.hidden_states: cpu trains in both checkpoint modes."""
         import torch.utils.checkpoint as ckpt
 
         from axolotl.monkeypatch.activation_offload_checkpoint import (
@@ -255,16 +261,18 @@ class TestActivationOffloading:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": "auto",
-                "gradient_checkpointing": True,
-                "activation_offloading": "hidden_states",
+                "activation_checkpointing": {
+                    "enabled": True,
+                    "offload": {"hidden_states": "cpu"},
+                },
                 "save_first_step": False,
             }
         )
         if use_reentrant:
-            cfg["gradient_checkpointing_kwargs"] = {"use_reentrant": True}
+            cfg["activation_checkpointing"]["reentrant"] = True
         try:
             cfg = validate_config(cfg)
-            assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is use_reentrant
+            assert cfg.activation_checkpointing["reentrant"] is use_reentrant
             normalize_config(cfg)
             dataset_meta = load_datasets(cfg=cfg)
             train(cfg=cfg, dataset_meta=dataset_meta)
@@ -402,8 +410,10 @@ class TestActivationOffloading:
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "bf16": "auto",
-                "gradient_checkpointing": True,
-                "activation_offloading": True,
+                "activation_checkpointing": {
+                    "enabled": True,
+                    "offload": {"all": "cpu"},
+                },
                 "save_first_step": False,
             }
         )

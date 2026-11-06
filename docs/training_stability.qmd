@@ -198,15 +198,15 @@ For GRPO specifically, the logits tensor for policy logprob computation can be v
 
 Reduce `micro_batch_size` to 2--4 for GRPO.
 
-### Step 2: Enable Gradient Checkpointing
+### Step 2: Enable Activation Checkpointing
 
 Trades compute for memory by recomputing activations during the backward pass instead of storing them.
 
 ```yaml
-gradient_checkpointing: true
+activation_checkpointing: true
 ```
 
-Non-reentrant checkpointing (`gradient_checkpointing_kwargs.use_reentrant: false`) is the default: it is what PyTorch recommends and it lets `torch_compile` trace through the checkpointed layer.
+Non-reentrant checkpointing (`activation_checkpointing.reentrant: false`) is the default: it is what PyTorch recommends and it lets `torch_compile` trace through the checkpointed layer.
 
 ::: {.callout-warning}
 ## Reentrant Checkpointing Exceptions
@@ -278,7 +278,7 @@ This generates PyTorch profiler traces you can inspect to see exactly which tens
 | `'DummyOptim' object has no attribute 'step'` | DeepSpeed on single GPU | Remove `deepspeed:` section from config |
 | `unable to load strategy X` then `None is not callable` | Reward module not importable | Run `cd experiments && python -c "import my_rewards"` to check |
 | `generation_batch_size not divisible by num_generations` | micro_batch_size too small | Set `micro_batch_size >= num_generations` and make it divisible |
-| `CheckpointError` (tensor count mismatch) | Non-reentrant checkpointing + ZeRO-3 or flex_attention | Set `use_reentrant: true` in `gradient_checkpointing_kwargs` |
+| `CheckpointError` (tensor count mismatch) | Non-reentrant checkpointing + ZeRO-3 or flex_attention | Set `activation_checkpointing.reentrant: true` |
 | `Content end boundary is before start boundary` | Chat template parsing issue | Check `eos_token` matches template; file a GitHub issue if persistent |
 | `CAS service error` during data processing | HuggingFace XET issue | Set `export HF_HUB_DISABLE_XET=1` |
 

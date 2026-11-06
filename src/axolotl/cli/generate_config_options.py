@@ -49,7 +49,7 @@ def _option_for_scalar(name: str, field) -> ConfigOption:
 def _option_for_nested(parent_name: str, sub_name: str, sub_field) -> ConfigOption:
     sub_type = _strip_optional_type(sub_field.annotation)
     cli_name = f"{parent_name}.{sub_name}".replace("_", "-")
-    param_name = f"{parent_name}__{sub_name}"
+    param_name = f"{parent_name}__{sub_name}".replace(".", "__")
     description = _get_field_description(sub_field)
 
     if sub_type is bool:
@@ -96,13 +96,23 @@ def _format_option(option: ConfigOption) -> str:
     )
 
 
+def _nested_options(parent_name: str, model: type[BaseModel]) -> list[ConfigOption]:
+    options = []
+    for sub_name, sub_field in model.model_fields.items():
+        sub_type = _strip_optional_type(sub_field.annotation)
+        if _is_pydantic_model(sub_type):
+            options.extend(_nested_options(f"{parent_name}.{sub_name}", sub_type))
+        else:
+            options.append(_option_for_nested(parent_name, sub_name, sub_field))
+    return options
+
+
 def generate_options() -> list[ConfigOption]:
     options = []
     for name, field in AxolotlInputConfig.model_fields.items():
         field_type = _strip_optional_type(field.annotation)
         if _is_pydantic_model(field_type):
-            for sub_name, sub_field in field_type.model_fields.items():
-                options.append(_option_for_nested(name, sub_name, sub_field))
+            options.extend(_nested_options(name, field_type))
         else:
             options.append(_option_for_scalar(name, field))
     return options

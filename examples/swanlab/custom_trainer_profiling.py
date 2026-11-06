@@ -256,7 +256,7 @@ To use this custom trainer:
 5. Compare profiling metrics across runs:
    - Run baseline without optimizations
    - Run with flash_attention enabled
-   - Run with gradient_checkpointing enabled
+   - Run with activation_checkpointing enabled
    - Compare profiling metrics to see performance impact
 """
 

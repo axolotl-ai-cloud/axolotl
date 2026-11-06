@@ -36,6 +36,15 @@ from axolotl.utils import (
     is_opentelemetry_available,
     is_trackio_available,
 )
+from axolotl.utils.activation_checkpointing import (
+    CHECKPOINTING_ARG,
+    CHECKPOINTING_KWARGS_ARG,
+    checkpointing_config,
+    checkpointing_kwargs,
+    fsdp_checkpointing_enabled,
+    hf_checkpointing_enabled,
+    offload_placement,
+)
 from axolotl.utils.callbacks import (
     GCCallback,
     SaveAxolotlConfigtoWandBCallback,
@@ -57,6 +66,13 @@ def _eval_on_start(cfg) -> bool:
     """An explicit `eval_on_start` wins; unset keeps the step-0 eval."""
     eval_on_start = getattr(cfg, "eval_on_start", None)
     return True if eval_on_start is None else bool(eval_on_start)
+
+
+def _fsdp_training_config(cfg):
+    """`fsdp_config` for TrainingArguments, which reads FSDP's checkpointing from it."""
+    if fsdp_checkpointing_enabled(cfg):
+        return {**cfg.fsdp_config, "activation_checkpointing": True}
+    return cfg.fsdp_config
 
 
 class TrainerBuilderBase(abc.ABC):
@@ -641,7 +657,7 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
             torch._dynamo.config.suppress_errors = True
             torch._dynamo.config.accumulated_cache_size_limit = 256
-            if self.cfg.gradient_checkpointing:
+            if hf_checkpointing_enabled(self.cfg):
                 # pytorch/pytorch#166926: the checkpoint recompute must run the same Dynamo
                 # cache entry as the forward, which the LRU reordering does not guarantee.
                 eval_frame = getattr(
@@ -689,33 +705,18 @@ class TrainerBuilderBase(abc.ABC):
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.layer_offloading:
             training_args_kwargs["layer_offloading"] = True
-        if self.cfg.activation_offloading == "hidden_states":
-            training_args_kwargs["gradient_checkpointing"] = True
-            gc_kwargs = dict(self.cfg.gradient_checkpointing_kwargs or {})
-            training_args_kwargs["gradient_checkpointing_kwargs"] = gc_kwargs
-            if gc_kwargs["use_reentrant"] is False:
-                training_args_kwargs["activation_offloading"] = (
-                    self.cfg.activation_offloading
-                )
-        else:
-            if self.cfg.activation_offloading:
-                # checkpointing stays as configured; the TRL offloader offloads
-                # whatever the step saves
-                training_args_kwargs["activation_offloading"] = (
-                    self.cfg.activation_offloading
-                )
-            if self.cfg.gradient_checkpointing is not None:
-                training_args_kwargs["gradient_checkpointing"] = (
-                    self.cfg.gradient_checkpointing
-                )
-                if self.cfg.gradient_checkpointing_kwargs is not None:
-                    training_args_kwargs["gradient_checkpointing_kwargs"] = (
-                        self.cfg.gradient_checkpointing_kwargs
-                    )
-                else:
-                    training_args_kwargs["gradient_checkpointing_kwargs"] = {
-                        "use_reentrant": False
-                    }
+        training_args_kwargs[CHECKPOINTING_ARG] = hf_checkpointing_enabled(self.cfg)
+        training_args_kwargs[CHECKPOINTING_KWARGS_ARG] = checkpointing_kwargs(self.cfg)
+        if offload_placement(self.cfg, "all") == "cpu":
+            # checkpointing stays as configured; the TRL offloader offloads
+            # whatever the step saves
+            training_args_kwargs["activation_offloading"] = True
+        elif (
+            offload_placement(self.cfg, "hidden_states") == "cpu"
+            and not checkpointing_config(self.cfg).reentrant
+        ):
+            # reentrant hidden_states offload is a patch the model loader applies
+            training_args_kwargs["activation_offloading"] = "hidden_states"
 
     def _set_base_training_args(
         self, total_num_steps
@@ -796,7 +797,7 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["max_length"] = self.cfg.sequence_len
 
         if self.cfg.fsdp_config:
-            training_args_kwargs["fsdp_config"] = self.cfg.fsdp_config
+            training_args_kwargs["fsdp_config"] = _fsdp_training_config(self.cfg)
             training_args_kwargs["fsdp"] = True
 
         self._configure_reporting(training_args_kwargs)

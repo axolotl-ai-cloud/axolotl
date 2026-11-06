@@ -37,6 +37,11 @@ from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
 )
+from axolotl.utils.activation_checkpointing import (
+    checkpointing_config,
+    fsdp_checkpointing_enabled,
+    offload_placement,
+)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -464,7 +469,7 @@ class PatchManager:
         if (
             self.cfg.fsdp_config
             and self.cfg.adapter
-            and self.cfg.fsdp_config.activation_checkpointing
+            and fsdp_checkpointing_enabled(self.cfg)
         ):
             from axolotl.monkeypatch.peft.state_dict import (
                 patch_peft_checkpoint_wrapper_prefixes,
@@ -654,11 +659,9 @@ class PatchManager:
                 "gemma4_unified_text",
             ):
                 # Shared-KV side channel when activation checkpointing (PR #3611).
-                fsdp_cfg = self.cfg.fsdp_config
                 needs_shared_kv_workaround = (not self.inference) and bool(
-                    self.cfg.gradient_checkpointing
-                    or self.cfg.activation_offloading
-                    or (fsdp_cfg is not None and fsdp_cfg.activation_checkpointing)
+                    checkpointing_config(self.cfg).enabled
+                    or offload_placement(self.cfg, "all") != "none"
                 )
                 if self.cfg.model_config_type in (
                     "gemma4_unified",
@@ -883,7 +886,10 @@ class PatchManager:
     def _apply_trl_offload_patches(self):
         """Keep saved-tensor layouts intact under TRL's activation offloader."""
         # TRL's own trainers (DPO, KTO) run their offloader for any truthy mode, hidden_states too
-        if self.cfg.activation_offloading:
+        if (
+            offload_placement(self.cfg, "all") != "none"
+            or offload_placement(self.cfg, "hidden_states") != "none"
+        ):
             from axolotl.monkeypatch.trainer.trl_offload import (
                 patch_trl_logprob_entropy_saved_layout,
                 patch_trl_offload_dense_layout,
@@ -1293,7 +1299,7 @@ class PatchManager:
 
             from axolotl.monkeypatch.deepspeed_utils import apply_deepspeed_patches
 
-            if self.cfg.activation_offloading is True and (
+            if offload_placement(self.cfg, "all") == "cpu" and (
                 is_deepspeed_zero3_enabled()
                 or os.getenv("ACCELERATE_DEEPSPEED_ZERO_STAGE") == "3"
             ):

@@ -54,7 +54,7 @@ class TestRewardModelLoraSmolLM2(unittest.TestCase):
                 "learning_rate": 0.00001,
                 "optimizer": "adamw_torch",
                 "lr_scheduler": "cosine",
-                "gradient_checkpointing": True,
+                "activation_checkpointing": True,
                 "warmup_ratio": 0.1,
                 "use_tensorboard": True,
                 "save_first_step": False,

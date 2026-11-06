@@ -162,7 +162,7 @@ learning_rate: 5e-6
 micro_batch_size: 1
 gradient_accumulation_steps: 4
 max_steps: 30
-gradient_checkpointing: true
+activation_checkpointing: true
 bf16: true
 output_dir: ./outputs/nemo_gym_async
 

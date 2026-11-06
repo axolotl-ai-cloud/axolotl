@@ -25,7 +25,7 @@ warmup_steps: 0.1
 bf16: true
 tf32: false
 
-gradient_checkpointing: true
+activation_checkpointing: true
 flash_attention: true
 logging_steps: 1
 evals_per_epoch:

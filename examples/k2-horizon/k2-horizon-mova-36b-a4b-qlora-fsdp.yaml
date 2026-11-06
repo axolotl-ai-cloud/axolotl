@@ -41,9 +41,9 @@ train_on_inputs: false
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 
 logging_steps: 1
 attn_implementation: flash_attention_2
@@ -61,4 +61,3 @@ fsdp_config:
   transformer_layer_cls_to_wrap: K2HorizonDecoderLayer
   state_dict_type: FULL_STATE_DICT
   reshard_after_forward: true
-  activation_checkpointing: true

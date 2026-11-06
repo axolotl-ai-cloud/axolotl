@@ -44,7 +44,7 @@ bf16: auto
 fp16: false
 tf32: true
 
-gradient_checkpointing: true
+activation_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
 

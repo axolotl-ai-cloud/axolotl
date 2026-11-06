@@ -68,7 +68,7 @@ learning_rate: 0.0002
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
+activation_checkpointing: true
 
 # flex_attention OOMs on sm120 here; the hybrid runs FA2 (sliding) + SDPA (global). Needs attn_implementation=flash_attention_2.
 attn_implementation: flash_attention_2

@@ -86,12 +86,9 @@ class TestMixLoraArgs:
 
     def test_forces_non_reentrant_gradient_checkpointing(self, plugin_manager):
         cfg = _validate(
-            _cfg(
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": True},
-            )
+            _cfg(activation_checkpointing={"enabled": True, "reentrant": True})
         )
-        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is False
+        assert cfg.activation_checkpointing.reentrant is False
 
 
 class TestMixLoraPluginAdapter:

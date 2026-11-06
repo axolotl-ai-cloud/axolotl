@@ -32,7 +32,7 @@ dataset_prepared_path: ./last_run_prepared/nemotron-diffusion-smoke
 output_dir: ./outputs/nemotron-diffusion-smoke
 logging_steps: 1
 save_strategy: 'no'
-gradient_checkpointing: false
+activation_checkpointing: false
 diffusion_lm:
   from_causal_lm: false
   generate_samples: false

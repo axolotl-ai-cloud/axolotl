@@ -52,10 +52,9 @@ learning_rate: 0.0001
 bf16: true
 tf32: true
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
-activation_offloading: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 
 fsdp_version: 2
 fsdp_config:
