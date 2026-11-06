@@ -27,17 +27,18 @@ import gc
 import pytest
 import torch
 
+from tests.cuda_gates import cuda_major_not_in
+
 # ---------------------------------------------------------------------------
 # Skip gates
 # ---------------------------------------------------------------------------
 
 _IS_CUDA = torch.cuda.is_available()
-_IS_BLACKWELL = _IS_CUDA and torch.cuda.get_device_capability()[0] in (10, 12)
 
 pytestmark = [
     pytest.mark.perf,
     pytest.mark.skipif(
-        not _IS_BLACKWELL,
+        not _IS_CUDA or cuda_major_not_in(10, 12),
         reason="grouped NVFP4 training backends require Blackwell (sm100/sm120)",
     ),
 ]
@@ -440,11 +441,7 @@ def test_grouped_fp4_speed(shape_fn, shape_name, vram_needed, fwd_floor, step_fl
 
 
 @pytest.mark.skipif(
-    not (
-        _IS_CUDA
-        and torch.cuda.is_available()
-        and torch.cuda.get_device_capability()[0] == 12
-    ),
+    not _IS_CUDA or cuda_major_not_in(12),
     reason="marlin W4A16 memory test is sm120 only",
 )
 def test_marlin_memory_no_double_copy():
