@@ -28,5 +28,6 @@ MOE_ARCH_BLOCK = {
     "glm5_next_text": "Glm5NextTextMoE",
     "nemotron_h": "NemotronHMoE",
     "minimax_m2": "MiniMaxM2SparseMoeBlock",
+    "mimo_v2": "MiMoV2FlashMoE",
     "bailing_hybrid": "BailingMoeV3SparseMoeBlock",
 }
