@@ -9,19 +9,27 @@ permissions:
 env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
-  # Exact patch: testmon re-runs everything when the Python micro version changes
-  PYTHON_VERSION: "3.14.9"
-  PYTORCH_VERSION: "2.14.1"
 
 jobs:
   pytest-testmon:
-    name: PyTest testmon (py3.14, torch 2.14.1)
+    name: PyTest testmon (py${{ matrix.python_version }}, torch ${{ matrix.pytorch_version }})
     runs-on: ubuntu-latest
     # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
     continue-on-error: true
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      # One cell per PyTest cell, each with its own baseline. PRs run only the first; the
+      # others run where a baseline is saved (main), so main keeps every cell's baseline.
+      # Exact patch: testmon re-runs everything when the Python micro version changes.
+      matrix:
+        python_version: ["3.14.9"]
+        pytorch_version: ["2.14.1"]
+        include: ${{ fromJSON(github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && '[{"python_version":"3.12.16","pytorch_version":"2.13.0"},{"python_version":"3.14.9","pytorch_version":"2.15.0"}]' || '[]') }}
     env:
       AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
+      PYTHON_VERSION: ${{ matrix.python_version }}
+      PYTORCH_VERSION: ${{ matrix.pytorch_version }}
 
     steps:
       - name: cleanup node

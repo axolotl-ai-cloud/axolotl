@@ -150,6 +150,16 @@ to check routing, then run on the required compute when available. Inspect skip
 reasons and report actual passes, skips, hardware, and any untested requirements
 in the PR. CPU-only validation does not establish CUDA or Blackwell correctness.
 
+After the Tests, Slow CPU or Slow GPU workflow finishes, the `Changed tests executed`
+check reports whether every test the PR adds or edits ran in some job, from the
+`pytest -v` lines in the logs of all jobs for the PR head. Tests that never ran or only
+skipped are grouped by the label that routes them (`run-gpu-tests`, `run-gpu-slow`,
+`run-cpu-slow`) or flagged when no lane selects them, and each one is annotated at its
+`def` line in the diff. The check is informational; its details page has the full
+report. The Tests run's last job, `Changed tests report`, previews the same report and
+annotations before Slow CPU or Slow GPU finish. To check a PR locally with `gh`, run
+`python cicd/verify_changed_tests.py --pr <number>`.
+
 ## How to Contribute
 
 ### Reporting Bugs
