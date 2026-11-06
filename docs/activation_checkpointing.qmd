@@ -35,7 +35,7 @@ activation_checkpointing:
     every_n_layers: 2        # checkpoint every 2nd decoder layer only
   selective:                 # selective activation checkpointing (SAC)
     save: [attention]
-  offload:                   # none | cpu | disk (disk is disabled pending a fix); true = cpu
+  offload:                   # where each target's tensors go
     hidden_states: cpu       # each checkpointed layer's input
     saves: none              # what `selective` saves
     all: none                # every saved activation (TRL's offloader)
@@ -44,6 +44,10 @@ activation_checkpointing:
 `activation_checkpointing: true` turns on transformers' activation checkpointing with the defaults;
 `false`, or leaving the key out, turns everything off. In the dict form `enabled` defaults to
 `true`. Unknown fields in the block are rejected.
+
+`offload` is a mapping, not a value. Each of its targets (`hidden_states`, `saves`, `all`) takes
+`none` (the default), `cpu` or `disk`, and `true` / `false` mean `cpu` / `none`. `disk` is
+rejected for now, pending a fix.
 
 How recompute and offload placement combine (decoder layers; the output head always stays on GPU):
 
