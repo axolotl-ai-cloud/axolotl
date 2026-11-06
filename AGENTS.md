@@ -132,6 +132,8 @@ mixed parameterizations, and avoid GPU work during module import. `slow` is
 additional to hardware markers. Verify that the test path and marker are selected
 by a CI lane with the required hardware; update that lane when necessary. See
 [assigning new tests to compute lanes](.github/CONTRIBUTING.md#assigning-new-tests-to-compute-lanes).
+Once a PR's CI finishes, `python cicd/verify_changed_tests.py --pr <N>` lists the changed
+tests that did not run and the label each one needs.
 
 Setup, CI matrix, GPU e2e, skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
