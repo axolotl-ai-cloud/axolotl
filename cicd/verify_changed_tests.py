@@ -201,8 +201,10 @@ class Evidence:
     def add(self, job: Job, outcomes: dict[str, set[str]]) -> None:
         if job.gpu:
             self.gpu_jobs.add(job.label)
+        # two runs of a workflow for one head share job labels
         for nodeid, seen in outcomes.items():
-            self.by_base[nodeid.split("[", 1)[0]][nodeid][job.label] = seen
+            jobs = self.by_base[nodeid.split("[", 1)[0]][nodeid]
+            jobs.setdefault(job.label, set()).update(seen)
 
 
 def gather_evidence(
@@ -963,7 +965,7 @@ def to_json(
 # --- GitHub ---------------------------------------------------------------------
 
 
-def find_pr(repo: str, head_sha: str) -> int:
+def find_pr(repo: str, head_sha: str) -> int | None:
     try:
         numbers = [
             item["number"]
@@ -986,7 +988,7 @@ def find_pr(repo: str, head_sha: str) -> int:
             head_sha
         ):
             return number
-    raise SystemExit(f"no pull request has head {head_sha}")
+    return None
 
 
 def ensure_commits(repo: str, pr: int, shas: list[str]) -> None:
@@ -1049,6 +1051,13 @@ def main() -> int:
         parser.error("pass --pr or --head-sha")
 
     pr = args.pr or find_pr(args.repo, args.head_sha)
+    if pr is None:
+        print(
+            f"No pull request has head {args.head_sha}; it moved on or closed, "
+            "and the newer head's runs report instead",
+            file=sys.stderr,
+        )
+        return 0
     info = json.loads(_gh("api", f"repos/{args.repo}/pulls/{pr}"))
     head_sha = args.head_sha or info["head"]["sha"]
     if head_sha != info["head"]["sha"]:

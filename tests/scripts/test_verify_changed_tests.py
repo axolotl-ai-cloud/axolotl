@@ -352,6 +352,23 @@ def test_judge_explains_skips_that_labels_cannot_fix():
     assert off.route == mod.SKIP_MARK_ROUTE
 
 
+def test_evidence_merges_runs_that_share_job_labels():
+    evidence = mod.Evidence()
+    job = mod.Job(1, "PyTest (3.14, 2.14.1)", "Tests", 1, "completed", "success")
+    evidence.add(job, {"tests/a.py::test_x": {"FAILED"}})
+    evidence.add(job, {"tests/a.py::test_x": {"PASSED"}})
+    verdict = mod.judge(_test("tests/a.py::test_x"), evidence)
+    assert verdict.variants["tests/a.py::test_x"][CPU] == {"FAILED", "PASSED"}
+    assert (verdict.status, verdict.failed) == ("ran", True)
+
+
+def test_find_pr_skips_heads_no_pull_request_has(monkeypatch):
+    monkeypatch.setattr(mod, "_gh_items", lambda path, jq: [{"number": 7}])
+    monkeypatch.setattr(mod, "_gh", lambda *args: "b" * 40 + "\n")
+    assert mod.find_pr("o/r", "b" * 40) == 7
+    assert mod.find_pr("o/r", "a" * 40) is None
+
+
 def test_status_payload():
     evidence = _evidence({CPU: {"tests/a.py::test_ran": {"PASSED"}}})
     ran = mod.judge(_test("tests/a.py::test_ran"), evidence)
