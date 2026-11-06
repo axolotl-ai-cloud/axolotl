@@ -221,6 +221,12 @@ def test_new_files_select_every_test():
     tests = mod.changed_tests_for_file(change, None, OLD)
     assert tests is not None
     assert {t.why for t in tests} == {"new file"}
+    lines = {t.nodeid.split("::", 1)[1]: t.line for t in tests}
+    assert lines["test_plain"] == OLD.splitlines().index("def test_plain():") + 1
+    # an inherited test is annotated where its base class defines it
+    assert lines["TestThing::test_inherited"] == (
+        OLD.splitlines().index("    def test_inherited(self):") + 1
+    )
     assert len(tests) == 6
 
 
@@ -431,3 +437,96 @@ def test_render_lists_actions_and_support_files():
     assert report.startswith("## Changed tests: 1/2 ran\n")
     assert "**Add `run-gpu-tests` (single-GPU e2e)** · 1" in report
     assert "- `tests/conftest.py`" in report
+
+
+def _missing_verdicts(n: int) -> list:
+    evidence = _evidence({})
+    return [
+        mod.judge(
+            mod.ChangedTest(
+                "tests/e2e/t.py", ("TestA", f"test_{i}"), "edited", set(), i
+            ),
+            evidence,
+        )
+        for i in range(1, n + 1)
+    ]
+
+
+def test_annotations_name_the_action_at_the_def_line():
+    (note,) = mod.annotations_for(_missing_verdicts(1), set())
+    assert (note.path, note.line, note.title) == (
+        "tests/e2e/t.py",
+        1,
+        "Not run: TestA::test_1",
+    )
+    assert note.message == "Add run-gpu-tests (single-GPU e2e). Changed: edited."
+
+
+def test_workflow_commands_escape_and_cap_per_test_warnings():
+    notes = mod.annotations_for(_missing_verdicts(12), set())
+    lines = mod.workflow_commands(notes, "failure", "0/12 ran, 50%")
+    assert len(lines) == mod.MAX_COMMAND_ANNOTATIONS + 1
+    assert lines[0] == (
+        "::warning file=tests/e2e/t.py,line=1,title=Not run%3A TestA%3A%3Atest_1"
+        "::Add run-gpu-tests (single-GPU e2e). Changed: edited."
+    )
+    assert lines[-1] == (
+        "::warning title=Changed tests executed::0/12 ran, 50%25 "
+        "(3 more tests in the run summary)"
+    )
+    assert mod.workflow_commands([], "success", "All 2 ran") == [
+        "::notice title=Changed tests executed::All 2 ran"
+    ]
+
+
+def test_post_check_run_supersedes_stale_checks_and_batches_annotations(
+    monkeypatch,
+):
+    calls = []
+    monkeypatch.setattr(mod, "_gh_items", lambda path, jq: [{"id": 5}])
+
+    def gh_json(method, path, body):
+        calls.append((method, path, body))
+        return {"id": 9}
+
+    monkeypatch.setattr(mod, "_gh_json", gh_json)
+    notes = mod.annotations_for(_missing_verdicts(120), set())
+    mod.post_check_run("o/r", "a" * 40, "failure", "title", "x" * 70000, notes)
+
+    stale, create, *appends = calls
+    assert stale[:2] == ("PATCH", "repos/o/r/check-runs/5")
+    assert stale[2]["conclusion"] == "neutral"
+    method, path, body = create
+    assert (method, path) == ("POST", "repos/o/r/check-runs")
+    assert (body["status"], body["conclusion"], body["head_sha"]) == (
+        "completed",
+        "failure",
+        "a" * 40,
+    )
+    assert len(body["output"]["summary"]) == mod.CHECK_SUMMARY_LIMIT
+    assert [len(c[2]["output"]["annotations"]) for c in [create, *appends]] == [
+        50,
+        50,
+        20,
+    ]
+    assert {c[1] for c in appends} == {"repos/o/r/check-runs/9"}
+
+
+@pytest.mark.parametrize(
+    ("state", "fields"),
+    [
+        ("pending", {"status": "in_progress"}),
+        ("error", {"status": "completed", "conclusion": "neutral"}),
+        ("success", {"status": "completed", "conclusion": "success"}),
+    ],
+)
+def test_post_check_run_states(monkeypatch, state, fields):
+    calls = []
+    monkeypatch.setattr(mod, "_gh_items", lambda path, jq: [])
+    monkeypatch.setattr(
+        mod, "_gh_json", lambda method, path, body: calls.append(body) or {"id": 1}
+    )
+    mod.post_check_run("o/r", "a" * 40, state, "title", "summary", [])
+    (body,) = calls
+    assert {k: body[k] for k in ("status", "conclusion") if k in body} == fields
+    assert body["output"]["annotations"] == []

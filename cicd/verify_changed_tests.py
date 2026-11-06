@@ -34,10 +34,18 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_WORKFLOWS = ("Tests", "Slow CPU", "Slow GPU")
-STATUS_CONTEXT = "Changed tests executed"
+CHECK_NAME = "Changed tests executed"
+CHECK_CONCLUSIONS = {"success": "success", "failure": "failure", "error": "neutral"}
+CHECK_SUMMARY_LIMIT = 65535
+# the Checks API takes 50 annotations per request
+ANNOTATION_BATCH = 50
+MAX_ANNOTATIONS = 250
+# GitHub keeps 10 warning commands per step; the verdict takes one
+MAX_COMMAND_ANNOTATIONS = 9
 TEST_FILE_GLOBS = ("test_*.py", "*_test.py")
 # Jobs that never run pytest; their logs are not downloaded
 NON_TEST_JOB_RE = re.compile(
@@ -644,6 +652,7 @@ class ChangedTest:
     qualname: tuple[str, ...]
     why: str
     markers: set[str]
+    line: int = 1
 
     @property
     def nodeid(self) -> str:
@@ -696,7 +705,13 @@ def changed_tests_for_file(
         for test, used in new.users_of(symbols | old_symbols).items():
             whys.setdefault(test, "uses " + ", ".join(sorted(used)[:3]))
     return [
-        ChangedTest(change.new_path, test, why, new.markers(test))
+        ChangedTest(
+            change.new_path,
+            test,
+            why,
+            new.markers(test),
+            new.defs[new.owners[test]].lineno,
+        )
         for test, why in sorted(whys.items())
     ]
 
@@ -926,6 +941,57 @@ def render(
     return "\n".join(out) + "\n"
 
 
+PLAIN_STATUS = {
+    "partial": "Some parametrizations only skipped",
+    "skipped": "Only skipped",
+    "not_run": "Not run",
+}
+
+
+@dataclass
+class Annotation:
+    path: str
+    line: int
+    title: str
+    message: str
+
+
+def annotations_for(verdicts: list[Verdict], labels: set[str]) -> list[Annotation]:
+    """One warning per changed test that did not fully run, at its ``def`` line."""
+    return [
+        Annotation(
+            v.test.path,
+            v.test.line,
+            f"{PLAIN_STATUS[v.status]}: {'::'.join(v.test.qualname)}",
+            f"{_action(v.route, labels).replace('`', '')}. Changed: {v.test.why}.",
+        )
+        for v in verdicts
+        if v.route is not None
+    ]
+
+
+def _command_value(text: str, prop: bool = False) -> str:
+    text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return text.replace(":", "%3A").replace(",", "%2C") if prop else text
+
+
+def workflow_commands(
+    annotations: list[Annotation], state: str, description: str
+) -> list[str]:
+    """``::warning`` lines that annotate the diff, then the verdict."""
+    lines = [
+        f"::warning file={_command_value(a.path, True)},line={a.line},"
+        f"title={_command_value(a.title, True)}::{_command_value(a.message)}"
+        for a in annotations[:MAX_COMMAND_ANNOTATIONS]
+    ]
+    if (extra := len(annotations) - MAX_COMMAND_ANNOTATIONS) > 0:
+        description += f" ({extra} more tests in the run summary)"
+    level = "notice" if state == "success" else "warning"
+    title = _command_value(CHECK_NAME, True)
+    lines.append(f"::{level} title={title}::{_command_value(description)}")
+    return lines
+
+
 def status_payload(
     verdicts: list[Verdict], evidence: Evidence, labels: set[str]
 ) -> tuple[str, str]:
@@ -1031,23 +1097,87 @@ def ensure_commits(repo: str, pr: int, shas: list[str]) -> None:
         )
 
 
-def post_status(repo: str, sha: str, state: str, description: str) -> None:
-    args = [
-        "api",
-        "-X",
+def _gh_json(method: str, path: str, body: dict) -> dict:
+    out = subprocess.run(  # nosec B603 B607
+        ["gh", "api", "-X", method, path, "--input", "-"],
+        input=json.dumps(body),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return json.loads(out) if out.strip() else {}
+
+
+def _check_output(title: str, summary: str, batch: list[Annotation]) -> dict:
+    if len(summary) > CHECK_SUMMARY_LIMIT:
+        note = "\n\n… truncated; the job summary has the full report\n"
+        summary = summary[: CHECK_SUMMARY_LIMIT - len(note)] + note
+    return {
+        "title": title,
+        "summary": summary,
+        "annotations": [
+            {
+                "path": a.path,
+                "start_line": a.line,
+                "end_line": a.line,
+                "annotation_level": "warning",
+                "title": a.title,
+                "message": a.message,
+            }
+            for a in batch
+        ],
+    }
+
+
+def post_check_run(
+    repo: str,
+    sha: str,
+    state: str,
+    title: str,
+    summary: str,
+    annotations: list[Annotation],
+) -> None:
+    """Publish the report as a check run on ``sha``, annotating changed tests."""
+    # an in-progress check from an earlier report would otherwise spin forever
+    for stale in _gh_items(
+        f"repos/{repo}/commits/{sha}/check-runs?check_name={quote(CHECK_NAME)}"
+        "&filter=all&per_page=100",
+        '.check_runs[] | select(.status != "completed"'
+        ' and .app.slug == "github-actions") | {id}',
+    ):
+        _gh_json(
+            "PATCH",
+            f"repos/{repo}/check-runs/{stale['id']}",
+            {
+                "status": "completed",
+                "conclusion": "neutral",
+                "output": {
+                    "title": "Superseded",
+                    "summary": "A newer report replaced this check.",
+                },
+            },
+        )
+    body: dict = {"name": CHECK_NAME, "head_sha": sha}
+    if state == "pending":
+        body["status"] = "in_progress"
+    else:
+        body |= {"status": "completed", "conclusion": CHECK_CONCLUSIONS[state]}
+    kept = annotations[:MAX_ANNOTATIONS]
+    batches = [
+        kept[i : i + ANNOTATION_BATCH] for i in range(0, len(kept), ANNOTATION_BATCH)
+    ] or [[]]
+    run = _gh_json(
         "POST",
-        f"repos/{repo}/statuses/{sha}",
-        "-f",
-        f"state={state}",
-        "-f",
-        f"context={STATUS_CONTEXT}",
-        "-f",
-        f"description={description}",
-    ]
-    if run_id := os.environ.get("GITHUB_RUN_ID"):
-        server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
-        args += ["-f", f"target_url={server}/{repo}/actions/runs/{run_id}"]
-    _gh(*args)
+        f"repos/{repo}/check-runs",
+        body | {"output": _check_output(title, summary, batches[0])},
+    )
+    # later batches append to the annotations already on the check run
+    for batch in batches[1:]:
+        _gh_json(
+            "PATCH",
+            f"repos/{repo}/check-runs/{run['id']}",
+            {"output": _check_output(title, summary, batch)},
+        )
 
 
 def main() -> int:
@@ -1060,7 +1190,9 @@ def main() -> int:
     parser.add_argument("--summary", type=Path, help="append the markdown report here")
     parser.add_argument("--json", type=Path, help="write the full report as JSON")
     parser.add_argument(
-        "--status", action="store_true", help=f"set the '{STATUS_CONTEXT}' status"
+        "--check-run",
+        action="store_true",
+        help=f"publish the report as the '{CHECK_NAME}' check run",
     )
     parser.add_argument("--log-cache", type=Path, help="reuse job logs saved here")
     parser.add_argument(
@@ -1069,7 +1201,7 @@ def main() -> int:
     parser.add_argument(
         "--annotate",
         action="store_true",
-        help="emit the verdict as a GitHub Actions notice or warning",
+        help="emit GitHub Actions annotations for the verdict and missing tests",
     )
     args = parser.parse_args()
     if not args.pr and not args.head_sha:
@@ -1114,12 +1246,13 @@ def main() -> int:
             encoding="utf-8",
         )
     state, description = status_payload(verdicts, evidence, labels)
-    print(f"{STATUS_CONTEXT}: {state} - {description}", file=sys.stderr)
-    if args.status:
-        post_status(args.repo, head_sha, state, description)
+    print(f"{CHECK_NAME}: {state} - {description}", file=sys.stderr)
+    # while runs are pending or logs are missing, "not run" is not yet a finding
+    notes = annotations_for(verdicts, labels) if state == "failure" else []
+    if args.check_run:
+        post_check_run(args.repo, head_sha, state, description, report, notes)
     if args.annotate:
-        level = "notice" if state == "success" else "warning"
-        print(f"::{level} title={STATUS_CONTEXT}::{description}")
+        print("\n".join(workflow_commands(notes, state, description)))
     return 1 if args.strict and state != "success" else 0
 
 

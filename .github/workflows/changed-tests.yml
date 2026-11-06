@@ -34,7 +34,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-      statuses: write
+      checks: write
     steps:
       - name: Check out repository code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,7 +52,7 @@ jobs:
           PR_NUMBER: ${{ inputs.pr || github.event.workflow_run.pull_requests[0].number }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          args=(--repo "$GITHUB_REPOSITORY" --status \
+          args=(--repo "$GITHUB_REPOSITORY" --check-run \
             --summary "$GITHUB_STEP_SUMMARY" --json "$RUNNER_TEMP/changed-tests.json")
           if [ -n "$PR_NUMBER" ]; then args+=(--pr "$PR_NUMBER"); fi
           if [ -n "$HEAD_SHA" ]; then args+=(--head-sha "$HEAD_SHA"); fi
