@@ -1,0 +1,68 @@
+name: Changed tests
+
+on:
+  workflow_run:
+    workflows: [Tests, Slow CPU, Slow GPU]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: number
+
+permissions: {}
+
+# Each check re-reads every run for the head, so a later one supersedes an in-flight one
+concurrency:
+  group: changed-tests-${{ github.event.workflow_run.head_sha || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify changed tests ran
+    # workflow_run executes this file from the default branch with a write token, so it never
+    # checks out or runs PR code: the PR's test files and job logs are only parsed as data.
+    # Label-gated Slow CPU/GPU runs that did not fire conclude "skipped" and add no evidence.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion != 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      checks: write
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: Verify changed tests ran
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr || github.event.workflow_run.pull_requests[0].number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          args=(--repo "$GITHUB_REPOSITORY" --check-run \
+            --summary "$GITHUB_STEP_SUMMARY" --json "$RUNNER_TEMP/changed-tests.json")
+          if [ -n "$PR_NUMBER" ]; then args+=(--pr "$PR_NUMBER"); fi
+          if [ -n "$HEAD_SHA" ]; then args+=(--head-sha "$HEAD_SHA"); fi
+          python cicd/verify_changed_tests.py "${args[@]}"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: changed-tests
+          path: ${{ runner.temp }}/changed-tests.json
+          if-no-files-found: ignore
+          retention-days: 14

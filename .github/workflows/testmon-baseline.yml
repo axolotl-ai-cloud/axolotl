@@ -33,9 +33,11 @@ jobs:
             const ageHours = (Date.now() - committed.getTime()) / 3600000;
             core.info(`main head ${commit.sha} committed ${ageHours.toFixed(1)}h ago`);
             core.setOutput('run', String(ageHours < 24));
-            // The CPU baseline is cached per cell and commit, so refresh whenever main's head has none:
-            // [skip ci] or path-filtered pushes, cancelled runs and evicted caches all leave gaps.
+            // The CPU baseline is cached per cell and commit, so refresh whenever main's head lacks
+            // one: [skip ci] or path-filtered pushes, cancelled runs and evicted caches all leave gaps.
             // A failed lookup refreshes anyway; failing this job would also skip single-gpu.
+            // The cells of testmon-cpu.yml's matrix on main:
+            const cells = ['py3.14.9-torch2.14.1', 'py3.12.16-torch2.13.0', 'py3.14.9-torch2.15.0'];
             try {
               const caches = await github.paginate(github.rest.actions.getActionsCacheList, {
                 ...context.repo,
@@ -43,9 +45,10 @@ jobs:
                 ref: 'refs/heads/main',
                 per_page: 100,
               });
-              const cached = caches.map((c) => c.key).filter((key) => key.endsWith(`-${commit.sha}`));
-              core.info(`testmon-cpu baselines for ${commit.sha}: ${cached.join(', ') || 'none'}`);
-              core.setOutput('cpu', String(cached.length === 0));
+              const keys = new Set(caches.map((c) => c.key));
+              const missing = cells.filter((cell) => !keys.has(`testmon-cpu-${cell}-${commit.sha}`));
+              core.info(`testmon-cpu baselines missing for ${commit.sha}: ${missing.join(', ') || 'none'}`);
+              core.setOutput('cpu', String(missing.length > 0));
             } catch (error) {
               core.warning(`testmon-cpu cache lookup failed, refreshing anyway: ${error.message}`);
               core.setOutput('cpu', 'true');
