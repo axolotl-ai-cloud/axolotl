@@ -487,4 +487,16 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python cicd/verify_changed_tests.py --repo "$GITHUB_REPOSITORY" \
-            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --summary "$GITHUB_STEP_SUMMARY" --annotate
+            --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --summary "$GITHUB_STEP_SUMMARY" --annotate \
+            --json "$RUNNER_TEMP/changed-tests.json"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: changed-tests
+          path: ${{ runner.temp }}/changed-tests.json
+          if-no-files-found: ignore
+          retention-days: 14
+          # gpu-label.yml re-runs this workflow, and a re-run re-uploads the name
+          overwrite: true
