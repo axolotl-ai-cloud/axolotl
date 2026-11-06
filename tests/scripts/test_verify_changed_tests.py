@@ -410,6 +410,11 @@ def test_status_payload():
         "failure",
         "1/2 changed tests ran; not run 1",
     )
+    evidence.unreadable.append("Tests › PyTest (gh: Not Found (HTTP 404))")
+    assert mod.status_payload([ran, missing], evidence, set()) == (
+        "error",
+        "1 job logs unreadable; 1/2 changed tests ran; run-gpu-tests 1",
+    )
     evidence.pending.append("Tests")
     state, text = mod.status_payload([ran, missing], evidence, set())
     assert state == "pending" and text.startswith("Waiting on Tests; ")

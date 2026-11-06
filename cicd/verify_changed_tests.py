@@ -29,6 +29,7 @@ import os
 import re
 import subprocess  # nosec B404
 import sys
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -239,31 +240,42 @@ def gather_evidence(
                 )
             )
 
-    def fetch(job: Job) -> tuple[Job, str | None]:
+    def fetch(job: Job) -> tuple[Job, str | None, str]:
         cached = log_cache / f"{job.id}.log" if log_cache else None
         if cached and cached.exists():
-            return job, cached.read_text(encoding="utf-8", errors="replace")
-        try:
-            raw = subprocess.check_output(  # nosec B603 B607
-                ["gh", "api", f"repos/{repo}/actions/jobs/{job.id}/logs"],
-                stderr=subprocess.PIPE,
-            )
-        except subprocess.CalledProcessError:
-            return job, None
+            return job, cached.read_text(encoding="utf-8", errors="replace"), ""
+        error = ""
+        for attempt in range(3):
+            try:
+                raw = subprocess.check_output(  # nosec B603 B607
+                    ["gh", "api", f"repos/{repo}/actions/jobs/{job.id}/logs"],
+                    stderr=subprocess.PIPE,
+                )
+                break
+            except subprocess.CalledProcessError as exc:
+                lines = (
+                    exc.stderr.decode("utf-8", errors="replace").strip().splitlines()
+                )
+                error = lines[-1] if lines else f"gh exited {exc.returncode}"
+                time.sleep(2 * (attempt + 1))
+        else:
+            return job, None, error
         text = raw.decode("utf-8", errors="replace")
         if cached:
             cached.parent.mkdir(parents=True, exist_ok=True)
             cached.write_text(text, encoding="utf-8")
-        return job, text
+        return job, text, ""
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for job, text in pool.map(fetch, [j for j in evidence.jobs if j.has_tests]):
-            if text is None:
-                # a job cancelled before it started has no log
-                if job.conclusion != "cancelled":
-                    evidence.unreadable.append(job.label)
-            else:
+        for job, text, error in pool.map(
+            fetch, [j for j in evidence.jobs if j.has_tests]
+        ):
+            if text is not None:
                 evidence.add(job, parse_log(text))
+            # a job cancelled before it started has no log
+            elif job.conclusion != "cancelled":
+                print(f"cannot read the log of {job.label}: {error}", file=sys.stderr)
+                evidence.unreadable.append(f"{job.label} ({error})")
     return evidence
 
 
@@ -934,6 +946,10 @@ def status_payload(
         text = f"{ran}/{len(verdicts)} changed tests ran; " + ", ".join(
             f"{key} {n}" for key, n in sorted(needs.items(), key=lambda kv: -kv[1])
         )
+    if evidence.unreadable and state == "failure":
+        # missing evidence, not missing tests
+        state = "error"
+        text = f"{len(evidence.unreadable)} job logs unreadable; " + text
     if evidence.pending:
         state = "pending"
         text = f"Waiting on {', '.join(sorted(set(evidence.pending)))}; " + text
