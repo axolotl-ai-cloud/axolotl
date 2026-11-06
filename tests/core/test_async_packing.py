@@ -15,10 +15,20 @@ from async_test_utils import (
     reference_tree_attention,
 )
 from tree_recurrence import Support, uninstall
+from tree_recurrence.integrations.trl import ChainRow, tree_kwargs_from_batch
+from trl.experimental.async_grpo.async_grpo_trainer import (
+    AsyncGRPOTrainer,
+    DataCollatorForRollout,
+)
 from trl.experimental.async_grpo.async_rollout_worker import RolloutSample
+from trl.experimental.async_grpo.packing import TreeRow
 
 from axolotl.core.trainers.async_grpo.config import AxolotlAsyncGRPOConfig
-from axolotl.core.trainers.async_grpo.scoring import pack_sequences
+from axolotl.core.trainers.async_grpo.scoring import (
+    ScoredChainRow,
+    ScoredRow,
+    pack_sequences,
+)
 from axolotl.core.trainers.async_grpo.trainer import AxolotlAsyncGRPOTrainer
 from axolotl.core.trainers.async_grpo.trl_compat import unsampled_fields
 from axolotl.monkeypatch.models.tree_packing import packing_support
@@ -35,6 +45,24 @@ def test_pack_sequences_without_sharing():
     assert chains["position_ids"].tolist() == [0, 1, 2, 3, 0, 1, 2, 3]
     assert chains["tree_cu_seqlens_q"].tolist() == [0, 4, 8]
     assert chains["positions"].tolist() == list(range(8))
+
+
+@pytest.mark.parametrize(
+    ("row_cls", "share_prefixes"), [(TreeRow, True), (ChainRow, False)]
+)
+def test_pack_sequences_lays_trees_out_as_trl(row_cls, share_prefixes):
+    """The scoring forward's rows carry TRL's tree format, which TRL's Gated DeltaNet
+    kernels read alongside tree attention."""
+    samples = branching_samples()
+    row = row_cls()
+    for sample in samples:
+        row.add({**sample, "metrics": {}})
+    expected = row.pack()
+    packed = pack_sequences([s["input_ids"] for s in samples], share_prefixes)
+    for key in ("input_ids", "position_ids"):
+        assert torch.equal(packed[key], expected[key]), key
+    for key in [k for k in expected if k.startswith("tree_")]:
+        assert torch.equal(packed[key], expected[key]), key
 
 
 def _torch_reference(dispatcher, name, package):
@@ -54,10 +82,18 @@ def _torch_reference(dispatcher, name, package):
 @pytest.fixture
 def tree_hooks(monkeypatch):
     """tree-recurrence's hooks as packing_support installs them, off after the test,
-    over transformers' PyTorch reference of Qwen3.5's gated delta rule."""
+    over transformers' PyTorch reference of Qwen3.5's gated delta rule.
+
+    TRL's tree Gated DeltaNet, which packing_support picks, is Triton-only, so here
+    tree-recurrence's runs Gated DeltaNet trees in its place, as the reference tree
+    attention stands in for FA3 (tests/e2e/kernels/test_trl_tree_gdn.py runs TRL's).
+    """
     from transformers.models.qwen3_5 import modeling_qwen3_5
     from trl.experimental.async_grpo import packing
 
+    from axolotl.monkeypatch.models import tree_packing
+
+    monkeypatch.setattr(tree_packing, "TREE_BACKENDS", {})
     monkeypatch.setattr(packing, "tree_attention", reference_tree_attention)
     # Where FLA is installed, transformers binds its Triton kernel, which needs a GPU.
     monkeypatch.setattr(
@@ -72,6 +108,24 @@ def tree_hooks(monkeypatch):
     uninstall()
     yield
     uninstall()
+
+
+@pytest.mark.parametrize("row_cls", [TreeRow, ChainRow, ScoredRow, ScoredChainRow])
+def test_rows_collate_to_the_inputs_trl_reads(row_cls):
+    """Every row type packs, through TRL's collator, to exactly the columns TRL's
+    trainer keeps, and its padded tree reads back whole."""
+    trainer = types.SimpleNamespace(_signature_columns=None)
+    AsyncGRPOTrainer._set_signature_columns_if_needed(trainer)
+    rows = [row_cls(), row_cls()]
+    for i, sample in enumerate(branching_samples()):
+        rows[i % 2].add({**sample, "metrics": {}})
+    batch = DataCollatorForRollout(pad_token_id=0, num_processes=2)([rows])
+    assert set(batch) == set(trainer._signature_columns)
+    for rank, row in enumerate(rows):
+        packed = row.pack()
+        tree = tree_kwargs_from_batch({k: v[rank : rank + 1] for k, v in batch.items()})
+        for key in ("tree_kv_index", "tree_cu_seqlens_q", "tree_cu_seqlens_k"):
+            assert torch.equal(tree[key], packed[key])
 
 
 class _Hybrid(torch.nn.Module):
@@ -105,6 +159,30 @@ class TestPackingSupport:
         support = packing_support(_tiny_qwen3_5(64))
         assert support.mode == "tree"
         assert support.owners == {"Qwen3_5GatedDeltaNet": "tree_recurrence"}
+
+    def test_gated_delta_nets_run_trls_tree_kernels(self, monkeypatch):
+        """TRL's patch_tree_gdn takes the transformers model, whose class names the
+        modeling module it patches, not the PEFT wrapper axolotl trains."""
+        from peft import LoraConfig, get_peft_model
+
+        from axolotl.monkeypatch.models import tree_packing
+
+        monkeypatch.setattr(tree_packing, "TREE_BACKENDS", {"gated_delta_net": "trl"})
+        installs = []
+
+        def install(model, **kwargs):
+            installs.append((type(model).__module__, kwargs))
+            return Support("tree", "stub")
+
+        monkeypatch.setattr(tree_packing, "install", install)
+        model = _tiny_qwen3_5(64)
+        packing_support(model)
+        packing_support(
+            get_peft_model(model, LoraConfig(r=4, target_modules=["q_proj"]))
+        )
+        modeling = "transformers.models.qwen3_5.modeling_qwen3_5"
+        backends = {"backends": {"gated_delta_net": "trl"}}
+        assert installs == [(modeling, backends)] * 2
 
     def test_recurrent_models_with_a_packing_patch_pack_chains(self):
         from transformers import MambaConfig, MambaForCausalLM
@@ -241,6 +319,8 @@ def test_trains_hybrid_model_on_cpu(
         report_to=[],
         save_strategy="no",
         gradient_checkpointing=False,
+        # The stub rollouts record no sampler top log-probs to center over.
+        loss_type="dapo",
     )
     trainer = AxolotlAsyncGRPOTrainer(
         model,

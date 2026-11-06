@@ -38,7 +38,8 @@ def reference_tree_attention(
         qs, qe = int(tree_cu_seqlens_q[s]), int(tree_cu_seqlens_q[s + 1])
         ks, ke = int(tree_cu_seqlens_k[s]), int(tree_cu_seqlens_k[s + 1])
         lq, lk = qe - qs, ke - ks
-        mask = torch.arange(lk)[None, :] <= (lk - lq + torch.arange(lq))[:, None]
+        positions = torch.arange(max(lq, lk), device=q.device)
+        mask = positions[None, :lk] <= (lk - lq + positions[:lq])[:, None]
         # Batched (4D): torch 2.13 runs 3D CPU SDPA as its math decomposition, which
         # neither selective checkpointing nor AttentionForwards can see.
         out[qs:qe] = torch.nn.functional.scaled_dot_product_attention(
@@ -123,17 +124,23 @@ def _set_attention(model, implementation):
         model.set_attn_implementation(implementation)
 
 
-def assert_tree_rows_match_alone(model, samples, on_row=None):
+def assert_tree_rows_match_alone(model, samples, on_row=None, rtol=1e-5, atol=1e-5):
     """Trie and chain rows score ``samples`` (log-probs and grads) as they score alone.
 
-    ``on_row(row_tokens)`` runs after each packed forward. Returns the trie's and
-    the chains' row lengths.
+    ``on_row(row_tokens)`` runs after each packed forward. ``rtol`` / ``atol`` bound
+    the log-probs, ten times ``rtol`` the gradients. Returns the trie's and the
+    chains' row lengths.
     """
-    from tree_recurrence.integrations.trl import ChainRow, sample_boundaries
+    from tree_recurrence.integrations.trl import (
+        ChainRow,
+        sample_boundaries,
+        tree_kwargs_from_batch,
+    )
     from trl.experimental.async_grpo import packing
     from trl.experimental.async_grpo.packing import TreeRow
 
     packing.register_tree_attention()
+    device = next(model.parameters()).device
 
     def grads():
         found = {
@@ -146,14 +153,11 @@ def assert_tree_rows_match_alone(model, samples, on_row=None):
         _set_attention(model, packing.TREE_ATTENTION)
         for sample in samples:
             row.add(sample)
-        packed = row.pack()
-        tree = {
-            "tree_kv_index": packed["tree_kv_index"],
-            "tree_cu_seqlens_q": packed["tree_cu_seqlens_q"],
-            "tree_cu_seqlens_k": packed["tree_cu_seqlens_k"],
-            "tree_max_seqlen_q": int(packed["tree_max_seqlens"][0]),
-            "tree_max_seqlen_k": int(packed["tree_max_seqlens"][1]),
+        packed = {
+            key: value.to(device) if isinstance(value, torch.Tensor) else value
+            for key, value in row.pack().items()
         }
+        tree = tree_kwargs_from_batch(packed)
         if isinstance(row, ChainRow):
             tree.update(sample_boundaries(tree))
         logits = model(
@@ -175,9 +179,11 @@ def assert_tree_rows_match_alone(model, samples, on_row=None):
         _set_attention(model, "sdpa")
         log_probs = []
         for sample in samples:
-            ids = torch.as_tensor(sample["input_ids"])[None]
+            ids = torch.as_tensor(sample["input_ids"], device=device)[None]
             logits = model(input_ids=ids, use_cache=False).logits[0, :-1]
-            trained = torch.as_tensor(sample["completion_mask"][1:]).bool()
+            trained = torch.as_tensor(
+                sample["completion_mask"][1:], device=device
+            ).bool()
             log_probs.append(
                 torch.log_softmax(logits[trained], -1).gather(
                     1, ids[0, 1:][trained][:, None]
@@ -195,10 +201,12 @@ def assert_tree_rows_match_alone(model, samples, on_row=None):
         (shared, shared_grads),
         (chains, chain_grads),
     ):
-        torch.testing.assert_close(packed_log_probs, alone, rtol=1e-5, atol=1e-5)
+        torch.testing.assert_close(packed_log_probs, alone, rtol=rtol, atol=atol)
         assert packed_grads.keys() == alone_grads.keys()
         for name, grad in packed_grads.items():
-            torch.testing.assert_close(grad, alone_grads[name], rtol=1e-4, atol=1e-5)
+            torch.testing.assert_close(
+                grad, alone_grads[name], rtol=10 * rtol, atol=atol, msg=name
+            )
     return shared_len, chain_len
 
 

@@ -447,7 +447,12 @@ class TestPluginWiring:
             "run_timeout": 600.0,
         }
         assert args["vllm_lora_alias"] == "policy"
+        # Agents sample without the top log-probs the default score centering needs.
+        assert args["loss_type"] == "dapo"
         AxolotlAsyncGRPOConfig(output_dir="/tmp/unused", use_cpu=True, **args)  # nosec B108
+        cispo = _cfg(nemo_gym_multi_turn=True)
+        cispo.trl.loss_type = "cispo"
+        assert "loss_type" not in plugin.get_training_args(cispo)
 
         full_finetune = plugin.get_training_args(
             _cfg(nemo_gym_multi_turn=True, adapter=None)

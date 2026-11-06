@@ -272,9 +272,11 @@ plugin's `NemoGymRolloutLoop`, which:
 4. Queues the samples tagged with the policy version they were sampled under
 
 The trainer drops samples more than `max_staleness` weight syncs old, packs the rest
-by token budget and applies async GRPO's loss: TRL's clipped objective by default, or
-with `loss_type: cispo`, each token weighted by its policy/sampler ratio, capped at
-`vllm_importance_sampling_cap`. A failed `/run` is left out of its group's baseline.
+by token budget and applies async GRPO's loss: TRL's clipped objective by default
+(agents sample without the top log-probs that score centering, async GRPO's default
+elsewhere, needs), or with `loss_type: cispo`, each token weighted by its
+policy/sampler ratio, capped at `vllm_importance_sampling_cap`. A failed `/run` is
+left out of its group's baseline.
 
 ### Weight Sync (LoRA Mode)
 

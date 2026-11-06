@@ -65,6 +65,7 @@ class VllmServeArguments:
     max_lora_rank: int = 64
     max_loras: int = 2
     worker_extension_cls: str | None = None
+    return_sampling_mask: bool = False
 
 
 AxolotlScriptArguments = VllmServeArguments
@@ -180,10 +181,13 @@ def build_command(script_args: VllmServeArguments) -> list[str]:
     if script_args.worker_extension_cls:
         command += ["--worker-extension-cls", script_args.worker_extension_cls]
     # Same fixed flags as TRL's `trl vllm-serve`: scale-out adds the render and
-    # generate routes used for multimodal prompts, the NCCL transfer engine
-    # receives merged weights, and processed logprobs feed importance sampling.
+    # generate routes used for multimodal prompts and sampling-mask replay, the NCCL
+    # transfer engine receives merged weights, and processed logprobs feed importance
+    # sampling.
     if _vllm_at_least("0.30.0"):
         command += ["--enable-scale-out"]
+        if script_args.return_sampling_mask:
+            command += ["--return-sampling-mask"]
     command += [
         "--weight-transfer-config",
         json.dumps({"backend": "nccl"}),
@@ -254,6 +258,18 @@ def _max_loras(cfg) -> int:
     return max(VllmServeArguments.max_loras, max_staleness + 2 + alias)
 
 
+def _returns_sampling_mask(cfg) -> bool:
+    """Whether async GRPO renormalizes the policy over the candidate set vLLM sampled
+    each token from, which TRL's rollout loop requires the server to return when
+    top-k/top-p truncate sampling. EBFT and NeMo Gym agents sample without it."""
+    trl = cfg.trl
+    if not (trl and trl.async_prefetch and cfg.rl in ("grpo", "gdpo")):
+        return False
+    if cfg.nemo_gym_enabled and cfg.nemo_gym_multi_turn:
+        return False
+    return (trl.top_p is not None and trl.top_p < 1.0) or (trl.top_k or 0) > 0
+
+
 def do_vllm_serve(
     config: Union[Path, str],
     cli_args: dict,
@@ -305,6 +321,7 @@ def do_vllm_serve(
         max_lora_rank=_max_lora_rank(cfg) or VllmServeArguments.max_lora_rank,
         max_loras=_max_loras(cfg),
         worker_extension_cls=worker_extension_cls,
+        return_sampling_mask=_returns_sampling_mask(cfg),
     )
 
     if serve_module is None:

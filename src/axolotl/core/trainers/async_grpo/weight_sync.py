@@ -201,12 +201,12 @@ class WeightSyncMixin(LoraMergeCheckMixin, AsyncGRPOTrainer):
         bf16 the round trip does not restore the base weights, so every sync nudges the
         frozen model; `_streaming_iter` streams ``W + ΔW`` computed out of place instead.
         """
-        if self.accelerator.is_main_process and self.weight_transfer:
+        if self.accelerator.is_main_process:
             self.weight_transfer.pause()
         t_pause = time.time()
         self.accelerator.wait_for_everyone()
         t_barrier = time.time()
-        if self.accelerator.is_main_process and self.weight_transfer:
+        if self.accelerator.is_main_process:
             self.weight_transfer.send_weights(self._streaming_iter())
         else:
             # The other ranks still take part in each parameter's all-gather.
@@ -215,8 +215,7 @@ class WeightSyncMixin(LoraMergeCheckMixin, AsyncGRPOTrainer):
         t_transfer = time.time()
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
-            if self.weight_transfer:
-                self.weight_transfer.resume()
+            self.weight_transfer.resume()
             self.model_version += 1
             if self.rollout_worker:
                 self.rollout_worker.update_model_version(self.model_version)

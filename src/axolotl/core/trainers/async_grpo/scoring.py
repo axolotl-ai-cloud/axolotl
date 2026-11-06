@@ -32,7 +32,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from accelerate.utils import gather_object
-from tree_recurrence.integrations.trl import ChainRow
+from tree_recurrence.integrations.trl import ChainRow, tree_kwargs_from_batch
 
 from axolotl.core.trainers.async_grpo.progress import (
     STOP_KEY,
@@ -154,10 +154,10 @@ def pack_sequences(
 ) -> dict[str, torch.Tensor]:
     """Tree-pack token sequences for a no-grad forward, as ``TreeRow.pack`` would.
 
-    Besides the model inputs (``input_ids``, ``position_ids``, ``tree_*``), returns
-    ``positions``: the packed position of each sequence's tokens, laid end to end, with
-    ``offsets`` marking where each sequence starts, and ``sizes``: the lengths of
-    ``input_ids``, ``tree_kv_index``, ``tree_cu_seqlens_q`` and ``offsets``, so a padded
+    Besides the model inputs (``input_ids``, ``position_ids``, and the ``tree_*`` keys
+    in ``TreeRow.pack``'s format), returns ``positions``: the packed position of each
+    sequence's tokens, laid end to end, with ``offsets`` marking where each sequence
+    starts, and ``sizes``: the lengths of ``input_ids`` and ``offsets``, so a padded
     copy can be cut back.
     """
     row = TreeRow() if share_prefixes else ChainRow()
@@ -176,6 +176,8 @@ def pack_sequences(
     paths: list[list[int]] = []
     kv_index: list[int] = []
     cu_seqlens_k = [0]
+    parents: list[int] = []
+    depths: list[int] = []
     packed = [0] * len(row.tokens)
     stack: list[tuple[int, int | None, int]] = [
         (node, None, 0) for node in reversed(row.roots.values())
@@ -184,6 +186,8 @@ def pack_sequences(
         node, parent, depth = stack.pop()
         segment = len(paths)
         start = len(input_ids)
+        parents.append(-1 if parent is None else parent)
+        depths.append(0 if parent is None else depths[parent] + 1)
         while True:
             packed[node] = len(input_ids)
             input_ids.append(row.tokens[node])
@@ -204,40 +208,39 @@ def pack_sequences(
         )
     positions = [packed[node] for nodes in row.sample_nodes for node in nodes]
     sequence_offsets = np.cumsum([0, *(len(nodes) for nodes in row.sample_nodes)])
+    lengths = [b - a for a, b in zip(offsets[:-1], offsets[1:], strict=True)]
     return {
         "input_ids": torch.tensor(input_ids),
         "position_ids": torch.tensor(position_ids),
         "tree_kv_index": torch.tensor(kv_index, dtype=torch.long),
         "tree_cu_seqlens_q": torch.tensor(offsets, dtype=torch.int32),
         "tree_cu_seqlens_k": torch.tensor(cu_seqlens_k, dtype=torch.int32),
-        "tree_max_seqlens": torch.tensor(
+        "tree_segment_parents": torch.tensor(parents, dtype=torch.int32),
+        "tree_segment_depths": torch.tensor(depths, dtype=torch.int32),
+        "tree_sizes": torch.tensor(
             [
-                max(b - a for a, b in zip(offsets[:-1], offsets[1:], strict=True)),
+                max(lengths),
                 max(map(len, paths)),
+                len(kv_index),
+                sum(-(-length // 64) for length in lengths),
             ]
+            + [depths.count(depth) for depth in range(max(depths) + 1)]
         ),
         "positions": torch.tensor(positions, dtype=torch.long),
         "offsets": torch.tensor(sequence_offsets, dtype=torch.long),
-        "sizes": torch.tensor(
-            [len(input_ids), len(kv_index), len(offsets), len(sequence_offsets)]
-        ),
+        "sizes": torch.tensor([len(input_ids), len(sequence_offsets)]),
     }
 
 
 def unpack_sequences(inputs: dict[str, torch.Tensor]) -> dict[str, Any]:
     """Cut one rank's padded ``pack_sequences`` output back to model inputs."""
-    n_tokens, n_kv, n_segments, n_offsets = inputs["sizes"][0].tolist()
-    max_q, max_k = inputs["tree_max_seqlens"][0].tolist()
+    n_tokens, n_offsets = inputs["sizes"][0].tolist()
     offsets = inputs["offsets"][0, :n_offsets]
     return {
         "model_inputs": {
             "input_ids": inputs["input_ids"][:, :n_tokens],
             "position_ids": inputs["position_ids"][:, :n_tokens],
-            "tree_kv_index": inputs["tree_kv_index"][0, :n_kv],
-            "tree_cu_seqlens_q": inputs["tree_cu_seqlens_q"][0, :n_segments],
-            "tree_cu_seqlens_k": inputs["tree_cu_seqlens_k"][0, :n_segments],
-            "tree_max_seqlen_q": max_q,
-            "tree_max_seqlen_k": max_k,
+            **tree_kwargs_from_batch(inputs),
         },
         "positions": inputs["positions"][0, : int(offsets[-1])],
         "offsets": offsets,
@@ -245,7 +248,10 @@ def unpack_sequences(inputs: dict[str, torch.Tensor]) -> dict[str, Any]:
 
 
 class GroupedQueue:
-    """A view of the rollout queue that releases each group's samples together."""
+    """A view of the rollout queue that releases each group's samples together.
+
+    A bare ``int`` group id (a group with nothing to train) passes straight through.
+    """
 
     def __init__(self, inner):
         self._inner = inner
@@ -262,6 +268,8 @@ class GroupedQueue:
                 None if deadline is None else max(0.0, deadline - time.monotonic())
             )
             sample = self._inner.get(timeout=remaining)
+            if isinstance(sample, int):
+                return sample
             rows = self._pending.setdefault(sample.group_id, [])
             rows.append(sample)
             if len(rows) == sample.metrics[SCORE_PAYLOAD]["group_rows"]:

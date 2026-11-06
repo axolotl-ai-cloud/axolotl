@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from axolotl.core.trainers.async_grpo.trl_compat import (
-    SCORE_CENTERING,
-    AsyncGRPOConfig,
-)
+from axolotl.core.trainers.async_grpo.trl_compat import AsyncGRPOConfig
 from axolotl.core.trainers.mixins.lora_merge_check import (
     DEFAULT_MERGE_CHECK_INTERVAL,
 )
@@ -68,17 +65,17 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
         },
     )
     loss_type: str = field(
-        default="dapo",
+        default="score_centering",
         metadata={
-            "help": "'dapo' is TRL's objective, the PPO surrogate against the vLLM "
-            "sampler's log-probabilities clipped at [1 - epsilon, 1 + epsilon_high]. "
-            "'cispo' weights each token's policy gradient by the policy/sampler "
-            "ratio, bounded at vllm_importance_sampling_cap, and clips nothing. "
-            "'score_centering' (TRL main only) is TRL's score centering: the "
+            "help": "'score_centering' (default) is TRL's score centering: the "
             "importance-weighted score minus its expectation over the sampler's "
             "num_sampler_logprobs most likely tokens, dropping tokens whose ratio "
             "falls outside [vllm_importance_sampling_clip_min, "
-            "vllm_importance_sampling_clip_max]."
+            "vllm_importance_sampling_clip_max]. 'dapo' is TRL's clipped objective, "
+            "the PPO surrogate against the vLLM sampler's log-probabilities clipped "
+            "at [1 - epsilon, 1 + epsilon_high]. 'cispo' weights each token's policy "
+            "gradient by the policy/sampler ratio, bounded at "
+            "vllm_importance_sampling_cap, and clips nothing."
         },
     )
     vllm_importance_sampling_mode: str = field(
@@ -121,8 +118,7 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
     )
 
     def __post_init__(self):
-        if SCORE_CENTERING:
-            # TRL main trains with score centering by default; loss_type decides here,
-            # so that the rollout worker requests top log-probs only when it is used.
-            self.score_centering = self.loss_type == "score_centering"
+        # loss_type decides TRL's objective, so that the rollout worker requests top
+        # log-probs only when score centering uses them.
+        self.score_centering = self.loss_type == "score_centering"
         super().__post_init__()
