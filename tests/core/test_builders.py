@@ -234,6 +234,15 @@ class TestHFCausalTrainerBuilder:
     TestCase class for SFT trainer builder
     """
 
+    def test_persistent_workers_reach_training_arguments(
+        self, sft_cfg, model, tokenizer
+    ):
+        sft_cfg["dataloader_persistent_workers"] = True
+
+        trainer = HFCausalTrainerBuilder(sft_cfg, model, tokenizer).build(100)
+
+        assert trainer.args.dataloader_persistent_workers is True
+
     def test_training_arguments(self, sft_cfg, model, tokenizer):
         builder = HFCausalTrainerBuilder(sft_cfg, model, tokenizer)
         trainer = builder.build(100)

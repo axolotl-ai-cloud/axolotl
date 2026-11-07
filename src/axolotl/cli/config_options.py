@@ -2163,6 +2163,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--dataloader-persistent-workers/--no-dataloader-persistent-workers",),
+        None,
+        None,
+        "Keep DataLoader workers alive between epochs and evaluations instead of restarting them. Needs dataloader_num_workers > 0. Workers keep their own dataset copy, so per-epoch dataset state (e.g. IterableDataset.set_epoch shuffling) does not reach them.",
+    ),
+    (
         ("--dataloader-drop-last/--no-dataloader-drop-last",),
         None,
         None,

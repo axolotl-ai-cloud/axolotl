@@ -746,6 +746,7 @@ class TrainerBuilderBase(abc.ABC):
             "dataloader_num_workers",
             "dataloader_pin_memory",
             "dataloader_prefetch_factor",
+            "dataloader_persistent_workers",
             "gradient_accumulation_steps",
             "learning_rate",
             "embedding_lr",
