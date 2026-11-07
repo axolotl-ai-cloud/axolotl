@@ -79,6 +79,25 @@ def test_preload_modules_import(name):
     importlib.import_module(name)
 
 
+def test_dataloader_preload_skips_the_cuda_import_chain():
+    # peft imports bitsandbytes, and through transformers' torchao quantizer torch CUDA
+    code = (
+        "import importlib, sys; "
+        f"[importlib.import_module(m) for m in {forkserver.DATALOADER_PRELOAD!r}]; "
+        "print(sorted(m for m in ('peft', 'bitsandbytes', 'torchao', 'trl', "
+        "'transformers.trainer_utils') if m in sys.modules))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=os.environ,
+    )
+
+    assert result.stdout.strip().splitlines()[-1] == "[]"
+
+
 def test_packing_children_skip_the_torch_import_path():
     code = (
         "import sys, axolotl.utils.samplers.bin_packing; "

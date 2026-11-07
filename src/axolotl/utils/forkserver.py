@@ -5,15 +5,15 @@ import multiprocessing
 # Sample-packing pools always start from the forkserver; this needs only numpy and numba.
 PACKING_PRELOAD = ("axolotl.utils.samplers.bin_packing",)
 
-# What DataLoader workers unpickle. Without a preload each one re-imports these on every
-# start, ~30s per DataLoader iteration. The bitsandbytes import behind them initializes
-# CUDA in the forkserver, so its children cannot use CUDA, the same as fork children.
+# What SFT DataLoader workers unpickle; without a preload each one re-imports these on
+# every start (~30s per DataLoader iteration). Keep peft, bitsandbytes and torchao out:
+# importing them initializes CUDA and starts threads in the forkserver.
 DATALOADER_PRELOAD = (
     "torch",
     "transformers",
-    "transformers.trainer_utils",
     "datasets",
     "axolotl.utils.collators",
+    "axolotl.utils.worker_seed",
     "axolotl.monkeypatch.data.batch_dataset_fetcher",
 )
 

@@ -35,7 +35,7 @@ from transformers import (
     TrainerState,
 )
 from transformers.trainer import TRAINING_ARGS_NAME
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length
 from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
 from trl.experimental.utils import pad_to_length
 from typing_extensions import override
@@ -78,6 +78,7 @@ from axolotl.utils.samplers import (
 )
 from axolotl.utils.samplers.utils import get_dataset_label_counts
 from axolotl.utils.schemas.fp8 import DEFAULT_FP8_RECIPE
+from axolotl.utils.worker_seed import seed_worker
 
 LOG = get_logger(__name__)
 
