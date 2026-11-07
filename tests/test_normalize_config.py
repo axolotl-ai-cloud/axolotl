@@ -360,6 +360,37 @@ class NormalizeConfigTestCase(unittest.TestCase):
         self.assertTrue(cfg.bf16)
         self.assertFalse(cfg.fp16)
 
+    @patch("axolotl.utils.config.is_torch_xla_available", return_value=True)
+    def test_xla_bf16_auto_enables_bf16(self, _mock_xla):
+        cfg = self._get_base_cfg()
+        cfg.bf16 = "auto"
+
+        normalize_config(cfg)
+
+        self.assertEqual(cfg.device, "xla")
+        self.assertTrue(cfg.bf16)
+        self.assertFalse(cfg.fp16)
+        self.assertFalse(cfg.tf32)
+
+    @patch("axolotl.utils.config.is_torch_xla_available", return_value=True)
+    def test_xla_fp16_switches_to_bf16(self, _mock_xla):
+        cfg = self._get_base_cfg()
+        cfg.fp16 = True
+
+        normalize_config(cfg)
+
+        self.assertTrue(cfg.bf16)
+        self.assertFalse(cfg.fp16)
+
+    @patch("axolotl.utils.config.is_torch_xla_available", return_value=True)
+    def test_xla_device_map_is_none(self, _mock_xla):
+        cfg = self._get_base_cfg()
+        cfg.device_map = "auto"
+
+        normalize_config(cfg)
+
+        self.assertIsNone(cfg.device_map)
+
     def test_migrate_fsdp_config(self):
         """Test basic FSDP config migration with and without fsdp_version"""
         cfg_with_version = self._get_base_cfg() | DictDefault(

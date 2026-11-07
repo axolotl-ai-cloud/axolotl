@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterator, Literal
 
 import yaml
+from transformers.utils.import_utils import is_torch_xla_available
 
 from axolotl.cli.utils.sweeps import generate_sweep_configs
 
@@ -117,6 +118,12 @@ def launch_training(
     """Execute training with the given configuration."""
     launcher_args = launcher_args or []
 
+    if is_torch_xla_available() and launcher == "torchrun":
+        raise ValueError(
+            "TPU/XLA training does not support the torchrun launcher. "
+            "Use --launcher accelerate (the default) instead."
+        )
+
     if cloud:
         _launch_cloud_training(cloud, cfg_file, launcher, kwargs, launcher_args)
     elif launcher:
@@ -175,6 +182,12 @@ def _launch_accelerate_training(
 
     # Combine internal args with user-provided launcher args
     all_launcher_args = internal_launcher_args + launcher_args
+
+    if is_torch_xla_available():
+        # Tell accelerate to use the TPU launcher (xmp.spawn) and set PJRT device.
+        if "--tpu" not in all_launcher_args:
+            all_launcher_args = ["--tpu"] + all_launcher_args
+        os.environ.setdefault("PJRT_DEVICE", "TPU")
 
     base_cmd = (
         ["accelerate", "launch"] + all_launcher_args + ["-m", "axolotl.cli.train"]

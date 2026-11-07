@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from axolotl.cli.main import cli
 
 from .test_cli_base import BaseCliTest
@@ -251,3 +253,40 @@ class TestTrainCommand(BaseCliTest):
             call_kwargs = mock_cloud_train.call_args.kwargs
             assert call_kwargs["launcher"] == "torchrun"
             assert call_kwargs["launcher_args"] == ["--nproc_per_node=4", "--nnodes=2"]
+
+    def test_train_xla_accelerate_adds_tpu_flag(
+        self, cli_runner, tmp_path, valid_test_config, monkeypatch
+    ):
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+        monkeypatch.delenv("PJRT_DEVICE", raising=False)
+
+        with (
+            patch("axolotl.cli.utils.train.is_torch_xla_available", return_value=True),
+            patch("os.execvpe") as mock_subprocess,
+        ):
+            result = cli_runner.invoke(
+                cli,
+                ["train", str(config_path), "--launcher", "accelerate"],
+                catch_exceptions=False,
+            )
+            assert result.exit_code == 0
+            called_cmd = mock_subprocess.call_args.args[1]
+            assert called_cmd[:3] == ["accelerate", "launch", "--tpu"]
+            assert mock_subprocess.call_args.args[2]["PJRT_DEVICE"] == "TPU"
+
+    def test_train_xla_torchrun_raises(self, cli_runner, tmp_path, valid_test_config):
+        config_path = tmp_path / "config.yml"
+        config_path.write_text(valid_test_config)
+
+        with (
+            patch("axolotl.cli.utils.train.is_torch_xla_available", return_value=True),
+            patch("os.execvpe") as mock_subprocess,
+        ):
+            with pytest.raises(ValueError, match="torchrun"):
+                cli_runner.invoke(
+                    cli,
+                    ["train", str(config_path), "--launcher", "torchrun"],
+                    catch_exceptions=False,
+                )
+            mock_subprocess.assert_not_called()

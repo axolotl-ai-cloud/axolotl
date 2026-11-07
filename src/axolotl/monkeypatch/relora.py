@@ -22,7 +22,7 @@ from transformers import (
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import barrier, is_main_process
+from axolotl.utils.distributed import barrier, empty_device_cache, is_main_process
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -452,7 +452,7 @@ def merge_and_save(
         barrier()
         del in_tensors
         del out_tensors
-        torch.cuda.empty_cache()
+        empty_device_cache()
 
     if actually_save and len(unique_shards) > 1:
         with open(
