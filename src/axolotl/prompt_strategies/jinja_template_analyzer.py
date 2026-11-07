@@ -5,6 +5,26 @@ from typing import Dict, Optional, Set, TypedDict, Union
 from jinja2 import Environment, meta, nodes
 from jinja2.ext import Extension
 
+# Bound nesting below where jinja2's parser or our AST walk overflow the stack.
+MAX_TEMPLATE_DEPTH = 200
+
+
+def _assert_within_depth(node: nodes.Node, max_depth: int) -> None:
+    """Reject an AST nested deeper than ``max_depth``.
+
+    The check itself walks iteratively so it cannot exhaust the stack on the very
+    input it is meant to guard against.
+    """
+    stack = [(node, 1)]
+    while stack:
+        current, depth = stack.pop()
+        if depth > max_depth:
+            raise ValueError(
+                f"chat template nesting depth exceeds the maximum of {max_depth}"
+            )
+        for child in current.iter_child_nodes():
+            stack.append((child, depth + 1))
+
 
 class JinjaTemplateAnalysis(TypedDict):
     """
@@ -77,9 +97,18 @@ class JinjaTemplateAnalyzer:
         self.property_access: Dict[str, Set[str]] = {}
         self.iteration_targets: Dict[str, Union[str, list[str]]] = {}
         self.index_access: Dict[str, Set[Union[int, float]]] = {}
-        self.ast: nodes.Node = self.env.parse(template)
+        self.ast: nodes.Node = self._parse(template)
         self.template: str = template
         self.variable_assignments: Dict[str, str] = {}
+
+    def _parse(self, template: str) -> nodes.Template:
+        # jinja2's recursive-descent parser raises RecursionError on deep nesting.
+        try:
+            ast = self.env.parse(template)
+        except RecursionError as exc:
+            raise ValueError("chat template is too deeply nested to analyze") from exc
+        _assert_within_depth(ast, MAX_TEMPLATE_DEPTH)
+        return ast
 
     def _visit_node(self, node) -> None:
         """Recursively visit AST nodes to find attribute access."""
@@ -188,8 +217,8 @@ class JinjaTemplateAnalyzer:
         Returns:
             Dict[str, Set[str]]: Dictionary mapping variable names to sets of accessed properties
         """
-        # Parse the template
-        ast = self.env.parse(self.template)
+        # Reuse the AST parsed and depth-checked in __init__.
+        ast = self.ast
 
         # Get all undeclared variables
         variables = meta.find_undeclared_variables(ast)
