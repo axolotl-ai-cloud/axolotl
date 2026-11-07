@@ -120,7 +120,10 @@ A marker selects a CI lane; it does not check hardware availability. Retain
 `skipif` or fixture/runtime checks for CUDA availability, required GPU count,
 exact compute capability, and optional dependencies. B200 is SM100: a test that
 requires SM120 must still skip there with a precise reason. Do not relax a
-capability guard just to make a test run in the Blackwell lane.
+capability guard just to make a test run in the Blackwell lane. A test for one
+backend of a kernel that auto-selects by capability should force that backend
+rather than skip when auto-select picks another: the choice differs per GPU, so
+such a test can end up skipping on every CI GPU.
 
 For mixed CPU/CUDA parameterizations, mark only the CUDA cases so the CPU
 coverage remains in the CPU lane:

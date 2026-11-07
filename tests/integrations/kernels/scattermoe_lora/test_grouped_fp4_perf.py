@@ -440,10 +440,6 @@ def test_grouped_fp4_speed(shape_fn, shape_name, vram_needed, fwd_floor, step_fl
 # ===========================================================================
 
 
-@pytest.mark.skipif(
-    not _IS_CUDA or cuda_major_not_in(12),
-    reason="marlin W4A16 memory test is sm120 only",
-)
 def test_marlin_memory_no_double_copy():
     """After build_marlin_forward_base, the NVFP4 qdata must be freed (single copy resident).
 
