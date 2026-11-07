@@ -22,6 +22,7 @@ from axolotl.utils.config import (
     validate_config,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.forkserver import preload_forkserver_modules
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.tee import prepare_debug_log
@@ -238,6 +239,9 @@ def load_cfg(
     Returns:
         `DictDefault` mapping configuration keys to values.
     """
+    # before dataset packing or a DataLoader can start the forkserver
+    preload_forkserver_modules()
+
     if isinstance(config, (str, Path)):
         config = check_remote_config(config)
         if Path(config).is_dir():

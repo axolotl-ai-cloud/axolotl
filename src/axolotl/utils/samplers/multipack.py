@@ -17,6 +17,7 @@ import torch
 from torch.utils.data import BatchSampler, RandomSampler, Sampler, SequentialSampler
 
 from axolotl.utils.distributed import reduce_and_broadcast
+from axolotl.utils.forkserver import preload_forkserver_modules
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers.accumulation import (
     accumulation_metrics,
@@ -189,6 +190,7 @@ def pack_parallel(
     else:
         # Use ProcessPoolExecutor only if num_processes > 1
         # Pass mp_context if available
+        preload_forkserver_modules()
         with ProcessPoolExecutor(
             max_workers=num_processes, mp_context=mp_ctx
         ) as executor:
