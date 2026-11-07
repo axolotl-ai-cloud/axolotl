@@ -8,7 +8,7 @@ import math
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import cpu_count, get_context
+from multiprocessing import cpu_count, get_all_start_methods, get_context
 from typing import Iterable, Iterator, Union
 
 import numba
@@ -138,7 +138,7 @@ def pack_parallel(
     bin_size: int,
     num_processes: int | None = None,
     safe_mode: bool = True,
-    mp_start_method: str | None = "fork",
+    mp_start_method: str | None = None,
 ) -> list[list[int]]:
     """Pack sequences into bins using parallel processing.
 
@@ -150,8 +150,8 @@ def pack_parallel(
         num_processes: Number of parallel processes to use.
         safe_mode: If True, use a more conservative packing approach.
         mp_start_method: Multiprocessing start method ('fork', 'spawn', 'forkserver').
-                         'spawn' is often safer with Numba/PyTorch.
-                         Set to None to use system default.
+                         None uses forkserver where available, else the system
+                         default.
     Returns:
         List of bins, where each bin contains indices of sequences assigned to it.
     """
@@ -165,11 +165,16 @@ def pack_parallel(
         group_lengths = sequence_lengths[i : i + group_size]
         max_bins = len(group_lengths)  # Allow as many bins as items in the group
         tasks.append((group_lengths, i, bin_capacity, max_bins, bin_size, safe_mode))
+    # a single group gains nothing from a pool but would pay its process start
+    num_processes = max(1, min(num_processes, len(tasks)))
 
     # Process groups in parallel
     all_bins = []
 
     mp_ctx = None
+    if mp_start_method is None and "forkserver" in get_all_start_methods():
+        # forking the multi-threaded trainer risks deadlocks, and spawn re-imports per pool
+        mp_start_method = "forkserver"
     if mp_start_method:
         try:
             mp_ctx = get_context(mp_start_method)
@@ -278,7 +283,7 @@ class MultipackBatchSampler(BatchSampler):
         group_size: int = 100_000,  # Size of groups for parallel packing
         num_processes: int | None = None,  # Number of processes for parallel packing
         safe_mode: bool = True,  # Conservative packing to prevent training instability
-        mp_start_method: str = "fork",
+        mp_start_method: str | None = None,
         label_counts: np.ndarray | None = None,
         label_start_counts: np.ndarray | None = None,
         seed: int = 0,

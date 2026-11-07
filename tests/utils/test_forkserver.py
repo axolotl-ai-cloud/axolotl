@@ -3,9 +3,11 @@
 import importlib
 import multiprocessing
 
+import numpy as np
 import pytest
 
 from axolotl.utils import forkserver
+from axolotl.utils.samplers import multipack
 
 needs_forkserver = pytest.mark.skipif(
     "forkserver" not in multiprocessing.get_all_start_methods(),
@@ -46,3 +48,65 @@ def test_preload_skipped_without_forkserver(preload_calls, monkeypatch):
 def test_preload_modules_import(name):
     # the forkserver silently skips a module that fails to import
     importlib.import_module(name)
+
+
+class _RecordingExecutor:
+    """Runs the pool's tasks in-process and records its start method."""
+
+    seen: dict = {}
+
+    def __init__(self, max_workers, mp_context):
+        type(self).seen["method"] = mp_context.get_start_method()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def map(self, fn, tasks):
+        return map(fn, tasks)
+
+
+@pytest.fixture(name="pool")
+def fixture_pool(monkeypatch):
+    _RecordingExecutor.seen = {}
+    monkeypatch.setattr(multipack, "ProcessPoolExecutor", _RecordingExecutor)
+    monkeypatch.setattr(
+        multipack,
+        "preload_forkserver_modules",
+        lambda: _RecordingExecutor.seen.setdefault("preloaded", True),
+    )
+    return _RecordingExecutor.seen
+
+
+def _pack(**kwargs):
+    lengths = np.array([10, 20, 30, 40], dtype=np.int32)
+    bins = multipack.pack_parallel(
+        lengths, bin_capacity=50, group_size=2, bin_size=4, num_processes=2, **kwargs
+    )
+    assert sorted(idx for bin_ in bins for idx in bin_) == [0, 1, 2, 3]
+
+
+@needs_forkserver
+def test_pack_parallel_defaults_to_preloaded_forkserver(pool):
+    _pack()
+
+    assert pool == {"method": "forkserver", "preloaded": True}
+
+
+def test_pack_parallel_keeps_an_explicit_start_method(pool):
+    _pack(mp_start_method="spawn")
+
+    assert pool["method"] == "spawn"
+
+
+def test_pack_parallel_packs_a_single_group_in_process(pool):
+    lengths = np.array([10, 20, 30, 40], dtype=np.int32)
+
+    bins = multipack.pack_parallel(
+        lengths, bin_capacity=50, group_size=8, bin_size=4, num_processes=4
+    )
+
+    assert pool == {}
+    assert sorted(idx for bin_ in bins for idx in bin_) == [0, 1, 2, 3]

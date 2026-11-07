@@ -761,7 +761,7 @@ class AxolotlInputConfig(
     sample_packing_mp_start_method: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "The multiprocessing start method to use for packing. Should be 'fork', 'spawn' or 'forkserver'"
+            "description": "The multiprocessing start method to use for packing: 'fork', 'spawn' or 'forkserver'. Defaults to 'forkserver' where available (Linux, macOS), else the platform default."
         },
     )
     eval_sample_packing: bool | None = Field(

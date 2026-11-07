@@ -2572,7 +2572,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--sample-packing-mp-start-method",),
         None,
         None,
-        "The multiprocessing start method to use for packing. Should be 'fork', 'spawn' or 'forkserver'",
+        "The multiprocessing start method to use for packing: 'fork', 'spawn' or 'forkserver'. Defaults to 'forkserver' where available (Linux, macOS), else the platform default.",
     ),
     (
         ("--eval-sample-packing/--no-eval-sample-packing",),

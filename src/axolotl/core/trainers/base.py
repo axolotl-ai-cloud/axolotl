@@ -435,7 +435,7 @@ class AxolotlTrainer(
             sequential=self.args.sample_packing_sequentially,
             drop_last=True,
             num_processes=self.args.dataset_num_proc,
-            mp_start_method=self.args.sample_packing_mp_start_method or "fork",
+            mp_start_method=self.args.sample_packing_mp_start_method,
         )
 
         len(sampler)
