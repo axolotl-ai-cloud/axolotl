@@ -65,12 +65,15 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _XDIST_RE = re.compile(
     rf"^\[gw\d+\] \[\s*\d+%\] ({_OUTCOME}) (tests/\S*?\.py::.+?)\s*$"
 )
-# serial: "tests/x.py::test_y PASSED [ 50%]"; under -s the test's output sits in between
-_SERIAL_RE = re.compile(
-    rf"^(tests/\S*?\.py::.+?) ({_OUTCOME})(?: \(.*\))?\s+\[\s*\d+%\]\s*$"
-)
-_SERIAL_START_RE = re.compile(r"^(tests/\S*?\.py::\S+)")
-_SERIAL_END_RE = re.compile(rf"({_OUTCOME})(?: \(.*\))?\s+\[\s*\d+%\]\s*$")
+_NODEID = r"tests/\S*?\.py::[^\s\[]+(?:\[.*?\])?"
+_WORD = rf"({_OUTCOME})(?: \(.*\))?"
+_PROGRESS = r"\s+\[\s*\d+%\]"
+# serial: "tests/x.py::test_y PASSED [ 50%]"; -s drops the progress column and
+# prints the test's output after the nodeid, so the word may end a later line
+_SERIAL_RE = re.compile(rf"^({_NODEID}) {_WORD}(?:{_PROGRESS})?\s*$")
+_SERIAL_START_RE = re.compile(rf"^({_NODEID})")
+_SERIAL_END_RE = re.compile(rf"{_WORD}{_PROGRESS}\s*$")
+_BARE_WORD_RE = re.compile(rf"^{_WORD}\s*$")
 _SECTION_RE = re.compile(r"^(=|_){3,} ")
 
 # "skip" is the unconditional mark, kept to explain tests that skip in every lane
@@ -171,7 +174,9 @@ def parse_log(text: str) -> dict[str, set[str]]:
             pending = match.group(1)
         elif _SECTION_RE.match(line):
             pending = None
-        elif pending and (match := _SERIAL_END_RE.search(line)):
+        elif pending and (
+            match := _SERIAL_END_RE.search(line) or _BARE_WORD_RE.match(line)
+        ):
             outcomes[pending].add(match.group(1))
             pending = None
     return dict(outcomes)

@@ -108,6 +108,42 @@ def test_parse_log_reads_xdist_serial_and_split_lines():
     }
 
 
+def test_parse_log_reads_outcomes_printed_under_capture_off():
+    # -s: no progress column, and the outcome word follows the test's own output
+    rm = "tests/e2e/solo/test_reward_model_smollm2.py::TestRewardModelLoraSmolLM2"
+    log = textwrap.dedent(
+        f"""\
+        2026-11-07T06:07:25.1090166Z collecting ... collected 6 items
+        2026-11-07T06:07:25.1529222Z
+        2026-11-07T06:07:25.7464998Z {rm}::test_rm_lora [2026-11-07 06:07:25,731] [INFO] [axolotl.integrations.base] Attempting to load plugin
+        2026-11-07T06:07:25.7899830Z [2026-11-07 06:07:25,731] [INFO] [axolotl.train] health check PASSED
+        2026-11-07T06:07:42.3357495Z \x1b[1A100%|##########| 10/10 [00:06<00:00,  1.84it/s]
+        2026-11-07T06:07:42.5454539Z [2026-11-07 06:07:42,494] [INFO] [axolotl.train] Model successfully saved to /tmp/tmpf60jm39s
+        2026-11-07T06:07:57.1695977Z PASSED
+        2026-11-07T06:07:57.1700000Z {rm}::test_quiet PASSED
+        2026-11-07T06:07:57.1700001Z {rm}::test_gated[no cuda] SKIPPED (requires CUDA)
+        2026-11-07T06:07:57.1700002Z {rm}::test_bad output
+        2026-11-07T06:07:57.1700003Z FAILED
+        2026-11-07T06:07:57.1700004Z {rm}::test_teardown output
+        2026-11-07T06:07:57.1700005Z PASSED
+        2026-11-07T06:07:57.1700006Z {rm}::test_teardown ERROR
+        2026-11-07T06:07:57.1700007Z {rm}::test_crashed output
+        2026-11-07T06:07:57.1700008Z
+        2026-11-07T06:07:57.2200021Z =============================== warnings summary ===============================
+        2026-11-07T06:07:57.2209370Z {rm}::test_rm_lora
+        2026-11-07T06:07:57.2210953Z   /x.py:1640: DeprecationWarning: old
+        2026-11-07T06:07:57.2715219Z ========= 3 passed, 1 failed, 1 skipped, 1 error in 32.62s =========
+        """
+    )
+    assert mod.parse_log(log) == {
+        f"{rm}::test_rm_lora": {"PASSED"},
+        f"{rm}::test_quiet": {"PASSED"},
+        f"{rm}::test_gated[no cuda]": {"SKIPPED"},
+        f"{rm}::test_bad": {"FAILED"},
+        f"{rm}::test_teardown": {"PASSED", "ERROR"},
+    }
+
+
 def test_parse_diff_tracks_renames_additions_and_deletions():
     diff = textwrap.dedent(
         """\
