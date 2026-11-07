@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1002,8 +1002,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 ZeRO-3 to fail when gradient checkpointing is enabled.</p>
 <p>This issue occurs specifically with:
 - QLoRA + DeepSpeed ZeRO-3
-- gradient_checkpointing: true
-- activation_offloading: true</p>
+- activation_checkpointing: {enabled: true, offload: {all: cpu}}</p>
 <p>References:
 - https://github.com/deepspeedai/DeepSpeed/issues/7203
 - https://github.com/deepspeedai/DeepSpeed/blob/38d1a9eb64c9e01e32eccc50b25ba18925287441/deepspeed/runtime/zero/parameter_offload.py#L424-L458

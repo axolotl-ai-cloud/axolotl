@@ -884,8 +884,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -971,7 +971,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#oom-debugging" id="toc-oom-debugging" class="nav-link" data-scroll-target="#oom-debugging">OOM Debugging</a>
   <ul class="collapse">
   <li><a href="#step-1-reduce-batch-size" id="toc-step-1-reduce-batch-size" class="nav-link" data-scroll-target="#step-1-reduce-batch-size">Step 1: Reduce Batch Size</a></li>
-  <li><a href="#step-2-enable-gradient-checkpointing" id="toc-step-2-enable-gradient-checkpointing" class="nav-link" data-scroll-target="#step-2-enable-gradient-checkpointing">Step 2: Enable Gradient Checkpointing</a></li>
+  <li><a href="#step-2-enable-activation-checkpointing" id="toc-step-2-enable-activation-checkpointing" class="nav-link" data-scroll-target="#step-2-enable-activation-checkpointing">Step 2: Enable Activation Checkpointing</a></li>
   <li><a href="#step-3-use-quantization" id="toc-step-3-use-quantization" class="nav-link" data-scroll-target="#step-3-use-quantization">Step 3: Use Quantization</a></li>
   <li><a href="#step-4-reduce-sequence-length" id="toc-step-4-reduce-sequence-length" class="nav-link" data-scroll-target="#step-4-reduce-sequence-length">Step 4: Reduce Sequence Length</a></li>
   <li><a href="#step-5-use-flash-attention" id="toc-step-5-use-flash-attention" class="nav-link" data-scroll-target="#step-5-use-flash-attention">Step 5: Use Flash Attention</a></li>
@@ -1342,11 +1342,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <pre><code>8 * 16 * 2048 * 151936 * 2 bytes = ~75 GB  (way too large)</code></pre>
 <p>Reduce <code>micro_batch_size</code> to 2–4 for GRPO.</p>
 </section>
-<section id="step-2-enable-gradient-checkpointing" class="level3">
-<h3 class="anchored" data-anchor-id="step-2-enable-gradient-checkpointing">Step 2: Enable Gradient Checkpointing</h3>
+<section id="step-2-enable-activation-checkpointing" class="level3">
+<h3 class="anchored" data-anchor-id="step-2-enable-activation-checkpointing">Step 2: Enable Activation Checkpointing</h3>
 <p>Trades compute for memory by recomputing activations during the backward pass instead of storing them.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Non-reentrant checkpointing (<code>gradient_checkpointing_kwargs.use_reentrant: false</code>) is the default: it is what PyTorch recommends and it lets <code>torch_compile</code> trace through the checkpointed layer.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">activation_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Non-reentrant checkpointing (<code>activation_checkpointing.reentrant: false</code>) is the default: it is what PyTorch recommends and it lets <code>torch_compile</code> trace through the checkpointed layer.</p>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -1454,7 +1454,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td><code>CheckpointError</code> (tensor count mismatch)</td>
 <td>Non-reentrant checkpointing + ZeRO-3 or flex_attention</td>
-<td>Set <code>use_reentrant: true</code> in <code>gradient_checkpointing_kwargs</code></td>
+<td>Set <code>activation_checkpointing.reentrant: true</code></td>
 </tr>
 <tr class="even">
 <td><code>Content end boundary is before start boundary</code></td>

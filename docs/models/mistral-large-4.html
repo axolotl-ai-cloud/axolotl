@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1017,7 +1017,7 @@ Due to limited compute, we can only do minor testing, so please let us know if y
 <h2 class="anchored" data-anchor-id="fused-attention-lora">Fused Attention LoRA</h2>
 <p>With the kernels plugin enabled (<code>axolotl.integrations.kernels.KernelsPlugin</code>, <code>use_kernels: true</code>), LoRA on the MLA attention projections (<code>q_proj</code>, <code>kv_a_proj_with_mqa</code>, <code>kv_b_proj</code>, <code>o_proj</code>) runs a fused kernel that dispatches on the base weight’s format.</p>
 <ul>
-<li><code>mistral_large4_attn_lora_kernel</code>: on by default for <code>adapter: lora</code> on a block-FP8 or bf16 checkpoint; off by default on the NVFP4 checkpoint and when <code>selective_checkpointing</code> saves matmul outputs. Set <code>true</code> or <code>false</code> to override.</li>
+<li><code>mistral_large4_attn_lora_kernel</code>: on by default for <code>adapter: lora</code> on a block-FP8 or bf16 checkpoint; off by default on the NVFP4 checkpoint and when <code>activation_checkpointing.selective</code> saves matmul outputs. Set <code>true</code> or <code>false</code> to override.</li>
 <li><code>mistral_large4_attn_native_fp8</code>: on by default. On an FP8 base, <code>q_proj</code>, <code>kv_b_proj</code> and <code>o_proj</code> run the native block-FP8 GEMM instead of a dequantized one.</li>
 <li><code>mistral_large4_attn_quantization</code>: <code>none</code> (default), <code>nvfp4</code>, <code>mxfp4</code> or <code>mxfp8</code>. Quantizes the frozen attention bases after the LoRA wrap to save memory. Needs the fused kernel on, and does not combine with <code>peft_use_dora</code>, <code>load_in_8bit</code>, <code>load_in_4bit</code> or <code>lora_merge_aware</code>.</li>
 </ul>

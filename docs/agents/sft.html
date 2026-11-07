@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1171,7 +1171,7 @@ Multi-GPU: FSDP or DeepSpeed shards model across GPUs automatically.</code></pre
 <tbody>
 <tr class="odd">
 <td>OOM during training</td>
-<td>Reduce <code>micro_batch_size</code>, enable <code>gradient_checkpointing</code>, reduce <code>sequence_len</code></td>
+<td>Reduce <code>micro_batch_size</code>, enable <code>activation_checkpointing</code>, reduce <code>sequence_len</code></td>
 </tr>
 <tr class="even">
 <td><code>sample_packing</code> + SDPA + bf16 = 0.0 loss</td>
@@ -1199,7 +1199,7 @@ Multi-GPU: FSDP or DeepSpeed shards model across GPUs automatically.</code></pre
 </tr>
 <tr class="even">
 <td>DeepSpeed CheckpointError</td>
-<td>Set <code>use_reentrant: true</code> in <code>gradient_checkpointing_kwargs</code></td>
+<td>Set <code>activation_checkpointing.reentrant: true</code></td>
 </tr>
 </tbody>
 </table>

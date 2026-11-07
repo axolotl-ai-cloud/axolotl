@@ -884,8 +884,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -953,7 +953,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#memory-optimizations" id="toc-memory-optimizations" class="nav-link" data-scroll-target="#memory-optimizations">Memory Optimizations</a>
   <ul class="collapse">
   <li><a href="#parameter-efficient-finetuning-lora-qlora" id="toc-parameter-efficient-finetuning-lora-qlora" class="nav-link" data-scroll-target="#parameter-efficient-finetuning-lora-qlora">Parameter Efficient Finetuning (LoRA &amp; QLoRA)</a></li>
-  <li><a href="#gradient-checkpointing-activation-offloading" id="toc-gradient-checkpointing-activation-offloading" class="nav-link" data-scroll-target="#gradient-checkpointing-activation-offloading">Gradient Checkpointing &amp; Activation Offloading</a></li>
+  <li><a href="#activation-checkpointing-offloading" id="toc-activation-checkpointing-offloading" class="nav-link" data-scroll-target="#activation-checkpointing-offloading">Activation Checkpointing &amp; Offloading</a></li>
   <li><a href="#layer-offloading" id="toc-layer-offloading" class="nav-link" data-scroll-target="#layer-offloading">Layer Offloading</a></li>
   <li><a href="#cut-cross-entropy-cce" id="toc-cut-cross-entropy-cce" class="nav-link" data-scroll-target="#cut-cross-entropy-cce">Cut Cross Entropy (CCE)</a></li>
   <li><a href="#liger-kernels" id="toc-liger-kernels" class="nav-link" data-scroll-target="#liger-kernels">Liger Kernels</a></li>
@@ -1052,13 +1052,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>Config Reference: See <code>adapter</code>, <code>load_in_4bit</code>, and <code>load_in_8bit</code> in the <a href="../docs/config-reference.html">Configuration Reference</a>.</li>
 </ul>
 </section>
-<section id="gradient-checkpointing-activation-offloading" class="level3">
-<h3 class="anchored" data-anchor-id="gradient-checkpointing-activation-offloading">Gradient Checkpointing &amp; Activation Offloading</h3>
+<section id="activation-checkpointing-offloading" class="level3">
+<h3 class="anchored" data-anchor-id="activation-checkpointing-offloading">Activation Checkpointing &amp; Offloading</h3>
 <p>These techniques save VRAM by changing how activations are handled.</p>
 <ul>
-<li>Gradient Checkpointing: re-computes activations during the backward pass, trading compute time for VRAM.</li>
-<li>Activation Offloading: moves activations to CPU RAM or disk, trading I/O overhead for VRAM.</li>
-<li>Learn more: <a href="../docs/gradient_checkpointing.html">Gradient Checkpointing and Offloading Docs</a></li>
+<li>Activation Checkpointing: re-computes activations during the backward pass, trading compute time for VRAM.</li>
+<li>Activation Offloading: moves activations to CPU RAM, trading I/O overhead for VRAM.</li>
+<li>Learn more: <a href="../docs/activation_checkpointing.html">Activation Checkpointing &amp; Offloading Docs</a></li>
 </ul>
 </section>
 <section id="layer-offloading" class="level3">
@@ -1066,7 +1066,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Offloads frozen (non-trainable) decoder layer parameters to CPU and streams them back to GPU one layer at a time during forward/backward passes using CUDA stream prefetching. Especially effective for LoRA/QLoRA where most parameters are frozen.</p>
 <ul>
 <li><strong>Config:</strong> <code>layer_offloading: true</code></li>
-<li><strong>Learn more:</strong> <a href="../docs/gradient_checkpointing.html#enabling-layer-offloading">Layer Offloading Docs</a></li>
+<li><strong>Learn more:</strong> <a href="../docs/activation_checkpointing.html#enabling-layer-offloading">Layer Offloading Docs</a></li>
 </ul>
 </section>
 <section id="cut-cross-entropy-cce" class="level3">
@@ -1091,7 +1091,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li><strong>Compile-safe:</strong> the kernel is wrapped as a <code>torch.library.triton_op</code> and traces under <code>torch.compile(fullgraph=True)</code>.</li>
 <li><strong>Baseline perf:</strong> stacking <code>torch_compile: true</code> is a steady-state win that scales with arch — ~−14% to −16.5% on sm_86 (vanilla RTX 3090 / 3090 Ti), ~−19% on sm_120 (Blackwell/RTX 5090), measured on Qwen3-8B + LoRA r=16 + torch 2.11. Also trims peak memory ~2%.</li>
-<li><strong>Compile cold-start:</strong> adds 5–15 min on the first step. <code>torch_compile_regional: true</code> compiles each decoder block separately so identical blocks reuse one compiled artifact, but it is off by default: with <code>gradient_checkpointing</code> the recompute can run a different Dynamo cache entry than the forward and fail with a <code>CheckpointError</code> (pytorch/pytorch#166926). Whole-model compile with non-reentrant checkpointing traces cleanly (zero graph breaks on Qwen3-8B LoRA under FSDP2).</li>
+<li><strong>Compile cold-start:</strong> adds 5–15 min on the first step. <code>torch_compile_regional: true</code> compiles each decoder block separately so identical blocks reuse one compiled artifact, but it is off by default: with <code>activation_checkpointing</code> the recompute can run a different Dynamo cache entry than the forward and fail with a <code>CheckpointError</code> (pytorch/pytorch#166926). Whole-model compile with non-reentrant checkpointing traces cleanly (zero graph breaks on Qwen3-8B LoRA under FSDP2).</li>
 <li><strong>Tuning (<code>torch_compile_options</code>):</strong> optionally sets allowlisted <code>torch._inductor.config</code> flags (disallowed keys are rejected at validation; see the config reference for the list). Payoff is arch-specific: the only measured win is <code>max_autotune_gemm: true</code> on sm_120 with ≥32 GB (~−2.6% over plain compile) — the same flag <em>regresses</em> ~+13% on sm_86, and every other flag tested was within noise. <code>triton.cudagraphs</code> needs static shapes and is incompatible with <code>sample_packing</code>.</li>
 </ul>
 </section>

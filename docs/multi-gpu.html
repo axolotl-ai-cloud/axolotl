@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1154,7 +1154,7 @@ To migrate an FSDP1 config, replace the <code>fsdp:</code> list with <code>fsdp_
 </tr>
 <tr class="even">
 <td>fsdp_activation_checkpointing</td>
-<td>activation_checkpointing</td>
+<td>top-level <code>activation_checkpointing: {implementation: fsdp}</code></td>
 </tr>
 </tbody>
 </table>
@@ -1899,7 +1899,7 @@ DeepSpeed the same key maps onto DeepSpeed’s Ulysses (ALST) implementation thr
 <span id="cb6-136"><a href="#cb6-136" aria-hidden="true" tabindex="-1"></a>fsdp_cpu_ram_efficient_loading | cpu_ram_efficient_loading</span>
 <span id="cb6-137"><a href="#cb6-137" aria-hidden="true" tabindex="-1"></a>fsdp_state_dict_type | state_dict_type</span>
 <span id="cb6-138"><a href="#cb6-138" aria-hidden="true" tabindex="-1"></a>fsdp_use_orig_params | **REMOVED** (dropped with a warning; FSDP2 always trains original parameters)</span>
-<span id="cb6-139"><a href="#cb6-139" aria-hidden="true" tabindex="-1"></a>fsdp_activation_checkpointing | activation_checkpointing</span>
+<span id="cb6-139"><a href="#cb6-139" aria-hidden="true" tabindex="-1"></a>fsdp_activation_checkpointing | top-level <span class="in">`activation_checkpointing: {implementation: fsdp}`</span></span>
 <span id="cb6-140"><a href="#cb6-140" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-141"><a href="#cb6-141" aria-hidden="true" tabindex="-1"></a>For more details, please see the migration guide in the <span class="co">[</span><span class="ot">torchtitan repo</span><span class="co">](https://github.com/pytorch/torchtitan/blob/main/docs/fsdp.md)</span>. In Axolotl,</span>
 <span id="cb6-142"><a href="#cb6-142" aria-hidden="true" tabindex="-1"></a>if you were using the following FSDP1 config:</span>

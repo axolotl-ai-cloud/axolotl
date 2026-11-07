@@ -884,8 +884,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1335,7 +1335,7 @@ Important
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>These estimates assume a short context length (512-2048 tokens) and micro_batch_size of 1-2. Longer sequences and larger batches increase memory significantly due to activations. Use <a href="../docs/gradient_checkpointing.html">gradient checkpointing</a> to reduce activation memory at the cost of ~30% slower training.</p>
+<p>These estimates assume a short context length (512-2048 tokens) and micro_batch_size of 1-2. Longer sequences and larger batches increase memory significantly due to activations. Use <a href="../docs/activation_checkpointing.html">activation checkpointing</a> to reduce activation memory at the cost of ~30% slower training.</p>
 </div>
 </div>
 </section>

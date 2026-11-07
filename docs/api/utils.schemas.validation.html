@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1093,16 +1093,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading">check_ebft_activation_offloading</a></td>
-<td>activation_offloading replaces gradient checkpointing with FSDP-style wrapping,</td>
+<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_checkpointing_reentrant">check_ebft_activation_checkpointing_reentrant</a></td>
+<td>flex_attention + non-reentrant activation checkpointing causes CheckpointError.</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required">check_ebft_config_required</a></td>
-<td>rl: ebft requires an ebft config section.</td>
+<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading">check_ebft_activation_offloading</a></td>
+<td>TRL’s offloader wraps the layers in a way that conflicts with</td>
 </tr>
 <tr class="odd">
-<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_gradient_checkpointing_reentrant">check_ebft_gradient_checkpointing_reentrant</a></td>
-<td>flex_attention + non-reentrant gradient checkpointing causes CheckpointError.</td>
+<td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required">check_ebft_config_required</a></td>
+<td>rl: ebft requires an ebft config section.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_dataset_split">check_ebft_strided_dataset_split</a></td>
@@ -1114,26 +1114,26 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_torch_compile">check_ebft_torch_compile</a></td>
-<td>torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles</td>
+<td>torch_compile + flex_attention + activation_checkpointing causes dynamo recompiles</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_checkpointing_reentrant" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_checkpointing_reentrant">check_ebft_activation_checkpointing_reentrant</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_checkpointing_reentrant(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>flex_attention + non-reentrant activation checkpointing causes CheckpointError.</p>
+</section>
 <section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading">check_ebft_activation_offloading</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>activation_offloading replaces gradient checkpointing with FSDP-style wrapping,
-which conflicts with flex_attention’s use_reentrant requirement.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_activation_offloading()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>TRL’s offloader wraps the layers in a way that conflicts with
+flex_attention’s use_reentrant requirement.</p>
 </section>
 <section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required">check_ebft_config_required</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_config_required(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>rl: ebft requires an ebft config section.</p>
-</section>
-<section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_gradient_checkpointing_reentrant" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_gradient_checkpointing_reentrant">check_ebft_gradient_checkpointing_reentrant</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_gradient_checkpointing_reentrant(</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>flex_attention + non-reentrant gradient checkpointing causes CheckpointError.</p>
 </section>
 <section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_dataset_split" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_strided_dataset_split">check_ebft_strided_dataset_split</h5>
@@ -1152,7 +1152,7 @@ which conflicts with flex_attention’s use_reentrant requirement.</p>
 <section id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_torch_compile" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.EBFTValidationMixin.check_ebft_torch_compile">check_ebft_torch_compile</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.EBFTValidationMixin.check_ebft_torch_compile(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles
+<p>torch_compile + flex_attention + activation_checkpointing causes dynamo recompiles
 and CheckpointErrors. The flex_attention kernel compiles itself internally —
 whole-model torch.compile is not needed and actively harmful.</p>
 </section>

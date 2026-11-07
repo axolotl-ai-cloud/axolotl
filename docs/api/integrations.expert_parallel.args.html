@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1007,7 +1007,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs.expert_parallel_save_dispatch">expert_parallel_save_dispatch</a></td>
-<td><code>torch</code> backend under activation checkpointing (<code>gradient_checkpointing</code> or FSDP2 <code>fsdp_config.activation_checkpointing</code>): save the dispatch/combine all-to-all outputs so backward does not re-issue the collectives, at the cost of holding the received rows per layer (24 GiB on Qwen3-30B-A3B at 32k packed on 2 GPUs). Recomputing them cost 1.6 s/step on a PCIe-only pair and was a tie on an NVLink pair, so the default recomputes; enable this on bandwidth-starved links with memory to spare. The routing <code>topk</code> and host-side split counts are always saved.</td>
+<td><code>torch</code> backend under activation checkpointing (<code>activation_checkpointing</code> with either implementation): save the dispatch/combine all-to-all outputs so backward does not re-issue the collectives, at the cost of holding the received rows per layer (24 GiB on Qwen3-30B-A3B at 32k packed on 2 GPUs). Recomputing them cost 1.6 s/step on a PCIe-only pair and was a tie on an NVLink pair, so the default recomputes; enable this on bandwidth-starved links with memory to spare. The routing <code>topk</code> and host-side split counts are always saved.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.args.ExpertParallelArgs.expert_parallel_size">expert_parallel_size</a></td>

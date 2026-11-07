@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1644,7 +1644,7 @@ The quick brown fox jumps over the loud dog</code></pre>
 <h3 class="anchored" data-anchor-id="checkpointing-with-the-torch-backend">Checkpointing with the <code>torch</code> backend</h3>
 <p>Recompute must replay the forward’s routing: a re-run router <code>topk</code> can break ties differently, desyncing the <code>all_to_all</code> shapes each rank sends and hanging the other ranks. The plugin installs a policy that always saves the router <code>topk</code> and the token-count splits:</p>
 <ul>
-<li>It applies under <code>gradient_checkpointing</code> (with or without <code>selective_checkpointing</code>, including <code>activation_offloading: hidden_states</code> or <code>true</code>) and under FSDP2 <code>fsdp_config.activation_checkpointing</code>.</li>
+<li>It applies under <code>activation_checkpointing</code> with either implementation: <code>hf</code> (with or without <code>selective</code>, including <code>offload.hidden_states</code> or <code>offload.all</code>) and FSDP2’s <code>implementation: fsdp</code>.</li>
 <li>The <code>topk</code> save is scoped to the MoE block that owns each Experts module; other <code>topk</code>s in the layer (e.g.&nbsp;GLM-DSA’s attention indexer) recompute as usual.</li>
 <li>Config validation rejects reentrant checkpointing.</li>
 </ul>
@@ -3207,7 +3207,7 @@ rollouts in flight and trains on them as they finish.</p>
 <span id="cb54-48"><a href="#cb54-48" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
 <span id="cb54-49"><a href="#cb54-49" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
 <span id="cb54-50"><a href="#cb54-50" aria-hidden="true" tabindex="-1"></a><span class="fu">max_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span></span>
-<span id="cb54-51"><a href="#cb54-51" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb54-51"><a href="#cb54-51" aria-hidden="true" tabindex="-1"></a><span class="fu">activation_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb54-52"><a href="#cb54-52" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb54-53"><a href="#cb54-53" aria-hidden="true" tabindex="-1"></a><span class="fu">output_dir</span><span class="kw">:</span><span class="at"> ./outputs/nemo_gym_async</span></span>
 <span id="cb54-54"><a href="#cb54-54" aria-hidden="true" tabindex="-1"></a></span>

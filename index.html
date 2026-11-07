@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="./docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1013,7 +1013,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>New training options: <a href="https://github.com/axolotl-ai-cloud/axolotl/tree/main/src/axolotl/integrations/mixlora">MixLoRA</a> adds routed LoRA experts to dense models, and <a href="https://github.com/axolotl-ai-cloud/axolotl/pull/4008">Dynamic Fine-Tuning (DFT)</a> weights the SFT loss by token probability.</li>
 <li><a href="https://docs.axolotl.ai/docs/sequence_parallelism.html">Ringmaster context parallelism</a> adds Ulysses and combined Ulysses/Ring (USP) support, sample packing, and CP fixes for GDN, KDA, and Mamba/Mamba2 models.</li>
 <li><a href="https://docs.axolotl.ai/docs/custom_integrations.html#expert-parallelism-integration">Torch all-to-all Expert Parallelism</a> enables MoE training over NVLink or PCIe without requiring DeepEP. Expanded <a href="https://docs.axolotl.ai/docs/nd_parallelism.html">N-D parallelism</a> supports EP with FSDP2, HSDP, and context parallelism, plus FSDP2 + tensor parallelism.</li>
-<li><a href="https://docs.axolotl.ai/docs/gradient_checkpointing.html#selective-activation-checkpointing-sac">Selective activation checkpointing</a> adds rules to save specific projections or large matrix multiplications, with optional CPU offload to tune the memory/recomputation tradeoff.</li>
+<li><a href="https://docs.axolotl.ai/docs/activation_checkpointing.html#selective-activation-checkpointing-sac">Selective activation checkpointing</a> adds rules to save specific projections or large matrix multiplications, with optional CPU offload to tune the memory/recomputation tradeoff.</li>
 <li>Improved <a href="https://docs.axolotl.ai/docs/custom_integrations.html">plugin integration</a> includes new cloud provider interfaces for launching training jobs, with support for <a href="https://docs.axolotl.ai/docs/nebius-serverless.html">Nebius Serverless Jobs</a>.</li>
 </ul></li>
 <li>2026/08:

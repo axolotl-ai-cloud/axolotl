@@ -884,8 +884,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1132,7 +1132,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </blockquote>
 <p>**Q: <code>ValueError("Backward pass should have cleared tracker of all tensors")</code></p>
 <blockquote class="blockquote">
-<p>A: This may happen due to edge cases in the OffloadActivations context manager. <code>activation_offloading: legacy</code> is now an alias of <code>true</code>, so it is no longer a workaround; try <code>activation_offloading: hidden_states</code> instead, and please report the config that triggers it.</p>
+<p>A: This may happen due to edge cases in the OffloadActivations context manager. Try <code>activation_checkpointing.offload.hidden_states: cpu</code> instead of <code>offload.all</code>, and please report the config that triggers it.</p>
 </blockquote>
 <p>**Q: <code>Error parsing tool_calls arguments as JSON.</code></p>
 <blockquote class="blockquote">

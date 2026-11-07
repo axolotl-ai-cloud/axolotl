@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1050,8 +1050,8 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 <h3 class="anchored" data-anchor-id="required-settings">Required settings</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Always needed for Gemma4:</span></span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">freeze_mm_modules</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">          # Freeze vision/audio encoders for text-only training</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing_kwargs</span><span class="kw">:</span></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_reentrant</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">           # Shared per-layer norms cause "marked ready twice" with reentrant</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">activation_checkpointing</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reentrant</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">               # Shared per-layer norms cause "marked ready twice" with reentrant</span></span>
 <span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="co"># LoRA target — restrict to language model only (DO NOT use lora_target_linear: true):</span></span>
 <span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> </span><span class="st">'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -1059,8 +1059,8 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 <section id="auto-detection" class="level3">
 <h3 class="anchored" data-anchor-id="auto-detection">Auto-detection</h3>
 <p>Axolotl auto-detects Gemma4 and applies:
-- <code>use_reentrant: false</code> for gradient checkpointing
-- <code>ddp_find_unused_parameters: true</code> for DDP (skipped when <code>activation_offloading: true</code>)</p>
+- <code>activation_checkpointing.reentrant: false</code>
+- <code>ddp_find_unused_parameters: true</code> for DDP (skipped when <code>activation_checkpointing.offload.all: cpu</code>)</p>
 </section>
 <section id="multi-gpu" class="level3">
 <h3 class="anchored" data-anchor-id="multi-gpu">Multi-GPU</h3>
@@ -1084,7 +1084,7 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 <td>Auto-sets <code>ddp_find_unused_parameters=True</code></td>
 </tr>
 <tr class="even">
-<td>DDP + activation_offloading</td>
+<td>DDP + offload.all</td>
 <td>Yes</td>
 <td><code>find_unused_parameters</code> is skipped (conflicts with checkpoint wrappers)</td>
 </tr>
@@ -1094,7 +1094,7 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 <td>Use <code>Gemma4TextDecoderLayer</code> (not <code>Gemma4DecoderLayer</code>) as wrap class</td>
 </tr>
 <tr class="even">
-<td>FSDP2 + activation_offloading</td>
+<td>FSDP2 + offload.all</td>
 <td>Yes</td>
 <td>Lowest VRAM (~26 GiB/GPU for 26B-A4B)</td>
 </tr>
@@ -1169,8 +1169,8 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 </tr>
 <tr class="even">
 <td><code>marked a variable ready twice</code> in DDP</td>
-<td><code>ddp_find_unused_parameters=True</code> + activation_offloading checkpoint wrappers</td>
-<td>Auto-handled — <code>find_unused_parameters</code> is skipped when <code>activation_offloading: true</code></td>
+<td><code>ddp_find_unused_parameters=True</code> + TRL offloader checkpoint wrappers</td>
+<td>Auto-handled — <code>find_unused_parameters</code> is skipped when <code>activation_checkpointing.offload.all: cpu</code></td>
 </tr>
 <tr class="odd">
 <td>Loss ~12 instead of ~0.5</td>

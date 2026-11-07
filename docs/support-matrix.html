@@ -849,8 +849,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -1564,8 +1564,8 @@ Warning
 </tr>
 <tr class="odd">
 <td>Activation offloading</td>
-<td><code>activation_offloading:</code></td>
-<td><code>hidden_states</code> requires gradient checkpointing; <code>true</code> without it offloads with no recompute; <code>legacy</code> is a deprecated alias of <code>true</code>; <code>disk</code> is disabled; ⚪ CUDA only (no CPU-only training)</td>
+<td><code>activation_checkpointing.offload</code></td>
+<td><code>hidden_states</code> and <code>saves</code> require checkpointing; <code>all</code> with <code>enabled: false</code> offloads with no recompute; <code>disk</code> is disabled pending a fix; ⚪ CUDA only (no CPU-only training)</td>
 </tr>
 </tbody>
 </table>
@@ -1704,7 +1704,7 @@ Warning
 <h2 class="anchored" data-anchor-id="optimizers-schedulers">Optimizers &amp; schedulers</h2>
 <p><strong>Optimizers:</strong> all HuggingFace / <code>bitsandbytes</code> optimizers, plus AdamW (torch-fused, optimi), TorchAO 4-bit/8-bit/FP8 AdamW, ADOPT, CAME, Muon (32/8-bit), Dion, SinkGD, Flash AdamW/Adam/SGD/SGDW/Lion, Q-GaLore, PoLoRA. (Muon / Flash / Q-GaLore / PoLoRA require FSDP2, not DeepSpeed; PoLoRA is additionally LoRA-only.)</p>
 <p><strong>Schedulers:</strong> cosine (+min-lr, +constant-ratio, +quadratic warmup), REX, one-cycle, linear warmup, jagged-restart (ReLoRA).</p>
-<p><strong>Also:</strong> gradient checkpointing (+CPU/disk offload), gradient accumulation, NEFTune, LR groups / embedding LR, loss watchdog, early stopping, <code>torch_compile</code>.</p>
+<p><strong>Also:</strong> activation checkpointing (+CPU offload), gradient accumulation, NEFTune, LR groups / embedding LR, loss watchdog, early stopping, <code>torch_compile</code>.</p>
 </section>
 <section id="method-plug-ins-extensions" class="level2">
 <h2 class="anchored" data-anchor-id="method-plug-ins-extensions">Method plug-ins &amp; extensions</h2>

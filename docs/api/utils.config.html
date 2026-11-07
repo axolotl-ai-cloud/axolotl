@@ -883,8 +883,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  <a href="../../docs/activation_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Activation Checkpointing &amp; Offloading</span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -949,6 +949,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.utils.config.normalize_cfg_datasets" id="toc-axolotl.utils.config.normalize_cfg_datasets" class="nav-link" data-scroll-target="#axolotl.utils.config.normalize_cfg_datasets">normalize_cfg_datasets</a></li>
   <li><a href="#axolotl.utils.config.prepare_plugins" id="toc-axolotl.utils.config.prepare_plugins" class="nav-link" data-scroll-target="#axolotl.utils.config.prepare_plugins">prepare_plugins</a></li>
+  <li><a href="#axolotl.utils.config.resolve_reentrant" id="toc-axolotl.utils.config.resolve_reentrant" class="nav-link" data-scroll-target="#axolotl.utils.config.resolve_reentrant">resolve_reentrant</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -982,6 +983,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.utils.config.prepare_plugins">prepare_plugins</a></td>
 <td>Prepare installed plugins and plugins explicitly selected by the config.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.utils.config.resolve_reentrant">resolve_reentrant</a></td>
+<td>Settle <code>activation_checkpointing.reentrant</code> for transformers’ checkpointing.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.utils.config.normalize_cfg_datasets" class="level3">
@@ -993,6 +998,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.utils.config.prepare_plugins">prepare_plugins</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.config.prepare_plugins(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Prepare installed plugins and plugins explicitly selected by the config.</p>
+</section>
+<section id="axolotl.utils.config.resolve_reentrant" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.config.resolve_reentrant">resolve_reentrant</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.config.resolve_reentrant(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Settle <code>activation_checkpointing.reentrant</code> for transformers’ checkpointing.</p>
 
 
 </section>
