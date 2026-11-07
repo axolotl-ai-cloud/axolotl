@@ -22,7 +22,7 @@ An explicit `deep_ep` without the `deep_ep` package installed follows `expert_pa
 
 Recompute must replay the forward's routing: a re-run router `topk` can break ties differently, desyncing the `all_to_all` shapes each rank sends and hanging the other ranks. The plugin installs a policy that always saves the router `topk` and the token-count splits:
 
-- It applies under `gradient_checkpointing` (with or without `selective_checkpointing`, including `activation_offloading: hidden_states` or `true`) and under FSDP2 `fsdp_config.activation_checkpointing`.
+- It applies under `activation_checkpointing` with either implementation: `hf` (with or without `selective`, including `offload.hidden_states` or `offload.all`) and FSDP2's `implementation: fsdp`.
 - The `topk` save is scoped to the MoE block that owns each Experts module; other `topk`s in the layer (e.g. GLM-DSA's attention indexer) recompute as usual.
 - Config validation rejects reentrant checkpointing.
 

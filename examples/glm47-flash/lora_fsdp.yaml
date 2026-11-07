@@ -65,6 +65,9 @@ evals_per_epoch: 1
 saves_per_epoch: 1
 
 fsdp_version: 2
+activation_checkpointing:
+  enabled: true
+  implementation: fsdp
 fsdp_config:
   offload_params: false
   cpu_ram_efficient_loading: false
@@ -72,4 +75,3 @@ fsdp_config:
   transformer_layer_cls_to_wrap: Glm4MoeLiteDecoderLayer
   state_dict_type: FULL_STATE_DICT
   reshard_after_forward: true
-  activation_checkpointing: true

@@ -27,7 +27,7 @@ lora_target_modules:
 
 bf16: auto
 attn_implementation: sdpa
-gradient_checkpointing: true
+activation_checkpointing: true
 logging_steps: 1
 save_steps: 10
 save_total_limit: 2

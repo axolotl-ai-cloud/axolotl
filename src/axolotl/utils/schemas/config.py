@@ -18,6 +18,9 @@ from pydantic import (
 
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
+from axolotl.utils.schemas.activation_checkpointing import (
+    ActivationCheckpointingConfig,
+)
 from axolotl.utils.schemas.checkpoint_mirror import CheckpointMirrorConfig
 from axolotl.utils.schemas.checkpoint_save_retry import CheckpointSaveRetryConfig
 from axolotl.utils.schemas.datasets import (
@@ -67,11 +70,7 @@ from axolotl.utils.schemas.model import (
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
-from axolotl.utils.schemas.training import (
-    HyperparametersConfig,
-    JaggedLRConfig,
-    SelectiveCheckpointingConfig,
-)
+from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import (
     ValidationMixin,
@@ -643,38 +642,13 @@ class AxolotlInputConfig(
     )
     float32: bool | None = None
 
-    gradient_checkpointing: Literal["offload", "offload_disk"] | bool | None = Field(
-        default=False,
-        json_schema_extra={
-            "description": "Whether to use gradient checkpointing. Available options are: true, false, 'offload' (deprecated, use activation_offloading: true). https://huggingface.co/docs/transformers/v4.18.0/en/performance#gradient-checkpointing"
-        },
-    )
-    gradient_checkpointing_kwargs: dict[str, Any] | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
-        },
-    )
-    selective_checkpointing: SelectiveCheckpointingConfig | bool | None = Field(
-        default=None,
+    activation_checkpointing: ActivationCheckpointingConfig = Field(
+        default_factory=lambda: ActivationCheckpointingConfig(enabled=False),
         json_schema_extra={
             "description": (
-                "Selective activation checkpointing: within each gradient-checkpointed "
-                "layer, save the listed ops during forward instead of recomputing them "
-                "in backward. `true` saves attention (SDPA/flash-attention). Requires "
-                "gradient_checkpointing with non-reentrant checkpointing."
-            )
-        },
-    )
-    activation_offloading: Literal["hidden_states"] | bool | None = Field(
-        default=False,
-        json_schema_extra={
-            "description": (
-                "Whether to offload activations. Options: true/false (TRL offloader; "
-                "gradient_checkpointing decides whether layers recompute), or "
-                "'hidden_states' (checkpoint input offload; non-reentrant by default, "
-                "ALST-style when gradient_checkpointing_kwargs.use_reentrant is true). "
-                "'legacy' is a deprecated alias of true; 'disk' is disabled."
+                "Activation checkpointing (recompute each decoder layer in backward) "
+                "and activation offloading. `true` enables transformers' activation "
+                "checkpointing. See docs/activation_checkpointing.qmd."
             )
         },
     )
@@ -1255,7 +1229,7 @@ class AxolotlInputConfig(
     torch_compile_regional: bool | None = Field(
         default=False,
         json_schema_extra={
-            "description": "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks gradient_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without gradient checkpointing."
+            "description": "With torch_compile, compile each repeated decoder block separately (accelerate's regional compilation) instead of the whole model. Cuts cold-start compile time, but on torch 2.14 it breaks activation_checkpointing: the checkpoint recompute can run a different Dynamo cache entry than the forward (pytorch/pytorch#166926). Off by default; only enable without activation checkpointing."
         },
     )
     torch_compile_options: dict[str, bool | int | float | str] | None = Field(
@@ -1731,6 +1705,16 @@ class AxolotlInputConfig(
             data.pop(flag, None)
 
         return data
+
+    @field_validator("activation_checkpointing", mode="before")
+    @classmethod
+    def expand_activation_checkpointing(cls, value):
+        # also accepts true/false/null; readers rely on the block always being present
+        if value is None or value is False:
+            return {"enabled": False}
+        if value is True:
+            return {}
+        return value
 
     @field_validator("large_head_attention", mode="before")
     @classmethod

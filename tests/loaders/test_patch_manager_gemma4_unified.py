@@ -21,8 +21,7 @@ def _make_patch_manager(model_config_type, *, gradient_checkpointing, inference=
             "model_config_type": model_config_type,
             "context_parallel_size": 1,
             "sample_packing": False,
-            "gradient_checkpointing": gradient_checkpointing,
-            "activation_offloading": False,
+            "activation_checkpointing": {"enabled": gradient_checkpointing},
             "fused_attn_kernel": False,
             "fsdp_config": None,
         }

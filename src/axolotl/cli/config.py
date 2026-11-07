@@ -264,12 +264,11 @@ def load_cfg(
     cfg_keys = cfg.keys()
 
     # Separate nested (dot-notation) kwargs from flat kwargs
-    nested_kwargs: dict[str, dict[str, Any]] = {}
+    nested_kwargs: dict[tuple[str, ...], Any] = {}
     flat_kwargs: dict[str, Any] = {}
     for key, value in kwargs.items():
         if "__" in key:
-            parent, child = key.split("__", 1)
-            nested_kwargs.setdefault(parent, {})[child] = value
+            nested_kwargs[tuple(key.split("__"))] = value
         else:
             flat_kwargs[key] = value
 
@@ -280,19 +279,21 @@ def load_cfg(
             cfg[key] = _coerce_value(value, cfg.get(key))
 
     # Apply nested kwargs (e.g., trl__beta -> cfg.trl.beta)
-    for parent, children in nested_kwargs.items():
-        if parent not in cfg_keys and cfg.strict:
+    for path, value in nested_kwargs.items():
+        if path[0] not in cfg_keys and cfg.strict:
             continue
-        if cfg[parent] is None:
-            cfg[parent] = {}
-        if not isinstance(cfg[parent], dict):
-            LOG.warning(
-                "Overwriting non-dict value for '%s' with nested CLI overrides", parent
-            )
-            cfg[parent] = {}
-        for child_key, child_value in children.items():
-            existing_child = cfg[parent].get(child_key)
-            cfg[parent][child_key] = _coerce_value(child_value, existing_child)
+        node = cfg
+        for depth, part in enumerate(path[:-1]):
+            if node.get(part) is None:
+                node[part] = {}
+            if not isinstance(node[part], dict):
+                LOG.warning(
+                    "Overwriting non-dict value for '%s' with nested CLI overrides",
+                    ".".join(path[: depth + 1]),
+                )
+                node[part] = {}
+            node = node[part]
+        node[path[-1]] = _coerce_value(value, node.get(path[-1]))
 
     prepare_plugins(cfg)
 

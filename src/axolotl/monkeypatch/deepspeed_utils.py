@@ -16,8 +16,7 @@ def patch_checkpoint_wrapper_setattr():
 
     This issue occurs specifically with:
     - QLoRA + DeepSpeed ZeRO-3
-    - gradient_checkpointing: true
-    - activation_offloading: true
+    - activation_checkpointing: {enabled: true, offload: {all: cpu}}
 
     References:
     - https://github.com/deepspeedai/DeepSpeed/issues/7203

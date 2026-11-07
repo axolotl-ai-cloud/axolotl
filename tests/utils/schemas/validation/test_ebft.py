@@ -37,19 +37,18 @@ class TestEBFTValidation:
             rl="ebft",
             ebft={"mode": "strided"},
             attn_implementation="flex_attention",
-            gradient_checkpointing=True,
+            activation_checkpointing=True,
         )
 
         cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
+        assert cfg.activation_checkpointing.reentrant is True
 
     def test_strided_flex_attention_rejects_activation_offloading(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
             rl="ebft",
             ebft={"mode": "strided"},
             attn_implementation="flex_attention",
-            gradient_checkpointing=True,
-            activation_offloading=True,
+            activation_checkpointing={"enabled": True, "offload": {"all": "cpu"}},
         )
 
         with pytest.raises(ValidationError, match="incompatible with"):

@@ -906,7 +906,7 @@ class TestRuleWarnings:
     def test_no_rules_message_unchanged(self, sac_log):
         self._drain(build_sac_context_fn(["attention"]))
         assert self._warnings(sac_log) == [
-            f"selective_checkpointing: no op matched the save policy after "
+            f"activation_checkpointing.selective: no op matched the save policy after "
             f"{_NO_MATCH_WARN_REGIONS} checkpoint regions. Your attention "
             "implementation may not be dispatcher-visible (e.g. a custom kernel "
             "not registered via torch.library); everything is being recomputed "
@@ -1326,9 +1326,13 @@ class TestRegisteredSaves:
             _activation_checkpoint_wrapper_fn,
         )
 
-        assert "context_fn" not in _activation_checkpoint_wrapper_fn().keywords
+        def checkpoint_keywords():
+            wrapped = _activation_checkpoint_wrapper_fn()(torch.nn.Linear(2, 2))
+            return wrapped.checkpoint_fn.keywords
+
+        assert "context_fn" not in checkpoint_keywords()
         selective_checkpointing.register_mandatory_save(ops={"aten::topk"})
-        assert callable(_activation_checkpoint_wrapper_fn().keywords["context_fn"])
+        assert callable(checkpoint_keywords()["context_fn"])
 
 
 class _TopkModule(torch.nn.Module):

@@ -33,6 +33,7 @@ from transformers.trainer_utils import (
 from trl.models import unwrap_model_for_generation
 
 from axolotl.utils import is_comet_available, is_mlflow_available
+from axolotl.utils.activation_checkpointing import disable_activation_checkpointing
 from axolotl.utils.callbacks.perplexity import Perplexity
 from axolotl.utils.distributed import (
     barrier,
@@ -968,7 +969,7 @@ def colab_inference_post_train_callback(trainer: Trainer):
                 and self.cfg.attn_implementation == "xformers"
             ):
                 trainer.model.config._attn_implementation = "eager"
-            trainer.model.gradient_checkpointing_disable()
+            disable_activation_checkpointing(trainer.model)
             trainer.model.config.use_cache = True
             trainer.model.eval()
 

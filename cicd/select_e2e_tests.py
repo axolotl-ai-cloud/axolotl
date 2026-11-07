@@ -11,7 +11,7 @@ Every edge is derived from the tree, so new features need no registration:
 * Otherwise a changed module selects the tests that import it directly, that name
   its module path, file stem or package in a config string, or that set a key it
   reads. A module with no edges at all runs the whole scope.
-* A module may declare ``__ci_config_keys__ = ("activation_offloading",)`` when the
+* A module may declare ``__ci_config_keys__ = ("activation_checkpointing",)`` when the
   graph cannot see what enables it; the selector then picks exactly the tests that set
   those keys. A declared key that is not a config field runs the whole scope.
 * A dependency bump in ``pyproject.toml`` selects through the importers of the

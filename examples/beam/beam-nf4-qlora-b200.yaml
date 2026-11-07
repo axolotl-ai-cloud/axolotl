@@ -82,9 +82,9 @@ max_grad_norm: 1.0
 bf16: true
 tf32: true
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_checkpointing:
+  enabled: true
+  reentrant: false
 attn_implementation: flash_attention_4
 # fused LoRA kernels: the QKV/O patch keeps Beam's gate and norms in place (descriptor: Experimental)
 lora_qkv_kernel: true

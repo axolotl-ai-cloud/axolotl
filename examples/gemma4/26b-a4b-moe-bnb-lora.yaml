@@ -89,7 +89,7 @@ learning_rate: 0.0002
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
+activation_checkpointing: true
 
 # gemma4 head_dim is 256. flex_attention OOMs sm120 shared memory here; the hybrid impl runs FA2 on
 # the sliding-window layers + SDPA on the global layers. Requires attn_implementation=flash_attention_2.

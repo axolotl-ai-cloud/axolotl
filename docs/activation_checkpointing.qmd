@@ -1,0 +1,372 @@
+---
+title: Activation Checkpointing & Offloading
+---
+
+Activation checkpointing, activation offloading and layer offloading reduce GPU memory during
+training. Each trades it for something else: extra compute, host memory, or PCIe bandwidth. The
+first two are configured in one `activation_checkpointing` block; `layer_offloading`, which moves
+parameters rather than activations, is a separate key.
+
+### How it works
+
+In the forward pass, each layer keeps some of its intermediate tensors (activations), because the
+backward pass needs them to compute gradients. With long sequences these activations, not the
+weights, take most of the GPU memory: they grow with batch size, sequence length, hidden size and
+the number of layers.
+
+- **Activation checkpointing** (`activation_checkpointing: true`) keeps only each decoder layer's
+  input during forward and drops the rest. In backward, each layer runs its forward again
+  (*recompute*) to rebuild what it needs. Memory drops to about one hidden-state tensor per layer,
+  at the cost of roughly one extra forward pass per step.
+- **Activation offloading** (`activation_checkpointing.offload`) keeps activations, but in CPU RAM
+  until backward needs them: it spends PCIe bandwidth and host memory instead of compute.
+- **Selective checkpointing** (`activation_checkpointing.selective`) recomputes each layer except
+  for the ops it saves, attention by default, which is usually the most expensive part to
+  recompute.
+
+The block, with every field:
+
+```yaml
+activation_checkpointing:
+  enabled: true              # recompute decoder layers in backward
+  implementation: hf         # hf (transformers) | fsdp (FSDP2's checkpoint wrapper)
+  reentrant: false           # use_reentrant; see below for the default
+  kwargs:                    # extra torch.utils.checkpoint arguments
+    every_n_layers: 2        # checkpoint every 2nd decoder layer only
+  selective:                 # selective activation checkpointing (SAC)
+    save: [attention]
+  offload:                   # where each target's tensors go
+    hidden_states: cpu       # each checkpointed layer's input
+    selective: none          # what the selective policy saves
+    all: none                # every saved activation (TRL's offloader)
+```
+
+`activation_checkpointing: true` turns on transformers' activation checkpointing with the defaults;
+`false`, or leaving the key out, turns everything off. In the dict form `enabled` defaults to
+`true`. Unknown fields in the block are rejected.
+
+`offload` is a mapping, not a value. Each of its targets (`hidden_states`, `selective`, `all`) takes
+`none` (the default), `cpu` or `disk`, and `true` / `false` mean `cpu` / `none`. `disk` is
+rejected for now, pending a fix.
+
+How recompute and offload placement combine (decoder layers; the output head always stays on GPU):
+
+| `enabled` | `offload` | Recomputed in backward | Moved to CPU |
+|---|---|---|---|
+| `false` | — | nothing | nothing: every activation stays on GPU |
+| `true` | — | every layer | nothing: each layer's input stays on GPU |
+| `true` | `all: cpu` | every layer | each layer's input, and what is saved outside the layers |
+| `false` | `all: cpu` | nothing | every saved activation |
+| `true` | `hidden_states: cpu` | every layer | each layer's input only |
+
+Adding `selective` skips recomputing the saved ops. Their outputs stay on GPU, or move to CPU with
+`offload.selective: cpu`. For example, to offload each layer's input and not recompute attention:
+
+```yaml
+activation_checkpointing:
+  selective:
+    save: [attention]
+  offload:
+    hidden_states: cpu
+    selective: cpu  # optional: keep the saved attention outputs in CPU RAM too
+```
+
+With `enabled: false`, only `offload.all` applies; setting `selective`, `offload.hidden_states`,
+`offload.selective`, `reentrant`, `kwargs` or `implementation: fsdp` is an error rather than a silent
+no-op.
+
+### Enabling Activation Checkpointing
+
+```yaml
+activation_checkpointing: true
+```
+
+Unless `reentrant` is set, Axolotl uses PyTorch's recommended non-reentrant checkpointing
+(`reentrant: false`). SFT runs on DeepSpeed ZeRO-3 default to `reentrant: true`, since
+non-reentrant recompute raises a `CheckpointError` there; `rl:` runs on ZeRO-3 need it set
+explicitly. Mistral Large 4, Gemma 4 and MixLoRA always run non-reentrant.
+
+`kwargs` passes extra arguments to `torch.utils.checkpoint.checkpoint` (`preserve_rng_state`,
+`determinism_check`, `debug`, `early_stop`), plus transformers' `every_n_layers`. Keys Axolotl sets
+itself (`context_fn`, `respect_saved_tensors_hooks`), `offload` (use `offload.hidden_states`) and
+anything torch does not accept are rejected: torch would pass an unknown key to each checkpointed
+layer's forward, where it is ignored or overrides the layer's own argument.
+
+#### FSDP2's checkpoint wrapper
+
+```yaml
+activation_checkpointing:
+  implementation: fsdp
+fsdp_config:
+  ...
+```
+
+`implementation: fsdp` wraps each decoder layer in FSDP2's non-reentrant `checkpoint_wrapper`
+instead of using transformers' checkpointing. transformers warns that its own checkpointing adds a
+redundant all-gather in backward under FSDP. It requires `fsdp_config`, and the rest of the block
+applies the same way: `selective` and `offload.selective` install the same save policy in the wrapper,
+`offload.hidden_states` offloads each wrapped layer's input, `offload.all` runs TRL's offloader,
+and `kwargs` (including `every_n_layers`) go to the wrapper. Only `reentrant: true` is rejected,
+since the wrapper is non-reentrant. accelerate's own wrapper turns off `preserve_rng_state`; Axolotl
+keeps torch's default (`true`), so dropout draws the same masks in the recompute. Set
+`kwargs: {preserve_rng_state: false}` to skip saving the RNG state. DiffusionGemma, whose split checkpointing hooks transformers'
+enable method, needs `implementation: hf`. Plugin-registered saves apply with either implementation.
+
+### Enabling Activation Offloading
+
+```yaml
+activation_checkpointing:
+  offload:
+    all: cpu
+```
+
+With `offload.all: cpu`, `enabled` controls recompute:
+
+- `true`: decoder layers are recomputed in backward; only tensors saved outside them are offloaded.
+- `false`: nothing is recomputed and every saved activation is offloaded, bounded by host RAM and
+  PCIe bandwidth. Can be faster for LoRA/QLoRA, whose activations are small. Not supported for
+  ORPO, SimPO, EBFT or process reward models.
+
+Activation offloading and selective checkpointing also apply to synchronous and async GRPO, whose
+TRL trainers do not offload on their own.
+
+Checkpointing runs exactly as it would without offloading, for adapters and full finetunes alike,
+honoring `reentrant` and `kwargs`; the non-reentrant default above applies to `rl:` runs as well
+(DeepSpeed ZeRO-3 stays reentrant).
+
+`offload.all: cpu` offloads activations to CPU and uses CUDA streams to overlap the communications
+and computations when offloading.
+
+`offload.hidden_states: cpu` keeps checkpointing enabled and moves only the decoder-layer
+checkpoint input (`hidden_states`) to CPU. With the default `reentrant: false`, Axolotl uses
+Transformers' non-reentrant checkpointing plus a saved-tensor hook that only offloads marked
+hidden-state tensors. Other saved tensors stay on GPU, which avoids the CPU memory and bandwidth
+cost of full activation offload. It cannot be combined with `offload.all`, which already offloads
+those tensors.
+
+Set `reentrant: true` to use the older ALST-style implementation. That path patches torch's
+reentrant `CheckpointFunction` and is DTensor-aware for sequence/context parallelism.
+
+`disk` is accepted as a placement but rejected for now: disk offload is disabled pending a fix.
+
+### Choosing a mode
+
+| Mode | What moves | Best for |
+|------|-----------|----------|
+| `offload.all: cpu` | Saved activations → CPU, stream-overlapped | General use; LoRA/QLoRA without recompute (`enabled: false`) |
+| `offload.hidden_states: cpu` | Per-layer checkpoint input only → CPU, stream-overlapped | Long-context training where full activation offload is CPU-memory or bandwidth-bound |
+
+`offload.hidden_states` always recomputes each layer. For LoRA/QLoRA, `offload.all: cpu` with
+`enabled: false` can be faster: adapter activations are small and pure offload skips recompute.
+
+### Selective Activation Checkpointing (SAC)
+
+```yaml
+activation_checkpointing:
+  selective: true
+```
+
+Plain activation checkpointing recomputes every op in a decoder layer during backward. Selective
+checkpointing keeps the recompute for cheap ops but *saves* the outputs of expensive ones — by
+default the attention op — so backward skips re-running them, for one extra hidden-state-sized
+tensor per layer. Attention's backward and its first forward still run, so what this removes is
+attention's share of the recompute. That share grows with the length each attention call spans:
+on Qwen3-8B LoRA with full-length documents, saving attention sped steps up by about 2% at 8k
+tokens and 9–15% at 32k (SDPA and flash-attention), for 2.3 GiB and 9.1 GiB of saved outputs. Rows
+packed from short documents gain little, since each attention call spans one document. The
+policy also runs Python for every op in the forward and the recompute, so on a slow host or a
+small model that overhead can cost more than the saved attention.
+
+This runs eagerly (no `torch.compile`) via torch's selective-checkpoint policy API. Ops are matched
+at the dispatcher level: SDPA and flash-attention are matched out of the box, and custom kernels
+that are not registered as torch ops are simply recomputed as usual — nothing breaks.
+
+Flash Attention 4 (`attn_implementation: flash_attention_4`, or FA2/FA3 upgraded to it) is savable
+too. FA4 (`flash_attn.cute`) registers no torch op, so inside checkpointed layers Axolotl runs it
+through `axolotl::flash_attn_4_fwd` / `axolotl::flash_attn_4_varlen_fwd`. These call FA4's own
+forward, and their backward calls FA4's own backward on the saved output and log-sum-exp, so the
+kernels and numerics are unchanged and the backward does not re-run the attention forward.
+Sliding-window FA4 calls are recognized from their window and recomputed like any other
+(`save_sliding_window` applies), and `offload.selective: cpu` moves the saved FA4 outputs to CPU. FA4 calls
+with attention sinks (`learnable_sink`) or mask/score mods, calls outside checkpointed layers and
+calls under `torch.compile` go to FA4 directly and are recomputed as before. The
+`kernels-community/flash-attn4` hub kernel is not covered: use `flash_attention_4` with
+`flash-attn-4` installed.
+
+The explicit form lets you save additional ops, matched as substrings of the qualified op name:
+
+```yaml
+activation_checkpointing:
+  selective:
+    save:
+      - attention
+      - aten::mm        # example: also save all matmuls
+```
+
+For hybrid models mixing full attention and sliding-window attention (SWA), only full-attention
+calls are saved by default — SWA is cheap to recompute and not worth the memory. Hybrid layers are
+detected two ways: the flash-attention window arguments, and the model's `layer_types` (published
+per-layer via hooks, which also covers SDPA where the window lives inside the attention mask).
+Set `selective.save_sliding_window: true` to save SWA calls too, or override which layer types
+recompute with `selective.recompute_layer_types` (default
+`[sliding_attention, chunked_attention]`; linear-attention layers never dispatch a matchable
+attention op, so they need no entry).
+
+To offload the saved tensors to pinned CPU memory instead of keeping them on GPU — asynchronous
+side-stream copies during forward, prefetched back one region ahead during backward — set:
+
+```yaml
+activation_checkpointing:
+  selective:
+    save: [attention]
+  offload:
+    selective: cpu
+```
+
+This makes the saved attention outputs cost ~zero GPU memory at the price of CPU RAM and PCIe
+traffic, and stacks with `offload.hidden_states` or `offload.all`. It covers everything the
+selective policy saves, including saves a plugin requires, such as expert parallelism's routing
+decisions. It requires `selective`: without it, those plugin saves stay on GPU.
+
+Requires non-reentrant checkpointing (the default). Composes with `offload.hidden_states` or
+`offload.all`: layer inputs go to CPU (with `offload.all`, so does what is saved outside the
+layers) while the saved ops' outputs stay on GPU, or go to CPU with `offload.selective: cpu`.
+Saving matmul ops (via `save`, `save_modules` or `save_matmul_min_k`) is rejected while a
+fused LoRA kernel is enabled, because the kernel adds the adapter delta into the base matmul
+output in place, which invalidates the cached tensor.
+
+#### Saving specific projections
+
+All projections dispatch the same `aten::mm`/`aten::addmm`, so `save: [aten::mm]` saves every
+one of them. Two rules target individual projections instead; both also work with
+`offload.selective: cpu`.
+
+`save_modules` saves the matmuls that run inside the named modules:
+
+```yaml
+activation_checkpointing:
+  selective:
+    save: [attention]
+    save_modules: [o_proj]
+```
+
+An entry matches a module name exactly, as a trailing dotted suffix (`o_proj`,
+`self_attn.o_proj`), or as a glob over the full name when it contains `*`, `?` or `[`. Names are
+those of the base model, before PEFT wraps it, and a PEFT-wrapped match resolves to its
+`base_layer`, so only the frozen base matmul is saved, not `lora_A`/`lora_B`. Modules that
+enclose the decoder layers, or run outside them (`lm_head`, `embed_tokens`), are never in scope.
+
+`save_matmul_min_k` saves every matmul whose contraction dim K (a linear's `in_features`) is at
+least the threshold, including MoE expert (`aten::_grouped_mm`) and bitsandbytes 4-bit gemms:
+
+```yaml
+activation_checkpointing:
+  selective:
+    save: [attention]
+    save_matmul_min_k: 8192
+```
+
+Saving only helps for ops that recompute would otherwise re-run. Recompute stops at the last
+tensor backward needs, so a layer's final projection (`down_proj` in Llama/Qwen3-style layers,
+whose output only feeds the residual add) is never replayed; saving it costs memory for no
+speedup. Prefer `o_proj`, `gate_proj` or `up_proj`.
+
+Validation rejects entries covered by an enabled fused LoRA kernel (`lora_mlp_kernel`,
+`lora_qkv_kernel`, `lora_o_kernel`, auto-enabled for LoRA/QLoRA), and the error names the flag
+to turn off. At runtime a warning is logged for any rule that matched no module, whose hooks never
+fired, whose saved tensors were never replayed, or whose threshold no matmul reached.
+
+`save: []` saves nothing through the list, so `save: []` with `save_modules` saves only the named
+projections and recomputes attention.
+
+#### Plugin-registered saves
+
+Plugins can register ops that every selective-checkpoint policy saves, ahead of `save` and the
+rules, through `axolotl.monkeypatch.selective_checkpointing`. `register_mandatory_save` is for
+correctness: ops whose recompute would diverge from the forward, such as a router's `topk` whose
+near-ties would re-route tokens, or a device-to-host copy that sizes a collective and would
+re-sync. Their outputs are cloned for the forward so an in-place edit (a router normalising its
+`topk` weights) cannot corrupt the cached copy. `register_preferred_save` only trades memory for
+skipping an expensive recompute. FSDP2's checkpoint wrapper (`implementation: fsdp`) applies
+registered saves on its own; under transformers' checkpointing without `selective`, a plugin
+installs them with `apply_selective_checkpointing(model, save=[])`.
+
+### Enabling Layer Offloading
+
+```yaml
+layer_offloading: true
+```
+
+Layer offloading reduces GPU memory usage by moving frozen (non-trainable) decoder layer parameters to CPU
+and streaming them back to GPU one layer at a time during the forward and backward passes. This is
+particularly useful for LoRA/QLoRA training where most of the model's parameters are frozen — only the
+trainable adapter weights stay on GPU permanently.
+
+During training, forward and backward hooks on each decoder layer handle the transfer automatically:
+
+- **Forward pass:** Before a layer executes, its frozen params are loaded to GPU. The next layer is
+  prefetched asynchronously on a separate CUDA stream for overlap.
+- **Backward pass:** Same pattern in reverse — the current layer's frozen params are loaded and the
+  previous layer is prefetched.
+
+After each layer finishes, its frozen params are offloaded back to CPU pinned memory.
+
+This approach trades some CPU-GPU transfer overhead for significant GPU memory savings — the freed memory
+is roughly equal to the size of all frozen parameters across all decoder layers, minus one layer's worth
+that is kept on GPU at any given time.
+
+**Requirements:**
+
+- CUDA GPU (CPU-only training is not supported for this feature)
+- Works with any HuggingFace model architecture that uses decoder layers (Llama, Mistral, Qwen, etc.)
+- Best combined with LoRA/QLoRA where most parameters are frozen
+
+### Migrating from the legacy keys {#sec-migrate-activation-checkpointing}
+
+`gradient_checkpointing`, `gradient_checkpointing_kwargs`, `selective_checkpointing`,
+`activation_offloading` and `fsdp_config.activation_checkpointing` are deprecated and will be
+removed in a future release. A config that sets them still trains as before: Axolotl rewrites them
+into the block at startup and logs a warning that prints the block replacing your values.
+
+Combinations that already failed still fail: disk offload, `selective_checkpointing` or
+`activation_offloading: hidden_states` without `gradient_checkpointing`, and
+`gradient_checkpointing` together with `fsdp_config.activation_checkpointing`. Setting a
+deprecated key next to `activation_checkpointing` is also an error.
+
+| Legacy | Replacement |
+|---|---|
+| `gradient_checkpointing: true` | `activation_checkpointing: true` |
+| `gradient_checkpointing: false` | `activation_checkpointing: false` (the default) |
+| `gradient_checkpointing: offload` | `activation_checkpointing: {offload: {all: cpu}}` |
+| `gradient_checkpointing_kwargs: {use_reentrant: X}` | `activation_checkpointing: {reentrant: X}` |
+| other `gradient_checkpointing_kwargs` keys | `activation_checkpointing.kwargs` (keys that `torch.utils.checkpoint` doesn't accept are dropped with a warning) |
+| `gradient_checkpointing_kwargs: {offload: true}` | `activation_checkpointing: {offload: {hidden_states: cpu}}` (stream-overlapped instead of synchronous) |
+| `selective_checkpointing: true` or `{...}` | `activation_checkpointing.selective: true` or `{...}` |
+| `selective_checkpointing.offload: true` | `activation_checkpointing.offload.selective: cpu` |
+| `activation_offloading: true` / `legacy` | `activation_checkpointing.offload.all: cpu` |
+| `activation_offloading: true` without `gradient_checkpointing` | `activation_checkpointing: {enabled: false, offload: {all: cpu}}` |
+| `activation_offloading: hidden_states` | `activation_checkpointing.offload.hidden_states: cpu` |
+| `activation_offloading: disk`, `gradient_checkpointing: offload_disk` | rejected: disk offload is disabled pending a fix (these never wrote to disk; they ran the CPU offloader) |
+| `fsdp_config.activation_checkpointing: true` | `activation_checkpointing: {implementation: fsdp}` |
+| `gradient_checkpointing: true` and `fsdp_config.activation_checkpointing: true` | rejected, as transformers' Trainer rejected the two together: use `activation_checkpointing: true`, or `{implementation: fsdp}` for FSDP's wrapper |
+
+For example:
+
+```yaml
+# before
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+activation_offloading: hidden_states
+
+# after
+activation_checkpointing:
+  reentrant: false
+  offload:
+    hidden_states: cpu
+```
+
+The CLI flags follow the block: `--activation-checkpointing.enabled`,
+`--activation-checkpointing.reentrant`, `--activation-checkpointing.offload.hidden-states`, and so
+on. Older Axolotl versions ignore an `activation_checkpointing` key, so a migrated config run on an
+older version trains without checkpointing.

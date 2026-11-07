@@ -1390,8 +1390,7 @@ def _torch_ep_cfg(**kw):
         expert_parallel_token_capacity=None,
         experts_implementation=None,
         dp_shard_size=None,
-        gradient_checkpointing=True,
-        selective_checkpointing=None,
+        activation_checkpointing={"enabled": True},
     )
     defaults.update(kw)
     return SimpleNamespace(**defaults)
@@ -1676,8 +1675,13 @@ class TestTorchBackendCheckpointHooks:
     @pytest.mark.parametrize(
         "extra",
         [
-            {"gradient_checkpointing": False},
-            {"selective_checkpointing": {"save": ["attention"]}},
+            {"activation_checkpointing": {"enabled": False}},
+            {
+                "activation_checkpointing": {
+                    "enabled": True,
+                    "selective": {"save": ["attention"]},
+                }
+            },
             {"expert_parallel_backend": "deep_ep"},
             {"expert_parallel_size": 1},
         ],
@@ -1737,8 +1741,7 @@ class TestDdpIgnoreListMirroring:
         cfg = SimpleNamespace(
             expert_parallel_size=2,
             expert_parallel_backend="torch",
-            gradient_checkpointing=False,
-            selective_checkpointing=None,
+            activation_checkpointing={"enabled": False},
         )
 
         ExpertParallelPlugin().post_model_load(cfg, model)
@@ -1758,8 +1761,7 @@ class TestDdpIgnoreListMirroring:
         cfg = SimpleNamespace(
             expert_parallel_size=2,
             expert_parallel_backend="torch",
-            gradient_checkpointing=False,
-            selective_checkpointing=None,
+            activation_checkpointing={"enabled": False},
         )
 
         with pytest.raises(RuntimeError, match="broadcast"):

@@ -81,8 +81,10 @@ learning_rate: 0.0002
 bf16: auto
 tf32: true
 
-gradient_checkpointing: true
-activation_offloading: true
+activation_checkpointing:
+  enabled: true
+  offload:
+    all: cpu
 logging_steps: 1
 
 # Hybrid attention is the biggest throughput lever (~2x vs plain sdpa, which computes full attention

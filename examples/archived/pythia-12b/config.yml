@@ -39,4 +39,4 @@ float16: true
 tf32: true
 flash_optimum: true
 resume_from_checkpoint:
-gradient_checkpointing: true
+activation_checkpointing: true

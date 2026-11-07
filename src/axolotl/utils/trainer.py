@@ -17,6 +17,7 @@ from datasets import IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
+from axolotl.utils.activation_checkpointing import fsdp_checkpointing_enabled
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_world_size,
@@ -645,7 +646,7 @@ def setup_fsdp_envs(cfg):
     os.environ["ACCELERATE_USE_FSDP"] = "true"
 
     os.environ["FSDP_VERSION"] = "2"
-    if cfg.fsdp_config.activation_checkpointing:
+    if fsdp_checkpointing_enabled(cfg):
         os.environ["FSDP_ACTIVATION_CHECKPOINTING"] = "true"
     if cfg.fsdp_config.offload_params:
         os.environ["FSDP_OFFLOAD_PARAMS"] = "true"

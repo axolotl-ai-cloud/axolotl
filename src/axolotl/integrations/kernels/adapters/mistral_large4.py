@@ -111,8 +111,8 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
                 raise ValueError(
                     "mistral_large4_attn_quantization quantizes the bases of the fused attention "
                     "LoRA, which is off for this config: it needs adapter: lora, and defaults off "
-                    "on the modelopt NVFP4 checkpoint and under a selective_checkpointing that "
-                    "saves matmul outputs. Set mistral_large4_attn_lora_kernel: true or drop "
+                    "on the modelopt NVFP4 checkpoint and under an "
+                    "activation_checkpointing.selective that saves matmul outputs. Set mistral_large4_attn_lora_kernel: true or drop "
                     "mistral_large4_attn_quantization."
                 )
             for key, reason in (
@@ -173,10 +173,13 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
 
     @staticmethod
     def _selective_checkpointing_conflict(cfg) -> str | None:
-        """What in ``selective_checkpointing`` clashes with the fused attention LoRA, which adds
-        the adapter delta into the base matmul output in place (the cached tensor SAC would
-        save), or None."""
-        sac = cfg.get("selective_checkpointing")
+        """What in ``activation_checkpointing.selective`` clashes with the fused attention LoRA,
+        which adds the adapter delta into the base matmul output in place (the cached tensor
+        SAC would save), or None."""
+        checkpointing = cfg.get("activation_checkpointing")
+        sac = (
+            checkpointing.get("selective") if isinstance(checkpointing, dict) else None
+        )
         if not isinstance(sac, dict):
             return None
         from axolotl.integrations.kernels.libs.mistral_large4.lora_attn import (
@@ -191,17 +194,24 @@ class MistralLarge4Adapter(Nvfp4MoeAdapter):
         for spec in sac.get("save") or []:
             if spec != "attention" and any(spec in op for op in matmul_ops):
                 return (
-                    f"selective_checkpointing.save entry {spec!r} saves matmul outputs"
+                    f"activation_checkpointing.selective.save entry {spec!r} saves "
+                    "matmul outputs"
                 )
         if sac.get("save_matmul_min_k"):
-            return "selective_checkpointing.save_matmul_min_k saves matmul outputs"
+            return (
+                "activation_checkpointing.selective.save_matmul_min_k saves matmul "
+                "outputs"
+            )
         covered = {suffix.rsplit(".", 1)[-1] for suffix in MLA_PROJ_SUFFIXES}
         covered.add("self_attn")
         for entry in sac.get("save_modules") or []:
             if _sac_entry_is_layer_container(entry) or any(
                 _sac_entry_covers(entry, module) for module in covered
             ):
-                return f"selective_checkpointing.save_modules entry {entry!r} saves attention matmul outputs"
+                return (
+                    f"activation_checkpointing.selective.save_modules entry {entry!r} "
+                    "saves attention matmul outputs"
+                )
         return None
 
     @staticmethod

@@ -6,6 +6,10 @@ from unittest.mock import patch
 import pytest
 
 from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.utils.activation_checkpointing import (
+    CHECKPOINTING_ARG,
+    CHECKPOINTING_KWARGS_ARG,
+)
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
@@ -15,9 +19,6 @@ LORA = {
     "lora_alpha": 16,
     "lora_target_linear": True,
 }
-DISK = pytest.param(
-    "disk", marks=pytest.mark.skip(reason="activation_offloading: disk is disabled")
-)
 
 
 @pytest.fixture
@@ -33,92 +34,87 @@ def validation_warnings(monkeypatch):
     return seen
 
 
+def _normalized(cfg):
+    with patch(
+        "axolotl.utils.config.load_model_config",
+        return_value=SimpleNamespace(model_type="llama", to_dict=dict),
+    ):
+        normalize_config(cfg)
+    return cfg
+
+
 class TestActivationOffloading:
     """
     Test cases for activation offloading schema validation
     """
 
-    def test_gc_converts_offload_wo_lora(self, min_base_cfg):
+    def test_offload_all_with_recompute(self, min_base_cfg):
         cfg = (
-            DictDefault(
-                gradient_checkpointing="offload",
-            )
+            DictDefault(activation_checkpointing={"offload": {"all": True}})
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing is True
-        assert cfg.activation_offloading is True
-
-    def test_ac_offload_impl_noop_wo_adapter(self, min_base_cfg):
-        cfg = (
-            DictDefault(
-                gradient_checkpointing=True,
-                activation_offloading=True,
-            )
-            | min_base_cfg
-        )
-
-        cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing is True
-        assert cfg.activation_offloading is True
+        assert cfg.activation_checkpointing.enabled is True
+        assert cfg.activation_checkpointing.offload.all == "cpu"
 
     def test_hidden_states_offload_defaults_to_non_reentrant(self, min_base_cfg):
         cfg = (
-            DictDefault(
-                gradient_checkpointing=True,
-                activation_offloading="hidden_states",
-            )
+            DictDefault(activation_checkpointing={"offload": {"hidden_states": "cpu"}})
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing is True
-        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is False
-        assert cfg.activation_offloading == "hidden_states"
+        assert cfg.activation_checkpointing.enabled is True
+        assert cfg.activation_checkpointing.reentrant is False
+        assert cfg.activation_checkpointing.offload.hidden_states == "cpu"
 
     def test_hidden_states_offload_accepts_reentrant_alst(self, min_base_cfg):
         cfg = (
             DictDefault(
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": True},
-                activation_offloading="hidden_states",
+                activation_checkpointing={
+                    "reentrant": True,
+                    "offload": {"hidden_states": "cpu"},
+                }
             )
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
-        assert cfg.activation_offloading == "hidden_states"
+        assert cfg.activation_checkpointing.reentrant is True
+        assert cfg.activation_checkpointing.offload.hidden_states == "cpu"
 
-    @pytest.mark.parametrize("mode", [True, DISK])
     @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
-    def test_trl_offload_without_gc(
-        self, min_base_cfg, validation_warnings, mode, adapter
+    def test_offload_all_without_recompute(
+        self, min_base_cfg, validation_warnings, adapter
     ):
         cfg = (
             DictDefault(
-                gradient_checkpointing=False,
-                activation_offloading=mode,
+                activation_checkpointing={"enabled": False, "offload": {"all": "cpu"}},
                 **(LORA if adapter else {}),
             )
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing is False
-        assert cfg.activation_offloading == mode
+        assert cfg.activation_checkpointing.enabled is False
+        assert cfg.activation_checkpointing.offload.all == "cpu"
         assert any("with no recompute" in msg for msg in validation_warnings)
 
     @pytest.mark.parametrize("rl", ["grpo", "gdpo"])
-    def test_grpo_offload_without_gc(self, min_base_cfg, validation_warnings, rl):
+    def test_grpo_offload_without_recompute(
+        self, min_base_cfg, validation_warnings, rl
+    ):
         cfg = (
-            DictDefault(gradient_checkpointing=False, activation_offloading=True, rl=rl)
+            DictDefault(
+                activation_checkpointing={"enabled": False, "offload": {"all": "cpu"}},
+                rl=rl,
+            )
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
-        assert cfg.activation_offloading is True
+        assert cfg.activation_checkpointing.offload.all == "cpu"
         assert any("with no recompute" in msg for msg in validation_warnings)
 
     @pytest.mark.parametrize(
@@ -126,115 +122,98 @@ class TestActivationOffloading:
         [{"rl": "orpo"}, {"process_reward_model": True}],
         ids=["orpo", "prm"],
     )
-    def test_trl_offload_without_gc_rejected_without_offload_context(
+    def test_offload_without_recompute_rejected_without_offload_context(
         self, min_base_cfg, trainer
     ):
         cfg = (
             DictDefault(
-                gradient_checkpointing=False, activation_offloading=True, **trainer
+                activation_checkpointing={"enabled": False, "offload": {"all": "cpu"}},
+                **trainer,
             )
             | min_base_cfg
         )
 
-        with pytest.raises(ValueError, match="without gradient_checkpointing is not"):
+        with pytest.raises(ValueError, match="without recompute is not supported"):
             validate_config(cfg)
 
-    def test_hidden_states_offload_requires_gc(self, min_base_cfg):
+    def test_hidden_states_offload_requires_checkpointing(self, min_base_cfg):
         cfg = (
             DictDefault(
-                gradient_checkpointing=False, activation_offloading="hidden_states"
+                activation_checkpointing={
+                    "enabled": False,
+                    "offload": {"hidden_states": "cpu"},
+                }
             )
             | min_base_cfg
         )
 
         with pytest.raises(
-            ValueError, match="activation_offloading: hidden_states requires gradient"
+            ValueError,
+            match=r"`activation_checkpointing.offload.hidden_states` requires "
+            "checkpointing",
         ):
             validate_config(cfg)
 
-    @pytest.mark.parametrize("gradient_checkpointing", [True, False])
-    def test_legacy_is_an_alias_of_true(
-        self, min_base_cfg, validation_warnings, gradient_checkpointing
-    ):
-        cfg = (
-            DictDefault(
-                gradient_checkpointing=gradient_checkpointing,
-                activation_offloading="legacy",
-            )
-            | min_base_cfg
-        )
+    @pytest.mark.parametrize("target", ["hidden_states", "selective", "all"])
+    def test_disk_offloading_is_disabled(self, min_base_cfg, target):
+        block = {"offload": {target: "disk"}}
+        if target == "selective":
+            block["selective"] = True
+        cfg = DictDefault(activation_checkpointing=block) | min_base_cfg
 
-        cfg = validate_config(cfg)
-        assert cfg.activation_offloading is True
-        assert any("legacy is deprecated" in msg for msg in validation_warnings)
-
-    @pytest.mark.parametrize(
-        "disk",
-        [{"activation_offloading": "disk"}, {"gradient_checkpointing": "offload_disk"}],
-        ids=["activation_offloading", "gradient_checkpointing"],
-    )
-    def test_disk_offloading_is_disabled(self, min_base_cfg, disk):
-        cfg = DictDefault({"gradient_checkpointing": True, **disk}) | min_base_cfg
-
-        with pytest.raises(ValueError, match="activation_offloading: disk is disabled"):
+        with pytest.raises(
+            ValueError,
+            match=rf"offload.{target}: disk offload is disabled pending a fix",
+        ):
             validate_config(cfg)
 
     @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
-    def test_trl_offload_with_gc(self, min_base_cfg, validation_warnings, adapter):
-        cfg = (
-            DictDefault(
-                gradient_checkpointing=True,
-                activation_offloading=True,
-                **(LORA if adapter else {}),
-            )
-            | min_base_cfg
-        )
-
-        cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing is True
-        assert cfg.activation_offloading is True
-        assert not any("with no recompute" in msg for msg in validation_warnings)
-
-    @pytest.mark.parametrize("mode", [True, DISK])
-    @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
-    def test_trl_offload_with_gc_defaults_to_non_reentrant(
-        self, min_base_cfg, mode, adapter
+    def test_offload_all_with_recompute_does_not_warn(
+        self, min_base_cfg, validation_warnings, adapter
     ):
         cfg = (
             DictDefault(
-                gradient_checkpointing=True,
-                activation_offloading=mode,
+                activation_checkpointing={"offload": {"all": "cpu"}},
                 **(LORA if adapter else {}),
             )
             | min_base_cfg
         )
 
         cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is False
+        assert cfg.activation_checkpointing.enabled is True
+        assert not any("with no recompute" in msg for msg in validation_warnings)
 
-    def test_trl_offload_with_gc_keeps_explicit_reentrant(self, min_base_cfg):
+    @pytest.mark.parametrize("adapter", [False, True], ids=["full", "lora"])
+    def test_offload_all_defaults_to_non_reentrant(self, min_base_cfg, adapter):
         cfg = (
             DictDefault(
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": True},
-                activation_offloading=True,
+                activation_checkpointing={"offload": {"all": "cpu"}},
+                **(LORA if adapter else {}),
+            )
+            | min_base_cfg
+        )
+
+        cfg = _normalized(validate_config(cfg))
+        assert cfg.activation_checkpointing.reentrant is False
+
+    def test_offload_all_keeps_explicit_reentrant(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                activation_checkpointing={"reentrant": True, "offload": {"all": "cpu"}},
                 **LORA,
             )
             | min_base_cfg
         )
 
-        cfg = validate_config(cfg)
-        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
+        cfg = _normalized(validate_config(cfg))
+        assert cfg.activation_checkpointing.reentrant is True
 
-    def test_trl_offload_with_gc_leaves_zero3_reentrant_default(
-        self, min_base_cfg, tmp_path
-    ):
+    def test_offload_all_leaves_zero3_reentrant_default(self, min_base_cfg, tmp_path):
         ds_config = tmp_path / "ds.json"
         ds_config.write_text('{"zero_optimization": {"stage": 3}}')
         cfg = (
             DictDefault(
-                gradient_checkpointing=True,
-                activation_offloading=True,
+                activation_checkpointing={"offload": {"all": "cpu"}},
                 deepspeed=str(ds_config),
                 **LORA,
             )
@@ -242,19 +221,15 @@ class TestActivationOffloading:
         )
 
         cfg = validate_config(cfg)
-        assert "use_reentrant" not in (cfg.gradient_checkpointing_kwargs or {})
+        assert "reentrant" not in cfg.activation_checkpointing
 
         # normalize_config then applies the reentrant default, which the trainer
         # builder passes to the Trainer.
-        with patch(
-            "axolotl.utils.config.load_model_config",
-            return_value=SimpleNamespace(model_type="llama", to_dict=dict),
-        ):
-            normalize_config(cfg)
+        _normalized(cfg)
         args: dict = {}
         TrainerBuilderBase._configure_gradient_checkpointing(
             SimpleNamespace(cfg=cfg), args
         )
-        assert args["gradient_checkpointing"] is True
-        assert args["gradient_checkpointing_kwargs"] == {"use_reentrant": True}
+        assert args[CHECKPOINTING_ARG] is True
+        assert args[CHECKPOINTING_KWARGS_ARG] == {"use_reentrant": True}
         assert args["activation_offloading"] is True

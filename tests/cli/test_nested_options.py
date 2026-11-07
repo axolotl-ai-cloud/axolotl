@@ -238,6 +238,22 @@ class TestLoadCfgNestedKwargs:
 
         assert cfg["trl"]["beta"] == 0.5
 
+    def test_deeply_nested_kwargs_applied_to_cfg(self, tmp_path, monkeypatch):
+        """Each double underscore is one nesting level."""
+        cfg = self._load_cfg(
+            tmp_path,
+            monkeypatch,
+            {"activation_checkpointing": {"enabled": True}, "learning_rate": 0.01},
+            {
+                "activation_checkpointing__reentrant": "false",
+                "activation_checkpointing__offload__hidden_states": "cpu",
+            },
+        )
+
+        assert cfg["activation_checkpointing"]["enabled"] is True
+        assert cfg["activation_checkpointing"]["reentrant"] is False
+        assert cfg["activation_checkpointing"]["offload"]["hidden_states"] == "cpu"
+
 
 class TestCoerceValue:
     """Test YAML-style type coercion for CLI string values."""

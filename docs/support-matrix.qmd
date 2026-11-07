@@ -165,7 +165,7 @@ Canonical key `attn_implementation:` (legacy boolean flags in parentheses are �
 | Fused LoRA-MLP/QKV/O kernels | `lora_mlp_kernel` / `lora_qkv_kernel` / `lora_o_kernel` | SFT + FSDP2 only; ⚪ not RLHF, not `trust_remote_code` |
 | Tiled MLP | `tiled_mlp: true` | shards MLP to cut memory |
 | Ulysses / Ring / USP (ringmaster) | via `context_parallel_size` | long-context CP; `auto` prefers Ulysses |
-| Activation offloading | `activation_offloading:` | `hidden_states` requires gradient checkpointing; `true` without it offloads with no recompute; `legacy` is a deprecated alias of `true`; `disk` is disabled; ⚪ CUDA only (no CPU-only training) |
+| Activation offloading | `activation_checkpointing.offload` | `hidden_states` and `saves` require checkpointing; `all` with `enabled: false` offloads with no recompute; `disk` is disabled pending a fix; ⚪ CUDA only (no CPU-only training) |
 
 ## Model architectures
 
@@ -208,7 +208,7 @@ Generic HuggingFace support is universal. This table lists **added acceleration/
 
 **Schedulers:** cosine (+min-lr, +constant-ratio, +quadratic warmup), REX, one-cycle, linear warmup, jagged-restart (ReLoRA).
 
-**Also:** gradient checkpointing (+CPU/disk offload), gradient accumulation, NEFTune, LR groups / embedding LR, loss watchdog, early stopping, `torch_compile`.
+**Also:** activation checkpointing (+CPU offload), gradient accumulation, NEFTune, LR groups / embedding LR, loss watchdog, early stopping, `torch_compile`.
 
 ## Method plug-ins & extensions
 

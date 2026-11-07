@@ -46,7 +46,7 @@ lora_dropout: 0.05
 lora_target_linear: true
 
 bf16: auto
-gradient_checkpointing: true
+activation_checkpointing: true
 
 special_tokens:
   pad_token: "<|end_of_text|>"

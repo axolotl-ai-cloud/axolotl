@@ -101,7 +101,7 @@ weight_decay: 0.0
 bf16: auto
 tf32: false
 
-gradient_checkpointing: true
+activation_checkpointing: true
 attn_implementation: flash_attention_2
 
 # ============================================================================

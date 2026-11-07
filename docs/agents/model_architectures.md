@@ -98,8 +98,8 @@ For this architecture, `fused_attn_kernel` fuses partial RoPE and MLA Q/K/V asse
 ```yaml
 # Always needed for Gemma4:
 freeze_mm_modules: true          # Freeze vision/audio encoders for text-only training
-gradient_checkpointing_kwargs:
-  use_reentrant: false           # Shared per-layer norms cause "marked ready twice" with reentrant
+activation_checkpointing:
+  reentrant: false               # Shared per-layer norms cause "marked ready twice" with reentrant
 
 # LoRA target — restrict to language model only (DO NOT use lora_target_linear: true):
 lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
@@ -108,17 +108,17 @@ lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_mod
 ### Auto-detection
 
 Axolotl auto-detects Gemma4 and applies:
-- `use_reentrant: false` for gradient checkpointing
-- `ddp_find_unused_parameters: true` for DDP (skipped when `activation_offloading: true`)
+- `activation_checkpointing.reentrant: false`
+- `ddp_find_unused_parameters: true` for DDP (skipped when `activation_checkpointing.offload.all: cpu`)
 
 ### Multi-GPU
 
 | Strategy | Works? | Notes |
 |----------|--------|-------|
 | DDP | Yes | Auto-sets `ddp_find_unused_parameters=True` |
-| DDP + activation_offloading | Yes | `find_unused_parameters` is skipped (conflicts with checkpoint wrappers) |
+| DDP + offload.all | Yes | `find_unused_parameters` is skipped (conflicts with checkpoint wrappers) |
 | FSDP2 | Yes | Use `Gemma4TextDecoderLayer` (not `Gemma4DecoderLayer`) as wrap class |
-| FSDP2 + activation_offloading | Yes | Lowest VRAM (~26 GiB/GPU for 26B-A4B) |
+| FSDP2 + offload.all | Yes | Lowest VRAM (~26 GiB/GPU for 26B-A4B) |
 
 FSDP2 config:
 ```yaml
@@ -182,7 +182,7 @@ lora_target_parameters:
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `mm_token_type_ids is required` in DDP | `model.config` not accessible through DDP wrapper | Already fixed — `unwrap_model()` in `compute_loss` and `prediction_step` |
-| `marked a variable ready twice` in DDP | `ddp_find_unused_parameters=True` + activation_offloading checkpoint wrappers | Auto-handled — `find_unused_parameters` is skipped when `activation_offloading: true` |
+| `marked a variable ready twice` in DDP | `ddp_find_unused_parameters=True` + TRL offloader checkpoint wrappers | Auto-handled — `find_unused_parameters` is skipped when `activation_checkpointing.offload.all: cpu` |
 | Loss ~12 instead of ~0.5 | Using `lora_target_linear: true` (applies LoRA to vision/audio modules) | Use the regex `lora_target_modules` pattern instead |
 | FSDP2 `Could not find Gemma4AudioLayer` | Auto-wrap detects `_no_split_modules` including audio layers that don't exist | Explicitly set `fsdp_config.transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer` |
 | `Gemma4ClippableLinear not supported` by PEFT | Vision tower uses a non-standard linear wrapper | Axolotl patches this automatically via `_patch_peft_clippable_linear()` |

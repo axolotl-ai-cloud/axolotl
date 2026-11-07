@@ -51,7 +51,7 @@ bf16: auto
 fp16:
 tf32: true
 
-gradient_checkpointing: true
+activation_checkpointing: true
 logging_steps: 1
 attn_implementation: flash_attention_2
 

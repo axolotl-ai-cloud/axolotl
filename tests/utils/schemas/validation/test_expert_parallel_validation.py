@@ -14,7 +14,7 @@ def _validate(min_base_cfg, **kw):
     base = {
         "plugins": [EP_PLUGIN],
         "expert_parallel_size": 2,
-        "gradient_checkpointing": True,
+        "activation_checkpointing": True,
         "fsdp_version": 2,
         "fsdp_config": {"state_dict_type": "FULL_STATE_DICT"},
     }
@@ -40,46 +40,64 @@ class TestTorchExpertParallelCheckpointing:
             _validate(
                 min_base_cfg,
                 expert_parallel_backend="torch",
-                gradient_checkpointing_kwargs={"use_reentrant": True},
+                activation_checkpointing={"reentrant": True},
             )
 
-    def test_reentrant_allowed_without_checkpointing(self, min_base_cfg):
+    def test_allows_checkpointing_off(self, min_base_cfg):
         cfg = _validate(
             min_base_cfg,
             expert_parallel_backend="torch",
-            gradient_checkpointing=False,
-            gradient_checkpointing_kwargs={"use_reentrant": True},
+            activation_checkpointing=False,
         )
-        assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
+        assert cfg.activation_checkpointing.enabled is False
+
+    def test_reentrant_without_checkpointing_rejected(self, min_base_cfg):
+        with pytest.raises(ValueError, match="requires checkpointing"):
+            _validate(
+                min_base_cfg,
+                expert_parallel_backend="torch",
+                activation_checkpointing={"enabled": False, "reentrant": True},
+            )
 
     @pytest.mark.parametrize(
-        "mode",
+        "placement",
         [
             True,
-            "legacy",
+            "cpu",
             pytest.param(
                 "disk",
-                marks=pytest.mark.skip(
-                    reason="activation_offloading: disk is disabled"
-                ),
+                marks=pytest.mark.skip(reason="disk offload is disabled pending a fix"),
             ),
         ],
     )
-    def test_accepts_trl_activation_offloading(self, min_base_cfg, mode):
+    def test_accepts_trl_activation_offloading(self, min_base_cfg, placement):
         cfg = _validate(
             min_base_cfg,
             expert_parallel_backend="torch",
+            activation_checkpointing={"offload": {"all": placement}},
+        )
+        expected = "cpu" if placement is True else placement
+        assert cfg.activation_checkpointing.offload.all == expected
+
+    @pytest.mark.parametrize("mode", [True, "legacy"])
+    def test_migrates_legacy_activation_offloading(self, min_base_cfg, mode):
+        cfg = _validate(
+            min_base_cfg,
+            expert_parallel_backend="torch",
+            activation_checkpointing=None,
+            gradient_checkpointing=True,
             activation_offloading=mode,
         )
-        assert cfg.activation_offloading is True
+        assert cfg.activation_checkpointing.enabled is True
+        assert cfg.activation_checkpointing.offload.all == "cpu"
 
     @pytest.mark.parametrize(
         "extra",
         [
             {},
-            {"gradient_checkpointing_kwargs": {"use_reentrant": False}},
-            {"activation_offloading": "hidden_states"},
-            {"selective_checkpointing": True},
+            {"activation_checkpointing": {"reentrant": False}},
+            {"activation_checkpointing": {"offload": {"hidden_states": "cpu"}}},
+            {"activation_checkpointing": {"selective": True}},
         ],
     )
     def test_accepts(self, min_base_cfg, extra):
@@ -91,7 +109,7 @@ class TestTorchExpertParallelCheckpointing:
         _validate(
             min_base_cfg,
             expert_parallel_backend="deep_ep",
-            gradient_checkpointing_kwargs={"use_reentrant": True},
+            activation_checkpointing={"reentrant": True},
         )
 
     def test_ep_disabled_allows_reentrant(self, min_base_cfg):
@@ -99,8 +117,7 @@ class TestTorchExpertParallelCheckpointing:
             DictDefault(
                 plugins=[EP_PLUGIN],
                 expert_parallel_backend="torch",
-                gradient_checkpointing=True,
-                gradient_checkpointing_kwargs={"use_reentrant": True},
+                activation_checkpointing={"enabled": True, "reentrant": True},
             )
             | min_base_cfg
         )
@@ -114,7 +131,7 @@ class TestTorchExpertParallelCheckpointing:
         _fake_deep_ep(monkeypatch, installed)
         kwargs = dict(
             expert_parallel_backend="auto",
-            gradient_checkpointing_kwargs={"use_reentrant": True},
+            activation_checkpointing={"reentrant": True},
         )
         if installed:
             _validate(min_base_cfg, **kwargs)

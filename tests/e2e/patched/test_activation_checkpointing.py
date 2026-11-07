@@ -28,13 +28,13 @@ class TestActivationCheckpointing:
     """
 
     @pytest.mark.parametrize(
-        "gradient_checkpointing",
+        "offload_all",
         [
-            "offload",
+            "cpu",
             pytest.param(
-                "offload_disk",
+                "disk",
                 marks=pytest.mark.skip(
-                    reason="activation_offloading: disk is disabled"
+                    reason="activation_checkpointing.offload: disk is disabled"
                 ),
             ),
         ],
@@ -43,7 +43,7 @@ class TestActivationCheckpointing:
         self,
         temp_dir,
         fix_checkpoint_after_test,
-        gradient_checkpointing,
+        offload_all,
     ):
         cfg = DictDefault(
             {
@@ -76,7 +76,10 @@ class TestActivationCheckpointing:
                 "flash_attention": True,
                 "sample_packing": True,
                 "bf16": True,
-                "gradient_checkpointing": gradient_checkpointing,
+                "activation_checkpointing": {
+                    "enabled": True,
+                    "offload": {"all": offload_all},
+                },
                 "save_first_step": False,
                 "dataset_num_proc": 4,
             }

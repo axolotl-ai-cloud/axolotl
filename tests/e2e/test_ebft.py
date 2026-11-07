@@ -64,8 +64,7 @@ class TestEBFTLlamaLora(unittest.TestCase):
                 "warmup_steps": 1,
                 "bf16": "auto",
                 "attn_implementation": "flex_attention",
-                "gradient_checkpointing": True,
-                "gradient_checkpointing_kwargs": {"use_reentrant": True},
+                "activation_checkpointing": {"enabled": True, "reentrant": True},
                 "save_first_step": False,
             }
         )

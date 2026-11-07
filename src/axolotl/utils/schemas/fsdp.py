@@ -19,7 +19,7 @@ class FSDPConfig(BaseModel):
     )
     activation_checkpointing: bool | None = Field(
         default=None,
-        description="Enable activation checkpointing to reduce memory usage during forward passes",
+        description="Deprecated: use `activation_checkpointing: {implementation: fsdp}`.",
     )
     offload_params: bool | None = Field(
         default=None,

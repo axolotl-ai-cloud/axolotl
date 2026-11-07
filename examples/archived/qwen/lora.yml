@@ -44,7 +44,7 @@ learning_rate: 0.0002
 bf16: auto
 tf32: false
 
-gradient_checkpointing: false
+activation_checkpointing: false
 resume_from_checkpoint:
 logging_steps: 1
 

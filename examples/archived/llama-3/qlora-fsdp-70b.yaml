@@ -43,9 +43,9 @@ learning_rate: 0.00001
 bf16: auto
 tf32: false
 
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: true
+activation_checkpointing:
+  enabled: true
+  reentrant: true
 resume_from_checkpoint:
 logging_steps: 1
 attn_implementation: flash_attention_2
