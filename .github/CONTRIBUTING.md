@@ -319,6 +319,11 @@ and single-GPU general suites exclude this marker while keeping the quick NF4 te
 Multi-process checkpoint and optimizer tests marked `distributed_cpu` also run in
 that job, with subprocess coverage enabled only for that subset. The regular CPU
 and testmon lanes keep the quick checkpoint unit tests and exclude this marker.
+On pull requests the job runs only when the PR touches a test file that
+`distributed-cpu.yml` lists, a `_*.py` helper or `conftest.py` beside one, or a
+path in `DISTRIBUTED_CPU_PATHS` in the `path-filters` job of `tests.yml`; other
+events always run it. When a distributed test starts exercising code outside those
+paths, add that code to the list.
 Run the NF4 subset locally with:
 
 ```bash

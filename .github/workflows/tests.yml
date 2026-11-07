@@ -75,8 +75,8 @@ jobs:
 
   distributed-cpu:
     name: Distributed CPU
-    if: ${{ !github.event.pull_request.draft }}
-    needs: [prime-cdn-s3-cache, pre-commit]
+    if: ${{ !github.event.pull_request.draft && needs.path-filters.outputs.run_distributed_cpu == 'true' }}
+    needs: [prime-cdn-s3-cache, pre-commit, path-filters]
     uses: ./.github/workflows/distributed-cpu.yml
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -321,19 +321,25 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  multigpu-paths:
-    name: Multi-GPU path filter
+  path-filters:
+    name: Lane path filters
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
     outputs:
       run_multigpu: ${{ steps.filter.outputs.run_multigpu }}
+      run_distributed_cpu: ${{ steps.filter.outputs.run_distributed_cpu }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/workflows/distributed-cpu.yml
+          sparse-checkout-cone-mode: false
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: filter
         with:
           script: |
             // trailing '/' = prefix, '*' = glob within one path segment, otherwise exact path
-            const PATTERNS = [
+            const MULTIGPU_PATHS = [
               'src/axolotl/core/',
               'src/axolotl/loaders/',
               'src/axolotl/model_support/',
@@ -358,24 +364,71 @@ jobs:
               'scripts/cutcrossentropy_install.py',
               'cicd/Dockerfile*',
             ];
+            const DISTRIBUTED_CPU_PATHS = [
+              'src/axolotl/core/',
+              'src/axolotl/loaders/',
+              'src/axolotl/model_support/',
+              'src/axolotl/monkeypatch/',
+              'src/axolotl/kernels/op_registry.py',
+              'src/axolotl/integrations/__init__.py',
+              'src/axolotl/integrations/base.py',
+              'src/axolotl/integrations/expert_parallel/',
+              'src/axolotl/integrations/context_parallel/',
+              'src/axolotl/integrations/kernels/',
+              'src/axolotl/utils/__init__.py',
+              'src/axolotl/utils/activation_checkpointing.py',
+              'src/axolotl/utils/config/',
+              'src/axolotl/utils/dict.py',
+              'src/axolotl/utils/distributed.py',
+              'src/axolotl/utils/fp32_norms.py',
+              'src/axolotl/utils/freeze.py',
+              'src/axolotl/utils/gradient_clipping.py',
+              'src/axolotl/utils/lora_*.py',
+              'src/axolotl/utils/model_shard_quant.py',
+              'src/axolotl/utils/nf4*.py',
+              'src/axolotl/utils/schemas/',
+              'src/axolotl/train.py',
+              'src/axolotl/cli/merge_lora.py',
+              'src/axolotl/cli/utils/*merge*.py',
+              'tests/conftest.py',
+              'tests/global_state.py',
+              'tests/hf_offline_utils.py',
+              'tests/native_source_fixtures.py',
+              'tests/core/trainers/diffusion_lm/fixtures/',
+              '.github/workflows/distributed-cpu.yml',
+              '.github/workflows/tests.yml',
+              '.coveragerc-distributed',
+              'pyproject.toml',
+              'scripts/cutcrossentropy_install.py',
+            ];
+            const LANES = { run_multigpu: MULTIGPU_PATHS, run_distributed_cpu: DISTRIBUTED_CPU_PATHS };
             if (context.eventName !== 'pull_request') {
-              core.info(`event ${context.eventName}: multigpu enabled`);
-              core.setOutput('run_multigpu', 'true');
+              core.info(`event ${context.eventName}: all lanes enabled`);
+              for (const lane of Object.keys(LANES)) core.setOutput(lane, 'true');
               return;
             }
+            // the test files distributed-cpu.yml runs, with the workers and conftest.py beside them
+            const listed = require('fs').readFileSync('.github/workflows/distributed-cpu.yml', 'utf8')
+              .match(/tests\/[\w/]+\.py/g) ?? [];
+            const dirs = [...new Set(listed.map((f) => f.slice(0, f.lastIndexOf('/') + 1)))];
+            DISTRIBUTED_CPU_PATHS.push(...listed, ...dirs.flatMap((d) => [`${d}_*.py`, `${d}conftest.py`]));
             const escape = (s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
             const toRegex = (p) => new RegExp('^' + p.split('*').map(escape).join('[^/]*') + '$');
-            const matches = (file) => PATTERNS.some((p) =>
+            const matches = (patterns, file) => patterns.some((p) =>
               p.endsWith('/') ? file.startsWith(p) : p.includes('*') ? toRegex(p).test(file) : file === p);
             const files = await github.paginate(github.rest.pulls.listFiles, {
               ...context.repo,
               pull_number: context.payload.pull_request.number,
               per_page: 100,
             });
-            const hits = files.flatMap((f) => [f.filename, f.previous_filename]).filter((name) => name && matches(name));
-            core.info(`${files.length} changed file(s); ${hits.length} matched multigpu paths`);
-            for (const hit of hits) core.info(`  ${hit}`);
-            core.setOutput('run_multigpu', String(hits.length > 0));
+            const names = files.flatMap((f) => [f.filename, f.previous_filename]).filter(Boolean);
+            core.info(`${files.length} changed file(s)`);
+            for (const [lane, patterns] of Object.entries(LANES)) {
+              const hits = names.filter((name) => matches(patterns, name));
+              core.info(`${lane}: ${hits.length} matched`);
+              for (const hit of hits) core.info(`  ${hit}`);
+              core.setOutput(lane, String(hits.length > 0));
+            }
 
   modal-image:
     name: Modal image build (py${{ matrix.python_version }}, torch ${{ matrix.pytorch }}${{ matrix.axolotl_extras && format(', {0}', matrix.axolotl_extras) || '' }})
@@ -444,17 +497,21 @@ jobs:
   check-gpu-label:
     # Deferred so a label added while CPU jobs run is seen without a rerun
     needs: [pre-commit, distributed-cpu, pytest-testmon, sdist]
+    # !failure() rather than the implicit success(): distributed-cpu skips when no path matches
+    if: ${{ !cancelled() && !failure() && !github.event.pull_request.draft }}
     uses: ./.github/workflows/gpu-pr-gate.yml
 
   docker-e2e:
     needs: [pre-commit, distributed-cpu, pytest-testmon, sdist, check-gpu-label]
-    if: needs.check-gpu-label.outputs.enabled == 'true'
+    if: ${{ !cancelled() && !failure() && needs.check-gpu-label.outputs.enabled == 'true' }}
     uses: ./.github/workflows/docker-e2e.yml
     secrets: inherit
 
   multi-gpu-e2e:
-    needs: [pre-commit, distributed-cpu, pytest-testmon, sdist, check-gpu-label, multigpu-paths]
-    if: github.event_name == 'pull_request' && needs.check-gpu-label.outputs.enabled == 'true' && needs.multigpu-paths.outputs.run_multigpu == 'true'
+    needs: [pre-commit, distributed-cpu, pytest-testmon, sdist, check-gpu-label, path-filters]
+    if: >-
+      !cancelled() && !failure() && github.event_name == 'pull_request' &&
+      needs.check-gpu-label.outputs.enabled == 'true' && needs.path-filters.outputs.run_multigpu == 'true'
     uses: ./.github/workflows/multi-gpu-e2e.yml
     secrets: inherit
 
