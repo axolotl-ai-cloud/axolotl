@@ -111,6 +111,114 @@ def test_all_rows_dropped_raises_actionable_error(dataset):
         )
 
 
+def test_batch_size_caps_rows_per_call(dataset):
+    """Multimodal rows are large; batch_size must bound rows per tokenize call."""
+
+    class BatchSizeStrategy(FakeStrategy):
+        supports_batched = True
+
+        def tokenize_prompt(self, batch):
+            n = len(batch["text"])
+            return {"input_ids": [[0]] * n, "rows_in_call": [n] * n}
+
+    result = tokenize_with_work_queue(
+        BatchSizeStrategy(),
+        dataset,
+        num_proc=2,
+        keep_in_memory=True,
+        batch_size=4,
+        writer_batch_size=8,
+    )
+
+    assert result.num_rows == len(dataset)
+    assert max(result["rows_in_call"]) <= 4
+
+
+@pytest.mark.parametrize("batch_size", [None, 16])
+def test_writer_batch_size_bounds_every_flush(dataset, batch_size, monkeypatch):
+    """A writer limit below the chunk size (or an unset batch_size, which falls
+    back to 1000-row chunks) used to flush whole chunks, so the RAM cap did
+    not hold."""
+    from axolotl.utils.data import work_queue
+
+    class BatchSizeStrategy(FakeStrategy):
+        supports_batched = True
+
+        def tokenize_prompt(self, batch):
+            n = len(batch["text"])
+            return {"input_ids": [[0]] * n, "rows_in_call": [n] * n}
+
+    flushed = []
+    original = work_queue.ArrowWriter.write_batch
+
+    def recording_write_batch(self, batch, *args, **kwargs):
+        flushed.append(work_queue._num_rows(batch))
+        return original(self, batch, *args, **kwargs)
+
+    monkeypatch.setattr(work_queue.ArrowWriter, "write_batch", recording_write_batch)
+
+    result = tokenize_with_work_queue(
+        BatchSizeStrategy(),
+        dataset,
+        num_proc=2,
+        keep_in_memory=True,
+        batch_size=batch_size,
+        writer_batch_size=3,
+    )
+
+    assert result.num_rows == len(dataset)
+    assert max(result["rows_in_call"]) <= 3
+    assert flushed and max(flushed) <= 3
+    assert sum(flushed) == len(dataset)
+
+
+def test_small_writer_batch_does_not_lock_null_schema():
+    """With writer_batch_size=1 the first flush used to fix list<null> columns
+    from an empty first row, rejecting the integer rows that followed."""
+    dataset = Dataset.from_dict({"text": [""] + [f"row{i}" for i in range(199)]})
+
+    result = tokenize_with_work_queue(
+        EmptyFirstRowStrategy(),
+        dataset,
+        num_proc=2,
+        keep_in_memory=True,
+        writer_batch_size=1,
+    )
+
+    assert result.num_rows == 200
+    assert result[0]["input_ids"] == []
+    assert result[1]["input_ids"] == list(range(len("row1")))
+
+
+def test_batched_cache_fingerprint_includes_chunk_size(dataset, tmp_path):
+    """Chunk boundaries reach a batched strategy, so a different batch_size
+    must not silently reuse the previous run's Arrow cache."""
+
+    class BatchedStrategy(FakeStrategy):
+        supports_batched = True
+
+        def tokenize_prompt(self, batch):
+            n = len(batch["text"])
+            return {"input_ids": [[0]] * n, "rows_in_call": [n] * n}
+
+    dataset = dataset.map(lambda row: row, cache_file_name=str(tmp_path / "base.arrow"))
+
+    small = tokenize_with_work_queue(
+        BatchedStrategy(), dataset, num_proc=2, batch_size=4, writer_batch_size=8
+    )
+    large = tokenize_with_work_queue(
+        BatchedStrategy(), dataset, num_proc=2, batch_size=8, writer_batch_size=8
+    )
+    again = tokenize_with_work_queue(
+        BatchedStrategy(), dataset, num_proc=2, batch_size=4, writer_batch_size=8
+    )
+
+    assert small.cache_files[0]["filename"] != large.cache_files[0]["filename"]
+    assert small.cache_files[0]["filename"] == again.cache_files[0]["filename"]
+    assert max(small["rows_in_call"]) <= 4
+    assert max(large["rows_in_call"]) <= 8
+
+
 def test_cache_round_trip(dataset, tmp_path):
     """Second call must load from the Arrow cache and match the first."""
     dataset = dataset.map(lambda row: row, cache_file_name=str(tmp_path / "base.arrow"))

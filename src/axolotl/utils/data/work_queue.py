@@ -31,8 +31,6 @@ MIN_CHUNK_SIZE = 8
 CHUNKS_PER_WORKER = 32
 # Bounds submitted-but-uncollected chunks so workers cannot outrun the writer.
 MAX_IN_FLIGHT_PER_WORKER = 4
-# The first write fixes the Arrow schema, so it must see enough rows to infer
-# types for columns that are empty in early rows.
 WRITER_BATCH_SIZE = 1000
 
 # Set once per worker by the pool initializer so tasks only ship row indices.
@@ -83,9 +81,13 @@ def _tokenize_chunk(bounds: tuple[int, int]) -> dict[str, list]:
     return {key: [row[key] for row in rows] for key in keys}
 
 
-def _chunk_bounds(num_rows: int, num_proc: int) -> list[tuple[int, int]]:
+def _chunk_bounds(
+    num_rows: int, num_proc: int, max_chunk_size: int = MAX_CHUNK_SIZE
+) -> list[tuple[int, int]]:
     chunk_size = math.ceil(num_rows / (num_proc * CHUNKS_PER_WORKER))
-    chunk_size = max(MIN_CHUNK_SIZE, min(MAX_CHUNK_SIZE, chunk_size))
+    chunk_size = max(
+        min(MIN_CHUNK_SIZE, max_chunk_size), min(max_chunk_size, chunk_size)
+    )
     return [
         (start, min(start + chunk_size, num_rows))
         for start in range(0, num_rows, chunk_size)
@@ -135,25 +137,59 @@ def _extend(into: dict[str, list], batch: dict[str, list]) -> None:
         into[key].extend(values)
 
 
+def _has_inferable_type(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple)):
+        return any(_has_inferable_type(item) for item in value)
+    return True
+
+
+def _types_inferable(batch: dict[str, list]) -> bool:
+    """Whether every column has a value Arrow can type (the first write fixes the schema)."""
+    return all(any(map(_has_inferable_type, values)) for values in batch.values())
+
+
+def _split(
+    batch: dict[str, list], num_rows: int
+) -> tuple[dict[str, list], dict[str, list]]:
+    head = {key: values[:num_rows] for key, values in batch.items()}
+    tail = {key: values[num_rows:] for key, values in batch.items()}
+    return head, tail
+
+
 def tokenize_with_work_queue(
     prompt_tokenizer: PromptTokenizingStrategy,
     dataset: Dataset,
     num_proc: int,
     keep_in_memory: bool | None = False,
+    batch_size: int | None = None,
+    writer_batch_size: int | None = None,
 ) -> Dataset:
     """Tokenize ``dataset`` across ``num_proc`` workers, dropping input columns.
 
     Equivalent to ``dataset.map(..., remove_columns=<all>)`` except that workers
     take the next chunk as they finish rather than owning a fixed shard. A hung
-    worker is not detected; only a dead one.
+    worker is not detected; only a dead one. ``batch_size`` caps the rows per
+    chunk (one ``tokenize_prompt`` call) and ``writer_batch_size`` the rows
+    buffered before each Arrow flush, like their ``Dataset.map`` namesakes.
+    ``writer_batch_size`` also caps the chunk size, so no single worker result
+    can exceed the flush limit.
     """
+    writer_batch_size = writer_batch_size or WRITER_BATCH_SIZE
+    max_chunk_size = min(
+        MAX_CHUNK_SIZE, batch_size or MAX_CHUNK_SIZE, writer_batch_size
+    )
+    fingerprint_args: dict[str, Any] = {
+        "function": prompt_tokenizer.tokenize_prompt,
+        "batched": prompt_tokenizer.supports_batched,
+    }
+    if prompt_tokenizer.supports_batched:
+        # chunk boundaries reach a batched strategy, so like Dataset.map's
+        # batch_size they are part of the cache identity
+        fingerprint_args["chunk_size"] = max_chunk_size
     fingerprint = update_fingerprint(
-        dataset._fingerprint,
-        "tokenize_with_work_queue",
-        {
-            "function": prompt_tokenizer.tokenize_prompt,
-            "batched": prompt_tokenizer.supports_batched,
-        },
+        dataset._fingerprint, "tokenize_with_work_queue", fingerprint_args
     )
     # Matching ``map``: an in-memory dataset has no cache dir, so a cache path
     # would land in a per-session temp dir and never be reused.
@@ -180,7 +216,7 @@ def tokenize_with_work_queue(
         buf_writer = pa.BufferOutputStream()
         writer_kwargs["stream"] = buf_writer
 
-    chunks = _chunk_bounds(len(dataset), num_proc)
+    chunks = _chunk_bounds(len(dataset), num_proc, max_chunk_size)
     LOG.info(
         f"Tokenizing {len(dataset)} examples with {num_proc} workers "
         f"({len(chunks)} chunks)"
@@ -210,10 +246,17 @@ def tokenize_with_work_queue(
                 ):
                     if batch:
                         _extend(buffered, batch)
-                    if _num_rows(buffered) >= WRITER_BATCH_SIZE:
-                        writer.write_batch(buffered)
-                        written += _num_rows(buffered)
-                        buffered = {}
+                    while _num_rows(buffered) >= writer_batch_size:
+                        if written:
+                            head, buffered = _split(buffered, writer_batch_size)
+                        elif _types_inferable(buffered):
+                            # the first write fixes the Arrow schema, so it must
+                            # carry a typed value for every column
+                            head, buffered = buffered, {}
+                        else:
+                            break
+                        writer.write_batch(head)
+                        written += _num_rows(head)
                     pbar.update(end - start)
                 if buffered:
                     writer.write_batch(buffered)
