@@ -1,0 +1,10 @@
+nbclient
+nbformat
+ipykernel
+quartodoc
+accelerate==1.15.0
+transformers==5.22.0
+pydantic==2.13.5
+addict
+pillow
+pyyaml
