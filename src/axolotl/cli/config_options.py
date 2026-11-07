@@ -2458,7 +2458,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--activation-checkpointing.offload.all",),
         "activation_checkpointing__offload__all",
         None,
-        "Every saved activation except the output head's, through TRL's offloader. With `enabled: true` the decoder layers still recompute, and this offloads their inputs plus everything saved outside them. With `enabled: false` nothing is recomputed and every activation is offloaded, which can be faster for LoRA/QLoRA. `true` means `cpu`.",
+        "Every saved activation except the output head's, through TRL's offloader. With `enabled: true` the decoder layers still recompute, and this offloads their inputs plus everything saved outside them. With `enabled: false` nothing is recomputed and every activation is offloaded, which is slower than recomputing on PCIe hosts, LoRA/QLoRA included. `true` means `cpu`.",
     ),
     (
         ("--activation-checkpointing.offload.disk.path",),

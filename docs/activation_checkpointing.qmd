@@ -124,8 +124,9 @@ With `offload.all: cpu`, `enabled` controls recompute:
 
 - `true`: decoder layers are recomputed in backward; only tensors saved outside them are offloaded.
 - `false`: nothing is recomputed and every saved activation is offloaded, bounded by host RAM and
-  PCIe bandwidth. Can be faster for LoRA/QLoRA, whose activations are small. Not supported for
-  ORPO, SimPO, EBFT or process reward models.
+  PCIe bandwidth. It is slower than recomputing on PCIe hosts and peaks higher on GPU, LoRA/QLoRA
+  included (see [Choosing a mode](#choosing-a-mode)). Not supported for ORPO, SimPO, EBFT or
+  process reward models.
 
 Activation offloading and selective checkpointing also apply to synchronous and async GRPO, whose
 TRL trainers do not offload on their own.
@@ -153,11 +154,34 @@ reentrant `CheckpointFunction` and is DTensor-aware for sequence/context paralle
 
 | Mode | What moves | Best for |
 |------|-----------|----------|
-| `offload.all: cpu` | Saved activations → CPU, stream-overlapped | General use; LoRA/QLoRA without recompute (`enabled: false`) |
-| `offload.hidden_states: cpu` | Per-layer checkpoint input only → CPU, stream-overlapped | Long-context training where full activation offload is CPU-memory or bandwidth-bound |
+| `offload.all: cpu` | Saved activations → CPU, stream-overlapped | General use |
+| `offload.hidden_states: cpu` | Per-layer checkpoint input only → CPU, stream-overlapped | Long-context training where full activation offload is CPU-memory or bandwidth-bound; LoRA/QLoRA |
+| `selective` with `offload.hidden_states: cpu` and `offload.selective: cpu` | Per-layer checkpoint input and saved attention outputs → CPU | Long context (16k+ tokens) with host RAM to spare: faster than plain checkpointing at about `offload.hidden_states`' GPU memory |
 
-`offload.hidden_states` always recomputes each layer. For LoRA/QLoRA, `offload.all: cpu` with
-`enabled: false` can be faster: adapter activations are small and pure offload skips recompute.
+Measured on Qwen3-8B LoRA (all linear layers) with full-length documents, flash-attention and cut
+cross entropy on one RTX PRO 6000 (96 GB, PCIe Gen5 x8); step time and peak GPU memory:
+
+| Tokens | Checkpointing | `offload.hidden_states: cpu` | + `selective`, `offload.selective: cpu` | `enabled: false`, `offload.all: cpu` |
+|--:|--:|--:|--:|--:|
+| 16k | 6.2 s, 23.2 GiB | 6.2 s, 19.1 GiB | 5.8 s, 19.4 GiB | 11.6 s, 60.5 GiB |
+| 32k | 15.5 s, 30.6 GiB | 15.5 s, 22.3 GiB | 14.2 s, 22.8 GiB | out of memory |
+| 64k | 43.0 s, 45.4 GiB | 43.1 s, 28.9 GiB | 37.8 s, 29.9 GiB | out of memory |
+| 128k | 134.5 s, 74.9 GiB | 134.6 s, 41.9 GiB | 113.7 s, 43.9 GiB | out of memory |
+
+The offloaded tensors live in pinned host RAM: one hidden-state tensor per layer for
+`offload.hidden_states` (4.5 GiB at 16k and 36 GiB at 128k here), and as much again for the saved
+attention outputs with `offload.selective: cpu`. With a fused loss, `offload.all: cpu` with recompute
+matched `offload.hidden_states` in speed and memory. With the stock loss it also offloads the
+full-vocabulary logits saved for the loss, which cost 11–23% at 4k–16k tokens.
+
+Turning recompute off (`enabled: false`) does not pay, LoRA/QLoRA included: backward still needs
+the input of every projection an adapter wraps plus the MLP and attention intermediates between
+them, and copying those out and back takes longer than the recompute it replaces. At 8k tokens it
+copied 43 GiB each way per step, and at 4k–16k it was 1.5–2.1× slower than plain checkpointing.
+That held with PCIe Gen5 x8 (21–29 GB/s pinned copies) and with an H100 on Gen5 x16 (55 GB/s), whose
+faster compute left less time to hide the copies. It also needs more GPU memory than
+checkpointing, not less: it ran out of memory from 32k tokens here, and at 16k on an 80 GB H100
+with the stock loss.
 
 ### Selective Activation Checkpointing (SAC)
 
@@ -172,10 +196,11 @@ default the attention op — so backward skips re-running them, for one extra hi
 tensor per layer. Attention's backward and its first forward still run, so what this removes is
 attention's share of the recompute. That share grows with the length each attention call spans:
 on Qwen3-8B LoRA with full-length documents, saving attention sped steps up by about 2% at 8k
-tokens and 9–15% at 32k (SDPA and flash-attention), for 2.3 GiB and 9.1 GiB of saved outputs. Rows
-packed from short documents gain little, since each attention call spans one document. The
-policy also runs Python for every op in the forward and the recompute, so on a slow host or a
-small model that overhead can cost more than the saved attention.
+tokens and 9–15% at 32k (SDPA and flash-attention), for 2.3 GiB and 9.1 GiB of saved outputs, and
+by 12% at 64k and 15% at 128k with flash-attention. Rows packed from short documents gain little,
+since each attention call spans one document. The policy also runs Python for every op in the
+forward and the recompute, so on a slow host or a small model that overhead can cost more than the
+saved attention.
 
 This runs eagerly (no `torch.compile`) via torch's selective-checkpoint policy API. Ops are matched
 at the dispatcher level: SDPA and flash-attention are matched out of the box, and custom kernels
@@ -224,7 +249,9 @@ activation_checkpointing:
 ```
 
 This makes the saved attention outputs cost ~zero GPU memory at the price of CPU RAM and PCIe
-traffic, and stacks with `offload.hidden_states` or `offload.all`. It covers everything the
+traffic, and stacks with `offload.hidden_states` or `offload.all`. On Qwen3-8B LoRA at 16k–128k
+tokens the copies hid completely: steps took as long as with the outputs kept on GPU, and peak GPU
+memory dropped by 4–34 GiB (see [Choosing a mode](#choosing-a-mode)). It covers everything the
 selective policy saves, including saves a plugin requires, such as expert parallelism's routing
 decisions. It requires `selective`: without it, those plugin saves stay on GPU.
 
