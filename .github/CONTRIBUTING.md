@@ -318,8 +318,7 @@ CCE or pure-kernel suite. The general suite retains every feature as a possible
 dependency. Shared code and unknown changes are never excluded by feature scope.
 Quack-only changes remain relevant to the MoE and Quack kernel suites and the
 SonicMoE-containing solo/NVFP4 suites. Shared kernel plugin, arguments, cache,
-and autotune infrastructure remain outside this boundary. B200 tests currently
-run without testmon; their hardware markers and process isolation are unchanged.
+and autotune infrastructure remain outside this boundary.
 Add a boundary only after verifying its activation conditions and every named
 suite's feature use; update suite declarations when tests exercise combinations.
 
@@ -331,6 +330,16 @@ Configuration, non-Python inputs, and conftest changes also force full execution
 of affected suites. Python changes within scope use testmon's finer selection.
 Full-run labels and manual refreshes bypass feature exclusion. Logs show each
 suite's decision and reason; skipped suites never count as a complete e2e gate run.
+
+The B200 lane uses a separate hardware-specific baseline and runs its general
+and SonicMoE suites in separate processes, with SonicMoE last. Full refreshes
+require at least one executed test per suite. A selected run may legitimately
+select nothing; a skip-only selection is retried in full to distinguish unsupported
+hardware cases from a missing dependency. Missing reports and skip-only full runs
+fail and cannot publish successful suite metadata. Dependency and hardware checks
+still run before selection. Use `run-tests-full` to bypass selection, or the
+`blackwell` input of **Refresh testmon baselines** to rebuild the B200 baseline on
+main. Scheduled full B200 refreshes run on Sundays with the other expensive lanes.
 
 #### Feature-aware multi-GPU suites
 

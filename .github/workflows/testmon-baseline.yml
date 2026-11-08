@@ -64,3 +64,9 @@ jobs:
   e2e:
     if: github.event_name == 'schedule' && github.event.schedule == '0 3 * * 0'
     uses: ./.github/workflows/testmon-e2e-baseline.yml
+
+  blackwell:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 3 * * 0'
+    uses: ./.github/workflows/testmon-blackwell.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

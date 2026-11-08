@@ -75,6 +75,29 @@
           ]
         }
       }
+    },
+    "blackwell": {
+      "paths": [
+        "tests/"
+      ],
+      "exclude": [
+        "tests/e2e/multigpu/",
+        "tests/cli/"
+      ],
+      "require_executed": true,
+      "suites": {
+        "sonicmoe": {
+          "tests": [
+            "tests/e2e/kernels/test_sonicmoe*.py"
+          ],
+          "features": [
+            "quack"
+          ]
+        }
+      },
+      "run_last": [
+        "sonicmoe"
+      ]
     }
   },
   "distributed": {

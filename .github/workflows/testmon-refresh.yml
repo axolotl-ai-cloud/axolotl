@@ -19,6 +19,10 @@ on:
         description: GPU kernels (all three Python/PyTorch cells)
         type: boolean
         default: false
+      blackwell:
+        description: B200 Blackwell kernels
+        type: boolean
+        default: false
       slow_gpu:
         description: Slow GPU (one, two, and four H100s)
         type: boolean
@@ -47,7 +51,7 @@ jobs:
       - name: Require main and at least one lane
         env:
           REF: ${{ github.ref }}
-          SELECTED: ${{ inputs.cpu || inputs.distributed_cpu || inputs.slow_cpu || inputs.gpu_kernels || inputs.slow_gpu || inputs.multigpu || inputs.e2e }}
+          SELECTED: ${{ inputs.cpu || inputs.distributed_cpu || inputs.slow_cpu || inputs.gpu_kernels || inputs.blackwell || inputs.slow_gpu || inputs.multigpu || inputs.e2e }}
         run: |
           test "$REF" = refs/heads/main || { echo "::error::Select main to publish baselines"; exit 1; }
           test "$SELECTED" = true || { echo "::error::Select at least one lane"; exit 1; }
@@ -95,3 +99,10 @@ jobs:
     if: inputs.multigpu
     uses: ./.github/workflows/multi-gpu-e2e-jobs.yml
     secrets: inherit
+
+  blackwell:
+    needs: validate
+    if: inputs.blackwell
+    uses: ./.github/workflows/testmon-blackwell.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

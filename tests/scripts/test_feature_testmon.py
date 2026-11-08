@@ -231,3 +231,96 @@ def test_quack_boundary_keeps_consumers_and_shared_code(path):
     for spec in [kernels["activations"], manifest["distributed"]["multigpu-cce"]]:
         assert mod.choose(old, new, spec["features"], routes, True)[0] == expected
     assert mod.choose(old, new, None, routes, True)[0] == "testmon"
+
+
+def test_required_execution_preserves_selection_and_rejects_skip_only(tmp_path):
+    pytest.importorskip("testmon")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "cicd").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "src").mkdir()
+    good = tmp_path / "tests/test_good.py"
+    skipped = tmp_path / "tests/test_skip.py"
+    good.write_text("def test_good():\n    assert True\n")
+    skipped.write_text(
+        "import pytest\n@pytest.mark.skip(reason='SM120 only')\ndef test_skip():\n    pass\n"
+    )
+    unrelated = tmp_path / "src/unrelated.py"
+    unrelated.write_text("value = 1\n")
+    (tmp_path / "cicd/feature_suites.json").write_text(
+        json.dumps(
+            {
+                "features": {},
+                "groups": {
+                    "demo": {
+                        "paths": ["tests/"],
+                        "exclude": [],
+                        "suites": {},
+                        "require_executed": True,
+                    }
+                },
+            }
+        )
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=CI",
+            "-c",
+            "user.email=ci@example.invalid",
+            "commit",
+            "-qm",
+            "baseline",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    env = {
+        **os.environ,
+        "TESTMON_FULL": "false",
+        "TESTMON_SELECT": "true",
+        "TESTMON_SUBPROCESSES": "false",
+    }
+
+    def run(*args, **overrides):
+        return subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "cicd/feature_testmon.py"),
+                "demo",
+                "-q",
+                *args,
+            ],
+            cwd=tmp_path,
+            env=env | overrides,
+            text=True,
+            capture_output=True,
+        )
+
+    first = run()
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert "1 ran, 1 skipped" in first.stdout
+    assert "source and environment match" in run().stdout
+    unrelated.write_text("value = 2\n")
+    empty_selection = run()
+    assert empty_selection.returncode == 0, (
+        empty_selection.stdout + empty_selection.stderr
+    )
+    assert "0 ran, 0 skipped" in empty_selection.stdout
+    skipped.write_text(skipped.read_text().replace("SM120 only", "requires SM120"))
+    skip_selection = run()
+    assert skip_selection.returncode == 0, skip_selection.stdout + skip_selection.stderr
+    assert "validating skip-only selection with a full suite" in skip_selection.stdout
+    assert "1 ran, 1 skipped" in skip_selection.stdout
+    good.write_text(
+        "import pytest\n@pytest.mark.skip(reason='missing dependency')\ndef test_good():\n    pass\n"
+    )
+    failed = run()
+    assert failed.returncode == 1, failed.stdout + failed.stderr
+    assert "no tests executed in the full suite" in failed.stdout
+    metadata = next((tmp_path / ".testmon").glob("*.scope.json"))
+    assert json.loads(metadata.read_text())["success"] is False
+    assert run(TESTMON_FULL="true").returncode == 1
+    assert run("-k", "nonexistent", TESTMON_SELECT="false").returncode == 1

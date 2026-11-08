@@ -31,51 +31,13 @@ BLACKWELL_ENV
 
 bash ./cicd/prepare_hf_cache.sh
 
+rm -f .coverage e2e-blackwell-coverage.xml blackwell-*-junit.xml
 status=0
-pytest -v --durations=10 --maxfail=10 -m "gpu_blackwell and not slow" \
-  --ignore=tests/e2e/multigpu/ \
-  --ignore=tests/cli \
-  --ignore-glob='tests/e2e/kernels/test_sonicmoe*.py' \
-  /workspace/axolotl/tests/ \
-  --junitxml=blackwell-junit.xml \
-  --cov=axolotl --cov-report=xml:e2e-blackwell-coverage.xml || status=$?
+python cicd/feature_testmon.py blackwell -v --durations=10 --maxfail=10 \
+  -m "gpu_blackwell and not slow" \
+  --cov=axolotl --cov-append --cov-report=xml:e2e-blackwell-coverage.xml || status=$?
 
-# SonicMoE in its own process, in a fixed order: an illegal access there poisons the CUDA
-# context and must not abort the rest of the lane.
-pytest -v --durations=10 --maxfail=10 -m "gpu_blackwell and not slow" \
-  /workspace/axolotl/tests/e2e/kernels/test_sonicmoe*.py \
-  --junitxml=blackwell-sonicmoe-junit.xml \
-  --cov=axolotl --cov-append --cov-report=xml:e2e-blackwell-coverage.xml || {
-  rc=$?
-  status=$((status ? status : rc))
-}
-
-# Some skips are expected (sm120-only tests on B200); a skip-only run means a missing dependency.
-python - <<'BLACKWELL_JUNIT' || status=$((status ? status : 1))
-import collections
-import xml.etree.ElementTree as ET
-
-skip_only = []
-for report in ("blackwell-junit.xml", "blackwell-sonicmoe-junit.xml"):
-    cases = list(ET.parse(report).iter("testcase"))
-    skips = collections.defaultdict(list)
-    for case in cases:
-        skipped = case.find("skipped")
-        if skipped is not None:
-            reason = skipped.get("message") or (skipped.text or "").strip() or "<no reason>"
-            skips[reason].append(f"{case.get('classname')}::{case.get('name')}")
-    n_skipped = sum(map(len, skips.values()))
-    print(f"{report}: {len(cases) - n_skipped} ran, {n_skipped} skipped", flush=True)
-    for reason, names in sorted(skips.items(), key=lambda kv: -len(kv[1])):
-        print(f"  skipped {len(names)}x: {reason}", flush=True)
-        for name in names:
-            print(f"    {name}", flush=True)
-    if len(cases) <= n_skipped:
-        skip_only.append(f"all {len(cases)} tests in {report} skipped")
-assert not skip_only, "; ".join(skip_only)
-BLACKWELL_JUNIT
-
-if [ -n "${CODECOV_TOKEN:-}" ]; then
+if [ -n "${CODECOV_TOKEN:-}" ] && [ -f e2e-blackwell-coverage.xml ]; then
   codecovcli upload-process -t "$CODECOV_TOKEN" -f e2e-blackwell-coverage.xml \
     -F "e2e,blackwell,pytorch-${PYTORCH_VERSION}" || true
 fi
