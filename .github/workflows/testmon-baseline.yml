@@ -3,7 +3,8 @@ name: testmon-baseline
 # Main commits mostly land with [skip ci], so the baselines are refreshed here instead.
 on:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 3 * * 0"
+    - cron: "0 3 * * 1-6"
   workflow_dispatch:
 
 permissions:
@@ -53,3 +54,13 @@ jobs:
     needs: main-changed
     if: needs.main-changed.outputs.cpu == 'true'
     uses: ./.github/workflows/testmon-cpu.yml
+
+  gpu-kernels:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 3 * * 0'
+    uses: ./.github/workflows/testmon-gpu-kernels.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  e2e:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 3 * * 0'
+    uses: ./.github/workflows/testmon-e2e-baseline.yml

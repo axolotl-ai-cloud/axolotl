@@ -278,9 +278,19 @@ gh workflow run testmon-refresh.yml --ref main -f slow_cpu=true
 gh workflow run testmon-refresh.yml --ref main -f gpu_kernels=true -f slow_gpu=true
 ```
 
-No new merge-triggered slow/GPU refresh is added. The existing daily baseline
-workflow refreshes only regular CPU; general e2e baseline refresh is now manual.
-Existing scheduled slow test runs can still publish main baselines. Missing or
+No new merge-triggered slow/GPU refresh is added. Regular CPU baseline checks
+remain daily; the expensive full refreshes are scheduled for Sunday.
+Scheduled expensive lanes use selection on their normal non-Sunday runs. Sunday
+runs (UTC, identified by the triggering cron entry) run every eligible test and
+refresh baselines, even if the job starts late. Multi-GPU runs retain Monday and
+Thursday selection runs and add Sunday full runs. Slow CPU remains daily; slow GPU
+remains Sunday-only. Pinned GPU-kernel and single-GPU e2e baselines refresh on Sunday
+at 03:00 UTC, across all three Python/PyTorch cells. Nightly GPU/e2e runs use selection
+Monday through Saturday and run fully on Sunday, with separate nightly baselines.
+The ordinary CPU baseline and image-build schedules are unchanged in frequency.
+Manual refreshes and full-run labels still bypass selection on any day.
+
+Selected main runs can still publish updated baselines. Missing or
 incompatible baselines fall back to running all eligible tests. Refreshing the
 same commit uses a new cache key because GitHub caches are immutable.
 
@@ -341,8 +351,8 @@ baselines run the suite in full.
 
 Scope metadata travels through Modal and the GitHub cache/artifact transport.
 Pinned and nightly caches are separate, keyed by suite, Python, PyTorch, CUDA,
-GPU type, and GPU count. Scheduled runs execute all suites and publish fresh main
-baselines. To refresh the pinned general/NF4/NVFP4 lanes explicitly, run:
+GPU type, and GPU count. Scheduled runs use selection outside Sunday; Sunday runs execute all suites
+and publish fresh main baselines. To refresh the pinned general/NF4/NVFP4 lanes explicitly, run:
 
 ```bash
 gh workflow run testmon-refresh.yml --ref main -f multigpu=true

@@ -10,22 +10,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      env:
-        TESTMON_CPU: ${{ inputs.cpu }}
+    - uses: ./.github/actions/testmon-selection
       with:
-        script: |
-          let labels = [];
-          if (context.eventName === 'pull_request') {
-            const { data: pr } = await github.rest.pulls.get({
-              ...context.repo, pull_number: context.payload.pull_request.number,
-            });
-            labels = pr.labels.map(label => label.name);
-          }
-          const full = labels.includes('run-tests-full') ||
-            (process.env.TESTMON_CPU === 'true' && labels.includes('run-cpu-full'));
-          core.exportVariable('TESTMON_FULL', String(full));
-          core.exportVariable('TESTMON_SELECT', String(context.eventName === 'pull_request'));
+        cpu: ${{ inputs.cpu }}
     - shell: bash
       env:
         TESTMON_SUITE: ${{ inputs.suite }}

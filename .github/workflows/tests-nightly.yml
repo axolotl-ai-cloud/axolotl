@@ -5,7 +5,8 @@ on:
   # to this file or the cicd/ harness.
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *" # Runs at 00:00 UTC every day
+    - cron: "0 0 * * 0"
+    - cron: "0 0 * * 1-6"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -203,11 +204,13 @@ jobs:
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
       - name: Compute deps hash
         run: python cicd/deps_hash.py
+      - name: Select test execution mode
+        uses: ./.github/actions/testmon-selection
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
-          modal run -m cicd.e2e_tests
+          modal run -m cicd.e2e_testmon
   docker-e2e-multigpu-tests:
     if: github.repository_owner == 'axolotl-ai-cloud'
     # this job needs to be run on self-hosted GPU runners...

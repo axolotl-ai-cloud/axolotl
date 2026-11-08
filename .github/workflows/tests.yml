@@ -366,6 +366,7 @@ jobs:
               'cicd/',
               '.github/actions/testmon-restore/',
               '.github/actions/testmon-save/',
+              '.github/actions/testmon-selection/',
               '.github/workflows/multi-gpu-e2e*.yml',
               '.github/workflows/tests.yml',
               'pyproject.toml',
@@ -410,6 +411,7 @@ jobs:
               'cicd/pytest_testmon.py',
               '.github/actions/testmon-restore/',
               '.github/actions/testmon-save/',
+              '.github/actions/testmon-selection/',
               'pyproject.toml',
               'scripts/cutcrossentropy_install.py',
             ];

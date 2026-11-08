@@ -5,7 +5,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
   workflow_dispatch:
   schedule:
-    - cron: "30 0 * * *"
+    - cron: "30 0 * * 0"
+    - cron: "30 0 * * 1-6"
 
 permissions:
   contents: read

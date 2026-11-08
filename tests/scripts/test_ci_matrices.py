@@ -31,6 +31,7 @@ def cells(job, suite=None):
     [
         ("tests.yml", "pytest", None),
         ("testmon-cpu.yml", "pytest-testmon", None),
+        ("testmon-e2e-baseline.yml", "single-gpu", None),
         ("tests-nightly.yml", "pytest", None),
         ("tests-nightly.yml", "docker-e2e-tests", None),
         ("tests-nightly.yml", "docker-e2e-multigpu-tests", "multigpu"),
