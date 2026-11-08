@@ -542,6 +542,206 @@ leaves them alone on purpose, since its winners were measured on the down-projec
 Those keep the `allow` filter and their own search until their winners are measured. A dW pin
 would match on `"A.dim1": { ge: 32768 }`.
 
+### Measured profiles for SonicMoE on B200
+
+The profiles below cut every grouped quack GEMM key from a 74-76 candidate sweep to at most five
+candidates (the gated forward to one, which is not benchmarked) and stay within 2.3% of the best
+config on every key of the precise stage below. They were measured with `scripts/sonicmoe_quack_sweep.py` in
+November 2026 on B200 (hub sonic-moe vendoring quack 0.6.1, cutlass-dsl 4.8.1, torch 2.14.1).
+
+Each run is a 2-layer model with Qwen3-MoE layout (gate_up `[E, 2I, H]`) at a family's real expert
+dims, random weights and a tiny vocabulary, run through the `use_sonicmoe` experts path for one
+forward and backward at 16k tokens per GPU. Full fine-tuning and `sonicmoe_lora_split` (rank 32,
+attention and expert LoRA) were both measured; the default LoRA path materializes `W + s B A` and
+calls exactly the same quack keys as full fine-tuning (checked on F1). Expert parallelism is
+emulated on one GPU: at EP=8 a layer keeps E/8 local experts at the same top-k, which gives a
+rank's routed-pair count (T x k) and rows per expert (8 x T x k / E).
+
+| family | H | I | E (EP=8 local) | top-k | stands in for |
+|---|---|---|---|---|---|
+| F1 | 2048 | 768 | 128 | 8 | Qwen3-30B-A3B |
+| F1-qwen35 | 2048 | 512 | 256 | 8 | Qwen3.5/3.6-35B-A3B |
+| F2 | 2816 | 704 | 128 | 8 | Gemma 4 26B-A4B (GeGLU) |
+| F5 | 4096 | 2048 | 256 (32) | 8 | Inkling-Small, DeepSeek-V4-Flash, Mistral Small 4; LoRA also at EP=1 |
+| F5-qwen35 | 4096 | 1024 | 512 (64) | 10 | Qwen3.5-397B |
+| F5-glm53flash | 4096 | 2048 | 288 (36) | 8 | GLM-5.3-Flash |
+| F6 | 7168 | 2048 | 256 (32) | 8 | DeepSeek-V3/V3.2, Kimi K2, GLM-5 |
+| F7 | 7168 | 4096 | 128 (16) | 4 | Mistral Large 3 |
+| F7-dsv4pro | 7168 | 3072 | 384 (48) | 6 | DeepSeek-V4-Pro |
+| F8 | 4096 | 14336 | 8 | 2 | Mixtral 8x7B |
+
+F1, F1-qwen35, F2 and F8 ran at EP=1, the others at EP=8. gpt-oss and Nemotron relu² are not
+covered: SonicMoE refuses gpt-oss's epilogue, and the non-gated experts run on `torch._grouped_mm`.
+The DeepSeek-V4 and GLM-5.3-Flash shapes ran as plain SwiGLU; their clamp only changes the gated
+epilogue.
+
+**Benchmark noise.** A single quack sweep moves a config by 3-5% between processes, as much as the
+gap between the leading configs, so one sweep cannot rank them. The first stage swept every
+candidate to find each key's contenders; the second re-timed at most ten of them per key (pinned
+by per-run profiles), four times in each of two processes, and ranks configs by their median
+regret over each process's best, averaged over both. The two processes' medians agree to 0.4% for
+the median key (1.3% at the 90th percentile, a few keys up to 12%).
+
+Per profile below, over the 222 grouped keys of the 21 runs at 16k tokens (precise stage) and the
+27 broad-stage runs, which add 4k and 64k tokens for F1 and F5 and single-sweep noise:
+
+| # | kernel | calls | keys | distinct winners | swept per key | worst regret, precise | worst regret, broad | `quack_autotune: false` median / max |
+|---|---|---|---|---|---|---|---|---|
+| 0 | `gemm_gated_tuned` | gate/up forward (with or without the LoRA addend) | 21 | 2 | 1 | 0.2% | 2.9% | 0.0% / 0.2% |
+| 1 | `gemm_dgated_tuned` | down backward | 21 | 4 | 3 | 2.2% | 5.4% | 0.0% / 5.4% |
+| 2 | `gemm_tuned` | expert weight grads (varlen-K) | 20 | 3 | 3 | 1.3% | 3.8% | 2.3% / 5.3% |
+| 3 | `gemm_tuned` | LoRA grads with r rows | 11 | 3 | 2 | 0.3% | 4.8% | 60% / 72% |
+| 4 | `gemm_tuned` | LoRA grads with r columns | 22 | 4 | 4 | 1.1% | 2.6% | 17% / 56% |
+| 5 | `gemm_tuned` | rank-r products `x P` (N = r) | 44 | 11 | 3-5 | 2.3% | 3.8% | 2.4% / 7.1% |
+| 6 | `gemm_tuned` | rank-r products `u Q` (K = r) | 41 | 3 | 2 | 2.1% | 2.6% | 1.2% / 29% |
+| 7 | `gemm_tuned` | down forward, gate/up dX | 42 | 6 | 2-4 | 1.8% | 3.9% | 0.8% / 9.9% |
+
+The broad-stage regrets above 3% are within that stage's single-sweep noise, and every such key
+that the precise stage also measured is at most 2.3% there. Under `quack_autotune_key_buckets: shape` the first call's token count
+picks the winner for every later one. Most winners hold from 4k to 64k tokens, but two moved by
+more than the noise: `gemm_dgated_tuned` at 64k tokens (128x256 tiles lost 10-13% to 256x256
+non-persistent) and the F5 expert weight grads at 4k (256x512 lost 20% to 256x256
+non-persistent). Both alternatives are in the profiles, so the short sweep at the training size
+picks between them.
+
+The `quack_autotune: false` rule is close on the base expert GEMMs (gated, dgated, weight grads,
+down and dX: median regret 0-2.3%, worst 5-10% on the smallest shapes) but not on
+`sonicmoe_lora_split`'s rank-r GEMMs. The LoRA grads with r rows want `swap_ab` (the rule's 256x256
+is 60% slower for the median key, 72% at worst), and at Gemma 4's I=704 the rule's 128x256 cluster
+1x2 is 29% slower than cluster 1x1 for `u Q`.
+
+```yaml
+autotune_profiles:
+  # gate/up forward: one config, not benchmarked
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: B200
+    match: { "cu_seqlens_m.dim0": { ge: 2 } }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true, swap_ab: false }
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: B200
+    match: { "cu_seqlens_m.dim0": { ge: 2 } }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true, swap_ab: false }
+      - { tile_m: 128, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: false, use_tma_gather: true, swap_ab: false }
+  # gemm_tuned: the first matching entry decides, so the narrower matches come first
+  - kernel: gemm_tuned            # expert weight grads
+    backend: quack
+    gpu: B200
+    match: { "cu_seqlens_k.dim0": { ge: 2 }, "out.dim-1": { gt: 128 }, "out.dim-2": { gt: 128 } }
+    configs:
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: false, use_tma_gather: false, swap_ab: false }
+  - kernel: gemm_tuned            # LoRA grads with r rows ([E, r, 2I])
+    backend: quack
+    gpu: B200
+    match: { "cu_seqlens_k.dim0": { ge: 2 }, "out.dim-2": { le: 128 } }
+    configs:
+      - { tile_m: 256, tile_n: 64, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: true }
+      - { tile_m: 128, tile_n: 64, cluster_m: 1, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: true }
+  - kernel: gemm_tuned            # LoRA grads with r columns ([E, H or I, r])
+    backend: quack
+    gpu: B200
+    match: { "cu_seqlens_k.dim0": { ge: 2 } }
+    configs:
+      - { tile_m: 128, tile_n: 64, cluster_m: 1, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 64, cluster_m: 1, cluster_n: 1, is_dynamic_persistent: false, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 256, tile_n: 64, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 64, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: false }
+  - kernel: gemm_tuned            # rank-r x P (N = r); the tma_gather ones only apply with A_idx
+    backend: quack
+    gpu: B200
+    match: { "cu_seqlens_m.dim0": { ge: 2 }, "out.dim-1": { le: 128 } }
+    configs:
+      - { tile_m: 128, tile_n: 64, cluster_m: 1, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 64, cluster_m: 1, cluster_n: 1, is_dynamic_persistent: false, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 256, tile_n: 64, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 64, cluster_m: 1, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true, swap_ab: false }
+      - { tile_m: 128, tile_n: 64, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: true, swap_ab: false }
+  - kernel: gemm_tuned            # rank-r u Q (K = r)
+    backend: quack
+    gpu: B200
+    match: { "cu_seqlens_m.dim0": { ge: 2 }, "B.dim-2": { le: 128 } }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: false, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 1, is_dynamic_persistent: false, use_tma_gather: false, swap_ab: false }
+  - kernel: gemm_tuned            # down forward, gate/up dX (with or without the LoRA addend)
+    backend: quack
+    gpu: B200
+    match: { "cu_seqlens_m.dim0": { ge: 2 } }
+    configs:
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 256, tile_n: 256, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: false, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 256, tile_n: 512, cluster_m: 2, cluster_n: 1, is_dynamic_persistent: true, use_tma_gather: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 2, is_dynamic_persistent: false, use_tma_gather: false, swap_ab: false }
+```
+
+Every entry matches only grouped calls (`cu_seqlens_m` or `cu_seqlens_k` passed), so dense quack
+GEMMs elsewhere keep their own search. Ranks other than 32 change the rank-r shapes (entries 3-6
+were measured at r = 32 only), and NVFP4 experts, sm90 and sm120 were not measured.
+
+End to end, with 20 timed steps after tuning on six of the runs (one container each, three
+fresh processes in turn: the `quack_autotune: false` rule, these profiles, and a per-run oracle
+pinning every key to its measured best), the profiles and the rule both stay within about 1% of
+the oracle:
+
+| run | rule | profiles | oracle |
+|---|---|---|---|
+| F1 `lora_split` | 25.36 ms | 25.12 ms | 25.05 ms |
+| F2 full | 26.49 ms | 26.76 ms | 26.58 ms |
+| F5 `lora_split`, EP=8 | 52.36 ms | 51.81 ms | 51.94 ms |
+| F6 full, EP=8 | 83.67 ms | 82.96 ms | 82.84 ms |
+| F7-dsv4pro `lora_split`, EP=8 | 87.90 ms | 88.04 ms | 88.37 ms |
+| F8 full | 73.81 ms | 73.78 ms | 73.16 ms |
+
+The rule's large misses are all on GEMMs of 0.03-0.3 ms, about 1% of a step here. What the profiles
+change against a full sweep is the time to the first step. Cold full sweeps took 10-26 minutes
+before the first step for full fine-tuning (6 sweeps of 74-76 candidates) and 18-32 minutes for
+`lora_split` (14-15 sweeps); the profiled processes reached their first step in 39-72 s, after a
+rule-only process in the same container had compiled some of the same configs.
+
+<details>
+<summary>Winners per run (16k tokens, precise stage): best config; configs within 2%; the no-sweep rule's regret</summary>
+
+`lora_split` runs pass the LoRA addend to the gate/up forward, down forward and dX GEMMs. Where a
+run has several keys for a role (`xN`), the cell shows the one the rule does worst on; `n/a` means
+the rule's config was not among that key's shortlist.
+
+| run | up+gate fwd | down fwd | down dgated bwd | dX up | dW1 varlen-K | dW2 varlen-K | rank-r out | rank-r in | LoRA grad varlen-K |
+|---|---|---|---|---|---|---|---|---|---|
+| F1-full-ep1-t16384 | 256x512 c2x1 P tg; 4; +0% | 256x256 c2x2 P; 4; +1% | 256x256 c2x1 np tg; 3; +1% | 256x256 c2x1 np; 5; +1% | 256x256 c2x1 P tg; 1; +0% | 256x256 c2x1 P tg; 2; +1% |  |  |  |
+| F1-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 np; 4; +2% | 256x256 c2x1 P tg; 3; +0% | 256x256 c2x2 P; 6; +1% |  |  | 128x64 c2x1 np; 4; +1% (x4) | 256x256 c2x1 np; 2; +25% (x4) | 256x64 c2x1 P swap; 1; +65% (x3) |
+| F1-qwen35-full-ep1-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x2 np; 3; +4% | 128x256 c2x1 P tg; 2; +5% | 256x256 c2x1 P; 4; +0% | 256x256 c2x1 P; 2; +1% | 256x256 c2x1 P; 2; +1% |  |  |  |
+| F1-qwen35-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 1; +0% | 256x256 c2x1 np; 1; +10% | 128x256 c2x1 np; 2; +3% | 256x256 c2x1 np; 2; +4% |  |  | 128x64 c1x1 np; 2; +4% (x4) | 128x256 c1x1 np; 2; +1% (x4) | 256x64 c2x1 np swap; 2; +69% (x3) |
+| F2-full-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 np; 1; +4% | 256x256 c2x1 P tg; 4; +0% | 256x256 c2x1 np; 2; +1% | 256x256 c2x1 P; 2; +1% | 256x256 c2x1 P tg; 2; +0% |  |  |  |
+| F2-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 np; 1; +3% | 256x256 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 2; +0% |  |  | 256x64 c2x1 np; 3; +2% (x4) | 128x256 c1x1 np; 2; +29% (x4) | 256x64 c2x1 P swap; 1; +72% (x3) |
+| F5-full-ep8-t16384 | 256x256 c2x1 P tg; 4; +0% | 256x256 c2x1 P; 3; +0% | 256x256 c2x1 P tg; 3; +0% | 256x512 c2x1 P; 2; +1% | 256x512 c2x1 P tg; 2; +2% | 256x512 c2x1 P tg; 2; +2% |  |  |  |
+| F5-glm53flash-full-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x512 c2x1 P; 4; +0% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +1% | 256x512 c2x1 P tg; 2; +3% | 256x512 c2x1 P tg; 2; +3% |  |  |  |
+| F5-glm53flash-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% | 256x256 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 2; +0% |  |  | 256x64 c2x1 P; 5; +7% (x4) | 256x256 c2x1 np; 1; +5% (x3) | 128x64 c1x1 P swap; 2; +53% (x3) |
+| F5-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 128x256 c1x2 P; 5; n/a | 128x256 c2x1 P tg; 2; +3% | 256x512 c2x1 P; 1; +3% |  |  | 128x64 c2x1 P tg; 2; +0% (x4) | 128x256 c1x2 np; 2; +0% (x3) | 256x64 c2x1 P swap; 2; +62% (x3) |
+| F5-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 4; +0% |  |  | 256x64 c2x1 P; 6; +6% (x4) | 256x256 c2x1 np; 1; +4% (x3) | 256x64 c2x1 P swap; 2; +59% (x3) |
+| F5-qwen35-full-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 4; +0% | 256x256 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 3; +0% | 256x256 c2x1 P; 4; +1% | 256x512 c2x1 P tg; 2; +3% |  |  |  |
+| F5-qwen35-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 np; 4; +1% | 256x256 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% |  |  | 128x64 c2x1 np tg; 4; +6% (x4) | 256x256 c2x1 np; 1; +4% (x4) | 256x64 c2x1 P swap; 1; +60% (x3) |
+| F6-full-ep8-t16384 | 256x512 c2x1 P tg; 4; +0% | 256x256 c2x1 P; 5; +0% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +1% | 256x512 c2x1 P tg; 4; +2% | 256x512 c2x1 P tg; 2; +3% |  |  |  |
+| F6-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 6; +0% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +0% |  |  | 256x64 c2x1 P tg; 3; +6% (x4) | 256x256 c2x1 np; 2; +5% (x4) | 128x64 c1x1 P swap; 2; +55% (x3) |
+| F7-dsv4pro-full-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +1% | 256x512 c2x1 P tg; 3; +2% | 256x512 c2x1 P tg; 2; +5% |  |  |  |
+| F7-dsv4pro-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +3% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +2% |  |  | 256x64 c2x1 P; 2; +3% (x4) | 256x256 c2x1 np; 1; +4% (x4) | 128x64 c1x1 P swap; 1; +60% (x3) |
+| F7-full-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +4% | 256x512 c2x1 P tg; 2; +3% | 256x512 c2x1 P tg; 2; +4% |  |  |  |
+| F7-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 4; +0% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +2% |  |  | 128x64 c1x1 np; 6; +4% (x4) | 256x256 c2x1 np; 1; +6% (x4) | 256x64 c2x1 P swap; 3; +54% (x3) |
+| F8-full-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +2% | 256x512 c2x1 P tg; 2; +3% | 256x512 c2x1 P tg; 2; +4% |  |  |  |
+| F8-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +2% |  |  | 128x64 c1x1 np; 5; +3% (x4) | 256x256 c2x1 np; 3; +6% (x4) | 128x64 c1x1 P swap; 3; +60% (x3) |
+
+</details>
+
+To reproduce: `python scripts/sonicmoe_quack_sweep.py run ...` on a B200 (or
+`modal run -m cicd.quack_profile_sweep` with the CI image), then
+`python scripts/sonicmoe_quack_sweep.py analyze <dirs> --shortlist <dir>` for the second stage
+and `analyze <dirs> --evaluate profiles.yaml` to score a profile set.
+
 ## quack key buckets and the no-sweep mode (SonicMoE)
 
 quack keys each autotune winner on every tensor's exact shape, so every new routed row count of a
