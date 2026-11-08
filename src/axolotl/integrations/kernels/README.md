@@ -215,9 +215,9 @@ micro-step this removes the merged weights and the full-rank weight gradients, a
 expert-GEMM FLOPs by about 31% (about 23% with activation checkpointing, which repeats the
 forward); `scripts/benchmark_sonicmoe_lora_split.py` measures both paths.
 
-It applies to bf16 gated experts with a frozen base, no expert bias and a SwiGLU/GeGLU
-activation, on the EP and non-EP dense paths (with or without `sonicmoe_ep_compact_routing`).
-Anything else logs a warning once and materializes as before.
+It applies to bf16 gated experts with a frozen base, no expert bias and a SwiGLU/GeGLU (or
+clamped SwiGLU) activation, on the EP and non-EP dense paths (with or without
+`sonicmoe_ep_compact_routing`). Anything else logs a warning once and materializes as before.
 ## Expert Quantization
 
 The routed experts are the bulk of an MoE model's weights, so keeping them quantized while training LoRA/QLoRA adapters is what lets large MoE fine-tuning fit in memory. The precision the frozen experts run in through the ScatterMoE grouped GEMM is set by `moe_grouped_mode`:
@@ -295,16 +295,20 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `gemma4_text`     |    Yes    |   Yes    | Yes |  -  |
 | `gpt_oss`         |    Yes    |   No     |  -  |  -  |
 | `nemotron_h`      |    Yes    |   Yes¹   | Yes | Yes¹ |
+| `deepseek_v4`     |    Yes    |   Yes²   |  -  |  -  |
+| `glm5_next`       |    No     |   Yes²   |  -  |  -  |
 
 NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its own fused-kernel path), so it is not a row above.
 
 ¹ `nemotron_h` covers Nemotron-3 latentmoe: **non-gated** relu² experts (`up_proj`/`down_proj`, no gate), operating in `moe_latent_size` when set (tokens arrive pre-projected by the block's `fc1/fc2_latent_proj`). ScatterMoE handles that layout natively; SonicMoE routes it through a `torch._grouped_mm` MLP because the current sonic-moe op layer only allows gated epilogues, and `AXOLOTL_SONICMOE_NONGATED_FUSED=1` switches to the exact REGLU rewrite (`relu²(h) == h·relu(h)`) once a build relaxes that assert. Nemotron-3 NVFP4 checkpoints (modelopt `MIXED_PRECISION`) keep the routed experts packed NVFP4 and dequantize every other quantized linear to bf16 at load; quantization there is per layer, not per module name, so one converter per suffix picks its branch from the keys each layer ships.
 
+² Clamped SwiGLU experts, `silu(gate.clamp(max=L)) * up.clamp(-L, L)` (DeepSeek-V4 `limit`, GLM-5.3-Flash `swiglu_limit`, both 10), which sonic-moe's own fused path cannot compute. Axolotl registers a `swiglu_limit<L>` epilogue into the hub kernel's quack and runs these experts through the `sonicmoe_lora_split` autograd on quack's gated GEMMs, for full fine-tuning (it adds the weight-gradient GEMMs), materialized LoRA and the LoRA split. Expert bias and non-bf16 experts are refused there. On a B200, a DeepSeek-V4-Flash expert layer (32 local experts, 16k tokens, top-k 6) runs a full fine-tune forward+backward in 11.1 ms with `quack_autotune: false`, against 12.4 ms for sonic-moe's own path on the unclamped layer and 28.3 ms on ScatterMoE.
+
 `gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a clamped sigmoid-GLU activation. The ScatterMoE forward handles the transposed/interleaved/biased layout and that epilogue via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM).
 
 ### Epilogue check (why `gpt_oss` is No on SonicMoE)
 
-SonicMoE picks its fused epilogue from `config.hidden_act`, which cannot express a clamped or otherwise non-plain GLU. `GptOssConfig.hidden_act` is `"silu"`, so `gpt_oss` silently ran plain SwiGLU (10.4% top-1 agreement, teacher-forced NLL 2.30 -> 8.12 on `openai/gpt-oss-20b`).
+SonicMoE picks its fused epilogue from `config.hidden_act`, which cannot express a clamped or otherwise non-plain GLU. Clamped SwiGLU now has its own quack epilogue (footnote ² above); gpt-oss's sigmoid-GLU with `alpha` and `up + 1` does not. `GptOssConfig.hidden_act` is `"silu"`, so `gpt_oss` silently ran plain SwiGLU (10.4% top-1 agreement, teacher-forced NLL 2.30 -> 8.12 on `openai/gpt-oss-20b`).
 
 Axolotl now probes each model's declared `_apply_gate` numerically at load and raises if the chosen path cannot reproduce it, pointing at `expert_backend: scattermoe`.
 
