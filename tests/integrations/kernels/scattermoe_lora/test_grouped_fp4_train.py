@@ -29,15 +29,16 @@ import torch.nn.functional as F
 
 from axolotl.integrations.kernels.libs.scattermoe_lora.runtime import RUNTIME
 
+from tests.cuda_gates import cuda_major_not_in
+
 # ---------------------------------------------------------------------------
 # Skip gate: Blackwell only (sm100 / sm120)
 # ---------------------------------------------------------------------------
 
 _IS_CUDA = torch.cuda.is_available()
-_IS_BLACKWELL = _IS_CUDA and torch.cuda.get_device_capability()[0] in (10, 12)
 
 pytestmark = pytest.mark.skipif(
-    not _IS_BLACKWELL,
+    not _IS_CUDA or cuda_major_not_in(10, 12),
     reason="grouped NVFP4 training backends require Blackwell (sm100/sm120)",
 )
 

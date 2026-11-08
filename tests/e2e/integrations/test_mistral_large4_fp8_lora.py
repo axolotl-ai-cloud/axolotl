@@ -9,10 +9,12 @@ from axolotl.loaders import ModelLoader, load_tokenizer
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
+from tests.cuda_gates import cuda_capability_below
+
 pytestmark = [
     pytest.mark.gpu,
     pytest.mark.skipif(
-        not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9),
+        not torch.cuda.is_available() or cuda_capability_below(8, 9),
         reason="CUDA with FP8 support (sm89+) required",
     ),
 ]

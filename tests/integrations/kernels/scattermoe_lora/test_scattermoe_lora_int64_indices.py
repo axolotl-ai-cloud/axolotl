@@ -43,6 +43,8 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
     flatten_sort_count,
 )
 
+from tests.cuda_gates import AtSetup
+
 DEVICE = "cuda"
 DTYPE = torch.bfloat16
 
@@ -312,11 +314,13 @@ def _has_free_gpu_mem(min_gb: float) -> bool:
     if not torch.cuda.is_available():
         return False
     free, _total = torch.cuda.mem_get_info()
+    # checked at setup, after earlier tests: blocks cached by this process's allocator are reusable
+    free += torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
     return free / (1024**3) >= min_gb
 
 
 @pytest.mark.skipif(
-    not _has_free_gpu_mem(80.0),
+    AtSetup(lambda: not _has_free_gpu_mem(80.0)),
     reason="bench shape needs ~80 GiB free GPU memory",
 )
 def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
@@ -408,7 +412,7 @@ _SMALL_MIN_FREE_GIB = 12.0
 
 
 @pytest.mark.skipif(
-    not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB),
+    AtSetup(lambda: not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB)),
     reason=f"small overflow shape needs ~{_SMALL_MIN_FREE_GIB:.0f} GiB free GPU memory",
 )
 def test_dense_scatter2scatter_int64_at_overflow_shape_small():
@@ -457,7 +461,7 @@ def test_dense_scatter2scatter_int64_at_overflow_shape_small():
 
 
 @pytest.mark.skipif(
-    not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB),
+    AtSetup(lambda: not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB)),
     reason=f"small overflow shape needs ~{_SMALL_MIN_FREE_GIB:.0f} GiB free GPU memory",
 )
 def test_parallel_linear_overflow_takes_int64_kernel_path_small(monkeypatch):

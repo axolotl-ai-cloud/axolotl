@@ -43,6 +43,7 @@ from .test_grouped_fp4_train import (
     _make_inputs,
     quantize_nvfp4,
 )
+from tests.cuda_gates import AtSetup
 
 _IS_CUDA = torch.cuda.is_available()
 
@@ -63,7 +64,7 @@ def _grouped_available() -> bool:
 
 
 pytestmark = pytest.mark.skipif(
-    not _grouped_available(),
+    AtSetup(lambda: not _grouped_available()),
     reason="grouped NVFP4 needs CUDA + a resolvable fp4 forward backend (Marlin sm80+ / "
     "DeepGEMM sm90+ / CUTLASS sm120)",
 )
@@ -370,7 +371,7 @@ def _marlin_available() -> bool:
 
 
 @pytest.mark.skipif(
-    not _marlin_available(),
+    AtSetup(lambda: not _marlin_available()),
     reason="marlin W4A16 ext (sm80+, nvcc) required",
 )
 @pytest.mark.parametrize(
