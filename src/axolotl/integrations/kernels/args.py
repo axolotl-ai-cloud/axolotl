@@ -83,6 +83,10 @@ class KernelsArgs(BaseModel):
     # per-kernel rule (by output width and reduction size; autotune_profiles still decide when they
     # match), so a new shape costs at most a compile. Default true (sweep).
     quack_autotune: bool | None = None
+    # SonicMoE on B200: sweep only the configs measured best for each grouped GEMM (1-5 instead
+    # of 74-76; quack_default_profiles.py) for every quack kernel autotune_profiles leaves
+    # unprofiled. Default true; false = full sweeps. No effect with quack_autotune: false.
+    quack_autotune_default_profiles: bool | None = None
     # grouped-expert backward base-dX precision: True = fp8-read (fast, ~2% grad err; sm120-only
     # default) | False = bf16-dequant (more accurate). None = arch default.
     moe_fp8_dx: bool | None = None
@@ -203,11 +207,18 @@ class KernelsArgs(BaseModel):
                 "quack_autotune_key_buckets must be 'pow2', 'shape' or 'none'"
             )
         tune = data.get("quack_autotune")
-        if tune is not None and not isinstance(tune, bool):
-            raise ValueError("quack_autotune must be true or false")
-        if (buckets is not None or tune is not None) and not data.get("use_sonicmoe"):
+        defaults = data.get("quack_autotune_default_profiles")
+        for name, value in (
+            ("quack_autotune", tune),
+            ("quack_autotune_default_profiles", defaults),
+        ):
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(f"{name} must be true or false")
+        set_any = buckets is not None or tune is not None or defaults is not None
+        if set_any and not data.get("use_sonicmoe"):
             raise ValueError(
-                "quack_autotune and quack_autotune_key_buckets only apply with use_sonicmoe"
+                "quack_autotune, quack_autotune_key_buckets and "
+                "quack_autotune_default_profiles only apply with use_sonicmoe"
             )
         return data
 
