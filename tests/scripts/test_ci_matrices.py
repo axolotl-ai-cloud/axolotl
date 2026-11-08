@@ -29,7 +29,6 @@ def cells(job, suite=None):
 @pytest.mark.parametrize(
     "name,job,suite",
     [
-        ("tests.yml", "pytest", None),
         ("testmon-cpu.yml", "pytest-testmon", None),
         ("testmon-e2e-baseline.yml", "single-gpu", None),
         ("tests-nightly.yml", "pytest", None),

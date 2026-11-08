@@ -229,10 +229,10 @@ You can skip certain CI checks by including specific keywords in your commit mes
 
 #### CPU test selection
 
-Pull requests run pytest-testmon as a failure-propagating lane across all
-three Python/PyTorch cells. Each cell restores its own baseline from main; missing
-or incompatible baselines run the full suite. Full CPU coverage runs remain enabled
-outside pull requests, and only main writes shared testmon baselines.
+Pull requests and main pushes run pytest-testmon as a failure-propagating lane
+across all three Python/PyTorch cells. Each cell restores its own baseline from
+main; missing or incompatible baselines run the full suite. Only main writes
+shared testmon baselines.
 
 Apply `run-cpu-full` to bypass testmon selection in all three PR cells, for example
 when the changed-tests report identifies an unexecuted CPU test. The label handler
@@ -298,9 +298,9 @@ Testmon cannot trace spawned workers. Distributed CPU and slow suites therefore
 invalidate their selection environment when tracked source, tests, scripts, or
 training configurations change; savings there are intentionally conservative.
 Testmon collection disables pytest-cov, so these lanes collect dependency data
-during normal runs and coverage during full-run overrides. Regular non-PR CPU
-coverage jobs remain enabled. Fast NF4 compatibility checks always run and retain
-their no-skip assertion.
+during normal runs and coverage during full-run overrides. The regular CPU
+testmon lane does not publish Codecov line coverage. Fast NF4 compatibility
+checks always run and retain their no-skip assertion.
 
 #### Feature-aware e2e suites
 
