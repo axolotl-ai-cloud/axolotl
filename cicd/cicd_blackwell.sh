@@ -55,24 +55,24 @@ python - <<'BLACKWELL_JUNIT' || status=$((status ? status : 1))
 import collections
 import xml.etree.ElementTree as ET
 
-cases = [
-    case
-    for report in ("blackwell-junit.xml", "blackwell-sonicmoe-junit.xml")
-    for case in ET.parse(report).iter("testcase")
-]
-skips = collections.defaultdict(list)
-for case in cases:
-    skipped = case.find("skipped")
-    if skipped is not None:
-        reason = skipped.get("message") or (skipped.text or "").strip() or "<no reason>"
-        skips[reason].append(f"{case.get('classname')}::{case.get('name')}")
-n_skipped = sum(map(len, skips.values()))
-print(f"gpu_blackwell: {len(cases) - n_skipped} ran, {n_skipped} skipped", flush=True)
-for reason, names in sorted(skips.items(), key=lambda kv: -len(kv[1])):
-    print(f"  skipped {len(names)}x: {reason}", flush=True)
-    for name in names:
-        print(f"    {name}", flush=True)
-assert len(cases) > n_skipped, f"all {len(cases)} gpu_blackwell tests skipped on this GPU"
+skip_only = []
+for report in ("blackwell-junit.xml", "blackwell-sonicmoe-junit.xml"):
+    cases = list(ET.parse(report).iter("testcase"))
+    skips = collections.defaultdict(list)
+    for case in cases:
+        skipped = case.find("skipped")
+        if skipped is not None:
+            reason = skipped.get("message") or (skipped.text or "").strip() or "<no reason>"
+            skips[reason].append(f"{case.get('classname')}::{case.get('name')}")
+    n_skipped = sum(map(len, skips.values()))
+    print(f"{report}: {len(cases) - n_skipped} ran, {n_skipped} skipped", flush=True)
+    for reason, names in sorted(skips.items(), key=lambda kv: -len(kv[1])):
+        print(f"  skipped {len(names)}x: {reason}", flush=True)
+        for name in names:
+            print(f"    {name}", flush=True)
+    if len(cases) <= n_skipped:
+        skip_only.append(f"all {len(cases)} tests in {report} skipped")
+assert not skip_only, "; ".join(skip_only)
 BLACKWELL_JUNIT
 
 if [ -n "${CODECOV_TOKEN:-}" ]; then
