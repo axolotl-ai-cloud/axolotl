@@ -18,9 +18,9 @@ runs:
         TESTMON_SUITE: ${{ inputs.suite }}
       run: |
         rm -rf .testmon
-        echo "TESTMON_CACHE_PREFIX=testmon-v1-${TESTMON_SUITE}-" >> "$GITHUB_ENV"
+        echo "TESTMON_CACHE_PREFIX=testmon-2.3.0-v1-${TESTMON_SUITE}-" >> "$GITHUB_ENV"
     - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .testmon
-        key: testmon-v1-${{ inputs.suite }}-${{ github.sha }}-
-        restore-keys: testmon-v1-${{ inputs.suite }}-
+        key: testmon-2.3.0-v1-${{ inputs.suite }}-${{ github.sha }}-
+        restore-keys: testmon-2.3.0-v1-${{ inputs.suite }}-

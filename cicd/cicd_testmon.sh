@@ -13,7 +13,7 @@ baseline_stack=pinned
 if [ "${NIGHTLY_BUILD:-}" = "true" ]; then
   baseline_stack=nightly
 fi
-TESTMON_BASELINE_DIR="/workspace/data/testmon/${BASE_TAG:?}/${baseline_stack}/single-gpu"
+TESTMON_BASELINE_DIR="/workspace/data/testmon/2.3.0/${BASE_TAG:?}/${baseline_stack}/single-gpu"
 TESTMON_DIR="/workspace/axolotl/.testmon"
 mkdir -p "$TESTMON_DIR"
 if [ -d "$TESTMON_BASELINE_DIR" ]; then

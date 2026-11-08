@@ -37,12 +37,12 @@ jobs:
             try {
               const caches = await github.paginate(github.rest.actions.getActionsCacheList, {
                 ...context.repo,
-                key: 'testmon-cpu-py',
+                key: 'testmon-2.3.0-cpu-py',
                 ref: 'refs/heads/main',
                 per_page: 100,
               });
               const keys = caches.map((c) => c.key);
-              const missing = cells.filter((cell) => !keys.some(key => key === `testmon-cpu-${cell}-${commit.sha}` || key.startsWith(`testmon-cpu-${cell}-${commit.sha}-`)));
+              const missing = cells.filter((cell) => !keys.some(key => key === `testmon-2.3.0-cpu-${cell}-${commit.sha}` || key.startsWith(`testmon-2.3.0-cpu-${cell}-${commit.sha}-`)));
               core.info(`testmon-cpu baselines missing for ${commit.sha}: ${missing.join(', ') || 'none'}`);
               core.setOutput('cpu', String(missing.length > 0));
             } catch (error) {
