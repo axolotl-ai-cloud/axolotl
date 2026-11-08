@@ -27,7 +27,6 @@ from transformers import (
     Trainer,
     TrainerCallback,
 )
-from transformers.trainer_utils import seed_worker
 from trl import GRPOTrainer
 from trl.data_utils import (
     apply_chat_template,
@@ -56,6 +55,7 @@ from axolotl.core.trainers.mixins.optimizer import OptimizerInitMixin, Optimizer
 from axolotl.monkeypatch.lora_merge_aware import merge_aware_vllm_sync
 from axolotl.monkeypatch.peft.exact_unmerge import exact_unmerge_vllm_sync
 from axolotl.monkeypatch.ring_attn import get_ring_attn_group
+from axolotl.utils.worker_seed import seed_worker
 
 if is_peft_available():
     from peft import PeftConfig

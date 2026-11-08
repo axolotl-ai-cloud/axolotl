@@ -2016,6 +2016,25 @@ class TestDataloaderValidation(BaseValidation):
         assert new_cfg.dataloader_pin_memory is True
         assert new_cfg.dataloader_prefetch_factor == 256
 
+    def test_persistent_workers_keep_auto_defaults(self, minimal_cfg):
+        cfg = DictDefault({"dataloader_persistent_workers": True}) | minimal_cfg
+
+        new_cfg = validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.dataloader_persistent_workers is True
+        assert new_cfg.dataloader_num_workers == 8
+
+    def test_persistent_workers_require_workers(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {"dataloader_num_workers": 0, "dataloader_persistent_workers": True}
+            )
+            | minimal_cfg
+        )
+
+        with pytest.raises(ValueError, match="requires dataloader_num_workers > 0"):
+            validate_config(cfg, {"n_gpu": 8}, {"torch_version": "2.6.0"})
+
 
 class TestGCStepsMigration(BaseValidation):
     """

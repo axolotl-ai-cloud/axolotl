@@ -484,6 +484,12 @@ class AxolotlInputConfig(
     dataloader_pin_memory: bool | None = None
     dataloader_num_workers: int | None = None
     dataloader_prefetch_factor: int | None = None
+    dataloader_persistent_workers: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Keep DataLoader workers alive between epochs and evaluations instead of restarting them. Needs dataloader_num_workers > 0. Workers keep their own dataset copy, so per-epoch dataset state (e.g. IterableDataset.set_epoch shuffling) does not reach them."
+        },
+    )
     dataloader_drop_last: bool | None = None
 
     accelerator_config: dict[str, Any] | None = None
@@ -755,7 +761,7 @@ class AxolotlInputConfig(
     sample_packing_mp_start_method: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "The multiprocessing start method to use for packing. Should be 'fork', 'spawn' or 'forkserver'"
+            "description": "The multiprocessing start method to use for packing: 'fork', 'spawn' or 'forkserver'. Defaults to 'forkserver' where available (Linux, macOS), else the platform default."
         },
     )
     eval_sample_packing: bool | None = Field(
@@ -2239,6 +2245,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             data["dataloader_num_workers"] = data.get("capabilities").get("n_gpu", 1)
             data["dataloader_pin_memory"] = True
             data["dataloader_prefetch_factor"] = 256
+        if data.get("dataloader_persistent_workers") and not data.get(
+            "dataloader_num_workers"
+        ):
+            raise ValueError(
+                "dataloader_persistent_workers requires dataloader_num_workers > 0"
+            )
 
         return data
 

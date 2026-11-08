@@ -521,7 +521,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 sequential=cfg.sample_packing_sequentially,
                 drop_last=True,
                 num_processes=cfg.dataset_num_proc,
-                mp_start_method=cfg.sample_packing_mp_start_method or "fork",
+                mp_start_method=cfg.sample_packing_mp_start_method,
             )
 
             data_loader = DataLoader(

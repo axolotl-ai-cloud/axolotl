@@ -2163,6 +2163,12 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         None,
     ),
     (
+        ("--dataloader-persistent-workers/--no-dataloader-persistent-workers",),
+        None,
+        None,
+        "Keep DataLoader workers alive between epochs and evaluations instead of restarting them. Needs dataloader_num_workers > 0. Workers keep their own dataset copy, so per-epoch dataset state (e.g. IterableDataset.set_epoch shuffling) does not reach them.",
+    ),
+    (
         ("--dataloader-drop-last/--no-dataloader-drop-last",),
         None,
         None,
@@ -2566,7 +2572,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--sample-packing-mp-start-method",),
         None,
         None,
-        "The multiprocessing start method to use for packing. Should be 'fork', 'spawn' or 'forkserver'",
+        "The multiprocessing start method to use for packing: 'fork', 'spawn' or 'forkserver'. Defaults to 'forkserver' where available (Linux, macOS), else the platform default.",
     ),
     (
         ("--eval-sample-packing/--no-eval-sample-packing",),
