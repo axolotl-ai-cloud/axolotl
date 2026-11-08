@@ -2,6 +2,9 @@ name: GPU kernel tests
 
 on:
   workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: false
     inputs:
       nightly:
         type: boolean

@@ -297,4 +297,5 @@ jobs:
     uses: ./.github/workflows/testmon-gpu-kernels.yml
     with:
       nightly: true
-    secrets: inherit
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

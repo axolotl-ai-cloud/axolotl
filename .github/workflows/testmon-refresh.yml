@@ -76,7 +76,8 @@ jobs:
     needs: validate
     if: inputs.gpu_kernels
     uses: ./.github/workflows/testmon-gpu-kernels.yml
-    secrets: inherit
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   slow-gpu:
     needs: validate
