@@ -2,13 +2,14 @@
 # Copyright (c) Axolotl AI
 # Licensed under the Apache License, Version 2.0
 
-"""Built-in quack ``autotune_profiles`` for SonicMoE's grouped GEMMs on B200.
+"""Built-in quack ``autotune_profiles`` for SonicMoE's grouped GEMMs on B200 and H100.
 
-Measured on ten expert-shape families (full fine-tuning and ``sonicmoe_lora_split``, EP=1 and
-EP=8; kernels README, "Built-in profiles for SonicMoE on B200"): each grouped key sweeps at most
-five candidates instead of 74-76 and stays within 2.3% of its best config. Every entry matches
-only calls that pass ``cu_seqlens_m`` or ``cu_seqlens_k``, so dense quack GEMMs keep their own
-search.
+Measured on expert-shape families (full fine-tuning and ``sonicmoe_lora_split``, EP=1 and EP=8;
+kernels README, "Built-in profiles for SonicMoE on B200" and "... on H100"): on B200 each grouped
+key sweeps at most five candidates instead of 74-76 and stays within 2.3% of its best config, on
+H100 at most four instead of 9-44, within 1.8%. Every entry matches only calls that pass
+``cu_seqlens_m`` or ``cu_seqlens_k``, so dense quack GEMMs keep their own search; ``gpu`` keeps
+each set to the GPU it was measured on.
 """
 
 import copy
@@ -33,11 +34,23 @@ def _config(
     }
 
 
-def _profile(kernel, match, *configs):
+def _sm90(tile_m, tile_n, cluster_m, cluster_n, pingpong, swap_ab=False):
+    """An sm90 config: never persistent or ``use_tma_gather`` there, so those are left out."""
+    return {
+        "tile_m": tile_m,
+        "tile_n": tile_n,
+        "cluster_m": cluster_m,
+        "cluster_n": cluster_n,
+        "pingpong": pingpong,
+        "swap_ab": swap_ab,
+    }
+
+
+def _profile(kernel, match, *configs, gpu="B200"):
     return {
         "kernel": kernel,
         "backend": "quack",
-        "gpu": "B200",
+        "gpu": gpu,
         "match": match,
         "configs": list(configs),
     }
@@ -107,6 +120,65 @@ B200_SONICMOE_PROFILES: list[dict[str, Any]] = [
 ]
 
 
+# sm90 offers 9-44 candidates per grouped key: every one was re-timed on H100
+H100_SONICMOE_PROFILES: list[dict[str, Any]] = [
+    _profile("gemm_gated_tuned", _VARLEN_M, _sm90(128, 256, 2, 1, False), gpu="H100"),
+    _profile("gemm_dgated_tuned", _VARLEN_M, _sm90(128, 256, 2, 1, False), gpu="H100"),
+    _profile(
+        "gemm_tuned",
+        {**_VARLEN_K, "out.dim-1": {"gt": 128}, "out.dim-2": {"gt": 128}},
+        _sm90(128, 256, 2, 1, False),
+        _sm90(128, 192, 2, 1, True),
+        _sm90(256, 192, 2, 1, False),
+        _sm90(256, 160, 2, 1, False),
+        gpu="H100",
+    ),
+    _profile(
+        "gemm_tuned",
+        {**_VARLEN_K, "out.dim-2": {"le": 128}},
+        _sm90(128, 128, 1, 2, True),
+        _sm90(256, 128, 2, 1, False, swap_ab=True),
+        _sm90(128, 192, 1, 2, True),
+        gpu="H100",
+    ),
+    _profile(
+        "gemm_tuned",
+        _VARLEN_K,
+        _sm90(128, 128, 2, 1, True),
+        _sm90(256, 128, 2, 1, False),
+        _sm90(192, 128, 2, 1, True),
+        gpu="H100",
+    ),
+    _profile(
+        "gemm_tuned",
+        {**_VARLEN_M, "out.dim-1": {"le": 128}},
+        _sm90(128, 128, 2, 1, True),
+        _sm90(256, 128, 2, 1, False),
+        _sm90(192, 128, 2, 1, True),
+        _sm90(256, 128, 1, 2, False),
+        gpu="H100",
+    ),
+    _profile(
+        "gemm_tuned",
+        {**_VARLEN_M, "B.dim-2": {"le": 128}},
+        _sm90(128, 256, 2, 1, False),
+        _sm90(128, 256, 1, 2, False),
+        _sm90(256, 128, 2, 1, False),
+        gpu="H100",
+    ),
+    _profile(
+        "gemm_tuned",
+        _VARLEN_M,
+        _sm90(192, 128, 1, 2, True),
+        _sm90(256, 128, 1, 2, False),
+        _sm90(128, 256, 1, 2, False),
+        gpu="H100",
+    ),
+]
+
+SONICMOE_DEFAULT_PROFILES = B200_SONICMOE_PROFILES + H100_SONICMOE_PROFILES
+
+
 def _names_kernel(pattern: str, kernel: str) -> bool:
     return fnmatch.fnmatchcase(kernel, pattern) or fnmatch.fnmatchcase(
         kernel, pattern.rpartition(".")[2]
@@ -128,6 +200,6 @@ def default_quack_profiles(
     ]
     return [
         copy.deepcopy(profile)
-        for profile in B200_SONICMOE_PROFILES
+        for profile in SONICMOE_DEFAULT_PROFILES
         if not any(_names_kernel(pattern, profile["kernel"]) for pattern in taken)
     ]

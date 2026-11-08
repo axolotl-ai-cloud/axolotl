@@ -2,7 +2,7 @@
 # Copyright (c) Axolotl AI
 # Licensed under the Apache License, Version 2.0
 
-"""CPU checks for the built-in SonicMoE B200 quack autotune profiles."""
+"""CPU checks for the built-in SonicMoE B200 and H100 quack autotune profiles."""
 
 import re
 from dataclasses import dataclass
@@ -18,8 +18,11 @@ from axolotl.integrations.kernels.autotune_profiles import (
     _validate_quack_match,
 )
 from axolotl.integrations.kernels.plugin import _autotune_profiles
+from axolotl.integrations.kernels.quack_autotune_policy import heuristic_fields
 from axolotl.integrations.kernels.quack_default_profiles import (
     B200_SONICMOE_PROFILES,
+    H100_SONICMOE_PROFILES,
+    SONICMOE_DEFAULT_PROFILES,
     default_quack_profiles,
 )
 from axolotl.utils.dict import DictDefault
@@ -30,17 +33,20 @@ README = (
 KERNELS = ("gemm_gated_tuned", "gemm_dgated_tuned", "gemm_tuned")
 
 
-def test_readme_shows_the_shipped_profiles():
+@pytest.mark.parametrize(
+    "gpu, shipped", [("B200", B200_SONICMOE_PROFILES), ("H100", H100_SONICMOE_PROFILES)]
+)
+def test_readme_shows_the_shipped_profiles(gpu, shipped):
     text = README.read_text()
-    section = text[text.index("### Built-in profiles for SonicMoE on B200") :]
+    section = text[text.index(f"### Built-in profiles for SonicMoE on {gpu}") :]
     block = re.search(r"```yaml\n(.*?)```", section, re.S).group(1)
-    assert yaml.safe_load(block)["autotune_profiles"] == B200_SONICMOE_PROFILES
+    assert yaml.safe_load(block)["autotune_profiles"] == shipped
 
 
-@pytest.mark.parametrize("profile", B200_SONICMOE_PROFILES)
+@pytest.mark.parametrize("profile", SONICMOE_DEFAULT_PROFILES)
 def test_profiles_are_valid_and_grouped_only(profile):
     _validate_quack_match(profile)
-    assert profile["backend"] == "quack" and profile["gpu"] == "B200"
+    assert profile["backend"] == "quack" and profile["gpu"] in ("B200", "H100")
     assert {"cu_seqlens_m.dim0", "cu_seqlens_k.dim0"} & set(profile["match"])
     assert 1 <= len(profile["configs"]) <= 5
 
@@ -143,16 +149,46 @@ def _prune(configs, named_args, **kwargs):
     return [c for c in configs if not c.kwargs["config"].use_tma_gather]
 
 
+def _sm90_grid():
+    """quack's SM90 candidates as the hub sonic-moe kernel listed them on H100."""
+    pingpong = [(128, n) for n in (128, 160, 192, 208)] + [(192, 128)]
+    tiles = (
+        pingpong + [(128, 224), (128, 256)] + [(256, n) for n in (128, 160, 192, 208)]
+    )
+    return [
+        AutotuneConfig(config=GemmConfig(m, n, cm, cn, False, False, swap, (m, n) in pingpong, 9))
+        for m, n in tiles
+        for cm, cn in ((1, 2), (2, 1))
+        for swap in (False, True)
+    ]  # fmt: skip
+
+
+def _sm90_prune(configs, named_args, **kwargs):
+    """What quack's ``prune_invalid_gemm_configs`` left of ``_sm90_grid`` on H100."""
+    args = named_args | kwargs
+    if args.get("A_idx") is not None:
+        return [
+            c
+            for c in configs
+            if not c.kwargs["config"].swap_ab
+            and c.kwargs["config"].cluster_n == 1
+            and c.kwargs["config"].tile_n != 208
+        ]
+    if args.get("cu_seqlens_m") is not None:
+        return [c for c in configs if not c.kwargs["config"].swap_ab]
+    return configs
+
+
 class Autotuner:
     __module__ = "fake_quack.autotuner"
 
-    def __init__(self, name):
+    def __init__(self, name, sm90=False):
         self.fn = SimpleNamespace(__name__=name)
         self.arg_names = ["A", "B", "out", "C", "postact_out", "PreAct"]
         self.arg_names += ["cu_seqlens_m", "cu_seqlens_k", "A_idx"]
         self.keys = []
-        self.configs = _sm100_grid()
-        self.early_config_prune = _prune
+        self.configs = _sm90_grid() if sm90 else _sm100_grid()
+        self.early_config_prune = _sm90_prune if sm90 else _prune
         self.nargs = None
 
     def prune_configs(self, kwargs):
@@ -195,6 +231,33 @@ def test_each_sonicmoe_call_sweeps_its_profile(call):
     assert tuner._axolotl_skip_bench == (len(picked) == 1)
 
 
+@pytest.mark.parametrize("call", sorted(CASES))
+def test_each_sonicmoe_call_sweeps_its_h100_profile(call):
+    kernel, index, shapes = CASES[call]
+    tuner = Autotuner(kernel, sm90=True)
+    _install_quack(tuner, [p for p in H100_SONICMOE_PROFILES if p["kernel"] == kernel])
+    tuner.nargs = {k: torch.empty(v, device="meta") for k, v in shapes.items()}
+    picked = [c.kwargs["config"] for c in tuner.prune_configs({})]
+    listed = [
+        c
+        for w in H100_SONICMOE_PROFILES[index]["configs"]
+        for c in tuner.configs
+        if all(getattr(c.kwargs["config"], f) == v for f, v in w.items())
+    ]
+    valid = [c.kwargs["config"] for c in _sm90_prune(listed, tuner.nargs)]
+    assert picked == valid and picked
+    assert tuner._axolotl_skip_bench == (len(picked) == 1)
+
+
+@pytest.mark.parametrize("call", sorted(CASES))
+def test_the_sm90_rule_picks_a_valid_candidate(call):
+    kernel, _, shapes = CASES[call]
+    args = {k: torch.empty(v, device="meta") for k, v in shapes.items()}
+    wanted = heuristic_fields(kernel, args, capacity=9)
+    valid = [c.kwargs["config"] for c in _sm90_prune(_sm90_grid(), args)]
+    assert any(all(getattr(c, f) == v for f, v in wanted.items()) for c in valid)
+
+
 def test_dense_calls_keep_the_full_search():
     tuner = Autotuner("gemm_tuned")
     _install_quack(
@@ -230,7 +293,7 @@ def test_post_model_load_applies_the_defaults(monkeypatch):
     assert profiles[0] == user
     assert [p["kernel"] for p in profiles[1:]] == [
         p["kernel"]
-        for p in B200_SONICMOE_PROFILES
+        for p in SONICMOE_DEFAULT_PROFILES
         if p["kernel"] != "gemm_dgated_tuned"
     ]
     assert cfg.autotune_profiles == [user]

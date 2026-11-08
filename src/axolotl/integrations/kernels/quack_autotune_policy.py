@@ -16,8 +16,8 @@ sweeps (after ``autotune_profiles``) differ from the ones it was measured agains
 bucket, when it is not among this call's candidates.
 
 ``quack_autotune: false`` never benchmarks: each key gets one config from a fixed rule (by kernel,
-output width N and reduction size K), measured on B200, or the first valid candidate when the rule's
-config is not one (other GPUs).
+output width N and reduction size K), measured on B200 and, for sm90, on H100, or the first valid
+candidate when the rule's config is not one (other GPUs).
 """
 
 from typing import Any
@@ -137,7 +137,14 @@ def bucket_key(
 
 
 def _rule(
-    tile_m, tile_n, cluster_m, cluster_n, persistent, gather, swap_ab=False
+    tile_m,
+    tile_n,
+    cluster_m,
+    cluster_n,
+    persistent,
+    gather,
+    swap_ab=False,
+    pingpong=False,
 ) -> dict[str, Any]:
     return {
         "tile_m": tile_m,
@@ -146,44 +153,99 @@ def _rule(
         "cluster_n": cluster_n,
         "is_dynamic_persistent": persistent,
         "use_tma_gather": gather,
-        "pingpong": False,
+        "pingpong": pingpong,
         "swap_ab": swap_ab,
     }
 
 
-def _rows_per_expert(args: dict[str, Any]) -> float | None:
-    """Routed rows per local expert of a varlen-M call, or None for any other call."""
-    cu = args.get("cu_seqlens_m")
+def _sm90_rule(tile_m, tile_n, cluster_m, cluster_n, pingpong) -> dict[str, Any]:
+    return _rule(tile_m, tile_n, cluster_m, cluster_n, False, False, pingpong=pingpong)
+
+
+def _rows_per_expert(args: dict[str, Any], varlen_k: bool = False) -> float | None:
+    """Routed rows per local expert of a varlen-M call (or, with ``varlen_k``, of a varlen-K
+    call's reduction), or None for any other call."""
+    cu = args.get("cu_seqlens_k" if varlen_k else "cu_seqlens_m")
     if not isinstance(cu, torch.Tensor) or cu.shape[0] < 2:
         return None
     rows = args.get("A_idx")
     if not isinstance(rows, torch.Tensor):
-        rows = args.get("A")
+        rows = args.get("B" if varlen_k else "A")
     if not isinstance(rows, torch.Tensor):
         return None
     return rows.shape[0] / (cu.shape[0] - 1)
 
 
-def heuristic_fields(kernel: str, args: dict[str, Any]) -> dict[str, Any]:
-    """The ``GemmConfig`` fields the no-sweep mode picks for a call."""
+def _gemm_dims(args: dict[str, Any]) -> tuple[int | None, int | None, bool, bool]:
+    """A ``gemm_tuned`` call's output width N, reduction size K, whether it is varlen-K, and
+    whether it is a varlen-K call with at most 128 output rows (LoRA grads with r rows)."""
+    out, b = args.get("out"), args.get("B")
+    n = out.shape[-1] if isinstance(out, torch.Tensor) else None
+    if n is None and isinstance(b, torch.Tensor):
+        n = b.shape[-1]
+    k = b.shape[-2] if isinstance(b, torch.Tensor) and b.ndim >= 2 else None
+    varlen_k = args.get("cu_seqlens_k") is not None
+    rank_rows = (
+        varlen_k
+        and isinstance(out, torch.Tensor)
+        and out.ndim >= 2
+        and out.shape[-2] <= 128
+    )
+    return n, k, varlen_k, rank_rows
+
+
+def _sm90_fields(kernel: str, args: dict[str, Any]) -> dict[str, Any]:
+    """sm90 has no persistent, ``use_tma_gather`` or 64-wide candidates, and gathered calls
+    only get cluster 2x1."""
+    gather = args.get("A_idx") is not None
+    if kernel != "gemm_tuned":
+        return _sm90_rule(128, 256, 2, 1, False)
+    n, k, varlen_k, rank_rows = _gemm_dims(args)
+    if rank_rows and not gather:
+        return _sm90_rule(128, 128, 1, 2, True)
+    if n is not None and n <= 128:
+        if varlen_k:
+            if gather:
+                return _sm90_rule(256, 128, 2, 1, False)
+            return _sm90_rule(128, 128, 2, 1, True)
+        if gather:
+            rows = _rows_per_expert(args)
+            if rows is not None and rows <= 1024:
+                return _sm90_rule(128, 128, 2, 1, True)
+            return _sm90_rule(256, 128, 2, 1, False)
+        return _sm90_rule(192, 128, 2, 1, True)
+    if varlen_k:
+        out = args.get("out")
+        rows = _rows_per_expert(args, varlen_k=True)
+        if (
+            isinstance(out, torch.Tensor)
+            and out.shape[-2] >= 4096
+            and (rows or 0) > 2048
+        ):
+            return _sm90_rule(256, 192, 2, 1, False)
+        return _sm90_rule(128, 256, 2, 1, False)
+    if k is not None and k <= 128:
+        return _sm90_rule(128, 256, 2, 1, False)
+    if gather:
+        return _sm90_rule(192, 128, 2, 1, True)
+    if k is not None and k >= 8192:
+        return _sm90_rule(256, 192, 1, 2, False)
+    return _sm90_rule(192, 128, 1, 2, True)
+
+
+def heuristic_fields(
+    kernel: str, args: dict[str, Any], capacity: int = 10
+) -> dict[str, Any]:
+    """The ``GemmConfig`` fields the no-sweep mode picks for a call on sm``capacity``x."""
+    if capacity == 9:
+        return _sm90_fields(kernel, args)
     gather = args.get("A_idx") is not None
     if kernel == "gemm_gated_tuned":
         return _rule(256, 512, 2, 1, True, gather)
     if kernel == "gemm_dgated_tuned":
         return _rule(256, 256, 2, 1, True, gather)
     if kernel == "gemm_tuned":
-        out, b = args.get("out"), args.get("B")
-        n = out.shape[-1] if isinstance(out, torch.Tensor) else None
-        if n is None and isinstance(b, torch.Tensor):
-            n = b.shape[-1]
-        k = b.shape[-2] if isinstance(b, torch.Tensor) and b.ndim >= 2 else None
-        varlen_k = args.get("cu_seqlens_k") is not None
-        rank_rows = (
-            varlen_k
-            and isinstance(out, torch.Tensor)
-            and out.ndim >= 2
-            and out.shape[-2] <= 128
-        )
+        n, k, varlen_k, rank_rows = _gemm_dims(args)
         if rank_rows and not gather:
             # LoRA grads with r rows: swapping puts the wide side on the tile's M
             return _rule(256, 64, 2, 1, True, False, swap_ab=True)
@@ -204,7 +266,8 @@ def heuristic_fields(kernel: str, args: dict[str, Any]) -> dict[str, Any]:
 
 def choose_heuristic_config(tuner: Any, candidates: list, args: dict[str, Any]) -> Any:
     kernel = _kernel_name(tuner)
-    wanted = heuristic_fields(kernel, args)
+    capacity = _quack_fields(candidates[0]).get("device_capacity", 10)
+    wanted = heuristic_fields(kernel, args, capacity)
     for config in candidates:
         have = _quack_fields(config)
         if all(have.get(k) == v for k, v in wanted.items()):

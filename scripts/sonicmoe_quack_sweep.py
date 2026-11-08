@@ -371,7 +371,7 @@ def profile_group(kernel, role):
     return kernel, "varlen-M"
 
 
-def _heuristic_name(kernel, call):
+def _heuristic_name(kernel, call, capacity=10):
     import torch
 
     from axolotl.integrations.kernels.quack_autotune_policy import heuristic_fields
@@ -381,7 +381,7 @@ def _heuristic_name(kernel, call):
         if key.endswith(".shape"):
             args[key[: -len(".shape")]] = torch.empty(shape, device="meta")
     try:
-        return short(heuristic_fields(kernel, args))
+        return short(heuristic_fields(kernel, args, capacity))
     except Exception:  # noqa: BLE001
         return None
 
@@ -711,7 +711,8 @@ def analyze(args):
     for entry in keys.values():
         entry["summary"] = summarize(entry)
         entry["role"] = gemm_role(entry["kernel"], entry["call"], entry["meta"])
-        entry["heuristic"] = _heuristic_name(entry["kernel"], entry["call"])
+        capacity = next(iter(entry["fields"].values())).get("device_capacity", 10)
+        entry["heuristic"] = _heuristic_name(entry["kernel"], entry["call"], capacity)
         groups[(entry["kernel"], entry["role"])].append(entry)
 
     if args.shortlist:

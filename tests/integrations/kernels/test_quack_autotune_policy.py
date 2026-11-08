@@ -793,13 +793,54 @@ def test_heuristic_rank_r_rules(args, wanted):
     assert tuple(fields[n] for n in names) == wanted
 
 
-def test_heuristic_falls_back_to_the_first_valid_config(quack, caplog):
+@pytest.mark.parametrize(
+    "kernel, args, wanted",
+    [
+        ("gemm_gated_tuned", dict(A=_meta(16384, 4096), B=_meta(32, 4096, 4096), cu_seqlens_m=_meta(33), A_idx=_meta(131072)), (128, 256, 2, 1, False)),
+        ("gemm_dgated_tuned", dict(A=_meta(16384, 4096), B=_meta(32, 4096, 2048), cu_seqlens_m=_meta(33), A_idx=_meta(131072)), (128, 256, 2, 1, False)),
+        # expert weight grads: 256x192 for H >= 4096 at > 2048 rows per expert
+        ("gemm_tuned", dict(A=_meta(4096, 16384), B=_meta(131072, 4096), out=_meta(32, 4096, 4096), cu_seqlens_k=_meta(33), A_idx=_meta(131072)), (256, 192, 2, 1, False)),
+        ("gemm_tuned", dict(A=_meta(4096, 4096), B=_meta(32768, 4096), out=_meta(32, 4096, 4096), cu_seqlens_k=_meta(33), A_idx=_meta(32768)), (128, 256, 2, 1, False)),
+        ("gemm_tuned", dict(A=_meta(2048, 65536), B=_meta(524288, 1536), out=_meta(128, 2048, 1536), cu_seqlens_k=_meta(129), A_idx=_meta(524288)), (128, 256, 2, 1, False)),
+        # LoRA grads: r rows; r columns, plain and gathered
+        ("gemm_tuned", dict(A=_meta(32, 131072), B=_meta(131072, 4096), out=_meta(32, 32, 4096), cu_seqlens_k=_meta(33)), (128, 128, 1, 2, True)),
+        ("gemm_tuned", dict(A=_meta(2048, 131072), B=_meta(131072, 32), out=_meta(32, 2048, 32), cu_seqlens_k=_meta(33)), (128, 128, 2, 1, True)),
+        ("gemm_tuned", dict(A=_meta(4096, 16384), B=_meta(131072, 32), out=_meta(32, 4096, 32), cu_seqlens_k=_meta(33), A_idx=_meta(131072)), (256, 128, 2, 1, False)),
+        # x P (N = r) gathered: by rows per expert, 4096 then 1024
+        ("gemm_tuned", dict(A=_meta(16384, 4096), B=_meta(32, 4096, 32), out=_meta(131072, 32), cu_seqlens_m=_meta(33), A_idx=_meta(131072)), (256, 128, 2, 1, False)),
+        ("gemm_tuned", dict(A=_meta(4096, 4096), B=_meta(32, 4096, 32), out=_meta(32768, 32), cu_seqlens_m=_meta(33), A_idx=_meta(32768)), (128, 128, 2, 1, True)),
+        # a P (N = r), u Q (K = r), down forward
+        ("gemm_tuned", dict(A=_meta(131072, 2048), B=_meta(32, 2048, 32), out=_meta(131072, 32), cu_seqlens_m=_meta(33)), (192, 128, 2, 1, True)),
+        ("gemm_tuned", dict(A=_meta(131072, 32), B=_meta(32, 32, 4096), out=_meta(131072, 4096), cu_seqlens_m=_meta(33)), (128, 256, 2, 1, False)),
+        ("gemm_tuned", dict(A=_meta(131072, 2048), B=_meta(32, 2048, 4096), out=_meta(131072, 4096), cu_seqlens_m=_meta(33)), (192, 128, 1, 2, True)),
+        # down forward with K = I = 14336 (Mixtral)
+        ("gemm_tuned", dict(A=_meta(32768, 14336), B=_meta(8, 14336, 4096), out=_meta(32768, 4096), cu_seqlens_m=_meta(9)), (256, 192, 1, 2, False)),
+    ],
+)  # fmt: skip
+def test_heuristic_sm90_rules(kernel, args, wanted):
+    fields = quack_autotune_policy.heuristic_fields(kernel, args, capacity=9)
+    names = ("tile_m", "tile_n", "cluster_m", "cluster_n", "pingpong")
+    assert tuple(fields[n] for n in names) == wanted
+    assert not fields["is_dynamic_persistent"] and not fields["use_tma_gather"]
+    assert not fields["swap_ab"]
+
+
+def test_heuristic_reads_the_capacity_from_the_candidates(quack, caplog):
     tuner = quack.add("gemm_gated_tuned", capacity=9)
     quack_autotune_policy.install_quack_key_policy("pow2", tune=False)
     with caplog.at_level("INFO"):
         config = gated(tuner, 600_000, _capacity=9)
-        gated(tuner, 2_000_000, _capacity=9)
-    first = prune_invalid(tuner.configs, {"A_idx": None, "_capacity": 9})[0]
+    assert _fields(config) == (128, 256, 2, 1, False, False)
+    assert not any("first valid one" in r.getMessage() for r in caplog.records)
+
+
+def test_heuristic_falls_back_to_the_first_valid_config(quack, caplog):
+    tuner = quack.add("gemm_gated_tuned", capacity=12)
+    quack_autotune_policy.install_quack_key_policy("pow2", tune=False)
+    with caplog.at_level("INFO"):
+        config = gated(tuner, 600_000, _capacity=12)
+        gated(tuner, 2_000_000, _capacity=12)
+    first = prune_invalid(tuner.configs, {"A_idx": None, "_capacity": 12})[0]
     assert config == first.kwargs["config"]
     assert tuner.benched == []
     assert sum("first valid one" in r.getMessage() for r in caplog.records) == 1
