@@ -249,7 +249,7 @@ jobs:
           modal run -m cicd.e2e_cuda_kernels
 
   docker-e2e-blackwell-tests:
-    # Only tests marked gpu_blackwell (SM100+); everything else stays on the L40S jobs above.
+    # Only tests marked gpu_blackwell (SM90+); everything else stays on the L40S jobs above.
     if: >
       github.repository_owner == 'axolotl-ai-cloud' &&
       needs.gate-skip-e2e.outputs.skip != 'true'
