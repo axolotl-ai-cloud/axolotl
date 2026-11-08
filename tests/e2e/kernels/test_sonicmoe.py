@@ -32,6 +32,9 @@ pytestmark = [
         importlib.util.find_spec("kernels") is None,
         reason="HF `kernels` package not installed",
     ),
+    # sm90+ only: the B200 lane is the only single-GPU lane newer than L40S
+    pytest.mark.gpu_blackwell,
+    pytest.mark.usefixtures("sonicmoe_setup"),
 ]
 
 

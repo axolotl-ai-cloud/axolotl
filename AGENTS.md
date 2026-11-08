@@ -125,8 +125,9 @@ The repo pins CI tool versions in `.pre-commit-config.yaml` — never run system
 - `pytest -m 'not gpu and not slow and not distributed_cpu and not nf4_distributed' --ignore=tests/e2e --ignore=tests/integrations/kernels tests/` — single-process CPU suite
 
 New tests must declare their compute requirements explicitly: `gpu` for CUDA,
-`gpu_blackwell` for single-GPU Blackwell-only kernels, `nvfp4` plus `gpu` for
-multi-GPU NVFP4, and `distributed_cpu` or `nf4_distributed` for CPU process groups.
+`gpu_blackwell` for single-GPU sm90+ kernels (Hopper or Blackwell, which L40S
+can't run), `nvfp4` plus `gpu` for multi-GPU NVFP4, and `distributed_cpu` or
+`nf4_distributed` for CPU process groups.
 Keep hardware/dependency skip guards as well as markers, mark only CUDA cases in
 mixed parameterizations, and avoid GPU work during module import. `slow` is
 additional to hardware markers. Verify that the test path and marker are selected

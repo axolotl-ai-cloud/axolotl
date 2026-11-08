@@ -228,11 +228,24 @@ def _fresh_nv(Wgu, Wdn):
     return quantize_nvfp4(Wgu), quantize_nvfp4(Wdn)
 
 
+@pytest.fixture
+def marlin_backend(monkeypatch):
+    """Force Marlin: auto-select prefers DeepGEMM on sm100, so B200 would never run these."""
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        _backend_available,
+    )
+
+    if not _backend_available("marlin"):
+        pytest.skip("Marlin W4A16 ext unavailable (needs sm80+ and nvcc)")
+    monkeypatch.setattr(RUNTIME, "grouped_backend", "marlin")
+
+
 # ===========================================================================
 # Test 1b: marlin qdata-free experts survive clone/state_dict (adapter save)
 # ===========================================================================
 
 
+@pytest.mark.usefixtures("marlin_backend")
 @pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
 def test_grouped_fp4_save_after_qdata_free(cfg):
     """Regression: the marlin memory fix frees nv.qdata after repack. The freed NVFP4Tensor must
@@ -240,15 +253,8 @@ def test_grouped_fp4_save_after_qdata_free(cfg):
     qdata.stride(-2)); a flat empty(0) qdata crashed with IndexError(dim -2). Freeing to a 3-D
     [E, N, 0] placeholder keeps clone/save working."""
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        _train_backend,
-        grouped_fp4_available,
         grouped_fp4_moe_train,
     )
-
-    if not grouped_fp4_available("nvfp4"):
-        pytest.skip("no grouped fp4 backend available")
-    if _train_backend("nvfp4") != "marlin":
-        pytest.skip("qdata-free only on the marlin backend")
 
     hidden, idx, wts, gu_nv, dn_nv, _Wgu, _Wdn, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
     s = cfg["scaling"]
@@ -738,14 +744,6 @@ def test_swiglu_clamped_kernel_vs_torch(limit, I, seed):
 # ===========================================================================
 
 
-def _marlin_available():
-    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        _train_backend,
-    )
-
-    return _train_backend("nvfp4") == "marlin"
-
-
 def test_marlin_dx_quantizer_roundtrip():
     """quantize_nvfp4_blockwise -> nvfp4_dequant_bf16 reproduces the source within fp4 error."""
     from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
@@ -768,10 +766,9 @@ def test_marlin_dx_quantizer_roundtrip():
     assert nvfp4_dequant_bf16(qd2, sc2, pt).abs().max() == 0
 
 
+@pytest.mark.usefixtures("marlin_backend")
 def test_marlin_dx_gemm_matches_exact_reference():
     """Transposed-pack marlin GEMM computes g @ W within the axis-requant tolerance."""
-    if not _marlin_available():
-        pytest.skip("marlin backend unavailable")
     from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
         nvfp4_dequant_bf16,
     )
@@ -813,12 +810,11 @@ def test_marlin_dx_gemm_matches_exact_reference():
     assert rel < 0.15, f"dxT GEMM rel {rel:.4f}"
 
 
+@pytest.mark.usefixtures("marlin_backend")
 @pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
 def test_marlin_dx_grad_quality_and_fallback(cfg, monkeypatch):
     """dxT ON: packs built + d_hidden cosine >= 0.99 vs the bf16 oracle.
     dxT OFF (env kill-switch): no packs, dequant fallback still correct."""
-    if not _marlin_available():
-        pytest.skip("marlin backend unavailable")
     from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
         nvfp4_dequant_bf16,
     )
@@ -904,13 +900,11 @@ def _grouped_experts_node(out):
     return None
 
 
+@pytest.mark.usefixtures("marlin_backend")
 @pytest.mark.parametrize("marlin_dx", [False, True], ids=["dx_off", "dx_on"])
 def test_marlin_forward_packs_reach_backward_only_for_dx(monkeypatch, marlin_dx):
     """Without the transposed dX packs the forward Marlin packs must not ride ctx to backward
     (under FSDP they're gathered and uncached, so every layer's would stay alive)."""
-    monkeypatch.setattr(RUNTIME, "grouped_backend", "marlin")
-    if not _marlin_available():
-        pytest.skip("marlin backend unavailable")
     monkeypatch.setattr(RUNTIME, "marlin_dx", marlin_dx)
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
         grouped_fp4_moe_train,
@@ -943,10 +937,9 @@ def test_marlin_forward_packs_reach_backward_only_for_dx(monkeypatch, marlin_dx)
     out.float().pow(2).mean().backward()
 
 
+@pytest.mark.usefixtures("marlin_backend")
 def test_batched_repack4_bit_exact_vs_loop():
     """One-launch 4-bit batched repack == the per-expert gptq_marlin_repack loop, bit-for-bit."""
-    if not _marlin_available():
-        pytest.skip("marlin backend unavailable")
     from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
     from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.batched_repack import (
         batched_repack4,

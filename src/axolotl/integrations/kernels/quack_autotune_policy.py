@@ -32,6 +32,7 @@ from axolotl.integrations.kernels.autotune_cache import (
 )
 from axolotl.integrations.kernels.autotune_profiles import (
     _quack_fields,
+    compile_quack_in_process,
     noop_quack_gpu_warmup,
 )
 from axolotl.integrations.kernels.sonicmoe_autotune import sonicmoe_autotuners
@@ -395,6 +396,7 @@ def install_quack_key_policy(buckets: str = "pow2", tune: bool = True) -> int:
         if not is_quack or not hasattr(tuner, "prune_configs"):
             continue
         noop_quack_gpu_warmup(tuner)
+        compile_quack_in_process(tuner)
         policy = getattr(tuner, "_axolotl_key_policy", None)
         if policy is not None:
             policy.buckets, policy.tune = buckets, tune

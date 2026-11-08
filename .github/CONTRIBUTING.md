@@ -87,8 +87,8 @@ Distributed CPU tests run separately with `-m "distributed_cpu and not slow"`.
 `@pytest.mark.gpu` (or `pytestmark = pytest.mark.gpu` for a whole module). A CUDA
 `skipif` without the marker is flagged by `tests/conftest.py`, and
 `AXOLOTL_CI_ENFORCE_GPU_MARKER=1` turns that into a failure.
-A single-GPU test that cannot run on the L40S lanes (SM100+/Blackwell, e.g. NVFP4
-GEMMs) gets `gpu_blackwell`, which implies `gpu`. It is applied automatically when
+A single-GPU test that cannot run on the L40S lanes (SM90+, e.g. NVFP4 GEMMs or
+SonicMoE) gets `gpu_blackwell`, which implies `gpu`. It is applied automatically when
 a `skipif` reason names only Blackwell archs (`sm100`, `sm>=100`, `Blackwell`);
 otherwise add `@pytest.mark.gpu_blackwell` yourself. These tests run only in
 `cicd/cicd_blackwell.sh` on a B200 and are excluded from the L40S lanes. Multi-GPU
@@ -101,8 +101,8 @@ Hub cache.
 
 Choose markers from the compute the test actually executes, not the feature name.
 For example, NVFP4 packing or transfer tests that use ordinary tensor operations
-can run on CPU or older CUDA GPUs; only tests invoking Blackwell-only kernels
-belong in the Blackwell lane.
+can run on CPU or older CUDA GPUs; only tests invoking kernels that need SM90+
+(Hopper or Blackwell) belong in the Blackwell lane.
 
 | Compute required | Marker and placement | CI entry point |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ belong in the Blackwell lane.
 | Multiple CPU processes with gloo | `distributed_cpu`; NF4 loading/sharding tests use `nf4_distributed` instead | Dedicated distributed CPU job in `.github/workflows/tests.yml` |
 | One CUDA GPU, supported on L40S | `gpu`; model smoke tests in `tests/e2e/`, plugin tests in `tests/integrations/<plugin>/` | `cicd/cicd.sh` |
 | One CUDA GPU, kernel correctness/parity | `gpu`; use `tests/e2e/kernels/` or `tests/integrations/kernels/` | `cicd/cicd_cuda_kernels.sh` |
-| One Blackwell GPU | `gpu_blackwell` (implies `gpu`), plus the precise capability guard | `cicd/cicd_blackwell.sh` on B200 |
+| One SM90+ GPU (Hopper or Blackwell) | `gpu_blackwell` (implies `gpu`), plus the precise capability guard | `cicd/cicd_blackwell.sh` on B200 |
 | Multiple CUDA GPUs | `gpu`, a device-count guard, and normally `tests/e2e/multigpu/` | `cicd/multigpu.sh` |
 | Multiple GPUs for NVFP4 | `nvfp4` and `gpu`, with capability and device-count guards | `cicd/nvfp4.sh` |
 
@@ -120,7 +120,10 @@ A marker selects a CI lane; it does not check hardware availability. Retain
 `skipif` or fixture/runtime checks for CUDA availability, required GPU count,
 exact compute capability, and optional dependencies. B200 is SM100: a test that
 requires SM120 must still skip there with a precise reason. Do not relax a
-capability guard just to make a test run in the Blackwell lane.
+capability guard just to make a test run in the Blackwell lane. A test for one
+backend of a kernel that auto-selects by capability should force that backend
+rather than skip when auto-select picks another: the choice differs per GPU, so
+such a test can end up skipping on every CI GPU.
 
 For mixed CPU/CUDA parameterizations, mark only the CUDA cases so the CPU
 coverage remains in the CPU lane:

@@ -21,6 +21,7 @@ autotune_profiles:
 ```
 """
 
+import contextlib
 import fnmatch
 import json
 import sys
@@ -306,6 +307,30 @@ def noop_quack_gpu_warmup(autotuner: Any) -> bool:
     return True
 
 
+@contextlib.contextmanager
+def _no_compile_pool():
+    yield None
+
+
+def compile_quack_in_process(autotuner: Any) -> bool:
+    """Compile a hub-vendored quack's sweep candidates in-process, not in its async compile pool.
+
+    The pool's forkserver workers import quack by module name, and a hub kernel's hash-named
+    package (``_sonic_moe_cuda_*``) is not importable there: every worker dies, the sweep reports
+    most candidates failed, and on B200 SonicMoE then faults with illegal memory accesses. A
+    pip-installed ``quack`` keeps its pool.
+    """
+    package = getattr(type(autotuner), "__module__", "").rpartition(".")[0]
+    if not package.endswith(".quack"):
+        return False
+    module = sys.modules.get(f"{package}.cache.async_compile")
+    current = getattr(module, "pool_scope", None)
+    if current is None or current is _no_compile_pool:
+        return False
+    module.pool_scope = _no_compile_pool  # type: ignore[union-attr]
+    return True
+
+
 def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
     """Restrict a quack autotuner's candidates per call.
 
@@ -326,6 +351,7 @@ def _install_quack(autotuner: Any, profiles: list[dict[str, Any]]) -> bool:
                         selected.append(config)
         resolved.append((profile, selected))
     noop_quack_gpu_warmup(autotuner)
+    compile_quack_in_process(autotuner)
     first = getattr(autotuner, "_axolotl_quack_profiles", None) is None
     autotuner._axolotl_quack_profiles = resolved
     if not first:
