@@ -5,6 +5,10 @@
     ],
     "cut-cross-entropy": [
       "src/axolotl/integrations/cut_cross_entropy/"
+    ],
+    "quack": [
+      "src/axolotl/integrations/kernels/quack_autotune_policy.py",
+      "src/axolotl/integrations/kernels/quack_default_profiles.py"
     ]
   },
   "groups": {
@@ -58,7 +62,17 @@
             "tests/integrations/kernels/scattermoe_lora/test_*.py",
             "tests/integrations/kernels/sonicmoe/test_*.py"
           ],
-          "features": []
+          "features": [
+            "quack"
+          ]
+        },
+        "quack": {
+          "tests": [
+            "tests/integrations/kernels/test_quack_*.py"
+          ],
+          "features": [
+            "quack"
+          ]
         }
       }
     }
@@ -136,7 +150,9 @@
         "tests/e2e/multigpu/solo/"
       ],
       "exclude": [],
-      "features": [],
+      "features": [
+        "quack"
+      ],
       "audited_tests": [
         "tests/e2e/multigpu/solo/test_ep_checkpoint_resume_state.py",
         "tests/e2e/multigpu/solo/test_ep_cpu_offload_grad_clip_nccl.py",
@@ -195,7 +211,9 @@
         "tests/e2e/multigpu/solo/"
       ],
       "exclude": [],
-      "features": [],
+      "features": [
+        "quack"
+      ],
       "audited_tests": [
         "tests/e2e/multigpu/solo/test_ep_checkpoint_resume_state.py",
         "tests/e2e/multigpu/solo/test_ep_cpu_offload_grad_clip_nccl.py",

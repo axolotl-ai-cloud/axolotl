@@ -204,3 +204,30 @@ def test_actual_refresh_skip_input_change_failure_and_override(tmp_path):
     repaired = run()
     assert repaired.returncode == 0, repaired.stdout + repaired.stderr
     assert "missing baseline" in repaired.stdout
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/axolotl/integrations/kernels/quack_autotune_policy.py",
+        "src/axolotl/integrations/kernels/quack_default_profiles.py",
+        "src/axolotl/integrations/kernels/plugin.py",
+        "src/axolotl/integrations/kernels/autotune_profiles.py",
+    ],
+)
+def test_quack_boundary_keeps_consumers_and_shared_code(path):
+    manifest = json.loads((ROOT / "cicd/feature_suites.json").read_text())
+    routes = manifest["features"]
+    kernels = manifest["groups"]["kernels"]["suites"]
+    old, new = baseline({path: "old"}), baseline({path: "new"})
+    for spec in [
+        kernels["moe"],
+        kernels["quack"],
+        manifest["distributed"]["multigpu-solo"],
+        manifest["distributed"]["nvfp4"],
+    ]:
+        assert mod.choose(old, new, spec["features"], routes, True)[0] == "testmon"
+    expected = "skip" if path in routes["quack"] else "testmon"
+    for spec in [kernels["activations"], manifest["distributed"]["multigpu-cce"]]:
+        assert mod.choose(old, new, spec["features"], routes, True)[0] == expected
+    assert mod.choose(old, new, None, routes, True)[0] == "testmon"

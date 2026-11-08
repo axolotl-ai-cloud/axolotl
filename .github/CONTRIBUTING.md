@@ -311,10 +311,15 @@ baselines. Unclassified test files remain in a general suite. The existing
 subprocess and LoRA-patching exclusions keep their original lanes.
 
 Only explicit feature boundaries can exclude a suite before testmon runs. The
-initial boundaries are the opt-in Liger and Cut Cross Entropy plugin packages:
+boundaries cover the opt-in Liger and Cut Cross Entropy plugin packages and
+the Quack policy/default-profile modules:
 for example, a Liger-only implementation change can skip a previously passing
 CCE or pure-kernel suite. The general suite retains every feature as a possible
 dependency. Shared code and unknown changes are never excluded by feature scope.
+Quack-only changes remain relevant to the MoE and Quack kernel suites and the
+SonicMoE-containing solo/NVFP4 suites. Shared kernel plugin, arguments, cache,
+and autotune infrastructure remain outside this boundary. B200 tests currently
+run without testmon; their hardware markers and process isolation are unchanged.
 Add a boundary only after verifying its activation conditions and every named
 suite's feature use; update suite declarations when tests exercise combinations.
 
@@ -341,7 +346,7 @@ unexpected skips. Slow two- and four-GPU suites use the same whole-suite selecti
 the slow single-GPU kernel lane retains its existing testmon path.
 
 The audited suites can exclude changes confined to the opt-in Liger/CCE plugin
-packages they do not use. Shared code, worker code, configuration, and unknown
+packages or Quack policy/default-profile modules they do not use. Shared code, worker code, configuration, and unknown
 paths force complete execution of affected suites. New test files invalidate a
 suite's feature exclusions until `audited_tests` is updated after reviewing their
 feature use. Update `features` as well when an existing test starts using another
