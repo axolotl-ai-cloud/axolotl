@@ -173,9 +173,9 @@ def run_suite(
         valid_database = (
             hashlib.sha256(database.read_bytes()).hexdigest() == previous["database"]
         )
-        if not valid_database:
-            for suffix in ("", "-wal", "-shm"):
-                Path(str(database) + suffix).unlink(missing_ok=True)
+    if not valid_database:
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(database) + suffix).unlink(missing_ok=True)
     mode, reason = choose(previous, current, features, routes, valid_database)
     if full_override or not select:
         mode, reason = "full", "full-run override or baseline refresh"

@@ -11,6 +11,7 @@ on:
       - ".github/workflows/*.yml"
       - ".github/actions/**"
       - "cicd/*.sh"
+      - "scripts/**"
       - "cicd/feature_suites.json"
       - "cicd/*.jinja"
       # tree-recurrence has its own workflow until axolotl depends on it
@@ -26,6 +27,7 @@ on:
       - ".github/workflows/*.yml"
       - ".github/actions/**"
       - "cicd/*.sh"
+      - "scripts/**"
       - "cicd/feature_suites.json"
       - "cicd/*.jinja"
       # tree-recurrence has its own workflow until axolotl depends on it

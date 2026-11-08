@@ -141,11 +141,14 @@ jobs:
             TESTMON_DATAFILE=".testmon/${name}.testmondata" pytest "$testmon_option" \
               -o "testmon_ignore_dependencies=${ignore_deps}" "$@" | tee -a testmon-run.log || failed=1
           }
-          tm core -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow and not distributed_cpu" --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
+          pytest --no-testmon -v -m "not gpu and not slow and not distributed_cpu" \
+            tests/scripts/ tests/test_ci_hf_cache.py tests/utils/test_cuda13.py \
+            | tee -a testmon-run.log || failed=1
+          tm core -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow and not distributed_cpu" --ignore=tests/scripts/ --ignore=tests/test_ci_hf_cache.py --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
           tm monkeypatch -v --durations=10 -m "not gpu and not slow and not nf4_distributed and not distributed_cpu" tests/monkeypatch/
           tm patched -v --durations=10 -m "not gpu and not slow" tests/patched/
           tm cli -v --durations=10 -m "not gpu and not slow" tests/cli/
-          tm utils -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow" tests/utils/
+          tm utils -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow" --ignore=tests/utils/test_cuda13.py tests/utils/
           tm integrations -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/
           exit $failed
 

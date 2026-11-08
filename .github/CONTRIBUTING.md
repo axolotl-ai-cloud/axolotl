@@ -248,6 +248,11 @@ Slow CPU/GPU and hardware-specific NF4/NVFP4 suites retain their narrower
 
 #### Testmon baselines and full-run overrides
 
+CPU CI always runs `tests/scripts/`, `tests/test_ci_hf_cache.py`, and
+`tests/utils/test_cuda13.py` without testmon selection. These checks read workflow
+files or execute scripts whose dependencies testmon cannot trace. Script-only
+changes also trigger the Tests workflow.
+
 Distributed CPU, slow CPU, GPU kernel, and slow GPU lanes also use testmon.
 `run-tests-full` bypasses selection across testmon lanes; keep `run-gpu-tests`,
 `run-gpu-slow`, or `run-cpu-slow` to enable the optional suites you need.

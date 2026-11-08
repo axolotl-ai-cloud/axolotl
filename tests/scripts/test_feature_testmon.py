@@ -188,6 +188,18 @@ def test_actual_refresh_skip_input_change_failure_and_override(tmp_path):
     (tmp_path / "input.txt").write_text("ok")
     assert run().returncode == 0
     database = next((tmp_path / ".testmon").glob("*.testmondata"))
+    metadata = next((tmp_path / ".testmon").glob("*.scope.json"))
+    for invalid_metadata in (None, "broken", "{}"):
+        database.write_bytes(b"corrupt")
+        for suffix in ("-wal", "-shm"):
+            Path(str(database) + suffix).write_bytes(b"corrupt")
+        if invalid_metadata is None:
+            metadata.unlink()
+        else:
+            metadata.write_text(invalid_metadata)
+        repaired = run()
+        assert repaired.returncode == 0, repaired.stdout + repaired.stderr
+        assert "missing baseline" in repaired.stdout
     database.write_bytes(b"corrupt")
     repaired = run()
     assert repaired.returncode == 0, repaired.stdout + repaired.stderr
