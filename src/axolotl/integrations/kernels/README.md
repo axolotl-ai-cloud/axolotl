@@ -693,7 +693,7 @@ autotune_profiles:
 
 Every entry matches only grouped calls (`cu_seqlens_m` or `cu_seqlens_k` passed), so dense quack
 GEMMs elsewhere keep their own search. Ranks other than 32 change the rank-r shapes (entries 3-6
-were measured at r = 32 only), and NVFP4 experts, sm90 and sm120 were not measured.
+were measured at r = 32 only), and NVFP4 experts and sm120 were not measured (sm90: next section).
 
 End to end, with 20 timed steps after tuning on six of the runs (one container each, three
 fresh processes in turn: the `quack_autotune: false` rule, these profiles, and a per-run oracle
@@ -759,6 +759,160 @@ To reproduce: `python scripts/sonicmoe_quack_sweep.py run ...` on a B200 (or
 `python scripts/sonicmoe_quack_sweep.py analyze <dirs> --shortlist <dir>` for the second stage
 and `analyze <dirs> --evaluate profiles.yaml` to score a profile set.
 
+### Built-in profiles for SonicMoE on H100
+
+On an H100 the built-in profiles below (`H100_SONICMOE_PROFILES`) take the place of the B200 ones,
+with the same precedence, cache re-tune and `quack_autotune_default_profiles: false` opt-out: every
+grouped key goes from quack's 9-44 sm90 candidates to at most four (the gate/up forward and the down
+backward to one, which is not benchmarked), and every key measured below stays within 1.8% of its
+best config. `gpu: H100` matches H100 SXM, PCIe and NVL. H200, GH200 and H800 share the SM but were
+not measured, so they keep quack's full sm90 search; a config can copy these entries with its own
+`gpu`. The `quack_autotune: false` rule's sm90 picks (next section) apply to every sm90 GPU.
+
+They were measured with `scripts/sonicmoe_quack_sweep.py` in November 2026 on an H100 80GB HBM3
+(same image as the B200 study: hub sonic-moe vendoring quack 0.6.1, cutlass-dsl 4.8.1, torch
+2.14.1), with the synthetic models above for six families: F1, F2 and F8 at EP=1 and F5, F6 and
+F7-dsv4pro at EP=8, each in full fine-tuning and `sonicmoe_lora_split` (rank 32) at 16k tokens,
+plus F1 full at 4k and 64k, F1 `lora_split` at 64k, F5 full at 4k and 64k and F5 `lora_split` at
+4k: 18 runs, 178 grouped keys.
+
+quack's sm90 list is short: 11 tiles (128x128 to 128x208 and 192x128 with pingpong, 128x224,
+128x256 and 256x128 to 256x208 without) times clusters 1x2 and 2x1, plus `swap_ab` for varlen-K
+calls without `A_idx`. It has no persistent, `use_tma_gather` or 64-wide tiles, and a gathered call
+(`A_idx`) keeps only cluster 2x1 and no 208-wide tile, so 9 candidates; other varlen-M calls have
+22 and the LoRA grads 44. With so few there was no shortlist stage: every candidate was timed four
+times in each of two processes and ranked by its median regret, averaged over both. The processes
+agree to 0.2% for the median key (0.9% at the 90th percentile, one key 5.2%). H100 winners are
+decisive: for half the keys no other config is within 2% of the best, and the runner-up is 2.2%
+behind for the median key.
+
+| # | kernel | calls | keys | distinct winners | swept per key | worst regret | `quack_autotune: false` median / max | first valid candidate median / max |
+|---|---|---|---|---|---|---|---|---|
+| 0 | `gemm_gated_tuned` | gate/up forward (with or without the LoRA addend) | 18 | 1 | 1 | 0.0% | 0.0% / 0.0% | 42% / 129% |
+| 1 | `gemm_dgated_tuned` | down backward | 18 | 1 | 1 | 0.0% | 0.0% / 0.0% | 35% / 100% |
+| 2 | `gemm_tuned` | expert weight grads (varlen-K) | 20 | 4 | 4 | 0.2% | 0.0% / 15% | 11% / 45% |
+| 3 | `gemm_tuned` | LoRA grads with r rows | 8 | 3 | 3 | 0.1% | 2.1% / 6.3% | 74% / 85% |
+| 4 | `gemm_tuned` | LoRA grads with r columns | 16 | 5 | 3 | 0.7% | 0.0% / 10% | 4.7% / 82% |
+| 5 | `gemm_tuned` | rank-r products `x P` (N = r) | 32 | 5 | 3-4 | 1.3% | 0.0% / 15% | 4.2% / 29% |
+| 6 | `gemm_tuned` | rank-r products `u Q` (K = r) | 30 | 7 | 3 | 1.8% | 0.8% / 4.5% | 2.8% / 5.4% |
+| 7 | `gemm_tuned` | down forward, gate/up dX | 36 | 6 | 3 | 1.5% | 0.0% / 7.5% | 4.8% / 18% |
+
+The last column is what `quack_autotune: false` did on sm90 before the rule had sm90 picks: none of
+the B200 picks is an sm90 candidate, so every key took quack's first valid one (256x128, cluster
+1x2, or 2x1 with `A_idx`). That costs 35-42% on the gated forward and dgated backward for the
+median key, and those two are 35-50% of each run's grouped GEMM time. Summed over each run's keys,
+weighted by their best times, the first valid candidates are 11-53% slower than the per-key best
+and the sm90 rule 0-3.6%. The rule's misses above 5% are F1's expert weight grad with N = 2I
+(128x192 pingpong wins by 9-15% at every token count, on no other shape), F8's gathered `x P` (15%
+on a 0.09 ms GEMM), F2's LoRA grad with r columns at I = 704 (10% on 0.12 ms), F8's LoRA grad with
+r rows (6.3%) and F7-dsv4pro's dX with the LoRA addend (7.5%, where the same shape without the
+addend prefers the rule's config).
+
+```yaml
+autotune_profiles:
+  # gate/up forward and down backward: one config each, not benchmarked
+  - kernel: gemm_gated_tuned
+    backend: quack
+    gpu: H100
+    match: { "cu_seqlens_m.dim0": { ge: 2 } }
+    configs:
+      - { tile_m: 128, tile_n: 256, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+  - kernel: gemm_dgated_tuned
+    backend: quack
+    gpu: H100
+    match: { "cu_seqlens_m.dim0": { ge: 2 } }
+    configs:
+      - { tile_m: 128, tile_n: 256, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+  # gemm_tuned: the first matching entry decides, so the narrower matches come first
+  - kernel: gemm_tuned            # expert weight grads
+    backend: quack
+    gpu: H100
+    match: { "cu_seqlens_k.dim0": { ge: 2 }, "out.dim-1": { gt: 128 }, "out.dim-2": { gt: 128 } }
+    configs:
+      - { tile_m: 128, tile_n: 256, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 192, cluster_m: 2, cluster_n: 1, pingpong: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 192, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+      - { tile_m: 256, tile_n: 160, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+  - kernel: gemm_tuned            # LoRA grads with r rows ([E, r, 2I])
+    backend: quack
+    gpu: H100
+    match: { "cu_seqlens_k.dim0": { ge: 2 }, "out.dim-2": { le: 128 } }
+    configs:
+      - { tile_m: 128, tile_n: 128, cluster_m: 1, cluster_n: 2, pingpong: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 128, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: true }
+      - { tile_m: 128, tile_n: 192, cluster_m: 1, cluster_n: 2, pingpong: true, swap_ab: false }
+  - kernel: gemm_tuned            # LoRA grads with r columns ([E, H or I, r])
+    backend: quack
+    gpu: H100
+    match: { "cu_seqlens_k.dim0": { ge: 2 } }
+    configs:
+      - { tile_m: 128, tile_n: 128, cluster_m: 2, cluster_n: 1, pingpong: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 128, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+      - { tile_m: 192, tile_n: 128, cluster_m: 2, cluster_n: 1, pingpong: true, swap_ab: false }
+  - kernel: gemm_tuned            # rank-r x P (N = r); cluster 1x2 only applies without A_idx
+    backend: quack
+    gpu: H100
+    match: { "cu_seqlens_m.dim0": { ge: 2 }, "out.dim-1": { le: 128 } }
+    configs:
+      - { tile_m: 128, tile_n: 128, cluster_m: 2, cluster_n: 1, pingpong: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 128, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+      - { tile_m: 192, tile_n: 128, cluster_m: 2, cluster_n: 1, pingpong: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 128, cluster_m: 1, cluster_n: 2, pingpong: false, swap_ab: false }
+  - kernel: gemm_tuned            # rank-r u Q (K = r)
+    backend: quack
+    gpu: H100
+    match: { "cu_seqlens_m.dim0": { ge: 2 }, "B.dim-2": { le: 128 } }
+    configs:
+      - { tile_m: 128, tile_n: 256, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 2, pingpong: false, swap_ab: false }
+      - { tile_m: 256, tile_n: 128, cluster_m: 2, cluster_n: 1, pingpong: false, swap_ab: false }
+  - kernel: gemm_tuned            # down forward, gate/up dX (with or without the LoRA addend)
+    backend: quack
+    gpu: H100
+    match: { "cu_seqlens_m.dim0": { ge: 2 } }
+    configs:
+      - { tile_m: 192, tile_n: 128, cluster_m: 1, cluster_n: 2, pingpong: true, swap_ab: false }
+      - { tile_m: 256, tile_n: 128, cluster_m: 1, cluster_n: 2, pingpong: false, swap_ab: false }
+      - { tile_m: 128, tile_n: 256, cluster_m: 1, cluster_n: 2, pingpong: false, swap_ab: false }
+```
+
+As on B200, ranks other than 32, NVFP4 experts and the families not listed above were not measured.
+
+<details>
+<summary>Winners per run (H100): best config; configs within 2%; the sm90 rule's regret</summary>
+
+`pp` is pingpong. Where a run has several keys for a role (`xN`), the cell shows the one the rule
+does worst on.
+
+| run | up+gate fwd | down fwd | down dgated bwd | dX up | dW1 varlen-K | dW2 varlen-K | rank-r out | rank-r in | LoRA grad varlen-K |
+|---|---|---|---|---|---|---|---|---|---|
+| F1-full-ep1-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 2; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x192 c2x1 np pp; 1; +15% | 128x256 c2x1 np; 2; +0% |  |  |  |
+| F1-full-ep1-t4096 | 128x256 c2x1 np; 1; +0% | 128x256 c1x2 np; 1; +2% | 128x256 c2x1 np; 1; +0% | 128x256 c1x2 np; 1; +3% | 128x192 c2x1 np pp; 1; +12% | 256x160 c2x1 np; 1; +3% |  |  |  |
+| F1-full-ep1-t65536 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x192 c2x1 np pp; 1; +9% | 128x256 c2x1 np; 1; +0% |  |  |  |
+| F1-lora_split-ep1-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% |  |  | 128x128 c2x1 np pp; 4; +2% (x4) | 128x224 c2x1 np; 3; +3% (x4) | 128x128 c1x2 np swap pp; 2; +1% (x3) |
+| F1-lora_split-ep1-t65536 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% |  |  | 256x192 c2x1 np; 3; +3% (x4) | 128x256 c1x2 np; 2; +5% (x4) | 128x128 c1x2 np swap pp; 2; +0% (x3) |
+| F2-full-ep1-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 3; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 128x256 c2x1 np; 1; +0% |  |  |  |
+| F2-lora_split-ep1-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% |  |  | 128x128 c2x1 np pp; 1; +3% (x4) | 256x128 c2x1 np; 3; +3% (x4) | 128x192 c1x2 np swap pp; 2; +10% (x3) |
+| F5-full-ep8-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 2; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 4; +0% | 256x192 c2x1 np; 2; +0% | 256x192 c2x1 np; 2; +0% |  |  |  |
+| F5-full-ep8-t4096 | 128x256 c2x1 np; 1; +0% | 128x256 c1x2 np; 2; +0% | 128x256 c2x1 np; 1; +0% | 128x256 c1x2 np; 1; +4% | 128x192 c2x1 np pp; 3; +1% | 128x256 c2x1 np; 3; +0% |  |  |  |
+| F5-full-ep8-t65536 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 4; +0% | 256x192 c2x1 np; 1; +0% | 256x192 c2x1 np; 1; +0% |  |  |  |
+| F5-lora_split-ep8-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% |  |  | 256x128 c2x1 np; 1; +0% (x4) | 128x224 c1x2 np; 2; +4% (x3) | 256x128 c2x1 np swap; 2; +3% (x3) |
+| F5-lora_split-ep8-t4096 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 2; +0% | 128x256 c2x1 np; 1; +0% | 128x256 c1x2 np; 3; +0% |  |  | 128x128 c2x1 np pp; 1; +0% (x4) | 128x224 c1x2 np; 5; +3% (x3) | 256x128 c2x1 np swap; 6; +1% (x3) |
+| F6-full-ep8-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 256x192 c1x2 np; 3; +1% | 256x192 c2x1 np; 1; +0% | 256x192 c2x1 np; 1; +0% |  |  |  |
+| F6-lora_split-ep8-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% |  |  | 256x128 c1x2 np; 1; +4% (x4) | 128x256 c1x2 np; 2; +3% (x4) | 128x192 c1x2 np pp; 2; +3% (x3) |
+| F7-dsv4pro-full-ep8-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 5; +0% | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 4; +0% | 128x192 c2x1 np pp; 1; +3% | 128x256 c2x1 np; 2; +0% |  |  |  |
+| F7-dsv4pro-lora_split-ep8-t16384 | 128x256 c2x1 np; 1; +0% | 192x128 c1x2 np pp; 1; +0% | 128x256 c2x1 np; 1; +0% | 256x128 c1x2 np; 4; +8% |  |  | 256x128 c2x1 np; 2; +1% (x4) | 256x128 c2x1 np; 6; +1% (x4) | 256x128 c2x1 np swap; 2; +5% (x3) |
+| F8-full-ep1-t16384 | 128x256 c2x1 np; 1; +0% | 256x208 c1x2 np; 5; +1% | 128x256 c2x1 np; 1; +0% | 256x192 c1x2 np; 4; +0% | 256x192 c2x1 np; 2; +0% | 256x192 c2x1 np; 2; +0% |  |  |  |
+| F8-lora_split-ep1-t16384 | 128x256 c2x1 np; 1; +0% | 256x208 c1x2 np; 5; +1% | 128x256 c2x1 np; 1; +0% | 128x256 c2x1 np; 4; +0% |  |  | 192x128 c2x1 np pp; 2; +15% (x4) | 128x256 c1x2 np; 3; +2% (x4) | 256x128 c2x1 np swap; 2; +6% (x3) |
+
+</details>
+
+To reproduce on Modal: push the branch, then run `cicd.quack_profile_sweep` with `GPU_TYPE=H100`
+and the CI image environment, `--passes 2 --extra "--repeats 4"`, and
+`python scripts/sonicmoe_quack_sweep.py analyze <dir> --evaluate profiles.yaml` on the
+downloaded `.quack.json` files. The 18 runs took 8.8 H100-hours: re-timing every candidate four
+times is what costs, up to 42 minutes per pass for F5 full at 64k tokens.
+
 ## quack key buckets and the no-sweep mode (SonicMoE)
 
 quack keys each autotune winner on every tensor's exact shape, so every new routed row count of a
@@ -796,7 +950,7 @@ every run. Records written before the fingerprint existed skip the first check. 
 `quack_autotune: false` never benchmarks: each key gets one config by a fixed rule, so a new shape
 costs at most a compile of that config (`source: heuristic` in the records). Matching
 `autotune_profiles` still decide the candidates; the rule then picks among them. The built-in
-B200 profiles are not applied in this mode.
+B200 and H100 profiles are not applied in this mode.
 
 | kernel | rule (B200) |
 |---|---|
@@ -811,15 +965,33 @@ B200 profiles are not applied in this mode.
 
 The others use `use_tma_gather` exactly when `A_idx` is passed, no pingpong and no `swap_ab`. The
 rank-r rows (N or K at most 128) were set from the B200 measurements under "Built-in profiles for
-SonicMoE on B200". When the
-rule's config is not a valid candidate (another GPU generation, or pruned for the call) the first
-valid candidate is used, logged once per kernel.
+SonicMoE on B200".
+
+On sm90 the rule picks from the H100 measurements under "Built-in profiles for SonicMoE on H100"
+(sm90 has no persistent, `use_tma_gather` or 64-wide candidates, and calls with `A_idx` get only
+cluster 2x1):
+
+| kernel | rule (sm90) |
+|---|---|
+| `gemm_gated_tuned`, `gemm_dgated_tuned`, other kernels | 128x256, cluster 2x1 |
+| `gemm_tuned` with `cu_seqlens_k`, at most 128 output rows, no `A_idx` (LoRA grads with r rows) | 128x128, cluster 1x2, pingpong |
+| `gemm_tuned`, N <= 128, with `cu_seqlens_k` | 256x128 cluster 2x1 with `A_idx`, else 128x128 cluster 2x1 pingpong |
+| `gemm_tuned`, N <= 128, with `A_idx` | 128x128 cluster 2x1 pingpong up to 1024 rows per expert, else 256x128 cluster 2x1 |
+| `gemm_tuned`, N <= 128, otherwise | 192x128, cluster 2x1, pingpong |
+| `gemm_tuned` with `cu_seqlens_k` otherwise (expert weight grads) | 256x192 cluster 2x1 for at least 4096 output rows and more than 2048 rows per expert, else 128x256 cluster 2x1 |
+| `gemm_tuned`, K <= 128 < N | 128x256, cluster 2x1 |
+| `gemm_tuned` otherwise, with `A_idx` | 192x128, cluster 2x1, pingpong |
+| `gemm_tuned` otherwise, K >= 8192 | 256x192, cluster 1x2 |
+| `gemm_tuned` otherwise | 192x128, cluster 1x2, pingpong |
+
+When the rule's config is not a valid candidate (another GPU generation, or pruned for the call)
+the first valid candidate is used, logged once per kernel.
 
 ```yaml
 use_sonicmoe: true
 quack_autotune_key_buckets: pow2   # default with use_sonicmoe; shape = no token dims; none = exact shapes
 quack_autotune: false              # default true (sweep)
-quack_autotune_default_profiles: false  # default true: sweep only the built-in B200 candidates
+quack_autotune_default_profiles: false  # default true: sweep only the built-in B200/H100 candidates
 ```
 
 With `use_sonicmoe` (or any quack `autotune_profiles`), the ~200 ms GPU warm-up matmul quack runs
