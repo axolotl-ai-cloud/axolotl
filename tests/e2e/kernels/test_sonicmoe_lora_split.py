@@ -31,6 +31,9 @@ pytestmark = [
         importlib.util.find_spec("kernels") is None,
         reason="HF `kernels` package not installed",
     ),
+    # sm90+ only: the B200 lane is the only single-GPU lane newer than L40S
+    pytest.mark.gpu_blackwell,
+    pytest.mark.usefixtures("sonicmoe_setup"),
 ]
 
 E_LOCAL, TOP_K, NUM_TOKENS, HIDDEN, INTER, RANK, SCALING = 8, 4, 300, 512, 256, 16, 2.0
@@ -42,11 +45,9 @@ def sonic_ops():
     from transformers.integrations.sonicmoe import is_sonicmoe_loadable
 
     from axolotl.integrations.kernels.libs.sonicmoe.lora_split import SonicOps
-    from axolotl.integrations.kernels.plugin import _shim_nvvm_mbarrier_arrive
 
     if not is_sonicmoe_loadable():
         pytest.skip("sonic-moe kernel not loadable")
-    _shim_nvvm_mbarrier_arrive()
     return SonicOps()
 
 
@@ -195,6 +196,15 @@ def test_sonic_primitives_match_torch_ops(sonic_ops):
     )
 
 
+def test_hub_quack_compiles_in_process(sonic_ops):
+    """The hub kernel's quack must not use its async compile pool: the pool's workers can't
+    import the hash-named package, and sweeps beside the dead pool faulted on B200."""
+    package = sonic_ops.gemm_interface.__name__.rpartition(".")[0]
+    async_compile = importlib.import_module(f"{package}.cache.async_compile")
+    with async_compile.pool_scope() as pool:
+        assert pool is None
+
+
 @pytest.fixture(scope="module")
 def experts_module():
     from transformers import AutoConfig, AutoModelForCausalLM
@@ -203,11 +213,9 @@ def experts_module():
     from axolotl.integrations.kernels.libs.sonicmoe.experts import (
         register_sonicmoe_experts,
     )
-    from axolotl.integrations.kernels.plugin import _shim_nvvm_mbarrier_arrive
 
     if not is_sonicmoe_loadable():
         pytest.skip("sonic-moe kernel not loadable")
-    _shim_nvvm_mbarrier_arrive()
     register_sonicmoe_experts()
     config = AutoConfig.for_model("qwen3_moe")
     config.hidden_size = HIDDEN
