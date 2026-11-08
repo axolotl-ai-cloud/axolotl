@@ -3,6 +3,8 @@
 Dense experts materialize expert LoRA via ``MoELoRAMaterialize`` and hand the result
 to upstream's ``sonicmoe_experts_forward`` through a facade, or, with ``sonicmoe_lora_split``,
 keep the base in sonic-moe's GEMMs and add the LoRA as low-rank addends (``lora_split``).
+Clamped-SwiGLU experts (DeepSeek-V4, GLM-5), whose epilogue sonic-moe's autograd lacks, run
+on the same quack GEMMs through ``lora_split``'s autograd either way.
 NVFP4 experts (which the CUTLASS kernel cannot read) take the grouped dequant path in
 ``nvfp4_lora`` instead, and non-gated relu² experts (nemotron_h) the grouped MLP in
 ``nongated``.
@@ -24,7 +26,11 @@ from .lora import (
     materialize_expert_lora,
     unwrap_experts_lora,
 )
-from .lora_split import lora_split_applies, sonicmoe_lora_split_forward
+from .lora_split import (
+    lora_split_applies,
+    quack_experts_unsupported_reason,
+    sonicmoe_lora_split_forward,
+)
 
 
 def _maybe_unwrap_param_wrapper(param):
@@ -122,6 +128,7 @@ class _LoRAExpertsFacade:
         "has_post_expert_norm",
         "is_concatenated",
         "is_transposed",
+        "limit",
         "num_experts",
     )
 
@@ -129,13 +136,18 @@ class _LoRAExpertsFacade:
         from .nvfp4 import resolve_gated_activation
 
         concat = getattr(experts_module, "is_concatenated", True)
+        limit = None
         # An explicit ``act`` means rewritten non-gated weights: no ``_apply_gate`` to probe.
         if act is None:
-            from .epilogue import check_epilogue
+            from .epilogue import check_epilogue, dense_limit
 
             act = resolve_gated_activation(experts_module.config)
-            # The fused kernel has no clamp, so the dense path can only ever compute limit=None.
-            check_epilogue(experts_module, act, concat=concat, limit=None, path="dense")
+            limit = dense_limit(experts_module, act)
+            check_epilogue(
+                experts_module, act, concat=concat, limit=limit, path="dense"
+            )
+
+        self.limit = limit
 
         self.has_gate = True
         self.gate_up_proj = w1
@@ -560,9 +572,47 @@ def _sonicmoe_forward(
         )
 
     facade = _LoRAExpertsFacade(self, w1, b1, w2, b2)
+    if facade.limit is not None:
+        return _sonicmoe_clamped_forward(
+            self, facade, hidden_states, top_k_index, top_k_weights, pairs
+        )
     if pairs is not None:
         return _sonicmoe_pairs_forward(facade, hidden_states, *pairs)
     return sonicmoe_experts_forward(facade, hidden_states, top_k_index, top_k_weights)
+
+
+def _sonicmoe_clamped_forward(
+    self,
+    facade: _LoRAExpertsFacade,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+    pairs: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
+    ops=None,
+) -> torch.Tensor:
+    """Clamped SwiGLU experts (``facade.limit``) on the quack GEMMs via ``lora_split``'s autograd.
+
+    sonic-moe's own autograd has no clamped epilogue and nothing else runs one on SonicMoE, so
+    a call that autograd cannot take raises instead of falling back.
+    """
+    reason = quack_experts_unsupported_reason(
+        self,
+        hidden_states,
+        facade.gate_up_proj,
+        facade.gate_up_proj_bias,
+        facade.down_proj,
+        facade.down_proj_bias,
+    )
+    if reason is not None:
+        raise NotImplementedError(
+            f"sonicmoe runs clamped SwiGLU experts on its quack GEMMs only, which do not "
+            f"support {reason}. Use `expert_backend: scattermoe` instead."
+        )
+    if pairs is None:
+        pairs = _grid_pairs(hidden_states, top_k_index, top_k_weights)
+    return sonicmoe_lora_split_forward(
+        facade, hidden_states, *pairs, None, None, ops=ops
+    )
 
 
 def _sonicmoe_nongated_forward(
@@ -659,7 +709,7 @@ def _sonicmoe_nvfp4_forward(
     in-kernel W4A4 grouped GEMM (``fp4_cute``); elsewhere it is dequantized to
     dense per matmul (``dequant``).
     """
-    from .epilogue import check_epilogue
+    from .epilogue import check_epilogue, declared_limit
     from .nvfp4 import resolve_gated_activation
     from .nvfp4_lora import grouped_moe_reference_forward
 
@@ -679,7 +729,7 @@ def _sonicmoe_nvfp4_forward(
         )
 
     act = resolve_gated_activation(self.config)
-    limit = getattr(self, "limit", None)
+    limit = declared_limit(self)
     concat = getattr(self, "is_concatenated", True)
     if not getattr(self, "has_gate", True):
         # `_apply_gate` is not the contract for non-gated experts, so check `act` directly.

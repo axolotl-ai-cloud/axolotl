@@ -26,12 +26,19 @@ Per routed pair ``p`` (row vectors, expert ``e``, router score ``sigma``), with 
 
 ``TorchOps`` implements every primitive in plain torch with the kernels' semantics, so the whole
 autograd function runs on CPU; ``SonicOps`` binds the same primitives to the loaded hub kernel.
+
+The same autograd function also runs experts whose epilogue sonic-moe's own autograd cannot
+express, the clamped SwiGLU of DeepSeek-V4 / GLM-5, without LoRA addends and with trainable base
+weights (``dW1 = sum x^T dh``, ``dW2 = sum G^T (sigma a)``) for full fine-tuning and materialized
+LoRA. The clamped epilogue is registered into the hub kernel's quack per limit
+(``quack_activations``).
 """
 
 from __future__ import annotations
 
 import importlib
 import math
+from pathlib import Path
 from typing import NamedTuple
 
 import torch
@@ -41,6 +48,25 @@ _LORA_SPLIT: dict = {"enabled": False}
 _LORA_SPLIT_WARNED: set[str] = set()
 
 GLU_EPILOGUES = {"silu": "swiglu", "gelu": "geglu"}
+CLAMPED_SWIGLU = "swiglu_limit"
+
+
+def glu_epilogue(act: str, limit: float | None = None) -> str | None:
+    """quack's gated activation for ``act`` clamped at ``limit``, or ``None`` if it has none."""
+    base = GLU_EPILOGUES.get(act)
+    if limit is None or base is None:
+        return base
+    if base != "swiglu":
+        return None
+    text = repr(float(limit))
+    return CLAMPED_SWIGLU + (text[:-2] if text.endswith(".0") else text)
+
+
+def glu_limit(activation: str) -> float | None:
+    """The clamp of a ``glu_epilogue`` activation name, or ``None`` if it is unclamped."""
+    if activation.startswith(CLAMPED_SWIGLU):
+        return float(activation[len(CLAMPED_SWIGLU) :])
+    return None
 
 
 def configure_lora_split(enabled: bool = False) -> None:
@@ -48,18 +74,16 @@ def configure_lora_split(enabled: bool = False) -> None:
     _LORA_SPLIT_WARNED.clear()
 
 
-def lora_split_unsupported_reason(
+def quack_experts_unsupported_reason(
     module, hidden_states: torch.Tensor, w1, b1, w2, b2
 ) -> str | None:
-    """Why the split path cannot run this (LoRA-carrying) experts call, or ``None``."""
+    """Why ``LoRASplitExperts`` cannot run this experts call, or ``None``."""
     from .nvfp4 import resolve_gated_activation
 
     if not getattr(module, "has_gate", True):
         return "non-gated experts"
     if any(t.dtype != torch.bfloat16 for t in (hidden_states, w1, w2)):
         return "non-bf16 experts"
-    if w1.requires_grad or w2.requires_grad:
-        return "trainable base expert weights"
     if b1 is not None or b2 is not None:
         return "expert bias"
     if getattr(module, "has_post_expert_norm", False):
@@ -74,6 +98,16 @@ def lora_split_unsupported_reason(
     ):
         return "transposed concatenated gate_up layout"
     return None
+
+
+def lora_split_unsupported_reason(
+    module, hidden_states: torch.Tensor, w1, b1, w2, b2
+) -> str | None:
+    """Why the split path cannot run this (LoRA-carrying) experts call, or ``None``."""
+    reason = quack_experts_unsupported_reason(module, hidden_states, w1, b1, w2, b2)
+    if reason is None and (w1.requires_grad or w2.requires_grad):
+        return "trainable base expert weights"
+    return reason
 
 
 def lora_split_applies(module, hidden_states, w1, b1, w2, b2) -> bool:
@@ -130,20 +164,25 @@ class RoutingMetadata(NamedTuple):
 
 
 def glu_forward(gate: torch.Tensor, up: torch.Tensor, activation: str) -> torch.Tensor:
-    if activation == "swiglu":
-        return F.silu(gate) * up
-    return F.gelu(gate, approximate="tanh") * up
+    limit = glu_limit(activation)
+    if limit is not None:
+        gate, up = gate.clamp(max=limit), up.clamp(-limit, limit)
+    if activation == "geglu":
+        return F.gelu(gate, approximate="tanh") * up
+    return F.silu(gate) * up
 
 
 def glu_backward(
     gate: torch.Tensor, up: torch.Tensor, d: torch.Tensor, activation: str
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """``(dgate, dup)`` for upstream ``d``, as quack's ``dswiglu`` / ``dgeglu`` compute them."""
-    if activation == "swiglu":
-        sig = torch.sigmoid(gate)
-        act = gate * sig
-        dact = sig + act * (1 - sig)
-    else:
+    limit = glu_limit(activation)
+    if limit is not None:
+        # torch.clamp's gradient is zero at the bound, not only past it
+        gate_inside = gate < limit
+        up_inside = (up > -limit) & (up < limit)
+        gate, up = gate.clamp(max=limit), up.clamp(-limit, limit)
+    if activation == "geglu":
         c1 = math.sqrt(2 / math.pi)
         c2 = 0.044715 * c1
         gate_sq = gate * gate
@@ -151,7 +190,15 @@ def glu_backward(
         half = 0.5 + 0.5 * t
         act = gate * half
         dact = half + 0.5 * gate * (1 - t * t) * (c1 + 3 * c2 * gate_sq)
-    return d * up * dact, d * act
+    else:
+        sig = torch.sigmoid(gate)
+        act = gate * sig
+        dact = sig + act * (1 - sig)
+    dgate, dup = d * up * dact, d * act
+    if limit is not None:
+        dgate = torch.where(gate_inside, dgate, 0.0)
+        dup = torch.where(up_inside, dup, 0.0)
+    return dgate, dup
 
 
 def _compute_dtype(dtype: torch.dtype) -> torch.dtype:
@@ -194,12 +241,23 @@ class TorchOps:
         self._poison_tail(out, cu)
         return out
 
-    def gemm_k(self, a_t, b, out, cu, a_idx=None, alpha=1.0):
+    def gemm_k(self, a_t, b, out, cu, a_idx=None, alpha=1.0, concat_out=False):
         ct = _compute_dtype(out.dtype)
         for e, (lo, hi) in self._segments(cu):
             cols = a_t[:, a_idx[lo:hi].long()] if a_idx is not None else a_t[:, lo:hi]
-            out[e] = (alpha * (cols.to(ct) @ b[lo:hi].to(ct))).to(out.dtype)
+            res = alpha * (cols.to(ct) @ b[lo:hi].to(ct))
+            if concat_out:
+                # quack de-interleaves along out's non-contiguous dim
+                dim = 0 if out.stride(-1) == 1 else 1
+                res = torch.cat(
+                    [res[::2], res[1::2]] if dim == 0 else [res[:, ::2], res[:, 1::2]],
+                    dim,
+                )
+            out[e] = res.to(out.dtype)
         return out
+
+    def prepare_activation(self, activation):
+        pass
 
     def gemm_gated(self, x, b, c, preact, postact, cu, a_idx, activation, concat_b):
         if concat_b:
@@ -306,10 +364,39 @@ class SonicOps:
 
         load_sonicmoe_kernel()
         root = lazy_load_kernel("sonic-moe").__name__
+        self.quack_root = f"{root}.quack"
         self.gemm_interface = importlib.import_module(f"{root}.quack.gemm_interface")
+        self.activation = importlib.import_module(f"{root}.quack.activation")
         self.functional = importlib.import_module(f"{root}.functional")
         self.forward_ops = importlib.import_module(f"{root}.functional.forward")
         self.backward_ops = importlib.import_module(f"{root}.functional.backward")
+
+    def prepare_activation(self, activation):
+        """Register a clamped SwiGLU into quack's gated epilogues the first time it is used."""
+        limit = glu_limit(activation)
+        if limit is None or activation in self.activation.gate_fn_map:
+            return
+        from axolotl.integrations.kernels.autotune_profiles import (
+            compile_quack_in_process,
+        )
+
+        from . import quack_activations
+        from .quack_activations.clamped_swiglu import build_clamped_swiglu
+
+        cache = importlib.import_module(f"{self.quack_root}.cache")
+        source_dir = Path(quack_activations.__file__).resolve().parent
+        if source_dir not in cache.EXTRA_SOURCE_DIRS:
+            cache.EXTRA_SOURCE_DIRS.append(source_dir)
+            jit = importlib.import_module(f"{self.quack_root}.cache.jit")
+            jit._compute_source_fingerprint.cache_clear()
+        # the epilogue exists only in this process, so its compiles cannot go to the pool workers
+        compile_quack_in_process(self.gemm_interface.gemm_gated_tuned)
+        fwd, bwd = build_clamped_swiglu(self.activation, limit)
+        self.gemm_interface.gated_to_pytorch_fn_map[activation] = lambda gate, up: (
+            glu_forward(gate, up, activation)
+        )
+        self.activation.gate_fn_map[activation] = fwd
+        self.activation.dgate_fn_map[activation] = bwd
 
     def gemm(self, a, b, out, cu, a_idx=None, alpha=1.0, c=None, concat_b=False):
         concat = ("B",) if concat_b else None
@@ -338,7 +425,7 @@ class SonicOps:
             )
         return out
 
-    def gemm_k(self, a_t, b, out, cu, a_idx=None, alpha=1.0):
+    def gemm_k(self, a_t, b, out, cu, a_idx=None, alpha=1.0, concat_out=False):
         self.gemm_interface.gemm(
             a_t,
             b,
@@ -348,6 +435,7 @@ class SonicOps:
             A_idx=a_idx,
             batch_idx_permute=None,
             dynamic_scheduler=False,
+            concat_layout=("out",) if concat_out else None,
         )
         return out
 
@@ -460,6 +548,31 @@ def sonic_ops() -> SonicOps:
     return _SONIC_OPS
 
 
+def prepare_model_epilogues(model, ops=None) -> list[str]:
+    """Register the clamped SwiGLU epilogues ``model``'s dense experts run, before any forward.
+
+    The first forward would do it otherwise, possibly inside a torch.compile trace.
+    """
+    from .epilogue import dense_limit
+    from .nvfp4 import is_nvfp4_param, resolve_gated_activation
+
+    limits = set()
+    for module in model.modules():
+        if not hasattr(module, "_apply_gate") or not hasattr(module, "gate_up_proj"):
+            continue
+        if not getattr(module, "has_gate", True) or is_nvfp4_param(module.gate_up_proj):
+            continue
+        limit = dense_limit(module, resolve_gated_activation(module.config))
+        if limit is not None:
+            limits.add(limit)
+    activations = sorted(filter(None, (glu_epilogue("silu", lim) for lim in limits)))
+    if activations:
+        ops = ops if ops is not None else sonic_ops()
+        for activation in activations:
+            ops.prepare_activation(activation)
+    return activations
+
+
 def _addend_buffer(out: torch.Tensor) -> torch.Tensor:
     # Writing C into the output buffer is safe for the kernels (each tile reads its C before
     # storing D there) but not something a traced graph may assume of a mutated input.
@@ -467,11 +580,12 @@ def _addend_buffer(out: torch.Tensor) -> torch.Tensor:
 
 
 class LoRASplitExperts(torch.autograd.Function):
-    """Gated MoE experts on flat routing with expert LoRA as low-rank addends (base frozen).
+    """Gated MoE experts on flat routing with expert LoRA as low-rank addends.
 
     ``w1`` / ``w2`` are the quack B operands sonic-moe's forward uses, ``[E, H, 2I]`` and
-    ``[E, I, H]``; ``p1, q1`` / ``p2, q2`` are from ``lora_split_factors`` (``q1`` in the gated
-    kernels' interleaved column order) or ``None`` for a linear without LoRA.
+    ``[E, I, H]``, and get gradients when they require them; ``p1, q1`` / ``p2, q2`` are from
+    ``lora_split_factors`` (``q1`` in the gated kernels' interleaved column order) or ``None``
+    for a linear without LoRA.
     """
 
     @staticmethod
@@ -593,6 +707,16 @@ class LoRASplitExperts(torch.autograd.Function):
             activation,
         )
 
+        dw1 = dw2 = None
+        if ctx.needs_input_grad[7]:
+            dw2 = ops.gemm_k(
+                dout.t(),
+                a_prime,
+                torch.empty(num_experts, hidden, inter, **kw),
+                cu,
+                x_gather_idx,
+            ).transpose(1, 2)
+
         dp2 = dq2 = None
         if p2 is not None:
             r2 = p2.shape[-1]
@@ -653,12 +777,23 @@ class LoRASplitExperts(torch.autograd.Function):
                 z1, p1.transpose(1, 2), _addend_buffer(dx_expanded), cu, alpha=scaling1
             )
             del z1
+        if ctx.needs_input_grad[6]:
+            # w1's own strides: for HF's [E, 2I, H] the interleaved gate/up dim is the
+            # non-contiguous one quack writes concatenated
+            dw1 = ops.gemm_k(
+                x.t(),
+                dh,
+                torch.empty_like(w1),
+                cu,
+                x_gather_idx,
+                concat_out=ctx.concat,
+            )
         ops.gemm(dh, w1.transpose(1, 2), dx_expanded, cu, c=c, concat_b=ctx.concat)
         del dh, c
         dx = ops.token_reduce(
             dx_expanded, s_reverse_scatter_idx, token_offset, num_tokens, num_experts
         )
-        return (dx, dscores, dp1, dq1, dp2, dq2) + (None,) * 12
+        return (dx, dscores, dp1, dq1, dp2, dq2, dw1, dw2) + (None,) * 10
 
 
 def sonicmoe_lora_split_forward(
@@ -673,14 +808,16 @@ def sonicmoe_lora_split_forward(
 ) -> torch.Tensor:
     """The split path on flat routing (``moe_general_routing_inputs`` arguments).
 
-    ``facade`` exposes the base weights in HF layout plus the layout flags and activation, as
-    ``experts._LoRAExpertsFacade`` does; ``lora_w*`` are ``(lora_A, lora_B, scaling)`` or ``None``.
+    ``facade`` exposes the base weights in HF layout plus the layout flags, activation and clamp,
+    as ``experts._LoRAExpertsFacade`` does; ``lora_w*`` are ``(lora_A, lora_B, scaling)`` or
+    ``None``.
     """
     ops = ops if ops is not None else sonic_ops()
     num_experts = facade.num_experts
     transposed = facade.is_transposed
     concat = facade.is_concatenated
-    activation = GLU_EPILOGUES[facade.config.hidden_act]
+    activation = glu_epilogue(facade.config.hidden_act, getattr(facade, "limit", None))
+    ops.prepare_activation(activation)
     w1 = facade.gate_up_proj if transposed else facade.gate_up_proj.transpose(1, 2)
     w2 = facade.down_proj if transposed else facade.down_proj.transpose(1, 2)
     dtype = hidden_states.dtype

@@ -129,6 +129,7 @@ def test_post_model_load_preloads_sonicmoe_before_profiles(monkeypatch):
     import axolotl.integrations.kernels.autotune_cache as cache_mod
     import axolotl.integrations.kernels.autotune_profiles as profiles_mod
     import axolotl.integrations.kernels.libs.sonicmoe.epilogue as epilogue_mod
+    import axolotl.integrations.kernels.libs.sonicmoe.lora_split as lora_split_mod
 
     order = []
     monkeypatch.setattr(plugin_mod, "get_active_adapters", lambda cfg: [])
@@ -146,7 +147,14 @@ def test_post_model_load_preloads_sonicmoe_before_profiles(monkeypatch):
         "apply_autotune_profiles",
         lambda profiles: order.append("profiles"),
     )
-    monkeypatch.setattr(epilogue_mod, "check_model_epilogues", lambda model: None)
+    monkeypatch.setattr(
+        epilogue_mod, "check_model_epilogues", lambda model: order.append("check")
+    )
+    monkeypatch.setattr(
+        lora_split_mod,
+        "prepare_model_epilogues",
+        lambda model: order.append("epilogues"),
+    )
 
     cfg = Cfg(
         use_sonicmoe=True,
@@ -160,6 +168,8 @@ def test_post_model_load_preloads_sonicmoe_before_profiles(monkeypatch):
         "triton-cache",
         ("quack-cache", "/cache/b200.quack.json"),
         "profiles",
+        "check",
+        "epilogues",
     ]
 
 

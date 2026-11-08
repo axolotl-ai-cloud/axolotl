@@ -6,7 +6,8 @@
 
 Adds the gate/up gradient of an extra upstream ``d [TK, I]`` to the ``dh [TK, 2I]`` that quack's
 ``gemm_dgated`` wrote, with quack's ``dswiglu`` / ``dgeglu`` (tanh-approximate GELU) math in
-fp32. Rows at or past ``cu_seqlens[-1]`` (EP sentinel pairs) are neither read nor written.
+fp32, or the clamped SwiGLU's (``lora_split.glu_epilogue``). Rows at or past ``cu_seqlens[-1]``
+(EP sentinel pairs) are neither read nor written.
 """
 
 import torch
@@ -30,7 +31,9 @@ def _glu_bwd_add_kernel(
     inter,
     stride_h,
     stride_d,
+    limit,
     GEGLU: tl.constexpr,
+    CLAMP: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_I: tl.constexpr,
 ):
@@ -48,6 +51,12 @@ def _glu_bwd_add_kernel(
         d_ptr + rows[:, None] * stride_d + cols[None, :], mask=mask, other=0.0
     ).to(tl.float32)
 
+    if CLAMP:
+        gate_inside = gate < limit
+        up_inside = (up > -limit) & (up < limit)
+        gate = tl.minimum(gate, limit)
+        up = tl.minimum(tl.maximum(up, -limit), limit)
+
     if GEGLU:
         c1 = 0.7978845608028654
         c2 = 0.044715 * c1
@@ -61,11 +70,17 @@ def _glu_bwd_add_kernel(
         act = gate * sig
         dact = sig + act * (1.0 - sig)
 
+    add_gate = d * up * dact
+    add_up = d * act
+    if CLAMP:
+        add_gate = tl.where(gate_inside, add_gate, 0.0)
+        add_up = tl.where(up_inside, add_up, 0.0)
+
     dgate = tl.load(dh_ptr + gate_off, mask=mask, other=0.0).to(tl.float32)
     dup = tl.load(dh_ptr + gate_off + 1, mask=mask, other=0.0).to(tl.float32)
     out_ty = dh_ptr.dtype.element_ty
-    tl.store(dh_ptr + gate_off, (dgate + d * up * dact).to(out_ty), mask=mask)
-    tl.store(dh_ptr + gate_off + 1, (dup + d * act).to(out_ty), mask=mask)
+    tl.store(dh_ptr + gate_off, (dgate + add_gate).to(out_ty), mask=mask)
+    tl.store(dh_ptr + gate_off + 1, (dup + add_up).to(out_ty), mask=mask)
 
 
 def glu_bwd_add_(
@@ -75,8 +90,13 @@ def glu_bwd_add_(
     cu_seqlens: torch.Tensor,
     activation: str,
 ) -> None:
-    if activation not in ("swiglu", "geglu"):
-        raise ValueError(f"glu_bwd_add_ supports swiglu and geglu, got {activation!r}")
+    from .lora_split import glu_limit
+
+    limit = glu_limit(activation)
+    if limit is None and activation not in ("swiglu", "geglu"):
+        raise ValueError(
+            f"glu_bwd_add_ supports swiglu, geglu and clamped swiglu, got {activation!r}"
+        )
     num_slots, two_i = h.shape
     inter = two_i // 2
     assert dh.shape == h.shape and d.shape == (num_slots, inter)
@@ -96,7 +116,9 @@ def glu_bwd_add_(
         inter,
         h.stride(0),
         d.stride(0),
+        0.0 if limit is None else limit,
         GEGLU=activation == "geglu",
+        CLAMP=limit is not None,
         BLOCK_M=block_m,
         BLOCK_I=block_i,
         num_warps=4,

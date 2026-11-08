@@ -121,12 +121,13 @@ def test_routing_metadata_groups_valid_pairs_and_marks_sentinels():
 
 
 class _Experts(torch.nn.Module):
-    def __init__(self, transposed, concat, act, gen):
+    def __init__(self, transposed, concat, act, gen, limit=None):
         super().__init__()
         self.num_experts = E
         self.is_transposed = transposed
         self.is_concatenated = concat
         self.has_gate = True
+        self.limit = limit
         self.config = SimpleNamespace(hidden_act=act)
         shape1 = (E, H, 2 * INTER) if transposed else (E, 2 * INTER, H)
         shape2 = (E, INTER, H) if transposed else (E, H, INTER)
@@ -153,6 +154,7 @@ def _materialized(module, x, tokens, expert_ids, scores, lora1, lora2, act):
         w1 = MoELoRAMaterialize.apply(w1, *lora1, S1)
     if lora2 is not None:
         w2 = MoELoRAMaterialize.apply(w2, *lora2, S2)
+    limit = module.limit
     out = torch.zeros_like(x)
     for e in range(E):
         slots = (expert_ids == e).nonzero().squeeze(1)
@@ -164,6 +166,8 @@ def _materialized(module, x, tokens, expert_ids, scores, lora1, lora2, act):
             gate, up = hp.chunk(2, dim=-1)
         else:
             gate, up = hp[:, ::2], hp[:, 1::2]
+        if limit is not None:
+            gate, up = gate.clamp(max=limit), up.clamp(-limit, limit)
         glu = (F.silu(gate) if act == "silu" else F.gelu(gate, approximate="tanh")) * up
         y = glu @ w2[e] if module.is_transposed else glu @ w2[e].T
         out = out.index_add(0, tokens[slots].long(), y * scores[slots, None])
@@ -171,14 +175,21 @@ def _materialized(module, x, tokens, expert_ids, scores, lora1, lora2, act):
 
 
 LAYOUTS = [(False, True), (False, False), (True, False)]
+# clamps a large share of gate/up entries at these dims
+LIMIT = 0.8
 
 
 @pytest.mark.parametrize(("transposed", "concat"), LAYOUTS)
-@pytest.mark.parametrize("act", ["silu", "gelu_pytorch_tanh"])
+@pytest.mark.parametrize(
+    ("act", "limit"),
+    [("silu", None), ("gelu_pytorch_tanh", None), ("silu", LIMIT)],
+)
 @pytest.mark.parametrize("targets", ["both", "gate_up", "down"])
-def test_split_matches_materialized_forward_and_grads(transposed, concat, act, targets):
+def test_split_matches_materialized_forward_and_grads(
+    transposed, concat, act, limit, targets
+):
     gen = torch.Generator().manual_seed(2)
-    module = _Experts(transposed, concat, act, gen)
+    module = _Experts(transposed, concat, act, gen, limit=limit)
     x, tokens, expert_ids, scores = _routing()
     lora1 = _lora_pair(module.gate_up_proj, gen) if targets != "down" else None
     lora2 = _lora_pair(module.down_proj, gen) if targets != "gate_up" else None
@@ -228,6 +239,72 @@ def test_split_matches_materialized_forward_and_grads(transposed, concat, act, t
         assert not d_b.reshape(d_b.shape[0], RANK, E)[:, :, IDLE_EXPERT].any()
     for d_a in got[2::2]:
         assert not d_a[IDLE_EXPERT * RANK : (IDLE_EXPERT + 1) * RANK].any()
+
+
+@pytest.mark.parametrize(("transposed", "concat"), LAYOUTS)
+@pytest.mark.parametrize("limit", [None, LIMIT])
+@pytest.mark.parametrize("mode", ["full", "materialized"])
+def test_trainable_base_matches_autograd(transposed, concat, limit, mode):
+    """Full fine-tuning and materialized LoRA: the base GEMM operands carry gradients."""
+    gen = torch.Generator().manual_seed(5)
+    module = _Experts(transposed, concat, "silu", gen, limit=limit)
+    x, tokens, expert_ids, scores = _routing()
+    full = mode == "full"
+    module.requires_grad_(full)
+    lora1 = lora2 = None
+    if not full:
+        lora1, lora2 = (
+            _lora_pair(module.gate_up_proj, gen),
+            _lora_pair(module.down_proj, gen),
+        )
+    leaves = [module.gate_up_proj, module.down_proj] if full else [*lora1, *lora2]
+    grad_out = torch.randn(T, H, generator=gen, dtype=torch.float64)
+
+    def run(fn):
+        xx = x.clone().requires_grad_(True)
+        ss = scores.clone().requires_grad_(True)
+        out = fn(xx, ss)
+        grads = torch.autograd.grad((out * grad_out).sum(), [xx, ss, *leaves])
+        return out.detach(), grads
+
+    def quack(xx, ss):
+        w1, w2 = module.gate_up_proj, module.down_proj
+        if not full:
+            w1 = MoELoRAMaterialize.apply(w1, *lora1, S1)
+            w2 = MoELoRAMaterialize.apply(w2, *lora2, S2)
+        facade = experts._LoRAExpertsFacade(module, w1, None, w2, None)
+        assert facade.limit == limit
+        return sonicmoe_lora_split_forward(
+            facade, xx, tokens, expert_ids, ss, None, None, ops=TorchOps()
+        )
+
+    want_out, want = run(
+        lambda xx, ss: _materialized(
+            module, xx, tokens, expert_ids, ss, lora1, lora2, "silu"
+        )
+    )
+    got_out, got = run(quack)
+
+    torch.testing.assert_close(got_out, want_out, rtol=1e-10, atol=1e-10)
+    for g, w in zip(got, want, strict=True):
+        assert torch.isfinite(g).all()
+        torch.testing.assert_close(g, w, rtol=1e-9, atol=1e-10)
+    if full:
+        assert not got[2][IDLE_EXPERT].any() and not got[3][IDLE_EXPERT].any()
+
+
+def test_gemm_k_concat_out_writes_concatenated_columns():
+    """quack's ``concat_layout=("out",)`` on dW1's ``[E, H, 2I]`` view of ``[E, 2I, H]``:
+    interleaved gate/up columns land as ``[gate; up]`` along the non-contiguous dim."""
+    gen = torch.Generator().manual_seed(6)
+    a_t = torch.randn(4, 9, generator=gen, dtype=torch.float64)
+    b = torch.randn(9, 6, generator=gen, dtype=torch.float64)
+    cu = torch.tensor([0, 5, 9], dtype=torch.int32)
+    out = torch.empty(2, 6, 4, dtype=torch.float64).transpose(1, 2)
+    TorchOps().gemm_k(a_t, b, out, cu, concat_out=True)
+    for e, (lo, hi) in enumerate([(0, 5), (5, 9)]):
+        res = a_t[:, lo:hi] @ b[lo:hi]
+        torch.testing.assert_close(out[e], torch.cat([res[:, ::2], res[:, 1::2]], -1))
 
 
 def test_separate_addend_buffers_match_the_aliased_ones(monkeypatch):

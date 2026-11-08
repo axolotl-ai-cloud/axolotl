@@ -14,11 +14,30 @@ it has to be a real ACT2FN key).
 
 from __future__ import annotations
 
+import math
+
 import torch
 
 _PROBE_WIDTH = 16
 # Per instance, not per class: `_apply_gate` closes over `self.limit` / `self.alpha`.
 _VERDICT_ATTR = "_sonicmoe_epilogue_verdict"
+
+
+def declared_limit(experts_module) -> float | None:
+    """The gate/up clamp an experts module declares: DeepSeek-V4 ``limit``, GLM-5 ``swiglu_limit``.
+
+    Step3p7 stores ``inf`` for an unclamped layer, which is no clamp at all.
+    """
+    for attr in ("limit", "swiglu_limit"):
+        value = getattr(experts_module, attr, None)
+        if value is not None:
+            return float(value) if math.isfinite(value) else None
+    return None
+
+
+def dense_limit(experts_module, act: str) -> float | None:
+    """The clamp the dense path computes: its quack GEMMs have a clamped SwiGLU only."""
+    return declared_limit(experts_module) if act == "silu" else None
 
 
 def _describe(experts_module) -> str:
@@ -118,11 +137,12 @@ def check_model_epilogues(model) -> int:
         if not getattr(module, "has_gate", True):
             continue
         nvfp4 = is_nvfp4_param(module.gate_up_proj)
+        act = resolve_gated_activation(module.config)
         check_epilogue(
             module,
-            resolve_gated_activation(module.config),
+            act,
             concat=getattr(module, "is_concatenated", True),
-            limit=getattr(module, "limit", None) if nvfp4 else None,
+            limit=declared_limit(module) if nvfp4 else dense_limit(module, act),
             path="NVFP4 grouped" if nvfp4 else "dense",
         )
         checked += 1

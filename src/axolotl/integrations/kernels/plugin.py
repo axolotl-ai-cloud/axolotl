@@ -436,6 +436,12 @@ class KernelsPlugin(BasePlugin):
             )
 
             check_model_epilogues(model)
+            if sonic_loaded:
+                from axolotl.integrations.kernels.libs.sonicmoe.lora_split import (
+                    prepare_model_epilogues,
+                )
+
+                prepare_model_epilogues(model)
         for adapter in self._adapters(cfg):
             adapter.post_model_load(cfg, model)
 

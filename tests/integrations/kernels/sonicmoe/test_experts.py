@@ -356,22 +356,75 @@ class TestEpilogueCheck:
         experts = self._experts(model_type, cls_name, **overrides)
         self._check(experts, limit=None, path="dense")
 
+    @staticmethod
+    def _facade(experts):
+        from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+            _LoRAExpertsFacade,
+        )
+
+        return _LoRAExpertsFacade(
+            experts, experts.gate_up_proj, None, experts.down_proj, None
+        )
+
     @pytest.mark.parametrize(
         "model_type,cls_name",
         [
             ("gpt_oss", "GptOssExperts"),
-            ("deepseek_v4", "DeepseekV4Experts"),
+            ("minimax_m3_vl", "MiniMaxM3VLExperts"),
         ],
     )
     def test_custom_apply_gate_rejected_on_dense_path(self, model_type, cls_name):
         experts = self._experts(model_type, cls_name)
         with pytest.raises(ValueError, match="wrong expert math"):
+            self._facade(experts)
+
+    @pytest.mark.parametrize(
+        "model_type,cls_name",
+        [
+            ("deepseek_v4", "DeepseekV4Experts"),
+            ("glm5_next", "Glm5NextTextExperts"),
+        ],
+    )
+    def test_clamped_swiglu_accepted_on_dense_path(self, model_type, cls_name):
+        """SwiGLU clamped before the activation is the quack path's ``swiglu_limit<L>``."""
+        experts = self._experts(model_type, cls_name)
+        assert self._facade(experts).limit == 10.0
+
+    def test_missing_clamp_rejected_on_dense_path(self):
+        experts = self._experts("deepseek_v4", "DeepseekV4Experts")
+        with pytest.raises(ValueError, match="wrong expert math"):
             self._check(experts, limit=None, path="dense")
 
-    def test_clamped_swiglu_accepted_on_nvfp4_path(self):
-        """DeepSeek-V4 is plain SwiGLU plus a clamp, which `gated_activation` honors."""
-        experts = self._experts("deepseek_v4", "DeepseekV4Experts")
-        self._check(experts, limit=experts.limit, path="NVFP4 grouped")
+    def test_model_check_uses_the_dense_clamp(self):
+        from axolotl.integrations.kernels.libs.sonicmoe.epilogue import (
+            check_model_epilogues,
+        )
+
+        clamped = torch.nn.ModuleList(
+            [
+                self._experts("deepseek_v4", "DeepseekV4Experts"),
+                self._experts("glm5_next", "Glm5NextTextExperts"),
+            ]
+        )
+        assert check_model_epilogues(clamped) == 2
+        with pytest.raises(ValueError, match="wrong expert math"):
+            check_model_epilogues(
+                torch.nn.ModuleList([self._experts("gpt_oss", "GptOssExperts")])
+            )
+
+    @pytest.mark.parametrize(
+        "model_type,cls_name",
+        [
+            ("deepseek_v4", "DeepseekV4Experts"),
+            ("glm5_next", "Glm5NextTextExperts"),
+        ],
+    )
+    def test_clamped_swiglu_accepted_on_nvfp4_path(self, model_type, cls_name):
+        """Plain SwiGLU plus a clamp, which `gated_activation` honors."""
+        from axolotl.integrations.kernels.libs.sonicmoe.epilogue import declared_limit
+
+        experts = self._experts(model_type, cls_name)
+        self._check(experts, limit=declared_limit(experts), path="NVFP4 grouped")
 
     def test_sigmoid_glu_rejected_on_nvfp4_path(self):
         """`minimax_m3_vl` is a fixture, not a supported model: it is the only upstream
