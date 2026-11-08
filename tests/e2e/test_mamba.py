@@ -13,6 +13,7 @@ from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, with_temp_dir
+from tests.cuda_gates import AtSetup
 
 
 def _packed_cfg(base_model, temp_dir, **overrides):
@@ -77,7 +78,7 @@ class TestMamba(unittest.TestCase):
 
 
 @pytest.mark.skipif(
-    not _hub_mamba_kernels_available(),
+    AtSetup(lambda: not _hub_mamba_kernels_available()),
     reason="no kernels-community/mamba-ssm build for this torch/CUDA",
 )
 class TestMamba2(unittest.TestCase):

@@ -18,6 +18,7 @@ import pytest
 
 from axolotl.utils.dict import DictDefault
 
+from tests.cuda_init_guard import CudaInitGuard
 from tests.global_state import GlobalStateGuard
 from tests.hf_offline_utils import (
     enable_hf_offline,
@@ -25,6 +26,9 @@ from tests.hf_offline_utils import (
 )
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
+
+# Installed at import so it also sees the conftests pytest loads before pytest_configure.
+_cuda_init_guard = CudaInitGuard.from_env()
 
 
 @pytest.fixture(autouse=True)
@@ -100,6 +104,8 @@ def _apply_transformers_test_shims():
 def pytest_configure(config):
     _apply_transformers_test_shims()
     config.pluginmanager.register(GlobalStateGuard(config), "axolotl-global-state")
+    if _cuda_init_guard is not None:
+        config.pluginmanager.register(_cuda_init_guard, "axolotl-cuda-init-guard")
 
 
 # A device-side assert / illegal access poisons the process-wide CUDA context, so

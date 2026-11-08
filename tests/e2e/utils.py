@@ -17,7 +17,7 @@ from tbparse import SummaryReader
 
 from axolotl.utils.dict import DictDefault
 
-from tests.cuda_gates import cuda_capability_below
+from tests.cuda_gates import AtSetup, cuda_capability_below
 
 
 def with_temp_dir(test_func):
@@ -73,9 +73,10 @@ def flash_attn_available() -> bool:
     return available
 
 
-# pytest.mark works on plain (non-TestCase) classes; unittest.skipUnless does not.
+# pytest.mark works on plain (non-TestCase) classes; unittest.skipUnless does not. The hub
+# probe reads the device capability, so it runs once, at the first gated test's setup.
 requires_flash_attn = pytest.mark.skipif(
-    not flash_attn_available(),
+    AtSetup(lambda: not flash_attn_available()),
     reason="flash-attn unavailable: no package and no kernels-hub build for this torch",
 )
 
