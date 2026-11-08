@@ -195,6 +195,48 @@ def test_send_system_info(telemetry_manager_class):
         assert mock_capture.call_args[1]["properties"] == manager.system_info
 
 
+def test_system_info_collected_on_first_send(telemetry_manager_class):
+    """Building the manager must not query devices; that would initialize CUDA at import"""
+    with (
+        patch("posthog.capture") as mock_capture,
+        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "0"}),
+        patch.object(
+            telemetry_manager_class, "_get_system_info", return_value={"os": "test"}
+        ) as mock_get_info,
+    ):
+        manager = telemetry_manager_class()
+        mock_get_info.assert_not_called()
+
+        manager.send_event("config-loaded")
+        manager.send_system_info()
+        mock_get_info.assert_called_once()
+        assert mock_capture.call_args[1]["properties"] == {"os": "test"}
+
+
+def test_system_info_collection_error(telemetry_manager_class, caplog):
+    """A failing device query is logged and skips the system-info event"""
+    logger = logging.getLogger("axolotl.telemetry.manager")
+    logger.addHandler(caplog.handler)
+    try:
+        with (
+            patch("posthog.capture") as mock_capture,
+            patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "0"}),
+            patch.object(
+                telemetry_manager_class,
+                "_get_system_info",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            manager = telemetry_manager_class()
+            manager.send_system_info()
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert manager.system_info is None
+    assert not mock_capture.called
+    assert "Error during system info collection: boom" in caplog.text
+
+
 def test_redacted_properties(telemetry_manager_class):
     """Test path redaction in send_event method"""
     with (
