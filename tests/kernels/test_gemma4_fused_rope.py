@@ -96,23 +96,12 @@ class TestFusedRMSNormRoPEForward:
         y_ref = _reference_norm_rope(x.clone(), weight, cos, sin, eps)
         y_fused = fused_rms_norm_rope(x.clone(), weight, cos, sin, eps=eps)
 
+        assert y_fused.shape == x.shape
+        assert y_fused.dtype == x.dtype
         cos_sim = torch.nn.functional.cosine_similarity(
             y_ref.flatten().float(), y_fused.flatten().float(), dim=0
         )
         assert cos_sim > 0.999, f"Forward cosine_sim={cos_sim:.6f}, expected > 0.999"
-
-    def test_output_shape(self, shapes):
-        from axolotl.kernels.gemma4_fused_rope import fused_rms_norm_rope
-
-        B, S, H, D = shapes
-        x = torch.randn(B, S, H, D, device="cuda", dtype=torch.bfloat16)
-        weight = torch.randn(D, device="cuda", dtype=torch.bfloat16)
-        cos = torch.randn(B, S, D, device="cuda", dtype=torch.bfloat16)
-        sin = torch.randn(B, S, D, device="cuda", dtype=torch.bfloat16)
-
-        y = fused_rms_norm_rope(x, weight, cos, sin, eps=1e-6)
-        assert y.shape == x.shape
-        assert y.dtype == x.dtype
 
 
 class TestFusedRMSNormRoPEBackward:

@@ -187,15 +187,21 @@ def test_swiglu_mlp_integration(small_llama_model):
     assert torch.allclose(original_output, patched_output, rtol=1e-4)
 
 
-@pytest.mark.parametrize(
-    "model_name,expected_activation",
-    [
-        ("mhenrichsen/gemma-2b", apply_lora_mlp_geglu),
-    ],
-)
-def test_model_specific_activation(model_name, expected_activation):
+def test_model_specific_activation():
     """Test that each model type gets the correct activation function."""
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    from transformers import GemmaConfig, GemmaForCausalLM
+
+    model = GemmaForCausalLM(
+        GemmaConfig(
+            vocab_size=32,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=8,
+        )
+    )
     peft_config = get_peft_config(
         {
             "peft_type": "LORA",
@@ -212,7 +218,7 @@ def test_model_specific_activation(model_name, expected_activation):
 
     patched_model = apply_lora_kernel_patches(model, cfg)
     layer = patched_model.model.model.layers[0]
-    assert layer.mlp.forward.__func__ is expected_activation
+    assert layer.mlp.forward.__func__ is apply_lora_mlp_geglu
 
 
 def test_kernel_patch_conditions():

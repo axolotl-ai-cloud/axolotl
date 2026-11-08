@@ -253,3 +253,41 @@ def test_fsdp2_qlora_does_not_skip_peft_upcast(base_model_path):
     ).cfg
 
     assert not should_skip_peft_embedding_upcast(cfg)
+
+
+@pytest.mark.parametrize("embedding_module", ["embed_tokens", "lm_head"])
+@pytest.mark.parametrize("dist_dtype", [torch.bfloat16, torch.float16, torch.float32])
+@pytest.mark.parametrize("before_kbit_train_or_finetune", [True, False])
+def test_convert_embedding_modules_dtype(
+    embedding_module, dist_dtype, before_kbit_train_or_finetune
+):
+    from types import SimpleNamespace
+
+    from axolotl.loaders.model import ModelLoader
+
+    model = nn.ModuleDict(
+        {
+            "norm": nn.LayerNorm(4),
+            "embed_tokens": nn.Embedding(8, 4),
+            "lm_head": nn.Linear(4, 8),
+            "mlp": nn.ModuleDict({"gate": nn.Linear(4, 2)}),
+            "unrelated": nn.Linear(4, 4),
+        }
+    ).to(torch.float64)
+    loader = ModelLoader.__new__(ModelLoader)
+    loader.cfg = DictDefault(lora_on_cpu=False)
+    loader.model_config = SimpleNamespace(model_type="llama")
+    loader.model = model
+
+    loader._convert_embedding_modules_dtype(
+        [embedding_module], dist_dtype, before_kbit_train_or_finetune
+    )
+
+    expected = {"norm", embedding_module}
+    if before_kbit_train_or_finetune:
+        expected.add("mlp.gate")
+    for name, module in model.named_modules():
+        for parameter in module.parameters(recurse=False):
+            assert parameter.dtype == (
+                dist_dtype if name in expected else torch.float64
+            )
