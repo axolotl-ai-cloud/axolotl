@@ -35,16 +35,31 @@ status=0
 pytest -v --durations=10 --maxfail=10 -m "gpu_blackwell and not slow" \
   --ignore=tests/e2e/multigpu/ \
   --ignore=tests/cli \
+  --ignore-glob='tests/e2e/kernels/test_sonicmoe*.py' \
   /workspace/axolotl/tests/ \
   --junitxml=blackwell-junit.xml \
   --cov=axolotl --cov-report=xml:e2e-blackwell-coverage.xml || status=$?
+
+# SonicMoE in its own process, in a fixed order: an illegal access there poisons the CUDA
+# context and must not abort the rest of the lane.
+pytest -v --durations=10 --maxfail=10 -m "gpu_blackwell and not slow" \
+  /workspace/axolotl/tests/e2e/kernels/test_sonicmoe*.py \
+  --junitxml=blackwell-sonicmoe-junit.xml \
+  --cov=axolotl --cov-append --cov-report=xml:e2e-blackwell-coverage.xml || {
+  rc=$?
+  status=$((status ? status : rc))
+}
 
 # Some skips are expected (sm120-only tests on B200); a skip-only run means a missing dependency.
 python - <<'BLACKWELL_JUNIT' || status=$((status ? status : 1))
 import collections
 import xml.etree.ElementTree as ET
 
-cases = list(ET.parse("blackwell-junit.xml").iter("testcase"))
+cases = [
+    case
+    for report in ("blackwell-junit.xml", "blackwell-sonicmoe-junit.xml")
+    for case in ET.parse(report).iter("testcase")
+]
 skips = collections.defaultdict(list)
 for case in cases:
     skipped = case.find("skipped")
