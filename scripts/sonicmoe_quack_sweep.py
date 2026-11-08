@@ -21,6 +21,7 @@ smallest config sets that stay within a tolerance of every key's best, and what 
 
 import argparse
 import json
+import math
 import os
 import pathlib
 import statistics
@@ -623,8 +624,9 @@ def evaluate(entries, profiles, tol):
     """Per profile: the best regret its configs leave each measured key it would match.
 
     Matching goes through Axolotl's own ``_quack_matches`` on meta tensors of the recorded call
-    shapes, in profile order, as at train time. Only configs measured for a key count, so on a
-    shortlisted (stage-2) key a profiled config outside the shortlist is not seen.
+    shapes, in profile order, as at train time: the first matching profile decides. Only configs
+    measured for a key count, so a shortlisted (stage-2) key whose deciding profile pins only
+    unmeasured configs is reported with infinite regret rather than credited to a later profile.
     """
     import torch
 
@@ -650,9 +652,11 @@ def evaluate(entries, profiles, tol):
                     for want in p["configs"]
                 )
             ]
-            if chosen:
-                hit = (i, min(e["summary"]["regret"][c] for c in chosen), len(chosen))
-                break
+            regret = (
+                min(e["summary"]["regret"][c] for c in chosen) if chosen else math.inf
+            )
+            hit = (i, regret, len(chosen))
+            break
         rows[hit[0] if hit else None].append((e, hit))
     lines = [
         "| profile | kernel | match | keys | distinct winners | swept per key | median regret | "
@@ -831,14 +835,15 @@ def steps(args):
             meta = payload.get("sweep") or {}
             if "step_ms" not in meta:
                 continue
-            run_name, _, rest = path.name.partition(".pass")
+            run_name, has_pass, rest = path.name.partition(".pass")
+            run_name = run_name.removesuffix(".quack.json")
             sources = {r.get("source") for r in payload.get("records", [])}
             label = meta.get("profiles") or (
                 "rule" if "heuristic" in sources else "sweep"
             )
             if meta.get("plugin"):
                 label = f"plugin, {label}"
-            rows[run_name][int(rest.split(".")[0])] = (
+            rows[run_name][int(rest.split(".")[0]) if has_pass else 1] = (
                 pathlib.Path(label).name,
                 meta["forward_seconds"] + meta["backward_seconds"],
                 statistics.median(meta["step_ms"]),
