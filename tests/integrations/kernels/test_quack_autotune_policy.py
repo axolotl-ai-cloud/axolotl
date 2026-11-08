@@ -650,6 +650,46 @@ def test_gpu_warmup_is_skipped_with_profiles_only(quack):
     assert tuner.benched and quack.autotuner.warmups == 0
 
 
+def _pool_module(name):
+    module = ModuleType(name)
+
+    def pool_scope():
+        raise AssertionError(f"{name} compiled in its async pool")
+
+    module.pool_scope = pool_scope
+    return module
+
+
+@pytest.mark.parametrize("install", ["policy", "profiles"])
+def test_vendored_quack_sweeps_compile_in_process(quack, install):
+    pool = _pool_module(f"{PACKAGE}.quack.cache.async_compile")
+    with patch.dict(sys.modules, {pool.__name__: pool}):
+        quack.add("gemm_gated_tuned")
+        if install == "policy":
+            quack_autotune_policy.install_quack_key_policy("pow2")
+        else:
+            autotune_profiles.apply_autotune_profiles(
+                [
+                    {
+                        "kernel": "gemm_gated_tuned",
+                        "backend": "quack",
+                        "allow": {"tile_m": [256]},
+                    }
+                ]
+            )
+        with pool.pool_scope() as active:
+            assert active is None
+
+
+def test_pip_quack_keeps_its_compile_pool():
+    pool = _pool_module("quack.cache.async_compile")
+    original = pool.pool_scope
+    tuner = type("Autotuner", (), {"__module__": "quack.autotuner"})()
+    with patch.dict(sys.modules, {pool.__name__: pool}):
+        assert autotune_profiles.compile_quack_in_process(tuner) is False
+    assert pool.pool_scope is original
+
+
 def test_gpu_warmup_patch_tolerates_a_quack_without_it(quack):
     tuner = quack.add("gemm_gated_tuned")
     del quack.autotuner._gpu_warmup
