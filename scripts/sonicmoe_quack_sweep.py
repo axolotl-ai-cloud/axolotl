@@ -205,19 +205,35 @@ def run(args):
     model.train()
     sonic_ops()  # loads the hub kernel and imports the vendored quack's gemm_interface
     install_timing_capture()
+    profiles = None
     if args.profiles:
         import yaml
-
-        from axolotl.integrations.kernels.autotune_profiles import (
-            apply_autotune_profiles,
-        )
 
         with open(args.profiles, encoding="utf-8") as handle:
             profiles = yaml.safe_load(handle)
         profiles = profiles.get("autotune_profiles", profiles)
-        apply_autotune_profiles(profiles)
         meta["profiles"] = args.profiles
-    install_quack_key_policy(args.buckets, tune=not args.no_sweep)
+    if args.plugin:
+        from axolotl.integrations.kernels.plugin import KernelsPlugin
+        from axolotl.utils.dict import DictDefault
+
+        cfg = DictDefault(
+            use_sonicmoe=True,
+            autotune_profiles=profiles,
+            quack_autotune_key_buckets=args.buckets,
+            quack_autotune=not args.no_sweep,
+            quack_autotune_default_profiles=not args.no_default_profiles,
+        )
+        meta["plugin"] = {k: v for k, v in cfg.items() if k != "autotune_profiles"}
+        KernelsPlugin().post_model_load(cfg, model)
+    else:
+        if profiles:
+            from axolotl.integrations.kernels.autotune_profiles import (
+                apply_autotune_profiles,
+            )
+
+            apply_autotune_profiles(profiles)
+        install_quack_key_policy(args.buckets, tune=not args.no_sweep)
     if args.repeats > 1:
         meta["repeats"] = args.repeats
         meta["repeat_ms"] = []
@@ -820,6 +836,8 @@ def steps(args):
             label = meta.get("profiles") or (
                 "rule" if "heuristic" in sources else "sweep"
             )
+            if meta.get("plugin"):
+                label = f"plugin, {label}"
             rows[run_name][int(rest.split(".")[0])] = (
                 pathlib.Path(label).name,
                 meta["forward_seconds"] + meta["backward_seconds"],
@@ -850,6 +868,17 @@ def main(argv=None):
     p.add_argument("--buckets", choices=("shape", "pow2", "none"), default="shape")
     p.add_argument("--no-sweep", action="store_true", help="quack_autotune: false")
     p.add_argument("--profiles", help="YAML with autotune_profiles to apply first")
+    p.add_argument(
+        "--plugin",
+        action="store_true",
+        help="set up profiles and the key policy through KernelsPlugin.post_model_load "
+        "(built-in profiles included)",
+    )
+    p.add_argument(
+        "--no-default-profiles",
+        action="store_true",
+        help="with --plugin: quack_autotune_default_profiles: false",
+    )
     p.add_argument("--timed-steps", type=int, default=3)
     p.add_argument(
         "--repeats", type=int, default=1, help="benchmarks per candidate (median kept)"
