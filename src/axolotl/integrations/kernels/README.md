@@ -709,8 +709,10 @@ the oracle:
 The rule's large misses are all on GEMMs of 0.03-0.3 ms, about 1% of a step here. What the profiles
 change against a full sweep is the time to the first step. Cold full sweeps took 10-26 minutes
 before the first step for full fine-tuning (6 sweeps of 74-76 candidates) and 18-32 minutes for
-`lora_split` (14-15 sweeps); the profiled processes reached their first step in 39-72 s, after a
-rule-only process in the same container had compiled some of the same configs.
+`lora_split` (14-15 sweeps). Set up through the kernels plugin with an empty quack cache, the
+built-in profiles reached the first step in 80-116 s (F1 and F2 `lora_split`, F6 full at EP=8;
+compiles included), with every quack key decided by them and step times within 0.6% of the
+oracle.
 
 <details>
 <summary>Winners per run (16k tokens, precise stage): best config; configs within 2%; the no-sweep rule's regret</summary>
