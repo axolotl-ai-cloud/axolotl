@@ -542,12 +542,18 @@ leaves them alone on purpose, since its winners were measured on the down-projec
 Those keep the `allow` filter and their own search until their winners are measured. A dW pin
 would match on `"A.dim1": { ge: 32768 }`.
 
-### Measured profiles for SonicMoE on B200
+### Built-in profiles for SonicMoE on B200
 
-The profiles below cut every grouped quack GEMM key from a 74-76 candidate sweep to at most five
-candidates (the gated forward to one, which is not benchmarked) and stay within 2.3% of the best
-config on every key of the precise stage below. They were measured with `scripts/sonicmoe_quack_sweep.py` in
-November 2026 on B200 (hub sonic-moe vendoring quack 0.6.1, cutlass-dsl 4.8.1, torch 2.14.1).
+With `use_sonicmoe` on a B200, quack's grouped GEMMs sweep only the profiles below (built in, in
+`quack_default_profiles.py`): every grouped key goes from a 74-76 candidate sweep to at most five
+candidates (the gated forward to one, which is not benchmarked), and every key measured below
+stays within 2.3% of its best config. They come after the config's own `autotune_profiles`, and a
+kernel that the config profiles for quack (by name or glob) keeps only the config's entries, so
+its calls those entries do not match get quack's full search. `quack_autotune_default_profiles:
+false` turns them off; with `quack_autotune: false` they do not apply, and the rule picks.
+
+They were measured with `scripts/sonicmoe_quack_sweep.py` in November 2026 on B200 (hub sonic-moe
+vendoring quack 0.6.1, cutlass-dsl 4.8.1, torch 2.14.1).
 
 Each run is a 2-layer model with Qwen3-MoE layout (gate_up `[E, 2I, H]`) at a family's real expert
 dims, random weights and a tiny vocabulary, run through the `use_sonicmoe` experts path for one
@@ -778,7 +784,8 @@ every run. Records written before the fingerprint existed skip the first check. 
 
 `quack_autotune: false` never benchmarks: each key gets one config by a fixed rule, so a new shape
 costs at most a compile of that config (`source: heuristic` in the records). Matching
-`autotune_profiles` still decide the candidates; the rule then picks among them.
+`autotune_profiles` still decide the candidates; the rule then picks among them. The built-in
+B200 profiles are not applied in this mode.
 
 | kernel | rule (B200) |
 |---|---|
@@ -796,6 +803,7 @@ valid candidate is used, logged once per kernel.
 use_sonicmoe: true
 quack_autotune_key_buckets: pow2   # default with use_sonicmoe; shape = no token dims; none = exact shapes
 quack_autotune: false              # default true (sweep)
+quack_autotune_default_profiles: false  # default true: sweep only the built-in B200 candidates
 ```
 
 With `use_sonicmoe` (or any quack `autotune_profiles`), the ~200 ms GPU warm-up matmul quack runs
