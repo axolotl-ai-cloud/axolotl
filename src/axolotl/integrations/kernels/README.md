@@ -550,7 +550,9 @@ candidates (the gated forward to one, which is not benchmarked), and every key m
 stays within 2.3% of its best config. They come after the config's own `autotune_profiles`, and a
 kernel that the config profiles for quack (by name or glob) keeps only the config's entries, so
 its calls those entries do not match get quack's full search. `quack_autotune_default_profiles:
-false` turns them off; with `quack_autotune: false` they do not apply, and the rule picks.
+false` turns them off; with `quack_autotune: false` they do not apply, and the rule picks. A
+quack cache file (`autotune_cache_path`) whose winners were swept over the full candidate list is
+re-tuned once per key under them, since the candidates changed.
 
 They were measured with `scripts/sonicmoe_quack_sweep.py` in November 2026 on B200 (hub sonic-moe
 vendoring quack 0.6.1, cutlass-dsl 4.8.1, torch 2.14.1).
