@@ -2312,19 +2312,6 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
-    def check_hidden_states_offloading(self):
-        if self.activation_checkpointing.offload.hidden_states == "none":
-            return self
-        if self.adapter:
-            LOG.warning(
-                "activation_checkpointing.offload.hidden_states recomputes every layer; "
-                "with LoRA/QLoRA, offload.all: cpu with enabled: false can be faster "
-                "because it avoids recompute while offloading smaller adapter "
-                "activations."
-            )
-        return self
-
-    @model_validator(mode="after")
     def check_better_transformers(self):
         if self.flash_optimum is True:
             if self.adapter:
