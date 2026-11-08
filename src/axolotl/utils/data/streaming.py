@@ -12,10 +12,10 @@ from torch.utils.data import RandomSampler
 from transformers import PreTrainedTokenizerBase
 
 from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.data.packing import process_pretraining_datasets_for_packing
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 from axolotl.utils.samplers.utils import get_dataset_label_counts
-from axolotl.utils.trainer import process_pretraining_datasets_for_packing
 
 LOG = get_logger(__name__)
 

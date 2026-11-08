@@ -1,6 +1,8 @@
 """Data handling specific to SFT."""
 
-from typing import Any, NoReturn, cast
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from datasets import (
     Dataset,
@@ -9,7 +11,6 @@ from datasets import (
     Value,
 )
 from transformers import PreTrainedTokenizer
-from transformers.processing_utils import ProcessorMixin
 
 from axolotl.datasets import TokenizedPromptDataset, wrap_dataset_for_tokenized_prompt
 from axolotl.prompt_strategies import load
@@ -38,6 +39,10 @@ from axolotl.prompters import (
 )
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    # processing_utils imports modeling_utils, whose torchao quantizer initializes CUDA
+    from transformers.processing_utils import ProcessorMixin
 
 LOG = get_logger(__name__)
 
