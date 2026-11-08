@@ -317,6 +317,42 @@ of affected suites. Python changes within scope use testmon's finer selection.
 Full-run labels and manual refreshes bypass feature exclusion. Logs show each
 suite's decision and reason; skipped suites never count as a complete e2e gate run.
 
+#### Feature-aware multi-GPU suites
+
+Multi-GPU commands use `cicd/feature_command.py` and the `distributed` declarations
+in `cicd/feature_suites.json`. Selection happens at suite boundaries: every
+eligible test in a selected suite runs with normal pytest and testmon disabled.
+No per-test dependency claims are made for spawned training workers.
+
+The general lane preserves its process limits and separates CCE, quantization,
+context parallel, solo, wrapper, and patched suites. NF4 and NVFP4 retain their
+complete scripts, including hardware checks and assertions that tests ran without
+unexpected skips. Slow two- and four-GPU suites use the same whole-suite selection;
+the slow single-GPU kernel lane retains its existing testmon path.
+
+The audited suites can exclude changes confined to the opt-in Liger/CCE plugin
+packages they do not use. Shared code, worker code, configuration, and unknown
+paths force complete execution of affected suites. New test files invalidate a
+suite's feature exclusions until `audited_tests` is updated after reviewing their
+feature use. Update `features` as well when an existing test starts using another
+plugin. Changes since the last successful baseline include intervening main
+changes, not just the current PR diff. Missing, malformed, failed, or incompatible
+baselines run the suite in full.
+
+Scope metadata travels through Modal and the GitHub cache/artifact transport.
+Pinned and nightly caches are separate, keyed by suite, Python, PyTorch, CUDA,
+GPU type, and GPU count. Scheduled runs execute all suites and publish fresh main
+baselines. To refresh the pinned general/NF4/NVFP4 lanes explicitly, run:
+
+```bash
+gh workflow run testmon-refresh.yml --ref main -f multigpu=true
+```
+
+Use `-f slow_gpu=true` for the slow lanes. Neither requires automatic expensive
+runs on every merge. `run-tests-full` bypasses suite exclusion; the existing
+`run-gpu-tests` and `run-gpu-slow` labels still control lane eligibility. The
+existing selected-file preview remains independent and nonblocking.
+
 #### Slow CPU Tests
 
 The Slow CPU workflow runs integrations marked `slow` without `gpu`, including the

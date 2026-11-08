@@ -277,11 +277,20 @@ jobs:
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
       - name: Compute deps hash
         run: python cicd/deps_hash.py
+      - name: Restore suite baselines
+        uses: ./.github/actions/testmon-restore
+        with:
+          suite: distributed-v1-${{ matrix.test_suite }}-py${{ matrix.python_version }}-torch${{ matrix.pytorch }}-cu${{ matrix.cuda }}-H100-${{ matrix.num_gpus }}-nightly
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
           modal run -m cicd.multigpu
+      - name: Save suite baselines
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/testmon-save
+        with:
+          suite: distributed-v1-${{ matrix.test_suite }}-py${{ matrix.python_version }}-torch${{ matrix.pytorch }}-cu${{ matrix.cuda }}-H100-${{ matrix.num_gpus }}-nightly
 
   docker-e2e-kernel-tests:
     needs: [pre-commit, pytest]

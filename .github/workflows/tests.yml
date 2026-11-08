@@ -357,12 +357,15 @@ jobs:
               'src/axolotl/integrations/expert_parallel/',
               'src/axolotl/integrations/context_parallel/',
               'src/axolotl/integrations/cut_cross_entropy/',
+              'src/axolotl/integrations/liger/',
               'src/axolotl/integrations/kernels/',
               'src/axolotl/train.py',
               'src/axolotl/cli/',
               'deepspeed_configs/',
               'tests/e2e/multigpu/',
               'cicd/',
+              '.github/actions/testmon-restore/',
+              '.github/actions/testmon-save/',
               '.github/workflows/multi-gpu-e2e*.yml',
               '.github/workflows/tests.yml',
               'pyproject.toml',
@@ -441,7 +444,9 @@ jobs:
               const hits = names.filter((name) => matches(patterns, name));
               core.info(`${lane}: ${hits.length} matched`);
               for (const hit of hits) core.info(`  ${hit}`);
-              core.setOutput(lane, String(hits.length > 0 || (lane === 'run_distributed_cpu' && fullCpu)));
+              core.setOutput(lane, String(hits.length > 0 ||
+                (lane === 'run_distributed_cpu' && fullCpu) ||
+                (lane === 'run_multigpu' && pr.labels.some(label => label.name === 'run-tests-full'))));
             }
 
   modal-image:

@@ -92,6 +92,8 @@ def environment() -> dict:
                 "NIGHTLY_BUILD",
                 "CUDA_VISIBLE_DEVICES",
                 "TESTMON_SUBPROCESSES",
+                "MULTIGPU_TEST_SUITE",
+                "NF4_TEST_STACK",
             )
         },
     }
