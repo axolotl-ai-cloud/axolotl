@@ -1,4 +1,4 @@
-"""Run ``scripts/sonicmoe_quack_sweep.py`` on Modal B200s. Manual; no CI workflow calls this.
+"""Run ``scripts/sonicmoe_quack_sweep.py`` on Modal GPUs (``GPU_TYPE``). Manual; no CI workflow calls this.
 
 Each run spec ``family:mode:ep:tokens`` gets its own container and a fresh ``QUACK_CACHE_DIR``,
 and runs twice, each pass in a fresh process: the first compiles and sweeps every candidate,

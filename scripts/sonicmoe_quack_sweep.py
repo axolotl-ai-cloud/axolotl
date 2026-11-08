@@ -287,6 +287,7 @@ PROFILE_FIELDS = (
     "is_dynamic_persistent",
     "use_tma_gather",
     "swap_ab",
+    "pingpong",
 )
 
 
@@ -297,6 +298,8 @@ def short(fields):
         name += " tg"
     if fields.get("swap_ab"):
         name += " swap"
+    if fields.get("pingpong"):
+        name += " pp"
     return name
 
 
@@ -691,6 +694,13 @@ def evaluate(entries, profiles, tol):
     return lines
 
 
+def _gpu_label(entries):
+    """``H100`` for runs on an "NVIDIA H100 80GB HBM3", the profiles' ``gpu`` substring."""
+    names = {e["meta"].get("gpu") or "" for e in entries}
+    words = {n.removeprefix("NVIDIA ").split(" ")[0] for n in names}
+    return words.pop() if len(words) == 1 else None
+
+
 def analyze(args):
     paths = []
     for target in args.paths:
@@ -758,6 +768,7 @@ def analyze(args):
         "| kernel | group | keys | distinct winners | cover | worst regret | worst pass |"
     )
     out.append("|---|---|---|---|---|---|---|")
+    gpu = args.gpu or _gpu_label(keys.values())
     profiles = []
     for group in PROFILE_GROUPS:
         entries = by_group.get(group)
@@ -776,7 +787,7 @@ def analyze(args):
             {
                 "kernel": group[0],
                 "backend": "quack",
-                "gpu": "B200",
+                "gpu": gpu,
                 "match": json.loads(json.dumps(PROFILE_GROUPS[group])),
                 "configs": [{f: fields[c][f] for f in PROFILE_FIELDS} for c in cover],
             }
@@ -897,6 +908,7 @@ def main(argv=None):
     a.add_argument("--json", help="also write per-key summaries here")
     a.add_argument("--yaml", help="also write the covers as autotune_profiles here")
     a.add_argument("--evaluate", help="score an autotune_profiles YAML on the runs")
+    a.add_argument("--gpu", help="the --yaml profiles' gpu (default: from the runs)")
     a.add_argument(
         "--oracle", help="write per-run profiles pinning each key to its best"
     )
