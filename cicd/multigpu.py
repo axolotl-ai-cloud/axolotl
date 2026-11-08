@@ -148,7 +148,9 @@ def cicd_pytest(
         deep_ep_volume.commit()
     if suite.startswith("gpu_slow_"):
         refresh_source("/workspace/axolotl")
-        return run_remote(scripts[suite], state or {}, full, select, True)
+        return run_remote(
+            scripts[suite].removeprefix("bash "), state or {}, full, select, True
+        )
     run_cmd(scripts[suite], "/workspace/axolotl")
     return None
 
