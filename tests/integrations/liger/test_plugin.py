@@ -348,6 +348,9 @@ class TestKernelImplEnv:
         import sys
         import types
 
+        # the stub below is no package, so the registry must already be cached
+        import liger_kernel.ops.backends.registry  # noqa: F401
+
         from axolotl.integrations.liger.plugin import LigerPlugin
 
         monkeypatch.setitem(
