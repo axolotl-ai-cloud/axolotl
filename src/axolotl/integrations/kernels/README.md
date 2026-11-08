@@ -296,7 +296,7 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `gpt_oss`         |    Yes    |   No     |  -  |  -  |
 | `nemotron_h`      |    Yes    |   Yes¹   | Yes | Yes¹ |
 | `deepseek_v4`     |    Yes    |   Yes²   |  -  |  -  |
-| `glm5_next`       |    No     |   Yes²   |  -  |  -  |
+| `glm5_next`       |    Yes    |   Yes²   |  -  |  -  |
 
 NVFP4 for `deepseek_v4` is supported via ScatterMoE with `use_dsv4_kernels` (its own fused-kernel path), so it is not a row above.
 

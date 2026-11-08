@@ -312,7 +312,7 @@ def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
                 self,
                 act,
                 concat=getattr(self, "is_concatenated", True),
-                limit=getattr(self, "limit", None),
+                limit=_expert_limit(self),
                 path="merge-aware EP",
             )
         except ValueError as error:
@@ -350,7 +350,7 @@ def _ep_merge_aware_forward(self, hidden_states, top_k_index, top_k_weights):
             concat=getattr(self, "is_concatenated", True),
             scaling1=scaling1,
             scaling2=scaling2,
-            limit=getattr(self, "limit", None),
+            limit=_expert_limit(self),
             gated=gated,
         ),
         None,
@@ -528,16 +528,56 @@ def _prepare_weights_and_lora(
     )
 
 
+_CONFIG_ACT_TYPES = {
+    "silu": "silu",
+    "swish": "silu",
+    "gelu_pytorch_tanh": "gelu_tanh",
+    "gelu_tanh": "gelu_tanh",
+    "relu2": "relu2",
+    "relu_squared": "relu2",
+}
+
+
+def _expert_limit(module) -> float | None:
+    """The gate/up clamp, stored as ``limit`` (DeepSeek-V4) or ``swiglu_limit`` (GLM-5)."""
+    from ..sonicmoe.epilogue import declared_limit
+
+    return declared_limit(module)
+
+
+def _gated_epilogue(module, gates_h: torch.Tensor) -> torch.Tensor:
+    """The experts' gated activation on a concatenated ``[..., 2I]`` gate/up output.
+
+    ``_apply_gate`` is the epilogue ``@use_experts_implementation`` declares and transformers'
+    other backends call on this same layout; it also covers experts without ``act_fn`` (GLM-5).
+    """
+    apply_gate = getattr(module, "_apply_gate", None)
+    if apply_gate is not None:
+        return apply_gate(gates_h)
+    gates, h = gates_h.chunk(2, dim=-1)
+    limit = _expert_limit(module)
+    if limit is not None:
+        gates = gates.clamp(max=limit)
+        h = h.clamp(min=-limit, max=limit)
+    return module.act_fn(gates) * h
+
+
 def _detect_act_type(module, *, default="silu") -> str | None:
     """Detect gated-activation type from an experts module's act_fn.
 
     Returns 'gelu_tanh' for Gemma4-style GeGLU (gelu_pytorch_tanh * up),
     'silu' for DSV4-style clamped SwiGLU (silu(clamp(gate)) * clamp(up)).
-    ``default`` is returned for an unrecognized activation.
+    Experts without ``act_fn`` (GLM-5 computes ``F.silu`` in ``_apply_gate``) fall back to
+    the config's activation. ``default`` is returned for an unrecognized activation.
     """
     act_fn = getattr(module, "act_fn", None)
     if act_fn is None:
-        return default
+        config = getattr(module, "config", None)
+        if config is None:
+            return default
+        from ..sonicmoe.nvfp4 import resolve_gated_activation
+
+        return _CONFIG_ACT_TYPES.get(resolve_gated_activation(config), default)
     fn_name = (
         getattr(act_fn, "__name__", "") or getattr(type(act_fn), "__name__", "") or ""
     )
@@ -780,7 +820,7 @@ def scattermoe_experts_forward(
                 dn_scale,
                 gup_lora,
                 down_lora,
-                getattr(self, "limit", None),
+                _expert_limit(self),
                 act_type=_detect_act_type(self),
                 weight_recipe=_mx_recipe,
             )
@@ -820,7 +860,7 @@ def scattermoe_experts_forward(
                 dn_scale,
                 gup_lora,
                 down_lora,
-                getattr(self, "limit", None),
+                _expert_limit(self),
                 act_type=_detect_act_type(self),
                 weight_recipe=_fp8_recipe,
                 # persistent per-module cache for the moe_marlin_dx transposed packs
@@ -867,7 +907,7 @@ def scattermoe_experts_forward(
                 dn_base,
                 gup_lora,
                 down_lora,
-                getattr(self, "limit", None),
+                _expert_limit(self),
                 _fp4_grouped_mode,
                 act_type=_detect_act_type(self),
                 weight_recipe=_recipe,
@@ -922,7 +962,7 @@ def scattermoe_experts_forward(
             down_lora,
             self.num_experts,
             act_type=_detect_act_type(self),
-            limit=getattr(self, "limit", None),
+            limit=_expert_limit(self),
         )
 
     if _bnb_experts:
@@ -993,15 +1033,7 @@ def scattermoe_experts_forward(
         grouped_out=True,
     )
     if has_gate:
-        gates, h = gates_h.chunk(2, dim=-1)
-        # Clamped SwiGLU when the model defines a swiglu_limit (e.g. DeepSeek-V4 limit=10) must
-        # match the eager experts' `_apply_gate` (gate.clamp(max=L); up.clamp(-L, L)), else
-        # outliers blow up.
-        _limit = getattr(self, "limit", None)
-        if _limit is not None:
-            gates = gates.clamp(max=_limit)
-            h = h.clamp(min=-_limit, max=_limit)
-        h = self.act_fn(gates) * h
+        h = _gated_epilogue(self, gates_h)
     else:
         h = self.act_fn(gates_h)
 
@@ -1160,7 +1192,7 @@ def scattermoe_experts_forward_ep(
             _down_lora_g,
             self.num_experts,
             act_type=_detect_act_type(self),
-            limit=getattr(self, "limit", None),
+            limit=_expert_limit(self),
         )
 
     _fp4_grouped_mode_g = RUNTIME.grouped_mode
@@ -1198,7 +1230,7 @@ def scattermoe_experts_forward_ep(
                     _ds,
                     _gup_lora_g,
                     _down_lora_g,
-                    getattr(self, "limit", None),
+                    _expert_limit(self),
                     act_type=_detect_act_type(self),
                     weight_recipe=_mx_recipe_g,
                 )
@@ -1223,7 +1255,7 @@ def scattermoe_experts_forward_ep(
                     _ds,
                     _gup_lora_g,
                     _down_lora_g,
-                    getattr(self, "limit", None),
+                    _expert_limit(self),
                     act_type=_detect_act_type(self),
                     weight_recipe=_fp8_recipe_g,
                 )
@@ -1244,7 +1276,7 @@ def scattermoe_experts_forward_ep(
                     _dn_base_g,
                     _gup_lora_g,
                     _down_lora_g,
-                    getattr(self, "limit", None),
+                    _expert_limit(self),
                     _fp4_grouped_mode_g,
                     _detect_act_type(self),
                     _recipe_g,
@@ -1330,12 +1362,7 @@ def scattermoe_experts_forward_ep(
         grouped_out=True,
     )
     if _has_gate:
-        gates, h = gates_h.chunk(2, dim=-1)
-        _limit = getattr(self, "limit", None)
-        if _limit is not None:
-            gates = gates.clamp(max=_limit)
-            h = h.clamp(min=-_limit, max=_limit)
-        h = self.act_fn(gates) * h
+        h = _gated_epilogue(self, gates_h)
     else:
         h = self.act_fn(gates_h)
 
