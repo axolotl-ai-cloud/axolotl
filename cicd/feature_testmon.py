@@ -101,6 +101,17 @@ def environment() -> dict:
     }
 
 
+def comparable(environment: dict | None) -> dict:
+    """Empty settings dropped, so a baseline from before a setting was tracked still matches."""
+    environment = dict(environment or {})
+    environment["settings"] = {
+        name: value
+        for name, value in (environment.get("settings") or {}).items()
+        if value
+    }
+    return environment
+
+
 def choose(
     previous: dict,
     current: dict,
@@ -114,7 +125,7 @@ def choose(
         or not previous.get("success")
     ):
         return "full", "missing baseline or previous suite did not pass"
-    if previous.get("environment") != current["environment"]:
+    if comparable(previous.get("environment")) != comparable(current["environment"]):
         return "full", "environment changed"
     old = previous.get("files")
     if not isinstance(old, dict):
