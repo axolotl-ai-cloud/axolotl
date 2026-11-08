@@ -1,0 +1,22 @@
+name: Save testmon
+description: Publish only main baselines and retain run data for diagnosis
+inputs:
+  suite:
+    description: Unique artifact name for this job
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.TESTMON_FULL != 'true' }}
+      with:
+        path: .testmon
+        key: ${{ env.TESTMON_CACHE_PREFIX }}${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+    - if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: testmon-${{ inputs.suite }}-${{ github.run_attempt }}
+        path: .testmon
+        include-hidden-files: true
+        if-no-files-found: ignore
+        retention-days: 7

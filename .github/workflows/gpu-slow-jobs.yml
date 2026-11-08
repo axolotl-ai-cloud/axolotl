@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   MODAL_IMAGE_BUILDER_VERSION: "2026.10"
@@ -21,17 +22,17 @@ jobs:
         include:
           - cuda: 130
             python_version: "3.14"
-            pytorch: "2.14.0"
+            pytorch: "2.14.1"
             test_suite: gpu_slow_kernels
             num_gpus: 1
           - cuda: 130
             python_version: "3.14"
-            pytorch: "2.14.0"
+            pytorch: "2.14.1"
             test_suite: gpu_slow_distributed
             num_gpus: 2
           - cuda: 130
             python_version: "3.14"
-            pytorch: "2.14.0"
+            pytorch: "2.14.1"
             test_suite: gpu_slow_four_rank
             num_gpus: 4
     steps:
@@ -60,8 +61,17 @@ jobs:
           echo "E2E_DOCKERFILE=Dockerfile-uv.jinja" >> $GITHUB_ENV
       - name: Compute deps hash
         run: python cicd/deps_hash.py
+      - name: Restore testmon
+        uses: ./.github/actions/testmon-restore
+        with:
+          suite: gpu-slow-${{ matrix.test_suite }}-py${{ matrix.python_version }}-torch${{ matrix.pytorch }}-cu${{ matrix.cuda }}-H100-${{ matrix.num_gpus }}
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
           modal run -m cicd.multigpu
+      - name: Save testmon
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/testmon-save
+        with:
+          suite: gpu-slow-${{ matrix.test_suite }}-py${{ matrix.python_version }}-torch${{ matrix.pytorch }}-cu${{ matrix.cuda }}-H100-${{ matrix.num_gpus }}

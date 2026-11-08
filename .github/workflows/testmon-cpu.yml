@@ -2,9 +2,14 @@ name: testmon-cpu
 
 on:
   workflow_call:
+    inputs:
+      refresh:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   TRANSFORMERS_IS_CI: "yes"
@@ -14,18 +19,18 @@ jobs:
   pytest-testmon:
     name: PyTest testmon (py${{ matrix.python_version }}, torch ${{ matrix.pytorch_version }})
     runs-on: ubuntu-latest
-    # Parity preview: must not fail the run, so the full suite's verdict can be compared against it
-    continue-on-error: true
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      # One cell per PyTest cell, each with its own baseline. PRs run only the first; the
-      # others run where a baseline is saved (main), so main keeps every cell's baseline.
       # Exact patch: testmon re-runs everything when the Python micro version changes.
       matrix:
-        python_version: ["3.14.9"]
-        pytorch_version: ["2.14.1"]
-        include: ${{ fromJSON(github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && '[{"python_version":"3.12.16","pytorch_version":"2.13.0"},{"python_version":"3.14.9","pytorch_version":"2.15.0"}]' || '[]') }}
+        include:
+          - python_version: "3.12.16"
+            pytorch_version: "2.13.0"
+          - python_version: "3.14.9"
+            pytorch_version: "2.14.1"
+          - python_version: "3.14.9"
+            pytorch_version: "2.15.0"
     env:
       AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
       PYTHON_VERSION: ${{ matrix.python_version }}
@@ -80,6 +85,26 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Check generated CLI config options
+        if: ${{ matrix.python_version == '3.14.9' && matrix.pytorch_version == '2.14.1' }}
+        run: axolotl generate-cli-config-options --check
+
+      - name: Read CPU test selection
+        id: selection
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            let full = false;
+            if (context.eventName === 'pull_request') {
+              const { data: pr } = await github.rest.pulls.get({
+                ...context.repo,
+                pull_number: context.payload.pull_request.number,
+              });
+              full = pr.labels.some(label => ['run-cpu-full', 'run-tests-full'].includes(label.name));
+            }
+            core.setOutput('full', String(full));
+            core.info(full ? 'Running the full CPU suite' : 'Selecting CPU tests with testmon');
+
       - name: Pre-Download dataset fixture
         run: |
           hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
@@ -92,7 +117,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .testmon
-          key: testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}
+          key: testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}-
           restore-keys: |
             testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-
 
@@ -100,14 +125,20 @@ jobs:
         id: testmon
         timeout-minutes: 30
         shell: bash
+        env:
+          RUN_CPU_FULL: ${{ inputs.refresh || steps.selection.outputs.full == 'true' }}
         run: |
           mkdir -p .testmon
           ignore_deps=$(python cicd/testmon_ignore_deps.py)
+          testmon_option=--testmon-forceselect
+          if [ "$RUN_CPU_FULL" = "true" ]; then
+            testmon_option=--testmon-noselect
+          fi
           # Every arm runs even after a failure, so the baseline covers all of them
           failed=0
           tm() {
             local name=$1; shift
-            TESTMON_DATAFILE=".testmon/${name}.testmondata" pytest --testmon-forceselect \
+            TESTMON_DATAFILE=".testmon/${name}.testmondata" pytest "$testmon_option" \
               -o "testmon_ignore_dependencies=${ignore_deps}" "$@" | tee -a testmon-run.log || failed=1
           }
           tm core -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow and not distributed_cpu" --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
@@ -133,4 +164,4 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .testmon
-          key: testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}
+          key: testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}

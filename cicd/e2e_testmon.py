@@ -18,7 +18,8 @@ testmon_volume = modal.Volume.from_name("axolotl-ci-testmon", create_if_missing=
     memory=131072,
     volumes={**VOLUME_CONFIG, TESTMON_MOUNT: testmon_volume},
 )
-def cicd_pytest_testmon():
+def cicd_pytest_testmon(full: bool = False):
+    os.environ["TESTMON_FULL"] = str(full).lower()
     try:
         run_cmd("bash ./cicd/cicd_testmon.sh", "/workspace/axolotl")
     finally:
@@ -28,4 +29,4 @@ def cicd_pytest_testmon():
 
 @app.local_entrypoint()
 def main():
-    cicd_pytest_testmon.remote()
+    cicd_pytest_testmon.remote(os.environ.get("TESTMON_FULL") == "true")

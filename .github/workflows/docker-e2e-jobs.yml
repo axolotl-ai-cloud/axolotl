@@ -10,6 +10,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   TRANSFORMERS_IS_CI: "yes"
@@ -21,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.compute.outputs.skip }}
+      full: ${{ steps.compute.outputs.full }}
     steps:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: compute
@@ -44,6 +46,14 @@ jobs:
             const title = context.payload.pull_request?.title || '';
             const skip = token.test(msg) || token.test(title);
             core.setOutput('skip', String(skip));
+            let full = false;
+            if (context.eventName === 'pull_request') {
+              const { data: pr } = await github.rest.pulls.get({
+                ...context.repo, pull_number: context.payload.pull_request.number,
+              });
+              full = pr.labels.some(label => label.name === 'run-tests-full');
+            }
+            core.setOutput('full', String(full));
 
   docker-e2e-tests-testmon:
     # Run this job first as a gate for the remainder of the test matrix; testmon runs only the
@@ -97,6 +107,7 @@ jobs:
         id: testmon
         shell: bash
         env:
+          TESTMON_FULL: ${{ needs.gate-skip-e2e.outputs.full }}
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
           log="$RUNNER_TEMP/e2e-testmon.log"
@@ -104,6 +115,7 @@ jobs:
           # A block that selected against a baseline prints "changed files"; one that had none
           # prints "new DB" or "All tests have to be re-executed" and ran every test
           if ! grep -q "testmon: changed files" "$log" &&
+             ! grep -qE "feature-suite .*: skip:" "$log" &&
              grep -qE "testmon: new DB|All tests have to be re-executed" "$log"; then
             echo "ran_all=true" >> "$GITHUB_OUTPUT"
           else
@@ -188,65 +200,10 @@ jobs:
           modal run -m cicd.e2e_tests
 
   docker-e2e-kernel-tests:
-    if: >
-      github.repository_owner == 'axolotl-ai-cloud' &&
-      needs.gate-skip-e2e.outputs.skip != 'true'
-    runs-on: [self-hosted, modal]
-    timeout-minutes: 90
     needs: [gate-skip-e2e, docker-e2e-tests-testmon]
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - cuda: 130
-            cuda_version: 13.0.3
-            python_version: "3.12"
-            pytorch: 2.13.0
-            num_gpus: 1
-            axolotl_extras:
-          - cuda: 130
-            cuda_version: 13.0.3
-            python_version: "3.14"
-            pytorch: 2.14.1
-            num_gpus: 1
-            axolotl_extras:
-          - cuda: 132
-            cuda_version: 13.2.1
-            python_version: "3.14"
-            pytorch: 2.15.0
-            num_gpus: 1
-            axolotl_extras:
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-      - name: Install Modal
-        run: |
-          python -m pip install --upgrade pip
-          pip install modal==1.6.3 jinja2
-      - name: Update env vars
-        run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
-          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
-          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
-          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
-          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
-          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-          echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
-          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
-      - name: Compute deps hash
-        run: python cicd/deps_hash.py
-      - name: Run tests job on Modal
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: |
-          modal run -m cicd.e2e_cuda_kernels
+    if: needs.gate-skip-e2e.outputs.skip != 'true'
+    uses: ./.github/workflows/testmon-gpu-kernels.yml
+    secrets: inherit
 
   docker-e2e-blackwell-tests:
     # Only tests marked gpu_blackwell (SM100+); everything else stays on the L40S jobs above.

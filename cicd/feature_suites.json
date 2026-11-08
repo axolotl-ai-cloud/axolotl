@@ -1,0 +1,45 @@
+{
+  "features": {
+    "liger": ["src/axolotl/integrations/liger/"],
+    "cut-cross-entropy": ["src/axolotl/integrations/cut_cross_entropy/"]
+  },
+  "groups": {
+    "integrations": {
+      "paths": ["tests/e2e/integrations/"],
+      "exclude": ["tests/e2e/integrations/test_kd.py"],
+      "suites": {
+        "liger": {
+          "tests": ["tests/e2e/integrations/test_liger.py"],
+          "features": ["liger"]
+        },
+        "cut-cross-entropy": {
+          "tests": ["tests/e2e/integrations/test_cut_cross_entropy.py"],
+          "features": ["cut-cross-entropy"]
+        }
+      }
+    },
+    "kernels": {
+      "paths": [
+        "tests/e2e/kernels/",
+        "tests/integrations/kernels/",
+        "tests/integrations/monkeypatch/test_tiled_mlp_moe.py"
+      ],
+      "exclude": ["tests/e2e/kernels/lora_patching/"],
+      "suites": {
+        "activations": {
+          "tests": ["tests/e2e/kernels/test_geglu.py", "tests/e2e/kernels/test_swiglu.py"],
+          "features": []
+        },
+        "moe": {
+          "tests": [
+            "tests/e2e/kernels/test_scattermoe*.py",
+            "tests/e2e/kernels/test_sonicmoe*.py",
+            "tests/integrations/kernels/scattermoe_lora/test_*.py",
+            "tests/integrations/kernels/sonicmoe/test_*.py"
+          ],
+          "features": []
+        }
+      }
+    }
+  }
+}

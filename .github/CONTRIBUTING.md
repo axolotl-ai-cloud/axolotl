@@ -224,13 +224,98 @@ You can skip certain CI checks by including specific keywords in your commit mes
 - `[skip ci]` or `skip ci` - Skips all CI checks for that commit
 - `[skip-e2e]` or `skip-e2e` - Skips only end-to-end tests while running other CI checks. You may also include this in the title of your PR to disable end-to-end tests for the entire PR.
 
+#### CPU test selection
+
+Pull requests run pytest-testmon as a failure-propagating lane across all
+three Python/PyTorch cells. Each cell restores its own baseline from main; missing
+or incompatible baselines run the full suite. Full CPU coverage runs remain enabled
+outside pull requests, and only main writes shared testmon baselines.
+
+Apply `run-cpu-full` to bypass testmon selection in all three PR cells, for example
+when the changed-tests report identifies an unexecuted CPU test. The label handler
+reruns the current commit's Tests workflow after an active run completes; testmon
+reads current labels on each run, including reruns. The override persists on later
+pushes while labeled. It runs all tests normally eligible for the regular and distributed
+CPU lanes; GPU, slow, and distributed tests retain their separate lanes and gates.
+Removing and reapplying the label requests another full run. The label handler must
+be on the default branch before label-triggered reruns are available.
+
+The general CPU, single-GPU, GPU-kernel and multi-GPU matrices use Python/Torch
+3.12/2.13.0, 3.14/2.14.1 and 3.14/2.15.0 in both PR and scheduled runs.
+Nightly HF dependencies use separate testmon baselines from pinned dependencies.
+Slow CPU/GPU and hardware-specific NF4/NVFP4 suites retain their narrower
+3.14/2.14.1 environment across PR, scheduled and manual runs.
+
+#### Testmon baselines and full-run overrides
+
+Distributed CPU, slow CPU, GPU kernel, and slow GPU lanes also use testmon.
+`run-tests-full` bypasses selection across testmon lanes; keep `run-gpu-tests`,
+`run-gpu-slow`, or `run-cpu-slow` to enable the optional suites you need.
+`run-cpu-full` also applies to slow CPU when `run-cpu-slow` is present.
+The changed-tests report includes these escape hatches. Labels bypass selection,
+not hardware guards or intentional skips.
+
+The new lanes keep separate GitHub caches by suite and environment. Modal calls
+receive the restored databases and return updated databases even after pytest
+failures. Actions saves main baselines and uploads per-run diagnostic artifacts
+for seven days; PR results never replace shared baselines. The existing general
+e2e gate continues using its Modal Volume baseline.
+
+Use **Actions → Refresh testmon baselines → Run workflow**, select **main**, and
+check only the lanes to refresh. All choices default off. This runs every eligible
+test in those lanes and collects fresh testmon data. For example:
+
+```bash
+gh workflow run testmon-refresh.yml --ref main -f slow_cpu=true
+gh workflow run testmon-refresh.yml --ref main -f gpu_kernels=true -f slow_gpu=true
+```
+
+No new merge-triggered slow/GPU refresh is added. The existing daily baseline
+workflow refreshes only regular CPU; general e2e baseline refresh is now manual.
+Existing scheduled slow test runs can still publish main baselines. Missing or
+incompatible baselines fall back to running all eligible tests. Refreshing the
+same commit uses a new cache key because GitHub caches are immutable.
+
+Testmon cannot trace spawned workers. Distributed CPU and slow suites therefore
+invalidate their selection environment when tracked source, tests, scripts, or
+training configurations change; savings there are intentionally conservative.
+Testmon collection disables pytest-cov, so these lanes collect dependency data
+during normal runs and coverage during full-run overrides. Regular non-PR CPU
+coverage jobs remain enabled. Fast NF4 compatibility checks always run and retain
+their no-skip assertion.
+
+#### Feature-aware e2e suites
+
+The testmon e2e integration and kernel blocks are partitioned by
+`cicd/feature_suites.json`. Liger and Cut Cross Entropy integration tests run in
+separate processes; kernel activation and MoE tests have separate suites and
+baselines. Unclassified test files remain in a general suite. The existing
+subprocess and LoRA-patching exclusions keep their original lanes.
+
+Only explicit feature boundaries can exclude a suite before testmon runs. The
+initial boundaries are the opt-in Liger and Cut Cross Entropy plugin packages:
+for example, a Liger-only implementation change can skip a previously passing
+CCE or pure-kernel suite. The general suite retains every feature as a possible
+dependency. Shared code and unknown changes are never excluded by feature scope.
+Add a boundary only after verifying its activation conditions and every named
+suite's feature use; update suite declarations when tests exercise combinations.
+
+Each suite stores a successful source snapshot, revision, environment, and database
+checksum beside its testmon database. Comparison uses that snapshot, not just the
+PR diff, so an old baseline cannot hide intervening main changes. Missing or
+invalid metadata, environment changes, and previous failures force a full suite.
+Configuration, non-Python inputs, and conftest changes also force full execution
+of affected suites. Python changes within scope use testmon's finer selection.
+Full-run labels and manual refreshes bypass feature exclusion. Logs show each
+suite's decision and reason; skipped suites never count as a complete e2e gate run.
+
 #### Slow CPU Tests
 
 The Slow CPU workflow runs integrations marked `slow` without `gpu`, including the
 Ringmaster multi-process probes and MixLoRA model test. Apply `run-cpu-slow` to a
 ready PR to run this lane; later pushes rerun it while the label remains. It also
 runs nightly against the pinned dependencies on the default branch and supports
-manual dispatch. Tests run sequentially on Python 3.14 / PyTorch 2.14.0 to avoid
+manual dispatch. Tests run sequentially on Python 3.14 / PyTorch 2.14.1 to avoid
 multiplying process counts with pytest workers. This optional lane should not be
 a required branch-protection check.
 
@@ -253,7 +338,7 @@ Slow GPU workflow handles that label directly; unrelated labels do not start its
 jobs. Subsequent pushes rerun the suites while labeled. It also supports manual
 dispatch and runs weekly against pinned dependencies on the default branch.
 
-The lanes use Python 3.14 / PyTorch 2.14.0 and run sequential tests on one H100 (slow ScatterMoE kernels and the
+The lanes use Python 3.14 / PyTorch 2.14.1 and run sequential tests on one H100 (slow ScatterMoE kernels and the
 prequantized merge CLI test), two H100s (Ringmaster/FSDP2), or four H100s (FLA
 four-rank parity). NF4, FLA Mamba kernel tests, and GDN parity retain their existing
 GPU lanes and are not duplicated here. `run-gpu-tests` continues to select the
