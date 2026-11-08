@@ -9,37 +9,35 @@ on:
       nightly:
         type: boolean
         default: false
-      python_version:
+      python_pytorch_matrix:
         type: string
-        default: "3.12"
-      pytorch_versions:
-        type: string
-        default: '["2.13.0", "2.14.1"]'
+        default: '[{"python_version":"3.12.16","pytorch_version":"2.13.0"},{"python_version":"3.14.9","pytorch_version":"2.14.1"},{"python_version":"3.14.9","pytorch_version":"2.15.0"}]'
     secrets:
       CODECOV_TOKEN:
         required: false
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   TRANSFORMERS_IS_CI: "yes"
   UV_SYSTEM_PYTHON: "1"
   DS_ACCELERATOR: "cpu"
   COVERAGE_CORE: "sysmon"
+  TESTMON_SUBPROCESSES: "true"
   OMP_NUM_THREADS: "1"
   MKL_NUM_THREADS: "1"
 
 jobs:
   distributed-cpu:
-    name: ${{ inputs.slow && 'Slow CPU' || 'Distributed CPU' }} / ${{ matrix.stack }} / PyTorch ${{ matrix.pytorch_version }}
+    name: ${{ inputs.slow && 'Slow CPU' || 'Distributed CPU' }} / ${{ inputs.nightly && 'nightly' || 'pinned' }} / PyTorch ${{ matrix.pytorch_version }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        pytorch_version: ${{ fromJSON(inputs.pytorch_versions) }}
-        stack: ["${{ inputs.nightly && 'nightly' || 'pinned' }}"]
+        include: ${{ fromJSON(inputs.python_pytorch_matrix) }}
     steps:
       - name: Free runner disk space
         run: |
@@ -55,7 +53,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: ${{ inputs.python_version }}
+          python-version: ${{ matrix.python_version }}
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
@@ -68,7 +66,7 @@ jobs:
           uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
           uv pip install -e '.[ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install pytest==9.1.1 pytest-cov pytest-xdist
+          uv pip install pytest==9.1.1 pytest-cov pytest-xdist pytest-testmon==2.2.0
       - name: Override with nightly HF packages
         if: inputs.nightly
         run: |
@@ -87,6 +85,11 @@ jobs:
               print(f"{name}=={version(name)}", flush=True)
           PY
           python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, torch.__version__"
+      - name: Restore testmon
+        uses: ./.github/actions/testmon-restore
+        with:
+          cpu: 'true'
+          suite: ${{ inputs.slow && 'cpu-slow' || 'distributed-cpu' }}-py${{ matrix.python_version }}-torch${{ matrix.pytorch_version }}-${{ inputs.nightly && 'nightly' || 'pinned' }}
       - name: Run fast NF4 compatibility checks
         if: ${{ !inputs.slow }}
         run: |
@@ -103,7 +106,7 @@ jobs:
       - name: Run NF4 distributed CPU tests
         if: ${{ !inputs.slow }}
         run: |
-          pytest -v --durations=10 -n0 -m nf4_distributed \
+          python cicd/pytest_testmon.py -v --durations=10 -n0 -m nf4_distributed \
             --confcutdir=tests/monkeypatch tests/monkeypatch/test_nf4_loading.py \
             --cov=axolotl --cov-append --cov-report=xml:distributed-cpu-coverage.xml
       - name: Run distributed checkpoint and optimizer tests
@@ -111,7 +114,7 @@ jobs:
         env:
           CUDA_VISIBLE_DEVICES: ""
         run: |
-          pytest -v --durations=10 -n0 -m "distributed_cpu and not gpu and not slow" \
+          python cicd/pytest_testmon.py -v --durations=10 -n0 -m "distributed_cpu and not gpu and not slow" \
             tests/monkeypatch/test_fsdp2_full_checkpoint.py \
             tests/monkeypatch/test_fsdp2_sharded_adapter.py \
             tests/monkeypatch/test_fsdp2_bnb_checkpoint.py \
@@ -126,7 +129,7 @@ jobs:
       - name: Run other distributed CPU tests
         if: ${{ !inputs.slow }}
         run: |
-          pytest -v --durations=10 -n0 -m "distributed_cpu and not slow" \
+          python cicd/pytest_testmon.py -v --durations=10 -n0 -m "distributed_cpu and not slow" \
             tests/integrations/expert_parallel/test_ep_cpu_offload_grad_clip.py \
             tests/integrations/expert_parallel/test_torch_backend.py \
             tests/integrations/expert_parallel/test_plugin.py \
@@ -140,13 +143,19 @@ jobs:
       - name: Run slow CPU integrations
         if: inputs.slow
         run: |
-          pytest -v --durations=10 -n0 -m "slow and not gpu" \
+          python cicd/pytest_testmon.py -v --durations=10 -n0 -m "slow and not gpu" \
             --ignore=tests/integrations/kernels/ tests/integrations/ \
             --cov=axolotl --cov-report=xml:distributed-cpu-coverage.xml
+      - name: Save testmon
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/testmon-save
+        with:
+          suite: ${{ inputs.slow && 'cpu-slow' || 'distributed-cpu' }}-py${{ matrix.python_version }}-torch${{ matrix.pytorch_version }}-${{ inputs.nightly && 'nightly' || 'pinned' }}
       - name: Upload coverage
+        if: env.TESTMON_FULL == 'true'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./distributed-cpu-coverage.xml
-          flags: ${{ inputs.slow && 'cpu-slow' || 'distributed-cpu' }},${{ matrix.stack }},pytorch-${{ matrix.pytorch_version }}
+          flags: ${{ inputs.slow && 'cpu-slow' || 'distributed-cpu' }},${{ inputs.nightly && 'nightly' || 'pinned' }},pytorch-${{ matrix.pytorch_version }}
           fail_ci_if_error: false

@@ -9,7 +9,10 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
+      - ".github/actions/**"
       - "cicd/*.sh"
+      - "scripts/**"
+      - "cicd/feature_suites.json"
       - "cicd/*.jinja"
       # tree-recurrence has its own workflow until axolotl depends on it
       - "!packages/tree-recurrence/**"
@@ -22,7 +25,10 @@ on:
       - "**.py"
       - "pyproject.toml"
       - ".github/workflows/*.yml"
+      - ".github/actions/**"
       - "cicd/*.sh"
+      - "scripts/**"
+      - "cicd/feature_suites.json"
       - "cicd/*.jinja"
       # tree-recurrence has its own workflow until axolotl depends on it
       - "!packages/tree-recurrence/**"
@@ -84,7 +90,7 @@ jobs:
   pytest:
     name: PyTest
     runs-on: ubuntu-latest
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ github.event_name != 'pull_request' }}
     needs: [prime-cdn-s3-cache, pre-commit]
     strategy:
       max-parallel: 2
@@ -398,6 +404,9 @@ jobs:
               '.github/workflows/distributed-cpu.yml',
               '.github/workflows/tests.yml',
               '.coveragerc-distributed',
+              'cicd/pytest_testmon.py',
+              '.github/actions/testmon-restore/',
+              '.github/actions/testmon-save/',
               'pyproject.toml',
               'scripts/cutcrossentropy_install.py',
             ];
@@ -423,11 +432,16 @@ jobs:
             });
             const names = files.flatMap((f) => [f.filename, f.previous_filename]).filter(Boolean);
             core.info(`${files.length} changed file(s)`);
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: context.payload.pull_request.number,
+            });
+            const fullCpu = pr.labels.some(label =>
+              ['run-cpu-full', 'run-tests-full'].includes(label.name));
             for (const [lane, patterns] of Object.entries(LANES)) {
               const hits = names.filter((name) => matches(patterns, name));
               core.info(`${lane}: ${hits.length} matched`);
               for (const hit of hits) core.info(`  ${hit}`);
-              core.setOutput(lane, String(hits.length > 0));
+              core.setOutput(lane, String(hits.length > 0 || (lane === 'run_distributed_cpu' && fullCpu)));
             }
 
   modal-image:

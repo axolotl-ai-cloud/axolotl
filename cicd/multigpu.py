@@ -10,6 +10,7 @@ from modal import App
 
 from .ci_image import ci_image
 from .deep_ep import DEEP_EP_WHEELS, deep_ep_volume, install_deep_ep
+from .modal_testmon import run_local, run_remote
 
 df_args = {
     "AXOLOTL_EXTRAS": os.environ.get("AXOLOTL_EXTRAS", ""),
@@ -130,7 +131,9 @@ def run_cmd(cmd: str, run_folder: str):
     ),
     volumes=VOLUME_CONFIG,
 )
-def cicd_pytest():
+def cicd_pytest(
+    state: dict[str, bytes] | None = None, full: bool = False, select: bool = False
+):
     suite = os.environ.get("MULTIGPU_TEST_SUITE", "multigpu")
     scripts = {
         "multigpu": "./cicd/multigpu.sh",
@@ -143,9 +146,18 @@ def cicd_pytest():
     }
     if suite in DEEP_EP_SUITES and install_deep_ep(DEEP_EP_WHEELS):
         deep_ep_volume.commit()
+    if suite.startswith("gpu_slow_"):
+        refresh_source("/workspace/axolotl")
+        return run_remote(
+            scripts[suite].removeprefix("bash "), state or {}, full, select, True
+        )
     run_cmd(scripts[suite], "/workspace/axolotl")
+    return None
 
 
 @app.local_entrypoint()
 def main():
-    cicd_pytest.remote()
+    if os.environ.get("MULTIGPU_TEST_SUITE", "").startswith("gpu_slow_"):
+        run_local(cicd_pytest)
+    else:
+        cicd_pytest.remote()

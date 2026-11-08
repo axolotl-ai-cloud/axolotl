@@ -13,6 +13,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   UV_SYSTEM_PYTHON: "1"
@@ -52,7 +53,6 @@ jobs:
     uses: ./.github/workflows/distributed-cpu.yml
     with:
       nightly: true
-      pytorch_versions: '["2.13.0"]'
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
@@ -63,11 +63,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-# skip for now to reduce CI costs
-#        python_version: ["3.12", "3.14"]
-        python_version: ["3.14"]
-        pytorch_version: ["2.13.0", "2.14.1"]
-    timeout-minutes: 20
+        include:
+          - python_version: "3.12.16"
+            pytorch_version: "2.13.0"
+          - python_version: "3.14.9"
+            pytorch_version: "2.14.1"
+          - python_version: "3.14.9"
+            pytorch_version: "2.15.0"
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository code
@@ -154,18 +157,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-# skip for now to reduce CI costs
-#          - cuda: 130
-#            cuda_version: 13.0.3
-#            python_version: "3.12"
-#            pytorch: 2.13.0
-#            num_gpus: 1
-#            axolotl_extras:
-#            nightly_build: "true"
+          - cuda: 130
+            cuda_version: 13.0.3
+            python_version: "3.12"
+            pytorch: 2.13.0
+            num_gpus: 1
+            axolotl_extras:
+            nightly_build: "true"
           - cuda: 130
             cuda_version: 13.0.3
             python_version: "3.14"
             pytorch: 2.14.1
+            num_gpus: 1
+            axolotl_extras:
+            nightly_build: "true"
+          - cuda: 132
+            cuda_version: 13.2.1
+            python_version: "3.14"
+            pytorch: 2.15.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -213,13 +222,29 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.3
             python_version: "3.12"
-            pytorch: 2.14.1
+            pytorch: 2.13.0
             num_gpus: 2
             axolotl_extras:
             nightly_build: "true"
             test_suite: multigpu
           - cuda: 130
-            python_version: "3.12"
+            cuda_version: 13.0.3
+            python_version: "3.14"
+            pytorch: 2.14.1
+            num_gpus: 2
+            axolotl_extras:
+            nightly_build: "true"
+            test_suite: multigpu
+          - cuda: 132
+            cuda_version: 13.2.1
+            python_version: "3.14"
+            pytorch: 2.15.0
+            num_gpus: 2
+            axolotl_extras:
+            nightly_build: "true"
+            test_suite: multigpu
+          - cuda: 130
+            python_version: "3.14"
             pytorch: 2.14.1
             num_gpus: 3
             nightly_build: "true"
@@ -259,57 +284,8 @@ jobs:
           modal run -m cicd.multigpu
 
   docker-e2e-kernel-tests:
-    if: github.repository_owner == 'axolotl-ai-cloud'
-    runs-on: [self-hosted, modal]
-    timeout-minutes: 90
     needs: [pre-commit, pytest]
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-# skip for now to reduce CI costs
-#          - cuda: 130
-#            cuda_version: 13.0.3
-#            python_version: "3.12"
-#            pytorch: 2.13.0
-#            num_gpus: 1
-#            axolotl_extras:
-#            nightly_build: "true"
-          - cuda: 130
-            cuda_version: 13.0.3
-            python_version: "3.14"
-            pytorch: 2.14.1
-            num_gpus: 1
-            axolotl_extras:
-            nightly_build: "true"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-      - name: Install Modal
-        run: |
-          python -m pip install --upgrade pip
-          pip install modal==1.6.3 jinja2
-      - name: Update env vars
-        run: |
-          echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
-          echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
-          echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
-          echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
-          echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
-          echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
-          echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
-      - name: Compute deps hash
-        run: python cicd/deps_hash.py
-      - name: Run tests job on Modal
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: |
-          modal run -m cicd.e2e_cuda_kernels
+    uses: ./.github/workflows/testmon-gpu-kernels.yml
+    with:
+      nightly: true
+    secrets: inherit

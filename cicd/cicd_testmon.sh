@@ -20,10 +20,14 @@ else
 fi
 
 # Every block runs even after a failure, so the baseline covers all of them
+testmon_option=--testmon-forceselect
+if [ "${TESTMON_FULL:-}" = "true" ]; then
+  testmon_option=--testmon-noselect
+fi
 failed=0
 tm() {
   local name=$1; shift
-  TESTMON_DATAFILE="$TESTMON_DIR/${name}.testmondata" pytest --testmon-forceselect --maxfail=10 "$@" || failed=1
+  TESTMON_DATAFILE="$TESTMON_DIR/${name}.testmondata" pytest "$testmon_option" --maxfail=10 "$@" || failed=1
 }
 
 # testmon only traces the pytest process; these files run the code under test in child processes
@@ -45,9 +49,14 @@ tm solo -v --durations=10 -n1 \
 tm solo-reward-model -v --durations=10 -s \
   /workspace/axolotl/tests/e2e/solo/test_reward_model_smollm2.py
 
-tm integrations -v --durations=10 \
-  --ignore=tests/e2e/integrations/test_kd.py \
-  /workspace/axolotl/tests/e2e/integrations/
+feature_full=${TESTMON_FULL:-false}
+if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
+  feature_full=false
+  export TESTMON_SELECT=false
+else
+  export TESTMON_SELECT=true
+fi
+TESTMON_FULL="$feature_full" python cicd/feature_testmon.py integrations -v --durations=10 --maxfail=10 || failed=1
 
 tm gpu-integrations -v --durations=10 -n8 --dist loadfile -m "gpu and not gpu_blackwell" \
   --ignore=tests/e2e/kernels/ \

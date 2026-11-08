@@ -314,7 +314,7 @@ def test_static_markers(source, markers):
 @pytest.mark.parametrize(
     ("path", "markers", "label", "lane"),
     [
-        ("tests/test_x.py", set(), None, mod.CPU_ROUTE.lane),
+        ("tests/test_x.py", set(), "run-cpu-full", mod.CPU_ROUTE.lane),
         ("tests/e2e/test_x.py", set(), "run-gpu-tests", "single-GPU e2e"),
         ("tests/core/test_x.py", {"gpu"}, "run-gpu-tests", "single-GPU e2e"),
         ("tests/integrations/kernels/test_x.py", set(), "run-gpu-tests", "GPU kernels"),

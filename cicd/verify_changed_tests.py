@@ -118,6 +118,7 @@ SETUP_NAMES = frozenset(
 LABEL_GPU = "run-gpu-tests"
 LABEL_GPU_SLOW = "run-gpu-slow"
 LABEL_CPU_SLOW = "run-cpu-slow"
+LABEL_CPU_FULL = "run-cpu-full"
 # cicd/gpu_slow.sh suites
 GPU_SLOW_PATHS = (
     "tests/e2e/kernels/",
@@ -776,7 +777,8 @@ class Route:
 
 
 CPU_ROUTE = Route(
-    None, "Expected in CPU PyTest without a label; check its selection in tests.yml"
+    LABEL_CPU_FULL,
+    "Full CPU PyTest across all three cells, bypassing testmon selection",
 )
 SKIP_MARK_ROUTE = Route(None, "Skipped by an unconditional skip mark")
 SKIPPED_ON_GPU_ROUTE = Route(
@@ -812,9 +814,7 @@ def route_for(path: str, markers: set[str]) -> Route:
     if gpu:
         return Route(LABEL_GPU, "single-GPU e2e")
     if markers & {"distributed_cpu", "nf4_distributed"}:
-        return Route(
-            None, "Expected in Distributed CPU, which runs only the files it lists"
-        )
+        return Route(LABEL_CPU_FULL, "Distributed CPU, bypassing testmon selection")
     return CPU_ROUTE
 
 
@@ -873,6 +873,8 @@ STATUS_TITLES = {
 def _action(route: Route, labels: set[str]) -> str:
     if route.label is None:
         return route.lane
+    if route.label == LABEL_CPU_FULL and "run-tests-full" in labels:
+        return f"`run-tests-full` is set, but no matching job ran these ({route.lane})"
     if route.label in labels:
         return f"`{route.label}` is set, but no matching job ran these ({route.lane})"
     return f"Add `{route.label}` ({route.lane})"
@@ -923,7 +925,14 @@ def render(
         assert verdict.route is not None
         by_route[verdict.route].append(verdict)
     if missing:
-        out += ["", "### Needs attention", ""]
+        out += [
+            "",
+            "### Needs attention",
+            "",
+            "To bypass testmon selection, add `run-tests-full` alongside any required "
+            "GPU or slow-lane label. For CPU lanes only, use `run-cpu-full`.",
+            "",
+        ]
     for route, group in sorted(by_route.items(), key=lambda kv: -len(kv[1])):
         out += [f"**{_action(route, labels)}** · {len(group)}", ""]
         for verdict in group[:MAX_LISTED]:

@@ -31,11 +31,11 @@ esac
 python -c "import torch; assert torch.cuda.device_count() >= $required_gpus, 'Insufficient CUDA devices'"
 export OMP_NUM_THREADS=1
 
-pytest -v --durations=10 -n0 -m "gpu and slow" \
+python cicd/pytest_testmon.py -v --durations=10 -n0 -m "gpu and slow" \
   "${selection[@]}" "${tests[@]}" \
   --cov=axolotl --cov-report="xml:${MULTIGPU_TEST_SUITE}-coverage.xml"
 
-if [ -n "${CODECOV_TOKEN:-}" ]; then
+if [ "${TESTMON_FULL:-}" = "true" ] && [ -n "${CODECOV_TOKEN:-}" ]; then
   codecovcli upload-process -t "$CODECOV_TOKEN" \
     -f "${MULTIGPU_TEST_SUITE}-coverage.xml" \
     -F "gpu-slow,${MULTIGPU_TEST_SUITE},pytorch-${PYTORCH_VERSION}" || true
