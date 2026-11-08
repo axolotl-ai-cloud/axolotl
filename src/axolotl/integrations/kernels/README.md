@@ -598,10 +598,10 @@ Per profile below, over the 222 grouped keys of the 21 runs at 16k tokens (preci
 | 0 | `gemm_gated_tuned` | gate/up forward (with or without the LoRA addend) | 21 | 2 | 1 | 0.2% | 2.9% | 0.0% / 0.2% |
 | 1 | `gemm_dgated_tuned` | down backward | 21 | 4 | 3 | 2.2% | 5.4% | 0.0% / 5.4% |
 | 2 | `gemm_tuned` | expert weight grads (varlen-K) | 20 | 3 | 3 | 1.3% | 3.8% | 2.3% / 5.3% |
-| 3 | `gemm_tuned` | LoRA grads with r rows | 11 | 3 | 2 | 0.3% | 4.8% | 60% / 72% |
-| 4 | `gemm_tuned` | LoRA grads with r columns | 22 | 4 | 4 | 1.1% | 2.6% | 17% / 56% |
-| 5 | `gemm_tuned` | rank-r products `x P` (N = r) | 44 | 11 | 3-5 | 2.3% | 3.8% | 2.4% / 7.1% |
-| 6 | `gemm_tuned` | rank-r products `u Q` (K = r) | 41 | 3 | 2 | 2.1% | 2.6% | 1.2% / 29% |
+| 3 | `gemm_tuned` | LoRA grads with r rows | 11 | 3 | 2 | 0.3% | 4.8% | 0.1% / 2.5% |
+| 4 | `gemm_tuned` | LoRA grads with r columns | 22 | 4 | 4 | 1.1% | 2.6% | 1.2% / 11% |
+| 5 | `gemm_tuned` | rank-r products `x P` (N = r) | 44 | 11 | 3-5 | 2.3% | 3.8% | 2.1% / 4.7% |
+| 6 | `gemm_tuned` | rank-r products `u Q` (K = r) | 41 | 3 | 2 | 2.1% | 2.6% | 0.0% / 2.3% |
 | 7 | `gemm_tuned` | down forward, gate/up dX | 42 | 6 | 2-4 | 1.8% | 3.9% | 0.8% / 9.9% |
 
 The broad-stage regrets above 3% are within that stage's single-sweep noise, and every such key
@@ -613,10 +613,13 @@ non-persistent). Both alternatives are in the profiles, so the short sweep at th
 picks between them.
 
 The `quack_autotune: false` rule is close on the base expert GEMMs (gated, dgated, weight grads,
-down and dX: median regret 0-2.3%, worst 5-10% on the smallest shapes) but not on
-`sonicmoe_lora_split`'s rank-r GEMMs. The LoRA grads with r rows want `swap_ab` (the rule's 256x256
-is 60% slower for the median key, 72% at worst), and at Gemma 4's I=704 the rule's 128x256 cluster
-1x2 is 29% slower than cluster 1x1 for `u Q`.
+down and dX: median regret 0-2.3%, worst 5-10% on the smallest shapes). Its picks for
+`sonicmoe_lora_split`'s rank-r GEMMs (rows 3-6) come from these measurements. Before them the LoRA
+grads with r rows ran 256x256 where 256x64 with `swap_ab` wins (60% slower for the median key, 72%
+at worst), the gathered rank-r GEMMs used `tma_gather` (up to 56% slower), and `u Q` used 128x256
+cluster 1x2, 29% slower than cluster 1x1 at Gemma 4's I=704. The LoRA grads with r columns and no
+gather have no single good config: the rule's 256x64 cluster 2x1 is up to 11% behind on GEMMs of
+0.05-0.09 ms.
 
 ```yaml
 autotune_profiles:
@@ -697,7 +700,7 @@ fresh processes in turn: the `quack_autotune: false` rule, these profiles, and a
 pinning every key to its measured best), the profiles and the rule both stay within about 1% of
 the oracle:
 
-| run | rule | profiles | oracle |
+| run | rule (before the rank-r picks) | profiles | oracle |
 |---|---|---|---|
 | F1 `lora_split` | 25.36 ms | 25.12 ms | 25.05 ms |
 | F2 full | 26.49 ms | 26.76 ms | 26.58 ms |
@@ -706,7 +709,11 @@ the oracle:
 | F7-dsv4pro `lora_split`, EP=8 | 87.90 ms | 88.04 ms | 88.37 ms |
 | F8 full | 73.81 ms | 73.78 ms | 73.16 ms |
 
-The rule's large misses are all on GEMMs of 0.03-0.3 ms, about 1% of a step here. What the profiles
+The rule's large misses were all on GEMMs of 0.03-0.3 ms, about 1% of a step here. With the
+current rank-r picks, the rule alone (no benchmarking) measured 24.87, 29.65, 52.13 and 85.63 ms on
+F1, F2, F5 (EP=8) and F7-dsv4pro (EP=8) `lora_split`, within 0.3% of the oracle in the same
+containers (24.96, 29.56, 52.10 and 85.57 ms), and reached the first step in 54-118 s from an
+empty quack cache. What the profiles
 change against a full sweep is the time to the first step. Cold full sweeps took 10-26 minutes
 before the first step for full fine-tuning (6 sweeps of 74-76 candidates) and 18-32 minutes for
 `lora_split` (14-15 sweeps). Set up through the kernels plugin with an empty quack cache, the
@@ -724,26 +731,26 @@ the rule's config was not among that key's shortlist.
 | run | up+gate fwd | down fwd | down dgated bwd | dX up | dW1 varlen-K | dW2 varlen-K | rank-r out | rank-r in | LoRA grad varlen-K |
 |---|---|---|---|---|---|---|---|---|---|
 | F1-full-ep1-t16384 | 256x512 c2x1 P tg; 4; +0% | 256x256 c2x2 P; 4; +1% | 256x256 c2x1 np tg; 3; +1% | 256x256 c2x1 np; 5; +1% | 256x256 c2x1 P tg; 1; +0% | 256x256 c2x1 P tg; 2; +1% |  |  |  |
-| F1-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 np; 4; +2% | 256x256 c2x1 P tg; 3; +0% | 256x256 c2x2 P; 6; +1% |  |  | 128x64 c2x1 np; 4; +1% (x4) | 256x256 c2x1 np; 2; +25% (x4) | 256x64 c2x1 P swap; 1; +65% (x3) |
+| F1-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 np; 4; +2% | 256x256 c2x1 P tg; 3; +0% | 256x256 c2x2 P; 6; +1% |  |  | 128x64 c1x1 P tg; 1; +2% (x4) | 128x256 c1x2 np; 2; +2% (x4) | 128x64 c2x1 P; 1; +9% (x3) |
 | F1-qwen35-full-ep1-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x2 np; 3; +4% | 128x256 c2x1 P tg; 2; +5% | 256x256 c2x1 P; 4; +0% | 256x256 c2x1 P; 2; +1% | 256x256 c2x1 P; 2; +1% |  |  |  |
-| F1-qwen35-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 1; +0% | 256x256 c2x1 np; 1; +10% | 128x256 c2x1 np; 2; +3% | 256x256 c2x1 np; 2; +4% |  |  | 128x64 c1x1 np; 2; +4% (x4) | 128x256 c1x1 np; 2; +1% (x4) | 256x64 c2x1 np swap; 2; +69% (x3) |
+| F1-qwen35-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 1; +0% | 256x256 c2x1 np; 1; +10% | 128x256 c2x1 np; 2; +3% | 256x256 c2x1 np; 2; +4% |  |  | 128x64 c2x1 P tg; 1; +5% (x4) | 128x256 c1x2 np; 1; +2% (x4) | 128x64 c1x1 np; 2; +1% (x3) |
 | F2-full-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 np; 1; +4% | 256x256 c2x1 P tg; 4; +0% | 256x256 c2x1 np; 2; +1% | 256x256 c2x1 P; 2; +1% | 256x256 c2x1 P tg; 2; +0% |  |  |  |
-| F2-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 np; 1; +3% | 256x256 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 2; +0% |  |  | 256x64 c2x1 np; 3; +2% (x4) | 128x256 c1x1 np; 2; +29% (x4) | 256x64 c2x1 P swap; 1; +72% (x3) |
+| F2-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 np; 1; +3% | 256x256 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 2; +0% |  |  | 128x64 c1x1 P tg; 1; +4% (x4) | 256x256 c2x1 np; 2; +1% (x4) | 128x64 c2x1 P; 1; +4% (x3) |
 | F5-full-ep8-t16384 | 256x256 c2x1 P tg; 4; +0% | 256x256 c2x1 P; 3; +0% | 256x256 c2x1 P tg; 3; +0% | 256x512 c2x1 P; 2; +1% | 256x512 c2x1 P tg; 2; +2% | 256x512 c2x1 P tg; 2; +2% |  |  |  |
 | F5-glm53flash-full-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x512 c2x1 P; 4; +0% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +1% | 256x512 c2x1 P tg; 2; +3% | 256x512 c2x1 P tg; 2; +3% |  |  |  |
-| F5-glm53flash-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% | 256x256 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 2; +0% |  |  | 256x64 c2x1 P; 5; +7% (x4) | 256x256 c2x1 np; 1; +5% (x3) | 128x64 c1x1 P swap; 2; +53% (x3) |
-| F5-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 128x256 c1x2 P; 5; n/a | 128x256 c2x1 P tg; 2; +3% | 256x512 c2x1 P; 1; +3% |  |  | 128x64 c2x1 P tg; 2; +0% (x4) | 128x256 c1x2 np; 2; +0% (x3) | 256x64 c2x1 P swap; 2; +62% (x3) |
-| F5-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 4; +0% |  |  | 256x64 c2x1 P; 6; +6% (x4) | 256x256 c2x1 np; 1; +4% (x3) | 256x64 c2x1 P swap; 2; +59% (x3) |
+| F5-glm53flash-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% | 256x256 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 2; +0% |  |  | 256x64 c2x1 np; 3; +4% (x4) | 128x256 c1x2 np; 3; +0% (x3) | 128x64 c1x1 P swap; 2; +0% (x3) |
+| F5-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 128x256 c1x2 P; 5; n/a | 128x256 c2x1 P tg; 2; +3% | 256x512 c2x1 P; 1; +3% |  |  | 128x64 c1x1 P tg; 2; +3% (x4) | 128x256 c1x2 np; 2; +2% (x3) | 128x64 c1x1 P; 2; +0% (x3) |
+| F5-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 4; +0% |  |  | 128x64 c2x1 np; 4; +2% (x4) | 128x256 c1x2 np; 3; +1% (x3) | 128x64 c1x1 np; 1; +11% (x3) |
 | F5-qwen35-full-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 4; +0% | 256x256 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 3; +0% | 256x256 c2x1 P; 4; +1% | 256x512 c2x1 P tg; 2; +3% |  |  |  |
-| F5-qwen35-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 np; 4; +1% | 256x256 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% |  |  | 128x64 c2x1 np tg; 4; +6% (x4) | 256x256 c2x1 np; 1; +4% (x4) | 256x64 c2x1 P swap; 1; +60% (x3) |
+| F5-qwen35-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x256 c2x1 np; 4; +1% | 256x256 c2x1 P tg; 2; +0% | 256x256 c2x1 P; 5; +0% |  |  | 128x64 c2x1 P; 3; +3% (x4) | 128x256 c1x2 np; 3; +1% (x4) | 128x64 c1x1 np; 3; +2% (x3) |
 | F6-full-ep8-t16384 | 256x512 c2x1 P tg; 4; +0% | 256x256 c2x1 P; 5; +0% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +1% | 256x512 c2x1 P tg; 4; +2% | 256x512 c2x1 P tg; 2; +3% |  |  |  |
-| F6-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 6; +0% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +0% |  |  | 256x64 c2x1 P tg; 3; +6% (x4) | 256x256 c2x1 np; 2; +5% (x4) | 128x64 c1x1 P swap; 2; +55% (x3) |
+| F6-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 6; +0% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +0% |  |  | 256x64 c2x1 P tg; 3; +3% (x4) | 256x256 c2x1 np; 3; +0% (x4) | 128x64 c1x1 P swap; 2; +1% (x3) |
 | F7-dsv4pro-full-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +1% | 256x512 c2x1 P tg; 3; +2% | 256x512 c2x1 P tg; 2; +5% |  |  |  |
-| F7-dsv4pro-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +3% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +2% |  |  | 256x64 c2x1 P; 2; +3% (x4) | 256x256 c2x1 np; 1; +4% (x4) | 128x64 c1x1 P swap; 1; +60% (x3) |
+| F7-dsv4pro-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +3% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +2% |  |  | 256x64 c2x1 P; 2; +3% (x4) | 128x256 c1x2 np; 3; +0% (x4) | 128x64 c1x1 P swap; 1; +2% (x3) |
 | F7-full-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +4% | 256x512 c2x1 P tg; 2; +3% | 256x512 c2x1 P tg; 2; +4% |  |  |  |
-| F7-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 4; +0% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +2% |  |  | 128x64 c1x1 np; 6; +4% (x4) | 256x256 c2x1 np; 1; +6% (x4) | 256x64 c2x1 P swap; 3; +54% (x3) |
+| F7-lora_split-ep8-t16384 | 256x512 c2x1 P tg; 3; +0% | 256x256 c2x1 P; 4; +0% | 256x256 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 2; +2% |  |  | 256x64 c2x1 P; 3; +3% (x4) | 128x256 c1x2 np; 3; +0% (x4) | 128x64 c1x1 P; 1; +5% (x3) |
 | F8-full-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +2% | 256x512 c2x1 P tg; 2; +3% | 256x512 c2x1 P tg; 2; +4% |  |  |  |
-| F8-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +2% |  |  | 128x64 c1x1 np; 5; +3% (x4) | 256x256 c2x1 np; 3; +6% (x4) | 128x64 c1x1 P swap; 3; +60% (x3) |
+| F8-lora_split-ep1-t16384 | 256x512 c2x1 P tg; 2; +0% | 256x512 c2x1 P; 1; +3% | 256x256 c2x1 P tg; 1; +0% | 256x512 c2x1 P; 2; +2% |  |  | 128x64 c1x1 np; 5; +3% (x4) | 128x256 c1x2 np; 3; +1% (x4) | 128x64 c1x1 np; 2; +5% (x3) |
 
 </details>
 
@@ -795,11 +802,16 @@ B200 profiles are not applied in this mode.
 |---|---|
 | `gemm_gated_tuned` | 256x512, cluster 2x1, persistent |
 | `gemm_dgated_tuned` | 256x256, cluster 2x1, persistent |
-| `gemm_tuned`, N <= 128 | 128x64, cluster 2x1 with `cu_seqlens_k` else 1x1, persistent |
-| `gemm_tuned`, K <= 128 < N | 128x256, cluster 1x2, not persistent |
+| `gemm_tuned` with `cu_seqlens_k`, at most 128 output rows, no `A_idx` (LoRA grads with r rows) | 256x64, cluster 2x1, persistent, `swap_ab` |
+| `gemm_tuned`, N <= 128, with `cu_seqlens_k` and no `A_idx` | 256x64, cluster 2x1, persistent |
+| `gemm_tuned`, N <= 128, otherwise | 128x64, cluster 1x1, persistent, no `use_tma_gather` |
+| `gemm_tuned`, K <= 128 < N, with `cu_seqlens_m` | not persistent: 128x256 cluster 1x1 up to 1024 rows per expert, else 256x256 cluster 2x1 |
+| `gemm_tuned`, K <= 128 < N, otherwise | 128x256, cluster 1x2, not persistent |
 | `gemm_tuned` otherwise, other kernels | 256x256, cluster 2x1, persistent |
 
-All use `use_tma_gather` exactly when `A_idx` is passed, no pingpong and no `swap_ab`. When the
+The others use `use_tma_gather` exactly when `A_idx` is passed, no pingpong and no `swap_ab`. The
+rank-r rows (N or K at most 128) were set from the B200 measurements under "Built-in profiles for
+SonicMoE on B200". When the
 rule's config is not a valid candidate (another GPU generation, or pruned for the call) the first
 valid candidate is used, logged once per kernel.
 
