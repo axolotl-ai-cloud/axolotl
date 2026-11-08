@@ -808,6 +808,25 @@ on a 0.09 ms GEMM), F2's LoRA grad with r columns at I = 704 (10% on 0.12 ms), F
 r rows (6.3%) and F7-dsv4pro's dX with the LoRA addend (7.5%, where the same shape without the
 addend prefers the rule's config).
 
+End to end, with 20 timed steps after tuning on four of the runs (one container each, four fresh
+processes in turn: the sm90 rule, quack's first valid candidates as `quack_autotune: false` picked
+them before, these profiles through the kernels plugin, and a per-run oracle pinning every key to
+its measured best), the rule, the profiles and the oracle are within about 1% and the first valid
+candidates are 9-11% slower per step:
+
+| run | GPU | rule | first valid | profiles (plugin) | oracle |
+|---|---|---|---|---|---|
+| F1 `lora_split` | H100 | 44.05 ms | 48.01 ms (+9.0%) | 43.99 ms | 43.97 ms |
+| F2 full | H100 | 46.41 ms | 51.46 ms (+10.9%) | 46.66 ms | 46.72 ms |
+| F5 `lora_split`, EP=8 | H200 | 85.57 ms | 93.21 ms (+8.9%) | 87.59 ms (full sweep) | 86.40 ms |
+| F6 full, EP=8 | H200 | 152.27 ms | 166.98 ms (+9.7%) | 152.72 ms (full sweep) | 152.78 ms |
+
+On H100 the profiles decided every quack key and reached the first step in 37-50 s. Modal ran the
+F5 and F6 containers on H200s, where `gpu: H100` does not match, so their plugin pass swept quack's
+full sm90 lists (5-8 minutes before the first step) and the oracle pinned the H100 winners. There
+the rule and the H100 winners were as fast as the full H200 sweep, a first sign (two runs) that
+these entries would also serve H200.
+
 ```yaml
 autotune_profiles:
   # gate/up forward and down backward: one config each, not benchmarked
@@ -911,7 +930,8 @@ To reproduce on Modal: push the branch, then run `cicd.quack_profile_sweep` with
 and the CI image environment, `--passes 2 --extra "--repeats 4"`, and
 `python scripts/sonicmoe_quack_sweep.py analyze <dir> --evaluate profiles.yaml` on the
 downloaded `.quack.json` files. The 18 runs took 8.8 H100-hours: re-timing every candidate four
-times is what costs, up to 42 minutes per pass for F5 full at 64k tokens.
+times is what costs, up to 42 minutes per pass for F5 full at 64k tokens. Modal may serve an H100
+request with an H200; each run's file records the GPU it ran on (all 18 above are H100 80GB HBM3).
 
 ## quack key buckets and the no-sweep mode (SonicMoE)
 
