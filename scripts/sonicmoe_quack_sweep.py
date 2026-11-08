@@ -624,9 +624,10 @@ def evaluate(entries, profiles, tol):
     """Per profile: the best regret its configs leave each measured key it would match.
 
     Matching goes through Axolotl's own ``_quack_matches`` on meta tensors of the recorded call
-    shapes, in profile order, as at train time: the first matching profile decides. Only configs
-    measured for a key count, so a shortlisted (stage-2) key whose deciding profile pins only
-    unmeasured configs is reported with infinite regret rather than credited to a later profile.
+    shapes, in profile order; the first matching profile takes the key. Only configs measured for
+    a key count, so a key whose profile pins only unmeasured configs gets infinite regret. Training
+    also tries the next profile when none of a profile's configs is valid for the call; the
+    timings cannot tell invalid from unmeasured, so such a key also shows up here as infinite.
     """
     import torch
 
