@@ -49,8 +49,8 @@ def _quack_policy(cfg) -> tuple[str, bool] | None:
 
 
 def _autotune_profiles(cfg) -> list[dict]:
-    """The config's ``autotune_profiles``, then the built-in SonicMoE B200/H100 ones for every
-    quack kernel the config does not profile (sweep mode only: with ``quack_autotune: false`` the
+    """The config's ``autotune_profiles``, then the built-in SonicMoE B200/H100/H200 ones for
+    every quack kernel the config does not profile (sweep mode only: with ``quack_autotune: false`` the
     rule picks each config)."""
     profiles = list(cfg.autotune_profiles or [])
     if (

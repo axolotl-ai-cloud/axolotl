@@ -13,6 +13,7 @@ import pytest
 import torch
 import yaml
 
+import axolotl.integrations.kernels.autotune_profiles as autotune_profiles
 from axolotl.integrations.kernels.autotune_profiles import (
     _install_quack,
     _validate_quack_match,
@@ -22,6 +23,7 @@ from axolotl.integrations.kernels.quack_autotune_policy import heuristic_fields
 from axolotl.integrations.kernels.quack_default_profiles import (
     B200_SONICMOE_PROFILES,
     H100_SONICMOE_PROFILES,
+    H200_SONICMOE_PROFILES,
     SONICMOE_DEFAULT_PROFILES,
     default_quack_profiles,
 )
@@ -46,7 +48,7 @@ def test_readme_shows_the_shipped_profiles(gpu, shipped):
 @pytest.mark.parametrize("profile", SONICMOE_DEFAULT_PROFILES)
 def test_profiles_are_valid_and_grouped_only(profile):
     _validate_quack_match(profile)
-    assert profile["backend"] == "quack" and profile["gpu"] in ("B200", "H100")
+    assert profile["backend"] == "quack" and profile["gpu"] in ("B200", "H100", "H200")
     assert {"cu_seqlens_m.dim0", "cu_seqlens_k.dim0"} & set(profile["match"])
     assert 1 <= len(profile["configs"]) <= 5
 
@@ -73,6 +75,44 @@ def test_profiles_are_valid_and_grouped_only(profile):
 def test_a_profiled_kernel_keeps_only_the_configs_entries(user, dropped):
     kept = {p["kernel"] for p in default_quack_profiles(user)}
     assert kept == set(KERNELS) - dropped
+
+
+def test_h200_reuses_the_h100_entries():
+    assert [
+        {**p, "gpu": "H100"} for p in H200_SONICMOE_PROFILES
+    ] == H100_SONICMOE_PROFILES
+    for h200, h100 in zip(H200_SONICMOE_PROFILES, H100_SONICMOE_PROFILES, strict=True):
+        assert h200["match"] is not h100["match"]
+        assert h200["configs"] is not h100["configs"]
+
+
+@pytest.mark.parametrize(
+    "device, gpu",
+    [
+        ("NVIDIA B200", "B200"),
+        ("NVIDIA GB200", "B200"),
+        ("NVIDIA H100 80GB HBM3", "H100"),
+        ("NVIDIA H100 PCIe", "H100"),
+        ("NVIDIA H100 NVL", "H100"),
+        ("NVIDIA H200", "H200"),
+        ("NVIDIA H200 NVL", "H200"),
+        ("NVIDIA GH200 480GB", "H200"),
+        ("NVIDIA H800", None),
+        ("NVIDIA H20", None),
+    ],
+)
+def test_each_gpu_gets_one_built_in_set(monkeypatch, device, gpu):
+    tuner = Autotuner("gemm_gated_tuned", sm90=True)
+    monkeypatch.setattr(autotune_profiles, "_gpu_name", lambda: device)
+    monkeypatch.setattr(autotune_profiles, "_autotuners", lambda: [])
+    monkeypatch.setattr(
+        autotune_profiles,
+        "sonicmoe_autotuners",
+        lambda: [("fake_quack.gemm_interface", None, tuner, True)],
+    )
+    autotune_profiles.apply_autotune_profiles(default_quack_profiles([]), quiet=True)
+    applied = getattr(tuner, "_axolotl_quack_profiles", None) or []
+    assert [p["gpu"] for p, _ in applied] == ([gpu] if gpu else [])
 
 
 def test_defaults_are_copies():

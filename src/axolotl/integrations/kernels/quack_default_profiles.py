@@ -2,14 +2,14 @@
 # Copyright (c) Axolotl AI
 # Licensed under the Apache License, Version 2.0
 
-"""Built-in quack ``autotune_profiles`` for SonicMoE's grouped GEMMs on B200 and H100.
+"""Built-in quack ``autotune_profiles`` for SonicMoE's grouped GEMMs on B200, H100 and H200.
 
 Measured on expert-shape families (full fine-tuning and ``sonicmoe_lora_split``, EP=1 and EP=8;
 kernels README, "Built-in profiles for SonicMoE on B200" and "... on H100"): on B200 each grouped
 key sweeps at most five candidates instead of 74-76 and stays within 2.3% of its best config, on
 H100 at most four instead of 9-44, within 1.8%. Every entry matches only calls that pass
 ``cu_seqlens_m`` or ``cu_seqlens_k``, so dense quack GEMMs keep their own search; ``gpu`` keeps
-each set to the GPU it was measured on.
+each set to the GPU it was measured on. H200 and GH200 reuse the H100 entries.
 """
 
 import copy
@@ -176,7 +176,14 @@ H100_SONICMOE_PROFILES: list[dict[str, Any]] = [
     ),
 ]
 
-SONICMOE_DEFAULT_PROFILES = B200_SONICMOE_PROFILES + H100_SONICMOE_PROFILES
+# not swept on H200; on two H200 runs the H100 winners matched a full sweep end to end
+H200_SONICMOE_PROFILES: list[dict[str, Any]] = [
+    {**copy.deepcopy(profile), "gpu": "H200"} for profile in H100_SONICMOE_PROFILES
+]
+
+SONICMOE_DEFAULT_PROFILES = (
+    B200_SONICMOE_PROFILES + H100_SONICMOE_PROFILES + H200_SONICMOE_PROFILES
+)
 
 
 def _names_kernel(pattern: str, kernel: str) -> bool:

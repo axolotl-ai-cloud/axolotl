@@ -765,9 +765,12 @@ On an H100 the built-in profiles below (`H100_SONICMOE_PROFILES`) take the place
 with the same precedence, cache re-tune and `quack_autotune_default_profiles: false` opt-out: every
 grouped key goes from quack's 9-44 sm90 candidates to at most four (the gate/up forward and the down
 backward to one, which is not benchmarked), and every key measured below stays within 1.8% of its
-best config. `gpu: H100` matches H100 SXM, PCIe and NVL. H200, GH200 and H800 share the SM but were
-not measured, so they keep quack's full sm90 search; a config can copy these entries with its own
-`gpu`. The `quack_autotune: false` rule's sm90 picks (next section) apply to every sm90 GPU.
+best config. `gpu: H100` matches H100 SXM, PCIe and NVL. The same entries ship again with
+`gpu: H200` (`H200_SONICMOE_PROFILES`), which matches H200 and GH200: no H200 was swept, but on the
+two runs that Modal placed on H200s (end-to-end table below) the H100 winners were as fast as a full
+H200 sweep. H800 and H20 match neither and keep quack's full sm90 search; a config can copy these
+entries with its own `gpu`. The `quack_autotune: false` rule's sm90 picks (next section) apply to
+every sm90 GPU.
 
 They were measured with `scripts/sonicmoe_quack_sweep.py` in November 2026 on an H100 80GB HBM3
 (same image as the B200 study: hub sonic-moe vendoring quack 0.6.1, cutlass-dsl 4.8.1, torch
@@ -822,10 +825,10 @@ candidates are 9-11% slower per step:
 | F6 full, EP=8 | H200 | 152.27 ms | 166.98 ms (+9.7%) | 152.72 ms (full sweep) | 152.78 ms |
 
 On H100 the profiles decided every quack key and reached the first step in 37-50 s. Modal ran the
-F5 and F6 containers on H200s, where `gpu: H100` does not match, so their plugin pass swept quack's
-full sm90 lists (5-8 minutes before the first step) and the oracle pinned the H100 winners. There
-the rule and the H100 winners were as fast as the full H200 sweep, a first sign (two runs) that
-these entries would also serve H200.
+F5 and F6 containers on H200s, before the `gpu: H200` copies existed, so their plugin pass swept
+quack's full sm90 lists (5-8 minutes before the first step) and the oracle pinned the H100 winners.
+There the rule and the H100 winners were as fast as the full H200 sweep, which is the basis for
+shipping the same entries for H200.
 
 ```yaml
 autotune_profiles:
@@ -970,7 +973,7 @@ every run. Records written before the fingerprint existed skip the first check. 
 `quack_autotune: false` never benchmarks: each key gets one config by a fixed rule, so a new shape
 costs at most a compile of that config (`source: heuristic` in the records). Matching
 `autotune_profiles` still decide the candidates; the rule then picks among them. The built-in
-B200 and H100 profiles are not applied in this mode.
+profiles are not applied in this mode.
 
 | kernel | rule (B200) |
 |---|---|
@@ -1011,7 +1014,7 @@ the first valid candidate is used, logged once per kernel.
 use_sonicmoe: true
 quack_autotune_key_buckets: pow2   # default with use_sonicmoe; shape = no token dims; none = exact shapes
 quack_autotune: false              # default true (sweep)
-quack_autotune_default_profiles: false  # default true: sweep only the built-in B200/H100 candidates
+quack_autotune_default_profiles: false  # default true: sweep only the built-in B200/H100/H200 candidates
 ```
 
 With `use_sonicmoe` (or any quack `autotune_profiles`), the ~200 ms GPU warm-up matmul quack runs
