@@ -4,7 +4,8 @@ on:
   workflow_call:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * 1,4" # Runs at 00:00 UTC every monday & thursday
+    - cron: "0 0 * * 0"
+    - cron: "0 0 * * 1,4"
 
 permissions:
   contents: read

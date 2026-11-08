@@ -87,108 +87,6 @@ jobs:
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  pytest:
-    name: PyTest
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'pull_request' }}
-    needs: [prime-cdn-s3-cache, pre-commit]
-    strategy:
-      max-parallel: 2
-      fail-fast: false
-      matrix:
-        include: # just run the diagonal to keep it lightweight
-          - python_version: "3.12"
-            pytorch_version: "2.13.0"
-          - python_version: "3.14"
-            pytorch_version: "2.14.1"
-          - python_version: "3.14"
-            pytorch_version: "2.15.0"
-    timeout-minutes: 45
-    env:
-      AXOLOTL_CI_ENFORCE_GPU_MARKER: "1"
-
-    steps:
-      - name: cleanup node
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-
-      - name: Check out repository code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Restore Cache from S3
-        id: hf-cache-restore-s3
-        run: |
-          mkdir -p ~/.cache/huggingface/hub
-          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C ~/.cache/huggingface/hub/  --use-compress-program unzstd --strip-components=1
-          ls -ltr ~/.cache/huggingface/hub/
-
-      - name: Setup Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: ${{ matrix.python_version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          enable-cache: true
-          prune-cache: true
-          cache-dependency-glob: "pyproject.toml"
-
-      - name: Install PyTorch
-        run: |
-          uv pip install torch==${{ matrix.pytorch_version }} torchvision
-          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
-
-      - name: Install dependencies
-        run: |
-          uv pip install -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
-          python scripts/cutcrossentropy_install.py --uv | sh
-          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov-cli pytest==9.1.1 pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
-
-      - name: Make sure PyTorch version wasn't clobbered
-        run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
-
-      - name: Ensure axolotl CLI was installed
-        run: |
-          axolotl --help
-
-      - name: Check generated CLI config options
-        if: ${{ matrix.python_version == '3.14' && matrix.pytorch_version == '2.14.1' }}
-        run: |
-          axolotl generate-cli-config-options --check
-
-      - name: Pre-Download dataset fixture
-        run: |
-          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
-
-      - name: Show HF cache
-        run: hf cache ls
-
-      - name: Run tests
-        timeout-minutes: 40
-        run: |
-          pytest -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow and not distributed_cpu" --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          pytest -v --durations=10 -m "not gpu and not slow and not nf4_distributed and not distributed_cpu" tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 -m "not gpu and not slow" tests/patched/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 -m "not gpu and not slow" tests/cli/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow" tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 -n4 --dist loadfile -m "not gpu and not slow and not distributed_cpu" --ignore=tests/integrations/kernels/ tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
-
-      - name: Show HF cache
-        run: hf cache ls
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          flags: unittests,pytorch-${{ matrix.pytorch_version }}
-          fail_ci_if_error: false
-
   pytest-testmon:
     if: ${{ !github.event.pull_request.draft }}
     needs: [prime-cdn-s3-cache, pre-commit]
@@ -357,12 +255,16 @@ jobs:
               'src/axolotl/integrations/expert_parallel/',
               'src/axolotl/integrations/context_parallel/',
               'src/axolotl/integrations/cut_cross_entropy/',
+              'src/axolotl/integrations/liger/',
               'src/axolotl/integrations/kernels/',
               'src/axolotl/train.py',
               'src/axolotl/cli/',
               'deepspeed_configs/',
               'tests/e2e/multigpu/',
               'cicd/',
+              '.github/actions/testmon-restore/',
+              '.github/actions/testmon-save/',
+              '.github/actions/testmon-selection/',
               '.github/workflows/multi-gpu-e2e*.yml',
               '.github/workflows/tests.yml',
               'pyproject.toml',
@@ -407,6 +309,7 @@ jobs:
               'cicd/pytest_testmon.py',
               '.github/actions/testmon-restore/',
               '.github/actions/testmon-save/',
+              '.github/actions/testmon-selection/',
               'pyproject.toml',
               'scripts/cutcrossentropy_install.py',
             ];
@@ -441,7 +344,9 @@ jobs:
               const hits = names.filter((name) => matches(patterns, name));
               core.info(`${lane}: ${hits.length} matched`);
               for (const hit of hits) core.info(`  ${hit}`);
-              core.setOutput(lane, String(hits.length > 0 || (lane === 'run_distributed_cpu' && fullCpu)));
+              core.setOutput(lane, String(hits.length > 0 ||
+                (lane === 'run_distributed_cpu' && fullCpu) ||
+                (lane === 'run_multigpu' && pr.labels.some(label => label.name === 'run-tests-full'))));
             }
 
   modal-image:
@@ -532,7 +437,7 @@ jobs:
   changed-tests:
     name: Changed tests report
     # Preview of changed-tests.yml, whose status also waits for Slow CPU / Slow GPU runs
-    needs: [pytest, pytest-testmon, distributed-cpu, sdist, docker-e2e, multi-gpu-e2e]
+    needs: [pytest-testmon, distributed-cpu, sdist, docker-e2e, multi-gpu-e2e]
     if: ${{ !cancelled() && github.event_name == 'pull_request' && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 20

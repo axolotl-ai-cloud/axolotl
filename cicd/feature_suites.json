@@ -1,20 +1,40 @@
 {
   "features": {
-    "liger": ["src/axolotl/integrations/liger/"],
-    "cut-cross-entropy": ["src/axolotl/integrations/cut_cross_entropy/"]
+    "liger": [
+      "src/axolotl/integrations/liger/"
+    ],
+    "cut-cross-entropy": [
+      "src/axolotl/integrations/cut_cross_entropy/"
+    ],
+    "quack": [
+      "src/axolotl/integrations/kernels/quack_autotune_policy.py",
+      "src/axolotl/integrations/kernels/quack_default_profiles.py"
+    ]
   },
   "groups": {
     "integrations": {
-      "paths": ["tests/e2e/integrations/"],
-      "exclude": ["tests/e2e/integrations/test_kd.py"],
+      "paths": [
+        "tests/e2e/integrations/"
+      ],
+      "exclude": [
+        "tests/e2e/integrations/test_kd.py"
+      ],
       "suites": {
         "liger": {
-          "tests": ["tests/e2e/integrations/test_liger.py"],
-          "features": ["liger"]
+          "tests": [
+            "tests/e2e/integrations/test_liger.py"
+          ],
+          "features": [
+            "liger"
+          ]
         },
         "cut-cross-entropy": {
-          "tests": ["tests/e2e/integrations/test_cut_cross_entropy.py"],
-          "features": ["cut-cross-entropy"]
+          "tests": [
+            "tests/e2e/integrations/test_cut_cross_entropy.py"
+          ],
+          "features": [
+            "cut-cross-entropy"
+          ]
         }
       }
     },
@@ -24,10 +44,15 @@
         "tests/integrations/kernels/",
         "tests/integrations/monkeypatch/test_tiled_mlp_moe.py"
       ],
-      "exclude": ["tests/e2e/kernels/lora_patching/"],
+      "exclude": [
+        "tests/e2e/kernels/lora_patching/"
+      ],
       "suites": {
         "activations": {
-          "tests": ["tests/e2e/kernels/test_geglu.py", "tests/e2e/kernels/test_swiglu.py"],
+          "tests": [
+            "tests/e2e/kernels/test_geglu.py",
+            "tests/e2e/kernels/test_swiglu.py"
+          ],
           "features": []
         },
         "moe": {
@@ -37,9 +62,225 @@
             "tests/integrations/kernels/scattermoe_lora/test_*.py",
             "tests/integrations/kernels/sonicmoe/test_*.py"
           ],
-          "features": []
+          "features": [
+            "quack"
+          ]
+        },
+        "quack": {
+          "tests": [
+            "tests/integrations/kernels/test_quack_*.py"
+          ],
+          "features": [
+            "quack"
+          ]
         }
       }
+    },
+    "blackwell": {
+      "paths": [
+        "tests/"
+      ],
+      "exclude": [
+        "tests/e2e/multigpu/",
+        "tests/cli/"
+      ],
+      "require_executed": true,
+      "suites": {
+        "sonicmoe": {
+          "tests": [
+            "tests/e2e/kernels/test_sonicmoe*.py"
+          ],
+          "features": [
+            "quack"
+          ]
+        }
+      },
+      "run_last": [
+        "sonicmoe"
+      ]
+    }
+  },
+  "distributed": {
+    "multigpu-quantization": {
+      "paths": [
+        "tests/monkeypatch/test_fsdp2_bnb_checkpoint.py",
+        "tests/integrations/test_expert_parallel_bnb.py"
+      ],
+      "exclude": [],
+      "features": [],
+      "audited_tests": [
+        "tests/integrations/test_expert_parallel_bnb.py",
+        "tests/monkeypatch/test_fsdp2_bnb_checkpoint.py"
+      ]
+    },
+    "multigpu-cce": {
+      "paths": [
+        "tests/e2e/multigpu/test_cce_lora_lm_head.py"
+      ],
+      "exclude": [],
+      "features": [
+        "cut-cross-entropy"
+      ],
+      "audited_tests": [
+        "tests/e2e/multigpu/test_cce_lora_lm_head.py"
+      ]
+    },
+    "multigpu-general": {
+      "paths": [
+        "tests/e2e/multigpu/"
+      ],
+      "exclude": [
+        "tests/e2e/multigpu/solo/",
+        "tests/e2e/multigpu/patched/",
+        "tests/e2e/multigpu/test_cce_lora_lm_head.py"
+      ],
+      "features": [],
+      "audited_tests": [
+        "tests/e2e/multigpu/test_deepspeed_context_parallel.py",
+        "tests/e2e/multigpu/test_dist_muon_fsdp2.py",
+        "tests/e2e/multigpu/test_eval.py",
+        "tests/e2e/multigpu/test_expert_parallel_activation_offload.py",
+        "tests/e2e/multigpu/test_expert_parallel_sac_offload.py",
+        "tests/e2e/multigpu/test_fp8_fsdp2.py",
+        "tests/e2e/multigpu/test_fsdp2.py",
+        "tests/e2e/multigpu/test_fsdp2_checkpoint_assembly.py",
+        "tests/e2e/multigpu/test_fsdp2_fp32_norms.py",
+        "tests/e2e/multigpu/test_fsdp2_lora_kernels.py",
+        "tests/e2e/multigpu/test_fsdp2_rl_lora_fp32_gradients.py",
+        "tests/e2e/multigpu/test_fsdp2_sharded_adapter_save.py",
+        "tests/e2e/multigpu/test_gemma3.py",
+        "tests/e2e/multigpu/test_llama.py",
+        "tests/e2e/multigpu/test_polora_fsdp2.py",
+        "tests/e2e/multigpu/test_ray.py",
+        "tests/e2e/multigpu/test_ringmaster.py",
+        "tests/e2e/multigpu/test_sinkgd_fsdp2.py",
+        "tests/e2e/multigpu/test_tiled_mlp_fsdp2.py",
+        "tests/e2e/multigpu/test_tp.py"
+      ]
+    },
+    "multigpu-context-parallel": {
+      "paths": [
+        "tests/e2e/multigpu/test_ringmaster.py"
+      ],
+      "exclude": [],
+      "features": [],
+      "audited_tests": [
+        "tests/e2e/multigpu/test_ringmaster.py"
+      ]
+    },
+    "multigpu-solo": {
+      "paths": [
+        "tests/e2e/multigpu/solo/"
+      ],
+      "exclude": [],
+      "features": [
+        "quack"
+      ],
+      "audited_tests": [
+        "tests/e2e/multigpu/solo/test_ep_checkpoint_resume_state.py",
+        "tests/e2e/multigpu/solo/test_ep_cpu_offload_grad_clip_nccl.py",
+        "tests/e2e/multigpu/solo/test_flex.py",
+        "tests/e2e/multigpu/solo/test_fsdp2_cpu_offload_grad_clip.py",
+        "tests/e2e/multigpu/solo/test_gdpo.py",
+        "tests/e2e/multigpu/solo/test_grpo.py",
+        "tests/e2e/multigpu/solo/test_grpo_lora_merge_aware.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_deepspeed_lora_merge_aware.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_deepspeed_lora_merge_lifecycle.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_dynamic_ste.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_lora_parity.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_merge_aware_resume.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_recipe.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_tp_hf_load.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_tp_lora_parity.py",
+        "tests/e2e/multigpu/solo/test_sonicmoe_nvfp4_fsdp2.py",
+        "tests/e2e/multigpu/solo/test_torchao_lora_deepspeed.py",
+        "tests/e2e/multigpu/solo/test_torchao_lora_deepspeed_checkpoint.py",
+        "tests/e2e/multigpu/solo/test_torchao_lora_deepspeed_zero3_checkpoint.py",
+        "tests/e2e/multigpu/solo/test_twotower_expert_parallel.py"
+      ]
+    },
+    "multigpu-wrap": {
+      "paths": [
+        "tests/integrations/expert_parallel/test_nvfp4_wrap.py"
+      ],
+      "exclude": [],
+      "features": [],
+      "audited_tests": [
+        "tests/integrations/expert_parallel/test_nvfp4_wrap.py"
+      ]
+    },
+    "multigpu-patched": {
+      "paths": [
+        "tests/e2e/multigpu/patched/"
+      ],
+      "exclude": [],
+      "features": [],
+      "audited_tests": [
+        "tests/e2e/multigpu/patched/test_sp.py"
+      ]
+    },
+    "nf4": {
+      "paths": [
+        "tests/monkeypatch/test_nf4_loading.py"
+      ],
+      "exclude": [],
+      "features": [],
+      "audited_tests": [
+        "tests/monkeypatch/test_nf4_loading.py"
+      ]
+    },
+    "nvfp4": {
+      "paths": [
+        "tests/e2e/multigpu/solo/"
+      ],
+      "exclude": [],
+      "features": [
+        "quack"
+      ],
+      "audited_tests": [
+        "tests/e2e/multigpu/solo/test_ep_checkpoint_resume_state.py",
+        "tests/e2e/multigpu/solo/test_ep_cpu_offload_grad_clip_nccl.py",
+        "tests/e2e/multigpu/solo/test_flex.py",
+        "tests/e2e/multigpu/solo/test_fsdp2_cpu_offload_grad_clip.py",
+        "tests/e2e/multigpu/solo/test_gdpo.py",
+        "tests/e2e/multigpu/solo/test_grpo.py",
+        "tests/e2e/multigpu/solo/test_grpo_lora_merge_aware.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_deepspeed_lora_merge_aware.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_deepspeed_lora_merge_lifecycle.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_dynamic_ste.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_lora_parity.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_merge_aware_resume.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_fsdp2_recipe.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_tp_hf_load.py",
+        "tests/e2e/multigpu/solo/test_native_nvfp4_tp_lora_parity.py",
+        "tests/e2e/multigpu/solo/test_sonicmoe_nvfp4_fsdp2.py",
+        "tests/e2e/multigpu/solo/test_torchao_lora_deepspeed.py",
+        "tests/e2e/multigpu/solo/test_torchao_lora_deepspeed_checkpoint.py",
+        "tests/e2e/multigpu/solo/test_torchao_lora_deepspeed_zero3_checkpoint.py",
+        "tests/e2e/multigpu/solo/test_twotower_expert_parallel.py"
+      ]
+    },
+    "gpu_slow_distributed": {
+      "paths": [
+        "tests/e2e/multigpu/test_ringmaster.py",
+        "tests/e2e/multigpu/solo/test_twotower_expert_parallel.py"
+      ],
+      "exclude": [],
+      "features": [],
+      "audited_tests": [
+        "tests/e2e/multigpu/solo/test_twotower_expert_parallel.py",
+        "tests/e2e/multigpu/test_ringmaster.py"
+      ]
+    },
+    "gpu_slow_four_rank": {
+      "paths": [
+        "tests/e2e/multigpu/test_ringmaster.py"
+      ],
+      "exclude": [],
+      "features": [],
+      "audited_tests": [
+        "tests/e2e/multigpu/test_ringmaster.py"
+      ]
     }
   }
 }

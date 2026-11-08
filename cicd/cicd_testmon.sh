@@ -9,7 +9,11 @@ bash ./cicd/prepare_hf_cache.sh
 
 env -u CODECOV_TOKEN python -c "from kernels import get_kernel; get_kernel(\"kernels-community/flash-attn2\", version=4, trust_remote_code=True)"
 
-TESTMON_BASELINE_DIR="/workspace/data/testmon/${BASE_TAG:?}/single-gpu"
+baseline_stack=pinned
+if [ "${NIGHTLY_BUILD:-}" = "true" ]; then
+  baseline_stack=nightly
+fi
+TESTMON_BASELINE_DIR="/workspace/data/testmon/${BASE_TAG:?}/${baseline_stack}/single-gpu"
 TESTMON_DIR="/workspace/axolotl/.testmon"
 mkdir -p "$TESTMON_DIR"
 if [ -d "$TESTMON_BASELINE_DIR" ]; then
@@ -21,7 +25,7 @@ fi
 
 # Every block runs even after a failure, so the baseline covers all of them
 testmon_option=--testmon-forceselect
-if [ "${TESTMON_FULL:-}" = "true" ]; then
+if [ "${TESTMON_FULL:-}" = "true" ] || [ "${TESTMON_SELECT:-true}" = "false" ]; then
   testmon_option=--testmon-noselect
 fi
 failed=0
@@ -52,10 +56,8 @@ tm solo-reward-model -v --durations=10 -s \
 feature_full=${TESTMON_FULL:-false}
 if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
   feature_full=false
-  export TESTMON_SELECT=false
-else
-  export TESTMON_SELECT=true
 fi
+export TESTMON_SELECT=${TESTMON_SELECT:-true}
 TESTMON_FULL="$feature_full" python cicd/feature_testmon.py integrations -v --durations=10 --maxfail=10 || failed=1
 
 tm gpu-integrations -v --durations=10 -n8 --dist loadfile -m "gpu and not gpu_blackwell" \

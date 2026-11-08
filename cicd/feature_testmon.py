@@ -10,6 +10,8 @@ import os
 import platform
 import subprocess  # nosec B404
 import sys
+import xml.etree.ElementTree as ET  # nosec B405
+from collections import Counter
 from pathlib import Path
 
 VERSION = 1
@@ -92,6 +94,8 @@ def environment() -> dict:
                 "NIGHTLY_BUILD",
                 "CUDA_VISIBLE_DEVICES",
                 "TESTMON_SUBPROCESSES",
+                "MULTIGPU_TEST_SUITE",
+                "NF4_TEST_STACK",
             )
         },
     }
@@ -151,6 +155,7 @@ def run_suite(
     routes: dict,
     current: dict,
     args: list[str],
+    require_executed: bool = False,
 ) -> int:
     state = root / ".testmon"
     state.mkdir(exist_ok=True)
@@ -163,7 +168,10 @@ def run_suite(
             previous = {}
     except (OSError, ValueError):
         pass
+    report = root / f"{name}-junit.xml"
     pytest_args = [*args, *files]
+    if require_executed:
+        pytest_args.append(f"--junitxml={report}")
     full_override = os.environ.get("TESTMON_FULL") == "true"
     select = os.environ.get("TESTMON_SELECT") == "true"
     block = hashlib.sha256(json.dumps(pytest_args).encode()).hexdigest()[:16]
@@ -185,22 +193,53 @@ def run_suite(
     env = {**os.environ, "TESTMON_SELECT": str(mode == "testmon").lower()}
     if not full_override:
         metadata.write_text(json.dumps({**current, "success": False}, sort_keys=True))
-    result = subprocess.run(  # nosec B603 B607
-        [
-            sys.executable,
-            str(Path(__file__).with_name("pytest_testmon.py")),
-            *pytest_args,
-        ],
-        cwd=root,
-        env=env,
-        check=False,
-    )
+    command = [
+        sys.executable,
+        str(Path(__file__).with_name("pytest_testmon.py")),
+        *pytest_args,
+    ]
+    while True:
+        if require_executed:
+            report.unlink(missing_ok=True)
+        result = subprocess.run(command, cwd=root, env=env, check=False)  # nosec B603
+        code = result.returncode
+        if not require_executed or code not in (0, 5):
+            break
+        try:
+            cases = list(ET.parse(report).iter("testcase"))  # nosec B314
+        except (OSError, ET.ParseError) as exc:
+            print(f"{name}: cannot validate test execution: {exc}", flush=True)
+            code = 1
+            break
+        skips = Counter(
+            skipped.get("message", "<no reason>")
+            for case in cases
+            if (skipped := case.find("skipped")) is not None
+        )
+        executed = len(cases) - sum(skips.values())
+        print(
+            f"{name}: {executed} ran, {sum(skips.values())} skipped: {dict(skips)}",
+            flush=True,
+        )
+        if executed or (not cases and env["TESTMON_SELECT"] == "true"):
+            code = 0
+            break
+        if env["TESTMON_SELECT"] == "true":
+            # A changed SM120-only test can be the only selected test on B200.
+            print(
+                f"{name}: validating skip-only selection with a full suite", flush=True
+            )
+            env["TESTMON_SELECT"] = "false"
+            continue
+        print(f"{name}: no tests executed in the full suite", flush=True)
+        code = 1
+        break
     if not full_override:
         metadata.write_text(
             json.dumps(
                 {
                     **current,
-                    "success": result.returncode == 0,
+                    "success": code == 0,
                     "database": hashlib.sha256(database.read_bytes()).hexdigest()
                     if database.is_file()
                     else None,
@@ -208,7 +247,7 @@ def run_suite(
                 sort_keys=True,
             )
         )
-    return result.returncode
+    return code
 
 
 def main() -> int:
@@ -220,6 +259,7 @@ def main() -> int:
         if set(spec["features"]) - manifest["features"].keys():
             raise ValueError("Suite names an unknown feature")
     suites = partition(root, group)
+    suites.sort(key=lambda suite: suite[0] in group.get("run_last", []))
     if not suites:
         raise ValueError(f"No test files in feature group {group_name}")
     try:
@@ -251,6 +291,7 @@ def main() -> int:
             manifest["features"],
             current,
             args,
+            require_executed=group.get("require_executed", False),
         )
     return int(bool(failed))
 

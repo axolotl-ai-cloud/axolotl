@@ -229,10 +229,10 @@ You can skip certain CI checks by including specific keywords in your commit mes
 
 #### CPU test selection
 
-Pull requests run pytest-testmon as a failure-propagating lane across all
-three Python/PyTorch cells. Each cell restores its own baseline from main; missing
-or incompatible baselines run the full suite. Full CPU coverage runs remain enabled
-outside pull requests, and only main writes shared testmon baselines.
+Pull requests and main pushes run pytest-testmon as a failure-propagating lane
+across all three Python/PyTorch cells. Each cell restores its own baseline from
+main; missing or incompatible baselines run the full suite. Only main writes
+shared testmon baselines.
 
 Apply `run-cpu-full` to bypass testmon selection in all three PR cells, for example
 when the changed-tests report identifies an unexecuted CPU test. The label handler
@@ -278,9 +278,19 @@ gh workflow run testmon-refresh.yml --ref main -f slow_cpu=true
 gh workflow run testmon-refresh.yml --ref main -f gpu_kernels=true -f slow_gpu=true
 ```
 
-No new merge-triggered slow/GPU refresh is added. The existing daily baseline
-workflow refreshes only regular CPU; general e2e baseline refresh is now manual.
-Existing scheduled slow test runs can still publish main baselines. Missing or
+No new merge-triggered slow/GPU refresh is added. Regular CPU baseline checks
+remain daily; the expensive full refreshes are scheduled for Sunday.
+Scheduled expensive lanes use selection on their normal non-Sunday runs. Sunday
+runs (UTC, identified by the triggering cron entry) run every eligible test and
+refresh baselines, even if the job starts late. Multi-GPU runs retain Monday and
+Thursday selection runs and add Sunday full runs. Slow CPU remains daily; slow GPU
+remains Sunday-only. Pinned GPU-kernel and single-GPU e2e baselines refresh on Sunday
+at 03:00 UTC, across all three Python/PyTorch cells. Nightly GPU/e2e runs use selection
+Monday through Saturday and run fully on Sunday, with separate nightly baselines.
+The ordinary CPU baseline and image-build schedules are unchanged in frequency.
+Manual refreshes and full-run labels still bypass selection on any day.
+
+Selected main runs can still publish updated baselines. Missing or
 incompatible baselines fall back to running all eligible tests. Refreshing the
 same commit uses a new cache key because GitHub caches are immutable.
 
@@ -288,9 +298,9 @@ Testmon cannot trace spawned workers. Distributed CPU and slow suites therefore
 invalidate their selection environment when tracked source, tests, scripts, or
 training configurations change; savings there are intentionally conservative.
 Testmon collection disables pytest-cov, so these lanes collect dependency data
-during normal runs and coverage during full-run overrides. Regular non-PR CPU
-coverage jobs remain enabled. Fast NF4 compatibility checks always run and retain
-their no-skip assertion.
+during normal runs and coverage during full-run overrides. The regular CPU
+testmon lane does not publish Codecov line coverage. Fast NF4 compatibility
+checks always run and retain their no-skip assertion.
 
 #### Feature-aware e2e suites
 
@@ -301,10 +311,14 @@ baselines. Unclassified test files remain in a general suite. The existing
 subprocess and LoRA-patching exclusions keep their original lanes.
 
 Only explicit feature boundaries can exclude a suite before testmon runs. The
-initial boundaries are the opt-in Liger and Cut Cross Entropy plugin packages:
+boundaries cover the opt-in Liger and Cut Cross Entropy plugin packages and
+the Quack policy/default-profile modules:
 for example, a Liger-only implementation change can skip a previously passing
 CCE or pure-kernel suite. The general suite retains every feature as a possible
 dependency. Shared code and unknown changes are never excluded by feature scope.
+Quack-only changes remain relevant to the MoE and Quack kernel suites and the
+SonicMoE-containing solo/NVFP4 suites. Shared kernel plugin, arguments, cache,
+and autotune infrastructure remain outside this boundary.
 Add a boundary only after verifying its activation conditions and every named
 suite's feature use; update suite declarations when tests exercise combinations.
 
@@ -316,6 +330,52 @@ Configuration, non-Python inputs, and conftest changes also force full execution
 of affected suites. Python changes within scope use testmon's finer selection.
 Full-run labels and manual refreshes bypass feature exclusion. Logs show each
 suite's decision and reason; skipped suites never count as a complete e2e gate run.
+
+The B200 lane uses a separate hardware-specific baseline and runs its general
+and SonicMoE suites in separate processes, with SonicMoE last. Full refreshes
+require at least one executed test per suite. A selected run may legitimately
+select nothing; a skip-only selection is retried in full to distinguish unsupported
+hardware cases from a missing dependency. Missing reports and skip-only full runs
+fail and cannot publish successful suite metadata. Dependency and hardware checks
+still run before selection. Use `run-tests-full` to bypass selection, or the
+`blackwell` input of **Refresh testmon baselines** to rebuild the B200 baseline on
+main. Scheduled full B200 refreshes run on Sundays with the other expensive lanes.
+
+#### Feature-aware multi-GPU suites
+
+Multi-GPU commands use `cicd/feature_command.py` and the `distributed` declarations
+in `cicd/feature_suites.json`. Selection happens at suite boundaries: every
+eligible test in a selected suite runs with normal pytest and testmon disabled.
+No per-test dependency claims are made for spawned training workers.
+
+The general lane preserves its process limits and separates CCE, quantization,
+context parallel, solo, wrapper, and patched suites. NF4 and NVFP4 retain their
+complete scripts, including hardware checks and assertions that tests ran without
+unexpected skips. Slow two- and four-GPU suites use the same whole-suite selection;
+the slow single-GPU kernel lane retains its existing testmon path.
+
+The audited suites can exclude changes confined to the opt-in Liger/CCE plugin
+packages or Quack policy/default-profile modules they do not use. Shared code, worker code, configuration, and unknown
+paths force complete execution of affected suites. New test files invalidate a
+suite's feature exclusions until `audited_tests` is updated after reviewing their
+feature use. Update `features` as well when an existing test starts using another
+plugin. Changes since the last successful baseline include intervening main
+changes, not just the current PR diff. Missing, malformed, failed, or incompatible
+baselines run the suite in full.
+
+Scope metadata travels through Modal and the GitHub cache/artifact transport.
+Pinned and nightly caches are separate, keyed by suite, Python, PyTorch, CUDA,
+GPU type, and GPU count. Scheduled runs use selection outside Sunday; Sunday runs execute all suites
+and publish fresh main baselines. To refresh the pinned general/NF4/NVFP4 lanes explicitly, run:
+
+```bash
+gh workflow run testmon-refresh.yml --ref main -f multigpu=true
+```
+
+Use `-f slow_gpu=true` for the slow lanes. Neither requires automatic expensive
+runs on every merge. `run-tests-full` bypasses suite exclusion; the existing
+`run-gpu-tests` and `run-gpu-slow` labels still control lane eligibility. The
+existing selected-file preview remains independent and nonblocking.
 
 #### Slow CPU Tests
 

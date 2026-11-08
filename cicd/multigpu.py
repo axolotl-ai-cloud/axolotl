@@ -19,6 +19,8 @@ df_args = {
     "BASE_TAG": os.environ.get("BASE_TAG", "main-base-py3.12-cu130-2.13.0"),
     "DEPS_HASH": os.environ.get("DEPS_HASH", "dev"),
     "CUDA": os.environ.get("CUDA", "130"),
+    "GPU_TYPE": os.environ.get("GPU_TYPE", "H100"),
+    "N_GPUS": os.environ.get("N_GPUS", "2"),
     "GITHUB_REF": os.environ.get("GITHUB_REF", "refs/heads/main"),
     "IMAGE_REF": os.environ.get("IMAGE_REF")
     or os.environ.get("GITHUB_REF", "refs/heads/main"),
@@ -135,29 +137,18 @@ def cicd_pytest(
     state: dict[str, bytes] | None = None, full: bool = False, select: bool = False
 ):
     suite = os.environ.get("MULTIGPU_TEST_SUITE", "multigpu")
-    scripts = {
-        "multigpu": "./cicd/multigpu.sh",
-        "nf4": "bash ./cicd/nf4.sh",
-        "nvfp4": "bash ./cicd/nvfp4.sh",
-        "multigpu_selected": "bash ./cicd/multigpu_selected.sh",
-        "gpu_slow_kernels": "bash ./cicd/gpu_slow.sh",
-        "gpu_slow_distributed": "bash ./cicd/gpu_slow.sh",
-        "gpu_slow_four_rank": "bash ./cicd/gpu_slow.sh",
-    }
     if suite in DEEP_EP_SUITES and install_deep_ep(DEEP_EP_WHEELS):
         deep_ep_volume.commit()
-    if suite.startswith("gpu_slow_"):
+    if suite != "multigpu_selected":
         refresh_source("/workspace/axolotl")
-        return run_remote(
-            scripts[suite].removeprefix("bash "), state or {}, full, select, True
-        )
-    run_cmd(scripts[suite], "/workspace/axolotl")
+        return run_remote("./cicd/multigpu_feature.sh", state or {}, full, select, True)
+    run_cmd("bash ./cicd/multigpu_selected.sh", "/workspace/axolotl")
     return None
 
 
 @app.local_entrypoint()
 def main():
-    if os.environ.get("MULTIGPU_TEST_SUITE", "").startswith("gpu_slow_"):
+    if os.environ.get("MULTIGPU_TEST_SUITE", "multigpu") != "multigpu_selected":
         run_local(cicd_pytest)
     else:
         cicd_pytest.remote()
