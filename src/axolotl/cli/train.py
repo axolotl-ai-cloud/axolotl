@@ -112,7 +112,7 @@ def build_ray_runtime_env(cfg: DictDefault) -> dict | None:
     return {"env_vars": env_vars} if env_vars else None
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_train`.
 
