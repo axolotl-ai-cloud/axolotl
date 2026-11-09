@@ -265,13 +265,23 @@ def test_convert_embedding_modules_dtype(
 
     from axolotl.loaders.model import ModelLoader
 
-    model = nn.ModuleDict(
+    layer = nn.ModuleDict(
         {
-            "norm": nn.LayerNorm(4),
-            "embed_tokens": nn.Embedding(8, 4),
-            "lm_head": nn.Linear(4, 8),
+            "input_layernorm": nn.LayerNorm(4),
             "mlp": nn.ModuleDict({"gate": nn.Linear(4, 2)}),
             "unrelated": nn.Linear(4, 4),
+        }
+    )
+    model = nn.ModuleDict(
+        {
+            "model": nn.ModuleDict(
+                {
+                    "embed_tokens": nn.Embedding(8, 4),
+                    "layers": nn.ModuleList([layer]),
+                    "norm": nn.LayerNorm(4),
+                }
+            ),
+            "lm_head": nn.Linear(4, 8),
         }
     ).to(torch.float64)
     loader = ModelLoader.__new__(ModelLoader)
@@ -283,9 +293,14 @@ def test_convert_embedding_modules_dtype(
         [embedding_module], dist_dtype, before_kbit_train_or_finetune
     )
 
-    expected = {"norm", embedding_module}
+    embedding_path = {"embed_tokens": "model.embed_tokens", "lm_head": "lm_head"}
+    expected = {
+        "model.norm",
+        "model.layers.0.input_layernorm",
+        embedding_path[embedding_module],
+    }
     if before_kbit_train_or_finetune:
-        expected.add("mlp.gate")
+        expected.add("model.layers.0.mlp.gate")
     for name, module in model.named_modules():
         for parameter in module.parameters(recurse=False):
             assert parameter.dtype == (
