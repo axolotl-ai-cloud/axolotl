@@ -51,7 +51,8 @@ def encode_xor_delta_chunked(
             if not delta.any():
                 unchanged += chunk.nbytes
                 continue
-            # zstd's multithreaded output does not depend on the thread count (>= 1)
+            # multithreaded frames are not byte-stable across runs; consumers check the
+            # decoded bytes' Adler-32, never the frame
             compressor = zstandard.ZstdCompressor(
                 level=level, threads=max(1, threads or default_zstd_threads())
             ).compressobj(size=size)

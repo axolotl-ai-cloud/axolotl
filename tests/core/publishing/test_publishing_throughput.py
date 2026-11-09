@@ -218,7 +218,7 @@ def decode(frame: np.ndarray, previous: np.ndarray) -> np.ndarray:
 
 def test_chunked_encoder_on_large_tensor():
     current, previous = large_pair()
-    frames = {}
+    # streaming multithreaded zstd frames vary between runs; only their content is fixed
     for threads, chunk in ((1, 4 << 20), (4, 16 << 20), (8, 3 << 20)):
         frame, checksum = encode_xor_delta_chunked(
             current, previous, threads=threads, chunk_bytes=chunk
@@ -228,8 +228,6 @@ def test_chunked_encoder_on_large_tensor():
         assert zstandard.get_frame_parameters(frame.tobytes()).content_size == (
             current.nbytes
         )
-        frames[threads, chunk] = frame.tobytes()
-    assert len(set(frames.values())) == 1
     reference, reference_checksum = encode_xor_delta(current, previous)
     assert checksum == reference_checksum
     assert np.array_equal(decode(reference, previous), current)

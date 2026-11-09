@@ -286,6 +286,32 @@ def test_uncommitted_checkpoint_leaves_baseline_unchanged(tmp_path):
         writer.discard(staged)
 
 
+def test_baseline_raw_bytes_and_map_release(tmp_path):
+    writer = ChainWriter(tmp_path, max_shard_size=600)
+    weights = model_weights(0)
+    commit(writer, weights, "a")
+    first = writer.baseline
+    for name, tensor in weights.items():
+        assert (
+            first.raw(name).tobytes()
+            == tensor.reshape(-1).view(torch.uint8).numpy().tobytes()
+        )
+    assert first._maps
+    changed = {**weights, "attn.q.weight": weights["attn.q.weight"] + 1}
+    commit(writer, changed, "b")
+    assert not first._maps and not first.exists()
+    second = writer.baseline
+    for name, tensor in changed.items():
+        assert (
+            second.raw(name).tobytes()
+            == tensor.reshape(-1).view(torch.uint8).numpy().tobytes()
+        )
+    staged = writer.write(weights, "c")
+    staged.baseline.raw("attn.q.weight")
+    writer.discard(staged)
+    assert not staged.baseline._maps
+
+
 def test_staging_does_not_overwrite_existing_artifact(tmp_path):
     writer = ChainWriter(tmp_path)
     commit(writer, {"w": torch.ones(2)}, "a")

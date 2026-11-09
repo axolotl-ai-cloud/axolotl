@@ -496,5 +496,6 @@ class StepPublisher:
 
     def _drop_baseline(self):
         if self.chain.baseline is not None:
+            self.chain.baseline.close()
             shutil.rmtree(self.chain.baseline.path, ignore_errors=True)
             self.chain.baseline = None

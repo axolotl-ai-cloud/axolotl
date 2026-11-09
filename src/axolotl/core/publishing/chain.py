@@ -12,7 +12,9 @@ import errno
 import json
 import os
 import shutil
+import struct
 import tempfile
+import threading
 import zlib
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping
@@ -45,6 +47,20 @@ def _bytes(tensor: torch.Tensor) -> np.ndarray:
     return tensor.reshape(-1).view(torch.uint8).numpy()
 
 
+def _map_safetensors(path: Path) -> tuple[np.ndarray, dict[str, tuple[int, int]]]:
+    """A read-only byte map of a safetensors file and each tensor's byte range."""
+    with open(path, "rb") as handle:
+        (length,) = struct.unpack("<Q", handle.read(8))
+        header = json.loads(handle.read(length))
+    start = 8 + length
+    ranges = {
+        name: (start + entry["data_offsets"][0], start + entry["data_offsets"][1])
+        for name, entry in header.items()
+        if name != "__metadata__"
+    }
+    return np.memmap(path, dtype=np.uint8, mode="r"), ranges
+
+
 def _link(source: Path, target: Path):
     try:
         os.link(source, target)
@@ -75,6 +91,8 @@ class Baseline(Mapping[str, torch.Tensor]):
         }
         self.files: dict[str, str] = manifest["files"]
         self.checksums: dict[str, str] = manifest["checksums"]
+        self._maps: dict[str, tuple[np.ndarray, dict[str, tuple[int, int]]]] = {}
+        self._lock = threading.Lock()
 
     @property
     def fingerprint_digest(self) -> str | None:
@@ -93,6 +111,22 @@ class Baseline(Mapping[str, torch.Tensor]):
         with safe_open(self.path / self.files[name], framework="pt") as shard:
             return shard.get_tensor(name)
 
+    def raw(self, name: str) -> np.ndarray:
+        """The stored bytes of ``name``, through one map per file (thread-safe)."""
+        filename = self.files[name]
+        with self._lock:
+            mapped = self._maps.get(filename)
+            if mapped is None:
+                mapped = self._maps[filename] = _map_safetensors(self.path / filename)
+        data, ranges = mapped
+        start, stop = ranges[name]
+        return data[start:stop]
+
+    def close(self) -> None:
+        """Drop the file maps so deleted baseline files release their space."""
+        with self._lock:
+            self._maps.clear()
+
     def __iter__(self) -> Iterator[str]:
         return iter(self.layout)
 
@@ -102,7 +136,7 @@ class Baseline(Mapping[str, torch.Tensor]):
     def verify(self) -> None:
         """Re-check every tensor against the recorded Adler-32 of its bytes."""
         for name in self.layout:
-            if f"{zlib.adler32(_bytes(self[name])):08x}" != self.checksums[name]:
+            if f"{zlib.adler32(self.raw(name)):08x}" != self.checksums[name]:
                 raise ValueError(f"Baseline tensor {name} does not match its checksum")
 
 
@@ -263,6 +297,7 @@ class ChainWriter:
         _write_json(self.workdir / COMMITTED_NAME, {"identity": staged.identity})
         previous, self.baseline = self.baseline, staged.baseline
         if previous is not None:
+            previous.close()
             shutil.rmtree(previous.path, ignore_errors=True)
         if not self.retain_artifacts:
             shutil.rmtree(staged.path, ignore_errors=True)
@@ -288,6 +323,7 @@ class ChainWriter:
         """Drop a checkpoint that will not be committed; the baseline is unchanged."""
         if self.baseline is not None and staged.baseline.path == self.baseline.path:
             raise RuntimeError("Cannot discard the committed baseline")
+        staged.baseline.close()
         shutil.rmtree(staged.baseline.path, ignore_errors=True)
         shutil.rmtree(staged.path, ignore_errors=True)
 
@@ -432,7 +468,7 @@ class ChainSession:
 
     def _encode(self, name, tensor):
         assert self.base is not None
-        current, previous = _bytes(tensor), _bytes(self.base[name].contiguous())
+        current, previous = _bytes(tensor), self.base.raw(name)
         if current.nbytes >= self.writer.large_tensor_bytes:
             return encode_xor_delta_chunked(
                 current,
