@@ -668,7 +668,21 @@ def _find_param_wrapper_lora(
     return candidates[0] if candidates else (None, None, None)
 
 
-def _build_peft_layer_and_get_delta(
+def _build_peft_layer_and_get_delta(*args, canonical_fp32: bool = False, **kwargs):
+    """``_peft_layer_delta``; canonical fp32 deltas are computed in IEEE even under
+    ``tf32``, matching the merge-aware training snap bit for bit."""
+    if not canonical_fp32:
+        return _peft_layer_delta(*args, **kwargs)
+    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
+        ieee_fp32_matmul,
+    )
+
+    kwargs["canonical_fp32"] = True
+    with ieee_fp32_matmul():
+        return _peft_layer_delta(*args, **kwargs)
+
+
+def _peft_layer_delta(
     lora_a: torch.Tensor,
     lora_b: torch.Tensor,
     lora_config_dict: Dict,

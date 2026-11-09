@@ -79,14 +79,16 @@ def _merge_aware_wfq(
     fresh W_eff buffer), bitwise the torchao reference it falls back to.
     ``AXOLOTL_SONICMOE_MERGE_AWARE_KERNEL=0`` is the kill switch.
     """
+    from .nvfp4_quant import fake_quant_nvfp4_dispatch, ieee_fp32_matmul
+
     E, dim1, dim2 = w_dense.shape
     r = lora_A.shape[0] // E
     A_3d = lora_A.reshape(E, r, dim2).float()
     B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1).float()
-    w_eff = (w_dense.float() + torch.bmm(B_3d, A_3d) * scaling).to(w_dense.dtype)
+    with ieee_fp32_matmul():
+        delta = torch.bmm(B_3d, A_3d)
+    w_eff = (w_dense.float() + delta * scaling).to(w_dense.dtype)
     pts_flat = None if pts is None else pts.reshape(-1)
-
-    from .nvfp4_quant import fake_quant_nvfp4_dispatch
 
     return fake_quant_nvfp4_dispatch(w_eff, pts_flat, inplace=True)
 
