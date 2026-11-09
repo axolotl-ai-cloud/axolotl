@@ -1,6 +1,7 @@
 """Module for testing streaming dataset sequence packing"""
 
 import functools
+import hashlib
 import json
 import random
 import string
@@ -227,25 +228,31 @@ def _assert_same_packed_rows(actual, expected):
             assert torch.equal(got, want), key
 
 
+def _assert_same_array(actual, expected):
+    assert actual.dtype == expected.dtype
+    np.testing.assert_array_equal(actual, expected)
+
+
 @pytest.mark.parametrize(
     "columns,multipack_attn",
     [
-        (("position_ids",), True),
+        (("attention_mask",), True),
         (("attention_mask",), False),
-        (("labels", "position_ids"), True),
+        (("labels", "attention_mask"), True),
         (("labels", "attention_mask"), False),
-        (("labels", "attention_mask", "position_ids"), True),
+        (("labels",), False),
     ],
 )
 @pytest.mark.parametrize(
     "padding_side,pad_to_multiple_of", [("right", 256), ("left", 256), ("right", None)]
 )
-def test_bin_packer_matches_collator_on_random_bins(
+def test_flat_rows_match_dataset_rows_on_random_bins(
     tokenizer_huggyllama, columns, multipack_attn, padding_side, pad_to_multiple_of
 ):
     tokenizer_huggyllama.padding_side = padding_side
     rng = np.random.default_rng(0)
-    lengths = rng.integers(2, 300, size=400)
+    # rows on and outside both edges of the [2, 256] length filter
+    lengths = np.concatenate(([0, 1, 2, 256, 257], rng.integers(0, 300, size=395)))
     input_ids = [rng.integers(3, 32000, n).tolist() for n in lengths]
     data = {"input_ids": input_ids}
     features = {"input_ids": List(Value("int32"))}
@@ -258,11 +265,6 @@ def test_bin_packer_matches_collator_on_random_bins(
     if "attention_mask" in columns:
         data["attention_mask"] = [[1] * len(ids) for ids in input_ids]
         features["attention_mask"] = List(Value("int8"))
-    if "position_ids" in columns:
-        data["position_ids"] = [list(range(len(ids))) for ids in input_ids]
-        features["position_ids"] = List(Value("int64"))
-        data["length"] = lengths.tolist()
-        features["length"] = Value("int64")
     data["overflow_to_sample_mapping"] = list(range(len(input_ids)))
     features["overflow_to_sample_mapping"] = Value("int64")
     dataset = Dataset.from_dict(data, features=Features(features))
@@ -279,39 +281,61 @@ def test_bin_packer_matches_collator_on_random_bins(
     )
 
     for buffer in (dataset, dataset.select(rng.permutation(len(dataset))[:350])):
-        pack = streaming._bin_packer(buffer, collate)
-        assert pack is not None
+        actual = streaming._flat_rows(buffer, collate, 256, multipack_attn)
+        assert actual is not None
+        expected = streaming._DatasetRows(buffer, collate, 256, multipack_attn)
+        assert 0 < len(actual) == len(expected) < len(buffer)
+        _assert_same_array(actual.lengths(), expected.lengths())
+        assert actual.labeled == expected.labeled == ("labels" in columns)
+        if expected.labeled:
+            for got, want in zip(
+                actual.label_counts(), expected.label_counts(), strict=True
+            ):
+                _assert_same_array(got, want)
+        digests = hashlib.sha256(), hashlib.sha256()
+        actual.hash_input_ids(digests[0])
+        expected.hash_input_ids(digests[1])
+        assert digests[0].digest() == digests[1].digest()
         for _ in range(40):
             indices = rng.choice(
-                len(buffer), size=rng.integers(1, 9), replace=False
+                len(expected), size=rng.integers(1, 9), replace=False
             ).tolist()
-            expected = streaming._collate_bin(buffer, collate, indices)
-            actual = pack(indices)
             _assert_same_packed_rows(
-                {key: [row] for key, row in actual.items()},
-                {key: [row] for key, row in expected.items()},
+                {key: [row] for key, row in actual.pack(indices).items()},
+                {key: [row] for key, row in expected.pack(indices).items()},
             )
 
 
 @pytest.mark.parametrize(
-    "column,make_row",
+    "columns,multipack_attn",
     [
-        ("token_type_ids", lambda ids: [0] * len(ids)),
-        ("labels", lambda ids: ids[:-1]),
+        ({"token_type_ids": lambda ids: [0] * len(ids)}, False),
+        ({"labels": lambda ids: ids[:-1]}, False),
+        ({"position_ids": lambda ids: list(range(len(ids)))}, False),
+        ({"length": len}, False),
+        # no attention mask for the datasets transforms to drop
+        ({}, True),
     ],
 )
-def test_bin_packer_defers_to_the_collator_when_it_cannot_match_it(
-    tokenizer_huggyllama, column, make_row
+def test_flat_rows_defer_to_dataset_rows_when_they_cannot_match_them(
+    tokenizer_huggyllama, columns, multipack_attn
 ):
     input_ids = [[5, 6, 7], [8, 9]]
-    dataset = Dataset.from_dict(
-        {"input_ids": input_ids, column: [make_row(ids) for ids in input_ids]}
-    )
+    data = {"input_ids": input_ids}
+    for column, make_row in columns.items():
+        data[column] = [make_row(ids) for ids in input_ids]
     collate = PretrainingBatchSamplerDataCollatorForSeq2Seq(
-        tokenizer_huggyllama, return_tensors="pt", padding=True, pad_to_multiple_of=8
+        tokenizer_huggyllama,
+        return_tensors="pt",
+        padding=True,
+        pad_to_multiple_of=8,
+        multipack_attn=multipack_attn,
     )
 
-    assert streaming._bin_packer(dataset, collate) is None
+    assert (
+        streaming._flat_rows(Dataset.from_dict(data), collate, 8, multipack_attn)
+        is None
+    )
 
 
 @pytest.mark.parametrize("dataset_type", ["pretrain", "chat_template"])
@@ -377,16 +401,16 @@ def test_encode_packed_streaming_fast_packing_matches_the_collator(
             balance_labels=balance_labels,
         )
 
-    bin_packer = streaming._bin_packer
-    packers = []
+    flat_rows = streaming._flat_rows
+    built = []
     monkeypatch.setattr(
         streaming,
-        "_bin_packer",
-        lambda *args: packers.append(bin_packer(*args)) or packers[-1],
+        "_flat_rows",
+        lambda *args: built.append(flat_rows(*args)) or built[-1],
     )
     packed = encode()
-    assert packers and packers[0] is not None
-    monkeypatch.setattr(streaming, "_bin_packer", lambda *args: None)
+    assert built and built[0] is not None
+    monkeypatch.setattr(streaming, "_flat_rows", lambda *args: None)
     collated = encode()
 
     assert len(collated["input_ids"]) > 1
