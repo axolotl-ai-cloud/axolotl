@@ -992,8 +992,8 @@ configured chat template.</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 12%">
-<col style="width: 7%">
-<col style="width: 67%">
+<col style="width: 12%">
+<col style="width: 64%">
 <col style="width: 11%">
 </colgroup>
 <thead>
@@ -1007,19 +1007,19 @@ configured chat template.</p>
 <tbody>
 <tr class="odd">
 <td>cfg</td>
-<td></td>
+<td>DictDefault</td>
 <td>Configuration object containing chat_template and dataset settings</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>dataset_idx</td>
-<td></td>
+<td>int</td>
 <td>Index of the dataset in the config (default: 0)</td>
 <td><code>0</code></td>
 </tr>
 <tr class="odd">
 <td>**kwargs</td>
-<td></td>
+<td>Any</td>
 <td>Additional keyword arguments (unused)</td>
 <td><code>{}</code></td>
 </tr>
@@ -1031,8 +1031,8 @@ configured chat template.</p>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 4%">
-<col style="width: 4%">
-<col style="width: 91%">
+<col style="width: 19%">
+<col style="width: 76%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1043,9 +1043,9 @@ configured chat template.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td>tuple</td>
 <td></td>
-<td>(transform_fn, dataset_kwargs) where: - transform_fn: Function to transform dataset samples - dataset_kwargs: Dict with ‘remove_columns’ specifying columns to drop</td>
+<td>tuple[Callable, dict[str, Any]]</td>
+<td>A <code>(transform_fn, dataset_kwargs)</code> tuple, where <code>transform_fn</code> transforms dataset samples and <code>dataset_kwargs</code> holds the <code>remove_columns</code> to drop.</td>
 </tr>
 </tbody>
 </table>

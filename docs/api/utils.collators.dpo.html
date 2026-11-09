@@ -987,6 +987,8 @@ Qwen3.5), which otherwise re-autotune on every distinct batch length.</p>
 <h3 class="anchored" data-anchor-id="axolotl.utils.collators.dpo.AxolotlDPODataCollatorWithPadding">AxolotlDPODataCollatorWithPadding</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.collators.dpo.AxolotlDPODataCollatorWithPadding(pad_to_multiple_of<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>DPO data collator that pads to a multiple of <code>pad_to_multiple_of</code>.</p>
+<p>Inherits <code>pad_token_id</code> and <code>is_encoder_decoder</code> from TRL’s
+<code>DPODataCollatorWithPadding</code>.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
@@ -994,7 +996,7 @@ Qwen3.5), which otherwise re-autotune on every distinct batch length.</p>
 <col style="width: 14%">
 <col style="width: 9%">
 <col style="width: 68%">
-<col style="width: 8%">
+<col style="width: 7%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1005,18 +1007,6 @@ Qwen3.5), which otherwise re-autotune on every distinct batch length.</p>
 </tr>
 </thead>
 <tbody>
-<tr class="odd">
-<td>pad_token_id</td>
-<td></td>
-<td>Tokenizer pad token id (inherited).</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>is_encoder_decoder</td>
-<td></td>
-<td>Whether the model is encoder-decoder (inherited).</td>
-<td><em>required</em></td>
-</tr>
 <tr class="odd">
 <td>pad_to_multiple_of</td>
 <td>int | None</td>

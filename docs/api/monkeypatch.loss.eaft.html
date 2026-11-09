@@ -995,10 +995,10 @@ weights examples by entropy approximation from top-k logits</p>
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 19%">
-<col style="width: 7%">
-<col style="width: 60%">
-<col style="width: 11%">
+<col style="width: 16%">
+<col style="width: 23%">
+<col style="width: 50%">
+<col style="width: 9%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1011,31 +1011,31 @@ weights examples by entropy approximation from top-k logits</p>
 <tbody>
 <tr class="odd">
 <td>outputs</td>
-<td></td>
+<td>ModelOutput</td>
 <td>model outputs containing logits</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>labels</td>
-<td></td>
+<td>torch.Tensor</td>
 <td>target labels for computing loss</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>num_items_in_batch</td>
-<td></td>
+<td>int | torch.Tensor | None</td>
 <td>for sample packing support</td>
 <td><code>None</code></td>
 </tr>
 <tr class="even">
 <td>alpha</td>
-<td></td>
+<td>float</td>
 <td>exponent for entropy weighting (default 1.0)</td>
 <td><code>1.0</code></td>
 </tr>
 <tr class="odd">
 <td>k</td>
-<td></td>
+<td>int</td>
 <td>number of top logits for entropy approximation (default 20)</td>
 <td><code>20</code></td>
 </tr>

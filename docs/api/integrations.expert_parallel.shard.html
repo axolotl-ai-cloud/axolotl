@@ -1120,10 +1120,10 @@ LoRA params handled.</p>
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 9%">
 <col style="width: 7%">
-<col style="width: 71%">
-<col style="width: 11%">
+<col style="width: 21%">
+<col style="width: 61%">
+<col style="width: 9%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1136,13 +1136,13 @@ LoRA params handled.</p>
 <tbody>
 <tr class="odd">
 <td>model</td>
-<td></td>
+<td>torch.nn.Module</td>
 <td>A built (but not yet FSDP-wrapped) HuggingFace model.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>ep_group</td>
-<td></td>
+<td>dist.ProcessGroup | None</td>
 <td><code>torch.distributed.ProcessGroup</code> for EP, or <code>None</code> for single-rank (no-op).</td>
 <td><em>required</em></td>
 </tr>

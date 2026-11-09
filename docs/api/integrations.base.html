@@ -1495,6 +1495,11 @@ callbacks that require access to the model or trainer.</p>
 <section id="returns-4" class="level6 doc-section doc-section-returns">
 <h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-4">Returns</h6>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 8%">
+<col style="width: 32%">
+<col style="width: 58%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
@@ -1504,9 +1509,9 @@ callbacks that require access to the model or trainer.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td>class</td>
 <td></td>
-<td>The class for the collator.</td>
+<td>tuple[type, dict] | None</td>
+<td>A <code>(collator_cls, collator_kwargs)</code> tuple, or None.</td>
 </tr>
 </tbody>
 </table>
@@ -1666,6 +1671,11 @@ picklable: module-level functions or instances of module-level classes.</p>
 <section id="returns-7" class="level6 doc-section doc-section-returns">
 <h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-7">Returns</h6>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 10%">
+<col style="width: 18%">
+<col style="width: 70%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
@@ -1675,9 +1685,9 @@ picklable: module-level functions or instances of module-level classes.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td>object</td>
 <td></td>
-<td>dict containing the training arguments.</td>
+<td>dict | None</td>
+<td>Training argument names mapped to values, or None.</td>
 </tr>
 </tbody>
 </table>
@@ -1805,7 +1815,7 @@ from that step.</p>
 </tr>
 <tr class="even">
 <td>trainer</td>
-<td></td>
+<td>Trainer</td>
 <td>The trainer instance.</td>
 <td><em>required</em></td>
 </tr>
@@ -2734,18 +2744,70 @@ the first non-<code>None</code> optimizer.</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_collator_cls_and_kwargs">get_collator_cls_and_kwargs</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb42"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_collator_cls_and_kwargs(cfg, is_eval<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the get_collator_cls_and_kwargs method of all registered plugins and returns the first non-None collator class.</p>
-<p>Parameters:
-cfg (dict): The configuration for the plugins.
-is_eval (bool): Whether this is an eval split.</p>
-<p>Returns:
-object: The collator class, or None if none was found.</p>
+<section id="parameters-26" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-26">Parameters</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 12%">
+<col style="width: 18%">
+<col style="width: 51%">
+<col style="width: 17%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>cfg</td>
+<td>DictDefault</td>
+<td>The configuration for the plugins.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>is_eval</td>
+<td>bool</td>
+<td>Whether this is an eval split.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-13" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-13">Returns</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 6%">
+<col style="width: 25%">
+<col style="width: 68%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>tuple[type, dict] | None</td>
+<td>The first <code>(collator_cls, collator_kwargs)</code> tuple, or None if none was found.</td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="axolotl.integrations.base.PluginManager.get_input_args" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_input_args">get_input_args</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_input_args()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Returns a list of Pydantic classes for all registered plugins’ input arguments.’</p>
-<section id="returns-13" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-13">Returns</h6>
+<section id="returns-14" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-14">Returns</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 8%">
@@ -2785,63 +2847,6 @@ exist, it creates a new one.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb46"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_reward_funcs(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the <code>get_reward_funcs</code> method of all registered plugins and returns
 the combined reward functions.</p>
-<section id="parameters-26" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-26">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 11%">
-<col style="width: 18%">
-<col style="width: 52%">
-<col style="width: 17%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>cfg</td>
-<td>DictDefault</td>
-<td>The configuration for the plugins.</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-14" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-14">Returns</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 22%">
-<col style="width: 67%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>list[Callable]</td>
-<td>The reward functions, in plugin registration order.</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.integrations.base.PluginManager.get_trainer_cls" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_trainer_cls">get_trainer_cls</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_trainer_cls(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Calls the <code>get_trainer_cls</code> method of all registered plugins and returns the
-first non-<code>None</code> trainer class.</p>
 <section id="parameters-27" class="level6 doc-section doc-section-parameters">
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-27">Parameters</h6>
 <table class="caption-top table">
@@ -2873,6 +2878,63 @@ first non-<code>None</code> trainer class.</p>
 <h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-15">Returns</h6>
 <table class="caption-top table">
 <colgroup>
+<col style="width: 10%">
+<col style="width: 22%">
+<col style="width: 67%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>list[Callable]</td>
+<td>The reward functions, in plugin registration order.</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="axolotl.integrations.base.PluginManager.get_trainer_cls" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_trainer_cls">get_trainer_cls</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_trainer_cls(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Calls the <code>get_trainer_cls</code> method of all registered plugins and returns the
+first non-<code>None</code> trainer class.</p>
+<section id="parameters-28" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-28">Parameters</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 11%">
+<col style="width: 18%">
+<col style="width: 52%">
+<col style="width: 17%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>cfg</td>
+<td>DictDefault</td>
+<td>The configuration for the plugins.</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-16" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-16">Returns</h6>
+<table class="caption-top table">
+<colgroup>
 <col style="width: 8%">
 <col style="width: 27%">
 <col style="width: 63%">
@@ -2898,10 +2960,57 @@ first non-<code>None</code> trainer class.</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_training_args">get_training_args</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb48"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_training_args(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the get_training_args method of all registered plugins and returns the combined training arguments.</p>
-<p>Parameters:
-cfg (dict): The configuration for the plugins.</p>
-<p>Returns:
-object: The training arguments</p>
+<section id="parameters-29" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-29">Parameters</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 11%">
+<col style="width: 18%">
+<col style="width: 52%">
+<col style="width: 17%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>cfg</td>
+<td>DictDefault</td>
+<td>The configuration for the plugins.</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-17" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-17">Returns</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 80%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>dict</td>
+<td>Training argument names mapped to values, merged across plugins.</td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="axolotl.integrations.base.PluginManager.get_training_args_mixin" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_training_args_mixin">get_training_args_mixin</h5>
@@ -2929,8 +3038,8 @@ list[str]: A list of dataclsses</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.load_datasets">load_datasets</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb52"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.load_datasets(cfg, preprocess<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the load_datasets method of each registered plugin.</p>
-<section id="parameters-28" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-28">Parameters</h6>
+<section id="parameters-30" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-30">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 13%">
@@ -2962,8 +3071,8 @@ list[str]: A list of dataclsses</p>
 </tbody>
 </table>
 </section>
-<section id="returns-16" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-16">Returns</h6>
+<section id="returns-18" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-18">Returns</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 7%">
@@ -3003,8 +3112,8 @@ list[str]: A list of dataclsses</p>
 <span id="cb54-7"><a href="#cb54-7" aria-hidden="true" tabindex="-1"></a>    advantages,</span>
 <span id="cb54-8"><a href="#cb54-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the on_rollouts_scored method of all registered plugins.</p>
-<section id="parameters-29" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-29">Parameters</h6>
+<section id="parameters-31" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-31">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 12%">
@@ -3029,7 +3138,7 @@ list[str]: A list of dataclsses</p>
 </tr>
 <tr class="even">
 <td>trainer</td>
-<td></td>
+<td>Trainer</td>
 <td>The trainer instance.</td>
 <td><em>required</em></td>
 </tr>
@@ -3065,8 +3174,8 @@ list[str]: A list of dataclsses</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.post_lora_load">post_lora_load</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb55"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_lora_load(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the <code>post_lora_load</code> method of all registered plugins.</p>
-<section id="parameters-30" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-30">Parameters</h6>
+<section id="parameters-32" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-32">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 9%">
@@ -3109,8 +3218,8 @@ list[str]: A list of dataclsses</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb57"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_model_build(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the <code>post_model_build</code> method of all registered plugins after the
 model has been built / loaded, but before any adapters have been applied.</p>
-<section id="parameters-31" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-31">Parameters</h6>
+<section id="parameters-33" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-33">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 10%">
@@ -3148,8 +3257,8 @@ model has been built / loaded, but before any adapters have been applied.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb58"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb58-1"><a href="#cb58-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_model_load(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the <code>post_model_load</code> method of all registered plugins after the model
 has been loaded inclusive of any adapters.</p>
-<section id="parameters-32" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-32">Parameters</h6>
+<section id="parameters-34" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-34">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 9%">
@@ -3191,8 +3300,8 @@ has been loaded inclusive of any adapters.</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.post_train">post_train</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb60"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_train(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the post_train method of all registered plugins.</p>
-<section id="parameters-33" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-33">Parameters</h6>
+<section id="parameters-35" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-35">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 9%">
@@ -3229,8 +3338,8 @@ has been loaded inclusive of any adapters.</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.post_train_unload">post_train_unload</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb61"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_train_unload(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the post_train_unload method of all registered plugins.</p>
-<section id="parameters-34" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-34">Parameters</h6>
+<section id="parameters-36" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-36">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 11%">
@@ -3261,8 +3370,8 @@ has been loaded inclusive of any adapters.</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.post_trainer_create">post_trainer_create</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb62"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.post_trainer_create(cfg, trainer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the <code>post_trainer_create</code> method of all registered plugins.</p>
-<section id="parameters-35" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-35">Parameters</h6>
+<section id="parameters-37" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-37">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 12%">
@@ -3299,8 +3408,8 @@ has been loaded inclusive of any adapters.</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.pre_lora_load">pre_lora_load</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb63"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.pre_lora_load(cfg, model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the <code>pre_lora_load</code> method of all registered plugins.</p>
-<section id="parameters-36" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-36">Parameters</h6>
+<section id="parameters-38" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-38">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 10%">
@@ -3337,8 +3446,8 @@ has been loaded inclusive of any adapters.</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.pre_model_load">pre_model_load</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb64"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb64-1"><a href="#cb64-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.pre_model_load(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Calls the pre_model_load method of all registered plugins.</p>
-<section id="parameters-37" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-37">Parameters</h6>
+<section id="parameters-39" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-39">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 11%">
@@ -3378,8 +3487,8 @@ has been loaded inclusive of any adapters.</p>
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.register">register</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb66"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.register(plugin_name, <span class="op">*</span>, required<span class="op">=</span><span class="va">False</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Registers a new plugin by its name.</p>
-<section id="parameters-38" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-38">Parameters</h6>
+<section id="parameters-40" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-40">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 14%">
@@ -3479,8 +3588,8 @@ has been loaded inclusive of any adapters.</p>
 <p>The plugin name should be in the format “module_name.class_name”. This function
 splits the plugin name into module and class, imports the module, retrieves the
 class from the module, and creates an instance of the class.</p>
-<section id="parameters-39" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-39">Parameters</h4>
+<section id="parameters-41" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-41">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 10%">
@@ -3506,8 +3615,8 @@ class from the module, and creates an instance of the class.</p>
 </tbody>
 </table>
 </section>
-<section id="returns-17" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-17">Returns</h4>
+<section id="returns-19" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-19">Returns</h4>
 <table class="caption-top table">
 <thead>
 <tr class="header">

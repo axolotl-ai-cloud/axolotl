@@ -1045,9 +1045,9 @@ dataset and converts it to a Chat.</p>
 <h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 10%">
-<col style="width: 8%">
-<col style="width: 81%">
+<col style="width: 6%">
+<col style="width: 41%">
+<col style="width: 52%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1058,9 +1058,9 @@ dataset and converts it to a Chat.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td>Callable</td>
 <td></td>
-<td>A function that takes a list of conversations and returns a list of messages.</td>
+<td>Callable[[Mapping[str, Any]], dict[str, Any]]</td>
+<td>A function that maps a dataset row to <code>{"conversation": messages}</code>.</td>
 </tr>
 </tbody>
 </table>

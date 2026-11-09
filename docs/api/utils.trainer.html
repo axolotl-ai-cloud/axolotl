@@ -1071,10 +1071,10 @@ the sequence-parallel groups with the engine and shards each batch across the gr
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 14%">
-<col style="width: 6%">
-<col style="width: 68%">
-<col style="width: 10%">
+<col style="width: 12%">
+<col style="width: 18%">
+<col style="width: 60%">
+<col style="width: 8%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1087,55 +1087,55 @@ the sequence-parallel groups with the engine and shards each batch across the gr
 <tbody>
 <tr class="odd">
 <td>cfg</td>
-<td></td>
+<td>DictDefault</td>
 <td>Axolotl config object containing training parameters.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>train_dataset</td>
-<td></td>
+<td>Dataset</td>
 <td>Dataset to use for training.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>eval_dataset</td>
-<td></td>
+<td>EvalDataset</td>
 <td>Dataset to use for evaluation.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>model</td>
-<td></td>
+<td>PreTrainedModel</td>
 <td>The model to train.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>tokenizer</td>
-<td></td>
+<td>PreTrainedTokenizer</td>
 <td>Tokenizer for processing text input.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>processor</td>
-<td></td>
+<td>ProcessorMixin | None</td>
 <td>Processor for data preparation.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>total_num_steps</td>
-<td></td>
+<td>int | None</td>
 <td>The total number of training steps.</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>model_ref</td>
-<td></td>
+<td>PreTrainedModel | None</td>
 <td>Optional reference model for RLHF training. Default is None.</td>
 <td><code>None</code></td>
 </tr>
 <tr class="odd">
 <td>peft_config</td>
-<td></td>
+<td>PeftConfig | None</td>
 <td>Optional PEFT (Parameter-Efficient Fine-Tuning) configuration. Default is None.</td>
 <td><code>None</code></td>
 </tr>
@@ -1147,8 +1147,8 @@ the sequence-parallel groups with the engine and shards each batch across the gr
 <table class="caption-top table">
 <colgroup>
 <col style="width: 6%">
-<col style="width: 6%">
-<col style="width: 87%">
+<col style="width: 7%">
+<col style="width: 86%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1160,7 +1160,7 @@ the sequence-parallel groups with the engine and shards each batch across the gr
 <tbody>
 <tr class="odd">
 <td></td>
-<td></td>
+<td>Trainer</td>
 <td>A trainer instance (either <code>HFRLTrainer</code> or <code>HFCausalTrainer</code>) configured based on the provided parameters.</td>
 </tr>
 </tbody>

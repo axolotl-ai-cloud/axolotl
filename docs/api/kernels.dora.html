@@ -992,10 +992,10 @@ The B@A product is computed row-by-row inside the kernel.</p>
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 13%">
-<col style="width: 17%">
-<col style="width: 54%">
-<col style="width: 14%">
+<col style="width: 9%">
+<col style="width: 30%">
+<col style="width: 50%">
+<col style="width: 10%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1014,8 +1014,8 @@ The B@A product is computed row-by-row inside the kernel.</p>
 </tr>
 <tr class="even">
 <td>W_quant</td>
-<td></td>
-<td>quantization state</td>
+<td>QuantState | torch.Tensor | None</td>
+<td>quantization state (NF4 <code>QuantState</code>, FP8 scale, or None)</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">

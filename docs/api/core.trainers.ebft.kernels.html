@@ -1012,6 +1012,12 @@ the elementwise/fill category (~40% of CUDA time in profiling).</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 10%">
+<col style="width: 18%">
+<col style="width: 55%">
+<col style="width: 15%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
@@ -1022,9 +1028,15 @@ the elementwise/fill category (~40% of CUDA time in profiling).</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td>a, b</td>
-<td></td>
-<td>(…, D) tensors of the same shape</td>
+<td>a</td>
+<td>torch.Tensor</td>
+<td>(…, D) tensor.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>b</td>
+<td>torch.Tensor</td>
+<td>(…, D) tensor of the same shape as <code>a</code>.</td>
 <td><em>required</em></td>
 </tr>
 </tbody>

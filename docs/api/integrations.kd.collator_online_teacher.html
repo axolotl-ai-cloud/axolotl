@@ -1066,10 +1066,10 @@ Assumes API returns token IDs as strings in logprob dictionary keys.</p>
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 15%">
-<col style="width: 11%">
-<col style="width: 47%">
-<col style="width: 25%">
+<col style="width: 14%">
+<col style="width: 18%">
+<col style="width: 43%">
+<col style="width: 23%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1082,19 +1082,19 @@ Assumes API returns token IDs as strings in logprob dictionary keys.</p>
 <tbody>
 <tr class="odd">
 <td>int_list</td>
-<td></td>
+<td>List[int]</td>
 <td>List of integers</td>
 <td><em>required</em></td>
 </tr>
 <tr class="even">
 <td>key</td>
-<td></td>
+<td>str | bytes</td>
 <td>Secret key (string or bytes)</td>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
 <td>hash_func</td>
-<td></td>
+<td>Callable</td>
 <td>Hash function (default: sha256)</td>
 <td><code>hashlib.sha256</code></td>
 </tr>
@@ -1114,7 +1114,7 @@ Assumes API returns token IDs as strings in logprob dictionary keys.</p>
 <tbody>
 <tr class="odd">
 <td></td>
-<td></td>
+<td>str</td>
 <td>HMAC digest as hex string</td>
 </tr>
 </tbody>

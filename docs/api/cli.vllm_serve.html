@@ -1027,37 +1027,44 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.cli.vllm_serve.do_vllm_serve">do_vllm_serve</a></td>
-<td>Starts the VLLM server for serving LLM models used for online RL</td>
+<td>Starts the vLLM server for serving LLM models used for online RL. Without a</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.cli.vllm_serve.do_vllm_serve" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.vllm_serve.do_vllm_serve">do_vllm_serve</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.vllm_serve.do_vllm_serve(config, cli_args)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Starts the VLLM server for serving LLM models used for online RL</p>
-<p>Args
-:param config: Parsed dict of the YAML config
-:param cli_args: dict of additional command-line arguments of type VllmServeCliArgs</p>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
+<p>Starts the vLLM server for serving LLM models used for online RL. Without a
+custom <code>serve_module</code>, the process is replaced by the native vLLM server.</p>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 10%">
-<col style="width: 10%">
-<col style="width: 78%">
+<col style="width: 9%">
+<col style="width: 18%">
+<col style="width: 60%">
+<col style="width: 11%">
 </colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
 <th>Type</th>
 <th>Description</th>
+<th>Default</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td></td>
-<td></td>
-<td>None; the process is replaced by the native vLLM server</td>
+<td>config</td>
+<td>Union[Path, str]</td>
+<td>Path to <code>axolotl</code> config YAML file.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>cli_args</td>
+<td>dict</td>
+<td>Additional command-line arguments (<code>VllmServeCliArgs</code> fields).</td>
+<td><em>required</em></td>
 </tr>
 </tbody>
 </table>

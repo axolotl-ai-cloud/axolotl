@@ -1057,10 +1057,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h6>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 26%">
 <col style="width: 16%">
-<col style="width: 43%">
-<col style="width: 13%">
+<col style="width: 15%">
+<col style="width: 58%">
+<col style="width: 8%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1079,20 +1079,26 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td>add_generation_prompt</td>
-<td></td>
+<td>bool</td>
 <td>Whether to add a generation prompt.</td>
 <td><code>False</code></td>
 </tr>
 <tr class="odd">
 <td>images</td>
-<td></td>
+<td>list | None</td>
 <td>A list of images. (optional)</td>
 <td><code>None</code></td>
 </tr>
 <tr class="even">
 <td>tools</td>
-<td></td>
+<td>list[dict] | None</td>
 <td>A list of tools. (optional)</td>
+<td><code>None</code></td>
+</tr>
+<tr class="odd">
+<td>real_last_index</td>
+<td>int | None</td>
+<td>Index of the conversation’s last turn when rendering a prefix of it. (optional)</td>
 <td><code>None</code></td>
 </tr>
 </tbody>
