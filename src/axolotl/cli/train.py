@@ -1,6 +1,7 @@
 """CLI to run training on a model."""
 
 import gc
+import json
 import os
 from pathlib import Path
 from typing import Any, Union
@@ -95,7 +96,20 @@ def build_ray_runtime_env(cfg: DictDefault) -> dict | None:
     if not (cfg.get("plugins") or get_builtin_plugins()):
         return None
     env = PluginManager.get_instance().get_distributed_env(cfg)
-    return {"env_vars": env} if env else None
+    # a submitted Ray job's runtime_env already reaches the workers, and ray.init rejects
+    # env var keys that overlap with it
+    job_env_vars = (
+        json.loads(os.environ.get("RAY_JOB_CONFIG_JSON_ENV_VAR", "{}"))
+        .get("runtime_env", {})
+        .get("env_vars", {})
+    )
+    # forward the driver's effective value so user-set variables still win on workers
+    env_vars = {
+        key: os.environ.get(key, value)
+        for key, value in env.items()
+        if key not in job_env_vars
+    }
+    return {"env_vars": env_vars} if env_vars else None
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any):

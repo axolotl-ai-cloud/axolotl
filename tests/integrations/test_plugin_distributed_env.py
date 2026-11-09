@@ -1,6 +1,7 @@
 """Plugin env vars must be in os.environ before the distributed state is created."""
 
 import collections
+import json
 import logging
 import os
 from pathlib import Path
@@ -33,6 +34,8 @@ def plugins(monkeypatch):
     monkeypatch.setattr(plugin_base, "get_builtin_plugins", lambda: ())
     saved_env = dict(os.environ)
     monkeypatch.delenv(ENV_KEY, raising=False)
+    monkeypatch.delenv("OTHER", raising=False)
+    monkeypatch.delenv("RAY_JOB_CONFIG_JSON_ENV_VAR", raising=False)
     yield manager.plugins
     os.environ.clear()
     os.environ.update(saved_env)
@@ -126,6 +129,35 @@ def test_ray_runtime_env_forwards_plugin_env(plugins):
     plugins["env"] = EnvPlugin({ENV_KEY: "1"})
 
     assert train_cli.build_ray_runtime_env(_cfg()) == {"env_vars": {ENV_KEY: "1"}}
+
+
+def test_ray_runtime_env_forwards_user_value(plugins, monkeypatch):
+    plugins["env"] = EnvPlugin({ENV_KEY: "1"})
+    monkeypatch.setenv(ENV_KEY, "user")
+
+    assert train_cli.build_ray_runtime_env(_cfg()) == {"env_vars": {ENV_KEY: "user"}}
+
+
+def test_ray_runtime_env_skips_job_env_vars(plugins, monkeypatch):
+    plugins["env"] = EnvPlugin({ENV_KEY: "1", "OTHER": "x"})
+    monkeypatch.setenv(
+        "RAY_JOB_CONFIG_JSON_ENV_VAR",
+        json.dumps({"runtime_env": {"env_vars": {ENV_KEY: "job"}}}),
+    )
+
+    assert train_cli.build_ray_runtime_env(_cfg()) == {"env_vars": {"OTHER": "x"}}
+
+
+def test_no_warning_without_distributed_support(plugins, monkeypatch, caplog):
+    plugins["env"] = EnvPlugin({ENV_KEY: "1"})
+    monkeypatch.setattr(trainer_module.torch.distributed, "is_available", lambda: False)
+    monkeypatch.delattr(trainer_module.torch.distributed, "is_initialized")
+
+    with caplog.at_level(logging.WARNING, logger=trainer_module.__name__):
+        trainer_module.apply_plugin_distributed_env(_cfg())
+
+    assert os.environ[ENV_KEY] == "1"
+    assert not any("may not take effect" in r.getMessage() for r in caplog.records)
 
 
 def test_ray_runtime_env_is_none_without_plugin_env(plugins):

@@ -138,7 +138,8 @@ initializes inside `prepare_optim_env` after the hook), it runs before the proce
 exists. Axolotl applies the merged result with `os.environ.setdefault`, so variables the
 user already set win. Two plugins requesting different values for the same variable is an
 error. With `use_ray`, the driver passes the variables to the workers through Ray's
-`runtime_env`; if `ray.init()` was already called before Axolotl ran, the driver cannot
+`runtime_env`, using any value the user set on the driver and skipping variables a
+submitted Ray job's own `runtime_env` already sets; if `ray.init()` was already called before Axolotl ran, the driver cannot
 forward them and logs a warning, so put them in that job's `runtime_env` instead. The hook
 may run on a machine without GPUs, so it must not touch CUDA or `torch.distributed`.
 

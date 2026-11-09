@@ -751,7 +751,11 @@ def apply_plugin_distributed_env(cfg) -> dict[str, str]:
     newly_set = sorted(key for key in env if key not in os.environ)
     for key, value in env.items():
         os.environ.setdefault(key, value)
-    if newly_set and torch.distributed.is_initialized():
+    if (
+        newly_set
+        and torch.distributed.is_available()
+        and torch.distributed.is_initialized()
+    ):
         LOG.warning(
             "Plugin distributed environment variables %s were set after the process "
             "group was initialized and may not take effect for it. Set them before "
