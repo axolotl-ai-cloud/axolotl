@@ -8,7 +8,10 @@ import os
 import re
 from pathlib import Path
 
-WARNING_RE = re.compile(r"^(?P<path>\S+\.py):(?P<line>\d+): (?P<message>.+)$")
+# griffe prints `<module>` when it has no file path, and line 0 when it has no line
+WARNING_RE = re.compile(
+    r"^(?P<path>\S+\.py|<module(?:: [^>]+)?>):(?P<line>\d+): (?P<message>.+)$"
+)
 # GitHub shows at most 10 warning annotations per step and drops the rest
 MAX_ANNOTATIONS = 10
 
@@ -30,12 +33,21 @@ def parse_warnings(log: str) -> list[tuple[str, int, str]]:
     return warnings
 
 
+def _location(path: str, line: int) -> str:
+    return f"{path}:{line}" if line > 0 else path
+
+
+def _annotation(path: str, line: int, message: str) -> str:
+    if not path.endswith(".py"):
+        return f"::warning title=Docstring::{_command_value(f'{path}: {message}')}"
+    props = f"file={_command_value(path, True)}"
+    if line > 0:
+        props += f",line={line}"
+    return f"::warning {props},title=Docstring::{_command_value(message)}"
+
+
 def workflow_commands(warnings: list[tuple[str, int, str]]) -> list[str]:
-    commands = [
-        f"::warning file={_command_value(path, True)},line={line},"
-        f"title=Docstring::{_command_value(message)}"
-        for path, line, message in warnings[:MAX_ANNOTATIONS]
-    ]
+    commands = [_annotation(*warning) for warning in warnings[:MAX_ANNOTATIONS]]
     if (extra := len(warnings) - MAX_ANNOTATIONS) > 0:
         commands.append(
             f"::notice title=Docstring::{extra} more docstring warning(s) in the job summary"
@@ -57,7 +69,7 @@ def summary(warnings: list[tuple[str, int, str]]) -> str:
     ]
     for path, line, message in warnings:
         cell = message.replace("|", "\\|")
-        lines.append(f"| `{path}:{line}` | {cell} |")
+        lines.append(f"| `{_location(path, line)}` | {cell} |")
     return "\n".join(lines) + "\n"
 
 
@@ -66,7 +78,7 @@ def main() -> None:
     parser.add_argument("log", type=Path, help="Captured `quartodoc build` output")
     args = parser.parse_args()
 
-    warnings = parse_warnings(args.log.read_text())
+    warnings = parse_warnings(args.log.read_text(encoding="utf-8"))
     for command in workflow_commands(warnings):
         print(command)
     print(f"{len(warnings)} docstring warning(s)")
