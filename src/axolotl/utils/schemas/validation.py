@@ -799,6 +799,18 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_ao_optim_fsdp2_offload(cls, data):
+        if data.get("fsdp_config") and data.get("fsdp_config", {}).get(
+            "offload_params"
+        ):
+            if data.get("optimizer") in ["adamw_torch_8bit", "adamw_torch_4bit"]:
+                raise ValueError(
+                    "low bit ao optimizers is not supported with FSDP2 w/ offload_params."
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_use_reentrant_mismatch(cls, data):
         if (
             data.get("unfrozen_parameters")
@@ -921,6 +933,20 @@ class TrainingValidationMixin:
                 "pretraining_dataset and include_tokens_per_second cannot be used together."
             )
 
+        return data
+
+
+class CELossValidationMixin:
+    """Validation methods related to CE loss configuration."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_dft_loss_fn(cls, data):
+        if data.get("use_dynamic_finetuning"):
+            if not data.get("chunked_cross_entropy"):
+                raise ValueError(
+                    "`use_dynamic_finetuning` requires `chunked_cross_entropy`"
+                )
         return data
 
 
@@ -3001,6 +3027,7 @@ class ValidationMixin(
     DatasetValidationMixin,
     AttentionValidationMixin,
     TrainingValidationMixin,
+    CELossValidationMixin,
     LoRAValidationMixin,
     RLValidationMixin,
     OptimizationValidationMixin,
