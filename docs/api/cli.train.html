@@ -947,6 +947,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.cli.train.build_ray_runtime_env" id="toc-axolotl.cli.train.build_ray_runtime_env" class="nav-link" data-scroll-target="#axolotl.cli.train.build_ray_runtime_env">build_ray_runtime_env</a></li>
   <li><a href="#axolotl.cli.train.do_cli" id="toc-axolotl.cli.train.do_cli" class="nav-link" data-scroll-target="#axolotl.cli.train.do_cli">do_cli</a></li>
   <li><a href="#axolotl.cli.train.do_train" id="toc-axolotl.cli.train.do_train" class="nav-link" data-scroll-target="#axolotl.cli.train.do_train">do_train</a></li>
   <li><a href="#axolotl.cli.train.ray_train_func" id="toc-axolotl.cli.train.ray_train_func" class="nav-link" data-scroll-target="#axolotl.cli.train.ray_train_func">ray_train_func</a></li>
@@ -976,22 +977,31 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.cli.train.build_ray_runtime_env">build_ray_runtime_env</a></td>
+<td>Plugin env vars Ray workers need before TorchTrainer creates the process group.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.cli.train.do_cli">do_cli</a></td>
 <td>Parses <code>axolotl</code> config, CLI args, and calls <code>do_train</code>.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.cli.train.do_train">do_train</a></td>
 <td>Trains a <code>transformers</code> model by first loading the dataset(s) specified in the</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.cli.train.ray_train_func">ray_train_func</a></td>
 <td>Ray Train entrypoint executed on each GPU worker.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.cli.train.build_ray_runtime_env" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.train.build_ray_runtime_env">build_ray_runtime_env</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.train.build_ray_runtime_env(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Plugin env vars Ray workers need before TorchTrainer creates the process group.</p>
+</section>
 <section id="axolotl.cli.train.do_cli" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.train.do_cli">do_cli</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.train.do_cli(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.train.do_cli(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Parses <code>axolotl</code> config, CLI args, and calls <code>do_train</code>.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
@@ -1029,7 +1039,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="axolotl.cli.train.do_train" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.train.do_train">do_train</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.train.do_train(cfg, cli_args)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.train.do_train(cfg, cli_args)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Trains a <code>transformers</code> model by first loading the dataset(s) specified in the
 <code>axolotl</code> config, and then calling <code>axolotl.train.train</code>. Also runs the plugin
 manager’s <code>post_train_unload</code> once training completes.</p>
@@ -1069,7 +1079,7 @@ manager’s <code>post_train_unload</code> once training completes.</p>
 </section>
 <section id="axolotl.cli.train.ray_train_func" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.train.ray_train_func">ray_train_func</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.train.ray_train_func(kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.train.ray_train_func(kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Ray Train entrypoint executed on each GPU worker.</p>
 <p>Re-validates the config against worker-local GPU capabilities (deferred from
 the driver), then runs the standard training pipeline.</p>
