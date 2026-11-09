@@ -155,24 +155,30 @@ class CoreWeaveClient:
             raise ValueError("CoreWeave returned an unexpected number of completions")
         samples = []
         for choice in choices:
-            logprobs = choice["logprobs"]["token_logprobs"]
-            tokens = choice.get("token_ids")
-            if tokens is None:
-                encoded = choice["logprobs"].get("tokens", [])
-                if not encoded or any(
-                    not isinstance(token, str)
-                    or not re.fullmatch(r"token_id:[0-9]+", token)
-                    for token in encoded
-                ):
-                    raise ValueError(
-                        "Gateway must support exact completion token IDs; text retokenization is unsafe"
-                    )
-                tokens = [int(token.split(":", 1)[1]) for token in encoded]
-            if any(type(token) is not int or token < 0 for token in tokens):
-                raise ValueError("Gateway returned invalid completion token IDs")
-            if len(tokens) != len(logprobs):
-                raise ValueError(
-                    "CoreWeave token IDs and log probabilities are not aligned"
-                )
-            samples.append({"tokens": tokens, "logprobs": logprobs})
+            tokens = completion_token_ids(choice)
+            samples.append(
+                {"tokens": tokens, "logprobs": choice["logprobs"]["token_logprobs"]}
+            )
         return samples
+
+
+def completion_token_ids(choice: dict) -> list[int]:
+    """A ``/v1/completions`` choice's token IDs, from ``token_ids`` or from the
+    ``token_id:<id>`` spellings ``return_tokens_as_token_ids`` asks for."""
+    logprobs = choice["logprobs"]["token_logprobs"]
+    tokens = choice.get("token_ids")
+    if tokens is None:
+        encoded = choice["logprobs"].get("tokens", [])
+        if not encoded or any(
+            not isinstance(token, str) or not re.fullmatch(r"token_id:[0-9]+", token)
+            for token in encoded
+        ):
+            raise ValueError(
+                "Gateway must support exact completion token IDs; text retokenization is unsafe"
+            )
+        tokens = [int(token.split(":", 1)[1]) for token in encoded]
+    if any(type(token) is not int or token < 0 for token in tokens):
+        raise ValueError("Gateway returned invalid completion token IDs")
+    if len(tokens) != len(logprobs):
+        raise ValueError("CoreWeave token IDs and log probabilities are not aligned")
+    return tokens

@@ -77,6 +77,10 @@ class StepPublishCallback(TrainerCallback):
     step that is both reuses one staged copy: the recovery writer holds the slot
     until its shard is on disk. A recovery step is skipped on every rank when
     any rank is still writing the previous one.
+
+    With ``publish_at_start`` the weights training starts from (step 0, or the
+    resumed step) are published at once. ``on_published(step)`` runs on the
+    publisher thread after each step every destination serves.
     """
 
     def __init__(
@@ -88,6 +92,8 @@ class StepPublishCallback(TrainerCallback):
         adapter: str = "default",
         arrival_timeout: float = 600.0,
         recovery: RecoverySchedule | None = None,
+        publish_at_start: bool = False,
+        on_published: Callable[[int], None] | None = None,
     ):
         if every < 0 or (every == 0 and recovery is None):
             raise ValueError("every must be positive unless recovery saves are set")
@@ -96,6 +102,8 @@ class StepPublishCallback(TrainerCallback):
         self.factory, self.every, self.trainer = factory, every, trainer
         self.adapter, self.arrival_timeout = adapter, arrival_timeout
         self.recovery = recovery
+        self.publish_at_start = publish_at_start and bool(every)
+        self.on_published = on_published
         self.publisher = None
         self.scheduler: CoalescingScheduler | None = None
         self.writer: RecoveryWriter | None = None
@@ -134,6 +142,7 @@ class StepPublishCallback(TrainerCallback):
             comm,
             restore=self.publisher.restore if self.publisher is not None else None,
             arrival_timeout=self.arrival_timeout,
+            on_published=self.on_published,
         )
         if self.recovery is not None:
             assert recovery_comm is not None and model is not None
@@ -149,6 +158,13 @@ class StepPublishCallback(TrainerCallback):
                 self.optimizer_stager = OptimizerStager()
         if self.every:
             self.scheduler.start(restore_step=state.global_step or None)
+            if self.publish_at_start:
+                error = None
+                try:
+                    self.scheduler.offer(state.global_step)
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    error = f"rank {_rank()}: {exc!r}"
+                check_rank_errors(error)
         return control
 
     def on_pre_optimizer_step(self, args, state, control, **kwargs):

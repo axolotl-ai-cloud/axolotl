@@ -108,6 +108,16 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, AsyncGRPOConfig):
             "optimizer steps (lora_merge/retained). 0 disables."
         },
     )
+    external_weight_sync: bool = field(
+        default=False,
+        metadata={
+            "help": "Weights reach the rollout servers through a plugin (e.g. "
+            "CoreWeave hot-load) rather than from the trainer. The trainer neither "
+            "probes nor syncs a vLLM server, its policy version is the optimizer "
+            "step, and the plugin reports the step the servers serve. Needs "
+            "token_budget."
+        },
+    )
     vllm_lora_alias: str | None = field(
         default=None,
         metadata={

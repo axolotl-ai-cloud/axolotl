@@ -1972,3 +1972,45 @@ def test_staleness_zero_trains_on_fresh_samples_and_reports_rollouts(
         assert completions == ["Four"] * 4
         assert rewards == {"len": [0.0, 1.0, 2.0, 3.0]}
         assert advantages == [-1.5, -0.5, 0.5, 1.5]
+
+
+class TestExternalWeightSync:
+    """A plugin publishes the weights; the policy version is the optimizer step."""
+
+    def _trainer(self, step=9):
+        trainer = object.__new__(AxolotlAsyncGRPOTrainer)
+        trainer.args = types.SimpleNamespace(external_weight_sync=True)
+        trainer.state = types.SimpleNamespace(global_step=step)
+        trainer.weight_transfer = weight_sync.ExternalWeightTransfer()
+        trainer.model_version = 0
+        trainer._weights_updated = True
+        return trainer
+
+    def test_sync_only_moves_the_policy_version_to_the_step(self):
+        trainer = self._trainer()
+        trainer._sync_weight()
+        assert trainer.model_version == 9 and not trainer._weights_updated
+
+    def test_checkpoints_do_not_claim_a_served_version(self, monkeypatch):
+        from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer
+
+        saved = []
+        monkeypatch.setattr(
+            AsyncGRPOTrainer,
+            "_save_checkpoint",
+            lambda self, model, trial: saved.append(self.model_version),
+        )
+        trainer = self._trainer()
+        trainer.model_version = 9
+        weight_sync.WeightSyncMixin._save_checkpoint(trainer, None, None)
+        assert saved == [weight_sync.UNPUBLISHED_VERSION]
+        assert trainer.model_version == 9
+
+    def test_needs_a_token_budget(self, tmp_path):
+        args = AxolotlAsyncGRPOConfig(
+            output_dir=str(tmp_path), use_cpu=True, external_weight_sync=True
+        )
+        with pytest.raises(ValueError, match="token_budget"):
+            AxolotlAsyncGRPOTrainer(
+                model="unused", reward_funcs=[lambda **kwargs: []], args=args
+            )

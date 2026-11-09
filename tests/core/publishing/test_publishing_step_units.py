@@ -178,6 +178,23 @@ def test_scheduler_restores_before_publishing():
     assert calls == [("restore", 4, 4.0), ("publish", 5)]
 
 
+@pytest.mark.parametrize(
+    "action, reported", [("commit", [1]), ("empty", [1]), ("discard", [])]
+)
+def test_scheduler_reports_only_served_steps(action, reported):
+    served = []
+    scheduler = CoalescingScheduler(
+        FakeStager(torch.zeros(1)),
+        lambda buffers, step: {"action": action},
+        LocalComm(),
+        on_published=served.append,
+    )
+    scheduler.start()
+    scheduler.offer(1)
+    scheduler.close()
+    assert served == reported
+
+
 def _scheduler_worker(rank, world, init_file, out):
     dist.init_process_group(
         "gloo", init_method=f"file://{init_file}", rank=rank, world_size=world
@@ -609,6 +626,43 @@ def test_callback_restores_on_resume():
     callback.on_train_begin(None, state, None, model=model)
     callback.on_train_end(None, state, None)
     assert fake.restored == [7] and fake.published == []
+
+
+def _tiny_lora_model():
+    from peft import LoraConfig, get_peft_model
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    return get_peft_model(
+        LlamaForCausalLM(
+            LlamaConfig(
+                vocab_size=32,
+                hidden_size=16,
+                intermediate_size=32,
+                num_hidden_layers=1,
+                num_attention_heads=2,
+                num_key_value_heads=2,
+            )
+        ),
+        LoraConfig(r=2, target_modules=["q_proj"]),
+    )
+
+
+@pytest.mark.parametrize("start", [0, 7])
+def test_callback_publishes_the_starting_weights(start):
+    fake = FakePublisher()
+    served = []
+    callback = StepPublishCallback(
+        lambda **kwargs: fake,
+        every=4,
+        trainer=None,
+        publish_at_start=True,
+        on_published=served.append,
+    )
+    state = SimpleNamespace(global_step=start, is_world_process_zero=True)
+    callback.on_train_begin(None, state, None, model=_tiny_lora_model())
+    callback.on_train_end(None, state, None)
+    assert [step for step, _ in fake.published] == [start] and served == [start]
+    assert fake.restored == ([start] if start else [])
 
 
 def test_coreweave_plugin_registers_the_step_callback():

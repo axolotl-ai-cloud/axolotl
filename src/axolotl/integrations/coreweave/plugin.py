@@ -223,6 +223,58 @@ def step_publisher_factory(cfg, config, settings, revision):
     return factory
 
 
+ASYNC_ROLLOUT_LOOP = (
+    "axolotl.integrations.coreweave.async_rollouts.CoreWeaveRolloutLoop"
+)
+
+
+def async_rollouts(cfg) -> bool:
+    """Whether rollouts come from CoreWeave in async GRPO (``trl.async_prefetch``)."""
+
+    def get(obj, key):
+        if obj is None:
+            return None
+        return obj.get(key) if hasattr(obj, "get") else getattr(obj, key, None)
+
+    return bool(
+        get(get(cfg, "coreweave"), "rollouts")
+        and get(get(cfg, "trl"), "async_prefetch")
+    )
+
+
+def check_async_rollouts(cfg, settings):
+    """Async GRPO samples from the deployment the trainer hot-loads every publish."""
+    trl = cfg.get("trl") or {}
+    if cfg.get("rl") != "grpo":
+        raise ValueError("CoreWeave rollouts currently require rl: grpo")
+    if cfg.get("adapter") != "lora" or settings is None or not settings.every:
+        raise ValueError(
+            "Async CoreWeave rollouts publish merged LoRA every step: set adapter: "
+            "lora and checkpoint_publish.every"
+        )
+    if not trl.get("token_budget"):
+        raise ValueError("Async CoreWeave rollouts need trl.token_budget")
+    if trl.get("rollout_loop") or trl.get("vllm_lora_sync"):
+        raise ValueError(
+            "Async CoreWeave rollouts use their own rollout loop and weight sync; "
+            "unset trl.rollout_loop and trl.vllm_lora_sync"
+        )
+    if trl.get("temperature") is not None and trl["temperature"] <= 0:
+        raise ValueError("CoreWeave rollouts require a positive temperature")
+    if cfg.get("is_multimodal") or cfg.get("nemo_gym_enabled"):
+        raise ValueError(
+            "CoreWeave rollouts require text-only GRPO without another rollout plugin"
+        )
+    if (
+        trl.get("top_p") not in (None, 1, 1.0)
+        or trl.get("top_k") not in (None, 0, -1)
+        or trl.get("min_p") not in (None, 0)
+        or trl.get("repetition_penalty") not in (None, 1)
+    ):
+        # The gateway does not return the candidate set top_p/top_k sample from.
+        raise ValueError("Async CoreWeave rollouts support temperature sampling only")
+
+
 class CoreWeavePlugin(BasePlugin):
     """Upload full/delta checkpoints from ordinary Axolotl checkpoint saves."""
 
@@ -247,19 +299,21 @@ class CoreWeavePlugin(BasePlugin):
                 "the base checkpoint's own weights"
             )
         config = CoreWeaveConfig.model_validate(cfg["coreweave"])
-        publish_config(cfg, config)
+        _, settings = publish_config(cfg, config)
         if cfg.get("adapter") == "lora":
             if not cfg.get("base_model"):
                 raise ValueError("CoreWeave LoRA publishing requires base_model")
-            if config.rollouts:
+            if config.rollouts and not async_rollouts(cfg):
                 raise ValueError(
-                    "CoreWeave LoRA publishing supports checkpoint saves only"
+                    "CoreWeave LoRA rollouts need async GRPO (trl.async_prefetch)"
                 )
             if cfg.get("save_safetensors") is False or cfg.get("trust_remote_code"):
                 raise ValueError(
                     "CoreWeave LoRA publishing requires safetensors and a built-in model architecture"
                 )
-        if config.rollouts:
+        if async_rollouts(cfg):
+            check_async_rollouts(cfg, settings)
+        elif config.rollouts:
             trl = cfg.get("trl") or {}
             if cfg.get("rl") != "grpo":
                 raise ValueError("CoreWeave rollouts currently require rl: grpo")
@@ -290,9 +344,29 @@ class CoreWeavePlugin(BasePlugin):
                     "CoreWeave rollouts support temperature and top_p sampling"
                 )
 
+    def get_training_args(self, cfg):
+        if not async_rollouts(cfg):
+            return None
+        config = CoreWeaveConfig.model_validate(cfg.coreweave)
+        return {
+            "rollout_loop": ASYNC_ROLLOUT_LOOP,
+            "rollout_loop_kwargs": {
+                "gateway_url": config.gateway_url,
+                "model": config.model,
+                "api_token_env": config.api_token_env,
+            },
+            "external_weight_sync": True,
+        }
+
     def post_trainer_create(self, cfg, trainer):
         config = CoreWeaveConfig.model_validate(cfg.coreweave)
-        if config.rollouts:
+        if async_rollouts(cfg):
+            if not getattr(trainer.args, "external_weight_sync", False):
+                raise ValueError(
+                    "Async CoreWeave rollouts need AxolotlAsyncGRPOTrainer with "
+                    "external_weight_sync"
+                )
+        elif config.rollouts:
             from .correction import install_sampler_correction
             from .rollouts import CoreWeaveRollouts
 
@@ -307,7 +381,8 @@ class CoreWeavePlugin(BasePlugin):
 
     def add_callbacks_post_trainer(self, cfg, trainer):
         config = CoreWeaveConfig.model_validate(cfg.coreweave)
-        if config.rollouts:
+        rollouts = async_rollouts(cfg)
+        if config.rollouts and not rollouts:
             return []
         config, settings = publish_config(cfg, config)
         revision = cfg.get("revision_of_model")
@@ -326,11 +401,21 @@ class CoreWeavePlugin(BasePlugin):
         if settings is not None and settings.every:
             from axolotl.core.publishing.callback import StepPublishCallback
 
+            on_published = None
+            if rollouts:
+
+                def on_published(step):
+                    # Rank 0 runs the rollout worker; every replica serves `step`.
+                    if worker := getattr(trainer, "rollout_worker", None):
+                        worker.update_model_version(step)
+
             self._checkpoint_callback = StepPublishCallback(
                 step_publisher_factory(cfg, config, settings, revision),
                 settings.every,
                 trainer=trainer,
                 recovery=recovery,
+                publish_at_start=rollouts,
+                on_published=on_published,
             )
             return [self._checkpoint_callback]
         self._checkpoint_callback = CoreWeaveCheckpointCallback(

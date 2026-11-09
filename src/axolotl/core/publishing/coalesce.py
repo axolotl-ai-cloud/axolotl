@@ -134,9 +134,11 @@ class CoalescingScheduler:
         *,
         restore: Callable[[Sequence[torch.Tensor], int], Any] | None = None,
         arrival_timeout: float = 600.0,
+        on_published: Callable[[int], None] | None = None,
     ):
         self.stager, self.publish_fn, self.comm = stager, publish, comm
         self.restore_fn = restore
+        self.on_published = on_published
         self.arrival_timeout = arrival_timeout
         self.table = SlotTable(len(stager.buffers))
         self.cond = threading.Condition()
@@ -296,4 +298,10 @@ class CoalescingScheduler:
         metrics.update(step=target, coalesced_steps=coalesced - self._reported)
         self._reported = coalesced
         self.metrics.append(metrics)
+        # "empty": the step's weights equal the last commit's, which is served.
+        if self.on_published is not None and metrics.get("action") in (
+            "commit",
+            "empty",
+        ):
+            self.on_published(target)
         return True
