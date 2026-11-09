@@ -6,12 +6,26 @@ import random
 import string
 
 import multiprocess.pool
+import numpy as np
 import pytest
 import torch
-from datasets import Dataset, IterableDataset
+from datasets import (
+    Dataset,
+    Features,
+    IterableDataset,
+    List,
+    Value,
+    concatenate_datasets,
+)
 from torch.utils.data import DataLoader
 
-from axolotl.utils.data import get_dataset_wrapper, sft, wrap_streaming_dataset
+from axolotl.utils.collators import PretrainingBatchSamplerDataCollatorForSeq2Seq
+from axolotl.utils.data import (
+    get_dataset_wrapper,
+    sft,
+    streaming,
+    wrap_streaming_dataset,
+)
 from axolotl.utils.dict import DictDefault
 
 
@@ -199,3 +213,181 @@ def test_streaming_packing_skips_a_buffer_of_overlong_rows(tokenizer_huggyllama)
 
     assert packed
     assert all(len(row["input_ids"]) == 256 for row in packed)
+
+
+def _assert_same_packed_rows(actual, expected):
+    assert type(actual) is type(expected)
+    assert list(actual) == list(expected)
+    for key, rows in expected.items():
+        assert len(actual[key]) == len(rows), key
+        for got, want in zip(actual[key], rows, strict=True):
+            assert got.dtype == want.dtype, key
+            assert got.shape == want.shape, key
+            assert got.stride() == want.stride(), key
+            assert torch.equal(got, want), key
+
+
+@pytest.mark.parametrize(
+    "columns,multipack_attn",
+    [
+        (("position_ids",), True),
+        (("attention_mask",), False),
+        (("labels", "position_ids"), True),
+        (("labels", "attention_mask"), False),
+        (("labels", "attention_mask", "position_ids"), True),
+    ],
+)
+@pytest.mark.parametrize(
+    "padding_side,pad_to_multiple_of", [("right", 256), ("left", 256), ("right", None)]
+)
+def test_bin_packer_matches_collator_on_random_bins(
+    tokenizer_huggyllama, columns, multipack_attn, padding_side, pad_to_multiple_of
+):
+    tokenizer_huggyllama.padding_side = padding_side
+    rng = np.random.default_rng(0)
+    lengths = rng.integers(2, 300, size=400)
+    input_ids = [rng.integers(3, 32000, n).tolist() for n in lengths]
+    data = {"input_ids": input_ids}
+    features = {"input_ids": List(Value("int32"))}
+    if "labels" in columns:
+        data["labels"] = [
+            np.where(rng.random(len(ids)) < 0.3, -100, ids).tolist()
+            for ids in input_ids
+        ]
+        features["labels"] = List(Value("int64"))
+    if "attention_mask" in columns:
+        data["attention_mask"] = [[1] * len(ids) for ids in input_ids]
+        features["attention_mask"] = List(Value("int8"))
+    if "position_ids" in columns:
+        data["position_ids"] = [list(range(len(ids))) for ids in input_ids]
+        features["position_ids"] = List(Value("int64"))
+        data["length"] = lengths.tolist()
+        features["length"] = Value("int64")
+    data["overflow_to_sample_mapping"] = list(range(len(input_ids)))
+    features["overflow_to_sample_mapping"] = Value("int64")
+    dataset = Dataset.from_dict(data, features=Features(features))
+    # two arrow chunks, the second sliced, with and without an indices mapping
+    dataset = concatenate_datasets(
+        [dataset.select(range(150)), dataset.select(range(150, len(dataset)))]
+    )
+    collate = PretrainingBatchSamplerDataCollatorForSeq2Seq(
+        tokenizer_huggyllama,
+        return_tensors="pt",
+        padding=True,
+        pad_to_multiple_of=pad_to_multiple_of,
+        multipack_attn=multipack_attn,
+    )
+
+    for buffer in (dataset, dataset.select(rng.permutation(len(dataset))[:350])):
+        pack = streaming._bin_packer(buffer, collate)
+        assert pack is not None
+        for _ in range(40):
+            indices = rng.choice(
+                len(buffer), size=rng.integers(1, 9), replace=False
+            ).tolist()
+            expected = streaming._collate_bin(buffer, collate, indices)
+            actual = pack(indices)
+            _assert_same_packed_rows(
+                {key: [row] for key, row in actual.items()},
+                {key: [row] for key, row in expected.items()},
+            )
+
+
+@pytest.mark.parametrize(
+    "column,make_row",
+    [
+        ("token_type_ids", lambda ids: [0] * len(ids)),
+        ("labels", lambda ids: ids[:-1]),
+    ],
+)
+def test_bin_packer_defers_to_the_collator_when_it_cannot_match_it(
+    tokenizer_huggyllama, column, make_row
+):
+    input_ids = [[5, 6, 7], [8, 9]]
+    dataset = Dataset.from_dict(
+        {"input_ids": input_ids, column: [make_row(ids) for ids in input_ids]}
+    )
+    collate = PretrainingBatchSamplerDataCollatorForSeq2Seq(
+        tokenizer_huggyllama, return_tensors="pt", padding=True, pad_to_multiple_of=8
+    )
+
+    assert streaming._bin_packer(dataset, collate) is None
+
+
+@pytest.mark.parametrize("dataset_type", ["pretrain", "chat_template"])
+@pytest.mark.parametrize("multipack_attn", [True, False])
+@pytest.mark.parametrize("balance_labels", [False, True])
+def test_encode_packed_streaming_fast_packing_matches_the_collator(
+    tokenizer_huggyllama, monkeypatch, dataset_type, multipack_attn, balance_labels
+):
+    if balance_labels:
+        tokenizer_huggyllama.padding_side = "right"
+    rand = random.Random(0)
+
+    def text(low, high):
+        return " ".join(
+            "".join(rand.choices(string.ascii_lowercase, k=rand.randint(2, 8)))
+            for _ in range(rand.randint(low, high))
+        )
+
+    if dataset_type == "pretrain":
+        examples = {"text": [text(10, 200) for _ in range(120)]}
+        ds_cfg = DictDefault({"path": "unused", "type": "pretrain"})
+        cfg = DictDefault({"pretraining_dataset": [ds_cfg], "sequence_len": 256})
+    else:
+        examples = {
+            "messages": [
+                [
+                    {"role": "user", "content": text(2, 60)},
+                    {"role": "assistant", "content": text(2, 80)},
+                ]
+                for _ in range(120)
+            ]
+        }
+        ds_cfg = DictDefault({"path": "unused", "type": "chat_template"})
+        cfg = DictDefault(
+            {"datasets": [ds_cfg], "chat_template": "chatml", "sequence_len": 256}
+        )
+    ds_wrapper = functools.partial(
+        get_dataset_wrapper,
+        dataset_config=ds_cfg,
+        tokenizer=tokenizer_huggyllama,
+        cfg=cfg,
+        dataset_base_type=dataset_type,
+    )
+    collate = PretrainingBatchSamplerDataCollatorForSeq2Seq(
+        tokenizer_huggyllama,
+        return_tensors="pt",
+        padding=True,
+        pad_to_multiple_of=256,
+        multipack_attn=multipack_attn,
+    )
+
+    def encode():
+        # RandomSampler draws from the global generator
+        torch.manual_seed(0)
+        return streaming.encode_packed_streaming(
+            collate,
+            ds_wrapper,
+            examples,
+            bin_size=200,
+            max_seq_length=256,
+            batch_size=2,
+            multipack_attn=multipack_attn,
+            balance_labels=balance_labels,
+        )
+
+    bin_packer = streaming._bin_packer
+    packers = []
+    monkeypatch.setattr(
+        streaming,
+        "_bin_packer",
+        lambda *args: packers.append(bin_packer(*args)) or packers[-1],
+    )
+    packed = encode()
+    assert packers and packers[0] is not None
+    monkeypatch.setattr(streaming, "_bin_packer", lambda *args: None)
+    collated = encode()
+
+    assert len(collated["input_ids"]) > 1
+    _assert_same_packed_rows(packed, collated)

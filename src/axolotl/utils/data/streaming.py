@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import Callable, Dict, List, Optional
 
 import numpy as np
+import pyarrow as pa
 import torch
 from datasets import Dataset
 from torch.utils.data import RandomSampler
@@ -317,22 +318,131 @@ def encode_packed_streaming(
         bin_size=bin_size,
     )
 
+    pack_bin = _bin_packer(train_dataset, collate_fn) or functools.partial(
+        _collate_bin, train_dataset, collate_fn
+    )
     chunked_data = defaultdict(list)
 
     for batch in sampler:
         for data in batch:
-            features = train_dataset[data]
-            if "num_truncated_tokens" in features:
-                del features["num_truncated_tokens"]
-            if "overflow_to_sample_mapping" in features:
-                del features["overflow_to_sample_mapping"]
-            if "labels" not in features:
-                features["labels"] = features["input_ids"].copy()
-            collated_features = collate_fn(features)
-
-            for feature in features.keys():
-                if feature == "length":
-                    continue
-                chunked_data[feature].append(collated_features[feature].squeeze(0))
+            for feature, row in pack_bin(data).items():
+                chunked_data[feature].append(row)
 
     return chunked_data
+
+
+def _collate_bin(
+    train_dataset: Dataset, collate_fn, indices: List[int]
+) -> Dict[str, torch.Tensor]:
+    features = train_dataset[indices]
+    if "num_truncated_tokens" in features:
+        del features["num_truncated_tokens"]
+    if "overflow_to_sample_mapping" in features:
+        del features["overflow_to_sample_mapping"]
+    if "labels" not in features:
+        features["labels"] = features["input_ids"].copy()
+    collated_features = collate_fn(features)
+    return {
+        feature: collated_features[feature].squeeze(0)
+        for feature in features.keys()
+        if feature != "length"
+    }
+
+
+# The collator only concatenates and pads these; any other column goes through it.
+_PACKED_COLUMNS = ("input_ids", "labels", "attention_mask", "position_ids")
+_UNPACKED_COLUMNS = ("length", "num_truncated_tokens", "overflow_to_sample_mapping")
+
+
+def _bin_packer(
+    train_dataset: Dataset, collate_fn
+) -> Optional[Callable[[List[int]], Dict[str, torch.Tensor]]]:
+    """Pack bins from flat token arrays, reproducing ``_collate_bin`` without the
+    per-token Python work of ``tokenizer.pad``. None when only the collator can."""
+    tokenizer = collate_fn.tokenizer
+    names = [c for c in train_dataset.column_names if c not in _UNPACKED_COLUMNS]
+    if (
+        type(collate_fn) is not PretrainingBatchSamplerDataCollatorForSeq2Seq
+        or "input_ids" not in names
+        or not set(names).issubset(_PACKED_COLUMNS)
+        or tokenizer.model_input_names[0] != "input_ids"
+        or (
+            "attention_mask" in names
+            and "attention_mask" not in tokenizer.model_input_names
+        )
+        or tokenizer.pad_token is None
+        or tokenizer.pad_token_id is None
+        or tokenizer.pad_token_id < 0
+        or tokenizer.padding_side not in ("left", "right")
+        or collate_fn.padding is not True
+        or collate_fn.max_length is not None
+        or collate_fn.return_tensors != "pt"
+        or collate_fn.model is not None
+        or collate_fn.cp_shard is not None
+        or collate_fn.emit_fa_varlen_kwargs
+    ):
+        return None
+
+    # with_format would deep-copy the dataset, and with it the wrapper's tokenizer
+    with train_dataset.formatted_as("arrow"):
+        columns = {name: train_dataset[name].combine_chunks() for name in names}
+    if not all(
+        (pa.types.is_list(column.type) or pa.types.is_large_list(column.type))
+        and pa.types.is_integer(column.type.value_type)
+        and column.null_count == 0
+        and column.flatten().null_count == 0
+        for column in columns.values()
+    ):
+        return None
+    offsets = _row_offsets(columns["input_ids"])
+    # unequal row lengths across columns take the collator's per-column padding
+    if not all(
+        np.array_equal(_row_offsets(column), offsets) for column in columns.values()
+    ):
+        return None
+    flat = {
+        name: column.flatten().to_numpy().astype(np.int64)
+        for name, column in columns.items()
+    }
+    if "labels" not in flat:
+        names.append("labels")
+        flat["labels"] = flat["input_ids"]
+
+    row_starts = offsets[:-1]
+    row_lengths = np.diff(offsets)
+    multiple = collate_fn.pad_to_multiple_of or 1
+    pad_ids = {
+        "input_ids": tokenizer.pad_token_id,
+        "labels": collate_fn.label_pad_token_id,
+        "attention_mask": 0,
+    }
+    pad_left = tokenizer.padding_side == "left"
+
+    def pack(indices: List[int]) -> Dict[str, torch.Tensor]:
+        lengths = row_lengths[indices]
+        total = int(lengths.sum())
+        segment_starts = np.cumsum(lengths) - lengths
+        gather = np.arange(total) + np.repeat(
+            row_starts[indices] - segment_starts, lengths
+        )
+        pad_len = -total % multiple
+        packed = {}
+        for name in names:
+            values = flat[name][gather]
+            if name == "attention_mask" and collate_fn.multipack_attn:
+                values = values * np.repeat(np.arange(1, len(indices) + 1), lengths)
+            if name == "position_ids":
+                pad = np.arange(pad_len, dtype=np.int64)
+            else:
+                pad = np.full(pad_len, pad_ids[name], dtype=np.int64)
+            packed[name] = torch.from_numpy(
+                np.concatenate((pad, values) if pad_left else (values, pad))
+            )
+        return packed
+
+    return pack
+
+
+def _row_offsets(column: pa.ListArray) -> np.ndarray:
+    offsets = column.offsets.to_numpy().astype(np.int64)
+    return offsets - offsets[0]
