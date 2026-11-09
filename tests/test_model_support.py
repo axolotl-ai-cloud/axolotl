@@ -561,3 +561,54 @@ class TestGlm5NextSupport:
         from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
 
         assert {"glm5_next", "glm5_next_text"} <= set(SUPPORTED_MULTIPACK_MODEL_TYPES)
+
+
+class TestRicursiveSupport:
+    """Built-in Ripple descriptor: cfg matching, remote-code redirect."""
+
+    def test_registered_and_vanilla_family(self):
+        support = get_model_support("ricursive")
+        assert support is not None
+        assert type(support).__name__ == "RicursiveSupport"
+        assert resolve_model_support(support).family == "vanilla_causal_lm"
+
+    def test_matches_cfg_by_model_name(self):
+        from axolotl.model_support.registry import get_model_support_for_cfg
+
+        cfg = DictDefault(base_model_config="ricursiveAI/Ripple-65B-Preview")
+        assert get_model_support_for_cfg(cfg) is get_model_support("ricursive")
+
+    @pytest.mark.parametrize("capability", ["liger", "lora_kernels"])
+    def test_fused_kernel_features_are_rejected(self, capability):
+        with pytest.raises(ValueError, match="ricursive"):
+            check_capability(get_model_support("ricursive"), capability, "ricursive")
+
+    def test_remote_code_resolves_to_the_in_tree_model(self):
+        import transformers.dynamic_module_utils as dynamic_module_utils
+
+        from axolotl.model_support.ricursive.modeling_ricursive import (
+            RicursiveForCausalLM,
+        )
+
+        original = dynamic_module_utils.get_class_in_module
+        try:
+            run_model_support_hooks(
+                get_model_support("ricursive"),
+                ModelHookPhase.BEFORE_CONFIG_LOAD,
+                ModelHookContext(
+                    cfg=DictDefault(base_model_config="ricursiveAI/Ripple-65B-Preview")
+                ),
+            )
+            resolved = dynamic_module_utils.get_class_in_module(
+                "RicursiveForCausalLM",
+                "transformers_modules/ricursiveAI/Ripple-65B-Preview/abc/modeling_ricursive.py",
+            )
+        finally:
+            dynamic_module_utils.get_class_in_module = original
+
+        assert resolved is RicursiveForCausalLM
+
+    def test_packs_through_position_ids(self):
+        from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
+
+        assert "ricursive" in SUPPORTED_MULTIPACK_MODEL_TYPES
