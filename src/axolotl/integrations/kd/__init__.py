@@ -55,7 +55,7 @@ class KDPlugin(BasePlugin):
 
     def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
         if not cfg.kd_trainer:
-            return None, None
+            return None
 
         from .collator import DataCollatorForKD, KDBatchSamplerDataCollatorForSeq2Seq
 

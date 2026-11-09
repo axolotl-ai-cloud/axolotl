@@ -187,7 +187,7 @@ def _attach_torchao_quantizer(
 
 
 def quantize_model(
-    model,
+    model: torch.nn.Module,
     weight_dtype: TorchAOQuantDType,
     group_size: int | None = None,
     activation_dtype: TorchAOQuantDType | None = None,
@@ -349,7 +349,7 @@ def _make_qat_config(
 
 
 def prepare_model_for_qat(
-    model,
+    model: torch.nn.Module,
     weight_dtype: TorchAOQuantDType,
     group_size: int | None = None,
     activation_dtype: TorchAOQuantDType | None = None,
@@ -405,7 +405,7 @@ def prepare_model_for_qat(
 
 
 def convert_qat_model(
-    model,
+    model: torch.nn.Module,
     quantize_embedding: bool = False,
 ):
     """

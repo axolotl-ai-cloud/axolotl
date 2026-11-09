@@ -62,7 +62,26 @@ jobs:
           uv pip install --system -r docs/requirements.txt
 
       - name: Build autodoc
-        run: quartodoc build
+        id: autodoc
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/autodoc"
+          quartodoc build 2>&1 | tee "$RUNNER_TEMP/autodoc/quartodoc-build.log"
+
+      # griffe docstring warnings don't fail the build; surface them on the PR instead.
+      # Both steps also report a failed build: once the build step ran, tee created the log.
+      - name: Annotate docstring warnings
+        if: ${{ !cancelled() && steps.autodoc.outcome != 'skipped' }}
+        run: python3 docs/scripts/annotate_autodoc_warnings.py "$RUNNER_TEMP/autodoc/quartodoc-build.log"
+
+      - name: Upload autodoc log
+        if: ${{ !cancelled() && steps.autodoc.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: autodoc-log
+          path: ${{ runner.temp }}/autodoc/quartodoc-build.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Quarto render
         run: python3 docs/scripts/render_docs.py --jobs 4

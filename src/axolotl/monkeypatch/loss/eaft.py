@@ -7,13 +7,20 @@ Reference: https://github.com/ymxyll/LlamaFactory-EAFT/blob/e2ce19e8efcc226450ee
 
 import torch
 import torch.nn.functional as F
+from transformers.utils import ModelOutput
 
 
-def eaft_loss(outputs, labels, num_items_in_batch=None, alpha=1.0, k=20):
+def eaft_loss(
+    outputs: ModelOutput,
+    labels: torch.Tensor,
+    num_items_in_batch: int | torch.Tensor | None = None,
+    alpha: float = 1.0,
+    k: int = 20,
+) -> torch.Tensor:
     """
     compute eaft loss with entropy weighting
 
-    args:
+    Args:
         outputs: model outputs containing logits
         labels: target labels for computing loss
         num_items_in_batch: for sample packing support

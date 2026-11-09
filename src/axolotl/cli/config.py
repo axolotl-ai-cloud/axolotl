@@ -226,7 +226,7 @@ def plugin_set_cfg(cfg: DictDefault):
 
 @send_errors
 def load_cfg(
-    config: str | Path | DictDefault = Path("examples/"), **kwargs
+    config: str | Path | DictDefault = Path("examples/"), **kwargs: Any
 ) -> DictDefault:
     """
     Loads the `axolotl` configuration stored at `config`, validates it, and performs

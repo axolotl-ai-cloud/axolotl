@@ -2,7 +2,7 @@
 
 import shutil
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import fire
 import torch
@@ -220,7 +220,7 @@ def do_cli(
     config: Union[Path, str] = Path("examples/"),
     dequant: bool = False,
     override_quantizer: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_merge_lora`. Note that various

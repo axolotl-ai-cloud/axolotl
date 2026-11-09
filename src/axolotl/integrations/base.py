@@ -270,7 +270,7 @@ class BasePlugin:
             trainer: The trainer object for training.
         """
 
-    def get_training_args(self, cfg: DictDefault):
+    def get_training_args(self, cfg: DictDefault) -> dict | None:
         """
         Returns custom training arguments to set on TrainingArgs.
 
@@ -278,10 +278,12 @@ class BasePlugin:
             cfg: The global axolotl configuration.
 
         Returns:
-            object: dict containing the training arguments.
+            Training argument names mapped to values, or None.
         """
 
-    def get_collator_cls_and_kwargs(self, cfg: DictDefault, is_eval: bool = False):
+    def get_collator_cls_and_kwargs(
+        self, cfg: DictDefault, is_eval: bool = False
+    ) -> tuple[type, dict] | None:
         """
         Returns a custom class for the collator.
 
@@ -290,7 +292,7 @@ class BasePlugin:
             is_eval: Whether this is an eval split.
 
         Returns:
-            class: The class for the collator.
+            A `(collator_cls, collator_kwargs)` tuple, or None.
         """
 
     def create_optimizer(self, cfg: DictDefault, trainer: Trainer) -> Optimizer | None:
@@ -369,7 +371,7 @@ class BasePlugin:
     def on_rollouts_scored(
         self,
         cfg: DictDefault,
-        trainer,
+        trainer: Trainer,
         prompts: list[str],
         completions: list[str],
         rewards: dict[str, list[float]],
@@ -750,15 +752,15 @@ class PluginManager:
                 return trainer_cls
         return None
 
-    def get_training_args(self, cfg):
+    def get_training_args(self, cfg: DictDefault) -> dict:
         """
         Calls the get_training_args method of all registered plugins and returns the combined training arguments.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
+        Args:
+            cfg: The configuration for the plugins.
 
         Returns:
-        object: The training arguments
+            Training argument names mapped to values, merged across plugins.
         """
         training_args_kwargs = {}
         for plugin in self.plugins.values():
@@ -768,16 +770,18 @@ class PluginManager:
 
         return training_args_kwargs
 
-    def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
+    def get_collator_cls_and_kwargs(
+        self, cfg: DictDefault, is_eval: bool = False
+    ) -> tuple[type, dict] | None:
         """
         Calls the get_collator_cls_and_kwargs method of all registered plugins and returns the first non-None collator class.
 
-        Parameters:
-        cfg (dict): The configuration for the plugins.
-        is_eval (bool): Whether this is an eval split.
+        Args:
+            cfg: The configuration for the plugins.
+            is_eval: Whether this is an eval split.
 
         Returns:
-        object: The collator class, or None if none was found.
+            The first `(collator_cls, collator_kwargs)` tuple, or None if none was found.
         """
         for plugin in self.plugins.values():
             collator = plugin.get_collator_cls_and_kwargs(cfg, is_eval=is_eval)
@@ -909,7 +913,7 @@ class PluginManager:
     def on_rollouts_scored(
         self,
         cfg: DictDefault,
-        trainer,
+        trainer: Trainer,
         prompts: list[str],
         completions: list[str],
         rewards: dict[str, list[float]],

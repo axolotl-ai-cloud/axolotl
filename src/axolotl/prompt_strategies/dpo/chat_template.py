@@ -2,8 +2,11 @@
 DPO prompt strategies for using tokenizer chat templates.
 """
 
+from typing import Any, Callable
+
 from axolotl.utils.chat_templates import extract_chat_template_args, get_chat_template
 from axolotl.utils.data.utils import is_vision_dataset
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.utils import handle_legacy_message_fields_logic
 
 
@@ -159,7 +162,9 @@ def default(cfg, dataset_idx=0, **kwargs):
     return transform_fn, {"remove_columns": [field_messages]}
 
 
-def argilla_chat(cfg, dataset_idx=0, **kwargs):
+def argilla_chat(
+    cfg: DictDefault, dataset_idx: int = 0, **kwargs: Any
+) -> tuple[Callable, dict[str, Any]]:
     """
     DPO chat template strategy for argilla-style datasets.
 
@@ -174,9 +179,8 @@ def argilla_chat(cfg, dataset_idx=0, **kwargs):
         **kwargs: Additional keyword arguments (unused)
 
     Returns:
-        tuple: (transform_fn, dataset_kwargs) where:
-            - transform_fn: Function to transform dataset samples
-            - dataset_kwargs: Dict with 'remove_columns' specifying columns to drop
+        A `(transform_fn, dataset_kwargs)` tuple, where `transform_fn` transforms
+            dataset samples and `dataset_kwargs` holds the `remove_columns` to drop.
 
     Dataset format:
         {

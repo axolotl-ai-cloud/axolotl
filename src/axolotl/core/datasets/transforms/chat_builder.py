@@ -3,16 +3,16 @@ This module contains a function that builds a transform that takes a row from th
 dataset and converts it to a Chat.
 """
 
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 
 def chat_message_transform_builder(
-    train_on_inputs=False,
+    train_on_inputs: bool = False,
     conversations_field: str = "messages",
     message_field_role: str | list[str] | None = None,  # commonly "role"
     message_field_content: str | list[str] | None = None,  # commonly "content"
     message_field_training: str | list[str] | None = None,  # commonly "weight"
-):
+) -> Callable[[Mapping[str, Any]], dict[str, Any]]:
     """Builds a transform that takes a row from the dataset and converts it to a Chat
 
     Args:
@@ -29,8 +29,7 @@ def chat_message_transform_builder(
             The field name of the train/weight.
 
     Returns:
-        Callable:
-            A function that takes a list of conversations and returns a list of messages.
+        A function that maps a dataset row to `{"conversation": messages}`.
     """
 
     if message_field_training is None:

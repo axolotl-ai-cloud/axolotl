@@ -174,7 +174,9 @@ def _detect_experts_modules(model):
         yield name, module
 
 
-def shard_expert_weights(model, ep_group) -> int:
+def shard_expert_weights(
+    model: torch.nn.Module, ep_group: dist.ProcessGroup | None
+) -> int:
     """Slice expert weights along dim 0 per the EP rank.
 
     Args:

@@ -9,6 +9,7 @@ The B@A product is computed row-by-row inside the kernel.
 import torch
 import triton
 import triton.language as tl
+from bitsandbytes.functional import QuantState
 
 from .quantize import dequantize
 
@@ -94,7 +95,7 @@ def _dora_fused_norm_kernel(
 
 def triton_dora_scale(
     W: torch.Tensor,
-    W_quant,
+    W_quant: QuantState | torch.Tensor | None,
     A: torch.Tensor,
     B: torch.Tensor,
     s: float,
@@ -108,7 +109,7 @@ def triton_dora_scale(
 
     Args:
         W: base weight [out, in] (possibly quantized)
-        W_quant: quantization state
+        W_quant: quantization state (NF4 `QuantState`, FP8 scale, or None)
         A: LoRA A [rank, in]
         B: LoRA B [out, rank]
         s: LoRA scaling factor

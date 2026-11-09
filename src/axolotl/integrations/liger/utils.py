@@ -3,11 +3,13 @@ utils to patch liger kernel ops to disable torch.compile
 """
 
 from functools import wraps
+from types import ModuleType
+from typing import Callable
 
 import torch
 
 
-def patch_with_compile_disable(module, function_name):
+def patch_with_compile_disable(module: ModuleType, function_name: str) -> Callable:
     """
     Patch a function in a module by wrapping it with torch.compile.disable
 

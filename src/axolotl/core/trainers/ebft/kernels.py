@@ -223,7 +223,8 @@ def fused_cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """Compute cosine similarity along the last dimension.
 
     Args:
-        a, b: (..., D) tensors of the same shape
+        a: (..., D) tensor.
+        b: (..., D) tensor of the same shape as `a`.
 
     Returns:
         (...,) tensor of cosine similarities

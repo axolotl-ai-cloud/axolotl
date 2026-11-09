@@ -85,7 +85,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         gc.collect()
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any):
     """
     Parses `axolotl` config, CLI args, and calls `do_train`.
 
