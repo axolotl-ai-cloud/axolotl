@@ -32,6 +32,9 @@ def parse_warnings(log: str) -> list[tuple[str, int, str]]:
             path = match["path"]
             if os.path.isabs(path):
                 path = os.path.relpath(path)
+            # out-of-repo paths come from dependency warnings.warn, not griffe
+            if path.startswith(".."):
+                continue
             warnings.append((path, int(match["line"]), match["message"]))
     return warnings
 
