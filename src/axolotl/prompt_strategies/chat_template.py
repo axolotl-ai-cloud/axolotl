@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Set, Union
 
 from jinja2.exceptions import TemplateError
 from pydantic import BaseModel
-from transformers import ProcessorMixin
 
 from axolotl.prompt_strategies.jinja_template_analyzer import JinjaTemplateAnalyzer
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
@@ -21,6 +20,9 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import DatasetConfig
 
 if TYPE_CHECKING:
+    # processing_utils imports modeling_utils, whose torchao quantizer initializes CUDA
+    from transformers import ProcessorMixin
+
     from axolotl.utils.mistral import HFMistralTokenizer
 
 # Configure the logger
@@ -110,7 +112,7 @@ class ChatTemplatePrompter(Prompter):
         self.field_tools = field_tools
         self.field_thinking = field_thinking
         self.tokenizer = tokenizer
-        self.processor: ProcessorMixin | None = processor
+        self.processor: "ProcessorMixin | None" = processor
         self.chat_template = chat_template
         self.chat_template_kwargs = chat_template_kwargs or {}
         self.template_thinking_key: str = template_thinking_key or "reasoning_content"

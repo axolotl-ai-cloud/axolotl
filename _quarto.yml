@@ -268,6 +268,7 @@ quartodoc:
         - utils.optimizers.adopt
         - utils.optimizers.qgalore
         - utils.data.streaming
+        - utils.data.packing
         - utils.data.sft
         - utils.data.rl
         - utils.data.lock

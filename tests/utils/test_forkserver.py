@@ -1,15 +1,20 @@
 """Forkserver preload and the packing pool's start method."""
 
+import functools
 import importlib
 import multiprocessing
 import os
+import pickle
 import subprocess
 import sys
 
 import numpy as np
 import pytest
+from datasets import Dataset
 
 from axolotl.utils import forkserver
+from axolotl.utils.data import get_dataset_wrapper, wrap_streaming_dataset
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.samplers import bin_packing
 
 needs_forkserver = pytest.mark.skipif(
@@ -96,6 +101,77 @@ def test_dataloader_preload_skips_the_cuda_import_chain():
     )
 
     assert result.stdout.strip().splitlines()[-1] == "[]"
+
+
+@pytest.mark.parametrize(
+    "ds_type, rows",
+    [
+        ("pretrain", {"text": ["lorem ipsum dolor sit amet " * 20] * 32}),
+        (
+            "chat_template",
+            {
+                "messages": [
+                    [
+                        {"role": "user", "content": "hi " * 30},
+                        {"role": "assistant", "content": "hello " * 30},
+                    ]
+                ]
+                * 32
+            },
+        ),
+    ],
+)
+def test_streaming_packing_workers_skip_the_cuda_import_chain(
+    tmp_path, tokenizer_huggyllama, ds_type, rows
+):
+    ds_cfg = DictDefault({"path": "unused", "type": ds_type})
+    cfg = DictDefault(
+        {
+            "chat_template": "chatml",
+            "sample_packing": True,
+            "pretrain_multipack_attn": True,
+            "sequence_len": 256,
+            "micro_batch_size": 2,
+            "sample_packing_bin_size": 200,
+            "streaming_multipack_buffer_size": 16,
+        }
+    )
+    cfg["pretraining_dataset" if ds_type == "pretrain" else "datasets"] = [ds_cfg]
+    ds_wrapper = functools.partial(
+        get_dataset_wrapper,
+        dataset_config=ds_cfg,
+        tokenizer=tokenizer_huggyllama,
+        cfg=cfg,
+        dataset_base_type=ds_type,
+    )
+    dataset = wrap_streaming_dataset(
+        Dataset.from_dict(rows).to_iterable_dataset(),
+        tokenizer_huggyllama,
+        cfg,
+        ds_wrapper,
+    ).with_format("torch")
+    path = tmp_path / "dataset.pkl"
+    path.write_bytes(pickle.dumps(dataset))
+
+    # a DataLoader worker unpickles the dataset, then tokenizes and packs each buffer
+    code = (
+        "import pickle, sys; "
+        f"row = next(iter(pickle.loads(open({str(path)!r}, 'rb').read()))); "
+        "print(sorted(row)); "
+        "print(sorted(m for m in ('peft', 'bitsandbytes', 'torchao', 'trl', "
+        "'transformers.trainer_utils') if m in sys.modules))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=os.environ,
+    )
+
+    keys, heavy = result.stdout.strip().splitlines()[-2:]
+    assert keys == "['input_ids', 'labels', 'position_ids']"
+    assert heavy == "[]"
 
 
 def test_packing_children_skip_the_torch_import_path():

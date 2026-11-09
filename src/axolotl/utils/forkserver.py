@@ -15,6 +15,9 @@ DATALOADER_PRELOAD = (
     "axolotl.utils.collators",
     "axolotl.utils.worker_seed",
     "axolotl.monkeypatch.data.batch_dataset_fetcher",
+    # streaming datasets tokenize and pack each buffer inside the workers
+    "axolotl.utils.data.streaming",
+    "axolotl.utils.data.wrappers",
 )
 
 _configured = False
