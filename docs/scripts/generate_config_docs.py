@@ -497,7 +497,7 @@ class QuartoGenerator:
 
                 # Get nested model schema
                 try:
-                    nested_schema = nested_model.model_json_schema()
+                    nested_schema = nested_model.model_json_schema(by_alias=False)
                     nested_properties = nested_schema.get("properties", {})
                     nested_required = nested_schema.get("required", [])
                 except Exception:
@@ -601,7 +601,7 @@ class QuartoGenerator:
 
         # Try to get JSON schema, with fallback for serialization issues
         try:
-            schema = model_class.model_json_schema()
+            schema = model_class.model_json_schema(by_alias=False)
             properties = schema.get("properties", {})
             required = schema.get("required", [])
         except Exception as e:

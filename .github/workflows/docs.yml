@@ -21,10 +21,9 @@ permissions:
 jobs:
     build-deploy:
         runs-on: ubuntu-latest
+        env:
+            PYTHONPATH: ${{ github.workspace }}/src
         steps:
-        - name: cleanup node
-          run: |
-            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         - name: Check out repository
           uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
           with:
@@ -33,19 +32,32 @@ jobs:
             persist-credentials: true
         - name: Set up Quarto
           uses: quarto-dev/quarto-actions/setup@8a96df13519ee81fd526f2dfca5962811136661b # v2.2.0
+          with:
+            version: '1.11.9'
         - name: Setup Python
           uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
           with:
             python-version: '3.12'
-        - name: Install dependencies
+        - name: Install uv
+          uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+          with:
+            enable-cache: true
+            prune-cache: true
+            cache-dependency-glob: |
+              docs/requirements.txt
+              .github/workflows/docs.yml
+        - name: Install docs dependencies
           run: |
-            python3 -m pip install jupyter quartodoc
-            python3 -m pip install -e .
+            uv pip install --system 'torch>=2.13.0,<2.16.0' --index-url https://download.pytorch.org/whl/cpu
+            uv pip install --system -r docs/requirements.txt
         - name: Build autodoc
           run: quartodoc build
-        - name: Publish to GitHub Pages (and render)
+        - name: Quarto render
+          run: python3 docs/scripts/render_docs.py --jobs 4
+        - name: Publish to GitHub Pages
           uses: quarto-dev/quarto-actions/publish@8a96df13519ee81fd526f2dfca5962811136661b # v2.2.0
           with:
             target: gh-pages
+            render: false
           env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

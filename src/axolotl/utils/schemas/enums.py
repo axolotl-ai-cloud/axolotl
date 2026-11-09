@@ -3,6 +3,9 @@
 from enum import Enum
 
 import torch
+from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema, core_schema
 
 
 class TorchAOQuantDType(Enum):
@@ -12,6 +15,27 @@ class TorchAOQuantDType(Enum):
     nvfp4 = "nvfp4"
     mxfp4 = "mxfp4"
     ternary = "ternary"
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source: type, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        schema = dict(handler(source))
+        schema["serialization"] = core_schema.plain_serializer_function_ser_schema(
+            lambda value: value.name,
+            return_schema=core_schema.str_schema(),
+            when_used="json",
+        )
+        return schema
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, _schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        names = [dtype.name for dtype in cls]
+        if handler.mode == "validation":
+            names.extend(["fp8", "float8"])
+        return {"type": "string", "enum": names, "title": cls.__name__}
 
     def from_string(str):
         if str == "int4":
