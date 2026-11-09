@@ -229,6 +229,12 @@ You can skip certain CI checks by including specific keywords in your commit mes
 
 #### CPU test selection
 
+CI pins pytest-testmon 2.3.0. Its schema-15 databases use versioned GitHub
+cache keys and Modal paths, separate from 2.2.0 baselines. After upgrading,
+run **Refresh testmon baselines** on main for the required lanes; old-version
+caches do not satisfy the baseline scheduler. The first run in each environment
+runs all eligible tests to build its new baseline.
+
 Pull requests and main pushes run pytest-testmon as a failure-propagating lane
 across all three Python/PyTorch cells. Each cell restores its own baseline from
 main; missing or incompatible baselines run the full suite. Only main writes

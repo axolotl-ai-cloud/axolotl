@@ -75,7 +75,7 @@ jobs:
           uv pip install -e '.[modal,baseten,ringmaster]' --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov-cli pytest==9.1.1 pytest-retry pytest-sugar pytest-testmon==2.2.0 pytest-xdist tbparse
+            codecov-cli pytest==9.1.1 pytest-retry pytest-sugar pytest-testmon==2.3.0 pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -117,11 +117,11 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .testmon
-          key: testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}-
+          key: testmon-2.3.0-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}-
           restore-keys: |
-            testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-
+            testmon-2.3.0-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-
 
-      - name: Run tests with testmon selection (xdist -n4 kept, pytest-testmon 2.2.0 syncs workers)
+      - name: Run tests with testmon selection (xdist -n4 kept, pytest-testmon 2.3.0 syncs workers)
         id: testmon
         timeout-minutes: 30
         shell: bash
@@ -167,4 +167,4 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .testmon
-          key: testmon-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: testmon-2.3.0-cpu-py${{ env.PYTHON_VERSION }}-torch${{ env.PYTORCH_VERSION }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
