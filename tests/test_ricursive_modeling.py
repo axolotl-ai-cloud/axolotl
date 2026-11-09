@@ -1,4 +1,4 @@
-"""Ripple (`ricursive`) in-tree modeling: packing, checkpointing, caching."""
+"""Ripple (`ricursive`) in-tree modeling: packing, checkpointing, caching, CCE."""
 
 import pytest
 import torch
@@ -78,3 +78,26 @@ def test_cached_generation_matches_uncached():
     )
 
     assert torch.equal(cached, uncached)
+
+
+def test_cce_patch_routes_through_the_fork_forward(monkeypatch):
+    llama_patch = pytest.importorskip("cut_cross_entropy.transformers.llama")
+    from axolotl.model_support.ricursive.cut_cross_entropy import patch_ricursive
+
+    monkeypatch.setattr(RicursiveForCausalLM, "forward", RicursiveForCausalLM.forward)
+    monkeypatch.setattr(llama_patch, "_PATCH_OPTS", None)
+    model = make_model().eval()
+    input_ids = torch.randint(0, 128, (1, 10))
+    with torch.no_grad():
+        expected = model(input_ids=input_ids, labels=input_ids).loss
+
+    options = object()
+    patch_ricursive("ricursive", options, remote_model_id="ricursiveAI/Ripple")
+    assert RicursiveForCausalLM.forward is llama_patch.cce_forward
+    assert llama_patch._PATCH_OPTS is options
+
+    # no CCE kernels on CPU: the fork's logits fallback must still match
+    monkeypatch.setattr(llama_patch, "_PATCH_OPTS", None)
+    with torch.no_grad():
+        actual = model(input_ids=input_ids, labels=input_ids).loss
+    torch.testing.assert_close(actual, expected)

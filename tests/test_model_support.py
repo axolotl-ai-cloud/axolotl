@@ -564,7 +564,7 @@ class TestGlm5NextSupport:
 
 
 class TestRicursiveSupport:
-    """Built-in Ripple descriptor: cfg matching, remote-code redirect."""
+    """Built-in Ripple descriptor: cfg matching, remote-code redirect, CCE hook."""
 
     def test_registered_and_vanilla_family(self):
         support = get_model_support("ricursive")
@@ -607,6 +607,21 @@ class TestRicursiveSupport:
             dynamic_module_utils.get_class_in_module = original
 
         assert resolved is RicursiveForCausalLM
+
+    def test_cce_patch_is_registered_before_the_plugin_runs(self, monkeypatch):
+        cce_patch = pytest.importorskip("cut_cross_entropy.transformers.patch")
+        monkeypatch.setattr(cce_patch, "PATCH_FNS", dict(cce_patch.PATCH_FNS))
+
+        run_model_support_hooks(
+            get_model_support("ricursive"),
+            ModelHookPhase.BEFORE_MODEL_BUILD,
+            ModelHookContext(cfg=DictDefault(cut_cross_entropy=True)),
+        )
+
+        assert cce_patch.PATCH_FNS["ricursive"] == (
+            "axolotl.model_support.ricursive.cut_cross_entropy",
+            "patch_ricursive",
+        )
 
     def test_packs_through_position_ids(self):
         from axolotl.monkeypatch.multipack import SUPPORTED_MULTIPACK_MODEL_TYPES
