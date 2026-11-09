@@ -2448,7 +2448,7 @@ the same value from several plugins is fine, conflicting values raise.</p>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.integrations.base.PluginManager.get_training_args_mixin">get_training_args_mixin</a></td>
-<td>Returns a list of dataclasses for all registered plugins’ training args mixins’</td>
+<td>Returns the training args mixin dataclasses for all registered plugins.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.integrations.base.PluginManager.is_lora_like">is_lora_like</a></td>
@@ -3090,9 +3090,31 @@ first non-<code>None</code> trainer class.</p>
 <section id="axolotl.integrations.base.PluginManager.get_training_args_mixin" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.get_training_args_mixin">get_training_args_mixin</h5>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb51"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>integrations.base.PluginManager.get_training_args_mixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Returns a list of dataclasses for all registered plugins’ training args mixins’</p>
-<p>Returns:
-list[str]: A list of dataclsses</p>
+<p>Returns the training args mixin dataclasses for all registered plugins.</p>
+<section id="returns-18" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-18">Returns</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 15%">
+<col style="width: 75%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>list[str]</td>
+<td>Import paths of the plugins’ training args mixin dataclasses.</td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="axolotl.integrations.base.PluginManager.is_lora_like" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.integrations.base.PluginManager.is_lora_like">is_lora_like</h5>
@@ -3146,8 +3168,8 @@ list[str]: A list of dataclsses</p>
 </tbody>
 </table>
 </section>
-<section id="returns-18" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-18">Returns</h6>
+<section id="returns-19" class="level6 doc-section doc-section-returns">
+<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-19">Returns</h6>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 7%">
@@ -3690,8 +3712,8 @@ class from the module, and creates an instance of the class.</p>
 </tbody>
 </table>
 </section>
-<section id="returns-19" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-19">Returns</h4>
+<section id="returns-20" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-20">Returns</h4>
 <table class="caption-top table">
 <thead>
 <tr class="header">

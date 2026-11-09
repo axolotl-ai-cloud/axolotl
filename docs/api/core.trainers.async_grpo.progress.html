@@ -971,9 +971,10 @@ only when an optimizer step ends. Rollouts dropped before training (no reward si
 truncated, too stale, too long) complete no step, so a run whose remaining rollouts
 are all dropped would generate forever.</p>
 <p><code>SampleFilterQueue</code> drops the rollouts that would train nothing. Every drop and
-every trained micro-batch reports to <code>RolloutProgress</code>, which keeps
-TRL’s set of consumed prompt groups (read for the epoch bound and for resume). When
-the run’s prompt groups are consumed, or a full pass over the prompts trains nothing,
+every trained micro-batch reports to <code>RolloutProgress</code>, which keeps TRL’s sets of
+trained and dropped prompt groups (their union is read for the epoch bound and for
+resume). When the run’s prompt groups are consumed, or a full pass over the prompts
+trains nothing,
 the rank-0 pipeline raises <code>RolloutStop</code>. <code>StopAwareDataset</code> turns it into one
 stop micro-batch that accelerate’s dispatcher hands to every rank, so all ranks end
 training (or raise the stall error) at the same micro-batch.</p>
@@ -993,7 +994,7 @@ training (or raise the stall error) at the same micro-batch.</p>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.core.trainers.async_grpo.progress.RolloutProgress">RolloutProgress</a></td>
-<td>Consumed and trained prompt groups, and the stream’s stop conditions.</td>
+<td>Trained and dropped prompt groups, and the stream’s stop conditions.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.core.trainers.async_grpo.progress.RolloutStop">RolloutStop</a></td>
@@ -1013,15 +1014,19 @@ training (or raise the stall error) at the same micro-batch.</p>
 <section id="axolotl.core.trainers.async_grpo.progress.RolloutProgress" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.progress.RolloutProgress">RolloutProgress</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.progress.RolloutProgress(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    consumed,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    epochs_done,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    stall_groups,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Consumed and trained prompt groups, and the stream’s stop conditions.</p>
-<p><code>consumed</code> is the trainer’s set TRL counts epochs and resumes from: a group
-counts once it trained or its rollouts were dropped. <code>stall_groups</code> bounds how
-many groups may be consumed in a row without one training.</p>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    trained,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    dropped,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    epochs_done,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    stall_groups,</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Trained and dropped prompt groups, and the stream’s stop conditions.</p>
+<p><code>trained</code> and <code>dropped</code> are the trainer’s <code>_trained_groups</code> and
+<code>_dropped_groups</code>, whose union TRL counts epochs and resumes from: a group
+counts once it trained or its rollouts were dropped. TRL’s collator adds every
+group it packs to <code>trained</code>. <code>drop_reasons</code> counts the dropped groups by
+reason, and <code>stall_groups</code> bounds how many groups may be consumed in a row
+without one training.</p>
 <p>Only rank 0 reports, from the rollout stream and, with trainer-side scoring,
 from <code>score_step</code>; the stream raises the stop, so that it reaches every rank
 as a stop micro-batch.</p>

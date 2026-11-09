@@ -1037,8 +1037,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td>Loss</td>
-<td><code>loss_type: dapo</code> (default)</td>
-<td>TRL’s surrogate, clipped against the vLLM sampler at <code>epsilon</code> / <code>epsilon_high</code></td>
+<td><code>loss_type: dapo</code></td>
+<td>TRL’s surrogate, clipped against the vLLM sampler at <code>epsilon</code> / <code>epsilon_high</code> (the default for EBFT and NeMo Gym multi-turn)</td>
 </tr>
 <tr class="odd">
 <td>Importance weights</td>
@@ -1047,8 +1047,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td>Score centering</td>
-<td><code>loss_type: score_centering</code></td>
-<td>Experimental, TRL installed from main only: TRL’s score centering with masked importance sampling, centered over vLLM’s top <code>num_sampler_logprobs</code> tokens</td>
+<td><code>loss_type: score_centering</code> (default)</td>
+<td>TRL’s score centering with masked importance sampling, centered over vLLM’s top <code>num_sampler_logprobs</code> tokens</td>
 </tr>
 </tbody>
 </table>

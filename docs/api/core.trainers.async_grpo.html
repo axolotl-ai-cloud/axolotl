@@ -936,8 +936,8 @@ path, and plugs in axolotl’s optimizer, scheduler and distributed mixins;</li>
 (<code>reward_num_workers</code>);</li>
 <li>honors <code>reward_weights</code>, <code>multi_objective_aggregation</code> and <code>scale_rewards</code>;</li>
 <li>offers <code>loss_type: cispo</code>, which weights each token by its policy/sampler ratio,
-capped at <code>vllm_importance_sampling_cap</code>, instead of clipping that ratio, and,
-experimentally on TRL main, <code>loss_type: score_centering</code>, TRL’s score centering;</li>
+capped at <code>vllm_importance_sampling_cap</code>, instead of clipping that ratio, and
+<code>loss_type: score_centering</code>, TRL’s score centering;</li>
 <li>syncs merged LoRA weights without merging into the trained model, bitwise equal to
 the <code>lora_merge_aware</code> forward, and measures how much of the update the merge
 keeps (<code>vllm_merge_check_interval</code>);</li>

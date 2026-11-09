@@ -1180,6 +1180,10 @@ whole-model torch.compile is not needed and actively harmful.</p>
 <td><a href="#axolotl.utils.schemas.validation.GRPOVllmValidationMixin.check_data_producer_options">check_data_producer_options</a></td>
 <td>Reject the removed data producer trainer’s options, map its alias.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.utils.schemas.validation.GRPOVllmValidationMixin.check_grpo_sampling_needs_top_k">check_grpo_sampling_needs_top_k</a></td>
+<td>TRL’s synchronous GRPOConfig refuses top-p/min-p sampling without top_k</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.utils.schemas.validation.GRPOVllmValidationMixin.check_async_grpo_compat" class="level5">
@@ -1195,21 +1199,29 @@ AsyncGRPOTrainer.</p>
 <span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Reject the removed data producer trainer’s options, map its alias.</p>
 </section>
+<section id="axolotl.utils.schemas.validation.GRPOVllmValidationMixin.check_grpo_sampling_needs_top_k" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.GRPOVllmValidationMixin.check_grpo_sampling_needs_top_k">check_grpo_sampling_needs_top_k</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.GRPOVllmValidationMixin.check_grpo_sampling_needs_top_k(</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>TRL’s synchronous GRPOConfig refuses top-p/min-p sampling without top_k
+under vLLM importance sampling, which it renormalizes over vLLM’s candidate
+sets (async GRPO is checked in <code>check_async_grpo_compat</code>).</p>
+</section>
 </section>
 </section>
 <section id="axolotl.utils.schemas.validation.LoRAValidationMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.LoRAValidationMixin">LoRAValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.LoRAValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.LoRAValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Validation methods related to LoRA/QLoRA configuration.</p>
 </section>
 <section id="axolotl.utils.schemas.validation.ModelCompatibilityValidationMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.ModelCompatibilityValidationMixin">ModelCompatibilityValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.ModelCompatibilityValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.ModelCompatibilityValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Validation methods for specific model compatibility.</p>
 </section>
 <section id="axolotl.utils.schemas.validation.OptimizationValidationMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.OptimizationValidationMixin">OptimizationValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.OptimizationValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.OptimizationValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Validation methods related to optimization and performance.</p>
 <section id="methods-2" class="level4">
 <h4 class="anchored" data-anchor-id="methods-2">Methods</h4>
@@ -1229,9 +1241,9 @@ AsyncGRPOTrainer.</p>
 </table>
 <section id="axolotl.utils.schemas.validation.OptimizationValidationMixin.check_cross_entropy_conflicts" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.OptimizationValidationMixin.check_cross_entropy_conflicts">check_cross_entropy_conflicts</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.OptimizationValidationMixin.check_cross_entropy_conflicts(</span>
-<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
-<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.OptimizationValidationMixin.check_cross_entropy_conflicts(</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Check for mutual exclusivity between cross entropy patch options.</p>
 <p>Only one of the following can be enabled at a time:
 - cut_cross_entropy (CutCrossEntropyPlugin)
@@ -1243,12 +1255,12 @@ AsyncGRPOTrainer.</p>
 </section>
 <section id="axolotl.utils.schemas.validation.PretrainingValidationMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.PretrainingValidationMixin">PretrainingValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.PretrainingValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.PretrainingValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Validation methods related to pretraining configuration.</p>
 </section>
 <section id="axolotl.utils.schemas.validation.RLValidationMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.RLValidationMixin">RLValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.RLValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.RLValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Validation methods related to RL training configuration.</p>
 <section id="methods-3" class="level4">
 <h4 class="anchored" data-anchor-id="methods-3">Methods</h4>
@@ -1268,9 +1280,9 @@ AsyncGRPOTrainer.</p>
 </table>
 <section id="axolotl.utils.schemas.validation.RLValidationMixin.check_grpo_batch_size_divisibility" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.RLValidationMixin.check_grpo_batch_size_divisibility">check_grpo_batch_size_divisibility</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.RLValidationMixin.check_grpo_batch_size_divisibility(</span>
-<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
-<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.RLValidationMixin.check_grpo_batch_size_divisibility(</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>    data,</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Surface GRPO batch-shape mismatches at config-parse time.</p>
 <p>TRL’s GRPOTrainer requires that the per-step generation batch size be
 evenly divisible by <code>num_generations</code> so that every prompt can be
@@ -1291,17 +1303,17 @@ indicate multiple ranks (each rank needs at least one full group)</li>
 </section>
 <section id="axolotl.utils.schemas.validation.SystemValidationMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.SystemValidationMixin">SystemValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.SystemValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.SystemValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Validation methods related to system and hardware configuration.</p>
 </section>
 <section id="axolotl.utils.schemas.validation.TrainingValidationMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.TrainingValidationMixin">TrainingValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.TrainingValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.TrainingValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Validation methods related to training configuration.</p>
 </section>
 <section id="axolotl.utils.schemas.validation.ValidationMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.ValidationMixin">ValidationMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.ValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.ValidationMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Full validation mixin for Axolotl configuration.</p>
 </section>
 </section>
@@ -1323,7 +1335,7 @@ indicate multiple ranks (each rank needs at least one full group)</li>
 </table>
 <section id="axolotl.utils.schemas.validation.lora_kernels_auto_enable" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.validation.lora_kernels_auto_enable">lora_kernels_auto_enable</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.lora_kernels_auto_enable(get)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.validation.lora_kernels_auto_enable(get)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Whether the unset <code>lora_*_kernel</code> flags would be auto-enabled for this config.</p>
 <p><code>get</code> reads a config value by name (a raw <code>data</code> dict or a validated model).
 The single source of truth for <code>check_auto_enable_lora_kernels</code> and for the

@@ -947,6 +947,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
+  <li><a href="#axolotl.core.trainers.async_grpo.trainer.AdapterPrecisionMixin" id="toc-axolotl.core.trainers.async_grpo.trainer.AdapterPrecisionMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.trainer.AdapterPrecisionMixin">AdapterPrecisionMixin</a></li>
   <li><a href="#axolotl.core.trainers.async_grpo.trainer.AxolotlAsyncGRPOTrainer" id="toc-axolotl.core.trainers.async_grpo.trainer.AxolotlAsyncGRPOTrainer" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.trainer.AxolotlAsyncGRPOTrainer">AxolotlAsyncGRPOTrainer</a></li>
   </ul></li>
   </ul></li>
@@ -974,30 +975,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.core.trainers.async_grpo.trainer.AdapterPrecisionMixin">AdapterPrecisionMixin</a></td>
+<td>Saves a PEFT adapter’s LoRA tensors in fp32.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.core.trainers.async_grpo.trainer.AxolotlAsyncGRPOTrainer">AxolotlAsyncGRPOTrainer</a></td>
 <td>TRL’s <code>AsyncGRPOTrainer</code> adapted to axolotl and extended (see the package doc).</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.core.trainers.async_grpo.trainer.AdapterPrecisionMixin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.trainer.AdapterPrecisionMixin">AdapterPrecisionMixin</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.trainer.AdapterPrecisionMixin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Saves a PEFT adapter’s LoRA tensors in fp32.</p>
+<p>Under FSDP mixed precision, TRL’s <code>_save</code> casts every floating tensor it writes
+to the bf16/fp16 compute dtype, and FSDP2 trains LoRA factors in that dtype unless
+<code>lora_fp32_gradients</code> is set. The adapter is written in fp32 either way; a full
+model is still written as TRL writes it.</p>
+</section>
 <section id="axolotl.core.trainers.async_grpo.trainer.AxolotlAsyncGRPOTrainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.trainer.AxolotlAsyncGRPOTrainer">AxolotlAsyncGRPOTrainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.trainer.AxolotlAsyncGRPOTrainer(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    reward_funcs<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    train_dataset<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    processing_class<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    callbacks<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    optimizers<span class="op">=</span>(<span class="va">None</span>, <span class="va">None</span>),</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    eval_dataset<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    reward_processing_classes<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    rollout_func<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    data_collator<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    trainer_scorers<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.trainer.AxolotlAsyncGRPOTrainer(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    reward_funcs<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    args<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    train_dataset<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    processing_class<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    callbacks<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    optimizers<span class="op">=</span>(<span class="va">None</span>, <span class="va">None</span>),</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    eval_dataset<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    reward_processing_classes<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    rollout_func<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>    data_collator<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>    trainer_scorers<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>TRL’s <code>AsyncGRPOTrainer</code> adapted to axolotl and extended (see the package doc).</p>
 
 

@@ -4018,9 +4018,11 @@ results and other context are masked, and a rewritten history starts a new row</
 <li>Queues the samples tagged with the policy version they were sampled under</li>
 </ol>
 <p>The trainer drops samples more than <code>max_staleness</code> weight syncs old, packs the rest
-by token budget and applies async GRPO’s loss: TRL’s clipped objective by default, or
-with <code>loss_type: cispo</code>, each token weighted by its policy/sampler ratio, capped at
-<code>vllm_importance_sampling_cap</code>. A failed <code>/run</code> is left out of its group’s baseline.</p>
+by token budget and applies async GRPO’s loss: TRL’s clipped objective by default
+(agents sample without the top log-probs that score centering, async GRPO’s default
+elsewhere, needs), or with <code>loss_type: cispo</code>, each token weighted by its
+policy/sampler ratio, capped at <code>vllm_importance_sampling_cap</code>. A failed <code>/run</code> is
+left out of its group’s baseline.</p>
 </section>
 <section id="weight-sync-lora-mode" class="level3">
 <h3 class="anchored" data-anchor-id="weight-sync-lora-mode">Weight Sync (LoRA Mode)</h3>

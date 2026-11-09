@@ -1003,16 +1003,16 @@ and its metrics per loss type.</p>
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.core.trainers.async_grpo.loss.support_ids">support_ids</a></td>
-<td>Each position’s top-k/top-p candidate set, padded with -1, which TRL main’s</td>
+<td>Each position’s top-k/top-p candidate set, padded with -1, which TRL’s fused</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.core.trainers.async_grpo.loss.support_ids" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.loss.support_ids">support_ids</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.loss.support_ids(inputs, mask_bool)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Each position’s top-k/top-p candidate set, padded with -1, which TRL main’s
-fused head renormalizes the log-probs over as the sampler did; None without
-truncation, and on TRL releases, which do not record the sets.</p>
+<p>Each position’s top-k/top-p candidate set, padded with -1, which TRL’s fused
+head renormalizes the log-probs over as the sampler did; None without
+truncation.</p>
 
 
 </section>

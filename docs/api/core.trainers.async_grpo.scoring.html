@@ -1030,6 +1030,7 @@ which is what dropping them before packing would have done.</li>
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.scoring.GroupedQueue">GroupedQueue</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.scoring.GroupedQueue(inner)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>A view of the rollout queue that releases each group’s samples together.</p>
+<p>A bare <code>int</code> group id (a group with nothing to train) passes straight through.</p>
 </section>
 <section id="axolotl.core.trainers.async_grpo.scoring.ScoredRow" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.scoring.ScoredRow">ScoredRow</h3>
@@ -1205,10 +1206,10 @@ sequence longer than the budget is scored alone.</p>
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.scoring.pack_sequences">pack_sequences</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.scoring.pack_sequences(sequences, share_prefixes<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Tree-pack token sequences for a no-grad forward, as <code>TreeRow.pack</code> would.</p>
-<p>Besides the model inputs (<code>input_ids</code>, <code>position_ids</code>, <code>tree_*</code>), returns
-<code>positions</code>: the packed position of each sequence’s tokens, laid end to end, with
-<code>offsets</code> marking where each sequence starts, and <code>sizes</code>: the lengths of
-<code>input_ids</code>, <code>tree_kv_index</code>, <code>tree_cu_seqlens_q</code> and <code>offsets</code>, so a padded
+<p>Besides the model inputs (<code>input_ids</code>, <code>position_ids</code>, and the <code>tree_*</code> keys
+in <code>TreeRow.pack</code>’s format), returns <code>positions</code>: the packed position of each
+sequence’s tokens, laid end to end, with <code>offsets</code> marking where each sequence
+starts, and <code>sizes</code>: the lengths of <code>input_ids</code> and <code>offsets</code>, so a padded
 copy can be cut back.</p>
 </section>
 <section id="axolotl.core.trainers.async_grpo.scoring.score_step" class="level3">

@@ -1161,11 +1161,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-190"><a href="#cb1-190" aria-hidden="true" tabindex="-1"></a><span class="co">  # Liger's layer kernels.</span></span>
 <span id="cb1-191"><a href="#cb1-191" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_liger_loss</span><span class="kw">:</span><span class="at"> bool | None</span></span>
 <span id="cb1-192"><a href="#cb1-192" aria-hidden="true" tabindex="-1"></a><span class="co">  # Loss formulation to use. Synchronous GRPO: grpo, bnpo, dr_grpo, dapo, cispo, and the</span></span>
-<span id="cb1-193"><a href="#cb1-193" aria-hidden="true" tabindex="-1"></a><span class="co">  # others TRL's GRPOTrainer supports. Async GRPO: dapo (default, TRL's surrogate</span></span>
-<span id="cb1-194"><a href="#cb1-194" aria-hidden="true" tabindex="-1"></a><span class="co">  # clipped against the vLLM sampler), cispo (policy gradient weighted by the</span></span>
-<span id="cb1-195"><a href="#cb1-195" aria-hidden="true" tabindex="-1"></a><span class="co">  # policy/sampler ratio, capped at vllm_importance_sampling_cap), or, experimentally</span></span>
-<span id="cb1-196"><a href="#cb1-196" aria-hidden="true" tabindex="-1"></a><span class="co">  # and with TRL installed from main, score_centering (TRL's score centering with masked</span></span>
-<span id="cb1-197"><a href="#cb1-197" aria-hidden="true" tabindex="-1"></a><span class="co">  # importance sampling).</span></span>
+<span id="cb1-193"><a href="#cb1-193" aria-hidden="true" tabindex="-1"></a><span class="co">  # others TRL's GRPOTrainer supports. Async GRPO: score_centering (default, TRL's score</span></span>
+<span id="cb1-194"><a href="#cb1-194" aria-hidden="true" tabindex="-1"></a><span class="co">  # centering with masked importance sampling), dapo (TRL's surrogate clipped against</span></span>
+<span id="cb1-195"><a href="#cb1-195" aria-hidden="true" tabindex="-1"></a><span class="co">  # the vLLM sampler; the default for EBFT and NeMo Gym multi-turn), or cispo (policy</span></span>
+<span id="cb1-196"><a href="#cb1-196" aria-hidden="true" tabindex="-1"></a><span class="co">  # gradient weighted by the policy/sampler ratio, capped at</span></span>
+<span id="cb1-197"><a href="#cb1-197" aria-hidden="true" tabindex="-1"></a><span class="co">  # vllm_importance_sampling_cap).</span></span>
 <span id="cb1-198"><a href="#cb1-198" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">loss_type</span><span class="kw">:</span><span class="at"> str | None</span></span>
 <span id="cb1-199"><a href="#cb1-199" aria-hidden="true" tabindex="-1"></a><span class="co">  # Whether to exclude truncated completions from loss calculation.</span></span>
 <span id="cb1-200"><a href="#cb1-200" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mask_truncated_completions</span><span class="kw">:</span><span class="at"> bool = False</span></span>

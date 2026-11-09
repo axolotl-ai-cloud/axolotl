@@ -1012,8 +1012,9 @@ or the subclass passed as <code>loop_cls</code>.</p>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    scale_rewards<span class="op">=</span><span class="st">'group'</span>,</span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    reward_num_workers<span class="op">=</span><span class="dv">1</span>,</span>
 <span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>    trainer_scored<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    skip_zero_advantage<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>TRL’s rollout loop with GRPOTrainer’s reward options and parallel scoring.</p>
 <p>Subclasses that score each rollout themselves set <code>_provides_rollout_reward</code>
 and return the reward from <code>_generate_one</code>; it is scored as one more reward
@@ -1021,7 +1022,9 @@ column, named <code>_rollout_reward_name</code>, after the reward functions.</p>
 <p>With <code>trainer_scored</code>, the trainer adds reward columns that need the GPU, so
 this process scores its own columns but leaves the advantage pending: samples
 carry a NaN advantage and a payload under <code>SCORE_PAYLOAD</code> (the group’s row
-count, the columns scored here and <code>_trainer_score_payload</code>).</p>
+count, the columns scored here and <code>_trainer_score_payload</code>). Otherwise, with
+<code>skip_zero_advantage</code>, a group whose every advantage is zero is not sent: like
+TRL’s loop, it scores to no sample and its bare id goes on the queue.</p>
 </section>
 <section id="axolotl.core.trainers.async_grpo.rollout.RewardProcessPool" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.rollout.RewardProcessPool">RewardProcessPool</h3>
