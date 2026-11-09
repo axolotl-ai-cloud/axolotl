@@ -346,8 +346,8 @@ class GRPOStrategy:
                 or a HF hub path to the reward model.
 
         Returns:
-            RewardFunc: A callable that accepts prompts and completions and returns rewards,
-                or a path to a reward model.
+            A callable that accepts prompts and completions and returns rewards, or a
+                path to a reward model.
 
         Raises:
             ValueError: If the reward function does not accept at least two arguments.

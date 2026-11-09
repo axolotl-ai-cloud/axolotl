@@ -162,7 +162,7 @@ def merge_fsdp_weights(
             shutil.rmtree(checkpoint_dir_)
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `merge_fsdp_weights`.
 
