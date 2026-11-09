@@ -167,6 +167,31 @@ def test_coreweave_destination_caps_chain_and_hot_loads(tmp_path):
     assert publisher.identity == "c"
 
 
+@pytest.mark.skipif(
+    not hasattr(torch.backends, "fp32_precision"), reason="needs fp32_precision"
+)
+def test_fingerprint_reads_unset_precision_as_its_effective_value():
+    matmul = torch.backends.cuda.matmul
+    previous = matmul.fp32_precision
+    try:
+        matmul.fp32_precision = "none"
+        unset = fingerprint_digest(
+            merge_fingerprint(export="merged", base_identity="b", device="cpu")
+        )
+        # torch resolves "none" in place once something reads the precision.
+        matmul.fp32_precision = "ieee"
+        resolved = fingerprint_digest(
+            merge_fingerprint(export="merged", base_identity="b", device="cpu")
+        )
+        matmul.fp32_precision = "tf32"
+        tf32 = fingerprint_digest(
+            merge_fingerprint(export="merged", base_identity="b", device="cpu")
+        )
+    finally:
+        matmul.fp32_precision = previous
+    assert unset == resolved != tf32
+
+
 def test_fingerprint_records_eager_and_live_tf32():
     previous = torch.get_float32_matmul_precision()
     try:

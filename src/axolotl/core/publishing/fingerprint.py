@@ -32,16 +32,25 @@ def merge_code_hash() -> str:
 
 def float32_precision() -> dict[str, str]:
     """Read the live TF32 state rather than the config that requested it."""
-    state = {"matmul_precision": torch.get_float32_matmul_precision()}
-    for name, backend in (
-        ("backends", torch.backends),
-        ("cuda_matmul", torch.backends.cuda.matmul),
-        ("cudnn", torch.backends.cudnn),
-    ):
-        precision = getattr(backend, "fp32_precision", None)
-        if precision is not None:
-            state[name] = str(precision)
-    if "cuda_matmul" not in state:
+    try:
+        matmul_precision = torch.get_float32_matmul_precision()
+    except RuntimeError:
+        # Backends set apart through the new API; their values below decide.
+        matmul_precision = "per-backend"
+    state = {"matmul_precision": matmul_precision}
+    root = getattr(torch.backends, "fp32_precision", None)
+    if root is not None:
+        # "none" defers to the parent setting, and torch resolves it in place on
+        # first use; unset everywhere means IEEE.
+        root = "ieee" if str(root) == "none" else str(root)
+        state["backends"] = root
+        for name, backend in (
+            ("cuda_matmul", torch.backends.cuda.matmul),
+            ("cudnn", torch.backends.cudnn),
+        ):
+            precision = str(getattr(backend, "fp32_precision", "none"))
+            state[name] = root if precision == "none" else precision
+    else:
         state["cuda_matmul_allow_tf32"] = str(torch.backends.cuda.matmul.allow_tf32)
         state["cudnn_allow_tf32"] = str(torch.backends.cudnn.allow_tf32)
     return state
