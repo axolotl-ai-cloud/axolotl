@@ -6,15 +6,16 @@
 TRL packs each rank's samples into a prefix trie (``TreeRow``) and passes the model
 the ``tree_*`` kwargs the hooks read. Besides ``install``, a trainer needs:
 
-- ``tree_recurrent_models``: TRL 1.16 loads the model inside ``AsyncGRPOTrainer``'s
-  constructor and refuses recurrent layers right away; while the trainer is built,
-  this installs the hooks on the model TRL loads and hides its ``layer_types``;
-- ``guarded_flops``: TRL 1.16's FLOPs estimate fails on some MoE configs;
+- ``tree_recurrent_models``: TRL loads the model inside ``AsyncGRPOTrainer``'s
+  constructor and right away refuses the recurrent layers it does not patch itself;
+  while the trainer is built, this installs the hooks on the model TRL loads and
+  hides its ``layer_types``;
+- ``guarded_flops``: TRL's FLOPs estimate fails on some MoE configs;
 - ``tree_kwargs_from_batch``: a collated batch's tree as forward kwargs, from either
   TRL format;
-- ``hidden_layer_types``: TRL 1.16 refuses a model with any non-attention
-  ``layer_types``; once ``install`` reports ``tree`` or ``chains``, hide them while
-  TRL builds its trainer;
+- ``hidden_layer_types``: TRL refuses a model with non-attention ``layer_types``
+  (TRL 1.17 takes Gated DeltaNet ones); once ``install`` reports ``tree`` or
+  ``chains``, hide them while TRL builds its trainer;
 - for ``chains``: ``ChainRow`` and the chain batchers, which make every sample its
   own chain (they import TRL), and ``sample_boundaries``, a chain row's samples as
   the varlen kwargs stock layers read.
@@ -50,8 +51,9 @@ def tree_kwargs_from_batch(inputs: Mapping[str, Any]) -> dict[str, Any]:
     """This rank's tree, from a batch collated by TRL, as the model's forward kwargs.
 
     TRL 1.16 pads ``tree_kv_index`` and the ``cu_seqlens`` with ``-1`` and gives the
-    longest segment and path in ``tree_max_seqlens``; huggingface/trl#7686 pads with
-    ``0`` and gives every length in ``tree_sizes`` (as its ``unpad_tree`` reads it).
+    longest segment and path in ``tree_max_seqlens``; TRL 1.17 (huggingface/trl#7686)
+    pads with ``0`` and gives every length in ``tree_sizes`` (as its ``unpad_tree``
+    reads it).
     """
     row = {key: _row(value) for key, value in inputs.items() if key.startswith("tree_")}
     if "tree_sizes" in row:
@@ -106,9 +108,10 @@ def sample_boundaries(tree: Mapping[str, Any]) -> dict[str, Any]:
 def hidden_layer_types(model: torch.nn.Module) -> Iterator[None]:
     """Hide ``layer_types`` from the trainer's ``__init__``.
 
-    TRL 1.16 rejects any non-attention layer, since a recurrent layer cannot follow
-    its trie by itself; ``install`` has made them follow it, or chose chains. The
-    check is the only reader of ``layer_types`` while TRL builds the trainer.
+    TRL rejects the recurrent layers it does not patch itself (TRL 1.16 all of them,
+    TRL 1.17 all but Gated DeltaNet), since they cannot follow its trie by themselves;
+    ``install`` has made them follow it, or chose chains. The check is the only reader
+    of ``layer_types`` while TRL builds the trainer.
     """
     text_config = model.config.get_text_config()
     layer_types = getattr(text_config, "layer_types", None)
@@ -155,9 +158,9 @@ def tree_recurrent_models(policy: Policy | None = None) -> Iterator[list[Support
 def guarded_flops(
     compute_flops_per_token: Callable[..., int],
 ) -> Callable[..., int]:
-    """TRL 1.16's FLOPs estimate reads ``decoder_sparse_step`` from every MoE config
-    (huggingface/trl#7069). Where the config has none, the MFU metrics read 0 instead
-    of the run ending at its first log."""
+    """TRL's FLOPs estimate (1.16 and 1.17) reads ``decoder_sparse_step`` from every
+    MoE config (huggingface/trl#7069). Where the config has none, the MFU metrics read
+    0 instead of the run ending at its first log."""
 
     def flops_per_token(config, seq_len):
         try:

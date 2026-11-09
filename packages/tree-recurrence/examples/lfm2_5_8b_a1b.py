@@ -4,8 +4,8 @@
 """Async GRPO with LoRA on LiquidAI LFM2.5-8B-A1B, sharing prefixes.
 
 LFM2.5-8B-A1B (8.3B total, 1.5B active) has 18 gated short-conv layers and 6
-attention layers, with MoE feed-forwards (32 experts, 4 active). TRL 1.16 refuses it
-for its conv layers; ``tree_recurrence`` runs each conv over its own path in the
+attention layers, with MoE feed-forwards (32 experts, 4 active). TRL refuses it for
+its conv layers; ``tree_recurrence`` runs each conv over its own path in the
 prefix trie (``tree_recurrent_models``). The conv is the layers' only recurrence, so
 every shared token runs once.
 
@@ -13,7 +13,7 @@ every shared token runs once.
   (``kernels-community/mamba-ssm``), so nothing has to be compiled.
 - It is a reasoning model that always thinks before answering, so completions need
   room: the server's ``--max-model-len`` and ``--max-completion-length`` below.
-- TRL 1.16's FLOPs estimate fails on its MoE config (huggingface/trl#7069);
+- TRL's FLOPs estimate fails on its MoE config (huggingface/trl#7069);
   ``guarded_flops`` makes the MFU metrics read 0 instead.
 
 This file runs on its own. Install, then, on two GPUs (the bf16 weights are ~17 GB;

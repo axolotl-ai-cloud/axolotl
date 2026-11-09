@@ -23,7 +23,7 @@ wrapped when it runs, so a hub kernel bound later is used too. A tree-packed for
 builds no cache (a row's final state is no sample's), whatever ``use_cache`` the
 caller left to the config.
 
-Each modeling module has one owner. TRL's ``patch_tree_gdn``
+Each modeling module has one owner. TRL 1.17's ``patch_tree_gdn``
 (huggingface/trl#7686) also wraps the Gated DeltaNet functions: a module it already
 patched is left to it, and a module patched here is added to its record, so it does
 not wrap the module again.
@@ -679,6 +679,7 @@ def _install_gated_delta_net(modeling: ModuleType, context: InstallContext) -> s
         except ImportError:
             packing = None
         patch = getattr(packing, "patch_tree_gdn", None)
+        declined = "is unavailable or declined the model"
         if patch is not None:
             state = _INSTALLED.get(modeling.__name__)
             if state is not None:  # hand the module over
@@ -689,11 +690,14 @@ def _install_gated_delta_net(modeling: ModuleType, context: InstallContext) -> s
                 if state.claimed is not None:
                     getattr(state.claimed, "_PATCHED", set()).discard(modeling)
                     state.claimed = None
-            if patch(context.model):
-                return "trl"
+            try:
+                if patch(context.model):
+                    return "trl"
+            except ImportError as error:  # its kernels import Triton
+                declined = f"cannot load its kernels ({error})"
         LOG.warning(
-            "TRL's patch_tree_gdn is unavailable or declined the model; Gated "
-            "DeltaNet follows trees through tree_recurrence"
+            f"TRL's patch_tree_gdn {declined}; Gated DeltaNet follows trees "
+            "through tree_recurrence"
         )
     state = _state(modeling, context)
     state.add(install_hook(modeling, "causal_conv1d_fn", _conv_hook))

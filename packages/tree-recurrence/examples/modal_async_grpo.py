@@ -56,7 +56,7 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .uv_pip_install("vllm==0.30.0")
     .uv_pip_install(
-        "trl==1.16.0",
+        "trl==1.17.1",
         "peft",
         "kernels==0.17.2",
         "math-verify[antlr4_13_2]",

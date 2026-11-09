@@ -4,8 +4,9 @@
 """Async GRPO with TRL on a hybrid recurrent model, keeping prefix sharing.
 
 TRL's ``AsyncGRPOTrainer`` packs each rank's rollouts into a prefix trie, so the
-prompt a group's completions share is forwarded once. TRL 1.16 refuses models with
-recurrent layers (Gated DeltaNet, Mamba2, short convs), since they would scan across
+prompt a group's completions share is forwarded once. TRL refuses models with
+recurrent layers it does not patch itself (TRL 1.16 all of them; TRL 1.17 all but
+Gated DeltaNet, which its own Triton kernels follow), since they would scan across
 the packed samples. ``tree_recurrent_models`` installs ``tree_recurrence`` on the
 model TRL loads, which makes those layers follow the trie, and keeps the model's
 ``layer_types`` from TRL's check until the trainer is built.

@@ -23,7 +23,7 @@ classifiers = [
 
 [project.optional-dependencies]
 transformers = ["transformers>=5.15"]
-trl = ["trl>=1.16,<1.17"]
+trl = ["trl>=1.16,<1.18"]
 
 [project.urls]
 Repository = "https://github.com/axolotl-ai-cloud/axolotl/tree/main/packages/tree-recurrence"
