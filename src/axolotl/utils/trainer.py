@@ -833,8 +833,8 @@ def setup_trainer(
         peft_config: Optional PEFT (Parameter-Efficient Fine-Tuning) configuration. Default is None.
 
     Returns:
-        A trainer instance (either `HFRLTrainer` or `HFCausalTrainer`) configured based
-            on the provided parameters.
+        A trainer built by `HFRLTrainerBuilder` or `HFCausalTrainerBuilder` from the
+            provided parameters.
     """
     from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 

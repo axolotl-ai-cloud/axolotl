@@ -92,7 +92,7 @@ class KDPlugin(BasePlugin):
             trainer (Trainer): Huggingface Trainer instance.
 
         Returns:
-            list: List containing the configured callback instances.
+            The configured callback instances.
         """
         if cfg.kd_temperature_min is not None and cfg.kd_online_server_base_url:
             callback = KDTemperatureSchedulerCallback(

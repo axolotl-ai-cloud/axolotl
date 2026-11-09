@@ -604,12 +604,12 @@ class PluginManager:
                 input_args.append(input_args_from_plugin)
         return input_args
 
-    def get_training_args_mixin(self):
+    def get_training_args_mixin(self) -> list[str]:
         """
-        Returns a list of dataclasses for all registered plugins' training args mixins'
+        Returns the training args mixin dataclasses for all registered plugins.
 
         Returns:
-        list[str]: A list of dataclsses
+            Import paths of the plugins' training args mixin dataclasses.
         """
         training_args = []
         for plugin in self.plugins.values():
