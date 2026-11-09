@@ -738,7 +738,37 @@ def setup_deepspeed_context_parallel_envs(cfg):
     os.environ.pop("PARALLELISM_CONFIG_CP_SIZE", None)
 
 
+def apply_plugin_distributed_env(cfg) -> dict[str, str]:
+    """Merges every plugin's ``get_distributed_env`` and applies it with
+    ``os.environ.setdefault``, warning if a process group already exists.
+    Returns the merged dict."""
+    from axolotl.integrations.base import PluginManager, get_builtin_plugins
+
+    if not (cfg.get("plugins") or get_builtin_plugins()):
+        return {}
+    env = PluginManager.get_instance().get_distributed_env(cfg)
+    # already-present keys were either user-set or forwarded to Ray workers up front
+    newly_set = sorted(key for key in env if key not in os.environ)
+    for key, value in env.items():
+        os.environ.setdefault(key, value)
+    if (
+        newly_set
+        and torch.distributed.is_available()
+        and torch.distributed.is_initialized()
+    ):
+        LOG.warning(
+            "Plugin distributed environment variables %s were set after the process "
+            "group was initialized and may not take effect for it. Set them before "
+            "torch.distributed.init_process_group, or let Axolotl create the process "
+            "group.",
+            newly_set,
+        )
+    return env
+
+
 def prepare_optim_env(cfg):
+    apply_plugin_distributed_env(cfg)
+
     if cfg.ddp_timeout:
         os.environ.setdefault("AXOLOTL_NCCL_TIMEOUT", str(cfg.ddp_timeout))
 

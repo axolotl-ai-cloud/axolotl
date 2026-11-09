@@ -120,6 +120,29 @@ See this repo for an example: [https://github.com/axolotl-ai-cloud/diff-transfor
 
 :::
 
+### Environment variables before distributed init
+
+Some backends need environment variables in place before the process group and its NCCL
+communicators exist (for example, `NCCL_MAX_CTAS` for kernels that spin across ranks).
+Override `get_distributed_env(cfg)` to return them:
+
+```python
+class MyPlugin(BasePlugin):
+    def get_distributed_env(self, cfg):
+        return {"NCCL_MAX_CTAS": "16"} if cfg.my_backend else {}
+```
+
+The hook runs during config loading for every CLI command, after plugin registration and
+config validation and before `pre_model_load`. On every path, including DeepSpeed (which
+initializes inside `prepare_optim_env` after the hook), it runs before the process group
+exists. Axolotl applies the merged result with `os.environ.setdefault`, so variables the
+user already set win. Two plugins requesting different values for the same variable is an
+error. With `use_ray`, the driver passes the variables to the workers through Ray's
+`runtime_env`, using any value the user set on the driver and skipping variables a
+submitted Ray job's own `runtime_env` already sets; if `ray.init()` was already called before Axolotl ran, the driver cannot
+forward them and logs a warning, so put them in that job's `runtime_env` instead. The hook
+may run on a machine without GPUs, so it must not touch CUDA or `torch.distributed`.
+
 ### Publishing an always-on training plugin
 
 An installed integration can register itself before configuration validation.
