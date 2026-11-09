@@ -232,6 +232,23 @@ def test_trl_backend(fake_trl):
     assert modeling in fake_trl._PATCHED
 
 
+def test_trl_backend_without_triton(fake_trl, monkeypatch, caplog):
+    """TRL 1.17's kernels import Triton when patching: without it, ours stay on."""
+    model = qwen3_5()
+    install(model)
+
+    def patch_tree_gdn(model):
+        raise ModuleNotFoundError("No module named 'triton'")
+
+    monkeypatch.setattr(fake_trl, "patch_tree_gdn", patch_tree_gdn)
+    support = install(model, backends={"gated_delta_net": "trl"})
+    assert support.owners == {"Qwen3_5GatedDeltaNet": "tree_recurrence"}
+    assert hook_of(modeling, "torch_chunk_gated_delta_rule") is not None
+    assert modeling in fake_trl._PATCHED
+    assert "triton" in caplog.text
+    assert_tree_matches_alone(model, branching_sequences())
+
+
 def test_trl_backend_without_trl_support(monkeypatch, caplog):
     packing = types.ModuleType(integration.TRL_PACKING)  # TRL 1.16: no patch_tree_gdn
     monkeypatch.setitem(sys.modules, integration.TRL_PACKING, packing)
