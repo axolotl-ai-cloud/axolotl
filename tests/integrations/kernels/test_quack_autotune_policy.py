@@ -734,9 +734,63 @@ def test_heuristic_gemm_tuned_rules(quack):
     quack_autotune_policy.install_quack_key_policy("pow2", tune=False)
     assert _fields(down(tuner, 600_000)) == (256, 256, 2, 1, True, False)
     assert _fields(down(tuner, 600_000, n=128, k=5120)) == (128, 64, 1, 1, True, False)
-    assert _fields(weight_grad(tuner, 600_000, n=64)) == (128, 64, 2, 1, True, False)
-    assert _fields(down(tuner, 600_000, n=5120, k=64)) == (128, 256, 1, 2, False, False)
+    gathered = _t(600_000, dtype=torch.int32)
+    assert _fields(weight_grad(tuner, 600_000, n=64, A_idx=gathered)) == (
+        128, 64, 1, 1, True, False,
+    )  # fmt: skip
+    # K = r: 600k rows over 32 experts, then 16k
+    assert _fields(down(tuner, 600_000, n=5120, k=64)) == (256, 256, 2, 1, False, False)
+    assert _fields(down(tuner, 16_000, n=5120, k=64)) == (128, 256, 1, 1, False, False)
     assert tuner.benched == []
+
+
+def _meta(*shape):
+    return torch.empty(shape, device="meta")
+
+
+@pytest.mark.parametrize(
+    "args, wanted",
+    [
+        # LoRA grad with r rows ([E, r, 2I]): swap_ab
+        (
+            dict(A=_meta(32, 131072), B=_meta(131072, 4096), out=_meta(32, 32, 4096), cu_seqlens_k=_meta(33)),
+            (256, 64, 2, 1, True, False, True),
+        ),
+        # LoRA grads with r columns, plain and gathered (no tma_gather)
+        (
+            dict(A=_meta(2048, 131072), B=_meta(131072, 32), out=_meta(32, 2048, 32), cu_seqlens_k=_meta(33)),
+            (256, 64, 2, 1, True, False, False),
+        ),
+        (
+            dict(A=_meta(4096, 16384), B=_meta(131072, 32), out=_meta(32, 4096, 32), cu_seqlens_k=_meta(33), A_idx=_meta(131072)),
+            (128, 64, 1, 1, True, False, False),
+        ),
+        # x P with A_idx: no tma_gather
+        (
+            dict(A=_meta(16384, 4096), B=_meta(32, 4096, 32), out=_meta(131072, 32), cu_seqlens_m=_meta(33), A_idx=_meta(131072)),
+            (128, 64, 1, 1, True, False, False),
+        ),
+        # u Q (K = r): by rows per expert
+        (
+            dict(A=_meta(131072, 32), B=_meta(32, 32, 4096), out=_meta(131072, 4096), cu_seqlens_m=_meta(33)),
+            (256, 256, 2, 1, False, False, False),
+        ),
+        (
+            dict(A=_meta(131072, 32), B=_meta(128, 32, 1408), out=_meta(131072, 1408), cu_seqlens_m=_meta(129)),
+            (128, 256, 1, 1, False, False, False),
+        ),
+        # an ungrouped K <= 128 call keeps the old pick
+        (
+            dict(A=_meta(4096, 64), B=_meta(64, 4096), out=_meta(4096, 4096)),
+            (128, 256, 1, 2, False, False, False),
+        ),
+    ],
+)  # fmt: skip
+def test_heuristic_rank_r_rules(args, wanted):
+    fields = quack_autotune_policy.heuristic_fields("gemm_tuned", args)
+    names = ("tile_m", "tile_n", "cluster_m", "cluster_n", "is_dynamic_persistent")
+    names += ("use_tma_gather", "swap_ab")
+    assert tuple(fields[n] for n in names) == wanted
 
 
 def test_heuristic_falls_back_to_the_first_valid_config(quack, caplog):

@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 import torch
 
+from tests.cuda_gates import AtSetup
+
 pytestmark = pytest.mark.nvfp4
 
 
@@ -28,7 +30,7 @@ def _dynamic_nvfp4_supported():
         pytest.param(
             True,
             marks=pytest.mark.skipif(
-                not _dynamic_nvfp4_supported(),
+                AtSetup(lambda: not _dynamic_nvfp4_supported()),
                 reason="dynamic NVFP4 requires two SM100+ GPUs",
             ),
         ),
