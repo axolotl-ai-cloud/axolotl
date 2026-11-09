@@ -27,11 +27,16 @@ def test_runtime_only_cuda_home_is_unavailable(sm120, monkeypatch, tmp_path):
     assert not marlin_w4a16_available()
 
 
-def test_cuda_home_with_nvcc_is_available(sm120, monkeypatch, tmp_path):
+@pytest.mark.parametrize("mode,available", [(0o755, True), (0o644, False)])
+def test_cuda_home_with_nvcc_needs_an_executable(
+    sm120, monkeypatch, tmp_path, mode, available
+):
     (tmp_path / "bin").mkdir()
-    (tmp_path / "bin" / "nvcc").touch()
+    nvcc = tmp_path / "bin" / "nvcc"
+    nvcc.touch()
+    nvcc.chmod(mode)
     monkeypatch.setattr(torch.utils.cpp_extension, "CUDA_HOME", str(tmp_path))
-    assert marlin_w4a16_available()
+    assert marlin_w4a16_available() is available
 
 
 def test_no_cuda_home_is_unavailable(sm120, monkeypatch):
