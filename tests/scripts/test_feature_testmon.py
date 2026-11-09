@@ -70,6 +70,41 @@ def test_invalid_baseline_runs_full(change):
     assert mod.choose(baseline() | change, baseline(), [], ROUTES, True)[0] == "full"
 
 
+def test_newly_tracked_empty_setting_keeps_the_baseline():
+    old = baseline({"src/liger/impl.py": "old"})
+    old["environment"] = {"python": "pinned", "settings": {"GPU_TYPE": "L40S"}}
+    new = baseline({"src/liger/impl.py": "new"})
+    new["environment"] = {
+        "python": "pinned",
+        "settings": {"GPU_TYPE": "L40S", "NF4_TEST_STACK": ""},
+    }
+    assert mod.choose(old, new, ["liger"], ROUTES, True)[0] == "testmon"
+
+
+@pytest.mark.parametrize(
+    "settings,packages",
+    [
+        ({"GPU_TYPE": "L40S", "NF4_TEST_STACK": "torchao"}, [["torch", "2.13.0"]]),
+        ({"GPU_TYPE": "H100"}, [["torch", "2.13.0"]]),
+        ({"GPU_TYPE": "L40S"}, [["torch", "2.14.1"]]),
+    ],
+)
+def test_set_setting_or_package_change_runs_full(settings, packages):
+    old = baseline()
+    old["environment"] = {
+        "python": "pinned",
+        "packages": [["torch", "2.13.0"]],
+        "settings": {"GPU_TYPE": "L40S"},
+    }
+    new = baseline()
+    new["environment"] = {
+        "python": "pinned",
+        "packages": packages,
+        "settings": settings,
+    }
+    assert mod.choose(old, new, [], ROUTES, True)[0] == "full"
+
+
 def test_missing_database_runs_full():
     assert mod.choose(baseline(), baseline(), [], ROUTES, False)[0] == "full"
 
