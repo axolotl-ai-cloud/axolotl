@@ -257,16 +257,14 @@ def _max_loras(cfg) -> int:
 def do_vllm_serve(
     config: Union[Path, str],
     cli_args: dict,
-):
+) -> None:
     """
-    Starts the VLLM server for serving LLM models used for online RL
+    Starts the vLLM server for serving LLM models used for online RL. Without a
+    custom `serve_module`, the process is replaced by the native vLLM server.
 
-    Args
-        :param config: Parsed dict of the YAML config
-        :param cli_args: dict of additional command-line arguments of type VllmServeCliArgs
-
-    Returns:
-        None; the process is replaced by the native vLLM server
+    Args:
+        config: Path to `axolotl` config YAML file.
+        cli_args: Additional command-line arguments (`VllmServeCliArgs` fields).
     """
     cfg = load_cfg(config)
     vllm_cfg = cfg.vllm

@@ -4,7 +4,7 @@ import importlib
 import inspect
 import os
 import warnings
-from typing import Any
+from typing import Any, Callable
 
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
@@ -381,7 +381,7 @@ class GRPOStrategy:
                 ) from exc
 
     @classmethod
-    def get_rollout_func(cls, rollout_func_fqn: str):
+    def get_rollout_func(cls, rollout_func_fqn: str) -> Callable[..., Any]:
         """
         Returns the rollout function from the given fully qualified name.
 
@@ -390,7 +390,7 @@ class GRPOStrategy:
                                     (e.g. my_module.my_rollout_func)
 
         Returns:
-            Callable rollout function
+            The rollout function.
         """
         try:
             rollout_func_module_name = rollout_func_fqn.split(".")[-1]

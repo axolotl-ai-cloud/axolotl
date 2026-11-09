@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, Union
+from typing import Any, Dict, Union
 
 import fire
 import torch
@@ -162,7 +162,7 @@ def merge_fsdp_weights(
             shutil.rmtree(checkpoint_dir_)
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
+def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any):
     """
     Parses `axolotl` config, CLI args, and calls `merge_fsdp_weights`.
 

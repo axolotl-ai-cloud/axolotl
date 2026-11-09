@@ -7,7 +7,7 @@ import random
 from contextlib import contextmanager
 from functools import partial
 from tempfile import NamedTemporaryFile
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -27,6 +27,18 @@ from axolotl.utils.distributed import (
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
+
+if TYPE_CHECKING:
+    from datasets import Dataset
+    from peft import PeftConfig
+    from transformers import (
+        PreTrainedModel,
+        PreTrainedTokenizer,
+        ProcessorMixin,
+        Trainer,
+    )
+
+    from axolotl.utils.data.evaluation import EvalDataset
 
 LOG = get_logger(__name__)
 
@@ -766,16 +778,16 @@ def prepare_optim_env(cfg):
 
 
 def setup_trainer(
-    cfg,
-    train_dataset,
-    eval_dataset,
-    model,
-    tokenizer,
-    processor,
-    total_num_steps,
-    model_ref=None,
-    peft_config=None,
-):
+    cfg: DictDefault,
+    train_dataset: "Dataset",
+    eval_dataset: "EvalDataset",
+    model: "PreTrainedModel",
+    tokenizer: "PreTrainedTokenizer",
+    processor: "ProcessorMixin | None",
+    total_num_steps: int | None,
+    model_ref: "PreTrainedModel | None" = None,
+    peft_config: "PeftConfig | None" = None,
+) -> "Trainer":
     """
     Helper method for instantiating and building a (causal or RLHF) trainer.
 
@@ -795,7 +807,9 @@ def setup_trainer(
             on the provided parameters.
     """
     from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
+    from axolotl.core.builders.base import TrainerBuilderBase
 
+    trainer_builder: TrainerBuilderBase
     if cfg.rl:
         trainer_builder = HFRLTrainerBuilder(cfg, model, tokenizer, processor)
         trainer_builder.model_ref = model_ref

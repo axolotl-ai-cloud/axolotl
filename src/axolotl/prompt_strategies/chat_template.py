@@ -124,10 +124,10 @@ class ChatTemplatePrompter(Prompter):
     def build_prompt(
         self,
         conversation: list[dict],
-        add_generation_prompt=False,
-        images=None,
-        tools=None,
-        real_last_index=None,
+        add_generation_prompt: bool = False,
+        images: list | None = None,
+        tools: list[dict] | None = None,
+        real_last_index: int | None = None,
     ):
         """
         Build a prompt from a conversation.
@@ -137,6 +137,8 @@ class ChatTemplatePrompter(Prompter):
             add_generation_prompt: Whether to add a generation prompt.
             images: A list of images. (optional)
             tools: A list of tools. (optional)
+            real_last_index: Index of the conversation's last turn when rendering a
+                prefix of it. (optional)
         """
         chat_template_kwargs = {
             "chat_template": self.chat_template,
