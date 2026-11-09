@@ -15,11 +15,15 @@ from transformers import PreTrainedModel, TrainerCallback
 from transformers.trainer_utils import SaveStrategy
 from tree_recurrence.integrations.trl import (
     ChainFixedCountBatcher,
-    ChainTokenBudgetBatcher,
     hidden_layer_types,
 )
 
 from axolotl.core.trainers.async_grpo.config import AxolotlAsyncGRPOConfig
+from axolotl.core.trainers.async_grpo.dispatch import (
+    FreshChainTokenBudgetBatcher,
+    FreshTokenBudgetBatcher,
+    on_demand_dispatch,
+)
 from axolotl.core.trainers.async_grpo.loss import AsyncGRPOLossMixin
 from axolotl.core.trainers.async_grpo.progress import (
     STOP_KEY,
@@ -52,7 +56,6 @@ from axolotl.core.trainers.async_grpo.trl_compat import (
     EmptyIterableDataset,
     FixedCountBatcher,
     RolloutQueueDataset,
-    TokenBudgetBatcher,
     add_fused_lm_head,
     check_version,
     install_runtime_patches,
@@ -412,9 +415,9 @@ class AxolotlAsyncGRPOTrainer(
         )
         if not self._trainer_scorers:
             token_batcher, count_batcher = (
-                (TokenBudgetBatcher, FixedCountBatcher)
+                (FreshTokenBudgetBatcher, FixedCountBatcher)
                 if self._share_prefixes
-                else (ChainTokenBudgetBatcher, ChainFixedCountBatcher)
+                else (FreshChainTokenBudgetBatcher, ChainFixedCountBatcher)
             )
             replacements: dict[str, Any] = {
                 "TokenBudgetBatcher": _stop_aware(token_batcher),
@@ -425,7 +428,7 @@ class AxolotlAsyncGRPOTrainer(
                     progress=self._progress,
                 ),
             }
-            with patched_trainer_module(**replacements):
+            with patched_trainer_module(**replacements), on_demand_dispatch():
                 return super().get_train_dataloader()
         # TRL's dataloader with the step planner in place of its batchers.
         num_processes = self.accelerator.num_processes
@@ -481,23 +484,24 @@ class AxolotlAsyncGRPOTrainer(
                 )
         else:
             dataset = EmptyIterableDataset()
-        return self.accelerator.prepare(
-            DataLoader(
-                dataset,
-                batch_size=1,
-                collate_fn=ScoringCollator(
-                    self.processing_class.pad_token_id,
-                    num_processes,
-                    groups_trained=self._trained_groups,
-                    metrics=self._metrics["train"],
-                    token_budget=max(self.args.token_budget or 0, 0),
-                    recorder=self._trace_recorder,
-                    # `score_step` reports which groups trained.
-                    scorers=self._trainer_scorers,
-                ),
-                num_workers=0,
+        with on_demand_dispatch():
+            return self.accelerator.prepare(
+                DataLoader(
+                    dataset,
+                    batch_size=1,
+                    collate_fn=ScoringCollator(
+                        self.processing_class.pad_token_id,
+                        num_processes,
+                        groups_trained=self._trained_groups,
+                        metrics=self._metrics["train"],
+                        token_budget=max(self.args.token_budget or 0, 0),
+                        recorder=self._trace_recorder,
+                        # `score_step` reports which groups trained.
+                        scorers=self._trainer_scorers,
+                    ),
+                    num_workers=0,
+                )
             )
-        )
 
     def get_batch_samples(self, epoch_iterator, num_batches, device):
         if self._rollouts_stopped:

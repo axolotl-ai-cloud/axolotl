@@ -274,6 +274,36 @@ class TestSampleFilterQueue:
         assert filtered.get(timeout=1).advantage == 1.0
         assert progress.stop is None
 
+    def test_a_held_row_that_goes_stale_is_dropped_and_accounted(self):
+        """A batcher carries a kept row into a later micro-batch; by then the policy
+        moved on. The group counts as dropped once none of its kept rows is left,
+        unless another of its rows trained."""
+        version = 3
+        filtered, consumed, metrics = self._filter(
+            [
+                _sample(0, 1.0, model_version=3, group_rows=2),
+                _sample(0, -1.0, model_version=3, group_rows=2),
+                _sample(1, 1.0, model_version=3, group_rows=1),
+            ],
+            model_version=lambda: version,
+            max_staleness=0,
+        )
+        for _ in range(3):
+            filtered.get(timeout=1)
+        assert filtered.still_fresh(0) and filtered.still_fresh(1)
+        version = 4
+        assert not filtered.still_fresh(0)
+        filtered.drop_held(0)
+        assert consumed == set()
+        filtered.drop_held(0)
+        assert consumed == {0}
+        assert filtered._progress.drop_reasons == {"stale": 1}
+        filtered._progress.train([1])
+        filtered.drop_held(1)
+        assert consumed == {0}
+        assert metrics["sample/dropped_stale_total"] == [1.0, 1.0, 1.0]
+        assert filtered.still_fresh(7)
+
     def test_timeout_spans_dropped_samples(self):
         filtered, _, _ = self._filter([_sample(0, 0.0)])
         start = time.monotonic()
@@ -1048,6 +1078,8 @@ def test_dropped_tail_ends_the_epochs_without_another_step(
         old_log_probs=lambda g: 0.0,
         max_steps=-1,
         num_train_epochs=1,
+        # the stub tags every sample version 0; the tail must drop for its advantage
+        max_staleness=8,
     )
     for index, sample in enumerate(samples):
         sample.advantage = 0.0 if sample.group_id >= 8 else index % 4 - 1.5
@@ -1783,7 +1815,9 @@ def test_staleness_zero_trains_on_fresh_samples_and_reports_rollouts(
     tmp_path, monkeypatch
 ):
     """`use_data_producer` maps onto max_staleness 0: samples of an older policy are
-    dropped, training does not stall, and plugins see every step's rollouts."""
+    dropped, every micro-batch trains on samples of the policy it updates (the
+    dataloader must not pull a step early), training does not stall, and plugins
+    see every step's rollouts."""
     from datasets import Dataset
     from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaConfig
     from trl.experimental.async_grpo import async_grpo_trainer, packing
@@ -1828,7 +1862,8 @@ def test_staleness_zero_trains_on_fresh_samples_and_reports_rollouts(
             completion_mask=np.asarray(
                 [0] * len(prompt_ids) + [1] * len(completion), dtype=np.int64
             ),
-            old_log_probs=np.full(len(prompt_ids) + len(completion), -1.0),
+            # the version rides in the old log-probs, to be read back when trained
+            old_log_probs=np.full(len(prompt_ids) + len(completion), -1.0 - version),
             **unsampled_fields(len(prompt_ids) + len(completion)),
             advantage=float(g) - 1.5,
             model_version=version,
@@ -1861,13 +1896,22 @@ def test_staleness_zero_trains_on_fresh_samples_and_reports_rollouts(
         rollout_worker=worker,
         weight_transfer=StubTransfer(),
     )
+    trained = []
+    compute_loss = trainer.compute_loss
+
+    def recording(model, inputs, *args, **kwargs):
+        selected = inputs["token_index"] >= 0
+        versions = (-1.0 - inputs["old_log_probs"][selected]).round().long()
+        trained.append((trainer.model_version, sorted(set(versions.tolist()))))
+        return compute_loss(model, inputs, *args, **kwargs)
+
+    monkeypatch.setattr(trainer, "compute_loss", recording)
     trainer.train()
 
     assert trainer.state.global_step == 3
     assert worker.versions == [1, 2, 3, 4]
-    # TRL counts a group when it is collated; the dataloader fetches a micro-batch
-    # ahead, so the next step's group is counted too.
-    assert {0, 1, 2} <= trainer._trained_groups
+    assert trained == [(1, [1]), (2, [2]), (3, [3])]
+    assert trainer._trained_groups == {0, 1, 2}
     logs = trainer.state.log_history
     assert sum(log.get("sample/dropped_stale_total", 0) for log in logs) >= 4
 
