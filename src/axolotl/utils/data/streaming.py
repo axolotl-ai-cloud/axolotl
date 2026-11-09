@@ -279,6 +279,9 @@ def encode_packed_streaming(
         # workaround by using the position id logic for now in trainer
         drop_attention_mask=multipack_attn,
     )
+    if len(train_dataset) == 0:
+        # every row in this buffer was outside the sequence length range
+        return {}
 
     lengths = get_dataset_lengths(train_dataset)
     label_counts = label_start_counts = None

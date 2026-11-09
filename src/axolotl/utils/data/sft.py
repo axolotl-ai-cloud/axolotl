@@ -230,12 +230,14 @@ def _load_streaming_dataset(
     pretraining_config: DictDefault, cfg: DictDefault, tokenizer: PreTrainedTokenizer
 ) -> IterableDataset:
     """Load and prepare a streaming dataset for pretraining."""
-    # Create dataset wrapper partial function
+    # Tokenize each buffer in-process: a pool per small buffer costs more than it saves,
+    # and DataLoader workers are daemonic, so they cannot start one. None, not 1:
+    # datasets runs map(num_proc=1) in a one-process pool.
     dataset_wrapper_partial = functools.partial(
         get_dataset_wrapper,
         dataset_config=pretraining_config,
         tokenizer=tokenizer,
-        cfg=cfg,
+        cfg=DictDefault({**cfg, "dataset_num_proc": None}),
         dataset_base_type=pretraining_config["type"],
     )
 
