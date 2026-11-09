@@ -948,10 +948,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.utils.trainer.add_pose_position_ids" id="toc-axolotl.utils.trainer.add_pose_position_ids" class="nav-link" data-scroll-target="#axolotl.utils.trainer.add_pose_position_ids">add_pose_position_ids</a></li>
-  <li><a href="#axolotl.utils.trainer.add_position_ids" id="toc-axolotl.utils.trainer.add_position_ids" class="nav-link" data-scroll-target="#axolotl.utils.trainer.add_position_ids">add_position_ids</a></li>
   <li><a href="#axolotl.utils.trainer.apply_plugin_distributed_env" id="toc-axolotl.utils.trainer.apply_plugin_distributed_env" class="nav-link" data-scroll-target="#axolotl.utils.trainer.apply_plugin_distributed_env">apply_plugin_distributed_env</a></li>
   <li><a href="#axolotl.utils.trainer.create_weighted_mask" id="toc-axolotl.utils.trainer.create_weighted_mask" class="nav-link" data-scroll-target="#axolotl.utils.trainer.create_weighted_mask">create_weighted_mask</a></li>
-  <li><a href="#axolotl.utils.trainer.filter_sequences_by_length" id="toc-axolotl.utils.trainer.filter_sequences_by_length" class="nav-link" data-scroll-target="#axolotl.utils.trainer.filter_sequences_by_length">filter_sequences_by_length</a></li>
   <li><a href="#axolotl.utils.trainer.setup_deepspeed_context_parallel_envs" id="toc-axolotl.utils.trainer.setup_deepspeed_context_parallel_envs" class="nav-link" data-scroll-target="#axolotl.utils.trainer.setup_deepspeed_context_parallel_envs">setup_deepspeed_context_parallel_envs</a></li>
   <li><a href="#axolotl.utils.trainer.setup_trainer" id="toc-axolotl.utils.trainer.setup_trainer" class="nav-link" data-scroll-target="#axolotl.utils.trainer.setup_trainer">setup_trainer</a></li>
   </ul></li>
@@ -984,20 +982,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>use the PoSE technique to extend the context length by randomly skipping</td>
 </tr>
 <tr class="even">
-<td><a href="#axolotl.utils.trainer.add_position_ids">add_position_ids</a></td>
-<td>Handle both single-example and batched data.</td>
-</tr>
-<tr class="odd">
 <td><a href="#axolotl.utils.trainer.apply_plugin_distributed_env">apply_plugin_distributed_env</a></td>
 <td>Merges every plugin’s <code>get_distributed_env</code> and applies it with</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.trainer.create_weighted_mask">create_weighted_mask</a></td>
 <td>Weight each contiguous run of unmasked (!= -100) labels so it sums to 1.</td>
-</tr>
-<tr class="odd">
-<td><a href="#axolotl.utils.trainer.filter_sequences_by_length">filter_sequences_by_length</a></td>
-<td>Filter sequences outside valid length range [min_sequence_len, sequence_len].</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.utils.trainer.setup_deepspeed_context_parallel_envs">setup_deepspeed_context_parallel_envs</a></td>
@@ -1025,59 +1015,38 @@ context_len. There may be multiple turns in the context, so we want to
 make sure we take into account the maximum possible number of skips
 remaining in each sample.</p>
 </section>
-<section id="axolotl.utils.trainer.add_position_ids" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.trainer.add_position_ids">add_position_ids</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.add_position_ids(sample)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Handle both single-example and batched data.
-- single example: sample[‘input_ids’] is a list[int]
-- batched data: sample[‘input_ids’] is a list[list[int]]</p>
-</section>
 <section id="axolotl.utils.trainer.apply_plugin_distributed_env" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.trainer.apply_plugin_distributed_env">apply_plugin_distributed_env</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.apply_plugin_distributed_env(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.apply_plugin_distributed_env(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Merges every plugin’s <code>get_distributed_env</code> and applies it with
 <code>os.environ.setdefault</code>, warning if a process group already exists.
 Returns the merged dict.</p>
 </section>
 <section id="axolotl.utils.trainer.create_weighted_mask" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.trainer.create_weighted_mask">create_weighted_mask</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.create_weighted_mask(labels)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.create_weighted_mask(labels)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Weight each contiguous run of unmasked (!= -100) labels so it sums to 1.</p>
-</section>
-<section id="axolotl.utils.trainer.filter_sequences_by_length" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.utils.trainer.filter_sequences_by_length">filter_sequences_by_length</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.filter_sequences_by_length(</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    sample,</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    sequence_len<span class="op">=</span><span class="dv">2048</span>,</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    min_sequence_len<span class="op">=</span><span class="dv">2</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    raise_on_drop<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Filter sequences outside valid length range [min_sequence_len, sequence_len].</p>
-<p>Drops samples that are either too short (&lt; min_sequence_len) or too long (&gt; sequence_len).</p>
-<p>Works for both single-example (list[int]) or batched (list[list[int]]).</p>
-<p>If raise_on_drop is set, the code raises a ValueError if a sample is
-encountered that is too long and would have been dropped.</p>
 </section>
 <section id="axolotl.utils.trainer.setup_deepspeed_context_parallel_envs" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.trainer.setup_deepspeed_context_parallel_envs">setup_deepspeed_context_parallel_envs</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.setup_deepspeed_context_parallel_envs(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.setup_deepspeed_context_parallel_envs(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Map <code>context_parallel_size</code> onto accelerate’s DeepSpeed Ulysses (ALST) <code>sp</code> axis.</p>
 <p>ZeRO owns sharding, so the ranks outside the CP group replicate; accelerate registers
 the sequence-parallel groups with the engine and shards each batch across the group.</p>
 </section>
 <section id="axolotl.utils.trainer.setup_trainer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.trainer.setup_trainer">setup_trainer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.setup_trainer(</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    train_dataset,</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    eval_dataset,</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    processor,</span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    total_num_steps,</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    model_ref<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.trainer.setup_trainer(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    cfg,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    train_dataset,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    eval_dataset,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    tokenizer,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    processor,</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>    total_num_steps,</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    model_ref<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>    peft_config<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Helper method for instantiating and building a (causal or RLHF) trainer.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
