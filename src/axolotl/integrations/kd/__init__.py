@@ -53,7 +53,9 @@ class KDPlugin(BasePlugin):
             "kd_normalize_topk": cfg.kd_normalize_topk,
         }
 
-    def get_collator_cls_and_kwargs(self, cfg, is_eval=False):
+    def get_collator_cls_and_kwargs(
+        self, cfg, is_eval=False
+    ) -> tuple[type, dict] | None:
         if not cfg.kd_trainer:
             return None
 
