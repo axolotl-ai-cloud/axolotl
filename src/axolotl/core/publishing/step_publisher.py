@@ -137,6 +137,9 @@ class StepPublisher:
             resume=True,
         )
         self.state_dir = Path(state_dir) if state_dir is not None else None
+        # Set on every rank when readers may not serve the committed checkpoint: a
+        # delta on it could not apply, so the next publish is full.
+        self._force_reason: str | None = None
         self._stream = None
         idle = [
             r
@@ -252,6 +255,8 @@ class StepPublisher:
         )
         fingerprint = self.fingerprint()
         force_full, reason = self._agree(fingerprint)
+        if self._force_reason is not None:
+            force_full, reason = True, self._force_reason
         timings: dict[str, float] = {}
         staged: StagedCheckpoint | None = None
         error = None
@@ -294,6 +299,7 @@ class StepPublisher:
                 self.chain.commit(staged)
                 self._record(step)
                 committed = True
+                self._force_reason = None
             elif staged is not None:
                 self.chain.discard(staged)
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -319,6 +325,8 @@ class StepPublisher:
         )
         if decision["action"] == "discard":
             metrics["errors"] = decision["errors"]
+        if decision.get("served_unknown"):
+            self._force_reason = "readers may not serve the committed checkpoint"
         return metrics
 
     def _decide(self, identity, reports, step) -> dict[str, Any]:
@@ -350,7 +358,13 @@ class StepPublisher:
         except Exception as exc:  # pylint: disable=broad-exception-caught
             LOG.exception("Publishing the index of %s failed", identity)
             self.destination.discard_files(identity)
-            return {"action": "discard", "errors": [repr(exc)], "metrics": metrics}
+            # the hot-load may have reached some readers, so no delta can follow it
+            return {
+                "action": "discard",
+                "errors": [repr(exc)],
+                "metrics": metrics,
+                "served_unknown": True,
+            }
         finally:
             shutil.rmtree(directory, ignore_errors=True)
         metrics["seconds_publish_index"] = time.perf_counter() - start
@@ -358,7 +372,13 @@ class StepPublisher:
             self.state_dir.mkdir(parents=True, exist_ok=True)
             _write_json(
                 self.state_dir / "committed.json",
-                {"identity": identity, "step": step, "world": self.world, "full": full},
+                {
+                    "identity": identity,
+                    "step": step,
+                    "world": self.world,
+                    "full": full,
+                    "operation": self.destination.last_operation,
+                },
             )
         return {"action": "commit", "metrics": metrics}
 
@@ -464,7 +484,30 @@ class StepPublisher:
                     ", ".join(sorted(set(statuses))),
                 )
             self._drop_baseline()
+            return ok
+        assert committed is not None
+        if not self._committed_is_served(committed):
+            self._force_reason = (
+                "the deployment does not serve the committed checkpoint"
+            )
+            LOG.warning(
+                "Readers do not serve %s; the next publish will be a full checkpoint",
+                committed["identity"],
+            )
         return ok
+
+    def _committed_is_served(self, committed: dict) -> bool:
+        """Collective: rank 0 asks the destination, every rank gets the answer."""
+        served = None
+        if self.rank == 0:
+            try:
+                served = self.destination.serves(
+                    committed["identity"], committed.get("operation")
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                LOG.exception("Could not confirm what the deployment serves")
+                served = False
+        return bool(self.comm.broadcast_object(served))
 
     def _rebuild(self, data, record) -> bool:
         identity = record["identity"]

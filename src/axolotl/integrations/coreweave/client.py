@@ -84,6 +84,23 @@ class CoreWeaveClient:
             f"CoreWeave hot-load {operation} did not converge to {identity}"
         )
 
+    def serves(self, operation, identity) -> bool:
+        """One look: did ``operation`` load ``identity`` and does every replica serve it?"""
+        path = f"/v1alpha1/inference/hotLoads/{quote(operation, safe='')}"
+        hot_load = self._request("GET", path)["hotLoad"]
+        if (
+            hot_load["spec"]["identity"] != identity
+            or hot_load["spec"]["deploymentId"] != self.config.deployment_id
+            or hot_load["status"]["state"] != "HOT_LOAD_STATE_COMPLETED"
+        ):
+            return False
+        if not self._replicas_ready(
+            path, identity, time.monotonic() + min(self.config.timeout, 60)
+        ):
+            return False
+        self.ready_identity = identity
+        return True
+
     def _replicas_ready(self, path, identity, deadline):
         token, seen, count, ready = "", set(), 0, True
         while time.monotonic() < deadline:

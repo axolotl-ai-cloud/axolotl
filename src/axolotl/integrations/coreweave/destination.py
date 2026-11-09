@@ -40,17 +40,25 @@ class CoreWeaveDestination(Destination):
     def publish(self, staged: StagedCheckpoint) -> None:
         self.client.ready_identity = None
         self.upload(staged.path, staged.identity)
-        self.client.hot_load(staged.identity, base_identity=staged.base_identity)
+        self.last_operation = self.client.hot_load(
+            staged.identity, base_identity=staged.base_identity
+        )
 
     def publish_files(self, directory, identity, names):
         self.s3.publish_files(directory, identity, names)
 
     def publish_index(self, directory, identity, *, base_identity, full):
         self.client.ready_identity = None
+        self.last_operation = None
         self.s3.publish_index(
             directory, identity, base_identity=base_identity, full=full
         )
-        self.client.hot_load(identity, base_identity=base_identity)
+        self.last_operation = self.client.hot_load(
+            identity, base_identity=base_identity
+        )
+
+    def serves(self, identity, operation) -> bool:
+        return operation is not None and self.client.serves(operation, identity)
 
     def recover(self, staged: StagedCheckpoint, operation=None) -> None:
         """Confirm an existing or retried hot-load without issuing a duplicate."""

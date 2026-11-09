@@ -529,6 +529,14 @@ def test_coreweave_destination_hot_loads_after_the_index(tmp_path):
         "weights/two/model.safetensors.index.json",
         ("hot_load", "two", "one"),
     ]
+    assert destination.last_operation is None
+    client.hot_load.side_effect = lambda identity, base_identity: f"op-{identity}"
+    destination.publish_index(directory, "three", base_identity="two", full=False)
+    assert destination.last_operation == "op-three"
+    client.serves.return_value = True
+    assert destination.serves("three", "op-three")
+    client.serves.assert_called_with("op-three", "three")
+    assert not destination.serves("three", None)
 
 
 class FakePublisher:

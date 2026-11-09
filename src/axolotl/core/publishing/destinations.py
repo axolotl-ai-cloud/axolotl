@@ -65,6 +65,14 @@ class Destination:
     def discard_files(self, identity: str) -> None:
         """Forget files of a per-rank publish that will not be committed."""
 
+    # The handle of the last ``publish_index`` (e.g. a hot-load operation), kept in
+    # the commit record so a resumed run can ask whether readers still see it.
+    last_operation: Any = None
+
+    def serves(self, identity: str, operation: Any) -> bool:
+        """Whether readers see ``identity`` now; nothing to check by default."""
+        return True
+
 
 def index_files(directory: Path, full: bool) -> list[str]:
     """The files rank 0 publishes last: config for a full checkpoint, then the index."""

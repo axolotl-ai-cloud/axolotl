@@ -85,17 +85,24 @@ def split_adapter(state, rank, world, *, ep=None):
 
 
 class FailingDestination(LocalDestination):
-    def __init__(self, root, fail_index_at=None):
+    def __init__(self, root, fail_index_at=None, serves=True):
         super().__init__(root)
-        self.fail_index_at, self.calls = fail_index_at, 0
+        self.fail_index_at, self.calls, self.served = fail_index_at, 0, serves
+        self.asked = []
 
     def publish_index(self, directory, identity, *, base_identity, full):
         self.calls += 1
+        self.last_operation = None
         if self.calls == self.fail_index_at:
             raise RuntimeError("hot-load failed")
         super().publish_index(
             directory, identity, base_identity=base_identity, full=full
         )
+        self.last_operation = f"op-{identity}"
+
+    def serves(self, identity, operation):
+        self.asked.append((identity, operation))
+        return self.served
 
 
 def _worker(rank, world, init_file, spec_path):
@@ -118,7 +125,9 @@ def _worker(rank, world, init_file, spec_path):
             )
 
         pieces, _ = pieces_of(spec["adapters"][0])
-        destination = FailingDestination(spec["published"], spec.get("fail_index_at"))
+        destination = FailingDestination(
+            spec["published"], spec.get("fail_index_at"), spec.get("serves", True)
+        )
         publisher = StepPublisher(
             base=base,
             adapter_config=config,
@@ -145,6 +154,8 @@ def _worker(rank, world, init_file, spec_path):
         if "restore_step" in spec:
             _, data = pieces_of(spec["restore_adapter"])
             results.append({"restored": publisher.restore(data, spec["restore_step"])})
+            if rank == 0:
+                results[-1]["asked"] = destination.asked
         for step, adapter in zip(spec["steps"], spec["adapters"], strict=True):
             _, data = pieces_of(adapter)
             metrics = publisher.publish(data, step)
@@ -305,18 +316,19 @@ def test_failed_publish_rolls_back_every_rank(tmp_path, setup):
     first = results[0][0]["identity"]
     for rank_results in results:
         assert [m["chain_identity"] for m in rank_results][:3] == [first] * 3
-        assert [m["delta_count"] for m in rank_results] == [0, 0, 0, 1]
+        assert [m["delta_count"] for m in rank_results] == [0, 0, 0, 0]
+        # a failed hot-load may have reached readers: only a full checkpoint is safe
+        assert [m["full"] for m in rank_results] == [True, False, True, True]
+        assert rank_results[3]["reason"] == (
+            "readers may not serve the committed checkpoint"
+        )
     published = sorted(p.name for p in (tmp_path / "published").iterdir())
     assert published == sorted([first, results[0][3]["identity"]])
     last = tmp_path / "published" / results[0][3]["identity"]
-    index = json.loads((last / INDEX).read_text())["metadata"]
-    assert index["base_version"] == first
+    assert "delta_encoding" not in json.loads((last / INDEX).read_text())["metadata"]
     reference = tmp_path / "reference"
     lora_merge.merge_lora_sharded_efficient(base, adapters[3], reference)
-    assert_bytes_equal(
-        apply_delta(last, load_checkpoint(tmp_path / "published" / first)),
-        load_checkpoint(reference),
-    )
+    assert_bytes_equal(load_checkpoint(last), load_checkpoint(reference))
     for rank in range(2):
         work = tmp_path / "work" / "chain" / f"rank-{rank:05d}"
         assert not list(work.glob(".staging-*"))
@@ -360,7 +372,7 @@ def test_resume_rebuilds_the_baseline_and_continues_the_chain(
         restore_adapter=adapters[1],
     )
     for rank_results in results:
-        assert rank_results[0] == {"restored": True}
+        assert rank_results[0]["restored"] is True
         assert rank_results[1]["action"] == "commit"
         assert rank_results[1]["delta_count"] == 2
     assert not results[0][1]["full"]
@@ -388,8 +400,31 @@ def test_resume_keeps_a_surviving_baseline(tmp_path, committed_chain):
         restore_step=1,
         restore_adapter=adapters[1],
     )
-    assert all(r[0] == {"restored": True} for r in results)
+    assert all(r[0]["restored"] for r in results)
+    assert results[0][0]["asked"] == [[identities[1], f"op-{identities[1]}"]]
     assert not results[0][1]["full"] and results[0][1]["delta_count"] == 2
+
+
+def test_resume_publishes_full_when_readers_moved_on(tmp_path, committed_chain):
+    base, adapters, identities = committed_chain
+    results = run_ranks(
+        tmp_path,
+        2,
+        base=base,
+        adapters=adapters[2:3],
+        steps=[2],
+        work=tmp_path / "work",
+        published=tmp_path / "published",
+        restore_step=1,
+        restore_adapter=adapters[1],
+        serves=False,
+    )
+    for rank_results in results:
+        assert rank_results[0]["restored"]
+        assert rank_results[1]["full"] and rank_results[1]["delta_count"] == 0
+        assert rank_results[1]["reason"] == (
+            "the deployment does not serve the committed checkpoint"
+        )
 
 
 @pytest.mark.parametrize("case", ["wrong adapter", "other step", "no record"])
@@ -413,7 +448,7 @@ def test_resume_falls_back_to_a_full_checkpoint(tmp_path, committed_chain, case)
         **restore,
     )
     for rank_results in results:
-        assert rank_results[0] == {"restored": False}
+        assert rank_results[0]["restored"] is False
         assert rank_results[1]["full"] and rank_results[1]["delta_count"] == 0
         work = tmp_path / "work" / "chain"
         assert len(list(work.glob("rank-*/.baseline-*"))) == 2
