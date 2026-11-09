@@ -4,7 +4,7 @@
 """Async GRPO with LoRA on NVIDIA Nemotron 3.5 Lightning (30B-A3B), sharing prefixes.
 
 Nemotron 3.5 Lightning is a hybrid: 23 Mamba2 layers, 6 attention layers and 23 MoE
-layers (128 experts, 6 active). TRL 1.16 refuses it for its Mamba2 layers;
+layers (128 experts, 6 active). TRL refuses it for its Mamba2 layers;
 ``tree_recurrence`` makes them follow TRL's prefix trie (``tree_recurrent_models``),
 so each prompt is forwarded once for all its completions.
 
@@ -14,7 +14,7 @@ so each prompt is forwarded once for all its completions.
 - LoRA leaves the Mamba2 ``out_proj`` out: the fused kernel reads its weight
   directly, so an adapter there would be skipped in training.
 - TRL's tree attention runs FlashAttention 3, which needs Hopper GPUs (H100/H200).
-- TRL 1.16's FLOPs estimate reads ``decoder_sparse_step`` from every MoE config, which
+- TRL's FLOPs estimate reads ``decoder_sparse_step`` from every MoE config, which
   Nemotron-H lacks (huggingface/trl#7069), and would end the run at its first log;
   ``guarded_flops`` makes the MFU metrics read 0 instead.
 

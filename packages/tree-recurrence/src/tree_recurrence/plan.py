@@ -15,8 +15,9 @@ kwargs the model's forward receives. Both TRL formats are accepted:
 
 - TRL 1.16: ``tree_kv_index``, ``tree_cu_seqlens_q`` and ``tree_cu_seqlens_k``
   (collated with ``-1`` padding);
-- huggingface/trl#7686: ``tree_segment_parents`` and ``tree_segment_depths`` besides
-  those (``cu_seqlens`` collated with ``0`` padding), which are used as given.
+- TRL 1.17 (huggingface/trl#7686): ``tree_segment_parents`` and
+  ``tree_segment_depths`` besides those (``cu_seqlens`` collated with ``0`` padding),
+  which are used as given.
 
 A row of whole samples laid end to end is a trie without branches
 (``TreePlan.from_cu_seqlens``), so chains and trees take the same code path.

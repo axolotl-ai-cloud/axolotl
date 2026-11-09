@@ -26,6 +26,7 @@ from tree_testing import branching_sequences, reference_tree_attention
 
 pytest.importorskip("trl.experimental.async_grpo")
 from datasets import Dataset  # noqa: E402
+from test_trl import unsampled  # noqa: E402
 from tokenizers import Tokenizer, models  # noqa: E402
 from transformers import PreTrainedTokenizerFast  # noqa: E402
 from trl.experimental.async_grpo import (  # noqa: E402
@@ -113,6 +114,7 @@ class Rollouts:
                         [0] * prompt + [1] * (len(ids) - prompt), dtype=np.int64
                     ),
                     old_log_probs=np.full(len(ids), -4.0, dtype=np.float32),
+                    **unsampled(len(ids)),
                     advantage=float(self.rng.normal()),
                     model_version=self.model_version,
                     group_id=group,
@@ -207,8 +209,10 @@ def build_trainer(tmp_path, model=qwen3_5, peft_config=None):
 
 
 def test_trl_refuses_the_model_by_itself(tmp_path, cpu_trl):
-    with pytest.raises(ValueError, match="linear_attention"):
-        build_trainer(tmp_path)
+    # TRL 1.17 takes models whose only recurrent layers are Gated DeltaNet (Qwen3.5),
+    # through its own Triton kernels; Mamba2 layers it still refuses.
+    with pytest.raises(ValueError, match="NemotronHForCausalLM has"):
+        build_trainer(tmp_path, nemotron_h)
 
 
 @pytest.mark.parametrize("name", list(MODELS))
