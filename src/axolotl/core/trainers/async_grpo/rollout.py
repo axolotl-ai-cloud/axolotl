@@ -175,7 +175,9 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
     With ``trainer_scored``, the trainer adds reward columns that need the GPU, so
     this process scores its own columns but leaves the advantage pending: samples
     carry a NaN advantage and a payload under ``SCORE_PAYLOAD`` (the group's row
-    count, the columns scored here and ``_trainer_score_payload``).
+    count, the columns scored here and ``_trainer_score_payload``). Otherwise, with
+    ``skip_zero_advantage``, a group whose every advantage is zero is not sent: like
+    TRL's loop, it scores to no sample and its bare id goes on the queue.
     """
 
     _provides_rollout_reward: bool = False
@@ -184,6 +186,11 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
     # tool calls out of them. Loops that decode text themselves, or get messages from
     # an agent, set this to False and need no parser.
     _parses_responses = True
+    # Whether completions are sampled through TRL's `_generate_one_turn`, which records
+    # the candidate set top-k/top-p sampled each token from and the sampler's top
+    # log-probs score centering needs. Loops that call vLLM, or an agent, themselves
+    # set this to False.
+    _samples_through_trl = True
 
     def __init__(
         self,
@@ -193,9 +200,11 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
         scale_rewards: str = "group",
         reward_num_workers: int = 1,
         trainer_scored: bool = False,
+        skip_zero_advantage: bool = False,
         **kwargs,
     ):
         self._trainer_scored = trainer_scored
+        self._skip_zero_advantage = skip_zero_advantage
         provides_rollout_reward = self._provides_rollout_reward
         if trainer_scored:
             # TRL refuses a loop without a reward source; the trainer is one here.
@@ -230,6 +239,15 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
             if skip_parser:
                 tokenizer.response_template = None
         self._provides_rollout_reward = provides_rollout_reward
+        replay = self.sampling_replay  # type: ignore[has-type]
+        if replay and not self._samples_through_trl:
+            LOG.warning(
+                f"{type(self).__name__} does not record the candidate set top_k/top_p "
+                "sampled each token from, so the trainer normalizes log-probs over the "
+                "whole vocabulary and the policy/sampler ratio is biased."
+            )
+            # TRL would otherwise require vLLM's sampling-mask route at startup.
+            self.sampling_replay = False
         if decode_responses:
             tokenizer.parse_response = functools.partial(_decode_as_message, tokenizer)
             LOG.info(
@@ -357,19 +375,20 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
             print_prompt_completions_sample(
                 prompts=[s.prompt for s in samples],
                 completions=[s.completion for s in samples],
-                rewards={"reward": [s.metrics["reward"] for s in samples]},
+                rewards={"reward": [s.metrics["reward_kept"] for s in samples]},
                 advantages=[s.advantage for s in samples],
                 step=self._total_groups_scored,
                 num_samples=self.num_completions_to_print,
             )
         self._total_groups_scored += 1
 
-        for sample in samples:
+        for item in samples or [group.group_id]:
             t_blocked = None
             while True:
                 try:
-                    sample.enqueued_at = time.time()
-                    self.rollout_buffer.put_nowait(sample)
+                    if isinstance(item, RolloutSample):
+                        item.enqueued_at = time.time()
+                    self.rollout_buffer.put_nowait(item)
                     break
                 except queue.Full:
                     if stop_event.is_set():
@@ -422,6 +441,15 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
         )
         scored_rewards = rewards[~np.isnan(rewards)]
         reward_std = float(scored_rewards.std()) if scored_rewards.size else np.nan
+        # TRL's names: `reward` over every scored completion, `reward_kept` (per
+        # sample) over those sent to the trainer.
+        zero_signal = not advantages.any()
+        self._rates["reward"][0] += float(scored_rewards.sum())
+        self._rates["reward"][1] += scored_rewards.size
+        self._rates["frac_reward_zero_std"][0] += zero_signal
+        self._rates["frac_reward_zero_std"][1] += 1
+        if zero_signal and self._skip_zero_advantage:
+            return []
 
         tool_metrics = self._tool_metrics(group)
         samples = []
@@ -437,7 +465,7 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
             )
         ):
             metrics = {
-                "reward": float(reward),
+                "reward_kept": float(reward),
                 "reward_std": reward_std,
                 **{
                     f"rewards/{name}": float(value)

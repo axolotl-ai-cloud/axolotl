@@ -420,6 +420,16 @@ class TestGroupedQueue:
         with pytest.raises(queue.Empty):
             grouped.get(timeout=0.05)
 
+    def test_passes_a_dropped_groups_bare_id_through(self):
+        inner = queue.Queue()
+        inner.put(
+            types.SimpleNamespace(
+                group_id=0, metrics={SCORE_PAYLOAD: {"group_rows": 2}}
+            )
+        )
+        inner.put(5)
+        assert GroupedQueue(inner).get(timeout=1) == 5
+
 
 class TestStepPlanner:
     @staticmethod
@@ -501,7 +511,9 @@ class TestStepPlanner:
             [_pending(0, 30, 2), _pending(0, 30, 2, offset=50)],
             *[[_pending(g, 5, 2, offset=10 * g) for _ in range(2)] for g in (1, 2, 3)],
         ]
-        progress = RolloutProgress(set(), epochs_done=lambda: False, stall_groups=4)
+        progress = RolloutProgress(
+            set(), set(), epochs_done=lambda: False, stall_groups=4
+        )
         micro_batches, metrics = self._plan(
             groups, steps=1, token_budget=16, n=1, progress=progress
         )
@@ -509,7 +521,7 @@ class TestStepPlanner:
         assert {
             s["group_id"] for mb in micro_batches for row in mb for s in row.samples
         } == {1, 2}
-        assert progress.consumed == {0} and progress.dropped == {"oversize": 1}
+        assert progress.dropped == {0} and progress.drop_reasons == {"oversize": 1}
 
     def test_stalls_when_no_group_fits_a_step(self):
         """Groups too long for any step are consumed, and a pass of them ends the
@@ -521,10 +533,12 @@ class TestStepPlanner:
             ]
             for g in range(6)
         ]
-        progress = RolloutProgress(set(), epochs_done=lambda: False, stall_groups=5)
+        progress = RolloutProgress(
+            set(), set(), epochs_done=lambda: False, stall_groups=5
+        )
         with pytest.raises(RolloutStop, match="5 did not fit token_budget"):
             self._plan(groups, steps=1, token_budget=16, progress=progress)
-        assert progress.consumed == set(range(5))
+        assert progress.dropped == set(range(5))
 
 
 def test_collate_splits_rows_into_equal_numbers_of_budgeted_chunks():
@@ -552,7 +566,7 @@ def test_collate_splits_rows_into_equal_numbers_of_budgeted_chunks():
     chunks = chunk_inputs(inputs)
 
     def uids(row, chunk):
-        return chunk["uids"][row, : int(chunk["sizes"][row, 3]) - 1].tolist()
+        return chunk["uids"][row, : int(chunk["sizes"][row, 1]) - 1].tolist()
 
     # Both rows run two forwards; the short row's second scores no sample.
     assert [[uids(row, chunk) for chunk in chunks] for row in (0, 1)] == [

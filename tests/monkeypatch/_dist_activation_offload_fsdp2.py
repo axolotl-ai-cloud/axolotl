@@ -10,7 +10,6 @@ from trl.models.activation_offloading import get_act_offloading_ctx_manager
 from axolotl.core.trainers.mixins.activation_checkpointing import (
     _install_live_fsdp_parameter_storage_hooks,
 )
-from axolotl.monkeypatch.trainer.trl_offload import patch_trl_offload_dense_layout
 
 live_parameter_pointers: set[int] = set()
 observed_parameter_pointers: set[int] = set()
@@ -41,7 +40,6 @@ def main():
     torch.cuda.set_device(local_rank)
     dist.init_process_group("nccl")
     PartialState()
-    patch_trl_offload_dense_layout()
     model = Tiny().cuda().bfloat16()
     context = get_act_offloading_ctx_manager(model, min_offload_size=1)
     if os.environ["OFFLOAD_FSDP_LAYOUT"] == "leaf":

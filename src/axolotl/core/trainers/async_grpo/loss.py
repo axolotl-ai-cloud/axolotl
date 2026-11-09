@@ -24,11 +24,9 @@ from axolotl.core.trainers.async_grpo.trl_compat import (
 def support_ids(
     inputs: dict[str, torch.Tensor], mask_bool: torch.Tensor
 ) -> torch.Tensor | None:
-    """Each position's top-k/top-p candidate set, padded with -1, which TRL main's
-    fused head renormalizes the log-probs over as the sampler did; None without
-    truncation, and on TRL releases, which do not record the sets."""
-    if "sampling_mask_counts" not in inputs:
-        return None
+    """Each position's top-k/top-p candidate set, padded with -1, which TRL's fused
+    head renormalizes the log-probs over as the sampler did; None without
+    truncation."""
     counts = inputs["sampling_mask_counts"][mask_bool]
     width = int(counts.max()) if counts.numel() else 0
     if not width:
@@ -214,7 +212,7 @@ class AsyncGRPOLossMixin(AsyncGRPOTrainer):
         on once, so the policy ratio is taken against itself (1, never clipped) and the
         policy/sampler ratio is a detached weight, capped at
         ``vllm_importance_sampling_cap`` (``token_truncate``) or zero beyond it
-        (``token_mask``). ``score_centering`` is TRL main's: the policy/sampler-weighted
+        (``token_mask``). ``score_centering`` is TRL's: the policy/sampler-weighted
         score, zero outside [``vllm_importance_sampling_clip_min``,
         ``vllm_importance_sampling_clip_max``], minus its expectation over the sampler's
         top tokens (``score_log_probs`` under the policy, ``sampler_log_probs`` under

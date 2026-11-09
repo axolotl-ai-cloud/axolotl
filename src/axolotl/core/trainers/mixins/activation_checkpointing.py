@@ -14,7 +14,6 @@ from trl.models.activation_offloading import (
     get_act_offloading_ctx_manager,
 )
 
-from axolotl.monkeypatch.trainer.trl_offload import patch_trl_offload_dense_layout
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -97,7 +96,6 @@ class ActivationOffloadingMixin(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.args.activation_offloading:
-            patch_trl_offload_dense_layout()
             if self.args.activation_offloading == "hidden_states":
                 from axolotl.monkeypatch.checkpoint_activation_offload import (
                     get_checkpoint_hidden_states_offloading_ctx_manager,

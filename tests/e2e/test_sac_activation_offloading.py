@@ -14,13 +14,6 @@ pytestmark = [
 BATCH, SEQ, VOCAB = 4, 128, 4096
 
 
-@pytest.fixture(scope="module", autouse=True)
-def patched():
-    from axolotl.monkeypatch.trainer.trl_offload import patch_trl_offload_dense_layout
-
-    patch_trl_offload_dense_layout()
-
-
 class _AttentionForwards(TorchDispatchMode):
     def __init__(self):
         super().__init__()
