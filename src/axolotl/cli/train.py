@@ -10,6 +10,9 @@ import fire
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.utils import make_lazy_getattr
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 _LAZY_IMPORTS = {
     "Accelerator": "accelerate",
@@ -85,6 +88,16 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         gc.collect()
 
 
+def build_ray_runtime_env(cfg: DictDefault) -> dict | None:
+    """Plugin env vars Ray workers need before TorchTrainer creates the process group."""
+    from axolotl.integrations.base import PluginManager, get_builtin_plugins
+
+    if not (cfg.get("plugins") or get_builtin_plugins()):
+        return None
+    env = PluginManager.get_instance().get_distributed_env(cfg)
+    return {"env_vars": env} if env else None
+
+
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any):
     """
     Parses `axolotl` config, CLI args, and calls `do_train`.
@@ -113,6 +126,21 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs: Any):
     if parsed_cfg.use_ray:
         from ray.train import RunConfig, ScalingConfig
         from ray.train.torch import TorchConfig, TorchTrainer
+
+        runtime_env = build_ray_runtime_env(parsed_cfg)
+        if runtime_env:
+            import ray
+
+            if ray.is_initialized():
+                LOG.warning(
+                    "Ray is already initialized; plugin distributed environment "
+                    "variables %s are not forwarded to the workers. Pass them in the "
+                    "job's runtime_env instead.",
+                    sorted(runtime_env["env_vars"]),
+                )
+            else:
+                # workers inherit the job runtime_env; TorchTrainer has no per-run one
+                ray.init(runtime_env=runtime_env)
 
         train_loop_config = {"cfg": parsed_cfg.to_dict(), "cli_args": parsed_cli_args}
         trainer = TorchTrainer(

@@ -18,6 +18,8 @@ def _fake_ray(monkeypatch):
     ray_train.ScalingConfig = MagicMock(name="ScalingConfig")
     ray_train_torch.TorchConfig = MagicMock(name="TorchConfig")
     ray_train_torch.TorchTrainer = MagicMock(name="TorchTrainer")
+    ray.is_initialized = MagicMock(name="is_initialized", return_value=False)
+    ray.init = MagicMock(name="init")
     ray.train = ray_train
     ray_train.torch = ray_train_torch
     for name, module in (
@@ -26,12 +28,12 @@ def _fake_ray(monkeypatch):
         ("ray.train.torch", ray_train_torch),
     ):
         monkeypatch.setitem(sys.modules, name, module)
-    return ray_train_torch
+    return ray, ray_train_torch
 
 
 @pytest.mark.parametrize("ddp_timeout", [21600, None])
 def test_ray_trainer_receives_ddp_timeout(monkeypatch, tmp_path, ddp_timeout):
-    ray_torch = _fake_ray(monkeypatch)
+    _, ray_torch = _fake_ray(monkeypatch)
     cfg = DictDefault(
         use_ray=True,
         ddp_timeout=ddp_timeout,
@@ -54,4 +56,26 @@ def test_ray_trainer_receives_ddp_timeout(monkeypatch, tmp_path, ddp_timeout):
     else:
         ray_torch.TorchConfig.assert_called_once_with(timeout_s=ddp_timeout)
         assert trainer_kwargs["torch_config"] is ray_torch.TorchConfig.return_value
+    ray_torch.TorchTrainer.return_value.fit.assert_called_once()
+
+
+def test_ray_driver_forwards_plugin_env(monkeypatch, tmp_path):
+    ray, ray_torch = _fake_ray(monkeypatch)
+    cfg = DictDefault(
+        use_ray=True,
+        ray_num_workers=2,
+        resources_per_worker=DictDefault(GPU=1),
+        ray_run_name="run",
+        output_dir=str(tmp_path),
+    )
+    runtime_env = {"env_vars": {"NCCL_MAX_CTAS": "16"}}
+    monkeypatch.setattr(train_cli, "build_ray_runtime_env", lambda _cfg: runtime_env)
+    monkeypatch.setattr(train_cli, "load_cfg", lambda *a, **k: cfg, raising=False)
+    parser = MagicMock()
+    parser.return_value.parse_args_into_dataclasses.return_value = (None, [])
+    monkeypatch.setattr(train_cli, "HfArgumentParser", parser, raising=False)
+
+    train_cli.do_cli(config=str(tmp_path / "config.yaml"))
+
+    ray.init.assert_called_once_with(runtime_env=runtime_env)
     ray_torch.TorchTrainer.return_value.fit.assert_called_once()

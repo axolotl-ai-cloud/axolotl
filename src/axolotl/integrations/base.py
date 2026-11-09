@@ -110,6 +110,8 @@ class BasePlugin:
     Note:
         Plugin methods include:
         - register(cfg): Registers the plugin with the given configuration.
+        - get_distributed_env(cfg): Returns environment variables that must be set
+            before the distributed process group is created.
         - load_datasets(cfg): Loads and preprocesses the dataset for training.
         - pre_model_load(cfg): Performs actions before the model is loaded.
         - post_model_build(cfg, model): Performs actions after the model is loaded, but
@@ -141,6 +143,23 @@ class BasePlugin:
 
     def on_config_validation_error(self, cfg: dict):
         """Undo any register()-time side effects after the config is rejected."""
+
+    def get_distributed_env(self, cfg: DictDefault) -> dict[str, str]:
+        """Returns environment variables that must be present before the process group
+        and NCCL communicators are created (e.g. ``NCCL_MAX_CTAS``).
+
+        Called from ``prepare_optim_env`` inside ``load_cfg``, so it runs for every CLI
+        command (train, preprocess, inference, merge-lora, ...), after ``register`` and
+        config validation and before ``pre_model_load`` and any ``torch.distributed``
+        initialization. Values are stringified and applied with
+        ``os.environ.setdefault``, so user-set variables win. This hook must be pure
+        (no CUDA or ``torch.distributed`` calls): it also runs on a GPU-less Ray
+        driver to build the workers' runtime environment.
+
+        Args:
+            cfg: The validated configuration.
+        """
+        return {}
 
     def get_input_args(self) -> str | None:
         """Returns a pydantic model for the plugin's input arguments."""
@@ -474,6 +493,8 @@ class PluginManager:
         - get_instance(): Static method to get the singleton instance of `PluginManager`.
         - register(plugin_name: str): Registers a new plugin by its name.
         - pre_model_load(cfg): Calls the pre_model_load method of all registered plugins.
+        - get_distributed_env(cfg): Merges all plugins' pre-distributed-init env vars;
+            the same value from several plugins is fine, conflicting values raise.
     """
 
     plugins: OrderedDict[str, BasePlugin] = collections.OrderedDict()
@@ -549,6 +570,26 @@ class PluginManager:
                 or plugin_name in configured_plugins
             ):
                 plugin.on_config_validation_error(cfg)
+
+    def get_distributed_env(self, cfg: DictDefault) -> dict[str, str]:
+        """Merges the pre-distributed-init environment variables of all registered plugins.
+
+        Raises:
+            ValueError: If two plugins request different values for the same variable.
+        """
+        merged: dict[str, str] = {}
+        owners: dict[str, str] = {}
+        for plugin_name, plugin in self.plugins.items():
+            for key, value in (plugin.get_distributed_env(cfg) or {}).items():
+                value = str(value)
+                if key in merged and merged[key] != value:
+                    raise ValueError(
+                        f"Plugins '{owners[key]}' and '{plugin_name}' set conflicting "
+                        f"values for {key}: {merged[key]!r} vs {value!r}"
+                    )
+                merged.setdefault(key, value)
+                owners.setdefault(key, plugin_name)
+        return merged
 
     def get_input_args(self) -> list[str]:
         """Returns a list of Pydantic classes for all registered plugins' input arguments.'
