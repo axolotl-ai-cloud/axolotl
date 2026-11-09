@@ -1115,8 +1115,9 @@ enable method, needs <code>implementation: hf</code>. Plugin-registered saves ap
 <ul>
 <li><code>true</code>: decoder layers are recomputed in backward; only tensors saved outside them are offloaded.</li>
 <li><code>false</code>: nothing is recomputed and every saved activation is offloaded, bounded by host RAM and
-PCIe bandwidth. Can be faster for LoRA/QLoRA, whose activations are small. Not supported for
-ORPO, SimPO, EBFT or process reward models.</li>
+PCIe bandwidth. It is slower than recomputing on PCIe hosts and peaks higher on GPU, LoRA/QLoRA
+included (see <a href="#choosing-a-mode">Choosing a mode</a>). Not supported for ORPO, SimPO, EBFT or
+process reward models.</li>
 </ul>
 <p>Activation offloading and selective checkpointing also apply to synchronous and async GRPO, whose
 TRL trainers do not offload on their own.</p>
@@ -1154,17 +1155,83 @@ reentrant <code>CheckpointFunction</code> and is DTensor-aware for sequence/cont
 <tr class="odd">
 <td><code>offload.all: cpu</code></td>
 <td>Saved activations → CPU, stream-overlapped</td>
-<td>General use; LoRA/QLoRA without recompute (<code>enabled: false</code>)</td>
+<td>General use</td>
 </tr>
 <tr class="even">
 <td><code>offload.hidden_states: cpu</code></td>
 <td>Per-layer checkpoint input only → CPU, stream-overlapped</td>
-<td>Long-context training where full activation offload is CPU-memory or bandwidth-bound</td>
+<td>Long-context training where full activation offload is CPU-memory or bandwidth-bound; LoRA/QLoRA</td>
+</tr>
+<tr class="odd">
+<td><code>selective</code> with <code>offload.hidden_states: cpu</code> and <code>offload.selective: cpu</code></td>
+<td>Per-layer checkpoint input and saved attention outputs → CPU</td>
+<td>Long context (16k+ tokens) with host RAM to spare: faster than plain checkpointing at about <code>offload.hidden_states</code>’ GPU memory</td>
 </tr>
 </tbody>
 </table>
-<p><code>offload.hidden_states</code> always recomputes each layer. For LoRA/QLoRA, <code>offload.all: cpu</code> with
-<code>enabled: false</code> can be faster: adapter activations are small and pure offload skips recompute.</p>
+<p>Measured on Qwen3-8B LoRA (all linear layers) with full-length documents, flash-attention and cut
+cross entropy on one RTX PRO 6000 (96 GB, PCIe Gen5 x8); step time and peak GPU memory:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: right;">Tokens</th>
+<th style="text-align: right;">Checkpointing</th>
+<th style="text-align: right;"><code>offload.hidden_states: cpu</code></th>
+<th style="text-align: right;">+ <code>selective</code>, <code>offload.selective: cpu</code></th>
+<th style="text-align: right;"><code>enabled: false</code>, <code>offload.all: cpu</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">16k</td>
+<td style="text-align: right;">6.2 s, 23.2 GiB</td>
+<td style="text-align: right;">6.2 s, 19.1 GiB</td>
+<td style="text-align: right;">5.8 s, 19.4 GiB</td>
+<td style="text-align: right;">11.6 s, 60.5 GiB</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">32k</td>
+<td style="text-align: right;">15.5 s, 30.6 GiB</td>
+<td style="text-align: right;">15.5 s, 22.3 GiB</td>
+<td style="text-align: right;">14.2 s, 22.8 GiB</td>
+<td style="text-align: right;">out of memory</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">64k</td>
+<td style="text-align: right;">43.0 s, 45.4 GiB</td>
+<td style="text-align: right;">43.1 s, 28.9 GiB</td>
+<td style="text-align: right;">37.8 s, 29.9 GiB</td>
+<td style="text-align: right;">out of memory</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">128k</td>
+<td style="text-align: right;">134.5 s, 74.9 GiB</td>
+<td style="text-align: right;">134.6 s, 41.9 GiB</td>
+<td style="text-align: right;">113.7 s, 43.9 GiB</td>
+<td style="text-align: right;">out of memory</td>
+</tr>
+</tbody>
+</table>
+<p>The offloaded tensors live in pinned host RAM: one hidden-state tensor per layer for
+<code>offload.hidden_states</code> (4.5 GiB at 16k and 36 GiB at 128k here), and as much again for the saved
+attention outputs with <code>offload.selective: cpu</code>. With a fused loss, <code>offload.all: cpu</code> with recompute
+matched <code>offload.hidden_states</code> in speed and memory. With the stock loss it also offloads the
+full-vocabulary logits saved for the loss, which cost 11–23% at 4k–16k tokens.</p>
+<p>Turning recompute off (<code>enabled: false</code>) does not pay, LoRA/QLoRA included: backward still needs
+the input of every projection an adapter wraps plus the MLP and attention intermediates between
+them, and copying those out and back takes longer than the recompute it replaces. At 8k tokens it
+copied 43 GiB each way per step, and at 4k–16k it was 1.5–2.1× slower than plain checkpointing.
+That held with PCIe Gen5 x8 (21–29 GB/s pinned copies) and with an H100 on Gen5 x16 (55 GB/s), whose
+faster compute left less time to hide the copies. It also needs more GPU memory than
+checkpointing, not less: it ran out of memory from 32k tokens here, and at 16k on an 80 GB H100
+with the stock loss.</p>
 </section>
 <section id="selective-activation-checkpointing-sac" class="level3">
 <h3 class="anchored" data-anchor-id="selective-activation-checkpointing-sac">Selective Activation Checkpointing (SAC)</h3>
@@ -1176,10 +1243,11 @@ default the attention op — so backward skips re-running them, for one extra hi
 tensor per layer. Attention’s backward and its first forward still run, so what this removes is
 attention’s share of the recompute. That share grows with the length each attention call spans:
 on Qwen3-8B LoRA with full-length documents, saving attention sped steps up by about 2% at 8k
-tokens and 9–15% at 32k (SDPA and flash-attention), for 2.3 GiB and 9.1 GiB of saved outputs. Rows
-packed from short documents gain little, since each attention call spans one document. The
-policy also runs Python for every op in the forward and the recompute, so on a slow host or a
-small model that overhead can cost more than the saved attention.</p>
+tokens and 9–15% at 32k (SDPA and flash-attention), for 2.3 GiB and 9.1 GiB of saved outputs, and
+by 12% at 64k and 15% at 128k with flash-attention. Rows packed from short documents gain little,
+since each attention call spans one document. The policy also runs Python for every op in the
+forward and the recompute, so on a slow host or a small model that overhead can cost more than the
+saved attention.</p>
 <p>This runs eagerly (no <code>torch.compile</code>) via torch’s selective-checkpoint policy API. Ops are matched
 at the dispatcher level: SDPA and flash-attention are matched out of the box, and custom kernels
 that are not registered as torch ops are simply recomputed as usual — nothing breaks.</p>
@@ -1216,7 +1284,9 @@ side-stream copies during forward, prefetched back one region ahead during backw
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">offload</span><span class="kw">:</span></span>
 <span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">selective</span><span class="kw">:</span><span class="at"> cpu</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This makes the saved attention outputs cost ~zero GPU memory at the price of CPU RAM and PCIe
-traffic, and stacks with <code>offload.hidden_states</code> or <code>offload.all</code>. It covers everything the
+traffic, and stacks with <code>offload.hidden_states</code> or <code>offload.all</code>. On Qwen3-8B LoRA at 16k–128k
+tokens the copies hid completely: steps took as long as with the outputs kept on GPU, and peak GPU
+memory dropped by 4–34 GiB (see <a href="#choosing-a-mode">Choosing a mode</a>). It covers everything the
 selective policy saves, including saves a plugin requires, such as expert parallelism’s routing
 decisions. It requires <code>selective</code>: without it, those plugin saves stay on GPU.</p>
 <p>Requires non-reentrant checkpointing (the default). Composes with <code>offload.hidden_states</code> or
