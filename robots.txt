@@ -1,1 +1,0 @@
-Sitemap: https://docs.axolotl.ai/sitemap.xml

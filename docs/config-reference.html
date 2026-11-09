@@ -1364,7 +1364,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-393"><a href="#cb1-393" aria-hidden="true" tabindex="-1"></a><span class="co">  # Fake quantization layout to use for activation quantization.</span></span>
 <span id="cb1-394"><a href="#cb1-394" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">activation_dtype</span><span class="kw">:</span><span class="at"> TorchAOQuantDType | None</span></span>
 <span id="cb1-395"><a href="#cb1-395" aria-hidden="true" tabindex="-1"></a><span class="co">  # Fake quantization layout to use for weight quantization.</span></span>
-<span id="cb1-396"><a href="#cb1-396" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_dtype</span><span class="kw">:</span><span class="at"> TorchAOQuantDType = TorchAOQuantDType.int8</span></span>
+<span id="cb1-396"><a href="#cb1-396" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_dtype</span><span class="kw">:</span><span class="at"> TorchAOQuantDType = int8</span></span>
 <span id="cb1-397"><a href="#cb1-397" aria-hidden="true" tabindex="-1"></a><span class="co">  # Quantize embedding</span></span>
 <span id="cb1-398"><a href="#cb1-398" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">quantize_embedding</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
 <span id="cb1-399"><a href="#cb1-399" aria-hidden="true" tabindex="-1"></a><span class="co">  # The number of elements in each group for per-group fake quantization</span></span>
@@ -1375,7 +1375,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-404"><a href="#cb1-404" aria-hidden="true" tabindex="-1"></a><span class="fu">quantization</span><span class="kw">:</span><span class="at"> PTQConfig | None</span></span>
 <span id="cb1-405"><a href="#cb1-405" aria-hidden="true" tabindex="-1"></a><span class="co">  # For PTQConfig:</span></span>
 <span id="cb1-406"><a href="#cb1-406" aria-hidden="true" tabindex="-1"></a><span class="co">  # Fake quantization layout to use for weight quantization.</span></span>
-<span id="cb1-407"><a href="#cb1-407" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_dtype</span><span class="kw">:</span><span class="at"> TorchAOQuantDType = TorchAOQuantDType.int8</span></span>
+<span id="cb1-407"><a href="#cb1-407" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_dtype</span><span class="kw">:</span><span class="at"> TorchAOQuantDType = int8</span></span>
 <span id="cb1-408"><a href="#cb1-408" aria-hidden="true" tabindex="-1"></a><span class="co">  # Fake quantization layout to use for activation quantization.</span></span>
 <span id="cb1-409"><a href="#cb1-409" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">activation_dtype</span><span class="kw">:</span><span class="at"> TorchAOQuantDType | None</span></span>
 <span id="cb1-410"><a href="#cb1-410" aria-hidden="true" tabindex="-1"></a><span class="co">  # Whether to quantize the embedding layer.</span></span>
@@ -3316,7 +3316,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/docs\.axolotl\.ai");
+        var filterRegex = new RegExp('/' + window.location.host + '/');
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
