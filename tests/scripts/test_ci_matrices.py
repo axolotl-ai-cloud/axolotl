@@ -55,8 +55,7 @@ def test_distributed_matrix_and_slow_refresh_match():
     assert cells({"strategy": {"matrix": {"include": entries}}}) == EXPECTED
     scheduled = workflow("cpu-slow.yml")["jobs"]["cpu-slow"]["with"]
     manual = workflow("testmon-refresh.yml")["jobs"]["slow-cpu"]["with"]
-    for key in ("python_pytorch_matrix", "slow"):
-        assert scheduled[key] == manual[key]
+    assert scheduled == manual
 
 
 def test_nightly_and_manual_reuse_kernel_matrix():
