@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import torch
 import torch.cuda
-from datasets import IterableDataset, disable_caching, enable_caching
+from datasets import Dataset, IterableDataset, disable_caching, enable_caching
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers.utils import is_torch_bf16_gpu_available
 
@@ -29,7 +29,6 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 if TYPE_CHECKING:
-    from datasets import Dataset
     from peft import PeftConfig
     from transformers import (
         PreTrainedModel,
@@ -38,6 +37,7 @@ if TYPE_CHECKING:
         Trainer,
     )
 
+    from axolotl.core.builders.base import TrainerBuilderBase
     from axolotl.utils.data.evaluation import EvalDataset
 
 LOG = get_logger(__name__)
@@ -809,7 +809,7 @@ def prepare_optim_env(cfg):
 
 def setup_trainer(
     cfg: DictDefault,
-    train_dataset: "Dataset",
+    train_dataset: Dataset,
     eval_dataset: "EvalDataset",
     model: "PreTrainedModel",
     tokenizer: "PreTrainedTokenizer",
@@ -837,7 +837,6 @@ def setup_trainer(
             on the provided parameters.
     """
     from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
-    from axolotl.core.builders.base import TrainerBuilderBase
 
     trainer_builder: TrainerBuilderBase
     if cfg.rl:
