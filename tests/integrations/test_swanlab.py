@@ -1160,7 +1160,7 @@ class TestSwanLabProfiling:
             patch("swanlab.log") as mock_log,
             patch(
                 "axolotl.integrations.swanlab.profiling.time.perf_counter",
-                side_effect=[0, 0.02],
+                side_effect=[10, 10.02],
             ),
         ):
             mock_get_run.return_value = MagicMock()  # SwanLab initialized
@@ -1172,9 +1172,9 @@ class TestSwanLabProfiling:
             mock_log.assert_called_once()
             logged_data = mock_log.call_args[0][0]
             assert "profiling/Time taken: TestTrainer.test_function" in logged_data
-            assert (
-                logged_data["profiling/Time taken: TestTrainer.test_function"] == 0.02
-            )
+            assert logged_data[
+                "profiling/Time taken: TestTrainer.test_function"
+            ] == pytest.approx(0.02)
 
     def test_profiling_context_skips_when_swanlab_disabled(self):
         """Test that profiling is skipped when SwanLab is disabled."""
@@ -1286,7 +1286,7 @@ class TestSwanLabProfiling:
             patch("swanlab.log") as mock_log,
             patch(
                 "axolotl.integrations.swanlab.profiling.time.perf_counter",
-                side_effect=[0, 0.001, 1, 1.015],
+                side_effect=[5, 5.001, 7, 7.015],
             ),
         ):
             mock_get_run.return_value = MagicMock()
