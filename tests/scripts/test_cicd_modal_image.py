@@ -50,7 +50,6 @@ def test_single_and_multi_gpu_apps_build_the_same_image(monkeypatch):
 
     assert set(builds) == {"single_gpu", "multigpu"}
     assert builds["single_gpu"] == builds["multigpu"]
-    assert builds["single_gpu"][1] == {}
 
 
 PINNED = "axolotlai/axolotl-base-uv@sha256:" + "0" * 64

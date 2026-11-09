@@ -9,18 +9,6 @@ pytest.importorskip("triton")
 from axolotl.kernels.geglu import geglu_backward, geglu_forward
 
 
-def test_geglu_forward_shape():
-    """Test that GEGLU forward pass preserves expected shapes."""
-    batch, seq_len, hidden_dim = 2, 3, 64
-    gate = torch.randn(batch, seq_len, hidden_dim, device="cuda")
-    up = torch.randn(batch, seq_len, hidden_dim, device="cuda")
-
-    out = geglu_forward(gate, up)
-    assert out.shape == (batch, seq_len, hidden_dim)
-    assert out.dtype == gate.dtype
-    assert out.device == gate.device
-
-
 @pytest.mark.flaky(retries=1, delay=5)
 @pytest.mark.parametrize(
     "torch_seed",
@@ -40,6 +28,9 @@ def test_geglu_forward_values(torch_seed, approximate):
     # PyTorch reference
     torch_out = F.gelu(gate, approximate=approximate) * up
 
+    assert triton_out.shape == gate.shape
+    assert triton_out.dtype == gate.dtype
+    assert triton_out.device == gate.device
     assert torch.allclose(triton_out, torch_out, rtol=1e-3, atol=1e-5)
 
 

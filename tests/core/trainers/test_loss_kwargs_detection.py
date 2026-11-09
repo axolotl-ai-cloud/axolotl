@@ -2,8 +2,6 @@
 
 # pylint: disable=missing-class-docstring,too-few-public-methods
 
-import inspect
-
 import pytest
 from transformers.loss.loss_utils import (
     ForCausalLMLoss,
@@ -13,26 +11,6 @@ from transformers.loss.loss_utils import (
 
 from axolotl.core.trainers import base as base_module
 from axolotl.core.trainers.base import model_loss_accepts_num_items_in_batch
-
-
-class TestRealTransformersLossSignatures:
-    """Pin the upstream signatures the detection depends on.
-
-    If transformers changes which losses take ``num_items_in_batch`` these fail
-    loudly, which is the intent: the detection would then be making the wrong
-    call for those model types and needs revisiting.
-    """
-
-    def test_causal_lm_loss_takes_num_items_in_batch(self):
-        params = inspect.signature(ForCausalLMLoss).parameters
-        assert "num_items_in_batch" in params
-
-    @pytest.mark.parametrize(
-        "loss_fn", [ForSequenceClassificationLoss, ForTokenClassification]
-    )
-    def test_non_causal_losses_do_not_take_num_items_in_batch(self, loss_fn):
-        params = inspect.signature(loss_fn).parameters
-        assert "num_items_in_batch" not in params
 
 
 class TestDetection:

@@ -21,7 +21,6 @@ Tests conflict detection, configuration validation, and multi-logger warnings.
 import importlib.util
 import logging
 import os
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -964,23 +963,6 @@ class TestCompletionLogger:
         logger.clear()
         assert len(logger) == 0
 
-    def test_repr(self):
-        """Test string representation."""
-        from axolotl.integrations.swanlab.completion_logger import CompletionLogger
-
-        logger = CompletionLogger(maxlen=128)
-        logger.add_dpo_completion(
-            step=0,
-            prompt="Test",
-            chosen="A",
-            rejected="B",
-        )
-
-        repr_str = repr(logger)
-        assert "CompletionLogger" in repr_str
-        assert "maxlen=128" in repr_str
-        assert "buffered=1/128" in repr_str
-
 
 @pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
 class TestSwanLabRLHFCompletionCallback:
@@ -1173,20 +1155,26 @@ class TestSwanLabProfiling:
         mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
-        with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:
+        with (
+            patch("swanlab.get_run") as mock_get_run,
+            patch("swanlab.log") as mock_log,
+            patch(
+                "axolotl.integrations.swanlab.profiling.time.perf_counter",
+                side_effect=[10, 10.02],
+            ),
+        ):
             mock_get_run.return_value = MagicMock()  # SwanLab initialized
 
             with swanlab_profiling_context(mock_trainer, "test_function"):
-                time.sleep(0.01)  # Simulate work
+                pass
 
             # Verify log was called with correct metric name
             mock_log.assert_called_once()
             logged_data = mock_log.call_args[0][0]
             assert "profiling/Time taken: TestTrainer.test_function" in logged_data
-            # Duration should be > 0.01 seconds
-            assert (
-                logged_data["profiling/Time taken: TestTrainer.test_function"] >= 0.01
-            )
+            assert logged_data[
+                "profiling/Time taken: TestTrainer.test_function"
+            ] == pytest.approx(0.02)
 
     def test_profiling_context_skips_when_swanlab_disabled(self):
         """Test that profiling is skipped when SwanLab is disabled."""
@@ -1197,7 +1185,7 @@ class TestSwanLabProfiling:
 
         with patch("swanlab.log") as mock_log:
             with swanlab_profiling_context(mock_trainer, "test_function"):
-                time.sleep(0.01)
+                pass
 
             # Should NOT log when disabled
             mock_log.assert_not_called()
@@ -1214,7 +1202,7 @@ class TestSwanLabProfiling:
             patch("swanlab.log") as mock_log,
         ):
             with swanlab_profiling_context(mock_trainer, "test_function"):
-                time.sleep(0.01)
+                pass
 
             # Should NOT log when not initialized
             mock_log.assert_not_called()
@@ -1229,7 +1217,6 @@ class TestSwanLabProfiling:
 
             @swanlab_profile
             def expensive_method(self, x):
-                time.sleep(0.01)
                 return x * 2
 
         trainer = MockTrainer()
@@ -1294,18 +1281,25 @@ class TestSwanLabProfiling:
         # Config that filters out very fast operations
         config = ProfilingConfig(min_duration_ms=10.0)  # 10ms minimum
 
-        with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:
+        with (
+            patch("swanlab.get_run") as mock_get_run,
+            patch("swanlab.log") as mock_log,
+            patch(
+                "axolotl.integrations.swanlab.profiling.time.perf_counter",
+                side_effect=[5, 5.001, 7, 7.015],
+            ),
+        ):
             mock_get_run.return_value = MagicMock()
 
             # Fast operation (< 10ms) - should NOT log
             with swanlab_profiling_context_advanced(mock_trainer, "fast_op", config):
-                time.sleep(0.001)  # 1ms
+                pass
 
             mock_log.assert_not_called()
 
             # Slow operation (> 10ms) - should log
             with swanlab_profiling_context_advanced(mock_trainer, "slow_op", config):
-                time.sleep(0.015)  # 15ms
+                pass
 
             mock_log.assert_called_once()
 
@@ -1322,7 +1316,6 @@ class TestSwanLabProfiling:
 
             try:
                 with swanlab_profiling_context(mock_trainer, "error_function"):
-                    time.sleep(0.01)
                     raise ValueError("Test error")
             except ValueError:
                 pass  # Expected

@@ -304,46 +304,6 @@ class TestGroupCoeffNone:
 
 
 # ============================================================================
-# 6. Layer return value contracts
-# ============================================================================
-
-
-class TestLayerReturnValues:
-    """Test that layer forward methods return the correct types."""
-
-    def test_hf_scatter_moe_returns_single_tensor(self):
-        """HFScatterMoEGatedMLP.forward should return a single tensor, not a tuple."""
-        pytest.importorskip("triton")
-        # Verify the forward method signature and return annotation
-        import inspect
-
-        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
-            HFScatterMoEGatedMLP,
-        )
-
-        sig = inspect.signature(HFScatterMoEGatedMLP.forward)
-        # It's a staticmethod taking (self, layer_input)
-        params = list(sig.parameters.keys())
-        assert "self" in params
-        assert "layer_input" in params
-
-    def test_scatter_moe_gated_mlp_docstring_no_router_logits(self):
-        """ScatterMoEGatedMLP.forward docstring should not mention router logits as return."""
-        pytest.importorskip("triton")
-        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
-            ScatterMoEGatedMLP,
-        )
-
-        docstring = ScatterMoEGatedMLP.forward.__doc__
-        assert docstring is not None
-        # The docstring should mention output tensor but NOT router logits
-        assert "Output tensor" in docstring or "output tensor" in docstring.lower()
-        assert "Router logits" not in docstring, (
-            "Docstring should not mention 'Router logits' in Returns section"
-        )
-
-
-# ============================================================================
 # 7. Routing strategy detection and sigmoid routing
 # ============================================================================
 

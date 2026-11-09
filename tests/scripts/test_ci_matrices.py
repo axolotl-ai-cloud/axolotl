@@ -49,13 +49,19 @@ def test_distributed_matrix_and_slow_refresh_match():
     config = workflow("distributed-cpu.yml")
     # PyYAML's YAML 1.1 loader interprets the workflow's "on" key as True.
     events = config.get("on", config.get(True))
-    entries = json.loads(
-        events["workflow_call"]["inputs"]["python_pytorch_matrix"]["default"]
-    )
+    inputs = events["workflow_call"]["inputs"]
+    entries = json.loads(inputs["python_pytorch_matrix"]["default"])
     assert cells({"strategy": {"matrix": {"include": entries}}}) == EXPECTED
     scheduled = workflow("cpu-slow.yml")["jobs"]["cpu-slow"]["with"]
     manual = workflow("testmon-refresh.yml")["jobs"]["slow-cpu"]["with"]
-    assert scheduled == manual
+    for key in ("python_pytorch_matrix", "slow", "nightly"):
+        default = inputs[key]["default"]
+        scheduled_value = scheduled.get(key, default)
+        manual_value = manual.get(key, default)
+        if key == "python_pytorch_matrix":
+            scheduled_value = json.loads(scheduled_value)
+            manual_value = json.loads(manual_value)
+        assert scheduled_value == manual_value, key
 
 
 def test_nightly_and_manual_reuse_kernel_matrix():

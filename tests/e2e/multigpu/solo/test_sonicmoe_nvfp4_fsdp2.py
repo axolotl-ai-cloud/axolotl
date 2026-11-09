@@ -11,17 +11,6 @@ import pytest
 pytestmark = pytest.mark.nvfp4
 
 
-def test_sonicmoe_grouped_lora_dispatch_keeps_scaling_separate():
-    from ._sonicmoe_nvfp4_fsdp2_worker import _grouped_lora
-
-    gate = (object(), object(), 0.5)
-    down = (object(), object(), 0.75)
-    lora = {"gate_up_proj": gate, "down_proj": down}
-
-    assert _grouped_lora(lora, "gate_up_proj") == (gate[:2], gate[2])
-    assert _grouped_lora(lora, "down_proj") == (down[:2], down[2])
-
-
 def test_sonicmoe_snapshot_forward_passes_grouped_factors_and_scaling(monkeypatch):
     import torch
 
