@@ -16,9 +16,12 @@ WARNING_RE = re.compile(
 MAX_ANNOTATIONS = 10
 
 
-def _command_value(text: str, prop: bool = False) -> str:
-    text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-    return text.replace(":", "%3A").replace(",", "%2C") if prop else text
+def _escape_data(text: str) -> str:
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _escape_property(text: str) -> str:
+    return _escape_data(text).replace(":", "%3A").replace(",", "%2C")
 
 
 def parse_warnings(log: str) -> list[tuple[str, int, str]]:
@@ -39,11 +42,11 @@ def _location(path: str, line: int) -> str:
 
 def _annotation(path: str, line: int, message: str) -> str:
     if not path.endswith(".py"):
-        return f"::warning title=Docstring::{_command_value(f'{path}: {message}')}"
-    props = f"file={_command_value(path, True)}"
+        return f"::warning title=Docstring::{_escape_data(f'{path}: {message}')}"
+    props = f"file={_escape_property(path)}"
     if line > 0:
         props += f",line={line}"
-    return f"::warning {props},title=Docstring::{_command_value(message)}"
+    return f"::warning {props},title=Docstring::{_escape_data(message)}"
 
 
 def workflow_commands(warnings: list[tuple[str, int, str]]) -> list[str]:
