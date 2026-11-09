@@ -218,6 +218,7 @@ def step_publisher_factory(cfg, config, settings, revision):
             max_deltas=config.max_deltas,
             delta=settings.delta,
             max_shard_size=config.max_shard_size,
+            num_threads=cfg.get("merge_num_threads") or 2,
         )
 
     return factory

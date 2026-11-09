@@ -102,7 +102,11 @@ class StepPublisher:
         identity_prefix: str = "step",
         retain_artifacts: bool = False,
         expert_chunk: int = 8,
+        num_threads: int = 2,
     ):
+        if num_threads < 1:
+            raise ValueError("num_threads must be a positive integer")
+        self.num_threads = num_threads
         self.comm = comm or LocalComm()
         self.rank, self.world = self.comm.rank, self.comm.world
         self.base, self.destination = base, destination
@@ -175,12 +179,21 @@ class StepPublisher:
         device = torch.device(self.device)
         if device.type != "cuda":
             return self._build_on(identity, data, fingerprint, force_full, timings)
+        # same cap as merge-lora's merge_num_threads: a full intra-op team made each
+        # ~1 MB per-expert host copy cost ~5 ms; OpenMP counts are per calling thread
+        threads = torch.get_num_threads()
+        torch.set_num_threads(self.num_threads)
         # the publisher thread starts on GPU 0 and must not queue behind training kernels
-        with torch.cuda.device(device):
-            if self._stream is None:
-                self._stream = torch.cuda.Stream(device)
-            with torch.cuda.stream(self._stream):
-                return self._build_on(identity, data, fingerprint, force_full, timings)
+        try:
+            with torch.cuda.device(device):
+                if self._stream is None:
+                    self._stream = torch.cuda.Stream(device)
+                with torch.cuda.stream(self._stream):
+                    return self._build_on(
+                        identity, data, fingerprint, force_full, timings
+                    )
+        finally:
+            torch.set_num_threads(threads)
 
     def _build_on(self, identity, data, fingerprint, force_full, timings):
         start = time.perf_counter()
