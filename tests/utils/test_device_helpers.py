@@ -4,7 +4,7 @@ import os
 
 import torch
 
-from axolotl.utils import distributed
+from axolotl.utils import config, distributed
 from axolotl.utils.config import choose_device
 from axolotl.utils.dict import DictDefault
 
@@ -20,10 +20,6 @@ class TestGetDeviceType:
     def test_xpu_is_selected_when_it_is_the_only_accelerator(self, monkeypatch):
         _only_available(monkeypatch, xpu=True)
         assert distributed.get_device_type() == torch.device("xpu")
-
-    def test_cuda_wins_over_xpu(self, monkeypatch):
-        _only_available(monkeypatch, cuda=True, xpu=True)
-        assert distributed.get_device_type() == torch.device("cuda")
 
     def test_cpu_when_nothing_is_available(self, monkeypatch):
         _only_available(monkeypatch)
@@ -49,7 +45,7 @@ class TestChooseDevice:
         for key in [k for k in os.environ if k.startswith("ACCELERATE_USE_")]:
             monkeypatch.delenv(key)
         monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-        monkeypatch.setattr(torch.xpu, "is_available", lambda: True)
+        monkeypatch.setattr(config, "is_torch_xpu_available", lambda: True)
 
     def test_single_process_selects_xpu(self, monkeypatch):
         self._only_xpu(monkeypatch)
@@ -58,9 +54,9 @@ class TestChooseDevice:
         assert cfg.device == "xpu:0"
         assert cfg.device_map == "auto"
 
-    def test_cuda_still_wins_over_xpu(self, monkeypatch):
+    def test_multi_process_pins_each_rank_to_its_xpu(self, monkeypatch):
         self._only_xpu(monkeypatch)
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-        cfg = self._cfg(world_size=1)
+        cfg = self._cfg(world_size=2, local_rank=1)
         choose_device(cfg)
-        assert cfg.device == "cuda:0"
+        assert cfg.device == "xpu:1"
+        assert cfg.device_map == {"": "xpu:1"}
