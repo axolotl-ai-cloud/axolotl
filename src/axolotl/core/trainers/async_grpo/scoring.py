@@ -325,11 +325,21 @@ class StepPlanner(torch.utils.data.IterableDataset):
 
     def __iter__(self) -> Iterator[list[ScoredRow]]:
         source = iter(self.dataset)
+        queue = getattr(self.dataset, "queue", None)
+        still_fresh = getattr(queue, "still_fresh", None)
+        drop_held = getattr(queue, "drop_held", None)
         accepted: list[_Group] = []
         rows = self._new_rows()
         pending = None
         while True:
             group = pending if pending is not None else self._read_group(source)
+            if pending is not None and still_fresh is not None and drop_held:
+                # read for the previous step; the policy has moved on since
+                group_id = group.samples[0]["group_id"]
+                if not still_fresh(group_id):
+                    drop_held(group_id, len(group.samples))
+                    pending = None
+                    continue
             pending = None
             if self._place(rows, group):
                 accepted.append(group)

@@ -17,6 +17,7 @@ training (or raise the stall error) at the same micro-batch.
 
 from __future__ import annotations
 
+import itertools
 import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
@@ -30,6 +31,9 @@ from axolotl.core.trainers.async_grpo.trl_compat import DataCollatorForRollout
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+# Kept through a prune; far more groups than a carried row can trail by.
+_RECENT_VERSIONS = 4096
 
 STOP_KEY = "rollout_stop"
 STOP_DONE = 1
@@ -202,6 +206,10 @@ class SampleFilterQueue:
     once all of them arrived; one that keeps a row is counted when it trains. The
     rollout process sends a group whose every advantage is zero as its bare
     ``int`` id, which is settled as dropped right away.
+
+    A batcher that holds a kept row over into a later micro-batch re-checks it
+    with ``still_fresh`` there and reports a drop with ``drop_held``, since the
+    policy may have moved on in between.
     """
 
     def __init__(
@@ -224,8 +232,13 @@ class SampleFilterQueue:
         self._token_budget = token_budget
         self._skip_zero_advantage = skip_zero_advantage
         self._stop_token_ids = stop_token_ids
-        # group_id -> (rows seen, whether one was kept), for groups still arriving
-        self._arriving: dict[int, tuple[int, bool]] = {}
+        # group_id -> (rows seen, rows kept), for groups still arriving
+        self._arriving: dict[int, tuple[int, int]] = {}
+        # group_id -> rows kept and not yet dropped, for arrived groups that kept one
+        self._held: dict[int, int] = {}
+        # group_id -> its policy version, for groups that kept a row
+        self._versions: dict[int, int] = {}
+        self._prune_at = 4096
 
     def qsize(self) -> int:
         return self._inner.qsize()
@@ -274,6 +287,11 @@ class SampleFilterQueue:
                 self._metrics[f"sample/dropped_{reason}_total"].append(1.0)
             self._settle(sample.group_id, group_rows, reason)
             if reason is None:
+                # Newest last, so a prune keeps the versions carried rows still need.
+                self._versions.pop(sample.group_id, None)
+                self._versions[sample.group_id] = sample.model_version
+                if len(self._versions) > self._prune_at:
+                    self._prune()
                 return sample
 
     def _settle(self, group_id: int, group_rows: int | None, reason: str | None):
@@ -285,9 +303,60 @@ class SampleFilterQueue:
             if reason is not None:
                 self._progress.drop(group_id, reason)
             return
-        seen, kept = self._arriving.pop(group_id, (0, False))
-        seen, kept = seen + 1, kept or reason is None
+        seen, kept = self._arriving.pop(group_id, (0, 0))
+        seen, kept = seen + 1, kept + (reason is None)
         if seen < group_rows:
             self._arriving[group_id] = (seen, kept)
-        elif not kept and reason is not None:
+        elif kept:
+            self._hold(group_id, kept)
+        elif reason is not None:
             self._progress.drop(group_id, reason)
+
+    def _hold(self, group_id: int, kept: int):
+        if len(self._held) > self._prune_at:
+            self._prune()
+        self._held[group_id] = kept
+
+    def _prune(self):
+        """Forget settled groups; rows without a group size never reach ``_hold``.
+
+        The newest versions stay: a settled group can still have a row carried into
+        the next micro-batch, which ``still_fresh`` must judge.
+        """
+        settled = self._progress.trained | self._progress.dropped
+        self._held = {g: n for g, n in self._held.items() if g not in settled}
+        recent = set(itertools.islice(reversed(self._versions), _RECENT_VERSIONS))
+        self._versions = {
+            g: v
+            for g, v in self._versions.items()
+            if g in recent or g in self._held or g in self._arriving or g not in settled
+        }
+        self._prune_at = max(4096, 2 * max(len(self._held), len(self._versions)))
+
+    def still_fresh(self, group_id: int) -> bool:
+        """Whether a kept row of ``group_id`` is within ``max_staleness`` now."""
+        version = self._versions.get(group_id)
+        if version is None or self._model_version is None:
+            return True
+        if self._max_staleness is None:
+            return True
+        return self._model_version() - version <= self._max_staleness
+
+    def drop_held(self, group_id: int, rows: int = 1):
+        """Drop ``rows`` kept rows of ``group_id`` that went stale before placement."""
+        self._metrics["sample/dropped_stale_total"].append(float(rows))
+        if group_id in self._arriving:
+            seen, kept = self._arriving[group_id]
+            self._arriving[group_id] = (seen, max(kept - rows, 0))
+            return
+        if group_id not in self._held:
+            # A version without a held count is a row without a group size, which
+            # settles alone like its early drops in ``_settle``.
+            if group_id in self._versions:
+                self._progress.drop(group_id, "stale")
+            return
+        kept = self._held.pop(group_id) - rows
+        if kept > 0:
+            self._held[group_id] = kept
+        else:
+            self._progress.drop(group_id, "stale")

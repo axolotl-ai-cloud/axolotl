@@ -81,8 +81,9 @@ UPSTREAM = {
     "every rank",
     "RolloutQueueDataset.__iter__": "its staleness rule is applied ahead of it by "
     "SampleFilterQueue, which also takes the bare group ids it would count as dropped",
-    "TokenBudgetBatcher.__iter__": "its oversize rule is applied ahead of it by "
-    "SampleFilterQueue",
+    "TokenBudgetBatcher.__iter__": "re-implemented by dispatch.FreshCarry, which "
+    "re-checks the sample it carries into the next micro-batch for staleness; its "
+    "oversize rule is applied ahead of it by SampleFilterQueue",
     "_EpochStopCallback.on_step_end": "counts the trained and dropped groups that "
     "RolloutProgress keeps",
     "AsyncGRPOTrainer._save_checkpoint": "resumes from the trained and dropped "

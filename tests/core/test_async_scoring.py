@@ -753,9 +753,9 @@ def test_constant_rewards_fail_the_run_after_a_pass_over_the_prompts(
     trainer.rollout_worker.check_health = drained
     with pytest.raises(RuntimeError, match=": 8 had a zero advantage"):
         trainer.train()
-    # Steps 1-4 hold the 8 groups. Step 5 was planned before step 4 was scored, so
-    # the stream stops while planning step 6.
-    assert trainer.state.global_step == 5
+    # Steps 1-4 hold the 8 groups; step 5 is planned once step 4 was scored, so the
+    # stream stops while planning it.
+    assert trainer.state.global_step == 4
     assert trainer.weight_transfer.syncs == 1
 
 
