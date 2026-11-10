@@ -672,3 +672,25 @@ def test_callback_publishes_the_starting_weights(start):
     callback.on_train_end(None, state, None)
     assert [step for step, _ in fake.published] == [start] and served == [start]
     assert fake.restored == ([start] if start else [])
+
+
+def test_a_destination_publishes_every_n_steps_without_a_plugin(tmp_path):
+    from axolotl.core.publishing.callback import destination_callbacks
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault(
+        {
+            "adapter": "lora",
+            "base_model": "test/model",
+            "output_dir": str(tmp_path),
+            "checkpoint_publish": {"every": 2, "destination": str(tmp_path / "pub")},
+        }
+    )
+    (callback,) = destination_callbacks(cfg, trainer=None)
+    assert isinstance(callback, StepPublishCallback) and callback.every == 2
+    cfg["checkpoint_publish"] = {"every": 2}
+    assert destination_callbacks(cfg, trainer=None) == []
+    cfg["adapter"] = None
+    cfg["checkpoint_publish"] = {"every": 2, "destination": str(tmp_path / "pub")}
+    with pytest.raises(ValueError, match="adapter: lora"):
+        destination_callbacks(cfg, trainer=None)

@@ -65,6 +65,117 @@ def resolve_base(base_model: str, revision: str | None = None) -> Path:
 PublisherFactory = Callable[..., Any]
 
 
+def publish_settings(cfg):
+    """``cfg.checkpoint_publish`` validated for per-step publishing, or ``None``."""
+    from pydantic import BaseModel
+
+    from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
+
+    settings = cfg.get("checkpoint_publish")
+    if not settings:
+        return None
+    if isinstance(settings, BaseModel):
+        settings = settings.model_dump()
+    if hasattr(settings, "to_dict"):
+        settings = settings.to_dict()
+    settings = CheckpointPublishConfig.model_validate(dict(settings))
+    if settings.every:
+        if cfg.get("adapter") != "lora" or settings.merged_format != "preserve":
+            raise ValueError(
+                "checkpoint_publish.every publishes merged LoRA in the base's own "
+                "format; it needs adapter: lora and merged_format: preserve"
+            )
+        if cfg.get("nvfp4_merge_aware") and cfg.get("nvfp4_merge_aware_start_step"):
+            raise ValueError(
+                "checkpoint_publish.every needs merge-aware NVFP4 from the first step; "
+                "unset nvfp4_merge_aware_start_step"
+            )
+    if settings.merge_compile:
+        raise ValueError(
+            "checkpoint_publish.merge_compile is not supported by this merge path"
+        )
+    return settings
+
+
+def step_publisher_factory(
+    cfg,
+    settings,
+    destination: Callable[[], Any],
+    *,
+    revision: str | None,
+    output: Path,
+    max_deltas: int,
+    max_shard_size: int = 1 << 30,
+) -> PublisherFactory:
+    """Build each rank's per-step publisher once training has its sharded LoRA."""
+
+    def factory(*, model, comm, pieces):
+        from .pinned_base import pin_base
+        from .step_publisher import StepPublisher
+
+        workdir = Path(settings.workdir) if settings.workdir else output / "step"
+        # Agreed before StepPublisher's first collective, which ranks that pinned
+        # would otherwise wait in for the one that failed.
+        base, error = None, None
+        try:
+            base = pin_base(
+                resolve_base(cfg["base_model"], revision),
+                workdir / f"base-rank{comm.rank:05d}",
+                revision=revision,
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            error = f"rank {comm.rank}: {exc!r}"
+        failed = [e for e in comm.all_gather_object(error) if e is not None]
+        if failed:
+            raise RuntimeError(f"Pinning the base failed: {'; '.join(failed)}")
+        adapter_config = live_adapter_config(model)
+        if cfg.get("use_sonicmoe") and cfg.get("nvfp4_merge_aware"):
+            from axolotl.integrations.kernels.merge_aware_callback import (
+                merge_aware_metadata,
+            )
+
+            adapter_config["nvfp4_merge_aware"] = merge_aware_metadata()
+        return StepPublisher(
+            base=base,
+            adapter_config=adapter_config,
+            pieces=pieces,
+            destination=destination(),
+            workdir=workdir,
+            state_dir=output / "step-state",
+            comm=comm,
+            device=(
+                f"cuda:{torch.cuda.current_device()}"
+                if torch.cuda.is_available()
+                else "cpu"
+            ),
+            max_deltas=max_deltas,
+            delta=settings.delta,
+            max_shard_size=max_shard_size,
+            num_threads=cfg.get("merge_num_threads") or 2,
+        )
+
+    return factory
+
+
+def destination_callbacks(cfg, trainer, revision=None) -> list:
+    """Per-step publishing to ``checkpoint_publish.destination`` (local dir or S3)."""
+    settings = publish_settings(cfg)
+    if settings is None or not settings.destination or not settings.every:
+        return []
+    from .destinations import build_destination
+
+    output = Path(cfg.get("output_dir") or ".") / "published"
+    factory = step_publisher_factory(
+        cfg,
+        settings,
+        lambda: build_destination(settings.destination),
+        revision=revision,
+        output=output,
+        max_deltas=settings.max_deltas if settings.delta else 0,
+    )
+    return [StepPublishCallback(factory, settings.every, trainer=trainer)]
+
+
 class StepPublishCallback(TrainerCallback):
     """Snapshot the LoRA every ``every`` optimizer steps and publish it asynchronously.
 

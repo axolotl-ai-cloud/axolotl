@@ -284,6 +284,14 @@ class TrainerBuilderBase(abc.ABC):
             )
 
             callbacks.append(DeepSpeedNativeNVFP4MergeAwareCallback(trainer))
+        if self.cfg.checkpoint_publish:
+            from axolotl.core.publishing.callback import destination_callbacks
+
+            callbacks.extend(
+                destination_callbacks(
+                    self.cfg, trainer, revision=self.cfg.revision_of_model
+                )
+            )
         plugin_manager = PluginManager.get_instance()
         callbacks.extend(
             [

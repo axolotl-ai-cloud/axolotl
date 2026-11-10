@@ -3,12 +3,10 @@
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
 from safetensors.torch import load_file
 from transformers import TrainerCallback
 
 from axolotl.integrations.base import BasePlugin
-from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
 
 from .args import CoreWeaveConfig
 from .checkpoints import CheckpointPublisher
@@ -141,35 +139,17 @@ class CoreWeaveCheckpointCallback(TrainerCallback):
 
 def publish_config(cfg, config):
     """Apply ``checkpoint_publish`` to the CoreWeave destination's chain settings."""
-    settings = cfg.get("checkpoint_publish")
-    if not settings:
+    from axolotl.core.publishing.callback import publish_settings
+
+    settings = publish_settings(cfg)
+    if settings is None:
         return config, None
-    if isinstance(settings, BaseModel):
-        settings = settings.model_dump()
-    if hasattr(settings, "to_dict"):
-        settings = settings.to_dict()
-    settings = CheckpointPublishConfig.model_validate(dict(settings))
     if settings.destination is not None:
         raise ValueError(
             "Omit checkpoint_publish.destination when publishing to CoreWeave"
         )
     if cfg.get("adapter") == "lora":
         CoreWeaveDestination.check_export(settings.export)
-    if settings.every:
-        if cfg.get("adapter") != "lora" or settings.merged_format != "preserve":
-            raise ValueError(
-                "checkpoint_publish.every publishes merged LoRA in the base's own "
-                "format; it needs adapter: lora and merged_format: preserve"
-            )
-        if cfg.get("nvfp4_merge_aware") and cfg.get("nvfp4_merge_aware_start_step"):
-            raise ValueError(
-                "checkpoint_publish.every needs merge-aware NVFP4 from the first step; "
-                "unset nvfp4_merge_aware_start_step"
-            )
-    if settings.merge_compile:
-        raise ValueError(
-            "checkpoint_publish.merge_compile is not supported by this merge path"
-        )
     max_deltas = min(config.max_deltas, settings.max_deltas)
     if not settings.delta:
         max_deltas = 0
@@ -177,58 +157,20 @@ def publish_config(cfg, config):
 
 
 def step_publisher_factory(cfg, config, settings, revision):
-    """Build each rank's per-step publisher once training has its sharded LoRA."""
+    """Each rank's per-step publisher, hot-loading through CoreWeave."""
+    from axolotl.core.publishing.callback import (
+        step_publisher_factory as core_factory,
+    )
 
-    def factory(*, model, comm, pieces):
-        import torch
-
-        from axolotl.core.publishing.callback import live_adapter_config, resolve_base
-        from axolotl.core.publishing.pinned_base import pin_base
-        from axolotl.core.publishing.step_publisher import StepPublisher
-
-        output = Path(cfg.get("output_dir") or ".") / "coreweave-checkpoints"
-        workdir = Path(settings.workdir) if settings.workdir else output / "step"
-        # Agreed before StepPublisher's first collective, which ranks that pinned
-        # would otherwise wait in for the one that failed.
-        base, error = None, None
-        try:
-            base = pin_base(
-                resolve_base(cfg["base_model"], revision),
-                workdir / f"base-rank{comm.rank:05d}",
-                revision=revision,
-            )
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            error = f"rank {comm.rank}: {exc!r}"
-        failed = [e for e in comm.all_gather_object(error) if e is not None]
-        if failed:
-            raise RuntimeError(f"Pinning the base failed: {'; '.join(failed)}")
-        adapter_config = live_adapter_config(model)
-        if cfg.get("use_sonicmoe") and cfg.get("nvfp4_merge_aware"):
-            from axolotl.integrations.kernels.merge_aware_callback import (
-                merge_aware_metadata,
-            )
-
-            adapter_config["nvfp4_merge_aware"] = merge_aware_metadata()
-        return StepPublisher(
-            base=base,
-            adapter_config=adapter_config,
-            pieces=pieces,
-            destination=CoreWeaveDestination(config, CoreWeaveClient(config)),
-            workdir=workdir,
-            state_dir=output / "step-state",
-            comm=comm,
-            device=(
-                f"cuda:{torch.cuda.current_device()}"
-                if torch.cuda.is_available()
-                else "cpu"
-            ),
-            max_deltas=config.max_deltas,
-            delta=settings.delta,
-            max_shard_size=config.max_shard_size,
-            num_threads=cfg.get("merge_num_threads") or 2,
-        )
-
-    return factory
+    return core_factory(
+        cfg,
+        settings,
+        lambda: CoreWeaveDestination(config, CoreWeaveClient(config)),
+        revision=revision,
+        output=Path(cfg.get("output_dir") or ".") / "coreweave-checkpoints",
+        max_deltas=config.max_deltas,
+        max_shard_size=config.max_shard_size,
+    )
 
 
 ASYNC_ROLLOUT_LOOP = (
