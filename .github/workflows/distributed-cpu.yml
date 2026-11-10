@@ -139,6 +139,7 @@ jobs:
             tests/core/trainers/diffusion_lm/test_full_sequence.py \
             tests/core/test_checkpoint_mirror_dist.py \
             tests/core/test_async_scoring_two_rank.py \
+            tests/core/publishing/test_publishing_log_dist.py \
             --cov=axolotl --cov-append --cov-report=xml:distributed-cpu-coverage.xml
       - name: Run slow CPU integrations
         if: inputs.slow

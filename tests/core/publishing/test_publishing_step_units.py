@@ -581,6 +581,7 @@ def test_callback_stages_every_n_steps_and_logs(tmp_path):
         return fake
 
     trainer = MagicMock()
+    trainer_log = trainer.log
     callback = StepPublishCallback(factory, every=2, trainer=trainer)
     state = SimpleNamespace(global_step=0, is_world_process_zero=True)
     callback.on_train_begin(None, state, None, model=model)
@@ -596,6 +597,7 @@ def test_callback_stages_every_n_steps_and_logs(tmp_path):
             lora_a.fill_(step)
         state.global_step = step
         callback.on_step_end(None, state, None)
+        trainer.log({"loss": float(step)})
     callback.on_train_end(None, state, None)
     steps = [step for step, _ in fake.published]
     assert steps[-1] == 4 and set(steps) <= {2, 4}
@@ -605,11 +607,16 @@ def test_callback_stages_every_n_steps_and_logs(tmp_path):
         if received["pieces"][0].key.endswith("lora_A.weight")
     )
     assert fake.restored == [] and fake.closed
-    logged = [call.args[0] for call in trainer.log.call_args_list]
-    assert logged and all(
-        key.startswith(METRIC_PREFIX) for values in logged for key in values
+    logged = [call.args[0] for call in trainer_log.call_args_list]
+    # during training, publish metrics ride on the training rows; what is left
+    # at the end gets one row of its own
+    assert [row["loss"] for row in logged[:4]] == [1.0, 2.0, 3.0, 4.0]
+    assert all("loss" not in row for row in logged[4:]) and len(logged) <= 5
+    published = [row for row in logged if METRIC_PREFIX + "step" in row]
+    assert published and published[-1][METRIC_PREFIX + "step"] == 4.0
+    assert all(
+        key == "loss" or key.startswith(METRIC_PREFIX) for row in logged for key in row
     )
-    assert logged[-1][METRIC_PREFIX + "step"] == 4.0
 
 
 def test_callback_restores_on_resume():

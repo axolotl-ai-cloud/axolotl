@@ -196,6 +196,11 @@ class StepPublishCallback(TrainerCallback):
     With ``publish_at_start`` the weights training starts from (step 0, or the
     resumed step) are published at once. ``on_published(step)`` runs on the
     publisher thread after each step every destination serves.
+
+    Publish metrics join the trainer's next training log row instead of a
+    ``trainer.log`` of their own: on rank 0 alone, that call resets
+    ``control.should_log`` there, so rank 0 skips the step's log and its
+    all-gathers while the other ranks wait in them.
     """
 
     def __init__(
@@ -217,6 +222,17 @@ class StepPublishCallback(TrainerCallback):
         self.on_published = on_published
         self.publisher = None
         self.scheduler: CoalescingScheduler | None = None
+        self._pending: dict[str, float] = {}
+        trainer_log = getattr(trainer, "log", None)
+        if trainer_log is not None:
+
+            def log(logs, *args, **kwargs):
+                if "loss" in logs and self._pending:
+                    logs = {**logs, **self._pending}
+                    self._pending = {}
+                return trainer_log(logs, *args, **kwargs)
+
+            trainer.log = log
 
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         error = None
@@ -286,6 +302,10 @@ class StepPublishCallback(TrainerCallback):
                 self.publisher.close()
             self._log(state)
             self.scheduler = None
+            if self._pending and hasattr(self.trainer, "log"):
+                # no step log follows, and no rank waits in one
+                pending, self._pending = self._pending, {}
+                self.trainer.log(pending)
         check_rank_errors(error)
         return control
 
@@ -321,8 +341,7 @@ class StepPublishCallback(TrainerCallback):
                     if key in _SUMMARY and isinstance(value, Number)
                 ),
             )
-            if self.trainer is not None:
-                self.trainer.log(values)
+            self._pending.update(values)
 
 
 def _rank() -> int:
