@@ -149,3 +149,26 @@ class TestTopologyHelper:
             ),
         )
         validate_expert_parallel_topology(cfg)
+
+
+@pytest.mark.parametrize(
+    "fallback, outcome", [(True, "will be skipped"), (False, "loading will fail")]
+)
+def test_explicit_deep_ep_without_deep_ep_warns_at_validation(
+    monkeypatch, caplog, fallback, outcome
+):
+    from axolotl.integrations.expert_parallel import args
+
+    monkeypatch.setattr(args, "find_spec", lambda name: None)
+    with caplog.at_level("WARNING"):
+        ExpertParallelArgs(
+            expert_parallel_size=8,
+            expert_parallel_backend="deep_ep",
+            expert_parallel_fallback_on_unsupported=fallback,
+        )
+    assert "`deep_ep` is not installed" in caplog.text and outcome in caplog.text
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        ExpertParallelArgs(expert_parallel_size=8, expert_parallel_backend="auto")
+        ExpertParallelArgs(expert_parallel_size=1, expert_parallel_backend="deep_ep")
+    assert "deep_ep" not in caplog.text
