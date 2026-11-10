@@ -669,15 +669,12 @@ def _find_param_wrapper_lora(
 
 
 def _build_peft_layer_and_get_delta(*args, canonical_fp32: bool = False, **kwargs):
-    """``_peft_layer_delta``; canonical fp32 deltas are computed in IEEE even under
-    ``tf32``, matching the merge-aware training snap bit for bit."""
-    if not canonical_fp32:
-        return _peft_layer_delta(*args, **kwargs)
-    from axolotl.integrations.kernels.libs.sonicmoe.nvfp4_quant import (
-        ieee_fp32_matmul,
-    )
+    """``_peft_layer_delta`` computed in IEEE fp32 even under ``tf32``, matching the
+    merge-aware training forwards (BF16 and NVFP4) bit for bit."""
+    from axolotl.utils.fp32_precision import ieee_fp32_matmul
 
-    kwargs["canonical_fp32"] = True
+    if canonical_fp32:
+        kwargs["canonical_fp32"] = True
     with ieee_fp32_matmul():
         return _peft_layer_delta(*args, **kwargs)
 
