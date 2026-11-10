@@ -3,8 +3,9 @@
 Runs in async GRPO's CUDA-free rollout process. Turns are sampled by TRL's own
 ``/v1/completions`` request, sent to the deployment's gateway with its bearer token.
 The trainer publishes the merged weights itself (``checkpoint_publish``) and hot-loads
-them; the rollout worker's version is the optimizer step every replica serves, set
-only once the hot-load converged, and no rollout starts before the first one has.
+them at every weight sync; the rollout worker's version is the sync every replica
+serves, set only once the hot-load converged, and no rollout starts before the first
+one has.
 """
 
 from __future__ import annotations
@@ -95,7 +96,7 @@ class CoreWeaveRolloutLoop(AxolotlRolloutLoop):
                 pass
         if stop_event.is_set():
             return
-        LOG.info(f"CoreWeave serves step {self.model_version}; starting rollouts")
+        LOG.info(f"CoreWeave serves version {self.model_version}; starting rollouts")
         await self._generate_loop(stop_event)
 
     async def _post(

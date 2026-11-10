@@ -141,7 +141,9 @@ def publish_config(cfg, config):
     """Apply ``checkpoint_publish`` to the CoreWeave destination's chain settings."""
     from axolotl.core.publishing.callback import publish_settings
 
-    settings = publish_settings(cfg)
+    settings = publish_settings(
+        cfg, weight_sync_steps(cfg) if async_rollouts(cfg) else None
+    )
     if settings is None:
         return config, None
     if settings.destination is not None:
@@ -178,29 +180,34 @@ ASYNC_ROLLOUT_LOOP = (
 )
 
 
+def _get(obj, key):
+    if obj is None:
+        return None
+    return obj.get(key) if hasattr(obj, "get") else getattr(obj, key, None)
+
+
 def async_rollouts(cfg) -> bool:
     """Whether rollouts come from CoreWeave in async GRPO (``trl.async_prefetch``)."""
-
-    def get(obj, key):
-        if obj is None:
-            return None
-        return obj.get(key) if hasattr(obj, "get") else getattr(obj, key, None)
-
     return bool(
-        get(get(cfg, "coreweave"), "rollouts")
-        and get(get(cfg, "trl"), "async_prefetch")
+        _get(_get(cfg, "coreweave"), "rollouts")
+        and _get(_get(cfg, "trl"), "async_prefetch")
     )
 
 
-def check_async_rollouts(cfg, settings):
+def weight_sync_steps(cfg) -> int:
+    trl = _get(cfg, "trl")
+    return _get(trl, "weight_sync_steps") or _get(trl, "vllm_sync_interval") or 1
+
+
+def check_async_rollouts(cfg):
     """Async GRPO samples from the deployment the trainer hot-loads every publish."""
     trl = cfg.get("trl") or {}
     if cfg.get("rl") != "grpo":
         raise ValueError("CoreWeave rollouts currently require rl: grpo")
-    if cfg.get("adapter") != "lora" or settings is None or not settings.every:
+    if cfg.get("adapter") != "lora":
         raise ValueError(
-            "Async CoreWeave rollouts publish merged LoRA every step: set adapter: "
-            "lora and checkpoint_publish.every"
+            "Async CoreWeave rollouts publish merged LoRA at every weight sync: set "
+            "adapter: lora"
         )
     if not trl.get("token_budget"):
         raise ValueError("Async CoreWeave rollouts need trl.token_budget")
@@ -248,7 +255,7 @@ class CoreWeavePlugin(BasePlugin):
                 "the base checkpoint's own weights"
             )
         config = CoreWeaveConfig.model_validate(cfg["coreweave"])
-        _, settings = publish_config(cfg, config)
+        publish_config(cfg, config)
         if cfg.get("adapter") == "lora":
             if not cfg.get("base_model"):
                 raise ValueError("CoreWeave LoRA publishing requires base_model")
@@ -261,7 +268,7 @@ class CoreWeavePlugin(BasePlugin):
                     "CoreWeave LoRA publishing requires safetensors and a built-in model architecture"
                 )
         if async_rollouts(cfg):
-            check_async_rollouts(cfg, settings)
+            check_async_rollouts(cfg)
         elif config.rollouts:
             trl = cfg.get("trl") or {}
             if cfg.get("rl") != "grpo":
@@ -347,7 +354,7 @@ class CoreWeavePlugin(BasePlugin):
                 def on_published(step):
                     # Rank 0 runs the rollout worker; every replica serves `step`.
                     if worker := getattr(trainer, "rollout_worker", None):
-                        worker.update_model_version(step)
+                        worker.update_model_version(step // settings.every)
 
             self._checkpoint_callback = StepPublishCallback(
                 step_publisher_factory(cfg, config, settings, revision),

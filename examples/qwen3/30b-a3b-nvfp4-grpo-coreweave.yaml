@@ -21,7 +21,6 @@ coreweave:
   rollouts: true
 
 checkpoint_publish:
-  every: 1
   workdir: /scratch/publish        # node-local: per-rank base copy and baseline
 
 rl: grpo
@@ -31,6 +30,7 @@ trl:
   async_prefetch: true
   loss_type: cispo
   token_budget: 8192
+  weight_sync_steps: 1             # publish + hot-load every optimizer step
   max_staleness: 2
   num_generations: 8
   max_completion_length: 1024

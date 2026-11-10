@@ -212,9 +212,9 @@ class WeightSyncMixin(LoraMergeCheckMixin, AsyncGRPOTrainer):
 
     def _sync_weight(self):
         if self.args.external_weight_sync:
-            # Staleness is counted in optimizer steps against the step the servers
-            # serve, which the publishing plugin reports to the rollout worker.
-            self.model_version = self.state.global_step
+            # The publishing plugin reports the version the servers serve to the
+            # rollout worker, counted in syncs as TRL's own versions are.
+            self.model_version = self.state.global_step // self.args.weight_sync_steps
             self._weights_updated = False
             return
         if not self._weights_updated:

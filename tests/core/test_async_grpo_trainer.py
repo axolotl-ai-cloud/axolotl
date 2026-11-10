@@ -2029,21 +2029,24 @@ def test_staleness_zero_trains_on_fresh_samples_and_reports_rollouts(
 
 
 class TestExternalWeightSync:
-    """A plugin publishes the weights; the policy version is the optimizer step."""
+    """A plugin publishes the weights; the policy version counts weight syncs."""
 
-    def _trainer(self, step=9):
+    def _trainer(self, step=9, weight_sync_steps=1):
         trainer = object.__new__(AxolotlAsyncGRPOTrainer)
-        trainer.args = types.SimpleNamespace(external_weight_sync=True)
+        trainer.args = types.SimpleNamespace(
+            external_weight_sync=True, weight_sync_steps=weight_sync_steps
+        )
         trainer.state = types.SimpleNamespace(global_step=step)
         trainer.weight_transfer = weight_sync.ExternalWeightTransfer()
         trainer.model_version = 0
         trainer._weights_updated = True
         return trainer
 
-    def test_sync_only_moves_the_policy_version_to_the_step(self):
-        trainer = self._trainer()
+    @pytest.mark.parametrize("weight_sync_steps, version", [(1, 12), (3, 4)])
+    def test_sync_only_moves_the_policy_version(self, weight_sync_steps, version):
+        trainer = self._trainer(step=12, weight_sync_steps=weight_sync_steps)
         trainer._sync_weight()
-        assert trainer.model_version == 9 and not trainer._weights_updated
+        assert trainer.model_version == version and not trainer._weights_updated
 
     def test_checkpoints_do_not_claim_a_served_version(self, monkeypatch):
         from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer

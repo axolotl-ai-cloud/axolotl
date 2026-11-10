@@ -136,6 +136,18 @@ def test_async_rollouts_sample_from_the_hot_loaded_deployment():
     worker.update_model_version.assert_called_once_with(3)
 
 
+def test_async_rollouts_publish_at_every_weight_sync():
+    cfg = async_rollout_cfg(checkpoint_publish=None, trl={"weight_sync_steps": 2})
+    worker = MagicMock()
+    trainer = SimpleNamespace(
+        model=SimpleNamespace(config=SimpleNamespace()), rollout_worker=worker
+    )
+    (callback,) = CoreWeavePlugin().add_callbacks_post_trainer(cfg, trainer)
+    assert callback.every == 2
+    callback.on_published(6)
+    worker.update_model_version.assert_called_once_with(3)
+
+
 def test_async_rollouts_on_other_ranks_have_no_worker_to_update():
     cfg = async_rollout_cfg()
     trainer = SimpleNamespace(
@@ -148,7 +160,7 @@ def test_async_rollouts_on_other_ranks_have_no_worker_to_update():
 @pytest.mark.parametrize(
     "overrides, match",
     [
-        ({"checkpoint_publish": None}, "checkpoint_publish.every"),
+        ({"checkpoint_publish": {"every": 2}}, "trl.weight_sync_steps: 1"),
         ({"adapter": None}, "adapter: lora"),
         ({"trl": {"token_budget": None}}, "token_budget"),
         ({"trl": {"top_p": 0.9}}, "temperature sampling"),

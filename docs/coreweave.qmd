@@ -159,8 +159,8 @@ Requirements:
 ### Async GRPO with merged LoRA
 
 With `adapter: lora` and `trl.async_prefetch: true`, rollouts stream from the
-deployment while training continues. Every `checkpoint_publish.every` optimizer
-steps each rank merges its share of the adapter into the base (experts on their
+deployment while training continues. Every `trl.weight_sync_steps` optimizer
+steps (default 1) each rank merges its share of the adapter into the base (experts on their
 expert-parallel owner) from a node-local copy of the base checkpoint, the ranks
 publish the merge as one delta, and the deployment hot-loads it. With an NVFP4
 base and `nvfp4_merge_aware: true`, the served weights are the NVFP4 grid the
@@ -171,24 +171,26 @@ coreweave:
   # ...deployment and storage settings from above
   rollouts: true
 checkpoint_publish:
-  every: 1
   workdir: /scratch/publish  # node-local
 trl:
   use_vllm: true
   async_prefetch: true
   loss_type: cispo
   token_budget: 8192
+  weight_sync_steps: 1
   max_staleness: 2
 ```
 
-- Staleness counts optimizer steps between the policy being trained and the
-  step every replica serves; a step counts as served once the hot-load has
-  converged on all replicas.
+- `checkpoint_publish.every` follows `trl.weight_sync_steps`; setting it to a
+  different value fails validation.
+- Staleness counts weight syncs between the policy being trained and the one
+  every replica serves, as with vLLM; a sync counts as served once the hot-load
+  has converged on all replicas.
 - The weights training starts from (step 0, or the resumed step) are published
   first, and no rollout starts before they are served.
 - Publishing runs in the background; when it falls behind, only the newest
   step is published. Training waits for fresh rollouts when the served step is
-  more than `max_staleness` behind.
+  more than `max_staleness` syncs behind.
 - Sampling is limited to `temperature`. `loss_type: score_centering` also needs
   the gateway to return top log-probs (`trl.num_sampler_logprobs`).
 

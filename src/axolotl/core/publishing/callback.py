@@ -76,20 +76,31 @@ def resolve_base(base_model: str, revision: str | None = None) -> Path:
 PublisherFactory = Callable[..., Any]
 
 
-def publish_settings(cfg):
-    """``cfg.checkpoint_publish`` validated for per-step publishing, or ``None``."""
+def publish_settings(cfg, every: int | None = None):
+    """``cfg.checkpoint_publish`` validated for per-step publishing, or ``None``.
+
+    ``every`` is a cadence the caller requires, such as the weight sync of servers
+    that hot-load each publish; ``checkpoint_publish.every`` defaults to it.
+    """
     from pydantic import BaseModel
 
     from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
 
     settings = cfg.get("checkpoint_publish")
-    if not settings:
+    if not settings and every is None:
         return None
     if isinstance(settings, BaseModel):
         settings = settings.model_dump()
     if hasattr(settings, "to_dict"):
         settings = settings.to_dict()
-    settings = CheckpointPublishConfig.model_validate(dict(settings))
+    settings = CheckpointPublishConfig.model_validate(dict(settings or {}))
+    if every is not None:
+        if settings.every not in (0, every):
+            raise ValueError(
+                f"checkpoint_publish.every: {settings.every} must match "
+                f"trl.weight_sync_steps: {every}, the servers' weight sync"
+            )
+        settings = settings.model_copy(update={"every": every})
     if settings.every:
         if cfg.get("adapter") != "lora" or settings.merged_format != "preserve":
             raise ValueError(
