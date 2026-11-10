@@ -19,6 +19,17 @@ from .staging import LoRAStager
 
 LOG = get_logger(__name__)
 METRIC_PREFIX = "checkpoint_publish/"
+# Also in the log line: metrics logged after training ends are not printed.
+_SUMMARY = (
+    "full",
+    "artifact_bytes",
+    "coalesced_steps",
+    "seconds_build",
+    "seconds_encode",
+    "seconds_upload",
+    "seconds_publish_index",
+    "seconds_total",
+)
 
 
 def _gather(value) -> list:
@@ -300,10 +311,15 @@ class StepPublishCallback(TrainerCallback):
                 if isinstance(value, Number)
             }
             LOG.info(
-                "Published step %s as %s (%s)",
+                "Published step %s as %s (%s): %s",
                 metrics.get("step"),
                 metrics.get("identity"),
                 metrics.get("action"),
+                ", ".join(
+                    f"{key}={value:.3g}"
+                    for key, value in metrics.items()
+                    if key in _SUMMARY and isinstance(value, Number)
+                ),
             )
             if self.trainer is not None:
                 self.trainer.log(values)
