@@ -655,6 +655,16 @@ def download_llama2_model_fixture():
     )
 
 
+# ungated mirror of the gated CohereLabs repo; json only, never the onnx weights
+@pytest.fixture(scope="session")
+def download_cohere_transcribe_processor_fixture():
+    snapshot_download_w_retry(
+        "onnx-community/cohere-transcribe-03-2026-ONNX",
+        repo_type="model",
+        allow_patterns=["*.json"],
+    )
+
+
 @pytest.fixture
 @enable_hf_offline
 def tokenizer_huggyllama(
@@ -909,6 +919,7 @@ def test_load_fixtures(
     download_gemma2_9b_model_fixture,
     download_mlx_mistral_7b_model_fixture,
     download_llama2_model_fixture,
+    download_cohere_transcribe_processor_fixture,
 ):
     pass
 
