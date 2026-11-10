@@ -61,7 +61,7 @@ def tensor_class(name: str) -> str:
             return "block_scales"
         if name.endswith(".weight"):
             return "expert_weight"
-    if ".self_attn." in name or ".attention." in name:
+    if ".self_attn." in name or ".linear_attn." in name or ".attention." in name:
         return "attention"
     return "other"
 

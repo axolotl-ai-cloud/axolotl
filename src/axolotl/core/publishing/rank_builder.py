@@ -5,7 +5,9 @@ tensors assigned to it:
 
 - the experts whose LoRA it holds (the EP owner), merged in contiguous runs;
 - the linear (attention) targets assigned round-robin, after gathering their
-  small LoRA A/B slices;
+  small LoRA A/B slices; a quantized linear (modelopt NVFP4 or static FP8) is
+  dequantized, merged and re-quantized to its own format, as the offline merge
+  does;
 - in full checkpoints only, the untargeted tensors of the base files assigned to
   it, copied as they are.
 
@@ -62,6 +64,8 @@ class Inventory:
 
     linear: dict[str, tuple[str, str]]
     groups: list[ExpertGroup]
+    # quantized linear weight -> (format, its scale tensors the merge rewrites or reads)
+    quantized: dict[str, tuple[str, tuple[str, ...]]]
     targeted: set[str]
     files: dict[str, list[str]]
 
@@ -119,6 +123,7 @@ class MergeContext:
 
         layout = self.base.layout
         linear: dict[str, tuple[str, str]] = {}
+        quantized: dict[str, tuple[str, tuple[str, ...]]] = {}
         for name, (dtype, shape) in layout.items():
             if len(shape) != 2:
                 continue
@@ -126,9 +131,7 @@ class MergeContext:
             if a is None or b is None:
                 continue
             if dtype not in FLOAT_DTYPES:
-                raise NotImplementedError(
-                    f"Per-step publishing cannot merge LoRA into quantized linear {name}"
-                )
+                quantized[name] = _linear_format(name, dtype, layout)
             linear[name] = (self._key_of(a), self._key_of(b))
         groups: list[ExpertGroup] = []
         prefixes = sorted(
@@ -190,13 +193,35 @@ class MergeContext:
                 f"e.g. {sorted(unused)[0]}"
             )
         targeted = set(linear)
+        for fmt, scales in quantized.values():
+            if fmt == "nvfp4":
+                targeted.update(scales)
         for group in groups:
             targeted.update(group.tensors(0, group.experts))
         files: dict[str, list[str]] = {}
         for name, filename in self.base.files.items():
             if name not in targeted:
                 files.setdefault(filename, []).append(name)
-        return Inventory(linear, groups, targeted, files)
+        return Inventory(linear, groups, quantized, targeted, files)
+
+
+def _linear_format(
+    name: str, dtype: str, layout: Mapping[str, tuple[str, Sequence[int]]]
+) -> tuple[str, tuple[str, ...]]:
+    """How a LoRA-targeted quantized linear is stored, and the scales its merge uses.
+
+    NVFP4 rewrites its block scale (and passes its global scale through); static FP8
+    reuses its checkpoint scale, so only the weight changes."""
+    scale = layout.get(f"{name}_scale")
+    if dtype == "uint8" and scale is not None and scale[0] == "float8_e4m3fn":
+        if f"{name}_scale_2" not in layout:
+            raise NotImplementedError(f"NVFP4 linear {name} lacks its weight_scale_2")
+        return "nvfp4", (f"{name}_scale", f"{name}_scale_2")
+    if dtype == "float8_e4m3fn" and scale is not None and scale[0] == "float32":
+        return "modelopt_fp8", (f"{name}_scale",)
+    raise NotImplementedError(
+        f"Per-step publishing cannot merge LoRA into {dtype} linear {name}"
+    )
 
 
 def _runs(experts: Sequence[int], chunk: int) -> list[tuple[int, int]]:
@@ -233,6 +258,10 @@ class RankWork:
 
     def owned(self, inventory: Inventory) -> set[str]:
         names = set(self.linear)
+        for name in self.linear:
+            fmt, scales = inventory.quantized.get(name, (None, ()))
+            if fmt == "nvfp4":
+                names.update(scales)
         for group, start, stop in self.runs:
             names.update(inventory.groups[group].tensors(start, stop))
         for filename in self.files:
@@ -348,7 +377,8 @@ class RankBuilder:
     ) -> None:
         states = self.lora_state(assembled)
         for name, state in zip(self.work.linear, states, strict=False):
-            sink(name, self._merge_linear(name, state))
+            for key, tensor in self._merge_linear(name, state).items():
+                sink(key, tensor)
         for (group, start, stop), state in zip(
             self.work.runs, states[len(self.work.linear) :], strict=True
         ):
@@ -363,11 +393,23 @@ class RankBuilder:
                 ).items():
                     sink(name, tensor)
 
-    def _merge_linear(self, name: str, state: dict) -> torch.Tensor:
+    def _merge_linear(self, name: str, state: dict) -> dict[str, torch.Tensor]:
         from axolotl.cli.utils import lora_merge as merge
 
         context = self.context
-        tensor = self.reader.read([name])[name]
+        fmt, scale_names = self.inventory.quantized.get(name, (None, ()))
+        read = self.reader.read([name, *scale_names])
+        tensor = read[name]
+        if fmt is not None:
+            scales = {key.removeprefix(name): read[key] for key in scale_names}
+            dev = context.device
+            if dev != "cpu" and not torch.cuda.is_available():
+                dev = "cpu"
+            tensor = (
+                merge._dequant_by_format(fmt, tensor, scales, dev)
+                .to(torch.bfloat16)
+                .cpu()
+            )
         merged, did_merge = merge._merge_tensor_with_lora(
             tensor,
             name,
@@ -382,7 +424,12 @@ class RankBuilder:
         )
         if not did_merge:
             raise RuntimeError(f"LoRA for {name} was not applied")
-        return merged
+        if fmt is None:
+            return {name: merged}
+        requant = merge._requant_by_format(
+            fmt, merged, scales, context.device, nvfp4_scale_mode=context.scale_mode
+        )
+        return {name + suffix: tensor for suffix, tensor in requant.items()}
 
     def _merge_experts(
         self, group: ExpertGroup, start: int, stop: int, state: dict
