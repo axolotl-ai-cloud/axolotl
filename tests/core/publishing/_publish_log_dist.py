@@ -14,7 +14,6 @@ class Publisher:
         self.published: list[int] = []
 
     def publish(self, buffers, step):
-        self.published.append(step)
         return {"identity": f"id-{step}", "action": "commit", "full": 0}
 
     def restore(self, buffers, step):
@@ -89,6 +88,7 @@ def main(root: str) -> None:
             every=1,
             trainer=trainer,
             publish_at_start=True,
+            on_published=publisher.published.append,
         )
     )
     trainer.train()
