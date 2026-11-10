@@ -1498,6 +1498,60 @@ class TestTreeFlashAttn:
         assert trl_compat.tree_flash_attn() is kernel
         assert installed == ([kernel] if routed else [])
 
+    def test_prefers_an_installed_flash_attn4_on_blackwell(
+        self, tree_flash_attn, monkeypatch
+    ):
+        from axolotl.monkeypatch.attention import flash_attn_4_ops
+
+        trl_compat, loaded = tree_flash_attn
+        module = types.SimpleNamespace()
+        installed = []
+        monkeypatch.setattr(flash_attn_4_ops, "install_fa4_ops", installed.append)
+        monkeypatch.setattr(
+            trl_compat,
+            "_installed_flash_attn4",
+            lambda: trl_compat._InstalledFlashAttn4(module),
+        )
+        monkeypatch.setattr(trl_compat, "_trl_flash_attn", pytest.fail)
+        kernel = trl_compat.tree_flash_attn()
+        assert kernel.module is module and installed == [module] and loaded == []
+
+    def test_installed_flash_attn4_takes_trls_varlen_call(self):
+        from axolotl.core.trainers.async_grpo.trl_compat import _InstalledFlashAttn4
+
+        calls = []
+        module = types.SimpleNamespace(
+            flash_attn_varlen_func=lambda *args, **kwargs: calls.append((args, kwargs))
+        )
+        _InstalledFlashAttn4(module).flash_attn_varlen_func(
+            "q",
+            "k",
+            "v",
+            "cu_q",
+            "cu_k",
+            9,
+            7,
+            softmax_scale=0.5,
+            causal=True,
+            window_size=(-1, -1),
+        )
+        _InstalledFlashAttn4(module).flash_attn_varlen_func(
+            "q", "k", "v", "cu_q", "cu_k", 9, 7, window_size=(31, 0)
+        )
+        assert calls[0] == (
+            ("q", "k", "v"),
+            {
+                "cu_seqlens_q": "cu_q",
+                "cu_seqlens_k": "cu_k",
+                "max_seqlen_q": 9,
+                "max_seqlen_k": 7,
+                "window_size": (None, None),
+                "softmax_scale": 0.5,
+                "causal": True,
+            },
+        )
+        assert calls[1][1]["window_size"] == (31, 0)
+
     def test_flash_attn2_gets_values_as_wide_as_queries(self):
         from axolotl.core.trainers.async_grpo.trl_compat import _WideValues
 

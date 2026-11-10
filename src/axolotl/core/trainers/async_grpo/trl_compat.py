@@ -19,6 +19,7 @@ from itertools import chain, repeat
 from typing import Any
 
 import numpy as np
+import torch
 import torch.nn.functional as F
 from trl.chat_template_utils import add_response_schema
 from trl.experimental.async_grpo import (
@@ -214,7 +215,15 @@ class _DenseView:
 def tree_flash_attn():
     """TRL's kernel (FA3, or FA4 on Blackwell), or FA2's where it cannot load: FA4's
     CuTe DSL code fails to import under nvidia-cutlass-dsl releases it was not built
-    against."""
+    against. On Blackwell an installed flash-attn-4, built against the installed
+    CuTe DSL, comes first: TRL pins a hub snapshot that, under Python 3.14's lazy
+    annotations, imports fine and then fails to compile."""
+    installed = _installed_flash_attn4()
+    if installed is not None:
+        from axolotl.monkeypatch.attention.flash_attn_4_ops import install_fa4_ops
+
+        install_fa4_ops(installed.module)
+        return installed
     try:
         kernel = _trl_flash_attn()
     except Exception as err:  # pylint: disable=broad-exception-caught
@@ -232,6 +241,50 @@ def tree_flash_attn():
 
         install_fa4_ops(kernel)
     return kernel
+
+
+def _installed_flash_attn4():
+    if not (torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 10):
+        return None
+    try:
+        import flash_attn.cute as module
+    except ImportError:
+        return None
+    return _InstalledFlashAttn4(module)
+
+
+class _InstalledFlashAttn4:
+    """flash-attn-4's varlen API behind TRL's FA3-style call: its fourth positional
+    argument is ``qv``, and an unbounded window side is ``None`` rather than ``-1``."""
+
+    __version__ = "4"
+
+    def __init__(self, module):
+        self.module = module
+
+    def flash_attn_varlen_func(
+        self,
+        q,
+        k,
+        v,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        max_seqlen_q,
+        max_seqlen_k,
+        window_size=(-1, -1),
+        **kwargs,
+    ):
+        return self.module.flash_attn_varlen_func(
+            q,
+            k,
+            v,
+            cu_seqlens_q=cu_seqlens_q,
+            cu_seqlens_k=cu_seqlens_k,
+            max_seqlen_q=max_seqlen_q,
+            max_seqlen_k=max_seqlen_k,
+            window_size=tuple(None if side < 0 else side for side in window_size),
+            **kwargs,
+        )
 
 
 class _WideValues:
