@@ -254,6 +254,7 @@ def test_stager_reuses_buffers_and_copies_values():
         stager.ready(1)
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 def test_stager_copies_from_gpu_on_a_side_stream():
     source = torch.randn(1024, device="cuda")
