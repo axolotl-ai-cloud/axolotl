@@ -304,6 +304,34 @@ class TestSampleFilterQueue:
         assert metrics["sample/dropped_stale_total"] == [1.0, 1.0, 1.0]
         assert filtered.still_fresh(7)
 
+    def test_a_held_row_without_a_group_size_settles_alone(self):
+        """Rows without a group size are reported per row, late drops included."""
+        version = 3
+        filtered, consumed, _ = self._filter(
+            [_sample(0, 1.0, model_version=3), _sample(1, 1.0, model_version=3)],
+            model_version=lambda: version,
+            max_staleness=0,
+        )
+        filtered.get(timeout=1)
+        filtered.get(timeout=1)
+        version = 4
+        filtered.drop_held(0)
+        assert consumed == {0}
+        filtered._progress.train([1])
+        filtered.drop_held(1)
+        assert consumed == {0}
+
+    def test_versions_of_settled_groups_without_a_size_are_forgotten(self):
+        samples = [_sample(g, 1.0, model_version=0) for g in range(10)]
+        filtered, _, _ = self._filter(samples)
+        for _ in range(5):
+            filtered.get(timeout=1)
+        filtered._progress.train(range(5))
+        filtered._prune_at = 5
+        for _ in range(5):
+            filtered.get(timeout=1)
+        assert set(filtered._versions) <= set(range(5, 10))
+
     def test_timeout_spans_dropped_samples(self):
         filtered, _, _ = self._filter([_sample(0, 0.0)])
         start = time.monotonic()

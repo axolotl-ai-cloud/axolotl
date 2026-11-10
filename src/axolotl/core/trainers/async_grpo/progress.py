@@ -234,6 +234,7 @@ class SampleFilterQueue:
         self._held: dict[int, int] = {}
         # group_id -> its policy version, for groups that kept a row
         self._versions: dict[int, int] = {}
+        self._prune_at = 4096
 
     def qsize(self) -> int:
         return self._inner.qsize()
@@ -283,6 +284,8 @@ class SampleFilterQueue:
             self._settle(sample.group_id, group_rows, reason)
             if reason is None:
                 self._versions[sample.group_id] = sample.model_version
+                if len(self._versions) > self._prune_at:
+                    self._prune()
                 return sample
 
     def _settle(self, group_id: int, group_rows: int | None, reason: str | None):
@@ -304,15 +307,20 @@ class SampleFilterQueue:
             self._progress.drop(group_id, reason)
 
     def _hold(self, group_id: int, kept: int):
-        if len(self._held) > 4096:
-            settled = self._progress.trained | self._progress.dropped
-            self._held = {g: n for g, n in self._held.items() if g not in settled}
-            self._versions = {
-                g: v
-                for g, v in self._versions.items()
-                if g in self._held or g in self._arriving
-            }
+        if len(self._held) > self._prune_at:
+            self._prune()
         self._held[group_id] = kept
+
+    def _prune(self):
+        """Forget settled groups; rows without a group size never reach ``_hold``."""
+        settled = self._progress.trained | self._progress.dropped
+        self._held = {g: n for g, n in self._held.items() if g not in settled}
+        self._versions = {
+            g: v
+            for g, v in self._versions.items()
+            if g in self._held or g in self._arriving or g not in settled
+        }
+        self._prune_at = max(4096, 2 * max(len(self._held), len(self._versions)))
 
     def still_fresh(self, group_id: int) -> bool:
         """Whether a kept row of ``group_id`` is within ``max_staleness`` now."""
@@ -331,6 +339,10 @@ class SampleFilterQueue:
             self._arriving[group_id] = (seen, max(kept - rows, 0))
             return
         if group_id not in self._held:
+            # A version without a held count is a row without a group size, which
+            # settles alone like its early drops in ``_settle``.
+            if group_id in self._versions:
+                self._progress.drop(group_id, "stale")
             return
         kept = self._held.pop(group_id) - rows
         if kept > 0:
