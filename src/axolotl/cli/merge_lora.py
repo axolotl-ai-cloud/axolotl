@@ -87,7 +87,8 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
         LOG.warning("Ignore this if the base_model is pre-quantized.")
         LOG.warning("Error raised: %s", e)
 
-    model.generation_config.do_sample = True
+    if not getattr(model.config, "is_encoder_decoder", False):
+        model.generation_config.do_sample = True
     model.config.use_cache = True
 
     if cfg.local_rank == 0:

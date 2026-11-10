@@ -139,6 +139,26 @@ def test_legacy_merge_dispatches_post_merge_hook_only_from_writer(
     assert recorder.calls == []
 
 
+@pytest.mark.parametrize("is_encoder_decoder", [False, True])
+def test_legacy_merge_forces_sampling_only_for_decoder_only(
+    tmp_path, monkeypatch, is_encoder_decoder
+):
+    from axolotl.cli.merge_lora import _do_merge_lora_legacy
+
+    model = Mock()
+    model.merge_and_unload.return_value = model
+    model.generation_config = SimpleNamespace(do_sample=False)
+    model.config = SimpleNamespace(is_encoder_decoder=is_encoder_decoder)
+    monkeypatch.setattr(
+        "axolotl.cli.merge_lora.load_model_and_tokenizer",
+        lambda *, cfg: (model, Mock(), None),
+    )
+
+    _do_merge_lora_legacy(cfg=_merge_hook_cfg(tmp_path))
+
+    assert model.generation_config.do_sample is not is_encoder_decoder
+
+
 def test_efficient_merge_dispatches_post_merge_hook_after_success(
     tmp_path, monkeypatch
 ):
