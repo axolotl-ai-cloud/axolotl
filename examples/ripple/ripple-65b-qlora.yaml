@@ -1,0 +1,57 @@
+# Ripple-65B QLoRA on a single 80GB GPU.
+base_model: ricursiveAI/Ripple-65B-Preview
+trust_remote_code: true
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+chat_template: tokenizer_default
+datasets:
+  - path: HuggingFaceH4/Multilingual-Thinking
+    type: chat_template
+    split: train
+    field_thinking: thinking
+
+val_set_size: 0.0
+output_dir: ./outputs/ripple-65b-qlora
+
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+
+adapter: qlora
+load_in_4bit: true
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - g_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+bf16: auto
+tf32: true
+
+activation_checkpointing:
+  enabled: true
+  reentrant: false
+
+attn_implementation: flash_attention_2
+logging_steps: 1
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0

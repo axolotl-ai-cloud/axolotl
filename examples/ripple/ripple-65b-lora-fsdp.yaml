@@ -1,0 +1,65 @@
+# Ripple-65B bf16 LoRA, FSDP2 across one 8x80GB node.
+base_model: ricursiveAI/Ripple-65B-Preview
+trust_remote_code: true
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+chat_template: tokenizer_default
+datasets:
+  - path: HuggingFaceH4/Multilingual-Thinking
+    type: chat_template
+    split: train
+    field_thinking: thinking
+
+val_set_size: 0.0
+output_dir: ./outputs/ripple-65b-lora-fsdp
+
+sequence_len: 8192
+sample_packing: true
+pad_to_sequence_len: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - g_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+bf16: auto
+tf32: true
+
+activation_checkpointing:
+  enabled: true
+  reentrant: false
+
+fsdp_version: 2
+fsdp_config:
+  cpu_ram_efficient_loading: true
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: RicursiveDecoderLayer
+  reshard_after_forward: true
+  offload_params: false
+
+attn_implementation: flash_attention_2
+logging_steps: 1
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0

@@ -86,8 +86,11 @@ class ChatTemplatePrompter(Prompter):
                 "role": "role",
                 "content": "content",
             }
-            if template_thinking_key and field_thinking:
-                message_property_mappings[template_thinking_key] = field_thinking
+        if template_thinking_key and field_thinking:
+            message_property_mappings = {
+                template_thinking_key: field_thinking,
+                **message_property_mappings,
+            }
 
         if roles:
             self.roles = {s: t for t, sources in roles.items() for s in sources}
