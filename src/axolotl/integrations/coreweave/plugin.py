@@ -190,11 +190,20 @@ def step_publisher_factory(cfg, config, settings, revision):
 
         output = Path(cfg.get("output_dir") or ".") / "coreweave-checkpoints"
         workdir = Path(settings.workdir) if settings.workdir else output / "step"
-        base = pin_base(
-            resolve_base(cfg["base_model"], revision),
-            workdir / f"base-rank{comm.rank:05d}",
-            revision=revision,
-        )
+        # Agreed before StepPublisher's first collective, which ranks that pinned
+        # would otherwise wait in for the one that failed.
+        base, error = None, None
+        try:
+            base = pin_base(
+                resolve_base(cfg["base_model"], revision),
+                workdir / f"base-rank{comm.rank:05d}",
+                revision=revision,
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            error = f"rank {comm.rank}: {exc!r}"
+        failed = [e for e in comm.all_gather_object(error) if e is not None]
+        if failed:
+            raise RuntimeError(f"Pinning the base failed: {'; '.join(failed)}")
         adapter_config = live_adapter_config(model)
         if cfg.get("use_sonicmoe") and cfg.get("nvfp4_merge_aware"):
             from axolotl.integrations.kernels.merge_aware_callback import (

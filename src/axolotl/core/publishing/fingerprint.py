@@ -9,12 +9,14 @@ from typing import Any
 import torch
 
 import axolotl
+from axolotl.utils.fp32_precision import configured_cuda_matmul_precision
 
 MERGE_SOURCES = (
     "cli/utils/lora_merge.py",
     "cli/utils/native_nvfp4_merge.py",
     "cli/utils/param_wrapper_merge.py",
     "integrations/kernels/libs/sonicmoe/nvfp4_quant.py",
+    "utils/fp32_precision.py",
     "integrations/kernels/libs/sonicmoe/nvfp4_lora.py",
 )
 
@@ -31,28 +33,28 @@ def merge_code_hash() -> str:
 
 
 def float32_precision() -> dict[str, str]:
-    """Read the live TF32 state rather than the config that requested it."""
-    try:
-        matmul_precision = torch.get_float32_matmul_precision()
-    except RuntimeError:
-        # Backends set apart through the new API; their values below decide.
-        matmul_precision = "per-backend"
-    state = {"matmul_precision": matmul_precision}
+    """Read the live TF32 state rather than the config that requested it.
+
+    Read on the publisher thread while training may hold ``ieee_fp32_matmul``, so
+    the CUDA matmul precision is the configured one, not that override.
+    """
     root = getattr(torch.backends, "fp32_precision", None)
-    if root is not None:
-        # "none" defers to the parent setting, and torch resolves it in place on
-        # first use; unset everywhere means IEEE.
-        root = "ieee" if str(root) == "none" else str(root)
-        state["backends"] = root
-        for name, backend in (
-            ("cuda_matmul", torch.backends.cuda.matmul),
-            ("cudnn", torch.backends.cudnn),
-        ):
-            precision = str(getattr(backend, "fp32_precision", "none"))
-            state[name] = root if precision == "none" else precision
-    else:
-        state["cuda_matmul_allow_tf32"] = str(torch.backends.cuda.matmul.allow_tf32)
-        state["cudnn_allow_tf32"] = str(torch.backends.cudnn.allow_tf32)
+    if root is None:
+        return {
+            "matmul_precision": torch.get_float32_matmul_precision(),
+            "cuda_matmul_allow_tf32": str(torch.backends.cuda.matmul.allow_tf32),
+            "cudnn_allow_tf32": str(torch.backends.cudnn.allow_tf32),
+        }
+    # "none" defers to the parent setting, and torch resolves it in place on first
+    # use; unset everywhere means IEEE. The legacy matmul precision is derived
+    # from these and raises once backends are set apart, so it is not recorded.
+    root = "ieee" if str(root) == "none" else str(root)
+    state = {"backends": root}
+    for name, precision in (
+        ("cuda_matmul", configured_cuda_matmul_precision()),
+        ("cudnn", str(getattr(torch.backends.cudnn, "fp32_precision", "none"))),
+    ):
+        state[name] = root if precision == "none" else precision
     return state
 
 

@@ -19,10 +19,10 @@ identical to each other and to the ecosystem encoder.
 from __future__ import annotations
 
 import os
-import threading
-from contextlib import contextmanager
 
 import torch
+
+from axolotl.utils.fp32_precision import ieee_fp32_matmul  # noqa: F401
 
 SF_VEC_SIZE = 16
 E4M3_MAX = 448.0
@@ -32,39 +32,6 @@ E2M1_MAGNITUDES = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
 _E2M1_BOUNDS = (0.25, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0)
 # Full 16-entry table indexed by the 4-bit code (bit 3 = sign).
 FP4_CODE_VALUES = tuple(E2M1_MAGNITUDES) + tuple(-m for m in E2M1_MAGNITUDES)
-
-
-_IEEE_LOCK = threading.Lock()
-_IEEE_DEPTH = 0
-_IEEE_PREVIOUS: str | None = None
-
-
-@contextmanager
-def ieee_fp32_matmul():
-    """Run fp32 cuBLAS matmuls in IEEE regardless of ``tf32``.
-
-    The merge-aware snap kernel accumulates the LoRA delta in IEEE fp32, so every
-    other producer of the merged weight (the unfused training path, the merge
-    writer, per-step publishing) must too, or TF32 rounding moves elements across
-    NVFP4 code boundaries. The flag is process-global: it is refcounted across
-    threads so the last exit restores it, and other threads' fp32 matmuls also
-    run in IEEE meanwhile.
-    """
-    global _IEEE_DEPTH, _IEEE_PREVIOUS  # noqa: PLW0603
-    matmul = torch.backends.cuda.matmul
-    with _IEEE_LOCK:
-        if _IEEE_DEPTH == 0:
-            _IEEE_PREVIOUS = matmul.fp32_precision
-            if _IEEE_PREVIOUS != "ieee":
-                matmul.fp32_precision = "ieee"
-        _IEEE_DEPTH += 1
-    try:
-        yield
-    finally:
-        with _IEEE_LOCK:
-            _IEEE_DEPTH -= 1
-            if _IEEE_DEPTH == 0 and _IEEE_PREVIOUS != "ieee":
-                matmul.fp32_precision = _IEEE_PREVIOUS
 
 
 def fp4_code_to_value(codes: torch.Tensor) -> torch.Tensor:

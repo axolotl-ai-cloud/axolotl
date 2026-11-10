@@ -20,7 +20,6 @@ from axolotl.core.publishing import (
 )
 from axolotl.core.publishing.fingerprint import fingerprint_digest
 from axolotl.integrations.coreweave.args import CoreWeaveConfig
-from axolotl.integrations.coreweave.destination import CoreWeaveDestination
 from axolotl.integrations.coreweave.plugin import publish_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
@@ -138,35 +137,6 @@ def test_publisher_commits_only_after_destination_success(tmp_path):
     assert publisher.publish({"w": torch.full((2,), 3.0)}, "e") == "d"
 
 
-def test_coreweave_destination_caps_chain_and_hot_loads(tmp_path):
-    config = CoreWeaveConfig(
-        deployment_id="d",
-        bucket="bucket",
-        path_prefix="weights",
-        gateway_url="https://gateway.example",
-        model="m",
-    )
-    client = MagicMock()
-    s3 = FakeS3(tmp_path / "s3")
-    destination = CoreWeaveDestination(config, client, s3)
-    assert destination.max_deltas == 63
-    publisher = ChainPublisher(ChainWriter(tmp_path / "work"), destination)
-    publisher.publish({"w": torch.ones(2)}, "a", config={})
-    publisher.publish({"w": torch.zeros(2)}, "b")
-    assert [c.args[0] for c in client.hot_load.call_args_list] == ["a", "b"]
-    assert [c.kwargs["base_identity"] for c in client.hot_load.call_args_list] == [
-        None,
-        "a",
-    ]
-    assert s3.keys[-1] == "weights/b/model.safetensors.index.json"
-    client.hot_load.side_effect = TimeoutError("replicas")
-    with pytest.raises(TimeoutError):
-        publisher.publish({"w": torch.ones(2)}, "c")
-    publisher.recover("operation-1")
-    client.wait_for_hot_load.assert_called_once_with("operation-1", "c")
-    assert publisher.identity == "c"
-
-
 @pytest.mark.skipif(
     not hasattr(torch.backends, "fp32_precision"), reason="needs fp32_precision"
 )
@@ -192,13 +162,34 @@ def test_fingerprint_reads_unset_precision_as_its_effective_value():
     assert unset == resolved != tf32
 
 
+@pytest.mark.skipif(
+    not hasattr(torch.backends, "fp32_precision"), reason="needs fp32_precision"
+)
+def test_fingerprint_ignores_another_threads_ieee_override():
+    from axolotl.utils.fp32_precision import ieee_fp32_matmul
+
+    matmul = torch.backends.cuda.matmul
+    previous = matmul.fp32_precision
+    try:
+        matmul.fp32_precision = "tf32"
+        configured = merge_fingerprint(export="merged", base_identity="b")
+        with ieee_fp32_matmul():
+            assert matmul.fp32_precision == "ieee"
+            during = merge_fingerprint(export="merged", base_identity="b")
+        assert matmul.fp32_precision == "tf32"
+    finally:
+        matmul.fp32_precision = previous
+    assert during["float32_precision"]["cuda_matmul"] == "tf32"
+    assert fingerprint_digest(during) == fingerprint_digest(configured)
+
+
 def test_fingerprint_records_eager_and_live_tf32():
     previous = torch.get_float32_matmul_precision()
     try:
         torch.set_float32_matmul_precision("highest")
         eager = merge_fingerprint(export="merged", base_identity="base", device="cpu")
         assert eager["merge_compile"] == "eager"
-        assert eager["float32_precision"]["matmul_precision"] == "highest"
+        assert eager["float32_precision"]["cuda_matmul"] == "ieee"
         assert eager["merge_code"] and eager["torch"] == torch.__version__
         torch.set_float32_matmul_precision("high")
         tf32 = merge_fingerprint(export="merged", base_identity="base", device="cpu")

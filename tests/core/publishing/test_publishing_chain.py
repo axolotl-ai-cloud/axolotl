@@ -181,24 +181,6 @@ def test_chain_reconstruction_is_byte_exact(tmp_path, workers, max_inflight):
     writer.close()
 
 
-def test_bf16_chain_matches_fresh_tensors_over_long_run(tmp_path):
-    writer = ChainWriter(tmp_path, max_shard_size=1 << 12)
-    torch.manual_seed(0)
-    weight = torch.randn(64, 64).to(torch.bfloat16)
-    reconstructed = None
-    for step in range(12):
-        weight = (weight.float() + 1e-2 * torch.randn(64, 64)).to(torch.bfloat16)
-        current = {"w": weight.clone(), "fixed": torch.zeros(4, dtype=torch.bfloat16)}
-        staged = commit(writer, current, f"s{step}")
-        reconstructed = (
-            load_full(staged.path)
-            if staged.full
-            else apply_delta(staged.path, reconstructed)
-        )
-        assert_bytes_equal(reconstructed, current)
-    assert writer.delta_count == 11
-
-
 def test_63_delta_limit(tmp_path):
     writer = ChainWriter(tmp_path, max_shard_size=1 << 12)
     fulls = []

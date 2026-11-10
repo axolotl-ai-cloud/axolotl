@@ -231,3 +231,31 @@ def test_lora_callback_uses_loaded_training_revision():
     callback = CoreWeavePlugin().add_callbacks_post_trainer(cfg, trainer)[0]
     assert callback.base_model == "test/model"
     assert callback.revision == "fixed-commit"
+
+
+def test_a_failed_base_pin_on_any_rank_fails_every_rank(monkeypatch):
+    from axolotl.core.publishing import callback, pinned_base, step_publisher as step
+    from axolotl.integrations.coreweave.plugin import (
+        publish_config,
+        step_publisher_factory,
+    )
+
+    cfg = async_rollout_cfg()
+    config, settings = publish_config(cfg, config_from(cfg))
+    monkeypatch.setattr(callback, "resolve_base", lambda *args: "base")
+    monkeypatch.setattr(pinned_base, "pin_base", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        step, "StepPublisher", MagicMock(side_effect=AssertionError("collective"))
+    )
+    comm = SimpleNamespace(
+        rank=0, all_gather_object=lambda error: [error, "rank 1: OSError('disk full')"]
+    )
+    factory = step_publisher_factory(cfg, config, settings, None)
+    with pytest.raises(RuntimeError, match="rank 1: OSError"):
+        factory(model=MagicMock(), comm=comm, pieces=[])
+
+
+def config_from(cfg):
+    from axolotl.integrations.coreweave.args import CoreWeaveConfig
+
+    return CoreWeaveConfig.model_validate(cfg["coreweave"])

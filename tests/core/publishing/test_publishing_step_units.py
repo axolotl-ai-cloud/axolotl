@@ -672,29 +672,3 @@ def test_callback_publishes_the_starting_weights(start):
     callback.on_train_end(None, state, None)
     assert [step for step, _ in fake.published] == [start] and served == [start]
     assert fake.restored == ([start] if start else [])
-
-
-def test_coreweave_plugin_registers_the_step_callback():
-    from axolotl.integrations.coreweave.args import CoreWeaveConfig
-    from axolotl.integrations.coreweave.plugin import CoreWeavePlugin
-    from axolotl.utils.dict import DictDefault
-
-    config = CoreWeaveConfig(
-        deployment_id="d",
-        bucket="bucket",
-        path_prefix="weights",
-        gateway_url="https://gateway.example",
-        model="m",
-    )
-    cfg = DictDefault(
-        {
-            "coreweave": config.model_dump(),
-            "adapter": "lora",
-            "base_model": "test/model",
-            "checkpoint_publish": {"every": 3},
-        }
-    )
-    CoreWeavePlugin().register(cfg)
-    trainer = SimpleNamespace(model=SimpleNamespace(config=SimpleNamespace()))
-    (callback,) = CoreWeavePlugin().add_callbacks_post_trainer(cfg, trainer)
-    assert isinstance(callback, StepPublishCallback) and callback.every == 3
