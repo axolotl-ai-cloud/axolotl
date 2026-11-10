@@ -1227,9 +1227,22 @@ def _full(plugin):
     return plugin.fsdp_version == 2 and "FULL_STATE_DICT" in str(plugin.state_dict_type)
 
 
+def _ungatherable_base(model) -> bool:
+    """Whether a frozen weight is a torchao tensor subclass (e.g. NVFP4 experts left to
+    FSDP sharding) that FSDP2's full-state gather cannot all-gather."""
+    return any(
+        not parameter.requires_grad
+        and type(_local(parameter)).__module__.startswith("torchao.")
+        for parameter in model.parameters()
+    )
+
+
 def _model_needs_ownership(model):
     return bool(expert_ownership(model)) or bool(
-        getattr(model, "_moe_experts_quantized", False) and is_peft_model(model)
+        is_peft_model(model)
+        and (
+            getattr(model, "_moe_experts_quantized", False) or _ungatherable_base(model)
+        )
     )
 
 
