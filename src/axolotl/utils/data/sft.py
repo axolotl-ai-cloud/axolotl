@@ -6,6 +6,7 @@ import tempfile
 from typing import Literal
 
 from datasets import (
+    Audio,
     Dataset,
     DatasetDict,
     IterableDataset,
@@ -427,6 +428,11 @@ def _load_and_process_single_dataset(
                 f"no {split} split found for dataset {dataset_config.path}, you may "
                 "specify a split with 'split: ...'"
             )
+
+    # datasets' Audio decoding needs torchcodec + FFmpeg; the speech collator decodes instead
+    audio_column = cfg.asr.audio_column if cfg.asr else None
+    if audio_column and isinstance((dataset.features or {}).get(audio_column), Audio):
+        dataset = dataset.cast_column(audio_column, Audio(decode=False))
 
     # Apply sharding if configured
     if dataset_config.shards:
