@@ -58,7 +58,12 @@ from .registry import (
     get_model_support_for_processor,
     register_model_support,
 )
-from .templates import DIFFUSION_LM, IMAGE_TEXT_TO_TEXT, VANILLA_CAUSAL_LM
+from .templates import (
+    DIFFUSION_LM,
+    IMAGE_TEXT_TO_TEXT,
+    SPEECH_SEQ2SEQ,
+    VANILLA_CAUSAL_LM,
+)
 
 __all__ = [
     "AutoModelClassProvider",
@@ -107,5 +112,6 @@ __all__ = [
     "run_model_support_hooks",
     "IMAGE_TEXT_TO_TEXT",
     "DIFFUSION_LM",
+    "SPEECH_SEQ2SEQ",
     "VANILLA_CAUSAL_LM",
 ]
