@@ -2031,48 +2031,6 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         "Node-local directory for the committed baseline and staging. Defaults to a directory under `output_dir`.",
     ),
     (
-        ("--checkpoint-publish.recovery.every",),
-        "checkpoint_publish__recovery__every",
-        "int",
-        "Write a recovery checkpoint every N optimizer steps.",
-    ),
-    (
-        ("--checkpoint-publish.recovery.keep",),
-        "checkpoint_publish__recovery__keep",
-        "int",
-        "Recovery checkpoints kept in `dir`; older ones are deleted. The newest one with optimizer state is always kept as well.",
-    ),
-    (
-        ("--checkpoint-publish.recovery.dir",),
-        "checkpoint_publish__recovery__dir",
-        "str",
-        "Node-local directory for per-rank shards. Defaults to `recovery` under `checkpoint_publish.workdir` (or `output_dir`).",
-    ),
-    (
-        ("--checkpoint-publish.recovery.optimizer-every",),
-        "checkpoint_publish__recovery__optimizer_every",
-        "int",
-        "Also save optimizer state every N steps (a multiple of `every`); 0 never saves it.",
-    ),
-    (
-        ("--checkpoint-publish.recovery.consolidate-every",),
-        "checkpoint_publish__recovery__consolidate_every",
-        "int",
-        "Consolidate every N-th step's checkpoint (a multiple of `every`) into a PEFT adapter under `consolidate_dir`; 0 consolidates only the final one.",
-    ),
-    (
-        ("--checkpoint-publish.recovery.consolidate-dir",),
-        "checkpoint_publish__recovery__consolidate_dir",
-        "str",
-        "Durable directory for consolidated adapters. Defaults to `recovery-adapters` under `output_dir`.",
-    ),
-    (
-        ("--checkpoint-publish.recovery.final/--no-checkpoint-publish.recovery.final",),
-        "checkpoint_publish__recovery__final",
-        None,
-        "At the end of training, write and consolidate a recovery checkpoint of the final step.",
-    ),
-    (
         ("--dynamic-checkpoint.enabled/--no-dynamic-checkpoint.enabled",),
         "dynamic_checkpoint__enabled",
         None,

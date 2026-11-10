@@ -9,10 +9,6 @@ agree on a target, the newest step any rank holds; a rank that has not staged
 it yet keeps its slot for it until it arrives. Training reaches every snapshot
 step on every rank, so the ranks converge; if one rank no longer holds the
 target, everyone gives it up and agrees again.
-
-A recovery save can hold a slot while it writes the same snapshot to disk. A
-held slot is never overwritten; once the publisher is done with it, it stays
-``HELD`` until the last hold is released.
 """
 
 import threading
@@ -26,13 +22,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-FREE, WRITING, WAITING, BUILDING, HELD = (
-    "free",
-    "writing",
-    "waiting",
-    "building",
-    "held",
-)
+FREE, WRITING, WAITING, BUILDING = "free", "writing", "waiting", "building"
 
 
 class SlotTable:
@@ -41,7 +31,6 @@ class SlotTable:
     def __init__(self, count: int = 2):
         self.states = [FREE] * count
         self.steps: list[int | None] = [None] * count
-        self.holds = [0] * count
         self.target: int | None = None
         self.coalesced = 0
 
@@ -50,7 +39,7 @@ class SlotTable:
         replaceable = [
             i
             for i, state in enumerate(self.states)
-            if state == WAITING and self.steps[i] != self.target and not self.holds[i]
+            if state == WAITING and self.steps[i] != self.target
         ]
         if replaceable:
             slot = min(replaceable, key=lambda i: self.steps[i] or 0)
@@ -96,18 +85,7 @@ class SlotTable:
         return slot
 
     def release(self, slot: int):
-        if self.holds[slot]:
-            self.states[slot] = HELD
-        else:
-            self.states[slot], self.steps[slot] = FREE, None
-
-    def hold(self, slot: int):
-        self.holds[slot] += 1
-
-    def unhold(self, slot: int):
-        self.holds[slot] -= 1
-        if not self.holds[slot] and self.states[slot] == HELD:
-            self.states[slot], self.steps[slot] = FREE, None
+        self.states[slot], self.steps[slot] = FREE, None
 
     def drop_waiting(self) -> int:
         dropped = 0
@@ -173,52 +151,23 @@ class CoalescingScheduler:
 
     def offer(self, step: int) -> bool:
         """Stage the current LoRA as ``step``; ``False`` if it had to be skipped."""
-        return self.snapshot(step) is not None
-
-    def snapshot(
-        self, step: int, *, publish: bool = True, hold: bool = False
-    ) -> int | None:
-        """Stage the current LoRA as ``step`` and return its slot, or ``None`` if skipped.
-
-        With ``publish`` the snapshot is offered to the publisher; with ``hold`` the
-        slot stays readable until ``unhold``. A slot neither published nor held
-        would be freed at once, so one of the two is required.
-        """
-        if not (publish or hold):
-            raise ValueError("A snapshot must be published or held")
         self.check()
         with self.cond:
-            if publish and self._closing:
-                return None
+            if self._closing:
+                return False
             slot = self.table.acquire(step)
             if slot is None:
-                return None
-            if hold:
-                self.table.hold(slot)
+                return False
         try:
             self.stager.stage(slot)
         except BaseException:
             with self.cond:
-                if hold:
-                    self.table.unhold(slot)
                 self.table.release(slot)
             raise
         with self.cond:
-            if publish:
-                self.table.written(slot)
-            else:
-                self.table.release(slot)
+            self.table.written(slot)
             self.cond.notify_all()
-        return slot
-
-    def buffers(self, slot: int) -> Sequence[torch.Tensor]:
-        """A held slot's staged buffers, once the copy has finished."""
-        return self.stager.ready(slot)
-
-    def unhold(self, slot: int):
-        with self.cond:
-            self.table.unhold(slot)
-            self.cond.notify_all()
+        return True
 
     def wait_training(self):
         self.stager.wait_training()

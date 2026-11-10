@@ -170,8 +170,6 @@ def publish_config(cfg, config):
         raise ValueError(
             "checkpoint_publish.merge_compile is not supported by this merge path"
         )
-    if settings.recovery is not None and cfg.get("adapter") != "lora":
-        raise ValueError("checkpoint_publish.recovery saves LoRA adapters only")
     max_deltas = min(config.max_deltas, settings.max_deltas)
     if not settings.delta:
         max_deltas = 0
@@ -292,9 +290,8 @@ class CoreWeavePlugin(BasePlugin):
         return "axolotl.integrations.coreweave.args.CoreWeaveArgs"
 
     def post_train_unload(self, cfg):
-        for name in ("_checkpoint_callback", "_recovery_callback"):
-            if callback := getattr(self, name, None):
-                callback.close()
+        if callback := getattr(self, "_checkpoint_callback", None):
+            callback.close()
 
     def register(self, cfg):
         if not cfg.get("coreweave"):
@@ -399,15 +396,6 @@ class CoreWeavePlugin(BasePlugin):
         commit = getattr(getattr(trainer.model, "config", None), "_commit_hash", None)
         if isinstance(commit, str) and commit:
             revision = commit
-        recovery = None
-        if settings is not None and settings.recovery is not None:
-            from axolotl.core.publishing.recovery import RecoverySchedule
-
-            recovery = RecoverySchedule.from_config(
-                settings.recovery,
-                output_dir=cfg.get("output_dir") or ".",
-                workdir=settings.workdir,
-            )
         if settings is not None and settings.every:
             from axolotl.core.publishing.callback import StepPublishCallback
 
@@ -423,7 +411,6 @@ class CoreWeavePlugin(BasePlugin):
                 step_publisher_factory(cfg, config, settings, revision),
                 settings.every,
                 trainer=trainer,
-                recovery=recovery,
                 publish_at_start=rollouts,
                 on_published=on_published,
             )
@@ -434,11 +421,4 @@ class CoreWeavePlugin(BasePlugin):
             revision=revision,
             merged_format=settings.merged_format if settings else "preserve",
         )
-        if recovery is None:
-            return [self._checkpoint_callback]
-        from axolotl.core.publishing.callback import StepPublishCallback
-
-        self._recovery_callback = StepPublishCallback(
-            None, 0, trainer=trainer, recovery=recovery
-        )
-        return [self._checkpoint_callback, self._recovery_callback]
+        return [self._checkpoint_callback]
