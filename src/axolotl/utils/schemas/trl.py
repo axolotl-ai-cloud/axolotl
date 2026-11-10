@@ -312,17 +312,79 @@ class TRLConfig(BaseModel):
             "Structured EBFT runs on it too."
         },
     )
+    weight_sync_steps: int | None = Field(
+        default=None,
+        ge=1,
+        json_schema_extra={
+            "description": "Async GRPO: sync weights to the rollout servers every N "
+            "optimizer steps (a vLLM transfer, or a published checkpoint for servers that "
+            "hot-load). TRL defaults to 1."
+        },
+    )
     vllm_sync_interval: int | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Sync model weights to vLLM every N optimizer steps (async mode only)."
+            "description": "Deprecated: use `weight_sync_steps`.",
         },
     )
     max_staleness: int | None = Field(
         default=None,
         json_schema_extra={
             "description": "Async GRPO: drop rollouts generated more than this many weight "
-            "syncs ago. TRL defaults to 4."
+            "syncs ago (max_staleness x weight_sync_steps optimizer steps). TRL defaults "
+            "to 4."
+        },
+    )
+    queue_maxsize: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO: rollout samples buffered between the rollout "
+            "worker and the trainer. TRL defaults to 1024."
+        },
+    )
+    request_timeout: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO: timeout in seconds of one generation request to "
+            "the rollout servers. TRL defaults to 600."
+        },
+    )
+    weight_sync_timeout: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO: timeout in seconds of one weight transfer to vLLM; "
+            "a transfer that does not finish raises instead of hanging. TRL defaults to "
+            "1800."
+        },
+    )
+    heartbeat_stale_after_s: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO: seconds without a rollout worker heartbeat after "
+            "which the trainer treats the worker as hung and aborts. TRL defaults to 300."
+        },
+    )
+    fork_threshold_tokens: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO multi-turn: a re-tokenization drift in the last "
+            "answer smaller than this many tokens is realigned as context; a larger one "
+            "forks a new training row. TRL defaults to 1024."
+        },
+    )
+    max_tool_calling_iterations: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO: maximum tool-calling turns per rollout. Unlimited "
+            "by default."
+        },
+    )
+    router_aux_loss_coef: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Async GRPO with MoE models: weight of the router load-balancing "
+            "loss added to the training loss; 0 disables it. Defaults to the model "
+            "config's value."
         },
     )
     max_inflight_tasks: int | None = Field(

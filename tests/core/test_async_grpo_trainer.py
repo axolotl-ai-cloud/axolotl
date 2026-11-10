@@ -733,7 +733,7 @@ class TestGRPOStrategy:
             async_prefetch=True,
             vllm_server_host="0.0.0.0",  # nosec B104
             vllm_server_port=8123,
-            vllm_sync_interval=2,
+            weight_sync_steps=2,
             max_staleness=1,
             scale_rewards=False,
             reward_weights=[1.0, 0.5],

@@ -128,7 +128,7 @@ trl:
   vllm_server_host: localhost
   vllm_server_port: 8000
   vllm_lora_sync: true
-  vllm_sync_interval: 5
+  weight_sync_steps: 5
   async_prefetch: true   # Async GRPO, required for multi-turn
   num_generations: 4
   max_completion_length: 512

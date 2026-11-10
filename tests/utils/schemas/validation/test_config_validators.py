@@ -747,7 +747,7 @@ class TestAsyncGRPOCompat:
                 True,
             ),
             (
-                {"loss_type": "dapo", "max_staleness": 2, "vllm_sync_interval": 2},
+                {"loss_type": "dapo", "max_staleness": 2, "weight_sync_steps": 2},
                 "lora",
                 True,
             ),
@@ -777,6 +777,35 @@ class TestAsyncGRPOCompat:
             c for c in warning.call_args_list if "loss_type: cispo" in c.args[0]
         ]
         assert bool(recommended) == warns
+
+
+class TestWeightSyncSteps:
+    def test_vllm_sync_interval_is_a_deprecated_alias(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            max_steps=10,
+            trl={"use_vllm": True, "async_prefetch": True, "vllm_sync_interval": 3},
+        )
+        with patch("axolotl.utils.schemas.validation.LOG.warning") as warning:
+            validated = validate_config(cfg)
+        assert validated.trl.weight_sync_steps == 3
+        assert validated.trl.vllm_sync_interval is None
+        assert any(
+            "vllm_sync_interval` is deprecated" in c.args[0]
+            for c in warning.call_args_list
+        )
+
+    def test_conflicting_values_are_rejected(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            rl="grpo",
+            trl={
+                "async_prefetch": True,
+                "vllm_sync_interval": 3,
+                "weight_sync_steps": 2,
+            },
+        )
+        with pytest.raises(ValueError, match="conflicts with"):
+            validate_config(cfg)
 
 
 class TestDataProducerRemoval:

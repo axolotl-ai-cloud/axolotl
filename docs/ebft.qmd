@@ -63,7 +63,7 @@ GPU 1: Trainer (feature extraction, reward computation, GRPO training)
 
 Only the first assistant turn is trained; with `remaining_turns`, the later assistant turns are generated as reward context. Differences from the sync trainer: rewards use the sampled token IDs; the adaptive max_tokens budget is set per prompt; the loss is async GRPO's (`loss_type: dapo`, TRL's clipped objective, by default, or `cispo`; see [Loss](grpo.qmd#async-loss)); replay, re-roll, streaming and `num_iterations > 1` are not available.
 
-**When to use**: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by `vllm_sync_interval` and `max_staleness`).
+**When to use**: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by `weight_sync_steps` and `max_staleness`).
 
 ### Strided Mode
 
@@ -105,7 +105,7 @@ trl:
   vllm_server_host: 0.0.0.0
   vllm_server_port: 8000
   vllm_lora_sync: true
-  vllm_sync_interval: 3
+  weight_sync_steps: 3
   async_prefetch: true
   scale_rewards: true
 
@@ -466,7 +466,7 @@ These are set under the `trl:` key and control the GRPO training loop.
 | `temperature` | `float` | `0.7` | Sampling temperature for vLLM generation |
 | `use_vllm` | `bool` | -- | Enable vLLM generation backend |
 | `vllm_lora_sync` | `bool` | `false` | Sync LoRA adapters via filesystem (recommended) |
-| `vllm_sync_interval` | `int` | `1` | Steps between weight syncs to vLLM |
+| `weight_sync_steps` | `int` | `1` | Steps between weight syncs to vLLM |
 | `use_data_producer` | `bool` | -- | Deprecated: `async_prefetch: true` with `max_staleness: 0`, which discards in-flight rollouts at every sync; prefer `async_prefetch` with the default `max_staleness` |
 | `async_prefetch` | `bool` | `false` | Run on async GRPO (overlaps generation with training) |
 | `max_staleness` | `int` | `4` | Async: drop rollouts more than this many weight syncs old |
@@ -511,7 +511,7 @@ EBFT logs several custom metrics to wandb and the training console. Here is what
 | `ebft/reward` | Trending upward (may start negative) | Combined reward signal. If stuck at -1.0, the diversity penalty is dominating alignment. |
 | `grad_norm` | 0.1 -- 3.0 | Gradient magnitude. Values of 0.0 indicate zero-advantage skip (normal). Values above 10 suggest instability. |
 | `entropy` | 0.05 -- 0.5 | Policy entropy. Values below 0.01 suggest mode collapse. |
-| `IS ratio min` | Above 0.1 | Importance sampling ratio minimum. Near-zero values mean the policy is too far off-policy; increase `vllm_sync_interval`. |
+| `IS ratio min` | Above 0.1 | Importance sampling ratio minimum. Near-zero values mean the policy is too far off-policy; increase `weight_sync_steps`. |
 
 ### Console Log Example
 
