@@ -16,7 +16,9 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.multi_lora import (
     scatter2scatter_multilora,
 )
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+from tests.accelerator import DEVICE_TYPE, gpu_available
+
+pytestmark = pytest.mark.skipif(not gpu_available(), reason="GPU required")
 
 
 def _reference(x, w, lora_a, lora_b, expert, tenant, num_tenants, rank, scaling):
@@ -42,7 +44,7 @@ def _reference(x, w, lora_a, lora_b, expert, tenant, num_tenants, rank, scaling)
 )
 def test_multilora_forward_backward_matches_reference(num_experts, num_tenants, rank):
     torch.manual_seed(0)
-    dev, dt = "cuda", torch.float32
+    dev, dt = DEVICE_TYPE, torch.float32
     e, t, r = num_experts, num_tenants, rank
     K, N, M = 16, 12, 48
     scaling = 0.5
@@ -82,7 +84,7 @@ def test_multilora_true_fp32_when_tf32_disabled():
     import axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops as base_ops
 
     torch.manual_seed(0)
-    dev, dt = "cuda", torch.float32
+    dev, dt = DEVICE_TYPE, torch.float32
     e, t, r = 4, 3, 8
     K, N, M, scaling = 16, 12, 48, 0.5
 
@@ -128,7 +130,7 @@ def test_misrouting_would_fail():
     """Sanity: a wrong tenant assignment produces O(1) error, confirming the
     tolerance above actually checks routing."""
     torch.manual_seed(1)
-    dev, dt = "cuda", torch.float32
+    dev, dt = DEVICE_TYPE, torch.float32
     e, t, r, K, N, M = 3, 2, 4, 16, 12, 48
     w = torch.randn(e, K, N, device=dev, dtype=dt)
     a = torch.randn(e * t * r, K, device=dev, dtype=dt)

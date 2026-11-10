@@ -4,6 +4,8 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from tests.accelerator import DEVICE_TYPE
+
 pytest.importorskip("triton")
 
 from axolotl.kernels.swiglu import swiglu_backward, swiglu_forward
@@ -11,8 +13,8 @@ from axolotl.kernels.swiglu import swiglu_backward, swiglu_forward
 
 def test_swiglu_forward_values():
     """Test SwiGLU forward pass matches PyTorch reference implementation"""
-    gate = torch.randn(2, 3, 64, device="cuda")
-    up = torch.randn(2, 3, 64, device="cuda")
+    gate = torch.randn(2, 3, 64, device=DEVICE_TYPE)
+    up = torch.randn(2, 3, 64, device=DEVICE_TYPE)
 
     # Custom implementation
     triton_out = swiglu_forward(gate.clone(), up.clone())
@@ -28,9 +30,9 @@ def test_swiglu_forward_values():
 
 def test_swiglu_backward():
     """Test SwiGLU backward pass matches PyTorch autograd"""
-    gate = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
-    up = torch.randn(2, 3, 64, device="cuda", requires_grad=True)
-    grad_output = torch.randn(2, 3, 64, device="cuda")
+    gate = torch.randn(2, 3, 64, device=DEVICE_TYPE, requires_grad=True)
+    up = torch.randn(2, 3, 64, device=DEVICE_TYPE, requires_grad=True)
+    grad_output = torch.randn(2, 3, 64, device=DEVICE_TYPE)
 
     # PyTorch reference - compute intermediates
     silu_gate = F.silu(gate)
@@ -54,9 +56,9 @@ def test_swiglu_backward():
 
 def test_swiglu_inplace_preservation():
     """Test that SwiGLU backward doesn't modify original tensors unexpectedly"""
-    gate = torch.randn(2, 3, 64, device="cuda")
-    up = torch.randn(2, 3, 64, device="cuda")
-    grad_output = torch.randn(2, 3, 64, device="cuda")
+    gate = torch.randn(2, 3, 64, device=DEVICE_TYPE)
+    up = torch.randn(2, 3, 64, device=DEVICE_TYPE)
+    grad_output = torch.randn(2, 3, 64, device=DEVICE_TYPE)
 
     gate_copy = gate.clone()
     up_copy = up.clone()

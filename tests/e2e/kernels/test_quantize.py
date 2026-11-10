@@ -6,8 +6,12 @@ import torch
 
 from axolotl.kernels.quantize import dequantize
 
+from tests.accelerator import DEVICE_TYPE
 
-def _nf4_pair(shape=(64, 64), device="cuda", dtype=torch.float16, double_quant=True):
+
+def _nf4_pair(
+    shape=(64, 64), device=DEVICE_TYPE, dtype=torch.float16, double_quant=True
+):
     """Real bnb NF4 (packed_weight, quant_state) pair for the given shape."""
     W = torch.randn(shape, device=device, dtype=dtype)
     packed, quant_state = bnb.functional.quantize_4bit(
