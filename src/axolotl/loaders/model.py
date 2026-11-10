@@ -607,8 +607,10 @@ class ModelLoader:
             self.model.tie_weights()
 
     def _adjust_model_config(self):
+        # enc-dec position tables are fixed at build time; raising the config desyncs them
         if (
             hasattr(self.model, "config")
+            and not getattr(self.model.config, "is_encoder_decoder", False)
             and hasattr(self.model.config, "max_position_embeddings")
             and self.model.config.max_position_embeddings
             and self.cfg.sequence_len > self.model.config.max_position_embeddings
