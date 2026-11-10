@@ -127,4 +127,10 @@ class CoreWeaveRolloutLoop(AxolotlRolloutLoop):
         if path == "/v1/completions":
             for choice in content.get("choices", []):
                 choice["token_ids"] = completion_token_ids(choice)
+                # JSON has no -inf: the gateway sends a zero-probability candidate's
+                # log-prob as null.
+                for top in choice["logprobs"].get("top_logprobs") or []:
+                    for token, logprob in top.items():
+                        if logprob is None:
+                            top[token] = float("-inf")
         return content

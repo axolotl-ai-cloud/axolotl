@@ -6,6 +6,7 @@ import multiprocessing as mp
 import queue
 import time
 
+import aiohttp
 import pytest
 from aiohttp import web
 from datasets import Dataset
@@ -131,6 +132,36 @@ def test_samples_from_the_gateway_once_a_publish_is_served(tokenizer):
     assert body["model"] == "served-policy" and body["prompt"] == prompt_ids
     assert body["return_tokens_as_token_ids"] is True
     assert not body.keys() & {"return_token_ids", "top_k", "repetition_penalty"}
+
+
+def test_zero_probability_top_logprobs_arrive_as_null(tokenizer):
+    async def complete(request):
+        return web.json_response(
+            {
+                "choices": [
+                    {
+                        "logprobs": {
+                            "tokens": ["token_id:7"],
+                            "token_logprobs": [0.0],
+                            "top_logprobs": [{"token_id:7": 0.0, "token_id:2": None}],
+                        }
+                    }
+                ]
+            }
+        )
+
+    loop = coreweave_loop(tokenizer)
+
+    async def drive():
+        async with gateway(complete) as url, aiohttp.ClientSession() as session:
+            loop.vllm_server_url, loop.session = url, session
+            return await loop._post("/v1/completions", {}, timeout=10)
+
+    (choice,) = loop._loop.run_until_complete(drive())["choices"]
+    assert choice["token_ids"] == [7]
+    assert choice["logprobs"]["top_logprobs"] == [
+        {"token_id:7": 0.0, "token_id:2": float("-inf")}
+    ]
 
 
 def test_a_rejected_request_fails_without_retrying(tokenizer):

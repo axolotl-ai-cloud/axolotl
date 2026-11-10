@@ -191,8 +191,9 @@ trl:
 - Publishing runs in the background; when it falls behind, only the newest
   step is published. Training waits for fresh rollouts when the served step is
   more than `max_staleness` syncs behind.
-- Sampling is limited to `temperature`. `loss_type: score_centering` also needs
-  the gateway to return top log-probs (`trl.num_sampler_logprobs`).
+- Sampling is limited to `temperature`. `loss_type: score_centering` centers
+  over the gateway's top log-probs; the gateway returns at most 5, so set
+  `trl.num_sampler_logprobs: 5` (TRL defaults to 8).
 
 See [the example][nvfp4-grpo-yaml].
 
