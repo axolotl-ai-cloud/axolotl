@@ -29,7 +29,11 @@ from trl.experimental.async_grpo.async_rollout_worker import (
     TrainingSequence,
 )
 
-from axolotl.core.trainers.async_grpo import rollout, weight_sync
+from axolotl.core.trainers.async_grpo import (
+    progress as progress_module,
+    rollout,
+    weight_sync,
+)
 from axolotl.core.trainers.async_grpo.config import AxolotlAsyncGRPOConfig
 from axolotl.core.trainers.async_grpo.progress import (
     RolloutProgress,
@@ -321,7 +325,8 @@ class TestSampleFilterQueue:
         filtered.drop_held(1)
         assert consumed == {0}
 
-    def test_versions_of_settled_groups_without_a_size_are_forgotten(self):
+    def test_versions_of_settled_groups_without_a_size_are_forgotten(self, monkeypatch):
+        monkeypatch.setattr(progress_module, "_RECENT_VERSIONS", 2)
         samples = [_sample(g, 1.0, model_version=0) for g in range(10)]
         filtered, _, _ = self._filter(samples)
         for _ in range(5):
@@ -330,7 +335,25 @@ class TestSampleFilterQueue:
         filtered._prune_at = 5
         for _ in range(5):
             filtered.get(timeout=1)
-        assert set(filtered._versions) <= set(range(5, 10))
+        # The two newest stay; older settled groups are forgotten.
+        assert set(filtered._versions) == set(range(4, 10))
+
+    def test_a_prune_keeps_the_version_of_a_row_just_kept(self, monkeypatch):
+        """A trained group's new row is kept as a prune runs; its carried row must
+        still be judged stale once the policy moves on."""
+        monkeypatch.setattr(progress_module, "_RECENT_VERSIONS", 1)
+        version = 3
+        samples = [_sample(g, 1.0, model_version=3) for g in (0, 1, 0)]
+        filtered, _, _ = self._filter(
+            samples, model_version=lambda: version, max_staleness=0
+        )
+        filtered.get(timeout=1)
+        filtered.get(timeout=1)
+        filtered._progress.train([0, 1])
+        filtered._prune_at = 1
+        assert filtered.get(timeout=1).group_id == 0
+        version = 4
+        assert not filtered.still_fresh(0)
 
     def test_timeout_spans_dropped_samples(self):
         filtered, _, _ = self._filter([_sample(0, 0.0)])

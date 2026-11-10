@@ -17,6 +17,7 @@ training (or raise the stall error) at the same micro-batch.
 
 from __future__ import annotations
 
+import itertools
 import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
@@ -30,6 +31,9 @@ from axolotl.core.trainers.async_grpo.trl_compat import DataCollatorForRollout
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+# Kept through a prune; far more groups than a carried row can trail by.
+_RECENT_VERSIONS = 4096
 
 STOP_KEY = "rollout_stop"
 STOP_DONE = 1
@@ -283,6 +287,8 @@ class SampleFilterQueue:
                 self._metrics[f"sample/dropped_{reason}_total"].append(1.0)
             self._settle(sample.group_id, group_rows, reason)
             if reason is None:
+                # Newest last, so a prune keeps the versions carried rows still need.
+                self._versions.pop(sample.group_id, None)
                 self._versions[sample.group_id] = sample.model_version
                 if len(self._versions) > self._prune_at:
                     self._prune()
@@ -312,13 +318,18 @@ class SampleFilterQueue:
         self._held[group_id] = kept
 
     def _prune(self):
-        """Forget settled groups; rows without a group size never reach ``_hold``."""
+        """Forget settled groups; rows without a group size never reach ``_hold``.
+
+        The newest versions stay: a settled group can still have a row carried into
+        the next micro-batch, which ``still_fresh`` must judge.
+        """
         settled = self._progress.trained | self._progress.dropped
         self._held = {g: n for g, n in self._held.items() if g not in settled}
+        recent = set(itertools.islice(reversed(self._versions), _RECENT_VERSIONS))
         self._versions = {
             g: v
             for g, v in self._versions.items()
-            if g in self._held or g in self._arriving or g not in settled
+            if g in recent or g in self._held or g in self._arriving or g not in settled
         }
         self._prune_at = max(4096, 2 * max(len(self._held), len(self._versions)))
 
