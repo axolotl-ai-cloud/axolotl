@@ -12,6 +12,7 @@ from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import (
     is_torch_npu_available,
+    is_torch_xpu_available,
 )
 
 from axolotl.integrations.config import merge_input_args
@@ -136,7 +137,7 @@ def choose_device(cfg):
             if torch.cuda.is_available():
                 return f"cuda:{cfg.local_rank}"
 
-            if torch.xpu.is_available():
+            if is_torch_xpu_available():
                 return f"xpu:{cfg.local_rank}"
 
             if torch.backends.mps.is_available():
