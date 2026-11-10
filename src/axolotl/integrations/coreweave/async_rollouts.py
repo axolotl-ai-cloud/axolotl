@@ -36,6 +36,8 @@ class CoreWeaveRolloutLoop(AxolotlRolloutLoop):
         ready_poll_s: How often to check whether the first publish is served.
     """
 
+    _requires_vllm = False
+
     def __init__(
         self,
         *,

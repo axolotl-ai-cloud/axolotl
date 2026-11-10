@@ -165,3 +165,16 @@ def test_the_api_token_is_required(tokenizer, monkeypatch):
     monkeypatch.delenv("CW_API_TOKEN")
     with pytest.raises(ValueError, match="CW_API_TOKEN"):
         coreweave_loop(tokenizer)
+
+
+def test_the_worker_does_not_need_vllm_installed(monkeypatch):
+    import trl.experimental.async_grpo.async_rollout_worker as trl_worker
+
+    from axolotl.core.trainers.async_grpo.rollout import AxolotlAsyncRolloutWorker
+
+    monkeypatch.setattr(trl_worker, "is_vllm_available", lambda: False)
+    worker = AxolotlAsyncRolloutWorker(loop_cls=CoreWeaveRolloutLoop, model_name="m")
+    assert worker._loop_cls is CoreWeaveRolloutLoop
+    assert not trl_worker.is_vllm_available()
+    with pytest.raises(ImportError, match="vLLM is required"):
+        AxolotlAsyncRolloutWorker(model_name="m")
