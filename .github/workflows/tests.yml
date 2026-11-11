@@ -142,7 +142,7 @@ jobs:
       - name: Install axolotl from the sdist-built wheel
         run: |
           wheel=$(ls dist/axolotl-*.whl)
-          uv pip install "${wheel}[modal,baseten,ringmaster,audio]" --override /tmp/torch-pin.txt
+          uv pip install "${wheel}[modal,baseten,ringmaster]" --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install pytest==9.1.1 pytest-retry pytest-sugar pytest-xdist tbparse
 
