@@ -4280,3 +4280,20 @@ class TestMergeRoundingReport:
         assert len(reports) == 1
         expected = logging.INFO if merge_aware else logging.WARNING
         assert reports[0].levelno == expected
+
+
+def test_build_meta_model_uses_speech_seq2seq_head(tmp_path):
+    from transformers import CohereAsrConfig
+
+    from axolotl.cli.utils.lora_merge import _build_meta_model
+
+    CohereAsrConfig(
+        encoder_config={"hidden_size": 32, "num_hidden_layers": 1},
+        hidden_size=32,
+        num_hidden_layers=1,
+        architectures=["CohereAsrForConditionalGeneration"],
+    ).save_pretrained(tmp_path)
+
+    meta = _build_meta_model(tmp_path)
+
+    assert type(meta).__name__ == "CohereAsrForConditionalGeneration"

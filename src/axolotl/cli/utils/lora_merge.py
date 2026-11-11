@@ -362,9 +362,10 @@ def _build_meta_model(base_model_path: Path, trust_remote_code: bool = False):
     from transformers import (
         AutoModel,
         AutoModelForCausalLM,
+        AutoModelForSpeechSeq2Seq,
     )
 
-    auto_classes = [AutoModelForCausalLM, AutoModel]
+    auto_classes = [AutoModelForCausalLM, AutoModelForSpeechSeq2Seq, AutoModel]
     try:
         from transformers import AutoModelForImageTextToText
 
