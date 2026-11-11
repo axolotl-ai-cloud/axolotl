@@ -24,3 +24,17 @@ def test_remote_code_copy_keeps_merged_metadata_and_nested_sources(
     assert (output / "config.json").read_text() == '{"vocab_size": 2}\n'
     assert (output / "tokenizer.json").read_text() == "merged-tokenizer\n"
     assert (output / "model.safetensors").read_bytes() == b"merged"
+
+
+def test_remote_code_copy_keeps_saved_files_without_overwrite(tmp_path):
+    base, output = tmp_path / "base", tmp_path / "merged"
+    base.mkdir()
+    output.mkdir()
+    (base / "modeling_model.py").write_text("original\n")
+    (output / "modeling_model.py").write_text("saved\n")
+
+    _copy_remote_code_files(base, output, overwrite=False)
+    assert (output / "modeling_model.py").read_text() == "saved\n"
+
+    _copy_remote_code_files(base, output)
+    assert (output / "modeling_model.py").read_text() == "original\n"
