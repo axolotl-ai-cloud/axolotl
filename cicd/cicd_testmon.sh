@@ -65,18 +65,7 @@ tm gpu-integrations -v --durations=10 -n8 --dist loadfile -m "gpu and not gpu_bl
   --ignore=tests/integrations/kernels/ \
   /workspace/axolotl/tests/integrations/
 
-tm e2e -v --durations=10 -m "not slow and not gpu_blackwell" \
-  --ignore=tests/e2e/kernels/ \
-  --ignore=tests/e2e/solo/ \
-  --ignore=tests/e2e/patched/ \
-  --ignore=tests/e2e/multigpu/ \
-  --ignore=tests/e2e/integrations/ \
-  --ignore=tests/cli \
-  --ignore=tests/e2e/test_evaluate.py \
-  --ignore=tests/e2e/test_preprocess.py \
-  --ignore=tests/e2e/test_qwen.py \
-  --ignore=tests/e2e/test_quantization.py \
-  /workspace/axolotl/tests/e2e/
+TESTMON_FULL="$feature_full" python cicd/feature_testmon.py e2e -v --durations=10 --maxfail=10 -m "not slow and not gpu_blackwell" || failed=1
 
 # shellcheck disable=SC2086
 pytest -v --durations=10 --maxfail=10 -m "not slow and not gpu_blackwell" $SUBPROCESS_TESTS || failed=1

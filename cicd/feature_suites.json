@@ -98,6 +98,31 @@
       "run_last": [
         "sonicmoe"
       ]
+    },
+    "e2e": {
+      "paths": [
+        "tests/e2e/"
+      ],
+      "exclude": [
+        "tests/e2e/integrations/",
+        "tests/e2e/kernels/",
+        "tests/e2e/multigpu/",
+        "tests/e2e/patched/",
+        "tests/e2e/solo/",
+        "tests/e2e/test_evaluate.py",
+        "tests/e2e/test_preprocess.py",
+        "tests/e2e/test_qwen.py",
+        "tests/e2e/test_quantization.py"
+      ],
+      "suites": {
+        "preference": {
+          "tests": [
+            "tests/e2e/test_dpo.py",
+            "tests/e2e/test_ebft.py"
+          ],
+          "features": []
+        }
+      }
     }
   },
   "distributed": {

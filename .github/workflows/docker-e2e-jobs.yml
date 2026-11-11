@@ -65,8 +65,6 @@ jobs:
     runs-on: [self-hosted, modal]
     timeout-minutes: 120
     needs: [gate-skip-e2e]
-    outputs:
-      ran_all: ${{ steps.testmon.outputs.ran_all }}
 
     strategy:
       fail-fast: false
@@ -103,24 +101,14 @@ jobs:
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
       - name: Compute deps hash
         run: python cicd/deps_hash.py
-      - name: Run testmon e2e job on Modal
-        id: testmon
-        shell: bash
+      - name: Run affected e2e tests
+        if: (needs.gate-skip-e2e.outputs.full != 'true' && github.event_name != 'workflow_dispatch')
+        run: modal run -m cicd.e2e_testmon
+      - name: Run full e2e suite with coverage
+        if: (needs.gate-skip-e2e.outputs.full == 'true' || github.event_name == 'workflow_dispatch')
         env:
-          TESTMON_FULL: ${{ needs.gate-skip-e2e.outputs.full }}
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: |
-          log="$RUNNER_TEMP/e2e-testmon.log"
-          modal run -m cicd.e2e_testmon 2>&1 | tee "$log"
-          # A block that selected against a baseline prints "changed files"; one that had none
-          # prints "new DB" or "All tests have to be re-executed" and ran every test
-          if ! grep -q "testmon: changed files" "$log" &&
-             ! grep -qE "feature-suite .*: skip:" "$log" &&
-             grep -qE "testmon: new DB|All tests have to be re-executed" "$log"; then
-            echo "ran_all=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ran_all=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: modal run -m cicd.e2e_tests
 
   docker-e2e-tests:
     if: >
@@ -133,9 +121,8 @@ jobs:
     # this is to save on wasted compute costs for known failures that get caught in the gate
     needs: [gate-skip-e2e, docker-e2e-tests-testmon]
     env:
-      # With no testmon baseline in any block, the gate already ran this cell's full suite;
-      # the repeat is skipped, and with it that run's py3.14 coverage upload
-      REPEATS_GATE: ${{ matrix.python_version == '3.14' && matrix.pytorch == '2.14.1' && needs.docker-e2e-tests-testmon.outputs.ran_all == 'true' }}
+      # The gate already ran this cell in the requested selection mode.
+      REPEATS_GATE: ${{ matrix.python_version == '3.14' && matrix.pytorch == '2.14.1' }}
 
     strategy:
       fail-fast: false
@@ -162,7 +149,7 @@ jobs:
     steps:
       - name: Skip the repeat of the testmon gate
         if: env.REPEATS_GATE == 'true'
-        run: echo "docker-e2e-tests-testmon ran every test on this cell; skipping the full run"
+        run: echo "docker-e2e-tests-testmon already tested this cell; skipping the repeat"
       - name: Checkout
         if: env.REPEATS_GATE != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -192,12 +179,14 @@ jobs:
       - name: Compute deps hash
         if: env.REPEATS_GATE != 'true'
         run: python cicd/deps_hash.py
-      - name: Run tests job on Modal
-        if: env.REPEATS_GATE != 'true'
+      - name: Run affected e2e tests
+        if: env.REPEATS_GATE != 'true' && (needs.gate-skip-e2e.outputs.full != 'true' && github.event_name != 'workflow_dispatch')
+        run: modal run -m cicd.e2e_testmon
+      - name: Run full e2e suite with coverage
+        if: env.REPEATS_GATE != 'true' && (needs.gate-skip-e2e.outputs.full == 'true' || github.event_name == 'workflow_dispatch')
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: |
-          modal run -m cicd.e2e_tests
+        run: modal run -m cicd.e2e_tests
 
   docker-e2e-kernel-tests:
     needs: [gate-skip-e2e, docker-e2e-tests-testmon]
