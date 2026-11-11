@@ -36,7 +36,7 @@ class KDArgs(BaseModel):
     Input args for knowledge distillation.
     """
 
-    kd_trainer: float | None = None  # whether to use KD trainer
+    kd_trainer: bool | None = None  # whether to use KD trainer
     kd_ce_alpha: float | None = (
         None  # loss coefficient for cross-entropy loss during KD
     )
