@@ -133,13 +133,13 @@ def test_missing_language_raises(make_collator):
         collator([_row("hello")])
 
 
-def test_truncation_keeps_eos(make_collator, tokenizer):
+def test_truncation_drops_eos(make_collator, tokenizer):
     collator = make_collator()
     max_len = len(_prompt(collator)) + 3
     collator.max_decoder_len = max_len
     batch = collator([_row("one two three four five six seven eight")])
     assert batch["decoder_input_ids"].shape[1] == max_len
-    assert batch["labels"][0, -1].item() == tokenizer.eos_token_id
+    assert tokenizer.eos_token_id not in batch["labels"][0].tolist()
 
 
 def test_out_of_range_clips_dropped_once_then_all_dropped_raises(make_collator):

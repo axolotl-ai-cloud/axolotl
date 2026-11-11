@@ -141,6 +141,7 @@ class SpeechSeq2SeqCollator:
         text_ids = self.tokenizer(
             row[self.text_column].strip(), add_special_tokens=False
         )["input_ids"]
+        eos = [self.tokenizer.eos_token_id]
         if self.max_decoder_len is not None:
             max_text_len = max(self.max_decoder_len - len(prompt), 0)
             if len(text_ids) > max_text_len:
@@ -149,8 +150,9 @@ class SpeechSeq2SeqCollator:
                     f"Truncating transcripts to {max_text_len} tokens to fit "
                     f"sequence_len={self.max_decoder_len} with the decoder prompt.",
                 )
-                text_ids = text_ids[:max_text_len]
-        seq = prompt + text_ids + [self.tokenizer.eos_token_id]
+                # the audio continues past the cut, so do not teach the model to stop here
+                text_ids, eos = text_ids[: max_text_len + 1], []
+        seq = prompt + text_ids + eos
         labels = seq[1:]
         if not self.train_on_inputs:
             num_masked = len(prompt) - 1
