@@ -661,6 +661,7 @@ class TestCohereAsrSupport:
             {"attn_implementation": "flash_attention_2"},
             {"attn_implementation": "flex_attention"},
             {"sequence_len": 1025},
+            {"eval_sequence_len": 1025},
             {"sequence_len": 10},
             {"eval_sequence_len": 10},
         ],

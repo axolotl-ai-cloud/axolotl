@@ -38,12 +38,12 @@ def _validate(context: ModelHookContext) -> None:
             "cohere_asr; the Parakeet encoder supports only sdpa or eager."
         )
     max_positions = getattr(context.model_config, "max_position_embeddings", None)
-    if max_positions and cfg.sequence_len > max_positions:
-        raise ValueError(
-            f"sequence_len ({cfg.sequence_len}) exceeds the cohere_asr decoder's "
-            f"max_position_embeddings ({max_positions})."
-        )
     for key in ("sequence_len", "eval_sequence_len"):
+        if max_positions and cfg[key] is not None and cfg[key] > max_positions:
+            raise ValueError(
+                f"{key} ({cfg[key]}) exceeds the cohere_asr decoder's "
+                f"max_position_embeddings ({max_positions})."
+            )
         if cfg[key] is not None and cfg[key] <= _DECODER_PROMPT_LEN:
             raise ValueError(
                 f"{key} ({cfg[key]}) must exceed the cohere_asr decoder prompt "
