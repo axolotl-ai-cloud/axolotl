@@ -374,6 +374,8 @@ def architecture_skip_modules(model_type: str | None) -> tuple[str, ...]:
     """Modules an architecture keeps unquantized at both 4-bit load and merge."""
     if model_type == "nemotron_labs_diffusion_vlm":
         return NEMOTRON_DIFFUSION_VLM_4BIT_SKIP_MODULES
+    if model_type == "cohere_asr":
+        return ("proj_out",)
     return ()
 
 

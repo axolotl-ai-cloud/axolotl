@@ -694,6 +694,12 @@ class TestCohereAsrSupport:
                 ModelHookContext(cfg=self._cfg()),
             )
 
+    def test_nf4_keeps_output_head_unquantized(self):
+        from axolotl.utils.nf4 import bnb_4bit_skip_modules, nf4_skip_modules
+
+        assert "proj_out" in nf4_skip_modules("cohere_asr", {})
+        assert bnb_4bit_skip_modules("cohere_asr") == ["proj_out"]
+
     def test_peft_task_type_is_none(self):
         from axolotl.loaders.adapter import _get_peft_task_type
 
