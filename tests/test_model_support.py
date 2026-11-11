@@ -619,12 +619,45 @@ class TestCohereAsrSupport:
             "cohere_asr"
         )
 
+    @staticmethod
+    def _run_configure(cfg, **context_kwargs):
+        from types import SimpleNamespace
+
+        run_model_support_hooks(
+            get_model_support("cohere_asr"),
+            ModelHookPhase.CONFIGURE_RUN,
+            ModelHookContext(
+                cfg=cfg,
+                model_config=SimpleNamespace(max_position_embeddings=1024),
+                **context_kwargs,
+            ),
+        )
+
+    @staticmethod
+    def _cfg(**overrides):
+        cfg = DictDefault(
+            model_config_type="cohere_asr",
+            sequence_len=448,
+            skip_prepare_dataset=True,
+            asr=DictDefault(language="en"),
+        )
+        cfg.update(overrides)
+        return cfg
+
     @pytest.mark.parametrize(
         "overrides",
         [
             {"sample_packing": True},
             {"group_by_length": True},
             {"generate_samples": True},
+            {"rl": "dpo"},
+            {"reward_model": True},
+            {"process_reward_model": True},
+            {"freeze_mm_modules": True},
+            {"skip_prepare_dataset": False},
+            {"remove_unused_columns": True},
+            {"asr": None},
+            {"asr": DictDefault(language=None)},
             {"attn_implementation": "flash_attention_2"},
             {"attn_implementation": "flex_attention"},
             {"sequence_len": 1025},
@@ -633,38 +666,20 @@ class TestCohereAsrSupport:
         ],
     )
     def test_configure_run_rejects(self, overrides):
-        from types import SimpleNamespace
-
-        cfg = DictDefault(model_config_type="cohere_asr", sequence_len=448)
-        cfg.update(overrides)
         with pytest.raises(ValueError):
-            run_model_support_hooks(
-                get_model_support("cohere_asr"),
-                ModelHookPhase.CONFIGURE_RUN,
-                ModelHookContext(
-                    cfg=cfg,
-                    model_config=SimpleNamespace(max_position_embeddings=1024),
-                ),
-            )
+            self._run_configure(self._cfg(**overrides))
 
-    def test_configure_run_accepts_sdpa_and_defaults_asr(self):
-        from types import SimpleNamespace
+    @pytest.mark.parametrize(
+        "asr", [DictDefault(language="en"), DictDefault(language_column="lang")]
+    )
+    def test_configure_run_accepts(self, asr):
+        self._run_configure(
+            self._cfg(sequence_len=1024, attn_implementation="sdpa", asr=asr)
+        )
 
-        cfg = DictDefault(
-            model_config_type="cohere_asr",
-            sequence_len=1024,
-            attn_implementation="sdpa",
-        )
-        run_model_support_hooks(
-            get_model_support("cohere_asr"),
-            ModelHookPhase.CONFIGURE_RUN,
-            ModelHookContext(
-                cfg=cfg,
-                model_config=SimpleNamespace(max_position_embeddings=1024),
-            ),
-        )
-        assert cfg.asr.audio_column == "audio"
-        assert cfg.asr.text_column == "text"
+    def test_configure_run_refuses_inference(self):
+        with pytest.raises(ValueError, match="does not support"):
+            self._run_configure(self._cfg(), inference=True)
 
     def test_configure_run_requires_audio_extra(self, monkeypatch):
         monkeypatch.setattr(
@@ -675,7 +690,7 @@ class TestCohereAsrSupport:
             run_model_support_hooks(
                 get_model_support("cohere_asr"),
                 ModelHookPhase.CONFIGURE_RUN,
-                ModelHookContext(cfg=DictDefault(model_config_type="cohere_asr")),
+                ModelHookContext(cfg=self._cfg()),
             )
 
     def test_peft_task_type_is_none(self):

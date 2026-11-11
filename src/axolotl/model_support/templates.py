@@ -40,22 +40,40 @@ def _speech_seq2seq_collator_factory(cfg: Any, tokenizer: Any, is_eval: bool) ->
 
 def _validate_speech_seq2seq(context: ModelHookContext) -> None:
     cfg = context.cfg
+    model_type = cfg.model_config_type
+    if context.inference:
+        raise ValueError(
+            f"axolotl inference does not support speech seq2seq model_type={model_type}; "
+            "transcribe with the processor and model.generate() instead."
+        )
     if find_spec("librosa") is None or find_spec("soundfile") is None:
         raise ImportError(
             "Speech seq2seq training requires the audio extra: "
             "uv pip install 'axolotl[audio]'"
         )
-    if cfg.asr is None:
-        from axolotl.utils.dict import DictDefault
-        from axolotl.utils.schemas.asr import AsrConfig
-
-        # dataset loading only skips datasets' torchcodec Audio decode when `asr` is set
-        cfg.asr = DictDefault(AsrConfig().model_dump())
-    # These read `input_ids`, which speech seq2seq batches do not carry.
-    for key in ("sample_packing", "group_by_length", "generate_samples"):
+    if not cfg.skip_prepare_dataset or cfg.remove_unused_columns:
+        raise ValueError(
+            "Speech seq2seq training requires `skip_prepare_dataset: true` and "
+            "`remove_unused_columns: false`; the collator reads the raw audio and text."
+        )
+    if not (cfg.asr and (cfg.asr.language or cfg.asr.language_column)):
+        raise ValueError(
+            "Set `asr.language` (or `asr.language_column` for per-row codes); the "
+            "decoder prompt needs the transcript language."
+        )
+    # Paths that need tokenized text batches or a different trainer.
+    for key in (
+        "sample_packing",
+        "group_by_length",
+        "generate_samples",
+        "rl",
+        "reward_model",
+        "process_reward_model",
+        "freeze_mm_modules",
+    ):
         if cfg[key]:
             raise ValueError(
-                f"{key} is not supported for speech seq2seq model_type={cfg.model_config_type}."
+                f"{key} is not supported for speech seq2seq model_type={model_type}."
             )
 
 

@@ -127,6 +127,8 @@ class NormalizeConfigTestCase(unittest.TestCase):
         ):
             load_config.return_value = SimpleNamespace(model_type=model_type)
             cfg = self._get_base_cfg()
+            if model_type == "cohere_asr":
+                cfg.update(skip_prepare_dataset=True, asr=DictDefault(language="en"))
             cfg.activation_checkpointing = DictDefault(enabled=True, reentrant=True)
             normalize_config(cfg)
 
