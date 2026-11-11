@@ -34,7 +34,6 @@ def cells(job, suite=None):
         ("tests-nightly.yml", "pytest", None),
         ("tests-nightly.yml", "docker-e2e-tests", None),
         ("tests-nightly.yml", "docker-e2e-multigpu-tests", "multigpu"),
-        ("docker-e2e-jobs.yml", "docker-e2e-tests", None),
         ("testmon-gpu-kernels.yml", "docker-e2e-kernel-tests", None),
         ("multi-gpu-e2e-jobs.yml", "test-axolotl-multigpu", "multigpu"),
         ("nightlies.yml", "build-axolotl", None),
@@ -43,6 +42,14 @@ def cells(job, suite=None):
 )
 def test_general_matrix(name, job, suite):
     assert cells(workflow(name)["jobs"][job], suite) == EXPECTED
+
+
+def test_docker_e2e_matrix():
+    jobs = workflow("docker-e2e-jobs.yml")["jobs"]
+    gate = cells(jobs["docker-e2e-tests-testmon"])
+    followers = cells(jobs["docker-e2e-tests"])
+    assert gate.isdisjoint(followers)
+    assert gate | followers == EXPECTED
 
 
 def test_distributed_matrix_and_slow_refresh_match():
