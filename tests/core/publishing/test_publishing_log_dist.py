@@ -43,7 +43,5 @@ def test_publish_metrics_keep_ranks_logging_in_step(tmp_path):
     rows = json.loads((tmp_path / "log-0.json").read_text())
     steps = [row for row in rows if "loss" in row]
     assert [row["step"] for row in steps] == [1, 2, 3]
-    # step N's row carries the newest publish drained by then: N - 1, or N
-    assert all(
-        row[METRIC_PREFIX + "step"] in (row["step"] - 1, row["step"]) for row in steps
-    )
+    # step N's row carries the publish of step N - 1
+    assert [row[METRIC_PREFIX + "step"] for row in steps] == [0, 1, 2]

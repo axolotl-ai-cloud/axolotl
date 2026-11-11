@@ -2,6 +2,7 @@
 
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -10,10 +11,28 @@ from transformers import Trainer, TrainerCallback, TrainingArguments
 
 
 class Publisher:
+    """Publishes a step only once the training loop releases it."""
+
     def __init__(self):
         self.published: list[int] = []
+        self.released: set[int] = set()
+        self.release_all = False
+        self.cond = threading.Condition()
+
+    def release(self, step=None):
+        with self.cond:
+            if step is None:
+                self.release_all = True
+            else:
+                self.released.add(step)
+            self.cond.notify_all()
 
     def publish(self, buffers, step):
+        with self.cond:
+            if not self.cond.wait_for(
+                lambda: self.release_all or step in self.released, timeout=30
+            ):
+                raise TimeoutError(f"step {step} was never released")
         return {"identity": f"id-{step}", "action": "commit", "full": 0}
 
     def restore(self, buffers, step):
@@ -24,18 +43,24 @@ class Publisher:
 
 
 class WaitForPreviousPublish(TrainerCallback):
-    """Hold rank 0 at each step end until the previous step is published, so the
-    publish callback has metrics to log at every step."""
+    """At each step end, publish the previous step and wait for it, so the publish
+    callback drains exactly that step: a step published early would be drained by
+    its own step and leave the next step's row without publish metrics."""
 
     def __init__(self, publisher):
         self.publisher = publisher
 
     def on_step_end(self, args, state, control, **kwargs):
+        self.publisher.release(state.global_step - 1)
         deadline = time.monotonic() + 30
         while state.global_step - 1 not in self.publisher.published:
             if time.monotonic() > deadline:
                 raise TimeoutError(f"step {state.global_step - 1} never published")
             time.sleep(0.01)
+        return control
+
+    def on_train_end(self, args, state, control, **kwargs):
+        self.publisher.release()
         return control
 
 
