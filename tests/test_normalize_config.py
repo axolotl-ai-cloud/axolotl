@@ -130,7 +130,10 @@ class NormalizeConfigTestCase(unittest.TestCase):
             if model_type == "cohere_asr":
                 cfg.update(skip_prepare_dataset=True, asr=DictDefault(language="en"))
             cfg.activation_checkpointing = DictDefault(enabled=True, reentrant=True)
-            normalize_config(cfg)
+            with patch(
+                "axolotl.model_support.templates.find_spec", return_value=object()
+            ):
+                normalize_config(cfg)
 
             assert cfg.activation_checkpointing.reentrant is False, model_type
 

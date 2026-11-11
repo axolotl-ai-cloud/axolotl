@@ -622,16 +622,19 @@ class TestCohereAsrSupport:
     @staticmethod
     def _run_configure(cfg, **context_kwargs):
         from types import SimpleNamespace
+        from unittest.mock import patch
 
-        run_model_support_hooks(
-            get_model_support("cohere_asr"),
-            ModelHookPhase.CONFIGURE_RUN,
-            ModelHookContext(
-                cfg=cfg,
-                model_config=SimpleNamespace(max_position_embeddings=1024),
-                **context_kwargs,
-            ),
-        )
+        # the audio extra is optional; only test_configure_run_requires_audio_extra checks it
+        with patch("axolotl.model_support.templates.find_spec", return_value=object()):
+            run_model_support_hooks(
+                get_model_support("cohere_asr"),
+                ModelHookPhase.CONFIGURE_RUN,
+                ModelHookContext(
+                    cfg=cfg,
+                    model_config=SimpleNamespace(max_position_embeddings=1024),
+                    **context_kwargs,
+                ),
+            )
 
     @staticmethod
     def _cfg(**overrides):
