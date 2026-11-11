@@ -36,7 +36,12 @@ python cicd/feature_command.py multigpu-context-parallel pytest -v --durations=1
 
 # Run solo tests with coverage append; the NVFP4 suite has its own SM100 job
 python cicd/feature_command.py multigpu-solo pytest -v --durations=10 -n1 --maxfail=10 -m "not nvfp4 and not slow" \
-  /workspace/axolotl/tests/e2e/multigpu/solo/ \
+  '{suite_files}' \
+  --cov=axolotl \
+  --cov-append
+
+python cicd/feature_command.py multigpu-solo-rl pytest -v --durations=10 -n1 --maxfail=10 -m "not nvfp4 and not slow" \
+  '{suite_files}' \
   --cov=axolotl \
   --cov-append
 

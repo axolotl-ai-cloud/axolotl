@@ -73,6 +73,14 @@
           "features": [
             "quack"
           ]
+        },
+        "dense-lora": {
+          "tests": [
+            "tests/e2e/kernels/test_lora.py",
+            "tests/e2e/kernels/test_lora_features.py",
+            "tests/e2e/kernels/test_quantize.py"
+          ],
+          "features": []
         }
       }
     },
@@ -119,6 +127,22 @@
           "tests": [
             "tests/e2e/test_dpo.py",
             "tests/e2e/test_ebft.py"
+          ],
+          "features": []
+        },
+        "optimization": {
+          "tests": [
+            "tests/e2e/test_embeddings_lr.py",
+            "tests/e2e/test_optimizers.py",
+            "tests/e2e/test_schedulers.py"
+          ],
+          "features": []
+        },
+        "activation-memory": {
+          "tests": [
+            "tests/e2e/test_activation_offloading.py",
+            "tests/e2e/test_fa4_selective_checkpointing.py",
+            "tests/e2e/test_sac_activation_offloading.py"
           ],
           "features": []
         }
@@ -197,7 +221,11 @@
       "paths": [
         "tests/e2e/multigpu/solo/"
       ],
-      "exclude": [],
+      "exclude": [
+        "tests/e2e/multigpu/solo/test_gdpo.py",
+        "tests/e2e/multigpu/solo/test_grpo.py",
+        "tests/e2e/multigpu/solo/test_grpo_lora_merge_aware.py"
+      ],
       "features": [
         "quack"
       ],
@@ -206,9 +234,6 @@
         "tests/e2e/multigpu/solo/test_ep_cpu_offload_grad_clip_nccl.py",
         "tests/e2e/multigpu/solo/test_flex.py",
         "tests/e2e/multigpu/solo/test_fsdp2_cpu_offload_grad_clip.py",
-        "tests/e2e/multigpu/solo/test_gdpo.py",
-        "tests/e2e/multigpu/solo/test_grpo.py",
-        "tests/e2e/multigpu/solo/test_grpo_lora_merge_aware.py",
         "tests/e2e/multigpu/solo/test_native_nvfp4_deepspeed_lora_merge_aware.py",
         "tests/e2e/multigpu/solo/test_native_nvfp4_deepspeed_lora_merge_lifecycle.py",
         "tests/e2e/multigpu/solo/test_native_nvfp4_dynamic_ste.py",
@@ -305,6 +330,20 @@
       "features": [],
       "audited_tests": [
         "tests/e2e/multigpu/test_ringmaster.py"
+      ]
+    },
+    "multigpu-solo-rl": {
+      "paths": [
+        "tests/e2e/multigpu/solo/test_gdpo.py",
+        "tests/e2e/multigpu/solo/test_grpo.py",
+        "tests/e2e/multigpu/solo/test_grpo_lora_merge_aware.py"
+      ],
+      "exclude": [],
+      "features": [],
+      "audited_tests": [
+        "tests/e2e/multigpu/solo/test_gdpo.py",
+        "tests/e2e/multigpu/solo/test_grpo.py",
+        "tests/e2e/multigpu/solo/test_grpo_lora_merge_aware.py"
       ]
     }
   }

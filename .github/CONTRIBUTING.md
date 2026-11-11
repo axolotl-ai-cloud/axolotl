@@ -312,9 +312,11 @@ checks always run and retain their no-skip assertion.
 
 The regular serial e2e, integration, and kernel blocks are partitioned by
 `cicd/feature_suites.json`. Liger and Cut Cross Entropy integration tests run in
-separate processes; kernel activation and MoE tests have separate suites and
-baselines. The serial DPO and EBFT tests form a preference suite; neither opts into Liger, CCE, or Quack. Unclassified test files remain in a general suite. The existing
-subprocess and LoRA-patching exclusions keep their original lanes.
+separate processes. The serial single-GPU block groups preference training,
+optimizer/scheduler behavior, and activation memory tests. The kernel block
+separates activations, dense LoRA and dequantization, MoE, and Quack. Each group
+has its own testmon database. Unclassified files stay in the general suite. The
+existing subprocess and LoRA-patching exclusions keep their original lanes.
 
 Only explicit feature boundaries can exclude a suite before testmon runs. The
 boundaries cover the opt-in Liger and Cut Cross Entropy plugin packages and
@@ -355,7 +357,9 @@ eligible test in a selected suite runs with normal pytest and testmon disabled.
 No per-test dependency claims are made for spawned training workers.
 
 The general lane preserves its process limits and separates CCE, quantization,
-context parallel, solo, wrapper, and patched suites. NF4 and NVFP4 retain their
+context parallel, solo, wrapper, and patched suites. GRPO/GDPO runs separately
+from the other solo tests with the same one-worker and marker limits, so Quack-only
+changes need not run the RL suite. NF4 and NVFP4 retain their
 complete scripts, including hardware checks and assertions that tests ran without
 unexpected skips. Slow two- and four-GPU suites use the same whole-suite selection;
 the slow single-GPU kernel lane retains its existing testmon path.
