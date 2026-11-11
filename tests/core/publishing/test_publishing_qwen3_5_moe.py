@@ -84,6 +84,7 @@ def test_mixed_checkpoint_inventory(tmp_path, setup):
     assert any(name.startswith("model.visual.") for name in untargeted)
 
 
+@pytest.mark.distributed_cpu
 @pytest.mark.parametrize(("world", "ep"), [(2, None), (4, 2)])
 def test_rank_builds_match_the_offline_merge(tmp_path, setup, world, ep):
     _, base, adapters = setup
@@ -143,6 +144,7 @@ def _merge_aware_snap(weight, lora_a, lora_b, pts):
     return quantize_nvfp4_merge(w_eff.float(), pts, scale_mode="fresh")
 
 
+@pytest.mark.distributed_cpu
 def test_published_nvfp4_matches_the_merge_aware_forward(tmp_path, setup):
     """Shared expert and routed experts: published bytes are what training quantized."""
     pytest.importorskip("triton")  # the expert loader package imports it

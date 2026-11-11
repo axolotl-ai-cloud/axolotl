@@ -231,6 +231,7 @@ def reconstruct(paths):
     return states
 
 
+@pytest.mark.distributed_cpu
 @pytest.mark.parametrize(("world", "ep"), [(2, None), (3, None), (4, 2)])
 def test_rank_builds_match_the_offline_merge(tmp_path, setup, world, ep):
     root, base, adapters = setup
@@ -273,6 +274,7 @@ def test_rank_builds_match_the_offline_merge(tmp_path, setup, world, ep):
         assert metrics[f"seconds_{stage}"] >= 0
 
 
+@pytest.mark.distributed_cpu
 def test_merge_aware_rank_builds_match(tmp_path, setup):
     root, base, _ = setup
     adapters = [
@@ -295,6 +297,7 @@ def test_merge_aware_rank_builds_match(tmp_path, setup):
         assert_bytes_equal(ours, theirs)
 
 
+@pytest.mark.distributed_cpu
 def test_failed_publish_rolls_back_every_rank(tmp_path, setup):
     root, base, adapters = setup
     results = run_ranks(
@@ -355,6 +358,7 @@ def committed_chain(tmp_path, setup):
     return base, adapters, [m["identity"] for m in first[0]]
 
 
+@pytest.mark.distributed_cpu
 def test_resume_rebuilds_the_baseline_and_continues_the_chain(
     tmp_path, committed_chain
 ):
@@ -387,6 +391,7 @@ def test_resume_rebuilds_the_baseline_and_continues_the_chain(
     assert_bytes_equal(reconstruct(paths)[-1], load_checkpoint(reference))
 
 
+@pytest.mark.distributed_cpu
 def test_resume_keeps_a_surviving_baseline(tmp_path, committed_chain):
     base, adapters, identities = committed_chain
     results = run_ranks(
@@ -405,6 +410,7 @@ def test_resume_keeps_a_surviving_baseline(tmp_path, committed_chain):
     assert not results[0][1]["full"] and results[0][1]["delta_count"] == 2
 
 
+@pytest.mark.distributed_cpu
 def test_resume_publishes_full_when_readers_moved_on(tmp_path, committed_chain):
     base, adapters, identities = committed_chain
     results = run_ranks(
@@ -427,6 +433,7 @@ def test_resume_publishes_full_when_readers_moved_on(tmp_path, committed_chain):
         )
 
 
+@pytest.mark.distributed_cpu
 @pytest.mark.parametrize("case", ["wrong adapter", "other step", "no record"])
 def test_resume_falls_back_to_a_full_checkpoint(tmp_path, committed_chain, case):
     base, adapters, identities = committed_chain
