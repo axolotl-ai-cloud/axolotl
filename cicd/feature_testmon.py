@@ -31,7 +31,15 @@ def partition(root: Path, group: dict) -> list[tuple[str, list[str], list[str] |
         path = root / entry
         if not path.exists():
             raise FileNotFoundError(f"Missing suite path: {entry}")
-        candidates = path.rglob("test_*.py") if path.is_dir() else [path]
+        candidates = (
+            (
+                p
+                for p in path.rglob("*.py")
+                if p.match("test_*.py") or p.match("*_test.py")
+            )
+            if path.is_dir()
+            else [path]
+        )
         files.update(
             candidate.relative_to(root).as_posix()
             for candidate in candidates

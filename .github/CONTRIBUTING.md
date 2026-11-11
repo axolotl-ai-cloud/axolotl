@@ -310,11 +310,13 @@ checks always run and retain their no-skip assertion.
 
 #### Feature-aware e2e suites
 
-The testmon e2e integration and kernel blocks are partitioned by
+The regular serial e2e, integration, and kernel blocks are partitioned by
 `cicd/feature_suites.json`. Liger and Cut Cross Entropy integration tests run in
-separate processes; kernel activation and MoE tests have separate suites and
-baselines. Unclassified test files remain in a general suite. The existing
-subprocess and LoRA-patching exclusions keep their original lanes.
+separate processes. The serial single-GPU block groups preference training,
+optimizer/scheduler behavior, and activation memory tests. The kernel block
+separates activations, dense LoRA and dequantization, MoE, and Quack. Each group
+has its own testmon database. Unclassified files stay in the general suite. The
+existing subprocess and LoRA-patching exclusions keep their original lanes.
 
 Only explicit feature boundaries can exclude a suite before testmon runs. The
 boundaries cover the opt-in Liger and Cut Cross Entropy plugin packages and
@@ -335,7 +337,7 @@ invalid metadata, environment changes, and previous failures force a full suite.
 Configuration, non-Python inputs, and conftest changes also force full execution
 of affected suites. Python changes within scope use testmon's finer selection.
 Full-run labels and manual refreshes bypass feature exclusion. Logs show each
-suite's decision and reason; skipped suites never count as a complete e2e gate run.
+suite's decision and reason.
 
 The B200 lane uses a separate hardware-specific baseline and runs its general
 and SonicMoE suites in separate processes, with SonicMoE last. Full refreshes
@@ -355,7 +357,9 @@ eligible test in a selected suite runs with normal pytest and testmon disabled.
 No per-test dependency claims are made for spawned training workers.
 
 The general lane preserves its process limits and separates CCE, quantization,
-context parallel, solo, wrapper, and patched suites. NF4 and NVFP4 retain their
+context parallel, solo, wrapper, and patched suites. GRPO/GDPO runs separately
+from the other solo tests with the same one-worker and marker limits, so Quack-only
+changes need not run the RL suite. NF4 and NVFP4 retain their
 complete scripts, including hardware checks and assertions that tests ran without
 unexpected skips. Slow two- and four-GPU suites use the same whole-suite selection;
 the slow single-GPU kernel lane retains its existing testmon path.
@@ -403,7 +407,7 @@ The label handler uses `pull_request_target` with trusted inline code only and m
 
 Outside of PRs, the `docker-e2e-tests` suite runs on merges to `main`, and the multi-GPU suite runs on its semi-weekly schedule or manual dispatch.
 
-The single-GPU suite is gated by `docker-e2e-tests-testmon`, which runs it on Python 3.14 / PyTorch 2.14.1 under pytest-testmon, selecting only the tests affected since the baseline `main` last saved. The full single-GPU legs (Python 3.12 / PyTorch 2.13.0 and Python 3.14 / PyTorch 2.14.1), the CUDA kernel tests and the Blackwell tests start once it passes. When no testmon block had a baseline to select against (after a dependency change, for example), the gate has already run the whole Python 3.14 suite, so that full leg is skipped for the run.
+The regular single-GPU Docker jobs select against each environment's pinned Modal baseline on PRs and main pushes. Python 3.14 / PyTorch 2.14.1 runs first; on success, Python 3.12 / PyTorch 2.13.0 and Python 3.14 / PyTorch 2.15.0 run once each, alongside the kernel and Blackwell jobs. To run all three regular suites with Codecov, apply `run-tests-full` to a GPU-enabled PR or manually dispatch the Docker e2e workflow. Use **Refresh testmon baselines** on main to rebuild selection data.
 
 ##### Slow GPU Tests
 
@@ -421,11 +425,11 @@ required by branch protection.
 
 ##### Selected e2e arms (experimental)
 
-Alongside the full suites, every PR run selects the e2e test files its diff can affect
+Alongside the gating suites, every GPU-enabled PR run selects the e2e test files its diff can affect
 and runs just those in two extra arms, `docker-e2e-tests-selected` (single GPU) and
 `multigpu-selected`. They gate nothing today and run with `continue-on-error`, so a
 failure there never fails the run; they exist to be compared
-against the full suites in both directions. The `select-e2e` job writes the selection and the reason for every file
+against the gating jobs. The `select-e2e` job writes the selection and the reason for every file
 to its job summary and uploads it as the `e2e-selection` artifact.
 
 `cicd/select_e2e_tests.py` derives the selection from the tree, so new features need

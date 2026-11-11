@@ -21,6 +21,9 @@ def run(root: Path, name: str, command: list[str]) -> int:
     if not suites:
         raise ValueError(f"No tests in distributed suite {name}")
     tests = suites[0][1]
+    if "{suite_files}" in command:
+        index = command.index("{suite_files}")
+        command = [*command[:index], *tests, *command[index + 1 :]]
     # New test files need a feature audit before they can inherit exclusions.
     features = spec["features"] if tests == spec["audited_tests"] else None
     identity = hashlib.sha256(json.dumps([name, command]).encode()).hexdigest()[:16]

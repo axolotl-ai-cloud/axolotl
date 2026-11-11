@@ -52,7 +52,7 @@ def suite(tmp_path):
                 "-m",
                 "pytest",
                 "-q",
-                "tests/",
+                "{suite_files}",
             ],
             cwd=tmp_path,
             env=env | changes,
@@ -86,8 +86,8 @@ def test_feature_skip_full_override_and_new_tests(suite):
     assert "only other explicitly isolated features changed" in run().stdout
     assert "2 passed" in run(TESTMON_FULL="true").stdout
     assert "2 passed" in run(TESTMON_SELECT="false").stdout
-    (root / "tests/test_added.py").write_text("def test_new(): assert True\n")
-    subprocess.run(["git", "add", "tests/test_added.py"], cwd=root, check=True)
+    (root / "tests/added_test.py").write_text("def test_new(): assert True\n")
+    subprocess.run(["git", "add", "tests/added_test.py"], cwd=root, check=True)
     assert "3 passed" in run().stdout
     (root / "src/liger/plugin.py").write_text("x = 3\n")
     assert "3 passed" in run().stdout
@@ -153,7 +153,15 @@ def test_distributed_manifest_audit_and_partition():
         actual = set()
         for path in spec["paths"]:
             entry = ROOT / path
-            candidates = entry.rglob("test_*.py") if entry.is_dir() else [entry]
+            candidates = (
+                (
+                    p
+                    for p in entry.rglob("*.py")
+                    if p.match("test_*.py") or p.match("*_test.py")
+                )
+                if entry.is_dir()
+                else [entry]
+            )
             actual.update(
                 p.relative_to(ROOT).as_posix()
                 for p in candidates
@@ -164,11 +172,18 @@ def test_distributed_manifest_audit_and_partition():
             )
         assert sorted(actual) == spec["audited_tests"]
         assert set(spec["features"]) <= manifest["features"].keys()
-    groups = ["multigpu-cce", "multigpu-general", "multigpu-solo", "multigpu-patched"]
+    groups = [
+        "multigpu-cce",
+        "multigpu-general",
+        "multigpu-solo",
+        "multigpu-solo-rl",
+        "multigpu-patched",
+    ]
     assigned = [path for group in groups for path in suites[group]["audited_tests"]]
     expected = {
         p.relative_to(ROOT).as_posix()
-        for p in (ROOT / "tests/e2e/multigpu").rglob("test_*.py")
+        for p in (ROOT / "tests/e2e/multigpu").rglob("*.py")
+        if p.match("test_*.py") or p.match("*_test.py")
     }
     assert set(assigned) == expected
     assert len(assigned) == len(expected)
