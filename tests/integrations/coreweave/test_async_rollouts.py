@@ -134,6 +134,14 @@ def test_samples_from_the_gateway_once_a_publish_is_served(tokenizer):
     assert not body.keys() & {"return_token_ids", "top_k", "repetition_penalty"}
 
 
+def test_rollouts_fail_when_the_first_publish_was_discarded(tokenizer):
+    from axolotl.integrations.coreweave.async_rollouts import FIRST_PUBLISH_FAILED
+
+    loop = coreweave_loop(tokenizer, version=FIRST_PUBLISH_FAILED)
+    with pytest.raises(RuntimeError, match="starting weights"):
+        loop._loop.run_until_complete(loop._generate_once_served(asyncio.Event()))
+
+
 def test_zero_probability_top_logprobs_arrive_as_null(tokenizer):
     async def complete(request):
         return web.json_response(

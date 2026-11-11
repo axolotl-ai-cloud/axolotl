@@ -23,8 +23,8 @@ class CheckpointPublishConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Merged weight format: `preserve` keeps the base's own format "
-            "(e.g. NVFP4 experts with fresh scales), `bf16` writes BF16. "
-            "Defaults to `preserve` for `export: merged`."
+            "(e.g. NVFP4 experts with fresh scales), `bf16` dequantizes a quantized "
+            "base to BF16. Defaults to `preserve` for `export: merged`."
         },
     )
     delta: bool = Field(
@@ -63,8 +63,9 @@ class CheckpointPublishConfig(BaseModel):
     destination: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "`s3://bucket/prefix` or a local directory. Omit when a "
-            "destination plugin such as `coreweave` is configured."
+            "description": "`s3://bucket/prefix` or a local directory, published to "
+            "every `every` steps. Omit when a destination plugin such as `coreweave` "
+            "is configured."
         },
     )
     workdir: str | None = Field(

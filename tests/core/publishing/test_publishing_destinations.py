@@ -125,7 +125,10 @@ def test_publisher_commits_only_after_destination_success(tmp_path):
         publisher.publish({"w": torch.zeros(2)}, "c")
     publisher.abandon()
     destination.fail = False
-    assert publisher.publish({"w": torch.full((2,), 2.0)}, "c") == "c"
+    assert publisher.publish({"w": torch.full((2,), 2.0)}, "c", config={}) == "c"
+    # readers may hold part of the abandoned publish, so it was not a delta
+    assert publisher.delta_count == 0
+    assert publisher.publish({"w": torch.full((2,), 4.0)}, "c2") == "c2"
     assert publisher.delta_count == 1
     assert not (tmp_path / "b").exists()
     destination.fail = True
@@ -133,7 +136,8 @@ def test_publisher_commits_only_after_destination_success(tmp_path):
         publisher.publish({"w": torch.full((2,), 3.0)}, "d")
     destination.fail = False
     publisher.recover()
-    assert publisher.identity == "d" and destination.published == ["a", "c", "d"]
+    assert publisher.identity == "d"
+    assert destination.published == ["a", "c", "c2", "d"]
     assert publisher.publish({"w": torch.full((2,), 3.0)}, "e") == "d"
 
 
@@ -288,3 +292,75 @@ def test_checkpoint_publish_applies_to_coreweave():
             ),
             config,
         )
+
+
+def test_a_destination_needs_a_publish_cadence(tmp_path):
+    from axolotl.core.publishing.callback import publish_settings
+
+    cfg = {"adapter": "lora", "checkpoint_publish": {"destination": str(tmp_path)}}
+    with pytest.raises(ValueError, match="checkpoint_publish.every"):
+        publish_settings(DictDefault(cfg))
+    cfg["checkpoint_publish"]["every"] = 2
+    assert publish_settings(DictDefault(cfg)).every == 2
+
+
+def test_fan_in_fan_out_adapters_match_the_transposed_base(tmp_path):
+    import json
+
+    from safetensors.torch import save_file
+
+    from axolotl.core.publishing.adapters import (
+        ADAPTER_CONFIG,
+        ADAPTER_WEIGHTS,
+        PREFIX,
+        validate_adapter,
+    )
+
+    # GPT-2's c_attn: a Conv1D stores the weight as [in, out].
+    hidden, rank = 4, 2
+    module = "transformer.h.0.attn.c_attn"
+    save_file(
+        {
+            f"{PREFIX}{module}.lora_A.weight": torch.zeros(rank, hidden),
+            f"{PREFIX}{module}.lora_B.weight": torch.zeros(3 * hidden, rank),
+        },
+        tmp_path / ADAPTER_WEIGHTS,
+    )
+    config = {
+        "peft_type": "LORA",
+        "r": rank,
+        "lora_alpha": rank,
+        "target_modules": ["c_attn"],
+        "fan_in_fan_out": True,
+    }
+    (tmp_path / ADAPTER_CONFIG).write_text(json.dumps(config))
+    layout = {f"{module}.weight": ("float32", [hidden, 3 * hidden])}
+    assert validate_adapter(tmp_path, layout)
+    config["fan_in_fan_out"] = False
+    (tmp_path / ADAPTER_CONFIG).write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="LoRA shape"):
+        validate_adapter(tmp_path, layout)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "rejected"), [("float16", True), ("bfloat16", False)]
+)
+def test_bf16_export_of_an_unquantized_base(tmp_path, dtype, rejected):
+    from axolotl.core.publishing.exporters import MergedExporter
+    from axolotl.core.publishing.pinned_base import PinnedBase
+
+    base = PinnedBase(
+        source=tmp_path,
+        path=tmp_path,
+        identity="base",
+        format="unquantized",
+        layout={"w.weight": (dtype, [2, 2])},
+        files={"w.weight": "model.safetensors"},
+        config={},
+        linked=False,
+    )
+    if rejected:
+        with pytest.raises(ValueError, match="merged_format: preserve"):
+            MergedExporter(base, "bf16")
+    else:
+        MergedExporter(base, "bf16")

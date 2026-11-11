@@ -101,6 +101,11 @@ def publish_settings(cfg, every: int | None = None):
                 f"trl.weight_sync_steps: {every}, the servers' weight sync"
             )
         settings = settings.model_copy(update={"every": every})
+    if settings.destination and not settings.every:
+        raise ValueError(
+            "checkpoint_publish.destination publishes per step: set "
+            "checkpoint_publish.every"
+        )
     if settings.every:
         if cfg.get("adapter") != "lora" or settings.merged_format != "preserve":
             raise ValueError(
@@ -206,7 +211,8 @@ class StepPublishCallback(TrainerCallback):
 
     With ``publish_at_start`` the weights training starts from (step 0, or the
     resumed step) are published at once. ``on_published(step)`` runs on the
-    publisher thread after each step every destination serves.
+    publisher thread after each step every destination serves, and
+    ``on_discarded(step)`` after each publish that was dropped.
 
     Publish metrics join the trainer's next training log row instead of a
     ``trainer.log`` of their own: on rank 0 alone, that call resets
@@ -224,6 +230,7 @@ class StepPublishCallback(TrainerCallback):
         arrival_timeout: float = 600.0,
         publish_at_start: bool = False,
         on_published: Callable[[int], None] | None = None,
+        on_discarded: Callable[[int], None] | None = None,
     ):
         if every <= 0:
             raise ValueError("every must be positive")
@@ -231,6 +238,7 @@ class StepPublishCallback(TrainerCallback):
         self.adapter, self.arrival_timeout = adapter, arrival_timeout
         self.publish_at_start = publish_at_start
         self.on_published = on_published
+        self.on_discarded = on_discarded
         self.publisher = None
         self.scheduler: CoalescingScheduler | None = None
         self._pending: dict[str, float] = {}
@@ -272,6 +280,7 @@ class StepPublishCallback(TrainerCallback):
             restore=self.publisher.restore,
             arrival_timeout=self.arrival_timeout,
             on_published=self.on_published,
+            on_discarded=self.on_discarded,
         )
         self.scheduler.start(restore_step=state.global_step or None)
         if self.publish_at_start:

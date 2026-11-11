@@ -113,10 +113,12 @@ class CoalescingScheduler:
         restore: Callable[[Sequence[torch.Tensor], int], Any] | None = None,
         arrival_timeout: float = 600.0,
         on_published: Callable[[int], None] | None = None,
+        on_discarded: Callable[[int], None] | None = None,
     ):
         self.stager, self.publish_fn, self.comm = stager, publish, comm
         self.restore_fn = restore
         self.on_published = on_published
+        self.on_discarded = on_discarded
         self.arrival_timeout = arrival_timeout
         self.table = SlotTable(len(stager.buffers))
         self.cond = threading.Condition()
@@ -253,4 +255,6 @@ class CoalescingScheduler:
             "empty",
         ):
             self.on_published(target)
+        elif self.on_discarded is not None and metrics.get("action") == "discard":
+            self.on_discarded(target)
         return True

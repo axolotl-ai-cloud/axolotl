@@ -3,6 +3,7 @@
 import errno
 import json
 import os
+import shutil
 from unittest.mock import MagicMock
 
 import pytest
@@ -73,7 +74,18 @@ def test_pin_base_links_without_copying(tmp_path, base_dir):
     os.utime(base_dir / "model-00002-of-00002.safetensors", ns=(1, 1))
     with pytest.raises(RuntimeError, match="changed"):
         base.verify()
-    assert pin_base(base_dir, tmp_path / "work").identity != base.identity
+    repinned = pin_base(base_dir, tmp_path / "work")
+    assert repinned.identity == base.identity and repinned.path != base.path
+
+
+def test_pin_base_identity_ignores_file_times(tmp_path, base_dir):
+    # Byte-identical copies on two nodes differ in mtime only.
+    copy = tmp_path / "copy"
+    shutil.copytree(base_dir, copy)
+    for path in copy.iterdir():
+        os.utime(path, ns=(1, 1))
+    first = pin_base(base_dir, tmp_path / "a")
+    assert pin_base(copy, tmp_path / "b").identity == first.identity
 
 
 def test_pin_base_references_across_filesystems(tmp_path, base_dir, monkeypatch):
@@ -245,9 +257,8 @@ def test_failures_before_commit_leave_baseline(tmp_path, base_dir, monkeypatch):
     identity = publisher.publish_export(
         exporter, save_adapter(tmp_path / "a4", 4), "step-4"
     )
-    assert index_of(tmp_path / "published" / identity)["metadata"]["base_version"] == (
-        "step-1"
-    )
+    # step-2 was abandoned after a failed upload, so step-4 is a full checkpoint
+    assert "base_version" not in index_of(tmp_path / "published" / identity)["metadata"]
 
 
 def test_dropped_expert_lora_is_refused(tmp_path, base_dir, monkeypatch):

@@ -132,6 +132,8 @@ def validate_adapter(
         base = layout.get(f"{module}.weight")
         if wrappers == {module} and base is not None and len(base[1]) == 2:
             dtype, (rows, columns) = base
+            if config.get("fan_in_fan_out"):
+                rows, columns = columns, rows
             a = adapter[f"{PREFIX}{module}.lora_A.weight"][1]
             b = adapter[f"{PREFIX}{module}.lora_B.weight"][1]
             packed = 2 if dtype == "uint8" else 1

@@ -348,13 +348,25 @@ class CoreWeavePlugin(BasePlugin):
         if settings is not None and settings.every:
             from axolotl.core.publishing.callback import StepPublishCallback
 
-            on_published = None
+            on_published = on_discarded = None
             if rollouts:
+                from .async_rollouts import FIRST_PUBLISH_FAILED
+
+                served = False
 
                 def on_published(step):
+                    nonlocal served
+                    served = True
                     # Rank 0 runs the rollout worker; every replica serves `step`.
                     if worker := getattr(trainer, "rollout_worker", None):
                         worker.update_model_version(step // settings.every)
+
+                def on_discarded(step):
+                    # Nothing is served yet, so no rollout could ever start.
+                    if not served and (
+                        worker := getattr(trainer, "rollout_worker", None)
+                    ):
+                        worker.update_model_version(FIRST_PUBLISH_FAILED)
 
             self._checkpoint_callback = StepPublishCallback(
                 step_publisher_factory(cfg, config, settings, revision),
@@ -362,6 +374,7 @@ class CoreWeavePlugin(BasePlugin):
                 trainer=trainer,
                 publish_at_start=rollouts,
                 on_published=on_published,
+                on_discarded=on_discarded,
             )
             return [self._checkpoint_callback]
         self._checkpoint_callback = CoreWeaveCheckpointCallback(

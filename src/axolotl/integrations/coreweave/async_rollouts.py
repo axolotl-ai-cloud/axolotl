@@ -25,6 +25,8 @@ LOG = get_logger(__name__)
 # Statuses a retry cannot fix; anything else (429, 5xx during a hot-load) is retried.
 _REJECTED = frozenset(range(400, 500)) - {408, 429}
 _VLLM_ONLY = frozenset({"return_token_ids", "top_k", "repetition_penalty", "min_p"})
+# Set by the trainer when the publish of the starting weights was discarded.
+FIRST_PUBLISH_FAILED = -2
 
 
 class CoreWeaveRolloutLoop(AxolotlRolloutLoop):
@@ -90,6 +92,11 @@ class CoreWeaveRolloutLoop(AxolotlRolloutLoop):
     async def _generate_once_served(self, stop_event: asyncio.Event) -> None:
         # The score loop keeps the heartbeat while the first publish uploads.
         while self.model_version < 0 and not stop_event.is_set():
+            if self.model_version == FIRST_PUBLISH_FAILED:
+                raise RuntimeError(
+                    "Publishing the starting weights to CoreWeave failed; see the "
+                    "trainer log for the discarded publish"
+                )
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=self._ready_poll_s)
             except TimeoutError:

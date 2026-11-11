@@ -179,20 +179,22 @@ def test_scheduler_restores_before_publishing():
 
 
 @pytest.mark.parametrize(
-    "action, reported", [("commit", [1]), ("empty", [1]), ("discard", [])]
+    "action, reported, dropped",
+    [("commit", [1], []), ("empty", [1], []), ("discard", [], [1])],
 )
-def test_scheduler_reports_only_served_steps(action, reported):
-    served = []
+def test_scheduler_reports_served_and_dropped_steps(action, reported, dropped):
+    served, discarded = [], []
     scheduler = CoalescingScheduler(
         FakeStager(torch.zeros(1)),
         lambda buffers, step: {"action": action},
         LocalComm(),
         on_published=served.append,
+        on_discarded=discarded.append,
     )
     scheduler.start()
     scheduler.offer(1)
     scheduler.close()
-    assert served == reported
+    assert served == reported and discarded == dropped
 
 
 def _scheduler_worker(rank, world, init_file, out):

@@ -17,7 +17,8 @@ class ChainPublisher:
     """Advance the committed baseline only after the destination accepted a checkpoint.
 
     A failed publish stays ``pending``: ``recover`` completes it, ``abandon`` drops
-    it so the next publish is built against the last commit again.
+    it. Readers may already hold part of an abandoned publish, so the next one is a
+    full checkpoint.
     """
 
     def __init__(self, chain: ChainWriter, destination: Destination):
@@ -28,6 +29,7 @@ class ChainPublisher:
         ):
             chain.max_deltas = destination.max_deltas
         self.pending: StagedCheckpoint | None = None
+        self._force_full = False
 
     @property
     def identity(self) -> str | None:
@@ -65,6 +67,7 @@ class ChainPublisher:
             config=config,
             fingerprint=fingerprint,
             layout=layout,
+            force_full=self._force_full,
             copy=copy,
         )
         return self.submit(staged)
@@ -85,7 +88,10 @@ class ChainPublisher:
         if fingerprint is None:
             fingerprint = exporter.fingerprint(adapter)
         with self.chain.begin(
-            identity, fingerprint=fingerprint, layout=exporter.layout(adapter)
+            identity,
+            fingerprint=fingerprint,
+            layout=exporter.layout(adapter),
+            force_full=self._force_full,
         ) as session:
             config = exporter.export(
                 adapter, lambda name, tensor: session.add(name, tensor, copy=False)
@@ -113,8 +119,10 @@ class ChainPublisher:
         if self.pending is not None:
             self.chain.discard(self.pending)
             self.pending = None
+            self._force_full = True
 
     def commit(self):
         assert self.pending is not None
         self.chain.commit(self.pending)
         self.pending = None
+        self._force_full = False

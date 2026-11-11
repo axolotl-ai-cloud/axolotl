@@ -2034,7 +2034,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--checkpoint-publish.merged-format",),
         "checkpoint_publish__merged_format",
         None,
-        "Merged weight format: `preserve` keeps the base's own format (e.g. NVFP4 experts with fresh scales), `bf16` writes BF16. Defaults to `preserve` for `export: merged`.",
+        "Merged weight format: `preserve` keeps the base's own format (e.g. NVFP4 experts with fresh scales), `bf16` dequantizes a quantized base to BF16. Defaults to `preserve` for `export: merged`.",
     ),
     (
         ("--checkpoint-publish.delta/--no-checkpoint-publish.delta",),
@@ -2070,7 +2070,7 @@ AXOLOTL_CONFIG_CLI_OPTIONS = (
         ("--checkpoint-publish.destination",),
         "checkpoint_publish__destination",
         "str",
-        "`s3://bucket/prefix` or a local directory. Omit when a destination plugin such as `coreweave` is configured.",
+        "`s3://bucket/prefix` or a local directory, published to every `every` steps. Omit when a destination plugin such as `coreweave` is configured.",
     ),
     (
         ("--checkpoint-publish.workdir",),

@@ -148,6 +148,25 @@ def test_async_rollouts_publish_at_every_weight_sync():
     worker.update_model_version.assert_called_once_with(3)
 
 
+def test_a_discarded_first_publish_fails_the_rollout_worker():
+    from axolotl.integrations.coreweave.async_rollouts import FIRST_PUBLISH_FAILED
+
+    worker = MagicMock()
+    trainer = SimpleNamespace(
+        model=SimpleNamespace(config=SimpleNamespace()), rollout_worker=worker
+    )
+    (callback,) = CoreWeavePlugin().add_callbacks_post_trainer(
+        async_rollout_cfg(), trainer
+    )
+    callback.on_discarded(0)
+    worker.update_model_version.assert_called_once_with(FIRST_PUBLISH_FAILED)
+
+    worker.reset_mock()
+    callback.on_published(1)
+    callback.on_discarded(2)
+    worker.update_model_version.assert_called_once_with(1)
+
+
 def test_async_rollouts_on_other_ranks_have_no_worker_to_update():
     cfg = async_rollout_cfg()
     trainer = SimpleNamespace(

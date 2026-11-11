@@ -121,6 +121,18 @@ class MergedExporter(Exporter):
     ):
         if merged_format not in ("preserve", "bf16"):
             raise ValueError(f"Unknown merged format {merged_format!r}")
+        if merged_format == "bf16" and base.format == "unquantized":
+            others = {
+                dtype
+                for dtype, _ in base.layout.values()
+                if dtype in FLOAT_DTYPES and dtype != "bfloat16"
+            }
+            if others:
+                raise ValueError(
+                    "merged_format: bf16 dequantizes quantized bases; this "
+                    f"unquantized base keeps its {', '.join(sorted(others))} weights. "
+                    "Use merged_format: preserve"
+                )
         self.base, self.merged_format, self.device = base, merged_format, device
         self.workdir = Path(workdir) if workdir is not None else None
         self.workers = workers

@@ -2,8 +2,9 @@
 
 The merge reads the base on every publish, so it must not change under a chain.
 ``pin_base`` records each tensor's name, dtype and shape from the safetensors
-headers, derives an identity from those headers, the file stats and the config,
-and hard-links the files into the publisher's workdir so a later delete of the
+headers, derives an identity from those headers, the file sizes and the config
+(the same on every node holding the same checkpoint), and hard-links the files
+into the publisher's workdir so a later delete of the
 source cannot break the chain. Where links are impossible (another filesystem)
 the source is referenced in place and re-checked before every merge.
 """
@@ -183,7 +184,7 @@ def _identity(source: Path, names: list[str], revision: str | None) -> str:
         if (blob := _content_id(path)) is not None:
             digest.update(blob.encode())
             continue
-        digest.update(json.dumps(_stat(path)).encode())
+        digest.update(str(path.stat().st_size).encode())
         if name.endswith(".safetensors"):
             digest.update(read_header(path)[0])
         else:
@@ -212,7 +213,12 @@ def pin_base(
     fmt = base_format(config)
     check_layout(layout, fmt)
     identity = _identity(source, names, revision)
-    pinned = workdir / f".base-{identity[:32]}"
+    # The identity omits mtimes so nodes agree; the local pin is keyed on them too, so
+    # a source rewritten with the same sizes and headers is pinned afresh.
+    local = hashlib.sha256(
+        json.dumps([_stat(source / name) for name in names]).encode()
+    ).hexdigest()
+    pinned = workdir / f".base-{identity[:32]}-{local[:12]}"
     linked = pinned.is_dir()
     if linked:
         manifest = json.loads((pinned / MANIFEST_NAME).read_text(encoding="utf-8"))
