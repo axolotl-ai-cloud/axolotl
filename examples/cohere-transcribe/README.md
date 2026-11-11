@@ -6,13 +6,14 @@ This guide shows how to fine-tune it with Axolotl's speech-to-text (encoder-deco
 
 ## Getting Started
 
-1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html), including the `audio` extra (`librosa` and `soundfile`, required for audio decoding and feature extraction):
+1. Install Axolotl from main following the [installation guide](https://docs.axolotl.ai/docs/installation.html#sec-edge-build), including the `audio` extra (`librosa` and `soundfile`, required for audio decoding and feature extraction):
 
     ```bash
-    uv pip install 'axolotl[audio]'
-
-    # or, from a source checkout
+    # from a source checkout
     uv pip install -e '.[audio]'
+
+    # or, from the next release onward
+    uv pip install 'axolotl[audio]'
     ```
 
 2. Request access to the [model repo](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) and log in with `hf auth login`.
@@ -41,12 +42,18 @@ Audio is decoded, downmixed to mono and resampled to 16 kHz automatically. Write
 ## Tips
 
 - Clips longer than 35 seconds or shorter than 20 milliseconds are dropped with a warning when the dataset loads; split long recordings into shorter segments first.
-- `sequence_len` caps the number of transcript tokens per sample and must not exceed the decoder limit of 1024.
+- `sequence_len` caps the decoder length (the 10-token language/task prompt plus the transcript) and must not exceed the decoder limit of 1024; longer transcripts are truncated.
 - Prompt tokens (language, punctuation and task tags) are excluded from the loss unless `train_on_inputs: true`.
 - Use `attn_implementation: sdpa` or `eager`. Flash attention, sample packing, Liger and Cut Cross Entropy are not supported for this model.
 - The encoder's BatchNorm layers stay in eval mode during training so their running statistics are not skewed by small or padded batches.
 - Do not set `trust_remote_code`; Axolotl's pinned Transformers version includes the model.
 - The model expects the language to be given; it does not detect it.
+- For FSDP, set the wrap classes explicitly, since the model's default list names a class that does not exist:
+
+    ```yaml
+    fsdp_config:
+      transformer_layer_cls_to_wrap: ParakeetEncoderBlock,CohereAsrDecoderLayer
+    ```
 
 ## Inference
 
@@ -66,7 +73,7 @@ audio = load_audio("sample.wav", sampling_rate=16000)
 inputs = processor(audio, sampling_rate=16000, return_tensors="pt", language="en")
 inputs.to(model.device, dtype=model.dtype)
 outputs = model.generate(**inputs, max_new_tokens=256)
-print(processor.decode(outputs, skip_special_tokens=True))
+print(processor.decode(outputs[0], skip_special_tokens=True))
 ```
 
 ## Related Resources
