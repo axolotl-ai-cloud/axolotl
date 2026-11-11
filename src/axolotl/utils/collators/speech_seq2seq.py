@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from datasets import Dataset, IterableDataset
 from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
 from axolotl.utils.collators.core import IGNORE_INDEX
@@ -50,6 +51,28 @@ def load_audio(audio: Any, sampling_rate: int) -> np.ndarray:
     return array
 
 
+def audio_num_samples(audio: Any, sampling_rate: int) -> int:
+    """Length of `audio` at `sampling_rate`, read from the file header when undecoded."""
+    if isinstance(audio, dict) and audio.get("array") is not None:
+        num_samples, orig_sr = max(np.shape(audio["array"])), audio["sampling_rate"]
+    else:
+        soundfile = _import_audio_lib("soundfile")
+        if isinstance(audio, dict):
+            audio = audio.get("bytes") or audio["path"]
+        if isinstance(audio, bytes):
+            audio = io.BytesIO(audio)
+        info = soundfile.info(audio)
+        num_samples, orig_sr = info.frames, info.samplerate
+    return round(num_samples * sampling_rate / orig_sr)
+
+
+def _within(num_samples: int, bounds: tuple[int, int | None]) -> bool:
+    min_samples, max_samples = bounds
+    return num_samples >= min_samples and (
+        max_samples is None or num_samples <= max_samples
+    )
+
+
 @dataclass
 class SpeechSeq2SeqCollator:
     """Builds `decoder_input_ids = prompt + text` and pre-shifted `labels = prompt[1:] + text + [eos]`;
@@ -80,11 +103,16 @@ class SpeechSeq2SeqCollator:
         self.sampling_rate = feature_extractor.sampling_rate
         # longer clips get split into extra feature rows, desyncing them from the labels
         max_clip_s = getattr(feature_extractor, "max_audio_clip_s", None)
-        self.max_audio_s = (
-            None
-            if max_clip_s is None
-            else max_clip_s - getattr(feature_extractor, "overlap_chunk_second", 0.0)
+        # fewer than two hops leaves a single frame, whose normalization divides by zero
+        self.length_bounds = (
+            2 * getattr(feature_extractor, "hop_length", 0),
+            None if max_clip_s is None else round(max_clip_s * self.sampling_rate),
         )
+
+    def describe_bounds(self) -> str:
+        min_samples, max_samples = self.length_bounds
+        upper = "inf" if max_samples is None else max_samples
+        return f"[{min_samples}, {upper}] samples at {self.sampling_rate} Hz"
 
     def _warn_once(self, key: str, message: str):
         if key not in self._warned:
@@ -133,13 +161,10 @@ class SpeechSeq2SeqCollator:
         audios, rows = [], []
         for row in examples:
             audio = load_audio(row[self.audio_column], self.sampling_rate)
-            if (
-                self.max_audio_s is not None
-                and len(audio) / self.sampling_rate > self.max_audio_s
-            ):
+            if not _within(len(audio), self.length_bounds):
                 self._warn_once(
-                    "long_clip",
-                    f"Dropping clips longer than {self.max_audio_s:g}s; filter them "
+                    "clip_length",
+                    f"Dropping clips outside {self.describe_bounds()}; filter them "
                     "out of the dataset to avoid smaller batches.",
                 )
                 continue
@@ -147,7 +172,7 @@ class SpeechSeq2SeqCollator:
             rows.append(row)
         if not rows:
             raise ValueError(
-                f"Every clip in the batch is longer than {self.max_audio_s:g}s."
+                f"Every clip in the batch is outside {self.describe_bounds()}."
             )
 
         features = self.processor.feature_extractor(
@@ -210,3 +235,37 @@ def build_speech_seq2seq_collator(
         train_on_inputs=bool(cfg.train_on_inputs),
         features_dtype=cfg.torch_dtype or torch.float32,
     )
+
+
+def _keep_clip(row: dict, column: str, sampling_rate: int, bounds: tuple) -> bool:
+    return _within(audio_num_samples(row[column], sampling_rate), bounds)
+
+
+def filter_audio_lengths(
+    dataset: Dataset | IterableDataset,
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizerBase,
+) -> Dataset | IterableDataset:
+    """Drop clips the collator would skip, so no batch can end up empty."""
+    collator = build_speech_seq2seq_collator(cfg, tokenizer, is_eval=False)
+    fn_kwargs = {
+        "column": collator.audio_column,
+        "sampling_rate": collator.sampling_rate,
+        "bounds": collator.length_bounds,
+    }
+    if isinstance(dataset, IterableDataset):
+        return dataset.filter(_keep_clip, fn_kwargs=fn_kwargs)
+
+    num_rows = len(dataset)
+    dataset = dataset.filter(
+        _keep_clip,
+        fn_kwargs=fn_kwargs,
+        num_proc=cfg.dataset_num_proc,
+        desc="Dropping out-of-range audio clips",
+    )
+    if len(dataset) < num_rows:
+        LOG.warning(
+            f"Dropped {num_rows - len(dataset)} of {num_rows} clips outside "
+            f"{collator.describe_bounds()}."
+        )
+    return dataset

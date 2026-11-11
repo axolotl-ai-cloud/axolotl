@@ -40,7 +40,7 @@ Audio is decoded, downmixed to mono and resampled to 16 kHz automatically. Write
 
 ## Tips
 
-- Clips longer than 30 seconds are skipped with a warning; split long recordings into shorter segments first.
+- Clips longer than 35 seconds or shorter than 20 milliseconds are dropped with a warning when the dataset loads; split long recordings into shorter segments first.
 - `sequence_len` caps the number of transcript tokens per sample and must not exceed the decoder limit of 1024.
 - Prompt tokens (language, punctuation and task tags) are excluded from the loss unless `train_on_inputs: true`.
 - Use `attn_implementation: sdpa` or `eager`. Flash attention, sample packing, Liger and Cut Cross Entropy are not supported for this model.

@@ -142,16 +142,22 @@ def test_truncation_keeps_eos(make_collator, tokenizer):
     assert batch["labels"][0, -1].item() == tokenizer.eos_token_id
 
 
-def test_long_clips_dropped_once_then_all_dropped_raises(make_collator):
+def test_out_of_range_clips_dropped_once_then_all_dropped_raises(make_collator):
     collator = make_collator()
     with patch.object(speech_seq2seq.LOG, "warning") as warning:
         for _ in range(2):
-            batch = collator([_row("short"), _row("long", seconds=31.0)])
+            batch = collator(
+                [
+                    _row("kept", seconds=35.0),
+                    _row("long", seconds=36.0),
+                    _row("tiny", seconds=0.01),
+                ]
+            )
             assert batch["input_features"].shape[0] == 1
             assert batch["labels"].shape[0] == 1
     warning.assert_called_once()
     with pytest.raises(ValueError, match="Every clip"):
-        collator([_row("long", seconds=31.0)])
+        collator([_row("long", seconds=36.0)])
 
 
 def test_features_cast_to_compute_dtype(make_collator):
@@ -182,20 +188,29 @@ def test_load_audio_sources(tmp_path, orig_sr, source):
     np.testing.assert_allclose(decoded, expected, atol=1e-5)
 
 
-def test_dataset_load_disables_audio_decoding():
+@enable_hf_offline
+def test_dataset_load_skips_decoding_and_filters_clip_lengths(tokenizer):
     from datasets import Audio, Dataset
 
     from axolotl.utils.data.sft import _load_and_process_single_dataset
 
-    buffer = io.BytesIO()
-    soundfile.write(buffer, _tone(0.1), SR, format="WAV")
-    dataset = Dataset.from_dict(
-        {"audio": [{"bytes": buffer.getvalue(), "path": None}], "text": ["hi"]}
-    ).cast_column("audio", Audio())
-    cfg = DictDefault(skip_prepare_dataset=True, asr=DictDefault(audio_column="audio"))
+    clips = []
+    for seconds in (0.1, 0.01):
+        buffer = io.BytesIO()
+        soundfile.write(buffer, _tone(seconds), SR, format="WAV")
+        clips.append({"bytes": buffer.getvalue(), "path": None})
+    dataset = Dataset.from_dict({"audio": clips, "text": ["hi", "tiny"]}).cast_column(
+        "audio", Audio()
+    )
+    cfg = DictDefault(
+        base_model=MIRROR,
+        skip_prepare_dataset=True,
+        asr=DictDefault(audio_column="audio", language="en"),
+    )
     with patch("axolotl.utils.data.sft.load_dataset_with_config", return_value=dataset):
         loaded, _ = _load_and_process_single_dataset(
-            DictDefault(path="unused"), cfg, None, "train", seed=42
+            DictDefault(path="unused"), cfg, tokenizer, "train", seed=42
         )
     assert loaded.features["audio"].decode is False
-    assert loaded[0]["audio"]["bytes"] == buffer.getvalue()
+    assert loaded["text"] == ["hi"]
+    assert loaded[0]["audio"]["bytes"] == clips[0]["bytes"]
