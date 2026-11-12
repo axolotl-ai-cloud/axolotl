@@ -73,6 +73,47 @@ def init_accelerate():
     _ = PartialState()
 
 
+@pytest.fixture(autouse=True)
+def _restore_patched_classes():
+    # Model loading (which also turns on TF32 under tf32: auto) and
+    # patch_self_attn_lora change these in place; a later test's unpatched
+    # reference would otherwise run the patched code at TF32.
+    from transformers.modeling_utils import ModuleUtilsMixin, PreTrainedModel
+
+    classes = [
+        LlamaAttention,
+        Qwen3MoeAttention,
+        LlamaForCausalLM,
+        PreTrainedModel,
+        ModuleUtilsMixin,
+    ]
+    saved = [(cls, dict(vars(cls))) for cls in classes]
+    # The legacy allow_tf32 flags read through these; root before its children.
+    backends = [
+        torch.backends,
+        torch.backends.cuda.matmul,
+        torch.backends.cudnn,
+        getattr(torch.backends.cudnn, "conv", None),
+        getattr(torch.backends.cudnn, "rnn", None),
+    ]
+    precision = torch.get_float32_matmul_precision()
+    fp32 = [getattr(backend, "fp32_precision", None) for backend in backends]
+    yield
+    torch.set_float32_matmul_precision(precision)
+    for backend, value in zip(backends, fp32, strict=True):
+        if value is not None:
+            backend.fp32_precision = value
+    for cls, attrs in saved:
+        for name in set(vars(cls)) - set(attrs):
+            delattr(cls, name)
+        for name, value in attrs.items():
+            if vars(cls).get(name) is not value and name not in (
+                "__dict__",
+                "__weakref__",
+            ):
+                setattr(cls, name, value)
+
+
 @pytest.fixture
 def small_llama_model():
     """Create a small LLaMA model for testing."""
