@@ -22,6 +22,7 @@ from axolotl.utils.schemas.activation_checkpointing import (
     ActivationCheckpointingConfig,
 )
 from axolotl.utils.schemas.checkpoint_mirror import CheckpointMirrorConfig
+from axolotl.utils.schemas.checkpoint_publish import CheckpointPublishConfig
 from axolotl.utils.schemas.checkpoint_save_retry import CheckpointSaveRetryConfig
 from axolotl.utils.schemas.datasets import (
     DatasetConfig,
@@ -303,6 +304,13 @@ class AxolotlInputConfig(
     reward_model: bool | None = Field(
         default=None,
         json_schema_extra={"description": "Reward modelling: `True` or `False`"},
+    )
+    checkpoint_publish: CheckpointPublishConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Publish LoRA or merged weights as a full checkpoint "
+            "followed by XOR deltas, to a local directory, S3, or a destination plugin."
+        },
     )
     dynamic_checkpoint: DynamicCheckpointConfig | None = Field(
         default=None,

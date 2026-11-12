@@ -22,6 +22,8 @@ import os
 
 import torch
 
+from axolotl.utils.fp32_precision import ieee_fp32_matmul  # noqa: F401
+
 SF_VEC_SIZE = 16
 E4M3_MAX = 448.0
 

@@ -63,7 +63,9 @@ from axolotl.core.trainers.async_grpo.trl_compat import (
     register_tree_attention,
 )
 from axolotl.core.trainers.async_grpo.weight_sync import (
+    UNPUBLISHED_VERSION,
     AliasingVLLMClient,
+    ExternalWeightTransfer,
     WeightSyncMixin,
 )
 from axolotl.core.trainers.mixins import (
@@ -298,6 +300,18 @@ class AxolotlAsyncGRPOTrainer(
                 **(args.rollout_loop_kwargs or {}),
             )
         }
+        if args.external_weight_sync:
+            if kwargs.get("weight_transfer") is not None:
+                raise ValueError(
+                    "external_weight_sync publishes weights through a plugin and "
+                    "does not take a weight_transfer."
+                )
+            if args.token_budget is None:
+                # TRL would ask the vLLM server for its max_model_len.
+                raise ValueError(
+                    "external_weight_sync needs token_budget (`trl.token_budget`)."
+                )
+            kwargs["weight_transfer"] = ExternalWeightTransfer()
         if args.vllm_lora_alias:
             replacements["VLLMClient"] = functools.partial(
                 AliasingVLLMClient, alias=args.vllm_lora_alias
@@ -369,6 +383,12 @@ class AxolotlAsyncGRPOTrainer(
         self._step_trains_nothing = False
         self._weights_updated = True
         self.add_callback(_EmptyStepCallback(self))
+        if (
+            args.external_weight_sync
+            and self.accelerator.is_main_process
+            and self.rollout_worker
+        ):
+            self.rollout_worker.update_model_version(UNPUBLISHED_VERSION)
         if self.accelerator.is_main_process:
             queue_view = self.rollout_queue  # type: ignore[has-type]
             scored_here = bool(self._trainer_scorers)

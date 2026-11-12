@@ -272,7 +272,7 @@ def test_builder_registers_deepspeed_callback_for_dynamic_input_gradient_request
             del total_num_steps
 
     builder = object.__new__(Builder)
-    builder.cfg = SimpleNamespace(plugins=[])
+    builder.cfg = SimpleNamespace(plugins=[], checkpoint_publish=None)
     builder.model = SimpleNamespace(
         _axolotl_native_nvfp4_dynamic_input_gradients_requested="DeepSpeed"
     )

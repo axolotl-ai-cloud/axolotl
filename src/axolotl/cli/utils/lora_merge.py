@@ -668,7 +668,18 @@ def _find_param_wrapper_lora(
     return candidates[0] if candidates else (None, None, None)
 
 
-def _build_peft_layer_and_get_delta(
+def _build_peft_layer_and_get_delta(*args, canonical_fp32: bool = False, **kwargs):
+    """``_peft_layer_delta`` computed in IEEE fp32 even under ``tf32``, matching the
+    merge-aware training forwards (BF16 and NVFP4) bit for bit."""
+    from axolotl.utils.fp32_precision import ieee_fp32_matmul
+
+    if canonical_fp32:
+        kwargs["canonical_fp32"] = True
+    with ieee_fp32_matmul():
+        return _peft_layer_delta(*args, **kwargs)
+
+
+def _peft_layer_delta(
     lora_a: torch.Tensor,
     lora_b: torch.Tensor,
     lora_config_dict: Dict,
@@ -971,6 +982,8 @@ def _prefetched_shards(model_shards: list[Path]):
     """Yield ``(path, tensors, metadata)`` while the next shard loads in the background.
 
     safetensors reads release the GIL, so the read overlaps the caller's merge."""
+    if not model_shards:
+        return
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="merge-read") as pool:
         next_read: Optional[Future] = pool.submit(_read_shard, model_shards[0])
         for idx, shard_path in enumerate(model_shards):
@@ -2957,6 +2970,10 @@ def merge_lora_sharded_efficient(
     merge_compile_precision: str = "strict",
     base_model_config: Optional[str] = None,
     lora_merge_aware: Optional[str] = None,
+    merge_report: Optional[dict] = None,
+    shard_filter: Optional[Callable[[Path], bool]] = None,
+    on_shard_merged: Optional[Callable[[Path], None]] = None,
+    lora_weights: Optional[Dict[str, torch.Tensor]] = None,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -2979,6 +2996,13 @@ def merge_lora_sharded_efficient(
             "relaxed" uses compiler defaults without numerical equivalence checks.
         shard_sink: Optional writer receiving each merged CPU shard, its destination,
             and safetensors metadata. Replaces the default shard write.
+        merge_report: Optional dict filled with ``merged`` (LoRA targets applied),
+            ``expert_groups`` (per-expert NVFP4 groups merged, or None without the
+            expert writer) and ``expert_lora_dropped``.
+        shard_filter: Merge only the base shards it accepts. Shards that share a
+            layer must be merged by the same call; an empty result is not an error.
+        on_shard_merged: Called with each base shard once its output was emitted.
+        lora_weights: Already loaded adapter tensors, shared read-only.
         nf4_backend: NF4 implementation used for the training base.
         nf4_skips: Resolved module exclusions from ``nf4_skip_modules``. When provided,
             weights are selected the way the staged loader selected them (Linear
@@ -3164,7 +3188,9 @@ def merge_lora_sharded_efficient(
 
     LOG.debug(f"Loading LoRA weights from {lora_file}")
 
-    if lora_file.suffix == ".safetensors":
+    if lora_weights is not None:
+        lora_state = lora_weights
+    elif lora_file.suffix == ".safetensors":
         lora_state = safetensors.torch.load_file(lora_file)
     else:
         lora_state = torch.load(lora_file, map_location="cpu", weights_only=True)  # nosec B614
@@ -3179,6 +3205,8 @@ def merge_lora_sharded_efficient(
     if not model_shards:
         raise FileNotFoundError(f"No model shards found in {base_model_path}")
     foreign_scales = _cross_shard_scales(base_model_path)
+    if shard_filter is not None:
+        model_shards = [shard for shard in model_shards if shard_filter(shard)]
 
     token_row_merges = _plan_trainable_token_merges(
         lora_state,
@@ -3222,6 +3250,7 @@ def merge_lora_sharded_efficient(
     copy_non_model_files(base_model_path, output_path, model_shards)
 
     expert_writer = None
+    expert_lora_dropped = False
     if _detect_per_expert_unfused_mismatch(model_shards, lora_state):
         try:
             import torchao  # noqa: F401
@@ -3230,6 +3259,7 @@ def merge_lora_sharded_efficient(
         except ImportError:
             has_torchao = False
         if not has_torchao or not _per_expert_weights_are_packed(model_shards):
+            expert_lora_dropped = True
             LOG.warning(
                 "MERGE INCOMPLETE: the adapter has a FUSED expert LoRA (experts.gate_up_proj/down_proj) "
                 "but this base stores experts PER-EXPERT and unfused (experts.<i>.gate_proj.weight ...) "
@@ -3500,6 +3530,8 @@ def merge_lora_sharded_efficient(
                 )
                 del merged_tensors, shard_tensors
                 gc.collect()
+                if on_shard_merged is not None:
+                    on_shard_merged(shard_path)
                 continue
 
             if shard_sink is not None:
@@ -3523,6 +3555,8 @@ def merge_lora_sharded_efficient(
             if device != "cpu" and torch.cuda.is_available():
                 torch.cuda.empty_cache()
             gc.collect()
+            if on_shard_merged is not None:
+                on_shard_merged(shard_path)
     except BaseException:
         try:
             write_queue.close()
@@ -3576,7 +3610,17 @@ def merge_lora_sharded_efficient(
     if resized_vocab is not None:
         _update_config_vocab_size(output_path, resized_vocab)
 
+    if merge_report is not None:
+        merge_report.update(
+            merged=merged_count,
+            expert_groups=None
+            if expert_writer is None
+            else expert_writer.merged_groups,
+            expert_lora_dropped=expert_lora_dropped,
+        )
     if merged_count == 0:
+        if shard_filter is not None:
+            return
         if shard_sink is not None:
             raise ValueError("No LoRA weights matched the base model")
         LOG.warning(

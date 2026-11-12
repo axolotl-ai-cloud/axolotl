@@ -23,9 +23,15 @@ _FLOAT_DTYPES = (torch.float32, *_HALF_DTYPES)
 def lora_delta(
     lora_a: torch.Tensor, lora_b: torch.Tensor, scaling: float
 ) -> torch.Tensor:
-    """FP32 ``scaling * B @ A``, with the matmul in the adapter dtype as PEFT's merge computes it."""
+    """FP32 ``scaling * B @ A``, with the matmul in the adapter dtype as PEFT's merge
+    computes it, and in IEEE even under ``tf32`` as the merge writer computes it."""
+    from axolotl.utils.fp32_precision import ieee_fp32_matmul
+
     dtype = torch.promote_types(lora_a.dtype, lora_b.dtype)
-    with torch.autocast(device_type=lora_b.device.type, enabled=False):
+    with (
+        torch.autocast(device_type=lora_b.device.type, enabled=False),
+        ieee_fp32_matmul(),
+    ):
         return ((lora_b.to(dtype) @ lora_a.to(dtype)) * scaling).float()
 
 

@@ -206,7 +206,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
             beta=0.0,
             use_vllm=True,
             async_prefetch=True,
-            vllm_sync_interval=2,
+            weight_sync_steps=2,
             max_staleness=3,
             reward_num_workers=2,
             scoring_token_budget=64,

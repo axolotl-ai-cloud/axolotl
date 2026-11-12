@@ -8,6 +8,7 @@
 
 """Pydantic args for the Expert-Parallel plugin."""
 
+from importlib.util import find_spec
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -69,6 +70,23 @@ class ExpertParallelArgs(BaseModel):
             raise ValueError(
                 f"expert_parallel_token_capacity must be >= 1 when set "
                 f"(got {self.expert_parallel_token_capacity!r}). Use None to disable the cap."
+            )
+
+        if (
+            self.expert_parallel_size > 1
+            and self.expert_parallel_backend == "deep_ep"
+            and find_spec("deep_ep") is None
+        ):
+            outcome = (
+                "expert parallelism will be skipped at model load and the experts "
+                "sharded like any other weight"
+                if self.expert_parallel_fallback_on_unsupported
+                else "model loading will fail"
+            )
+            LOG.warning(
+                f"expert_parallel_backend: deep_ep, but `deep_ep` is not installed here: "
+                f"{outcome}. Use an image with DeepEP (the -blackwell cloud image) or "
+                "set expert_parallel_backend: torch (or auto)."
             )
 
         if self.expert_parallel_size > 1 and self.expert_parallel_num_rdma_bytes != 0:

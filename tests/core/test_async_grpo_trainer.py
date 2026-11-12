@@ -733,7 +733,7 @@ class TestGRPOStrategy:
             async_prefetch=True,
             vllm_server_host="0.0.0.0",  # nosec B104
             vllm_server_port=8123,
-            vllm_sync_interval=2,
+            weight_sync_steps=2,
             max_staleness=1,
             scale_rewards=False,
             reward_weights=[1.0, 0.5],
@@ -1498,6 +1498,60 @@ class TestTreeFlashAttn:
         assert trl_compat.tree_flash_attn() is kernel
         assert installed == ([kernel] if routed else [])
 
+    def test_prefers_an_installed_flash_attn4_on_blackwell(
+        self, tree_flash_attn, monkeypatch
+    ):
+        from axolotl.monkeypatch.attention import flash_attn_4_ops
+
+        trl_compat, loaded = tree_flash_attn
+        module = types.SimpleNamespace()
+        installed = []
+        monkeypatch.setattr(flash_attn_4_ops, "install_fa4_ops", installed.append)
+        monkeypatch.setattr(
+            trl_compat,
+            "_installed_flash_attn4",
+            lambda: trl_compat._InstalledFlashAttn4(module),
+        )
+        monkeypatch.setattr(trl_compat, "_trl_flash_attn", pytest.fail)
+        kernel = trl_compat.tree_flash_attn()
+        assert kernel.module is module and installed == [module] and loaded == []
+
+    def test_installed_flash_attn4_takes_trls_varlen_call(self):
+        from axolotl.core.trainers.async_grpo.trl_compat import _InstalledFlashAttn4
+
+        calls = []
+        module = types.SimpleNamespace(
+            flash_attn_varlen_func=lambda *args, **kwargs: calls.append((args, kwargs))
+        )
+        _InstalledFlashAttn4(module).flash_attn_varlen_func(
+            "q",
+            "k",
+            "v",
+            "cu_q",
+            "cu_k",
+            9,
+            7,
+            softmax_scale=0.5,
+            causal=True,
+            window_size=(-1, -1),
+        )
+        _InstalledFlashAttn4(module).flash_attn_varlen_func(
+            "q", "k", "v", "cu_q", "cu_k", 9, 7, window_size=(31, 0)
+        )
+        assert calls[0] == (
+            ("q", "k", "v"),
+            {
+                "cu_seqlens_q": "cu_q",
+                "cu_seqlens_k": "cu_k",
+                "max_seqlen_q": 9,
+                "max_seqlen_k": 7,
+                "window_size": (None, None),
+                "softmax_scale": 0.5,
+                "causal": True,
+            },
+        )
+        assert calls[1][1]["window_size"] == (31, 0)
+
     def test_flash_attn2_gets_values_as_wide_as_queries(self):
         from axolotl.core.trainers.async_grpo.trl_compat import _WideValues
 
@@ -1972,3 +2026,48 @@ def test_staleness_zero_trains_on_fresh_samples_and_reports_rollouts(
         assert completions == ["Four"] * 4
         assert rewards == {"len": [0.0, 1.0, 2.0, 3.0]}
         assert advantages == [-1.5, -0.5, 0.5, 1.5]
+
+
+class TestExternalWeightSync:
+    """A plugin publishes the weights; the policy version counts weight syncs."""
+
+    def _trainer(self, step=9, weight_sync_steps=1):
+        trainer = object.__new__(AxolotlAsyncGRPOTrainer)
+        trainer.args = types.SimpleNamespace(
+            external_weight_sync=True, weight_sync_steps=weight_sync_steps
+        )
+        trainer.state = types.SimpleNamespace(global_step=step)
+        trainer.weight_transfer = weight_sync.ExternalWeightTransfer()
+        trainer.model_version = 0
+        trainer._weights_updated = True
+        return trainer
+
+    @pytest.mark.parametrize("weight_sync_steps, version", [(1, 12), (3, 4)])
+    def test_sync_only_moves_the_policy_version(self, weight_sync_steps, version):
+        trainer = self._trainer(step=12, weight_sync_steps=weight_sync_steps)
+        trainer._sync_weight()
+        assert trainer.model_version == version and not trainer._weights_updated
+
+    def test_checkpoints_do_not_claim_a_served_version(self, monkeypatch):
+        from trl.experimental.async_grpo.async_grpo_trainer import AsyncGRPOTrainer
+
+        saved = []
+        monkeypatch.setattr(
+            AsyncGRPOTrainer,
+            "_save_checkpoint",
+            lambda self, model, trial: saved.append(self.model_version),
+        )
+        trainer = self._trainer()
+        trainer.model_version = 9
+        weight_sync.WeightSyncMixin._save_checkpoint(trainer, None, None)
+        assert saved == [weight_sync.UNPUBLISHED_VERSION]
+        assert trainer.model_version == 9
+
+    def test_needs_a_token_budget(self, tmp_path):
+        args = AxolotlAsyncGRPOConfig(
+            output_dir=str(tmp_path), use_cpu=True, external_weight_sync=True
+        )
+        with pytest.raises(ValueError, match="token_budget"):
+            AxolotlAsyncGRPOTrainer(
+                model="unused", reward_funcs=[lambda **kwargs: []], args=args
+            )

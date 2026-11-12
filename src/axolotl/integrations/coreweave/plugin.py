@@ -11,6 +11,7 @@ from axolotl.integrations.base import BasePlugin
 from .args import CoreWeaveConfig
 from .checkpoints import CheckpointPublisher
 from .client import CoreWeaveClient
+from .destination import CoreWeaveDestination
 
 
 def load_weights(directory):
@@ -48,9 +49,12 @@ def load_weights(directory):
 class CoreWeaveCheckpointCallback(TrainerCallback):
     """Publish only completed Hugging Face saves on the main process."""
 
-    def __init__(self, config, *, base_model=None, revision=None):
+    def __init__(
+        self, config, *, base_model=None, revision=None, merged_format="preserve"
+    ):
         self.config = config
         self.base_model, self.revision = base_model, revision
+        self.merged_format = merged_format
         self.publisher = None
         self.worker = None
 
@@ -62,7 +66,11 @@ class CoreWeaveCheckpointCallback(TrainerCallback):
                 from .lora import LoRACheckpointPublisher
 
                 publisher_type = LoRACheckpointPublisher
-                options = {"base_model": self.base_model, "revision": self.revision}
+                options = {
+                    "base_model": self.base_model,
+                    "revision": self.revision,
+                    "merged_format": self.merged_format,
+                }
             self.publisher = publisher_type(
                 self.config,
                 CoreWeaveClient(self.config),
@@ -129,6 +137,101 @@ class CoreWeaveCheckpointCallback(TrainerCallback):
             self.worker.close(cancel_pending=True)
 
 
+def publish_config(cfg, config):
+    """Apply ``checkpoint_publish`` to the CoreWeave destination's chain settings."""
+    from axolotl.core.publishing.callback import publish_settings
+
+    settings = publish_settings(
+        cfg, weight_sync_steps(cfg) if async_rollouts(cfg) else None
+    )
+    if settings is None:
+        return config, None
+    if settings.destination is not None:
+        raise ValueError(
+            "Omit checkpoint_publish.destination when publishing to CoreWeave"
+        )
+    if cfg.get("adapter") == "lora":
+        CoreWeaveDestination.check_export(settings.export)
+    max_deltas = min(config.max_deltas, settings.max_deltas)
+    if not settings.delta:
+        max_deltas = 0
+    return config.model_copy(update={"max_deltas": max_deltas}), settings
+
+
+def step_publisher_factory(cfg, config, settings, revision):
+    """Each rank's per-step publisher, hot-loading through CoreWeave."""
+    from axolotl.core.publishing.callback import (
+        step_publisher_factory as core_factory,
+    )
+
+    return core_factory(
+        cfg,
+        settings,
+        lambda: CoreWeaveDestination(config, CoreWeaveClient(config)),
+        revision=revision,
+        output=Path(cfg.get("output_dir") or ".") / "coreweave-checkpoints",
+        max_deltas=config.max_deltas,
+        max_shard_size=config.max_shard_size,
+    )
+
+
+ASYNC_ROLLOUT_LOOP = (
+    "axolotl.integrations.coreweave.async_rollouts.CoreWeaveRolloutLoop"
+)
+
+
+def _get(obj, key):
+    if obj is None:
+        return None
+    return obj.get(key) if hasattr(obj, "get") else getattr(obj, key, None)
+
+
+def async_rollouts(cfg) -> bool:
+    """Whether rollouts come from CoreWeave in async GRPO (``trl.async_prefetch``)."""
+    return bool(
+        _get(_get(cfg, "coreweave"), "rollouts")
+        and _get(_get(cfg, "trl"), "async_prefetch")
+    )
+
+
+def weight_sync_steps(cfg) -> int:
+    trl = _get(cfg, "trl")
+    return _get(trl, "weight_sync_steps") or _get(trl, "vllm_sync_interval") or 1
+
+
+def check_async_rollouts(cfg):
+    """Async GRPO samples from the deployment the trainer hot-loads every publish."""
+    trl = cfg.get("trl") or {}
+    if cfg.get("rl") != "grpo":
+        raise ValueError("CoreWeave rollouts currently require rl: grpo")
+    if cfg.get("adapter") != "lora":
+        raise ValueError(
+            "Async CoreWeave rollouts publish merged LoRA at every weight sync: set "
+            "adapter: lora"
+        )
+    if not trl.get("token_budget"):
+        raise ValueError("Async CoreWeave rollouts need trl.token_budget")
+    if trl.get("rollout_loop") or trl.get("vllm_lora_sync"):
+        raise ValueError(
+            "Async CoreWeave rollouts use their own rollout loop and weight sync; "
+            "unset trl.rollout_loop and trl.vllm_lora_sync"
+        )
+    if trl.get("temperature") is not None and trl["temperature"] <= 0:
+        raise ValueError("CoreWeave rollouts require a positive temperature")
+    if cfg.get("is_multimodal") or cfg.get("nemo_gym_enabled"):
+        raise ValueError(
+            "CoreWeave rollouts require text-only GRPO without another rollout plugin"
+        )
+    if (
+        trl.get("top_p") not in (None, 1, 1.0)
+        or trl.get("top_k") not in (None, 0, -1)
+        or trl.get("min_p") not in (None, 0)
+        or trl.get("repetition_penalty") not in (None, 1)
+    ):
+        # The gateway does not return the candidate set top_p/top_k sample from.
+        raise ValueError("Async CoreWeave rollouts support temperature sampling only")
+
+
 class CoreWeavePlugin(BasePlugin):
     """Upload full/delta checkpoints from ordinary Axolotl checkpoint saves."""
 
@@ -148,23 +251,25 @@ class CoreWeavePlugin(BasePlugin):
             or cfg.get("load_in_8bit")
         ):
             raise ValueError(
-                "CoreWeave publishing requires full model weights or unquantized BF16 LoRA"
+                "CoreWeave publishing requires full model weights or LoRA trained on "
+                "the base checkpoint's own weights"
             )
         config = CoreWeaveConfig.model_validate(cfg["coreweave"])
+        publish_config(cfg, config)
         if cfg.get("adapter") == "lora":
-            if not cfg.get("base_model") or not cfg.get("bf16"):
+            if not cfg.get("base_model"):
+                raise ValueError("CoreWeave LoRA publishing requires base_model")
+            if config.rollouts and not async_rollouts(cfg):
                 raise ValueError(
-                    "CoreWeave LoRA publishing requires base_model and bf16: true"
-                )
-            if config.rollouts:
-                raise ValueError(
-                    "CoreWeave LoRA publishing supports checkpoint saves only"
+                    "CoreWeave LoRA rollouts need async GRPO (trl.async_prefetch)"
                 )
             if cfg.get("save_safetensors") is False or cfg.get("trust_remote_code"):
                 raise ValueError(
                     "CoreWeave LoRA publishing requires safetensors and a built-in model architecture"
                 )
-        if config.rollouts:
+        if async_rollouts(cfg):
+            check_async_rollouts(cfg)
+        elif config.rollouts:
             trl = cfg.get("trl") or {}
             if cfg.get("rl") != "grpo":
                 raise ValueError("CoreWeave rollouts currently require rl: grpo")
@@ -195,9 +300,29 @@ class CoreWeavePlugin(BasePlugin):
                     "CoreWeave rollouts support temperature and top_p sampling"
                 )
 
+    def get_training_args(self, cfg):
+        if not async_rollouts(cfg):
+            return None
+        config = CoreWeaveConfig.model_validate(cfg.coreweave)
+        return {
+            "rollout_loop": ASYNC_ROLLOUT_LOOP,
+            "rollout_loop_kwargs": {
+                "gateway_url": config.gateway_url,
+                "model": config.model,
+                "api_token_env": config.api_token_env,
+            },
+            "external_weight_sync": True,
+        }
+
     def post_trainer_create(self, cfg, trainer):
         config = CoreWeaveConfig.model_validate(cfg.coreweave)
-        if config.rollouts:
+        if async_rollouts(cfg):
+            if not getattr(trainer.args, "external_weight_sync", False):
+                raise ValueError(
+                    "Async CoreWeave rollouts need AxolotlAsyncGRPOTrainer with "
+                    "external_weight_sync"
+                )
+        elif config.rollouts:
             from .correction import install_sampler_correction
             from .rollouts import CoreWeaveRollouts
 
@@ -212,15 +337,50 @@ class CoreWeavePlugin(BasePlugin):
 
     def add_callbacks_post_trainer(self, cfg, trainer):
         config = CoreWeaveConfig.model_validate(cfg.coreweave)
-        if config.rollouts:
+        rollouts = async_rollouts(cfg)
+        if config.rollouts and not rollouts:
             return []
+        config, settings = publish_config(cfg, config)
         revision = cfg.get("revision_of_model")
         commit = getattr(getattr(trainer.model, "config", None), "_commit_hash", None)
         if isinstance(commit, str) and commit:
             revision = commit
+        if settings is not None and settings.every:
+            from axolotl.core.publishing.callback import StepPublishCallback
+
+            on_published = on_discarded = None
+            if rollouts:
+                from .async_rollouts import FIRST_PUBLISH_FAILED
+
+                served = False
+
+                def on_published(step):
+                    nonlocal served
+                    served = True
+                    # Rank 0 runs the rollout worker; every replica serves `step`.
+                    if worker := getattr(trainer, "rollout_worker", None):
+                        worker.update_model_version(step // settings.every)
+
+                def on_discarded(step):
+                    # Nothing is served yet, so no rollout could ever start.
+                    if not served and (
+                        worker := getattr(trainer, "rollout_worker", None)
+                    ):
+                        worker.update_model_version(FIRST_PUBLISH_FAILED)
+
+            self._checkpoint_callback = StepPublishCallback(
+                step_publisher_factory(cfg, config, settings, revision),
+                settings.every,
+                trainer=trainer,
+                publish_at_start=rollouts,
+                on_published=on_published,
+                on_discarded=on_discarded,
+            )
+            return [self._checkpoint_callback]
         self._checkpoint_callback = CoreWeaveCheckpointCallback(
             config,
             base_model=cfg.get("base_model") if cfg.get("adapter") == "lora" else None,
             revision=revision,
+            merged_format=settings.merged_format if settings else "preserve",
         )
         return [self._checkpoint_callback]

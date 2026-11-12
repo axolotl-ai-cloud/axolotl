@@ -86,8 +86,118 @@ def test_incompatible_rollout_config_is_rejected(settings):
 
 
 def test_rollouts_do_not_register_save_publisher():
-    cfg = SimpleNamespace(coreweave=config(rollouts=True))
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault({"coreweave": config(rollouts=True).model_dump()})
     assert CoreWeavePlugin().add_callbacks_post_trainer(cfg, MagicMock()) == []
+
+
+def async_rollout_cfg(**overrides):
+    from axolotl.utils.dict import DictDefault
+
+    cfg = {
+        "coreweave": config(rollouts=True).model_dump(),
+        "rl": "grpo",
+        "adapter": "lora",
+        "base_model": "test/model",
+        "trl": {"async_prefetch": True, "token_budget": 4096},
+        "checkpoint_publish": {"every": 1},
+    }
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(cfg.get(key), dict):
+            cfg[key] = {**cfg[key], **value}
+        else:
+            cfg[key] = value
+    return DictDefault(cfg)
+
+
+def test_async_rollouts_sample_from_the_hot_loaded_deployment():
+    cfg = async_rollout_cfg()
+    plugin = CoreWeavePlugin()
+    plugin.register(cfg)
+    args = plugin.get_training_args(cfg)
+    assert args == {
+        "rollout_loop": "axolotl.integrations.coreweave.async_rollouts.CoreWeaveRolloutLoop",
+        "rollout_loop_kwargs": {
+            "gateway_url": "https://gateway.example",
+            "model": "policy",
+            "api_token_env": "CW_API_TOKEN",
+        },
+        "external_weight_sync": True,
+    }
+
+    worker = MagicMock()
+    trainer = SimpleNamespace(
+        model=SimpleNamespace(config=SimpleNamespace()), rollout_worker=worker
+    )
+    (callback,) = plugin.add_callbacks_post_trainer(cfg, trainer)
+    assert callback.publish_at_start and callback.every == 1
+    callback.on_published(3)
+    worker.update_model_version.assert_called_once_with(3)
+
+
+def test_async_rollouts_publish_at_every_weight_sync():
+    cfg = async_rollout_cfg(checkpoint_publish=None, trl={"weight_sync_steps": 2})
+    worker = MagicMock()
+    trainer = SimpleNamespace(
+        model=SimpleNamespace(config=SimpleNamespace()), rollout_worker=worker
+    )
+    (callback,) = CoreWeavePlugin().add_callbacks_post_trainer(cfg, trainer)
+    assert callback.every == 2
+    callback.on_published(6)
+    worker.update_model_version.assert_called_once_with(3)
+
+
+def test_a_discarded_first_publish_fails_the_rollout_worker():
+    from axolotl.integrations.coreweave.async_rollouts import FIRST_PUBLISH_FAILED
+
+    worker = MagicMock()
+    trainer = SimpleNamespace(
+        model=SimpleNamespace(config=SimpleNamespace()), rollout_worker=worker
+    )
+    (callback,) = CoreWeavePlugin().add_callbacks_post_trainer(
+        async_rollout_cfg(), trainer
+    )
+    callback.on_discarded(0)
+    worker.update_model_version.assert_called_once_with(FIRST_PUBLISH_FAILED)
+
+    worker.reset_mock()
+    callback.on_published(1)
+    callback.on_discarded(2)
+    worker.update_model_version.assert_called_once_with(1)
+
+
+def test_async_rollouts_on_other_ranks_have_no_worker_to_update():
+    cfg = async_rollout_cfg()
+    trainer = SimpleNamespace(
+        model=SimpleNamespace(config=SimpleNamespace()), rollout_worker=None
+    )
+    (callback,) = CoreWeavePlugin().add_callbacks_post_trainer(cfg, trainer)
+    callback.on_published(3)
+
+
+@pytest.mark.parametrize(
+    "overrides, match",
+    [
+        ({"checkpoint_publish": {"every": 2}}, "trl.weight_sync_steps: 1"),
+        ({"adapter": None}, "adapter: lora"),
+        ({"trl": {"token_budget": None}}, "token_budget"),
+        ({"trl": {"top_p": 0.9}}, "temperature sampling"),
+        ({"trl": {"temperature": 0}}, "positive temperature"),
+        ({"trl": {"vllm_lora_sync": True}}, "rollout_loop"),
+        ({"rl": "dpo"}, "rl: grpo"),
+    ],
+)
+def test_incompatible_async_rollout_config_is_rejected(overrides, match):
+    with pytest.raises(ValueError, match=match):
+        CoreWeavePlugin().register(async_rollout_cfg(**overrides))
+
+
+def test_sync_rollouts_take_no_training_args():
+    from axolotl.utils.dict import DictDefault
+
+    cfg = DictDefault({"coreweave": config(rollouts=True).model_dump(), "rl": "grpo"})
+    assert CoreWeavePlugin().get_training_args(cfg) is None
 
 
 def test_bf16_lora_save_configuration_is_supported():
@@ -101,10 +211,21 @@ def test_bf16_lora_save_configuration_is_supported():
     )
 
 
+def test_lora_publication_does_not_require_bf16():
+    CoreWeavePlugin().register(
+        {
+            "coreweave": config().model_dump(),
+            "adapter": "lora",
+            "base_model": "test/model",
+            "bf16": False,
+        }
+    )
+
+
 @pytest.mark.parametrize(
     "settings",
     [
-        {"bf16": False},
+        {"base_model": None},
         {"load_in_4bit": True},
         {"save_safetensors": False},
         {"trust_remote_code": True},
@@ -141,3 +262,31 @@ def test_lora_callback_uses_loaded_training_revision():
     callback = CoreWeavePlugin().add_callbacks_post_trainer(cfg, trainer)[0]
     assert callback.base_model == "test/model"
     assert callback.revision == "fixed-commit"
+
+
+def test_a_failed_base_pin_on_any_rank_fails_every_rank(monkeypatch):
+    from axolotl.core.publishing import callback, pinned_base, step_publisher as step
+    from axolotl.integrations.coreweave.plugin import (
+        publish_config,
+        step_publisher_factory,
+    )
+
+    cfg = async_rollout_cfg()
+    config, settings = publish_config(cfg, config_from(cfg))
+    monkeypatch.setattr(callback, "resolve_base", lambda *args: "base")
+    monkeypatch.setattr(pinned_base, "pin_base", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        step, "StepPublisher", MagicMock(side_effect=AssertionError("collective"))
+    )
+    comm = SimpleNamespace(
+        rank=0, all_gather_object=lambda error: [error, "rank 1: OSError('disk full')"]
+    )
+    factory = step_publisher_factory(cfg, config, settings, None)
+    with pytest.raises(RuntimeError, match="rank 1: OSError"):
+        factory(model=MagicMock(), comm=comm, pieces=[])
+
+
+def config_from(cfg):
+    from axolotl.integrations.coreweave.args import CoreWeaveConfig
+
+    return CoreWeaveConfig.model_validate(cfg["coreweave"])

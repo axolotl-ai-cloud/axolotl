@@ -191,6 +191,9 @@ class AxolotlRolloutLoop(AsyncRolloutLoop):
     # log-probs score centering needs. Loops that call vLLM, or an agent, themselves
     # set this to False.
     _samples_through_trl = True
+    # Whether the trainer process needs the vllm package; the loop itself only
+    # talks HTTP, so a loop sampling from another server can do without it.
+    _requires_vllm = True
 
     def __init__(
         self,
@@ -557,9 +560,21 @@ class AxolotlAsyncRolloutWorker(AsyncRolloutWorker):
     def __init__(
         self, *, loop_cls: type[AxolotlRolloutLoop] | None = None, **kwargs: Any
     ):
-        super().__init__(**kwargs)
         if loop_cls is not None:
             self._loop_cls = loop_cls
+        if self._loop_cls._requires_vllm:
+            super().__init__(**kwargs)
+            return
+        # TRL refuses to build the worker without vllm installed, which the loop
+        # never imports.
+        import trl.experimental.async_grpo.async_rollout_worker as trl_worker
+
+        check = trl_worker.is_vllm_available
+        trl_worker.is_vllm_available = lambda: True
+        try:
+            super().__init__(**kwargs)
+        finally:
+            trl_worker.is_vllm_available = check
 
     def stop(self) -> None:
         # A child that died on its own (it raised) stays counted as a waiter on the

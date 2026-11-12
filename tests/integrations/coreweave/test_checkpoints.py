@@ -109,6 +109,13 @@ def test_no_change_delta_and_immutable_destination(tmp_path):
         write_checkpoint(weights, path, identity="next", config={})
 
 
+def only_committed_baseline(directory, publisher):
+    """Published artifacts are removed; only the chain's committed baseline stays."""
+    return sorted(path.name for path in directory.iterdir()) == sorted(
+        ["committed.json", publisher.base.path.name]
+    )
+
+
 def test_publisher_chain_rollover_and_upload_order(tmp_path):
     s3, client = MagicMock(), MagicMock()
     publisher = CheckpointPublisher(config(max_deltas=1), client, tmp_path, s3)
@@ -121,7 +128,7 @@ def test_publisher_chain_rollover_and_upload_order(tmp_path):
         call.kwargs["base_identity"] for call in client.hot_load.call_args_list
     ] == [None, first, None]
     assert publisher.identity == third and publisher.delta_count == 0
-    assert list(tmp_path.iterdir()) == []
+    assert only_committed_baseline(tmp_path, publisher)
     keys = [call.args[2] for call in s3.upload_file.call_args_list]
     for identity in (first, second, third):
         assert [key for key in keys if identity in key][-1].endswith(
@@ -137,7 +144,7 @@ def test_unchanged_weights_do_not_submit_empty_delta(tmp_path):
     s3.upload_file.reset_mock()
     assert publisher.publish(weights, {}, 1) == identity
     s3.upload_file.assert_not_called()
-    assert list(tmp_path.iterdir()) == []
+    assert only_committed_baseline(tmp_path, publisher)
     client.hot_load.assert_called_once()
     assert publisher.delta_count == 0
 
@@ -160,7 +167,7 @@ def test_failure_does_not_advance_base_or_allow_more_publications(tmp_path, fail
     assert (tmp_path / publisher.pending[0]).is_dir()
     publisher.recover("confirmed-operation")
     assert torch.equal(publisher.base["a"], torch.zeros(2))
-    assert list(tmp_path.iterdir()) == []
+    assert only_committed_baseline(tmp_path, publisher)
 
 
 @pytest.mark.parametrize("identity", ["../bad", "a/b", "", ".", ".."])

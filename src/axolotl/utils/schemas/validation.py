@@ -2741,6 +2741,26 @@ class GRPOVllmValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def map_vllm_sync_interval(cls, data):
+        trl = data.get("trl") or {}
+        legacy = trl.get("vllm_sync_interval")
+        if legacy is None:
+            return data
+        current = trl.get("weight_sync_steps")
+        if current is not None and current != legacy:
+            raise ValueError(
+                f"`trl.vllm_sync_interval: {legacy}` conflicts with "
+                f"`trl.weight_sync_steps: {current}`; set only `weight_sync_steps`"
+            )
+        LOG.warning(
+            "`trl.vllm_sync_interval` is deprecated, use `trl.weight_sync_steps`"
+        )
+        trl["weight_sync_steps"] = legacy
+        trl["vllm_sync_interval"] = None
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_data_producer_options(cls, data):
         """Reject the removed data producer trainer's options, map its alias."""
         trl = data.get("trl") or {}
@@ -3023,7 +3043,7 @@ class GRPOVllmValidationMixin:
 
         # TRL's AsyncGRPOConfig defaults: max_staleness 4, weight_sync_steps 1
         staleness = 4 if trl.max_staleness is None else trl.max_staleness
-        sync_interval = trl.vllm_sync_interval or 1
+        sync_interval = trl.weight_sync_steps or 1
         if (
             self.adapter in ("lora", "qlora")
             and loss_type == "dapo"
@@ -3032,7 +3052,7 @@ class GRPOVllmValidationMixin:
             LOG.warning(
                 f"Async GRPO with a LoRA adapter trains on rollouts up to "
                 f"{staleness * sync_interval} optimizer steps old (`max_staleness: "
-                f"{staleness}`, `vllm_sync_interval: {sync_interval}`). "
+                f"{staleness}`, `weight_sync_steps: {sync_interval}`). "
                 f"{named} drops the gradient of tokens whose "
                 "probability moved past `epsilon` since sampling, and in 200-step "
                 "LoRA runs it stopped ending completions; `trl.loss_type: cispo` is "

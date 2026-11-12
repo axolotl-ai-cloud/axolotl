@@ -734,7 +734,7 @@ Async GRPO runs on TRL's `AsyncGRPOTrainer`: a rollout process generates and sco
 trl:
   use_vllm: true
   async_prefetch: true         # TRL's AsyncGRPOTrainer
-  vllm_sync_interval: 1        # Sync weights to vLLM every N steps
+  weight_sync_steps: 1        # Sync weights to vLLM every N steps
   max_staleness: 4             # Drop rollouts more than N syncs old
 ```
 
@@ -790,7 +790,7 @@ rl: grpo
 trl:
   use_vllm: true
   async_prefetch: true
-  vllm_sync_interval: 1
+  weight_sync_steps: 1
   vllm_lora_sync: true
   max_staleness: 4
   num_generations: 8
@@ -996,7 +996,7 @@ trl:
   vllm_server_host: 0.0.0.0
   vllm_server_port: 8000
   vllm_lora_sync: true                   # LoRA adapter sync (recommended)
-  vllm_sync_interval: 3
+  weight_sync_steps: 3
   async_prefetch: true                   # Set false for sync mode
   scale_rewards: true
   epsilon: 0.2
@@ -1159,7 +1159,7 @@ trl:
   vllm_server_host: localhost
   vllm_server_port: 8000
   vllm_lora_sync: true
-  vllm_sync_interval: 5
+  weight_sync_steps: 5
   async_prefetch: true                     # required for multi-turn
   num_generations: 4
   max_completion_length: 512

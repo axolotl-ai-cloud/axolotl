@@ -334,6 +334,49 @@ def test_fp32_adapter_matches_export_effective_weight(autocast, device):
     assert lora.lora_B["default"].weight.grad.dtype == torch.float32
 
 
+@pytest.mark.gpu
+def test_snap_uses_ieee_delta_under_tf32():
+    """``tf32: true`` must not move the snapped grid off the one the writer computes in IEEE."""
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required")
+    torch.manual_seed(922)
+    size, rank = 512, 16
+    w0 = torch.randn(size, size, dtype=torch.bfloat16) * 0.02
+    pts = (w0.float().abs().amax() / (6.0 * 448.0)).reshape(())
+    base = nn.Linear(size, size, bias=False, dtype=torch.bfloat16)
+    base.weight = nn.Parameter(fake_quant_nvfp4(w0, pts), requires_grad=False)
+    base._nvfp4_pts = pts
+    cfg = LoraConfig(r=rank, lora_alpha=2 * rank)
+    lora = LoraLinear(
+        base, adapter_name="default", config=cfg, r=rank, lora_alpha=2 * rank
+    )
+    # fp32 factors, as merge-aware training keeps them; bf16 ones are exact in TF32
+    model = nn.Sequential(lora.float()).cuda()
+    base.to(torch.bfloat16)
+    a, b = lora.lora_A["default"].weight, lora.lora_B["default"].weight
+    with torch.no_grad():
+        b.normal_(std=0.01)
+    matmul = torch.backends.cuda.matmul
+    previous = matmul.fp32_precision
+    try:
+        matmul.fp32_precision = "ieee"
+        ieee_delta = b @ a
+        writer_weight = (base.weight.float() + ieee_delta * lora.scaling["default"]).to(
+            base.weight.dtype
+        )
+        matmul.fp32_precision = "tf32"
+        assert not torch.equal(b @ a, ieee_delta)
+        install_merge_aware_lora_linears(model)
+        set_merge_aware_enabled(True)
+        x = torch.randn(4, size, dtype=torch.bfloat16, device="cuda")
+        actual = model(x)
+        assert matmul.fp32_precision == "tf32"
+    finally:
+        matmul.fp32_precision = previous
+    expected = F.linear(x, fake_quant_nvfp4(writer_weight, pts.cuda()))
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
 @pytest.mark.parametrize("adapter_dtype", [torch.bfloat16, torch.float32])
 def test_adapter_dtype_matches_canonical_writer_effective_weight(adapter_dtype):
     torch.manual_seed(921)

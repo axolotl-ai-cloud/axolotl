@@ -39,6 +39,30 @@ from axolotl.utils.lora_merge_precision import (
 # Kept beside the versioned adapter directories, dot-prefixed like TRL's staging ones.
 RETIRED_ADAPTER_WEIGHTS = f".retired-{SAFETENSORS_WEIGHTS_NAME}"
 
+# The rollout worker's version before any weights are confirmed served. Rollout
+# loops for external weight sync wait for a version >= 0 before sampling.
+UNPUBLISHED_VERSION = -1
+
+
+class ExternalWeightTransfer:
+    """TRL's ``weight_transfer`` when a plugin publishes the weights: TRL then neither
+    probes the vLLM server nor builds an NCCL group."""
+
+    def init_weight_transfer(self) -> None:
+        pass
+
+    def pause(self) -> None:
+        pass
+
+    def send_weights(self, iterator) -> None:
+        raise RuntimeError("External weight sync does not stream weights")
+
+    def resume(self) -> None:
+        pass
+
+    def destroy(self) -> None:
+        pass
+
 
 class AliasingVLLMClient(VLLMClient):
     """TRL's vLLM client that also loads every synced adapter under ``alias``.
@@ -187,12 +211,30 @@ class WeightSyncMixin(LoraMergeCheckMixin, AsyncGRPOTrainer):
     _wrote_retired_weights = False
 
     def _sync_weight(self):
+        if self.args.external_weight_sync:
+            # The publishing plugin reports the version the servers serve to the
+            # rollout worker, counted in syncs as TRL's own versions are.
+            self.model_version = self.state.global_step // self.args.weight_sync_steps
+            self._weights_updated = False
+            return
         if not self._weights_updated:
             # Only steps that trained nothing since the last sync: same policy.
             self._metrics["train"]["perf/weight_sync_skipped_total"].append(1.0)
             return
         super()._sync_weight()
         self._weights_updated = False
+
+    def _save_checkpoint(self, model, trial):
+        if not self.args.external_weight_sync:
+            return super()._save_checkpoint(model, trial)
+        # TRL restores the saved version into the rollout worker on resume, which
+        # would claim the servers serve the resumed step before anything is
+        # published; the first publish after resuming sets it instead.
+        trained, self.model_version = self.model_version, UNPUBLISHED_VERSION
+        try:
+            return super()._save_checkpoint(model, trial)
+        finally:
+            self.model_version = trained
 
     def _sync_weight_merged(self, t0: float) -> tuple[float, float, float]:
         """TRL's merged sync, without folding the adapter into the trained weights.

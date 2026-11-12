@@ -315,7 +315,7 @@ vllm:
 trl:
   use_vllm: true
   vllm_lora_sync: true         # Recommended with LoRA — faster sync, no NCCL contention
-  vllm_sync_interval: 5        # Sync weights every 5 steps
+  weight_sync_steps: 5        # Sync weights every 5 steps
 ```
 
 ```bash
@@ -345,7 +345,7 @@ Async GRPO decouples generation from training. It runs on TRL's experimental `As
 - Scored samples wait in a queue tagged with the policy version that generated them. The trainer drops any sample more than `max_staleness` weight syncs old.
 - The trainer packs samples into micro-batches of at most `token_budget` tokens, forwarding the prompt shared by a group once (tree attention), with no padding.
 - The policy ratio is taken against vLLM's own sampling log-probabilities, so there is no extra scoring forward pass on the trainer.
-- Weights are synced to vLLM every `vllm_sync_interval` optimizer steps: only the adapter when the server has LoRA enabled, merged weights over NCCL otherwise.
+- Weights are synced to vLLM every `weight_sync_steps` optimizer steps: only the adapter when the server has LoRA enabled, merged weights over NCCL otherwise.
 
 ### Enabling async GRPO
 
@@ -354,7 +354,7 @@ trl:
   use_vllm: true
   async_prefetch: true
   vllm_lora_sync: true        # `axolotl vllm-serve` starts vLLM with LoRA enabled
-  vllm_sync_interval: 1       # weight sync every optimizer step
+  weight_sync_steps: 1       # weight sync every optimizer step
   max_staleness: 4            # drop rollouts more than 4 syncs old
   reward_num_workers: 4       # score rewards in 4 processes
 ```
@@ -395,7 +395,7 @@ Without `max_steps`, training stops after `num_epochs` passes over the prompts a
 
 `top_p < 1` and `min_p > 0` need `top_k > 0` (e.g. `top_k: 512`), and with `top_p < 1` or `top_k > 0`, a vLLM 0.28+ server must be started with `--return-sampling-mask --enable-scale-out`, which `axolotl vllm-serve` passes for such a config. The trainer then normalizes each token's log-probability over the candidate set it was sampled from, as vLLM did, under every loss. An older vLLM cannot return those sets, so the log-probabilities stay normalized over the whole vocabulary, with a warning; so do EBFT and NeMo Gym rollouts, which call vLLM themselves. Synchronous GRPO with vLLM importance sampling (`vllm_importance_sampling_correction`, on by default) also needs `top_k` with `top_p < 1` or `min_p > 0`.
 
-The policy/sampler ratio grows with staleness and trainer/inference mismatch. Under `dapo`, a token whose probability moved past `epsilon` since sampling stops getting gradient, and those are the tokens being learned. That matters when the policy moves far per step, as with LoRA or higher learning rates. On Qwen2.5-1.5B LoRA (r 16, lr 2e-5, `max_staleness: 4`) with a GSM8K accuracy + answer-format reward, `cispo` reached a 0.9 format rate in 17-20 steps, like axolotl's removed trainer (15-18), and stayed stable over 200 steps. `dapo` took 38-49 steps, and from about step 80 its completions ran to `max_completion_length` in both of two seeds: the model stopped ending them. On 128 GSM8K test prompts, the final `dapo` models truncated 75-78% of completions and scored 0.46-0.52 accuracy; `cispo` truncated 4% and scored 0.64, the removed trainer 0.63. With `dapo`, watch `completions/clipped_ratio`. Validation warns when a LoRA or QLoRA run keeps `dapo` with rollouts allowed to be more than 2 optimizer steps old (`max_staleness` × `vllm_sync_interval`; TRL's `max_staleness` defaults to 4).
+The policy/sampler ratio grows with staleness and trainer/inference mismatch. Under `dapo`, a token whose probability moved past `epsilon` since sampling stops getting gradient, and those are the tokens being learned. That matters when the policy moves far per step, as with LoRA or higher learning rates. On Qwen2.5-1.5B LoRA (r 16, lr 2e-5, `max_staleness: 4`) with a GSM8K accuracy + answer-format reward, `cispo` reached a 0.9 format rate in 17-20 steps, like axolotl's removed trainer (15-18), and stayed stable over 200 steps. `dapo` took 38-49 steps, and from about step 80 its completions ran to `max_completion_length` in both of two seeds: the model stopped ending them. On 128 GSM8K test prompts, the final `dapo` models truncated 75-78% of completions and scored 0.46-0.52 accuracy; `cispo` truncated 4% and scored 0.64, the removed trainer 0.63. With `dapo`, watch `completions/clipped_ratio`. Validation warns when a LoRA or QLoRA run keeps `dapo` with rollouts allowed to be more than 2 optimizer steps old (`max_staleness` × `weight_sync_steps`; TRL's `max_staleness` defaults to 4).
 
 Every loss logs `ratio` and `kl` (policy/sampler divergence) and `sampling/ratio_min`, the step's smallest policy/sampler ratio.
 
@@ -599,7 +599,7 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `async_prefetch` | bool | `false` | Async GRPO on TRL's `AsyncGRPOTrainer` (also structured EBFT) |
-| `vllm_sync_interval` | int | `null` | Sync weights to vLLM every N optimizer steps |
+| `weight_sync_steps` | int | `null` (1) | Sync weights to the rollout servers every N optimizer steps (`vllm_sync_interval` is a deprecated alias) |
 | `vllm_lora_sync` | bool | `false` | Sync only the LoRA adapter; makes `axolotl vllm-serve` enable LoRA |
 | `vllm_merge_check_interval` | int | `50` | Log how much of the LoRA update survives merged weight sync every N steps; `0` disables |
 | `max_staleness` | int | `null` (4) | Async GRPO: drop rollouts more than N weight syncs old |
@@ -608,6 +608,13 @@ Available in TRL >= 1.8. Adds an entropy bonus to encourage exploration.
 | `scoring_token_budget` | int | `null` | Async GRPO with rewards scored on the trainer (EBFT): max tokens per scoring forward; a rank's scored sequences are split into as many forwards as needed (default: `token_budget`; <= 0 one forward per micro-batch) |
 | `skip_zero_advantage_batches` | bool | `true` | Async GRPO: drop zero-advantage samples |
 | `reward_num_workers` | int | `1` | Processes for synchronous reward functions |
+| `queue_maxsize` | int | `null` (1024) | Async GRPO: rollout samples buffered for the trainer |
+| `request_timeout` | int | `null` (600) | Async GRPO: seconds per generation request |
+| `weight_sync_timeout` | int | `null` (1800) | Async GRPO: seconds per vLLM weight transfer before it raises |
+| `heartbeat_stale_after_s` | float | `null` (300) | Async GRPO: abort when the rollout worker has not reported for this long |
+| `fork_threshold_tokens` | int | `null` (1024) | Async GRPO multi-turn: re-tokenization drift realigned as context instead of forking a new row |
+| `max_tool_calling_iterations` | int | `null` | Async GRPO: tool-calling turns per rollout (unlimited) |
+| `router_aux_loss_coef` | float | `null` | Async GRPO with MoE: router load-balancing loss weight (default: the model config's) |
 | `use_data_producer` | bool | `false` | Deprecated: `async_prefetch: true` with `max_staleness: 0`, slower than the default staleness ([migration](#sec-data-producer-migration)) |
 | `vllm_enable_sleep_mode` | bool | `null` | Offload vLLM weights when idle (colocate mode) |
 

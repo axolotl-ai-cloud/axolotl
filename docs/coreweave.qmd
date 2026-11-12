@@ -126,8 +126,9 @@ save_safetensors: true
 save_steps: 100
 ```
 
-LoRA checkpoints work too (`adapter: lora` with `bf16: true`). The base model
-must be an unquantized BF16 safetensors checkpoint; QLoRA, DoRA, and
+LoRA checkpoints work too (`adapter: lora`): the adapter is merged into the
+base and published in the base's own format, BF16 or an NVFP4 (modelopt)
+checkpoint trained with `nvfp4_merge_aware: true`. QLoRA, DoRA, and
 `modules_to_save` are not supported.
 
 ## GRPO rollouts on Dedicated Inference
@@ -148,18 +149,60 @@ trl:
 
 Requirements:
 
-- Full-model training (no adapters), text-only conversational prompts,
-  synchronous GRPO.
+- Full-model training (no adapters; see below for LoRA), text-only
+  conversational prompts, synchronous GRPO.
 - The deployment must use the same tokenizer and support token-ID completions
   (`return_tokens_as_token_ids`).
 - Only `temperature` and `top_p` sampling are supported. Liger loss kernels and
   context parallelism are not.
 
+### Async GRPO with merged LoRA
+
+With `adapter: lora` and `trl.async_prefetch: true`, rollouts stream from the
+deployment while training continues. Every `trl.weight_sync_steps` optimizer
+steps (default 1) each rank merges its share of the adapter into the base (experts on their
+expert-parallel owner) from a node-local copy of the base checkpoint, the ranks
+publish the merge as one delta, and the deployment hot-loads it. With an NVFP4
+base and `nvfp4_merge_aware: true`, the served weights are the NVFP4 grid the
+forward trained against.
+
+```yaml
+coreweave:
+  # ...deployment and storage settings from above
+  rollouts: true
+checkpoint_publish:
+  workdir: /scratch/publish  # node-local
+trl:
+  use_vllm: true
+  async_prefetch: true
+  loss_type: cispo
+  token_budget: 8192
+  weight_sync_steps: 1
+  max_staleness: 2
+```
+
+- `checkpoint_publish.every` follows `trl.weight_sync_steps`; setting it to a
+  different value fails validation.
+- Staleness counts weight syncs between the policy being trained and the one
+  every replica serves, as with vLLM; a sync counts as served once the hot-load
+  has converged on all replicas.
+- The weights training starts from (step 0, or the resumed step) are published
+  first, and no rollout starts before they are served.
+- Publishing runs in the background; when it falls behind, only the newest
+  step is published. Training waits for fresh rollouts when the served step is
+  more than `max_staleness` syncs behind.
+- Sampling is limited to `temperature`. `loss_type: score_centering` centers
+  over the gateway's top log-probs; the gateway returns at most 5, so set
+  `trl.num_sampler_logprobs: 5` (TRL defaults to 8).
+
+See [the example][nvfp4-grpo-yaml].
+
 ## Notes
 
 - **Delta format**: the first checkpoint is published in full, then later ones
   as [Slime-compatible][slime] XOR deltas. A new full checkpoint starts every
-  `max_deltas` saves (default 128) or when the trainer restarts.
+  `max_deltas` publishes (at most 63), when the merge numerics change, or
+  when a restart cannot verify the committed baseline.
 - **Background publishing**: checkpoints publish in order while training
   continues. Queued checkpoints use local disk until published. Set
   `async_publish: false` to block on each save.
@@ -175,6 +218,7 @@ Requirements:
   recovering from a failed hot-load.
 
 [cloud-yaml]: https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/cloud/coreweave.yaml
+[nvfp4-grpo-yaml]: https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-grpo-coreweave.yaml
 [slime]: https://github.com/THUDM/slime/blob/main/docs/en/advanced/delta-weight-sync.md
 [verl-sunk]: https://docs.coreweave.com/products/sunk/tutorials/verl-on-sunk
 [cw-rollouts]: https://docs.coreweave.com/products/inference/rl-rollouts
