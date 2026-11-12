@@ -717,8 +717,8 @@ def train(
     execute_training(cfg, trainer, resume_from_checkpoint)
 
     # clear cache
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if torch.accelerator.is_available():
+        torch.accelerator.empty_cache()
 
     # Save the trained model and cleanup
     if cfg.checkpoint_mirror:

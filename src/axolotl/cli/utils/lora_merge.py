@@ -3552,8 +3552,8 @@ def merge_lora_sharded_efficient(
                 total_size_bytes += tensor.numel() * tensor.element_size()
 
             del tensor, merged_tensors, shard_tensors
-            if device != "cpu" and torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if device != "cpu" and torch.accelerator.is_available():
+                torch.accelerator.empty_cache()
             gc.collect()
             if on_shard_merged is not None:
                 on_shard_merged(shard_path)

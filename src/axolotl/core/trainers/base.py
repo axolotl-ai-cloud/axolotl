@@ -1394,8 +1394,8 @@ class AxolotlTrainer(
 
         # Reclaim VRAM held by the FSDP full-state-dict gather.
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if torch.accelerator.is_available():
+            torch.accelerator.empty_cache()
 
         return result
 
