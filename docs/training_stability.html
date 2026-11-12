@@ -1136,7 +1136,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="even">
 <td><code>sampling/importance_sampling_ratio/min</code></td>
 <td>&gt; 0.1</td>
-<td>Near 0 indicates stale off-policy data; increase <code>vllm_sync_interval</code></td>
+<td>Near 0 indicates stale off-policy data; increase <code>weight_sync_steps</code></td>
 </tr>
 <tr class="odd">
 <td><code>clip_ratio/region_mean</code></td>
@@ -1237,7 +1237,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>This means the policy has diverged significantly from the weights used by vLLM for generation. The importance sampling correction becomes unreliable.</p>
 <p><strong>Fixes</strong>:</p>
 <ul>
-<li>Decrease <code>vllm_sync_interval</code> (sync weights more often).</li>
+<li>Decrease <code>weight_sync_steps</code> (sync weights more often).</li>
 <li>Enable <code>off_policy_mask_threshold</code> (e.g., 0.5) to mask stale off-policy samples (synchronous GRPO; for async GRPO, <code>loss_type: cispo</code> weights tokens by the capped ratio instead of clipping it).</li>
 <li>Use <code>importance_sampling_level: token</code> for finer-grained correction.</li>
 </ul>

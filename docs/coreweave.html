@@ -948,7 +948,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#train-on-sunk" id="toc-train-on-sunk" class="nav-link" data-scroll-target="#train-on-sunk">Train on SUNK</a></li>
   <li><a href="#train-on-cks" id="toc-train-on-cks" class="nav-link" data-scroll-target="#train-on-cks">Train on CKS</a></li>
   <li><a href="#publish-checkpoints-to-dedicated-inference" id="toc-publish-checkpoints-to-dedicated-inference" class="nav-link" data-scroll-target="#publish-checkpoints-to-dedicated-inference">Publish checkpoints to Dedicated Inference</a></li>
-  <li><a href="#grpo-rollouts-on-dedicated-inference" id="toc-grpo-rollouts-on-dedicated-inference" class="nav-link" data-scroll-target="#grpo-rollouts-on-dedicated-inference">GRPO rollouts on Dedicated Inference</a></li>
+  <li><a href="#grpo-rollouts-on-dedicated-inference" id="toc-grpo-rollouts-on-dedicated-inference" class="nav-link" data-scroll-target="#grpo-rollouts-on-dedicated-inference">GRPO rollouts on Dedicated Inference</a>
+  <ul class="collapse">
+  <li><a href="#async-grpo-with-merged-lora" id="toc-async-grpo-with-merged-lora" class="nav-link" data-scroll-target="#async-grpo-with-merged-lora">Async GRPO with merged LoRA</a></li>
+  </ul></li>
   <li><a href="#notes" id="toc-notes" class="nav-link" data-scroll-target="#notes">Notes</a></li>
   </ul>
 </nav>
@@ -1104,8 +1107,9 @@ for CoreWeave AI Object Storage. Then add to your training config:</p>
 <span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="fu">save_safetensors</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="fu">save_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">100</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>LoRA checkpoints work too (<code>adapter: lora</code> with <code>bf16: true</code>). The base model
-must be an unquantized BF16 safetensors checkpoint; QLoRA, DoRA, and
+<p>LoRA checkpoints work too (<code>adapter: lora</code>): the adapter is merged into the
+base and published in the base’s own format, BF16 or an NVFP4 (modelopt)
+checkpoint trained with <code>nvfp4_merge_aware: true</code>. QLoRA, DoRA, and
 <code>modules_to_save</code> are not supported.</p>
 </section>
 <section id="grpo-rollouts-on-dedicated-inference" class="level2">
@@ -1122,20 +1126,59 @@ must be an unquantized BF16 safetensors checkpoint; QLoRA, DoRA, and
 <span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="co">  # reward_funcs as usual</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Requirements:</p>
 <ul>
-<li>Full-model training (no adapters), text-only conversational prompts,
-synchronous GRPO.</li>
+<li>Full-model training (no adapters; see below for LoRA), text-only
+conversational prompts, synchronous GRPO.</li>
 <li>The deployment must use the same tokenizer and support token-ID completions
 (<code>return_tokens_as_token_ids</code>).</li>
 <li>Only <code>temperature</code> and <code>top_p</code> sampling are supported. Liger loss kernels and
 context parallelism are not.</li>
 </ul>
+<section id="async-grpo-with-merged-lora" class="level3">
+<h3 class="anchored" data-anchor-id="async-grpo-with-merged-lora">Async GRPO with merged LoRA</h3>
+<p>With <code>adapter: lora</code> and <code>trl.async_prefetch: true</code>, rollouts stream from the
+deployment while training continues. Every <code>trl.weight_sync_steps</code> optimizer
+steps (default 1) each rank merges its share of the adapter into the base (experts on their
+expert-parallel owner) from a node-local copy of the base checkpoint, the ranks
+publish the merge as one delta, and the deployment hot-loads it. With an NVFP4
+base and <code>nvfp4_merge_aware: true</code>, the served weights are the NVFP4 grid the
+forward trained against.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">coreweave</span><span class="kw">:</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="co">  # ...deployment and storage settings from above</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rollouts</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="fu">checkpoint_publish</span><span class="kw">:</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">workdir</span><span class="kw">:</span><span class="at"> /scratch/publish</span><span class="co">  # node-local</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">async_prefetch</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">loss_type</span><span class="kw">:</span><span class="at"> cispo</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">token_budget</span><span class="kw">:</span><span class="at"> </span><span class="dv">8192</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_sync_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_staleness</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><code>checkpoint_publish.every</code> follows <code>trl.weight_sync_steps</code>; setting it to a
+different value fails validation.</li>
+<li>Staleness counts weight syncs between the policy being trained and the one
+every replica serves, as with vLLM; a sync counts as served once the hot-load
+has converged on all replicas.</li>
+<li>The weights training starts from (step 0, or the resumed step) are published
+first, and no rollout starts before they are served.</li>
+<li>Publishing runs in the background; when it falls behind, only the newest
+step is published. Training waits for fresh rollouts when the served step is
+more than <code>max_staleness</code> syncs behind.</li>
+<li>Sampling is limited to <code>temperature</code>. <code>loss_type: score_centering</code> centers
+over the gateway’s top log-probs; the gateway returns at most 5, so set
+<code>trl.num_sampler_logprobs: 5</code> (TRL defaults to 8).</li>
+</ul>
+<p>See <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/qwen3/30b-a3b-nvfp4-grpo-coreweave.yaml">the example</a>.</p>
+</section>
 </section>
 <section id="notes" class="level2">
 <h2 class="anchored" data-anchor-id="notes">Notes</h2>
 <ul>
 <li><strong>Delta format</strong>: the first checkpoint is published in full, then later ones
 as <a href="https://github.com/THUDM/slime/blob/main/docs/en/advanced/delta-weight-sync.md">Slime-compatible</a> XOR deltas. A new full checkpoint starts every
-<code>max_deltas</code> saves (default 128) or when the trainer restarts.</li>
+<code>max_deltas</code> publishes (at most 63), when the merge numerics change, or
+when a restart cannot verify the committed baseline.</li>
 <li><strong>Background publishing</strong>: checkpoints publish in order while training
 continues. Queued checkpoints use local disk until published. Set
 <code>async_publish: false</code> to block on each save.</li>

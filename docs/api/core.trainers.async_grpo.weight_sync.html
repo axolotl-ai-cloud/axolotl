@@ -948,6 +948,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
   <li><a href="#axolotl.core.trainers.async_grpo.weight_sync.AliasingVLLMClient" id="toc-axolotl.core.trainers.async_grpo.weight_sync.AliasingVLLMClient" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.weight_sync.AliasingVLLMClient">AliasingVLLMClient</a></li>
+  <li><a href="#axolotl.core.trainers.async_grpo.weight_sync.ExternalWeightTransfer" id="toc-axolotl.core.trainers.async_grpo.weight_sync.ExternalWeightTransfer" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.weight_sync.ExternalWeightTransfer">ExternalWeightTransfer</a></li>
   <li><a href="#axolotl.core.trainers.async_grpo.weight_sync.WeightSyncMixin" id="toc-axolotl.core.trainers.async_grpo.weight_sync.WeightSyncMixin" class="nav-link" data-scroll-target="#axolotl.core.trainers.async_grpo.weight_sync.WeightSyncMixin">WeightSyncMixin</a></li>
   </ul></li>
   </ul></li>
@@ -983,6 +984,10 @@ sync retires each adapter leaving the staleness window rather than deleting it; 
 <td>TRL’s vLLM client that also loads every synced adapter under <code>alias</code>.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.core.trainers.async_grpo.weight_sync.ExternalWeightTransfer">ExternalWeightTransfer</a></td>
+<td>TRL’s <code>weight_transfer</code> when a plugin publishes the weights: TRL then neither</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.core.trainers.async_grpo.weight_sync.WeightSyncMixin">WeightSyncMixin</a></td>
 <td>TRL’s weight sync, skipped after steps that trained nothing, merging out of</td>
 </tr>
@@ -996,9 +1001,15 @@ sync retires each adapter leaving the staleness window rather than deleting it; 
 versions, so a sync drains in-flight requests (pausing with <code>mode=wait</code> also
 clears the cache) rather than freezing them under the old adapter.</p>
 </section>
+<section id="axolotl.core.trainers.async_grpo.weight_sync.ExternalWeightTransfer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.weight_sync.ExternalWeightTransfer">ExternalWeightTransfer</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.weight_sync.ExternalWeightTransfer()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>TRL’s <code>weight_transfer</code> when a plugin publishes the weights: TRL then neither
+probes the vLLM server nor builds an NCCL group.</p>
+</section>
 <section id="axolotl.core.trainers.async_grpo.weight_sync.WeightSyncMixin" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.core.trainers.async_grpo.weight_sync.WeightSyncMixin">WeightSyncMixin</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.weight_sync.WeightSyncMixin(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>core.trainers.async_grpo.weight_sync.WeightSyncMixin(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>TRL’s weight sync, skipped after steps that trained nothing, merging out of
 place and retiring adapters instead of deleting them.</p>
 

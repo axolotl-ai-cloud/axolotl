@@ -1310,7 +1310,7 @@ Warning
 <span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
 <span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">         # Recommended with LoRA — faster sync, no NCCL contention</span></span>
-<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">        # Sync weights every 5 steps</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_sync_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">        # Sync weights every 5 steps</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> vllm-serve config.yaml   <span class="co"># GPU 0: vLLM</span></span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>1 <span class="ex">axolotl</span> train config.yaml         <span class="co"># GPU 1: training</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-warning callout-titled">
@@ -1344,7 +1344,7 @@ Warning
 <li>Scored samples wait in a queue tagged with the policy version that generated them. The trainer drops any sample more than <code>max_staleness</code> weight syncs old.</li>
 <li>The trainer packs samples into micro-batches of at most <code>token_budget</code> tokens, forwarding the prompt shared by a group once (tree attention), with no padding.</li>
 <li>The policy ratio is taken against vLLM’s own sampling log-probabilities, so there is no extra scoring forward pass on the trainer.</li>
-<li>Weights are synced to vLLM every <code>vllm_sync_interval</code> optimizer steps: only the adapter when the server has LoRA enabled, merged weights over NCCL otherwise.</li>
+<li>Weights are synced to vLLM every <code>weight_sync_steps</code> optimizer steps: only the adapter when the server has LoRA enabled, merged weights over NCCL otherwise.</li>
 </ul>
 <section id="enabling-async-grpo" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-async-grpo">Enabling async GRPO</h3>
@@ -1352,7 +1352,7 @@ Warning
 <span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">async_prefetch</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">        # `axolotl vllm-serve` starts vLLM with LoRA enabled</span></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">       # weight sync every optimizer step</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_sync_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">       # weight sync every optimizer step</span></span>
 <span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_staleness</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">            # drop rollouts more than 4 syncs old</span></span>
 <span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reward_num_workers</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">       # score rewards in 4 processes</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Start the server with <code>axolotl vllm-serve config.yaml</code> as usual; with <code>async_prefetch</code> it reserves <code>max_staleness + 2</code> LoRA slots, one per policy version a queued rollout may still name.</p>
@@ -1384,7 +1384,7 @@ Warning
 <li><code>score_centering</code> (default) is TRL’s <a href="https://huggingface.co/papers/2609.20807">score centering</a> with masked importance sampling, which TRL introduced for samplers running in lower precision than the trainer. Each token’s gradient is weighted by its policy/sampler ratio, and tokens whose ratio falls outside [<code>vllm_importance_sampling_clip_min</code>, <code>vllm_importance_sampling_clip_max</code>] (default 0.5 and 5.0) are dropped. From that score, its expectation under the sampler is subtracted, so that a constant advantage does not pull the policy toward the sampler. The expectation is taken over the sampler’s <code>num_sampler_logprobs</code> most likely tokens (default 8), which the rollout worker requests from vLLM for every generated token. The vLLM server’s <code>--max-logprobs</code> must allow that many. TRL reports that serializing them costs 15-20% of generation throughput, and recommends <code>--api-server-count 8</code> on vLLM 0.32+. It logs <code>sampling/masked_mean</code> (the share of dropped tokens) and <code>sampling/sampler_mass</code> (how much of the sampler’s probability the top tokens cover). Setting <code>epsilon</code>, <code>epsilon_high</code> or <code>cispo</code>’s importance-sampling options with it is an error. It needs TRL’s own rollout loop, so EBFT and NeMo Gym multi-turn cannot use it. <code>dapo</code> stays the objective above: TRL’s clipped objective also drops tokens outside the importance-sampling bounds, but axolotl’s <code>dapo</code> does not.</li>
 </ul>
 <p><code>top_p &lt; 1</code> and <code>min_p &gt; 0</code> need <code>top_k &gt; 0</code> (e.g.&nbsp;<code>top_k: 512</code>), and with <code>top_p &lt; 1</code> or <code>top_k &gt; 0</code>, a vLLM 0.28+ server must be started with <code>--return-sampling-mask --enable-scale-out</code>, which <code>axolotl vllm-serve</code> passes for such a config. The trainer then normalizes each token’s log-probability over the candidate set it was sampled from, as vLLM did, under every loss. An older vLLM cannot return those sets, so the log-probabilities stay normalized over the whole vocabulary, with a warning; so do EBFT and NeMo Gym rollouts, which call vLLM themselves. Synchronous GRPO with vLLM importance sampling (<code>vllm_importance_sampling_correction</code>, on by default) also needs <code>top_k</code> with <code>top_p &lt; 1</code> or <code>min_p &gt; 0</code>.</p>
-<p>The policy/sampler ratio grows with staleness and trainer/inference mismatch. Under <code>dapo</code>, a token whose probability moved past <code>epsilon</code> since sampling stops getting gradient, and those are the tokens being learned. That matters when the policy moves far per step, as with LoRA or higher learning rates. On Qwen2.5-1.5B LoRA (r 16, lr 2e-5, <code>max_staleness: 4</code>) with a GSM8K accuracy + answer-format reward, <code>cispo</code> reached a 0.9 format rate in 17-20 steps, like axolotl’s removed trainer (15-18), and stayed stable over 200 steps. <code>dapo</code> took 38-49 steps, and from about step 80 its completions ran to <code>max_completion_length</code> in both of two seeds: the model stopped ending them. On 128 GSM8K test prompts, the final <code>dapo</code> models truncated 75-78% of completions and scored 0.46-0.52 accuracy; <code>cispo</code> truncated 4% and scored 0.64, the removed trainer 0.63. With <code>dapo</code>, watch <code>completions/clipped_ratio</code>. Validation warns when a LoRA or QLoRA run keeps <code>dapo</code> with rollouts allowed to be more than 2 optimizer steps old (<code>max_staleness</code> × <code>vllm_sync_interval</code>; TRL’s <code>max_staleness</code> defaults to 4).</p>
+<p>The policy/sampler ratio grows with staleness and trainer/inference mismatch. Under <code>dapo</code>, a token whose probability moved past <code>epsilon</code> since sampling stops getting gradient, and those are the tokens being learned. That matters when the policy moves far per step, as with LoRA or higher learning rates. On Qwen2.5-1.5B LoRA (r 16, lr 2e-5, <code>max_staleness: 4</code>) with a GSM8K accuracy + answer-format reward, <code>cispo</code> reached a 0.9 format rate in 17-20 steps, like axolotl’s removed trainer (15-18), and stayed stable over 200 steps. <code>dapo</code> took 38-49 steps, and from about step 80 its completions ran to <code>max_completion_length</code> in both of two seeds: the model stopped ending them. On 128 GSM8K test prompts, the final <code>dapo</code> models truncated 75-78% of completions and scored 0.46-0.52 accuracy; <code>cispo</code> truncated 4% and scored 0.64, the removed trainer 0.63. With <code>dapo</code>, watch <code>completions/clipped_ratio</code>. Validation warns when a LoRA or QLoRA run keeps <code>dapo</code> with rollouts allowed to be more than 2 optimizer steps old (<code>max_staleness</code> × <code>weight_sync_steps</code>; TRL’s <code>max_staleness</code> defaults to 4).</p>
 <p>Every loss logs <code>ratio</code> and <code>kl</code> (policy/sampler divergence) and <code>sampling/ratio_min</code>, the step’s smallest policy/sampler ratio.</p>
 <p><strong>Out-of-place merged sync.</strong> When the server has no LoRA support, TRL merges the adapter into the base weights for the send and unmerges it afterwards. In bf16 that round trip does not restore the weights: one sync changed 6% of a layer’s frozen weights, and 1000 syncs with a moving adapter left 58% changed and a 1.3% relative drift. Async GRPO instead streams <code>W + ΔW</code> computed in fp32 per parameter, so the trained model is never written to. DoRA is supported this way on a single GPU or DDP, but not under FSDP.</p>
 <p><strong>Adapter checkpoints in fp32.</strong> Under FSDP with mixed precision, TRL writes checkpoints in the bf16/fp16 compute dtype, and FSDP2 trains LoRA factors in that dtype unless <code>lora_fp32_gradients: true</code>. Async GRPO writes a LoRA adapter’s tensors in fp32 either way; a fully fine-tuned model is still written in the compute dtype, as TRL does.</p>
@@ -1903,10 +1903,10 @@ Tip
 <td>Async GRPO on TRL’s <code>AsyncGRPOTrainer</code> (also structured EBFT)</td>
 </tr>
 <tr class="even">
-<td><code>vllm_sync_interval</code></td>
+<td><code>weight_sync_steps</code></td>
 <td>int</td>
-<td><code>null</code></td>
-<td>Sync weights to vLLM every N optimizer steps</td>
+<td><code>null</code> (1)</td>
+<td>Sync weights to the rollout servers every N optimizer steps (<code>vllm_sync_interval</code> is a deprecated alias)</td>
 </tr>
 <tr class="odd">
 <td><code>vllm_lora_sync</code></td>
@@ -1957,12 +1957,54 @@ Tip
 <td>Processes for synchronous reward functions</td>
 </tr>
 <tr class="odd">
+<td><code>queue_maxsize</code></td>
+<td>int</td>
+<td><code>null</code> (1024)</td>
+<td>Async GRPO: rollout samples buffered for the trainer</td>
+</tr>
+<tr class="even">
+<td><code>request_timeout</code></td>
+<td>int</td>
+<td><code>null</code> (600)</td>
+<td>Async GRPO: seconds per generation request</td>
+</tr>
+<tr class="odd">
+<td><code>weight_sync_timeout</code></td>
+<td>int</td>
+<td><code>null</code> (1800)</td>
+<td>Async GRPO: seconds per vLLM weight transfer before it raises</td>
+</tr>
+<tr class="even">
+<td><code>heartbeat_stale_after_s</code></td>
+<td>float</td>
+<td><code>null</code> (300)</td>
+<td>Async GRPO: abort when the rollout worker has not reported for this long</td>
+</tr>
+<tr class="odd">
+<td><code>fork_threshold_tokens</code></td>
+<td>int</td>
+<td><code>null</code> (1024)</td>
+<td>Async GRPO multi-turn: re-tokenization drift realigned as context instead of forking a new row</td>
+</tr>
+<tr class="even">
+<td><code>max_tool_calling_iterations</code></td>
+<td>int</td>
+<td><code>null</code></td>
+<td>Async GRPO: tool-calling turns per rollout (unlimited)</td>
+</tr>
+<tr class="odd">
+<td><code>router_aux_loss_coef</code></td>
+<td>float</td>
+<td><code>null</code></td>
+<td>Async GRPO with MoE: router load-balancing loss weight (default: the model config’s)</td>
+</tr>
+<tr class="even">
 <td><code>use_data_producer</code></td>
 <td>bool</td>
 <td><code>false</code></td>
 <td>Deprecated: <code>async_prefetch: true</code> with <code>max_staleness: 0</code>, slower than the default staleness (<a href="#sec-data-producer-migration">migration</a>)</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>vllm_enable_sleep_mode</code></td>
 <td>bool</td>
 <td><code>null</code></td>

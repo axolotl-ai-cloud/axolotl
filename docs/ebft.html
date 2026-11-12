@@ -1105,7 +1105,7 @@ GPU 1: Trainer (feature extraction, reward computation, GRPO training)</code></p
 <h3 class="anchored" data-anchor-id="structured-mode-async">Structured Mode (Async)</h3>
 <p><code>trl.async_prefetch: true</code> runs structured EBFT on <a href="../docs/grpo.html">async GRPO</a> (TRL’s <code>AsyncGRPOTrainer</code>): a CUDA-free rollout process keeps generating against the vLLM server while the trainer trains on finished rollouts up to <code>trl.max_staleness</code> weight syncs old. The feature-matching reward needs the feature network’s hidden states, so it is computed on the trainer: each optimizer step holds whole prompt groups, every rank runs a no-grad forward of its completions and their references with adapters disabled, and the embeddings are all-gathered to score each group. This works under FSDP2. The scored sequences (whole conversations with <code>remaining_turns</code>, references) can be much longer than the trained tokens that <code>token_budget</code> bounds, so each rank splits them into forwards of at most <code>trl.scoring_token_budget</code> tokens (default <code>token_budget</code>); every rank runs the same number of forwards.</p>
 <p>Only the first assistant turn is trained; with <code>remaining_turns</code>, the later assistant turns are generated as reward context. Differences from the sync trainer: rewards use the sampled token IDs; the adaptive max_tokens budget is set per prompt; the loss is async GRPO’s (<code>loss_type: dapo</code>, TRL’s clipped objective, by default, or <code>cispo</code>; see <a href="../docs/grpo.html#async-loss">Loss</a>); replay, re-roll, streaming and <code>num_iterations &gt; 1</code> are not available.</p>
-<p><strong>When to use</strong>: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by <code>vllm_sync_interval</code> and <code>max_staleness</code>).</p>
+<p><strong>When to use</strong>: Same data as sync mode, but when you want faster training and can tolerate weight staleness (controlled by <code>weight_sync_steps</code> and <code>max_staleness</code>).</p>
 </section>
 <section id="strided-mode" class="level3">
 <h3 class="anchored" data-anchor-id="strided-mode">Strided Mode</h3>
@@ -1141,7 +1141,7 @@ GPU 1: Trainer (feature extraction, reward computation, GRPO training)</code></p
 <span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_host</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0.0.0</span></span>
 <span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
 <span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">weight_sync_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
 <span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">async_prefetch</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">scale_rewards</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a></span>
@@ -1749,7 +1749,7 @@ Warning
 <td>Sync LoRA adapters via filesystem (recommended)</td>
 </tr>
 <tr class="even">
-<td><code>vllm_sync_interval</code></td>
+<td><code>weight_sync_steps</code></td>
 <td><code>int</code></td>
 <td><code>1</code></td>
 <td>Steps between weight syncs to vLLM</td>
@@ -1878,7 +1878,7 @@ Warning
 <tr class="odd">
 <td><code>IS ratio min</code></td>
 <td>Above 0.1</td>
-<td>Importance sampling ratio minimum. Near-zero values mean the policy is too far off-policy; increase <code>vllm_sync_interval</code>.</td>
+<td>Importance sampling ratio minimum. Near-zero values mean the policy is too far off-policy; increase <code>weight_sync_steps</code>.</td>
 </tr>
 </tbody>
 </table>

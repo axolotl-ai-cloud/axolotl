@@ -1070,17 +1070,18 @@ then <code>group_feature_rewards</code>. See <code>axolotl.core.trainers.async_g
 <span id="cb1-71"><a href="#cb1-71" aria-hidden="true" tabindex="-1"></a>    rollout_loop<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-72"><a href="#cb1-72" aria-hidden="true" tabindex="-1"></a>    rollout_loop_kwargs<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb1-73"><a href="#cb1-73" aria-hidden="true" tabindex="-1"></a>    vllm_merge_check_interval<span class="op">=</span>DEFAULT_MERGE_CHECK_INTERVAL,</span>
-<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a>    vllm_lora_alias<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-75"><a href="#cb1-75" aria-hidden="true" tabindex="-1"></a>    ebft_feature_layers<span class="op">=</span>(<span class="kw">lambda</span>: [<span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>])(),</span>
-<span id="cb1-76"><a href="#cb1-76" aria-hidden="true" tabindex="-1"></a>    ebft_embed_method<span class="op">=</span><span class="st">'last_token'</span>,</span>
-<span id="cb1-77"><a href="#cb1-77" aria-hidden="true" tabindex="-1"></a>    ebft_use_whitening<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-78"><a href="#cb1-78" aria-hidden="true" tabindex="-1"></a>    ebft_alignment_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb1-79"><a href="#cb1-79" aria-hidden="true" tabindex="-1"></a>    ebft_diversity_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
-<span id="cb1-80"><a href="#cb1-80" aria-hidden="true" tabindex="-1"></a>    ebft_ce_coef<span class="op">=</span><span class="fl">0.0</span>,</span>
-<span id="cb1-81"><a href="#cb1-81" aria-hidden="true" tabindex="-1"></a>    ebft_adaptive_max_tokens<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb1-82"><a href="#cb1-82" aria-hidden="true" tabindex="-1"></a>    ebft_gt_length_multiplier<span class="op">=</span><span class="fl">1.5</span>,</span>
-<span id="cb1-83"><a href="#cb1-83" aria-hidden="true" tabindex="-1"></a>    generation_kwargs<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-84"><a href="#cb1-84" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a>    external_weight_sync<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-75"><a href="#cb1-75" aria-hidden="true" tabindex="-1"></a>    vllm_lora_alias<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-76"><a href="#cb1-76" aria-hidden="true" tabindex="-1"></a>    ebft_feature_layers<span class="op">=</span>(<span class="kw">lambda</span>: [<span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span>])(),</span>
+<span id="cb1-77"><a href="#cb1-77" aria-hidden="true" tabindex="-1"></a>    ebft_embed_method<span class="op">=</span><span class="st">'last_token'</span>,</span>
+<span id="cb1-78"><a href="#cb1-78" aria-hidden="true" tabindex="-1"></a>    ebft_use_whitening<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-79"><a href="#cb1-79" aria-hidden="true" tabindex="-1"></a>    ebft_alignment_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb1-80"><a href="#cb1-80" aria-hidden="true" tabindex="-1"></a>    ebft_diversity_coef<span class="op">=</span><span class="fl">1.0</span>,</span>
+<span id="cb1-81"><a href="#cb1-81" aria-hidden="true" tabindex="-1"></a>    ebft_ce_coef<span class="op">=</span><span class="fl">0.0</span>,</span>
+<span id="cb1-82"><a href="#cb1-82" aria-hidden="true" tabindex="-1"></a>    ebft_adaptive_max_tokens<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb1-83"><a href="#cb1-83" aria-hidden="true" tabindex="-1"></a>    ebft_gt_length_multiplier<span class="op">=</span><span class="fl">1.5</span>,</span>
+<span id="cb1-84"><a href="#cb1-84" aria-hidden="true" tabindex="-1"></a>    generation_kwargs<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb1-85"><a href="#cb1-85" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p><code>AxolotlAsyncGRPOConfig</code> plus EBFT’s fields.</p>
 </section>
 <section id="axolotl.core.trainers.ebft.async_trainer.AxolotlAsyncEBFTTrainer" class="level3">

@@ -1086,7 +1086,11 @@ runtime model key names used by the LoRA adapter.</p>
 <span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>    merge_compile_precision<span class="op">=</span><span class="st">'strict'</span>,</span>
 <span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>    base_model_config<span class="op">=</span><span class="va">None</span>,</span>
 <span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>    lora_merge_aware<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>    merge_report<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>    shard_filter<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>    on_shard_merged<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>    lora_weights<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Memory-efficient LoRA merging that processes shards individually
 without loading the full model into memory.</p>
 <section id="local-dir-config.json-path-or-hub-repo-supplying-the-config-when" class="level4 doc-section doc-section-local-dir-configjson-path-or-hub-repo-supplying-the-config-when">
@@ -1135,6 +1139,30 @@ adapter (encoder version drift); see <code>_resolve_nvfp4_scale_mode</code>.</p>
 <td>shard_sink</td>
 <td>Optional[Callable[[dict[str, torch.Tensor], Path, dict], None]]</td>
 <td>Optional writer receiving each merged CPU shard, its destination, and safetensors metadata. Replaces the default shard write.</td>
+<td><code>None</code></td>
+</tr>
+<tr class="even">
+<td>merge_report</td>
+<td>Optional[dict]</td>
+<td>Optional dict filled with <code>merged</code> (LoRA targets applied), <code>expert_groups</code> (per-expert NVFP4 groups merged, or None without the expert writer) and <code>expert_lora_dropped</code>.</td>
+<td><code>None</code></td>
+</tr>
+<tr class="odd">
+<td>shard_filter</td>
+<td>Optional[Callable[[Path], bool]]</td>
+<td>Merge only the base shards it accepts. Shards that share a layer must be merged by the same call; an empty result is not an error.</td>
+<td><code>None</code></td>
+</tr>
+<tr class="even">
+<td>on_shard_merged</td>
+<td>Optional[Callable[[Path], None]]</td>
+<td>Called with each base shard once its output was emitted.</td>
+<td><code>None</code></td>
+</tr>
+<tr class="odd">
+<td>lora_weights</td>
+<td>Optional[Dict[str, torch.Tensor]]</td>
+<td>Already loaded adapter tensors, shared read-only.</td>
 <td><code>None</code></td>
 </tr>
 <tr class="even">
