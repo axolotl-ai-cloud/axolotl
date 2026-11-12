@@ -893,7 +893,8 @@ class GCCallback(TrainerCallback):
 
     def _gc(self):
         gc.collect()
-        torch.accelerator.empty_cache()
+        if torch.accelerator.is_available():
+            torch.accelerator.empty_cache()
 
     def on_train_begin(
         self,
