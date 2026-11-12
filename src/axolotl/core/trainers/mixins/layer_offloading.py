@@ -113,7 +113,7 @@ class LayerOffloadManager:
         self._offload_all()
 
         # Release cached memory blocks back to the driver
-        torch.cuda.empty_cache()
+        torch.accelerator.empty_cache()
 
     def _offload_all(self):
         """Move all frozen params in all decoder layers to CPU."""

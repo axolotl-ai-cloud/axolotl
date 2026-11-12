@@ -644,7 +644,7 @@ class AxolotlStridedEBFTTrainer(
         model_dtype = next(model.parameters()).dtype
 
         # Free generation-phase memory before training forward pass
-        torch.cuda.empty_cache()
+        torch.accelerator.empty_cache()
 
         attn_mask, pos_ids = self._build_strided_mask(
             full_seq_len,
@@ -774,7 +774,7 @@ class AxolotlStridedEBFTTrainer(
             )
 
         del attn_mask, pos_ids
-        torch.cuda.empty_cache()
+        torch.accelerator.empty_cache()
 
         # --- Step 5: Compute advantages ---
         advantages_per_block = self._compute_advantages(

@@ -957,7 +957,7 @@ class ModelLoader:
 
         for _ in range(3):
             gc.collect()
-            torch.cuda.empty_cache()
+            torch.accelerator.empty_cache()
 
     def _set_parallel_config(self):
         """Set parallelism configuration (DP, FSDP, TP, CP) in PartialState/Accelerator"""
