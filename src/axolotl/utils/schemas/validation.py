@@ -579,12 +579,16 @@ class TrainingValidationMixin:
         if not (data.get("float32") and data.get("cut_cross_entropy")):
             return data
         fsdp_config = data.get("fsdp_config") or {}
-        fsdp2 = bool(fsdp_config) or str(data.get("fsdp_version")) == "2"
-        policy = str(fsdp_config.get("mixed_precision_policy") or "").lower()
+        # the `fsdp_` prefix is stripped by another validator, which may not have run yet
+        policy = str(
+            fsdp_config.get("mixed_precision_policy")
+            or fsdp_config.get("fsdp_mixed_precision_policy")
+            or ""
+        ).lower()
         half_param_dtype = policy in ("bf16", "fp16") or (
             policy == "" and (data.get("bf16") is True or data.get("fp16") is True)
         )
-        if fsdp2 and half_param_dtype:
+        if fsdp_config and half_param_dtype:
             return data
         raise ValueError(
             "`float32: true` with `cut_cross_entropy: true` needs FSDP2 with a "

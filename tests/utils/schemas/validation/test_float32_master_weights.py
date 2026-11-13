@@ -142,6 +142,41 @@ class TestFloat32CutCrossEntropy:
         with pytest.raises(ValueError, match="same half dtype"):
             _validate_with_plugins(cfg)
 
+    def test_rejected_with_fsdp_version_but_no_fsdp_config(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                bf16=True,
+                float32=True,
+                cut_cross_entropy=True,
+                plugins=CCE_PLUGIN,
+                fsdp_version=2,
+            )
+            | min_base_cfg
+        )
+        with pytest.raises(ValueError, match="same half dtype"):
+            _validate_with_plugins(cfg)
+
+    def test_rejected_when_prefixed_policy_keeps_fp32_params(self, min_base_cfg):
+        fsdp = {
+            **FSDP2,
+            "fsdp_config": {
+                **FSDP2["fsdp_config"],
+                "fsdp_mixed_precision_policy": "fp32",
+            },
+        }
+        cfg = (
+            DictDefault(
+                bf16=True,
+                float32=True,
+                cut_cross_entropy=True,
+                plugins=CCE_PLUGIN,
+                **fsdp,
+            )
+            | min_base_cfg
+        )
+        with pytest.raises(ValueError, match="same half dtype"):
+            _validate_with_plugins(cfg)
+
     def test_accepted_with_fsdp2(self, min_base_cfg):
         cfg = (
             DictDefault(
