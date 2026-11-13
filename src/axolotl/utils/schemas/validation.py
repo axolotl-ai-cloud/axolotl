@@ -556,6 +556,29 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_float32_cut_cross_entropy(cls, data):
+        if not (data.get("float32") and data.get("cut_cross_entropy")):
+            return data
+        fsdp_config = data.get("fsdp_config") or {}
+        fsdp2 = bool(fsdp_config) or str(data.get("fsdp_version")) == "2"
+        policy = str(fsdp_config.get("mixed_precision_policy") or "").lower()
+        half_param_dtype = policy in ("bf16", "fp16") or (
+            policy == "" and (data.get("bf16") is True or data.get("fp16") is True)
+        )
+        if fsdp2 and half_param_dtype:
+            return data
+        raise ValueError(
+            "`float32: true` with `cut_cross_entropy: true` needs FSDP2 with a "
+            "half-precision mixed-precision policy: the Cut Cross Entropy kernels need "
+            "the classifier and the hidden states in the same half dtype, and only "
+            "FSDP2 casts the FP32 `lm_head` to BF16/FP16 for compute (single GPU, DDP "
+            "and DeepSpeed pass it in FP32). Enable FSDP2 (`fsdp_config` with "
+            "`bf16: true`), drop `float32`, or use Liger's fused linear cross entropy "
+            "(`liger_fused_linear_cross_entropy: true`) or plain cross entropy."
+        )
+
+    @model_validator(mode="before")
+    @classmethod
     def hint_sample_packing_padding(cls, data):
         if data.get("sample_packing"):
             pad_to_sequence_len = data.get("pad_to_sequence_len")

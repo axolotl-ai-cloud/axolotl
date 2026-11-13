@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from axolotl.utils.config import normalize_config, validate_config
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 
@@ -89,3 +89,78 @@ class TestFloat32MasterWeights:
             resolve_dtype(cfg)
         assert cfg.bf16 is False
         assert cfg.torch_dtype == torch.float32
+
+
+FSDP2 = {
+    "fsdp_version": 2,
+    "fsdp_config": {
+        "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
+        "transformer_layer_cls_to_wrap": "LlamaDecoderLayer",
+    },
+}
+
+
+CCE_PLUGIN = ["axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin"]
+
+
+def _validate_with_plugins(cfg):
+    prepare_plugins(cfg)
+    return validate_config(cfg)
+
+
+class TestFloat32CutCrossEntropy:
+    def test_rejected_without_fsdp2(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                bf16=True, float32=True, cut_cross_entropy=True, plugins=CCE_PLUGIN
+            )
+            | min_base_cfg
+        )
+        with pytest.raises(ValueError) as err:
+            _validate_with_plugins(cfg)
+        message = str(err.value)
+        assert "same half dtype" in message
+        assert "FSDP2" in message
+        assert "liger_fused_linear_cross_entropy" in message
+        assert "drop `float32`" in message
+
+    def test_rejected_when_fsdp2_keeps_fp32_params(self, min_base_cfg):
+        fsdp = {
+            **FSDP2,
+            "fsdp_config": {**FSDP2["fsdp_config"], "mixed_precision_policy": "fp32"},
+        }
+        cfg = (
+            DictDefault(
+                bf16=True,
+                float32=True,
+                cut_cross_entropy=True,
+                plugins=CCE_PLUGIN,
+                **fsdp,
+            )
+            | min_base_cfg
+        )
+        with pytest.raises(ValueError, match="same half dtype"):
+            _validate_with_plugins(cfg)
+
+    def test_accepted_with_fsdp2(self, min_base_cfg):
+        cfg = (
+            DictDefault(
+                bf16=True,
+                float32=True,
+                cut_cross_entropy=True,
+                plugins=CCE_PLUGIN,
+                **FSDP2,
+            )
+            | min_base_cfg
+        )
+        cfg = _validate_with_plugins(cfg)
+        assert cfg.float32 is True
+        assert cfg.cut_cross_entropy is True
+
+    def test_accepted_without_float32(self, min_base_cfg):
+        cfg = (
+            DictDefault(bf16=True, cut_cross_entropy=True, plugins=CCE_PLUGIN)
+            | min_base_cfg
+        )
+        cfg = _validate_with_plugins(cfg)
+        assert cfg.cut_cross_entropy is True
