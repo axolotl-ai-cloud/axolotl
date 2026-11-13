@@ -879,7 +879,7 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 
 
 class GCCallback(TrainerCallback):
-    """Runs ``gc.collect()`` + ``torch.cuda.empty_cache()`` on
+    """Runs ``gc.collect()`` + ``torch.accelerator.empty_cache()`` on
     ``gc_collect_steps`` intervals and on eval/save/epoch boundaries that
     the Trainer's native ``torch_empty_cache_steps`` doesn't cover. The two
     settings are complementary; overlapping intervals just double-clear.
@@ -893,7 +893,8 @@ class GCCallback(TrainerCallback):
 
     def _gc(self):
         gc.collect()
-        torch.cuda.empty_cache()
+        if torch.accelerator.is_available():
+            torch.accelerator.empty_cache()
 
     def on_train_begin(
         self,

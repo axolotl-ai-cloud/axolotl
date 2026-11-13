@@ -25,6 +25,14 @@ _NF4_DEQUANT_KERNELS = {
 # and we skip a per-call c_void_p/c_int alloc; older bnb (no argtypes) still needs wrappers.
 _BNB_TYPED_CAPI = getattr(cdequantize_blockwise_fp32, "argtypes", None) is not None
 
+
+def _raw_stream(device: torch.device) -> int:
+    # bnb's XPU library takes the same arguments, with the SYCL queue as the stream
+    if device.type == "xpu":
+        return torch._C._xpu_getCurrentRawStream(device.index)
+    return torch._C._cuda_getCurrentRawStream(device.index)
+
+
 _ptr: Callable[..., object]
 _int: Callable[..., object]
 _stream: Callable[..., object]
@@ -38,15 +46,14 @@ if _BNB_TYPED_CAPI:
 
     # bnb calls this itself under the hood; prefer it over the bnb-internal
     # _get_tensor_stream, which upstream may remove.
-    def _stream(index):
-        return torch._C._cuda_getCurrentRawStream(index)
+    _stream = _raw_stream
 
 else:
     _ptr = get_ptr
     _int = ctypes.c_int
 
-    def _stream(index):
-        return ctypes.c_void_p(torch._C._cuda_getCurrentRawStream(index))
+    def _stream(device):
+        return ctypes.c_void_p(_raw_stream(device))
 
 
 def _ctypes_nf4_dequant(
@@ -69,7 +76,7 @@ def _ctypes_nf4_dequant(
     )
 
     # resolved per call: the current stream belongs to the caller's context, not the device
-    stream = _stream(W.device.index)
+    stream = _stream(W.device)
 
     cdequantize_blockwise_fp32(
         _ptr(code2),

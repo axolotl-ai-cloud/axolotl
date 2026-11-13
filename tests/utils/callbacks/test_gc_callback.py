@@ -29,15 +29,31 @@ class TestGCCallback:
         assert cb.gc_collect_steps == -1
 
     @patch("axolotl.utils.callbacks.gc.collect")
-    @patch("axolotl.utils.callbacks.torch.cuda.empty_cache")
-    def test_gc_calls_collect_and_empty_cache(self, mock_empty_cache, mock_gc_collect):
+    @patch("axolotl.utils.callbacks.torch.accelerator.is_available", return_value=True)
+    @patch("axolotl.utils.callbacks.torch.accelerator.empty_cache")
+    def test_gc_calls_collect_and_empty_cache(
+        self, mock_empty_cache, _mock_is_available, mock_gc_collect
+    ):
         cb = GCCallback(gc_collect_steps=1)
         cb._gc()
         mock_gc_collect.assert_called_once()
         mock_empty_cache.assert_called_once()
 
+    @patch("axolotl.utils.callbacks.torch.accelerator.is_available", return_value=False)
+    @patch(
+        "axolotl.utils.callbacks.torch.accelerator.empty_cache",
+        side_effect=RuntimeError(
+            "Cannot access accelerator device when none is available."
+        ),
+    )
+    def test_gc_skips_empty_cache_without_an_accelerator(
+        self, mock_empty_cache, _mock_is_available
+    ):
+        GCCallback(gc_collect_steps=1)._gc()
+        mock_empty_cache.assert_not_called()
+
     @patch("axolotl.utils.callbacks.gc.collect")
-    @patch("axolotl.utils.callbacks.torch.cuda.empty_cache")
+    @patch("axolotl.utils.callbacks.torch.accelerator.empty_cache")
     def test_on_step_end_periodic_gc(self, mock_empty_cache, mock_gc_collect):
         cb = GCCallback(gc_collect_steps=5)
         args = MagicMock()
@@ -55,7 +71,7 @@ class TestGCCallback:
         mock_gc_collect.assert_called_once()
 
     @patch("axolotl.utils.callbacks.gc.collect")
-    @patch("axolotl.utils.callbacks.torch.cuda.empty_cache")
+    @patch("axolotl.utils.callbacks.torch.accelerator.empty_cache")
     def test_on_step_end_no_gc_when_not_on_interval(
         self, mock_empty_cache, mock_gc_collect
     ):
@@ -75,7 +91,7 @@ class TestGCCallback:
         mock_gc_collect.assert_not_called()
 
     @patch("axolotl.utils.callbacks.gc.collect")
-    @patch("axolotl.utils.callbacks.torch.cuda.empty_cache")
+    @patch("axolotl.utils.callbacks.torch.accelerator.empty_cache")
     def test_on_step_end_gc_before_eval(self, mock_empty_cache, mock_gc_collect):
         cb = GCCallback(gc_collect_steps=-1)
         args = MagicMock()

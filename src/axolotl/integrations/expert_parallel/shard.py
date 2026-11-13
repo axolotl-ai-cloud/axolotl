@@ -277,8 +277,8 @@ def shard_expert_weights(
         # to the allocator. Without this, the original `from_pretrained`
         # allocations stay reserved and `memory_allocated()` doesn't drop.
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        if torch.accelerator.is_available():
+            torch.accelerator.empty_cache()
 
         # Append (don't overwrite) — other systems may have set this too.
         existing = list(getattr(model, "_ddp_params_and_buffers_to_ignore", []))
