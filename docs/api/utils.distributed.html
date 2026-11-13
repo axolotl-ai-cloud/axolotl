@@ -81,7 +81,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-447e42e69aaa9833c0ba1b986f430b20.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-6f0f3137e2c2eb6260f150ad0eb053cd.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-cb68e0b77819771736e520b02605167b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -954,7 +954,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.utils.distributed.gather_scalar_from_all_ranks" id="toc-axolotl.utils.distributed.gather_scalar_from_all_ranks" class="nav-link" data-scroll-target="#axolotl.utils.distributed.gather_scalar_from_all_ranks">gather_scalar_from_all_ranks</a></li>
   <li><a href="#axolotl.utils.distributed.is_distributed" id="toc-axolotl.utils.distributed.is_distributed" class="nav-link" data-scroll-target="#axolotl.utils.distributed.is_distributed">is_distributed</a></li>
   <li><a href="#axolotl.utils.distributed.is_main_process" id="toc-axolotl.utils.distributed.is_main_process" class="nav-link" data-scroll-target="#axolotl.utils.distributed.is_main_process">is_main_process</a></li>
+  <li><a href="#axolotl.utils.distributed.mesh_to_accelerate_env" id="toc-axolotl.utils.distributed.mesh_to_accelerate_env" class="nav-link" data-scroll-target="#axolotl.utils.distributed.mesh_to_accelerate_env">mesh_to_accelerate_env</a></li>
+  <li><a href="#axolotl.utils.distributed.mesh_to_parallelism_kwargs" id="toc-axolotl.utils.distributed.mesh_to_parallelism_kwargs" class="nav-link" data-scroll-target="#axolotl.utils.distributed.mesh_to_parallelism_kwargs">mesh_to_parallelism_kwargs</a></li>
   <li><a href="#axolotl.utils.distributed.reduce_and_broadcast" id="toc-axolotl.utils.distributed.reduce_and_broadcast" class="nav-link" data-scroll-target="#axolotl.utils.distributed.reduce_and_broadcast">reduce_and_broadcast</a></li>
+  <li><a href="#axolotl.utils.distributed.resolve_cfg_mesh" id="toc-axolotl.utils.distributed.resolve_cfg_mesh" class="nav-link" data-scroll-target="#axolotl.utils.distributed.resolve_cfg_mesh">resolve_cfg_mesh</a></li>
   <li><a href="#axolotl.utils.distributed.zero_first" id="toc-axolotl.utils.distributed.zero_first" class="nav-link" data-scroll-target="#axolotl.utils.distributed.zero_first">zero_first</a></li>
   </ul></li>
   </ul></li>
@@ -1010,10 +1013,22 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Check if the current process is the main process. If not in distributed mode,</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.utils.distributed.mesh_to_accelerate_env">mesh_to_accelerate_env</a></td>
+<td>Lower a <code>MeshSpec</code> to the <code>PARALLELISM_CONFIG_*</code> environment accelerate builds its</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.utils.distributed.mesh_to_parallelism_kwargs">mesh_to_parallelism_kwargs</a></td>
+<td>Lower a <code>MeshSpec</code> to accelerate <code>ParallelismConfig</code> kwargs.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.utils.distributed.reduce_and_broadcast">reduce_and_broadcast</a></td>
 <td>Run a callable ‘fn1’ on all ranks, gather the results, reduce them using ‘fn2’,</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.utils.distributed.resolve_cfg_mesh">resolve_cfg_mesh</a></td>
+<td>The parallel layout <code>cfg</code> builds on <code>world_size</code> ranks (default: <code>WORLD_SIZE</code>).</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.utils.distributed.zero_first">zero_first</a></td>
 <td>runs the wrapped context so that rank 0 runs first before other ranks</td>
 </tr>
@@ -1101,9 +1116,35 @@ on the 0-th local rank.</p>
 </table>
 </section>
 </section>
+<section id="axolotl.utils.distributed.mesh_to_accelerate_env" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.distributed.mesh_to_accelerate_env">mesh_to_accelerate_env</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.mesh_to_accelerate_env(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    mesh,</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    dp_shard_written<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>    dp_replicate_written<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    sp_attn_implementation<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Lower a <code>MeshSpec</code> to the <code>PARALLELISM_CONFIG_*</code> environment accelerate builds its
+<code>ParallelismConfig</code> from, plus <code>ACCELERATE_USE_PARALLELISM_CONFIG</code> when it should.</p>
+<p>A layout that is only FSDP (or only replicas) gets no accelerate <code>ParallelismConfig</code>
+unless <code>dp_shard_size</code> (or <code>dp_replicate_size</code>) was written, as before.</p>
+</section>
+<section id="axolotl.utils.distributed.mesh_to_parallelism_kwargs" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.distributed.mesh_to_parallelism_kwargs">mesh_to_parallelism_kwargs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.mesh_to_parallelism_kwargs(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    mesh,</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    dp_replicate_written<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Lower a <code>MeshSpec</code> to accelerate <code>ParallelismConfig</code> kwargs.</p>
+<p>EP is not a kwarg: the patched <code>ParallelismConfig</code> reads <code>PARALLELISM_CONFIG_EP_SIZE</code>.
+Without FSDP the replicas sit on a <code>dp_shard</code> axis unless <code>dp_replicate_size</code> was
+written, matching the meshes Axolotl has always built for DDP and DeepSpeed.</p>
+</section>
 <section id="axolotl.utils.distributed.reduce_and_broadcast" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.reduce_and_broadcast">reduce_and_broadcast</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.reduce_and_broadcast(fn1, fn2)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.reduce_and_broadcast(fn1, fn2)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Run a callable ‘fn1’ on all ranks, gather the results, reduce them using ‘fn2’,
 and then broadcast the reduced result to all ranks.</p>
 <p>Args:
@@ -1113,9 +1154,15 @@ and then broadcast the reduced result to all ranks.</p>
 <p>Returns:
 - The reduced and broadcasted value.</p>
 </section>
+<section id="axolotl.utils.distributed.resolve_cfg_mesh" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.distributed.resolve_cfg_mesh">resolve_cfg_mesh</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.resolve_cfg_mesh(cfg, world_size<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The parallel layout <code>cfg</code> builds on <code>world_size</code> ranks (default: <code>WORLD_SIZE</code>).</p>
+<p>Raises <code>PlanError</code> (PLAN-001) for a layout that cannot fill the world size.</p>
+</section>
 <section id="axolotl.utils.distributed.zero_first" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.distributed.zero_first">zero_first</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.zero_first(is_main)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>utils.distributed.zero_first(is_main)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>runs the wrapped context so that rank 0 runs first before other ranks</p>
 
 
