@@ -94,6 +94,10 @@ _LORA_KERNEL_FLAGS = (
 )
 
 
+def _float32_with_autocast(get: Callable[[str], Any]) -> bool:
+    return bool(get("float32")) and (get("bf16") is True or get("fp16") is True)
+
+
 def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     """Whether the unset ``lora_*_kernel`` flags would be auto-enabled for this config.
 
@@ -109,6 +113,8 @@ def lora_kernels_auto_enable(get: Callable[[str], Any]) -> bool:
     if any(get(flag) is not None for flag in _LORA_KERNEL_FLAGS):
         return False
     if adapter == "lora" and get("load_in_8bit"):
+        return False
+    if _float32_with_autocast(get):
         return False
     if get("trust_remote_code"):
         return False
@@ -537,7 +543,20 @@ class TrainingValidationMixin:
                 "`float32: true` keeps FP32 weights, but `bfloat16`, `float16` or "
                 "`bf16: full` load half-precision weights. Remove one of them."
             )
-        if data.get("bf16") is True or data.get("fp16") is True:
+        if _float32_with_autocast(data.get):
+            # the fused kernels mix the FP32 residual stream with autocast matmul outputs
+            kernels = [
+                flag
+                for flag in ("lora_qkv_kernel", "lora_mlp_kernel")
+                if data.get(flag)
+            ]
+            if kernels:
+                raise ValueError(
+                    f"`float32: true` with `bf16: true`/`fp16: true` does not support "
+                    f"{', '.join(f'`{flag}`' for flag in kernels)}: the fused LoRA "
+                    "kernels need the weights and activations in one dtype. Set them "
+                    "to `false`, or drop `float32`."
+                )
             return data
         data["bf16"] = False
         LOG.info(

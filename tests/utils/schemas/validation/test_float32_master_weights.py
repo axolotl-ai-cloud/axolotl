@@ -164,3 +164,67 @@ class TestFloat32CutCrossEntropy:
         )
         cfg = _validate_with_plugins(cfg)
         assert cfg.cut_cross_entropy is True
+
+
+GPU_CAPS = {
+    "compute_capability": "sm_90",
+    "bf16": True,
+    "tf32": False,
+    "n_gpu": 1,
+    "n_node": 1,
+}
+ENV_CAPS = {"torch_version": "2.14.0"}
+LORA = {"adapter": "lora", "lora_r": 8, "lora_alpha": 16, "lora_target_linear": True}
+LORA_KERNELS = (
+    "lora_mlp_kernel",
+    "lora_qkv_kernel",
+    "lora_o_kernel",
+    "lora_embedding_kernel",
+)
+
+
+class TestFloat32LoraKernels:
+    @pytest.mark.parametrize("amp", [{"bf16": True}, {"bf16": False, "fp16": True}])
+    def test_autocast_skips_kernel_auto_enable(self, min_base_cfg, amp):
+        cfg = validate_config(
+            DictDefault(float32=True, **amp, **LORA) | min_base_cfg,
+            capabilities=GPU_CAPS,
+            env_capabilities=ENV_CAPS,
+        )
+        assert not any(cfg[flag] for flag in LORA_KERNELS)
+
+    def test_pure_fp32_keeps_kernel_auto_enable(self, min_base_cfg):
+        cfg = validate_config(
+            DictDefault(float32=True, **LORA) | min_base_cfg,
+            capabilities=GPU_CAPS,
+            env_capabilities=ENV_CAPS,
+        )
+        assert all(cfg[flag] for flag in LORA_KERNELS)
+
+    def test_bf16_weights_keep_kernel_auto_enable(self, min_base_cfg):
+        cfg = validate_config(
+            DictDefault(bf16=True, **LORA) | min_base_cfg,
+            capabilities=GPU_CAPS,
+            env_capabilities=ENV_CAPS,
+        )
+        assert all(cfg[flag] for flag in LORA_KERNELS)
+
+    @pytest.mark.parametrize("flag", ["lora_qkv_kernel", "lora_mlp_kernel"])
+    def test_autocast_rejects_explicit_fused_kernel(self, min_base_cfg, flag):
+        cfg = DictDefault(bf16=True, float32=True, **LORA, **{flag: True})
+        with pytest.raises(ValueError, match=f"`{flag}`"):
+            validate_config(cfg | min_base_cfg)
+
+    def test_autocast_allows_explicit_o_and_embedding_kernels(self, min_base_cfg):
+        cfg = validate_config(
+            DictDefault(
+                bf16=True,
+                float32=True,
+                lora_o_kernel=True,
+                lora_embedding_kernel=True,
+                **LORA,
+            )
+            | min_base_cfg
+        )
+        assert cfg.lora_o_kernel is True
+        assert cfg.lora_embedding_kernel is True
