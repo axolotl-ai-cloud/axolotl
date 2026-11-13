@@ -6,15 +6,19 @@ from unittest.mock import patch
 
 import pytest
 
+from axolotl.core.plan.errors import PlanError
+from axolotl.core.plan.slices.mesh import resolve_mesh
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import _get_parallel_config_kwargs
+from axolotl.utils.distributed import mesh_to_parallelism_kwargs
+
+
+def _kwargs(world_size, **config):
+    return mesh_to_parallelism_kwargs(resolve_mesh(config, world_size=world_size))
 
 
 class TestParallelConfigKwargs:
     def test_deepspeed_maps_cp_to_sp_and_replicates_the_rest(self):
-        kwargs = _get_parallel_config_kwargs(
-            8, context_parallel_size=2, is_fsdp=False, is_deepspeed=True
-        )
+        kwargs = _kwargs(8, context_parallel_size=2, deepspeed="zero2.json")
         assert kwargs == {
             "sp_size": 2,
             "sp_backend": "deepspeed",
@@ -22,23 +26,20 @@ class TestParallelConfigKwargs:
         }
 
     def test_deepspeed_cp_equals_world(self):
-        kwargs = _get_parallel_config_kwargs(
-            4, context_parallel_size=4, is_fsdp=False, is_deepspeed=True
-        )
+        kwargs = _kwargs(4, context_parallel_size=4, deepspeed="zero2.json")
         assert kwargs == {"sp_size": 4, "sp_backend": "deepspeed"}
 
     def test_deepspeed_rejects_inconsistent_replicate(self):
         with pytest.raises(ValueError, match="dp_replicate_size"):
-            _get_parallel_config_kwargs(
+            _kwargs(
                 8,
                 context_parallel_size=2,
                 dp_replicate_size=2,
-                is_fsdp=False,
-                is_deepspeed=True,
+                deepspeed="zero2.json",
             )
 
     def test_fsdp_keeps_cp_axis(self):
-        kwargs = _get_parallel_config_kwargs(8, context_parallel_size=2, is_fsdp=True)
+        kwargs = _kwargs(8, context_parallel_size=2, fsdp_config={"fsdp_version": 2})
         assert kwargs == {"cp_size": 2, "dp_shard_size": 4}
 
 
@@ -74,7 +75,21 @@ class TestParallelismEnvs:
         assert os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] == "true"
         assert "PARALLELISM_CONFIG_CP_SIZE" not in os.environ
 
-    def test_deepspeed_autotp_shrinks_the_replicas(self, monkeypatch):
+    def test_deepspeed_autotp_fills_the_world(self, monkeypatch):
+        from axolotl.utils import trainer as trainer_utils
+
+        monkeypatch.setattr(trainer_utils, "get_world_size", lambda: 8)
+        cfg = DictDefault(
+            context_parallel_size=2,
+            tensor_parallel_size=4,
+            deepspeed="deepspeed_configs/zero2.json",
+        )
+        trainer_utils.setup_parallelism_envs(cfg)
+        assert os.environ["PARALLELISM_CONFIG_TP_SIZE"] == "4"
+        assert "PARALLELISM_CONFIG_DP_REPLICATE_SIZE" not in os.environ
+
+    def test_deepspeed_autotp_rejects_replicas(self, monkeypatch):
+        """accelerate's ParallelismConfig refuses TP beside pure dp_replicate."""
         from axolotl.utils import trainer as trainer_utils
 
         monkeypatch.setattr(trainer_utils, "get_world_size", lambda: 8)
@@ -83,8 +98,9 @@ class TestParallelismEnvs:
             tensor_parallel_size=2,
             deepspeed="deepspeed_configs/zero2.json",
         )
-        trainer_utils.setup_deepspeed_context_parallel_envs(cfg)
-        assert os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] == "2"
+        with pytest.raises(PlanError) as info:
+            trainer_utils.setup_parallelism_envs(cfg)
+        assert info.value.key == "dp_replicate_size"
 
     def test_fsdp_exports_cp_axis(self, monkeypatch):
         from axolotl.utils import trainer as trainer_utils

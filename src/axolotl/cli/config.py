@@ -22,6 +22,7 @@ from axolotl.utils.config import (
     validate_config,
 )
 from axolotl.utils.dict import DictDefault
+from axolotl.utils.distributed import log_mesh_spelling, resolve_cfg_mesh
 from axolotl.utils.forkserver import preload_forkserver_modules
 from axolotl.utils.logging import get_logger
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
@@ -313,6 +314,12 @@ def load_cfg(
             capabilities=capabilities,
             env_capabilities=env_capabilities,
         )
+        # Ray workers resolve the layout for their own world size
+        mesh = (
+            None
+            if capabilities is None
+            else resolve_cfg_mesh(cfg, world_size=capabilities.get("n_gpu"))
+        )
     except Exception:
         # a rejected config must not leave register()-time side effects (e.g.
         # LIGER_KERNEL_IMPL) behind for the next config in this process
@@ -326,6 +333,8 @@ def load_cfg(
     # have to wait for cfg.output to be resolved. We could call this earlier if we write
     # to a temporary file, and then move it later.
     prepare_debug_log(cfg)
+    if mesh is not None:
+        log_mesh_spelling(cfg, mesh)
     prepare_optim_env(cfg)
     normalize_config(cfg)
     normalize_cfg_datasets(cfg)

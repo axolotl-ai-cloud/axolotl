@@ -7,9 +7,11 @@ from transformers import BitsAndBytesConfig, PreTrainedTokenizerBase
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils.import_utils import is_torch_mps_available
 
+from axolotl.core.plan.errors import PlanError
+from axolotl.core.plan.slices.mesh import resolve_mesh
 from axolotl.loaders import ModelLoader
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import _get_parallel_config_kwargs
+from axolotl.utils.distributed import mesh_to_parallelism_kwargs
 
 
 class TestModelsUtils:
@@ -179,43 +181,63 @@ class TestModelsUtils:
         assert "Conflicting message content fields" in str(exc_info.value)
 
     @pytest.mark.parametrize(
-        "world_size, tensor_parallel_size, context_parallel_size, dp_shard_size, dp_replicate_size, is_fsdp, expected",
+        "world_size, tensor_parallel_size, context_parallel_size, dp_shard_size, dp_replicate_size, expected",
         [
-            (16, 2, 2, 2, 2, True, (2, 2, 2, 2)),
-            (16, 1, 1, None, None, True, (0, 0, 16, 1)),
-            (16, 2, 2, 2, None, True, (2, 2, 2, 2)),
-            (16, 2, 2, None, 2, True, (2, 2, 2, 2)),
-            (16, 1, 1, None, 2, True, (0, 0, 8, 2)),
-            (2, 1, 1, None, None, True, (0, 0, 2, 1)),
+            (
+                16,
+                2,
+                2,
+                2,
+                2,
+                {
+                    "tp_size": 2,
+                    "cp_size": 2,
+                    "dp_replicate_size": 2,
+                    "dp_shard_size": 2,
+                },
+            ),
+            (16, 1, 1, None, None, {"dp_shard_size": 16}),
+            (
+                16,
+                2,
+                2,
+                None,
+                2,
+                {
+                    "tp_size": 2,
+                    "cp_size": 2,
+                    "dp_replicate_size": 2,
+                    "dp_shard_size": 2,
+                },
+            ),
+            (16, 1, 1, None, 2, {"dp_replicate_size": 2, "dp_shard_size": 8}),
+            (2, 1, 1, None, None, {"dp_shard_size": 2}),
+            # dp_replicate_size is never auto-filled
+            (16, 2, 2, 2, None, None),
         ],
     )
-    def test_get_parallel_config_kwargs(
+    def test_parallelism_kwargs(
         self,
         world_size,
         tensor_parallel_size,
         context_parallel_size,
         dp_shard_size,
         dp_replicate_size,
-        is_fsdp,
         expected,
     ):
-        res = _get_parallel_config_kwargs(
-            world_size,
-            tensor_parallel_size,
-            context_parallel_size,
-            dp_shard_size,
-            dp_replicate_size,
-            is_fsdp,
-        )
-
-        if expected[0] > 1:
-            assert res["tp_size"] == expected[0]
-        if expected[1] > 1:
-            assert res["cp_size"] == expected[1]
-        if expected[2] > 1:
-            assert res["dp_shard_size"] == expected[2]
-        if expected[3] > 1:
-            assert res["dp_replicate_size"] == expected[3]
+        config = {
+            "tensor_parallel_size": tensor_parallel_size,
+            "context_parallel_size": context_parallel_size,
+            "dp_shard_size": dp_shard_size,
+            "dp_replicate_size": dp_replicate_size,
+            "fsdp_config": {"fsdp_version": 2},
+        }
+        if expected is None:
+            with pytest.raises(PlanError):
+                resolve_mesh(config, world_size=world_size)
+            return
+        mesh = resolve_mesh(config, world_size=world_size)
+        assert mesh_to_parallelism_kwargs(mesh) == expected
 
 
 class TestNoSplitModuleClasses:

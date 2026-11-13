@@ -22,10 +22,12 @@ _LAZY_IMPORTS = {
     "load_cfg": "axolotl.cli.config",
     "load_datasets": "axolotl.common.datasets",
     "load_preference_datasets": "axolotl.common.datasets",
+    "log_mesh_spelling": "axolotl.utils.distributed",
     "normalize_config": "axolotl.utils.config",
     "plugin_set_cfg": "axolotl.cli.config",
     "prepare_optim_env": "axolotl.utils.trainer",
     "prepare_plugins": "axolotl.cli.config",
+    "resolve_cfg_mesh": "axolotl.utils.distributed",
     "resolve_dtype": "axolotl.utils.config",
     "train": "axolotl.train",
     "validate_config": "axolotl.utils.config",
@@ -216,6 +218,9 @@ def ray_train_func(kwargs: dict):
         capabilities=capabilities,
         env_capabilities=env_capabilities,
     )
+    log_mesh_spelling_fn: Any = _lazy_attr("log_mesh_spelling")
+    resolve_cfg_mesh_fn: Any = _lazy_attr("resolve_cfg_mesh")
+    log_mesh_spelling_fn(cfg, resolve_cfg_mesh_fn(cfg, capabilities.get("n_gpu")))
 
     # Derive here (not in controller normalize_config) so the worker's
     # validate_config above doesn't see both set and trip check_gas_bsz.

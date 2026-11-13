@@ -4,6 +4,7 @@ import os
 import pickle  # nosec
 from contextlib import contextmanager
 from datetime import timedelta
+from functools import lru_cache
 
 import torch
 import torch.distributed as dist
@@ -14,6 +15,16 @@ from transformers.utils.import_utils import (
     is_torch_mps_available,
     is_torch_npu_available,
 )
+
+from axolotl.core.plan.slices.mesh import (
+    READS as MESH_READS,
+    READS_PARTIAL as MESH_READS_PARTIAL,
+    resolve_mesh,
+)
+from axolotl.core.plan.specs import MeshSpec
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 distributed_state = None
 
@@ -342,105 +353,161 @@ def reduce_and_broadcast(fn1, fn2):
     return compute_and_broadcast(lambda: fn2(gathered_values))
 
 
-def build_parallelism_config(cfg):
-    pc_kwargs = _get_parallel_config_kwargs(
-        get_world_size(),
-        cfg.tensor_parallel_size,
-        cfg.context_parallel_size,
-        cfg.dp_shard_size,
-        cfg.dp_replicate_size,
-        bool(cfg.fsdp or cfg.fsdp_config),
-        getattr(cfg, "expert_parallel_size", None),
-        is_deepspeed=bool(getattr(cfg, "deepspeed", None)),
+def _cfg_value(cfg, key):
+    return cfg.get(key) if isinstance(cfg, dict) else getattr(cfg, key, None)
+
+
+def _written(cfg, key) -> bool:
+    return (_cfg_value(cfg, key) or 1) > 1
+
+
+def resolve_cfg_mesh(cfg, world_size: int | None = None) -> MeshSpec:
+    """The parallel layout ``cfg`` builds on ``world_size`` ranks (default: ``WORLD_SIZE``).
+
+    Raises ``PlanError`` (PLAN-001) for a layout that cannot fill the world size.
+    """
+    layout = tuple(
+        sorted(
+            (key, bool(value) if key in MESH_READS_PARTIAL else value)
+            for key in MESH_READS
+            for value in (_cfg_value(cfg, key),)
+        )
+    )
+    return _resolve_layout(
+        layout, get_world_size() if world_size is None else world_size
     )
 
-    if pc_kwargs:
-        parallelism_config = ParallelismConfig(
-            **pc_kwargs,
-        )
-        device_mesh = parallelism_config.build_device_mesh("cuda")
 
+@lru_cache(maxsize=32)
+def _resolve_layout(layout: tuple, world_size: int) -> MeshSpec:
+    config = dict(layout)
+    if world_size == 1:
+        # single-process commands (preprocess, inference, merge) run without the layout
+        config = {key: config[key] for key in MESH_READS_PARTIAL}
+    return resolve_mesh(config, world_size=world_size)
+
+
+def _declared_layout(cfg) -> dict[str, int]:
+    return {
+        key: value
+        for key in (
+            "dp_replicate_size",
+            "dp_shard_size",
+            "context_parallel_size",
+            "tensor_parallel_size",
+            "expert_parallel_size",
+        )
+        if (value := _cfg_value(cfg, key) or 1) > 1
+    }
+
+
+def log_mesh_spelling(cfg, mesh: MeshSpec) -> None:
+    if mesh.world_size == 1 and (declared := _declared_layout(cfg)):
+        LOG.info("parallel layout %s is not applied in a single process", declared)
+    if mesh.legacy_spelling:
+        LOG.warning(
+            "dp_shard_size: %d with expert_parallel_size: %d uses the deprecated spelling, "
+            "where dp_shard_size is the split inside an expert-parallel group. dp_shard_size "
+            "is now the dense FSDP degree (transformers' fsdp_size) and expert parallelism "
+            "regroups the same ranks: write dp_shard_size: %d, or leave it unset, for this "
+            "layout. The old spelling will be removed in a future release.",
+            _cfg_value(cfg, "dp_shard_size"),
+            mesh.ep,
+            mesh.dp_shard,
+            main_process_only=True,
+        )
+
+
+def _accelerate_dp_shard(mesh: MeshSpec) -> int:
+    # accelerate's dp_shard axis is the split inside an EP group; its patched mesh adds `ep`
+    return mesh.efsdp if mesh.ep > 1 else mesh.dp_shard
+
+
+def _replicas_only(mesh: MeshSpec) -> bool:
+    return mesh.dist in ("single", "ddp") or (
+        mesh.dist == "deepspeed" and mesh.cp_impl != "ulysses"
+    )
+
+
+def mesh_to_parallelism_kwargs(
+    mesh: MeshSpec, *, dp_replicate_written: bool = False
+) -> dict[str, int | str]:
+    """Lower a ``MeshSpec`` to accelerate ``ParallelismConfig`` kwargs.
+
+    EP is not a kwarg: the patched ``ParallelismConfig`` reads ``PARALLELISM_CONFIG_EP_SIZE``.
+    Without FSDP the replicas sit on a ``dp_shard`` axis unless ``dp_replicate_size`` was
+    written, matching the meshes Axolotl has always built for DDP and DeepSpeed.
+    """
+    kwargs: dict[str, int | str] = {}
+    if mesh.tp > 1:
+        kwargs["tp_size"] = mesh.tp
+    if mesh.cp_impl == "ulysses":
+        kwargs["sp_size"] = mesh.cp
+        kwargs["sp_backend"] = "deepspeed"
+    elif mesh.cp > 1:
+        kwargs["cp_size"] = mesh.cp
+    if _replicas_only(mesh):
+        if mesh.dp_replicate > 1:
+            axis = "dp_replicate_size" if dp_replicate_written else "dp_shard_size"
+            kwargs[axis] = mesh.dp_replicate
+        return kwargs
+    if mesh.dp_replicate > 1:
+        kwargs["dp_replicate_size"] = mesh.dp_replicate
+    if _accelerate_dp_shard(mesh) > 1:
+        kwargs["dp_shard_size"] = _accelerate_dp_shard(mesh)
+    return kwargs
+
+
+def mesh_to_accelerate_env(
+    mesh: MeshSpec,
+    *,
+    dp_shard_written: bool = False,
+    dp_replicate_written: bool = False,
+    sp_attn_implementation: str | None = None,
+) -> dict[str, str]:
+    """Lower a ``MeshSpec`` to the ``PARALLELISM_CONFIG_*`` environment accelerate builds its
+    ``ParallelismConfig`` from, plus ``ACCELERATE_USE_PARALLELISM_CONFIG`` when it should.
+
+    A layout that is only FSDP (or only replicas) gets no accelerate ``ParallelismConfig``
+    unless ``dp_shard_size`` (or ``dp_replicate_size``) was written, as before.
+    """
+    env: dict[str, str] = {}
+    if mesh.tp > 1:
+        env["PARALLELISM_CONFIG_TP_SIZE"] = str(mesh.tp)
+    if mesh.cp_impl == "ulysses":
+        env["PARALLELISM_CONFIG_SP_SIZE"] = str(mesh.cp)
+        env["PARALLELISM_CONFIG_SP_BACKEND"] = "deepspeed"
+        env["PARALLELISM_CONFIG_SP_SEQ_LENGTH_IS_VARIABLE"] = "true"
+        env["PARALLELISM_CONFIG_SP_ATTN_IMPLEMENTATION"] = (
+            sp_attn_implementation or "sdpa"
+        )
+    elif mesh.cp > 1:
+        env["PARALLELISM_CONFIG_CP_SIZE"] = str(mesh.cp)
+        env["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
+    if mesh.ep > 1:
+        env["PARALLELISM_CONFIG_EP_SIZE"] = str(mesh.ep)
+
+    if mesh.dp_replicate > 1 and (
+        not _replicas_only(mesh) or mesh.cp_impl == "ulysses" or dp_replicate_written
+    ):
+        env["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(mesh.dp_replicate)
+    shard = _accelerate_dp_shard(mesh)
+    composed = mesh.tp > 1 or mesh.cp > 1 or mesh.ep > 1 or mesh.dp_replicate > 1
+    if shard > 1 and (dp_shard_written or composed):
+        env["PARALLELISM_CONFIG_DP_SHARD_SIZE"] = str(shard)
+
+    if any(key != "PARALLELISM_CONFIG_EP_SIZE" for key in env):
+        env["ACCELERATE_USE_PARALLELISM_CONFIG"] = "true"
+    return env
+
+
+def build_parallelism_config(cfg):
+    pc_kwargs = mesh_to_parallelism_kwargs(
+        resolve_cfg_mesh(cfg),
+        dp_replicate_written=_written(cfg, "dp_replicate_size"),
+    )
+    if pc_kwargs:
+        parallelism_config = ParallelismConfig(**pc_kwargs)
+        device_mesh = parallelism_config.build_device_mesh("cuda")
         return parallelism_config, device_mesh
     return None, None
-
-
-def _get_parallel_config_kwargs(
-    world_size: int,
-    tensor_parallel_size: int = 1,
-    context_parallel_size: int = 1,
-    dp_shard_size: int | None = None,
-    dp_replicate_size: int | None = None,
-    is_fsdp: bool = False,
-    expert_parallel_size: int | None = None,
-    is_deepspeed: bool = False,
-):
-    """Under DeepSpeed, ``context_parallel_size`` becomes accelerate's DeepSpeed Ulysses
-    ``sp`` axis (ALST) and the remaining ranks replicate, since ZeRO owns sharding."""
-    pc_kwargs: dict[str, int | str] = {}
-    remaining_world_size = world_size
-
-    # EP consumes part of world_size; subtract it up front so the auto-fill
-    # below doesn't put EP ranks into `dp_replicate_size`.
-    if expert_parallel_size and expert_parallel_size > 1:
-        if remaining_world_size % expert_parallel_size != 0:
-            raise ValueError(
-                f"expert_parallel_size ({expert_parallel_size}) must divide "
-                f"world_size ({world_size})."
-            )
-        remaining_world_size = remaining_world_size // expert_parallel_size
-
-    if tensor_parallel_size and tensor_parallel_size > 1:
-        pc_kwargs["tp_size"] = tensor_parallel_size
-        remaining_world_size = remaining_world_size // tensor_parallel_size
-
-    if context_parallel_size and context_parallel_size > 1:
-        if is_deepspeed:
-            pc_kwargs["sp_size"] = context_parallel_size
-            pc_kwargs["sp_backend"] = "deepspeed"
-        else:
-            pc_kwargs["cp_size"] = context_parallel_size
-        remaining_world_size = remaining_world_size // context_parallel_size
-
-    if is_deepspeed and "sp_size" in pc_kwargs and remaining_world_size > 1:
-        if dp_replicate_size and dp_replicate_size > 1:
-            if dp_replicate_size != remaining_world_size:
-                raise ValueError(
-                    f"dp_replicate_size ({dp_replicate_size}) must equal world_size / "
-                    f"context_parallel_size ({remaining_world_size}) under DeepSpeed."
-                )
-        pc_kwargs["dp_replicate_size"] = remaining_world_size
-        return pc_kwargs
-
-    if dp_shard_size is None and dp_replicate_size in (None, 1):
-        if remaining_world_size > 1:
-            pc_kwargs["dp_shard_size"] = remaining_world_size
-            remaining_world_size = 1
-
-    if dp_replicate_size and dp_replicate_size > 1:
-        pc_kwargs["dp_replicate_size"] = dp_replicate_size
-        remaining_world_size = remaining_world_size // dp_replicate_size
-
-    if remaining_world_size > 1 and dp_shard_size and dp_shard_size > 1:
-        if not is_fsdp:
-            raise ValueError(
-                "dp_shard_size was configured without a corresponding fsdp_config! "
-                "Please ensure you have configured FSDP using fsdp_config."
-            )
-        pc_kwargs["dp_shard_size"] = dp_shard_size
-        remaining_world_size = remaining_world_size // dp_shard_size
-        if remaining_world_size > 1 and "dp_replicate_size" not in pc_kwargs:
-            pc_kwargs["dp_replicate_size"] = remaining_world_size
-            remaining_world_size = 1
-
-    if remaining_world_size > 1:
-        if "dp_shard_size" not in pc_kwargs and is_fsdp:
-            pc_kwargs["dp_shard_size"] = remaining_world_size
-            remaining_world_size = 1
-
-    if remaining_world_size > 1:
-        raise ValueError(
-            f"The configured parallelisms are incompatible with the current world size ({get_world_size()})!\n"
-            f"{pc_kwargs}"
-        )
-
-    return pc_kwargs

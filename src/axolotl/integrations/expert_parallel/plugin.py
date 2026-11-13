@@ -17,6 +17,7 @@ import torch
 import torch.distributed as dist
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.utils.distributed import resolve_cfg_mesh
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -218,9 +219,9 @@ class ExpertParallelPlugin(BasePlugin):
         set_token_capacity(getattr(cfg, "expert_parallel_token_capacity", None))
         # Pure-EP path: register the grad-scale hook now. FSDP+EP defers
         # registration to `fully_shard_experts` (after experts become DTensors).
-        if (cfg.dp_shard_size or 1) <= 1:
-            ep_size = cfg.expert_parallel_size or 1
-            self._register_expert_grad_scale(model, ep_size)
+        mesh = resolve_cfg_mesh(cfg)
+        if mesh.efsdp <= 1:
+            self._register_expert_grad_scale(model, cfg.expert_parallel_size or 1)
 
     def post_model_load(self, cfg, model):
         """Propagate DDP-ignored params to the outermost model wrapper.
@@ -552,25 +553,11 @@ class ExpertParallelPlugin(BasePlugin):
             return None
 
         world_size = dist.get_world_size()
-        ep_size = getattr(cfg, "expert_parallel_size", 1) or 1
-        dp_shard_size = getattr(cfg, "dp_shard_size", None) or 1
-        dp_replicate_size = getattr(cfg, "dp_replicate_size", None) or 1
-        tp_size = getattr(cfg, "tensor_parallel_size", None) or 1
-        cp_size = getattr(cfg, "context_parallel_size", None) or 1
-
-        if ep_size <= 1:
+        if (getattr(cfg, "expert_parallel_size", 1) or 1) <= 1:
             return dist.group.WORLD
-
-        # Validate the world_size = product check.
-        product = ep_size * dp_replicate_size * dp_shard_size * tp_size * cp_size
-        if product != world_size:
-            raise ValueError(
-                f"expert_parallel_size ({ep_size}) * dp_replicate_size ({dp_replicate_size}) "
-                f"* dp_shard_size ({dp_shard_size}) * tensor_parallel_size ({tp_size}) "
-                f"* context_parallel_size ({cp_size}) = {product}, but world_size = "
-                f"{world_size}. The product must equal the world size for orthogonal mesh "
-                f"axes to be valid."
-            )
+        ep_size, dp_replicate_size, dp_shard_size, tp_size, cp_size = (
+            ExpertParallelPlugin._expert_layout(cfg, world_size)
+        )
 
         if ep_size == world_size:
             LOG.info(f"expert_parallel: pure EP, ep group = WORLD (ep={ep_size})")
@@ -582,50 +569,40 @@ class ExpertParallelPlugin(BasePlugin):
         # `_resolve_ep_group` directly). Experts shard on `ep` (tokens move via all-to-all); the
         # sequence shards on `cp` (DSA attention gathers the compressed KV on that axis);
         # non-expert weights shard on `dp_shard`. TP is still unsupported in composition.
-        if dp_shard_size > 1 or cp_size > 1 or dp_replicate_size > 1:
-            if tp_size > 1:
-                raise NotImplementedError(
-                    "EP × TP composition not yet supported. Got "
-                    f"ep={ep_size}, dp_shard={dp_shard_size}, tp={tp_size}, cp={cp_size}. "
-                    "Supported: EP, EP × dp_shard, EP × cp, EP × cp × dp_shard."
-                )
-            mesh = ExpertParallelPlugin._accelerate_mesh()
-            if mesh is None or "ep" not in (mesh.mesh_dim_names or ()):
-                from torch.distributed.device_mesh import init_device_mesh
-
-                from axolotl.monkeypatch.accelerate.parallelism_config import (
-                    MESH_ORDER,
-                )
-
-                # Fallback mesh in accelerate's axis order (ep innermost, node-local groups).
-                sizes = {
-                    "dp_replicate": dp_replicate_size,
-                    "dp_shard": dp_shard_size,
-                    "cp": cp_size,
-                    "ep": ep_size,
-                }
-                axes = [(n, sizes[n]) for n in MESH_ORDER if sizes.get(n, 1) > 1]
-                mesh = init_device_mesh(
-                    "cuda" if torch.cuda.is_available() else "cpu",
-                    tuple(s for _, s in axes),
-                    mesh_dim_names=tuple(n for n, _ in axes),
-                )
-            ExpertParallelPlugin._device_mesh = mesh
-            LOG.info(
-                f"expert_parallel: ep mesh shape={tuple(mesh.shape)} "
-                f"axes={mesh.mesh_dim_names}; ep group "
-                f"members={dist.get_process_group_ranks(mesh['ep'].get_group())}"
+        if tp_size > 1:
+            raise NotImplementedError(
+                "EP × TP composition not yet supported. Got "
+                f"ep={ep_size}, dp_shard={dp_shard_size}, tp={tp_size}, cp={cp_size}. "
+                "Supported: EP, EP × dp_shard, EP × cp, EP × cp × dp_shard."
             )
-            return mesh["ep"].get_group()
+        mesh = ExpertParallelPlugin._accelerate_mesh()
+        if mesh is None or "ep" not in (mesh.mesh_dim_names or ()):
+            from torch.distributed.device_mesh import init_device_mesh
 
-        # ep_size > 1, ep_size < world_size, no dp_shard/cp to fill the rest — invalid.
-        raise ValueError(
-            f"expert_parallel_size ({ep_size}) < world_size ({world_size}) "
-            "without dp_shard_size/context_parallel_size > 1 to fill the remaining axes is not "
-            "supported. Set dp_replicate_size, dp_shard_size and/or context_parallel_size such "
-            "that dp_replicate × ep × cp × dp_shard == world_size, or set "
-            "expert_parallel_size = world_size for pure EP."
+            from axolotl.monkeypatch.accelerate.parallelism_config import (
+                MESH_ORDER,
+            )
+
+            # Fallback mesh in accelerate's axis order (ep innermost, node-local groups).
+            sizes = {
+                "dp_replicate": dp_replicate_size,
+                "dp_shard": dp_shard_size,
+                "cp": cp_size,
+                "ep": ep_size,
+            }
+            axes = [(n, sizes[n]) for n in MESH_ORDER if sizes.get(n, 1) > 1]
+            mesh = init_device_mesh(
+                "cuda" if torch.cuda.is_available() else "cpu",
+                tuple(s for _, s in axes),
+                mesh_dim_names=tuple(n for n, _ in axes),
+            )
+        ExpertParallelPlugin._device_mesh = mesh
+        LOG.info(
+            f"expert_parallel: ep mesh shape={tuple(mesh.shape)} "
+            f"axes={mesh.mesh_dim_names}; ep group "
+            f"members={dist.get_process_group_ranks(mesh['ep'].get_group())}"
         )
+        return mesh["ep"].get_group()
 
     @staticmethod
     def _resolve_cp_group(cfg):
@@ -757,6 +734,13 @@ class ExpertParallelPlugin(BasePlugin):
         return n_hooks
 
     @staticmethod
+    def _expert_layout(cfg, world_size: int) -> tuple[int, int, int, int, int]:
+        """``(ep, dp_replicate, dp_shard, tp, cp)`` in the patched accelerate mesh's terms, where
+        ``dp_shard`` is the expert FSDP split inside an EP group (``efsdp``)."""
+        mesh = resolve_cfg_mesh(cfg, world_size)
+        return mesh.ep, mesh.dp_replicate, mesh.efsdp, mesh.tp, mesh.cp
+
+    @staticmethod
     def _is_ep_enabled(cfg) -> bool:
         """EP is enabled when expert_parallel_size > 1 (mirrors TP / DP UX)."""
         ep_size = getattr(cfg, "expert_parallel_size", 1) or 1
@@ -807,25 +791,12 @@ class ExpertParallelPlugin(BasePlugin):
         if ep_size <= 1:
             return
 
-        dp_shard_size = getattr(cfg, "dp_shard_size", None) or 1
-        dp_replicate_size = getattr(cfg, "dp_replicate_size", None) or 1
-        tp_size = getattr(cfg, "tensor_parallel_size", None) or 1
-        cp_size = getattr(cfg, "context_parallel_size", None) or 1
-
         if not (dist.is_available() and dist.is_initialized()):
             return  # validated at process-group time
         world_size = dist.get_world_size()
         if world_size <= 1:
             return  # single-rank context; mesh shapes are meaningless
-
-        product = ep_size * dp_replicate_size * dp_shard_size * tp_size * cp_size
-        if product != world_size:
-            raise ValueError(
-                f"expert_parallel: world_size ({world_size}) must equal "
-                f"expert_parallel_size ({ep_size}) * dp_replicate_size ({dp_replicate_size}) "
-                f"* dp_shard_size ({dp_shard_size}) * tensor_parallel_size ({tp_size}) "
-                f"* context_parallel_size ({cp_size}) = {product}."
-            )
+        resolve_cfg_mesh(cfg, world_size)
 
     @classmethod
     def _resolve_backend(cls, cfg) -> str | None:

@@ -27,7 +27,9 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import (
     get_world_size,
     init_distributed_state,
+    mesh_to_accelerate_env,
     reduce_and_broadcast,
+    resolve_cfg_mesh,
 )
 from axolotl.utils.environment import check_cuda_p2p_ib_support
 from axolotl.utils.logging import get_logger
@@ -583,59 +585,29 @@ def setup_fsdp_envs(cfg):
 
 
 def setup_parallelism_envs(cfg):
-    set_accelerate_parallelism_config = False
-    if cfg.tensor_parallel_size and cfg.tensor_parallel_size > 1:
-        set_accelerate_parallelism_config = True
-        os.environ["PARALLELISM_CONFIG_TP_SIZE"] = str(cfg.tensor_parallel_size)
+    mesh = resolve_cfg_mesh(cfg, get_world_size())
+    os.environ.update(
+        mesh_to_accelerate_env(
+            mesh,
+            dp_shard_written=(cfg.dp_shard_size or 1) > 1,
+            dp_replicate_written=(cfg.dp_replicate_size or 1) > 1,
+            sp_attn_implementation=cfg.attn_implementation,
+        )
+    )
+    if mesh.cp_impl == "ulysses":
+        os.environ.pop("PARALLELISM_CONFIG_CP_SIZE", None)
+    if mesh.tp > 1:
         from axolotl.monkeypatch.accelerate.tp import patch_accelerate_prepare_tp
 
         patch_accelerate_prepare_tp()
-    if cfg.dp_shard_size and cfg.dp_shard_size > 1:
-        set_accelerate_parallelism_config = True
-        os.environ["PARALLELISM_CONFIG_DP_SHARD_SIZE"] = str(cfg.dp_shard_size)
-    if cfg.dp_replicate_size and cfg.dp_replicate_size > 1:
-        set_accelerate_parallelism_config = True
-        os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(cfg.dp_replicate_size)
-    if cfg.context_parallel_size and cfg.context_parallel_size > 1:
-        set_accelerate_parallelism_config = True
-        if cfg.deepspeed:
-            setup_deepspeed_context_parallel_envs(cfg)
-        else:
-            os.environ["PARALLELISM_CONFIG_CP_SIZE"] = str(cfg.context_parallel_size)
-            os.environ["ACCELERATE_ALLOW_CP_STANDALONE"] = "true"
     # Expert Parallel patch must apply before the first `Accelerator()`
     # call so `ep_size` lands in the mesh.
-    if cfg.expert_parallel_size and cfg.expert_parallel_size > 1:
-        os.environ["PARALLELISM_CONFIG_EP_SIZE"] = str(cfg.expert_parallel_size)
-        if cfg.dp_shard_size and cfg.dp_shard_size > 1:
-            set_accelerate_parallelism_config = True
+    if mesh.ep > 1:
         from axolotl.monkeypatch.accelerate.parallelism_config import (
             patch_parallelism_config,
         )
 
         patch_parallelism_config()
-    if set_accelerate_parallelism_config:
-        os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] = "true"
-
-
-def setup_deepspeed_context_parallel_envs(cfg):
-    """Map ``context_parallel_size`` onto accelerate's DeepSpeed Ulysses (ALST) ``sp`` axis.
-
-    ZeRO owns sharding, so the ranks outside the CP group replicate; accelerate registers
-    the sequence-parallel groups with the engine and shards each batch across the group.
-    """
-    cp_size = cfg.context_parallel_size
-    os.environ["PARALLELISM_CONFIG_SP_SIZE"] = str(cp_size)
-    os.environ["PARALLELISM_CONFIG_SP_BACKEND"] = "deepspeed"
-    os.environ["PARALLELISM_CONFIG_SP_SEQ_LENGTH_IS_VARIABLE"] = "true"
-    os.environ["PARALLELISM_CONFIG_SP_ATTN_IMPLEMENTATION"] = (
-        cfg.attn_implementation or "sdpa"
-    )
-    world_size = get_world_size()
-    non_dp = cp_size * (cfg.tensor_parallel_size or 1)
-    if world_size > 1 and world_size % non_dp == 0 and world_size // non_dp > 1:
-        os.environ["PARALLELISM_CONFIG_DP_REPLICATE_SIZE"] = str(world_size // non_dp)
-    os.environ.pop("PARALLELISM_CONFIG_CP_SIZE", None)
 
 
 def apply_plugin_distributed_env(cfg) -> dict[str, str]:
