@@ -6,6 +6,8 @@ from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.validation import lora_kernels_auto_enable
 
+from tests.conftest import capture_axolotl_warnings
+
 
 @pytest.fixture(name="tpu_cfg")
 def fixture_tpu_cfg(min_base_cfg):
@@ -84,10 +86,16 @@ def test_supported_options_accepted(mock_tpu, tpu_cfg, overrides):
 
 
 def test_static_shape_defaults(mock_tpu, tpu_cfg):
-    cfg = validate_config(_with(tpu_cfg, pad_to_sequence_len=False))
+    cfg = validate_config(tpu_cfg)
     assert cfg.pad_to_sequence_len is True
-    assert cfg.dataloader_drop_last is True
     assert cfg.dataloader_pin_memory is False
+
+
+def test_pad_to_sequence_len_false_overridden_with_warning(mock_tpu, tpu_cfg, caplog):
+    with capture_axolotl_warnings(caplog):
+        cfg = validate_config(_with(tpu_cfg, pad_to_sequence_len=False))
+    assert cfg.pad_to_sequence_len is True
+    assert "pad_to_sequence_len: false" in caplog.text
 
 
 def test_lora_kernels_not_auto_enabled(mock_tpu, tpu_cfg):

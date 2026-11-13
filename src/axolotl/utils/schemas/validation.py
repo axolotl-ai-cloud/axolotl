@@ -2035,10 +2035,12 @@ class SystemValidationMixin:
                     f"Plugin {plugin!r} is not supported on TPU: it uses CUDA kernels."
                 )
 
-        # Every batch is padded to sequence_len, so a short final batch would be the
-        # only new shape in the run and trigger a recompile.
+        if data.get("pad_to_sequence_len") is False:
+            LOG.warning(
+                "Ignoring `pad_to_sequence_len: false` on TPU: every batch is padded to "
+                "`sequence_len` so the input shape never changes."
+            )
         data["pad_to_sequence_len"] = True
-        data["dataloader_drop_last"] = True
         data["dataloader_pin_memory"] = False
 
         return data

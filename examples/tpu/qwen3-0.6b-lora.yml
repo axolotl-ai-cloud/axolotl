@@ -15,10 +15,9 @@ attn_implementation: sdpa
 bf16: true
 
 # On TPU every batch is padded to sequence_len so the graph keeps one shape.
-# Axolotl sets these automatically; they are spelled out here for clarity.
+# Axolotl sets this automatically; it is spelled out here for clarity.
 sequence_len: 1024
 pad_to_sequence_len: true
-dataloader_drop_last: true
 
 datasets:
   - path: tatsu-lab/alpaca

@@ -1,5 +1,6 @@
 """Utilities for distributed functionality."""
 
+import functools
 import importlib.util
 import os
 import pickle  # nosec
@@ -19,6 +20,7 @@ from transformers.utils.import_utils import (
 distributed_state = None
 
 
+@functools.cache
 def is_tpu() -> bool:
     """Return True when TorchTPU (``torch_tpu``) is the active accelerator.
 

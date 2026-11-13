@@ -44,6 +44,7 @@ class TestIsTpu:
         with patch.object(
             torch.accelerator, "current_accelerator", return_value=accelerator
         ):
+            is_tpu.cache_clear()
             assert is_tpu() is False
 
     def test_true_without_probing_the_runtime(self, mock_tpu):
@@ -96,6 +97,13 @@ class TestResolveDtype:
         assert cfg.bf16 is True
         assert cfg.fp16 is False
         assert cfg.torch_dtype == torch.bfloat16
+
+    def test_mps_unchanged(self):
+        cfg = DictDefault(device="mps", bf16=True, load_in_8bit=True)
+        resolve_dtype(cfg)
+        assert cfg.fp16 is True
+        assert cfg.bf16 is False
+        assert cfg.load_in_8bit is False
 
 
 @pytest.fixture(name="tokenizer")
@@ -163,7 +171,6 @@ def test_tpu_examples_validate(mock_tpu, example):
     cfg = validate_config(DictDefault(yaml.safe_load(example.read_text())))
     assert cfg.attn_implementation == "sdpa"
     assert cfg.pad_to_sequence_len is True
-    assert cfg.dataloader_drop_last is True
     assert not cfg.sample_packing
     for flag in ("lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"):
         assert not cfg.get(flag)

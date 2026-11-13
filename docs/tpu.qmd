@@ -37,7 +37,7 @@ When `torch_tpu` is the active accelerator, Axolotl:
 
 - trains on `tpu:0`, loading the model on the host first;
 - enables bf16 (`bf16: auto` resolves to bf16, `fp16: true` is switched to bf16 with a warning);
-- pads every batch to `sequence_len` and drops the last incomplete batch, so the input shape never changes;
+- pads every batch to `sequence_len`, so the sequence length never changes;
 - skips the automatic Triton LoRA kernels.
 
 See `examples/tpu/` for complete LoRA and full fine-tuning configs.
@@ -61,6 +61,7 @@ Axolotl rejects these at config validation with an error that names the option.
 | Flash attention, xformers | CUDA kernels; use `sdpa` |
 | Sample packing, batch flattening | batch shapes change every step |
 | RL trainers (`rl:`) | SFT only for now |
+| Multimodal models | image batches are not padded to a fixed shape yet |
 | `torch_compile` | not yet validated with TorchTPU's `tpu` compile backend |
 | Liger, Cut Cross Entropy, `lora_*_kernel` | CUDA/Triton kernels |
 | `activation_checkpointing.offload` | relies on CUDA streams |

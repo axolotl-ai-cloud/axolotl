@@ -890,6 +890,8 @@ def fixture_mock_tpu(monkeypatch):
 
     import torch
 
+    from axolotl.utils.distributed import is_tpu
+
     real_find_spec = importlib.util.find_spec
 
     def find_spec(name, *args, **kwargs):
@@ -905,6 +907,9 @@ def fixture_mock_tpu(monkeypatch):
     monkeypatch.setattr(torch.accelerator, "current_accelerator", current_accelerator)
     monkeypatch.setattr(torch.accelerator, "device_count", lambda: 8)
     monkeypatch.setattr(torch.accelerator, "current_device_index", lambda: 0)
+    is_tpu.cache_clear()
+    yield
+    is_tpu.cache_clear()
 
 
 #

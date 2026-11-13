@@ -614,7 +614,7 @@ class AxolotlInputConfig(
     bf16: Literal["auto"] | bool | None = Field(
         default="auto",
         json_schema_extra={
-            "description": "Enable bfloat16. bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. Requires CUDA Ampere+ GPU or a TPU."
+            "description": "Use CUDA bf16. bool or 'full' for `bf16_full_eval`, or 'auto' for automatic detection. require >=ampere"
         },
     )
     fp16: bool | None = Field(

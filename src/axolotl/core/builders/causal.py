@@ -492,11 +492,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         return bool(self.cfg.streaming or self.cfg.pretraining_dataset)
 
     def _collator_padding_kwargs(self) -> dict:
-        # TPU recompiles on every new input shape, so pad every batch to the same length.
+        # TPU recompiles on every new input shape. Samples never exceed sequence_len,
+        # so rounding up to it gives every batch the same width with any collator.
         if is_tpu():
             data_collator_kwargs = {
-                "padding": "max_length",
-                "max_length": self.cfg.sequence_len,
+                "padding": True,
                 "pad_to_multiple_of": self.cfg.sequence_len,
             }
         else:
