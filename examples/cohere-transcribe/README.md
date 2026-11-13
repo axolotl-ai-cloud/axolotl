@@ -39,6 +39,8 @@ asr:
 
 Audio is decoded, downmixed to mono and resampled to 16 kHz automatically. Write transcripts the way you want the model to output them: with `punctuation: true`, use cased and punctuated text (FLEURS `raw_transcription`, not `transcription`).
 
+The example's FLEURS train split was likely part of the model's training data: the base model's loss on it starts near zero (about 0.001, versus about 0.3 on the FLEURS validation split), so the example shows the pipeline working rather than a real improvement. Swap in your own domain data for an actual fine-tune.
+
 ## Tips
 
 - Clips longer than 35 seconds or shorter than 20 milliseconds are dropped with a warning when the dataset loads; split long recordings into shorter segments first.
@@ -46,6 +48,9 @@ Audio is decoded, downmixed to mono and resampled to 16 kHz automatically. Write
 - Prompt tokens (language, punctuation and task tags) are excluded from the loss unless `train_on_inputs: true`.
 - Use `attn_implementation: sdpa` or `eager`. Flash attention, sample packing, Liger and Cut Cross Entropy are not supported for this model.
 - The encoder's BatchNorm layers stay in eval mode during training so their running statistics are not skewed by small or padded batches.
+- Keep `activation_checkpointing: true` unless you have memory to spare: turning it off used about 3.5x the GPU memory (21 GiB versus 6 GiB with the example config).
+- `torch_compile: true` works but recompiles for every new audio length, so it is much slower than eager mode with variable-length clips.
+- Resuming a full fine-tune (no `adapter`) from a checkpoint, or `load_best_model_at_end`, currently does not restore most weights: Transformers saves this model's checkpoints under the original NeMo key names and the trainer's resume path does not rename them back, so it logs missing keys and continues from the base weights. LoRA and QLoRA resumes are not affected.
 - Do not set `trust_remote_code`; Axolotl's pinned Transformers version includes the model.
 - The model expects the language to be given; it does not detect it.
 - For FSDP, set the wrap classes explicitly, since the model's default list names a class that does not exist:
