@@ -13,7 +13,7 @@ class TestExportConfig:
 
     def test_defaults(self):
         config = ExportConfig()
-        assert (config.format, config.outtype, config.quantize) == ("gguf", "f16", [])
+        assert (config.format, config.outtype, config.quantize) == ("gguf", None, [])
 
     @pytest.mark.parametrize(
         "quantize, expected",
@@ -59,6 +59,37 @@ class TestExportConfig:
     def test_q8_0_outtype_alone_is_allowed(self):
         assert ExportConfig(outtype="q8_0").outtype == "q8_0"
 
+    def test_lora_defaults_to_false(self):
+        assert ExportConfig().lora is False
+
+    def test_lora_rejects_quantize(self):
+        with pytest.raises(ValidationError, match="only takes full models"):
+            ExportConfig(lora=True, quantize=["Q4_K_M"])
+
+    @pytest.mark.parametrize("outtype", ["tq1_0", "tq2_0"])
+    def test_lora_rejects_model_only_outtypes(self, outtype):
+        with pytest.raises(ValidationError, match=f"cannot write {outtype}"):
+            ExportConfig(lora=True, outtype=outtype)
+
+    @pytest.mark.parametrize("outtype", ["f32", "f16", "bf16", "q8_0", "auto"])
+    def test_lora_outtypes(self, outtype):
+        assert ExportConfig(lora=True, outtype=outtype).outtype == outtype
+
+    def test_lora_false_skips_the_lora_checks(self):
+        assert ExportConfig(lora=False, quantize=["Q4_K_M"]).quantize == ["Q4_K_M"]
+
+    @pytest.mark.parametrize(
+        "config, lora, expected",
+        [
+            ({}, False, "f16"),
+            ({}, True, "f32"),
+            ({"outtype": "f16"}, True, "f16"),
+            ({"outtype": "bf16"}, False, "bf16"),
+        ],
+    )
+    def test_resolved_outtype(self, config, lora, expected):
+        assert ExportConfig(**config).resolved_outtype(lora) == expected
+
 
 class TestExportConfigInAxolotlConfig:
     """The `export` block round-trips through full config validation."""
@@ -69,3 +100,9 @@ class TestExportConfigInAxolotlConfig:
     def test_normalized_in_place(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(export={"quantize": ["q4_k_m"]})
         assert validate_config(cfg).export["quantize"] == ["Q4_K_M"]
+
+    def test_lora_outtype_default_survives_validation(self, min_base_cfg):
+        """Validation writes defaults back, so an unset outtype must stay unset."""
+        cfg = min_base_cfg | DictDefault(export={"lora": True})
+        export = ExportConfig(**validate_config(cfg).export)
+        assert export.resolved_outtype(True) == "f32"
