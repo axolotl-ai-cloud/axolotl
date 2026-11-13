@@ -4297,3 +4297,59 @@ def test_build_meta_model_uses_speech_seq2seq_head(tmp_path):
     meta = _build_meta_model(tmp_path)
 
     assert type(meta).__name__ == "CohereAsrForConditionalGeneration"
+
+
+def test_efficient_merge_matches_keys_saved_without_base_model_prefix(tmp_path):
+    from peft import LoraConfig as PeftLoraConfig, get_peft_model
+    from transformers import AutoModelForSpeechSeq2Seq, CohereAsrConfig
+
+    torch.manual_seed(0)
+    config = CohereAsrConfig(
+        encoder_config={
+            "hidden_size": 32,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+            "intermediate_size": 64,
+            "subsampling_conv_channels": 8,
+            "num_mel_bins": 16,
+        },
+        vocab_size=64,
+        hidden_size=32,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        intermediate_size=64,
+        max_position_embeddings=16,
+        architectures=["CohereAsrForConditionalGeneration"],
+    )
+    base_dir = tmp_path / "base"
+    AutoModelForSpeechSeq2Seq.from_config(config).save_pretrained(base_dir)
+    # the hub checkpoint stores bare NeMo names with no `model.` prefix
+    shard = base_dir / "model.safetensors"
+    state = safetensors.torch.load_file(shard)
+    safetensors.torch.save_file(
+        {k.removeprefix("model."): v for k, v in state.items()},
+        shard,
+        metadata={"format": "pt"},
+    )
+
+    peft_model = get_peft_model(
+        AutoModelForSpeechSeq2Seq.from_pretrained(base_dir),
+        PeftLoraConfig(r=2, target_modules=["q_proj"]),
+    )
+    for name, param in peft_model.named_parameters():
+        if "lora_B" in name:
+            torch.nn.init.normal_(param)
+    peft_model.save_pretrained(tmp_path / "adapter")
+    expected = peft_model.merge_and_unload().state_dict()
+
+    merge_lora_sharded_efficient(base_dir, tmp_path / "adapter", tmp_path / "merged")
+
+    merged = AutoModelForSpeechSeq2Seq.from_pretrained(tmp_path / "merged").state_dict()
+    base = AutoModelForSpeechSeq2Seq.from_pretrained(base_dir).state_dict()
+    assert all(
+        not torch.equal(merged[k], base[k])
+        for k in expected
+        if k.endswith("q_proj.weight")
+    )
+    for key in expected:
+        torch.testing.assert_close(merged[key], expected[key])
